@@ -61,7 +61,7 @@ struct BackgroundService {
     }
 
     /// Registers the job when this launch may (`mayRegister`) and answers its status; nil when
-    /// it may not, so the app stays in process. A failed registration is logged and read as
+    /// it may not, so the app supervises its own host (`HostSupervisor`). A failed registration is logged and read as
     /// whatever status launchd reports after it.
     func prepare(may: Bool) -> Status? {
         guard may else { return nil }

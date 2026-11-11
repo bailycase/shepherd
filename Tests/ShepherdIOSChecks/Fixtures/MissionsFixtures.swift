@@ -39,6 +39,10 @@ extension FixtureCatalog {
                           prepare: load),
             FixtureScreen(name: "mission-patch", hosts: hosts, routes: [.missions(.list), .missions(.mission(host: studio, mission: D.patched))],
                           prepare: choose(D.patched)),
+            FixtureScreen(name: "mission-train", hosts: hosts, routes: [.missions(.list), .missions(.mission(host: studio, mission: D.training))],
+                          prepare: choose(D.training)),
+            FixtureScreen(name: "mission-train-blocked", hosts: hosts, routes: [.missions(.list), .missions(.mission(host: studio, mission: D.blocked))],
+                          prepare: choose(D.blocked)),
             FixtureScreen(name: "mission-new", hosts: hosts, routes: [.missions(.list)], presented: .missions(.new(host: studio)), prepare: load),
         ]
     }
@@ -78,6 +82,8 @@ enum MissionsFixtureData {
     static let running = MissionID(rawValue: "00000000-0000-4000-8000-000000000003")
     static let consent = MissionID(rawValue: "00000000-0000-4000-8000-000000000004")
     static let patched = MissionID(rawValue: "00000000-0000-4000-8000-000000000005")
+    static let training = MissionID(rawValue: "00000000-0000-4000-8000-000000000006")
+    static let blocked = MissionID(rawValue: "00000000-0000-4000-8000-000000000007")
     static let shepherd = FixtureData.shepherdSpace, horizon = FixtureData.horizonSpace
     static let now = FixtureData.start / 1000
 
@@ -162,7 +168,7 @@ enum MissionsFixtureData {
         stuck.draft.plan?.estimate = MissionEstimate(tokens: 3_100_000, seconds: 3600 + 38 * 60)
         stuck.run?.patch = MissionPatch(proposedAt: now - 120, base: stuck.draft, draft: after,
                                         summary: "Only horizon changes. The validator still waits for it, so nothing else re-runs.")
-        let missions = FixtureMissions(records: [reviewed, asking, working, trusting, stuck],
+        let missions = FixtureMissions(records: [reviewed, asking, working, trusting, stuck, train(training, blocked: false), train(blocked, blocked: true)],
                                        options: RemoteMissionStartOptions(models: ["anthropic/claude-opus", "openai/gpt-5"], defaultModel: "anthropic/claude-opus",
                                                                           spaces: [shepherd, horizon],
                                                                           branchChoices: [shepherd.id: ["refs/heads/main", "refs/remotes/origin/main"],
@@ -175,5 +181,33 @@ enum MissionsFixtureData {
         var hosts = FixtureData.hosts()
         hosts[0].missions = missions
         return hosts
+    }
+
+    /// MXTrain on the phone: a published mission's four pull requests, the second soaking on staging,
+    /// or (blocked) the third stopped on a code conflict with the train paused.
+    static func train(_ id: MissionID, blocked: Bool) -> Mission {
+        let names = ["contracts", "analytics-ingest", "checkout-svc", "orders-svc"]
+        let lanes = names.map { MissionLane(spaceID: SpaceID(rawValue: "space-\($0)"), name: $0, baseBranch: "refs/heads/main") }
+        var run = MissionRun(model: "anthropic/claude-opus", phase: .done, elapsedSeconds: 2 * 3600 + 52 * 60)
+        run.publicationApproval = String(repeating: "b2", count: 32)
+        run.checkouts = lanes.enumerated().map { index, lane in
+            MissionCheckout(spaceID: lane.spaceID, repo: "/Users/dev/\(lane.name)", path: "/wt/\(lane.name)", branch: "mission/checkout-events",
+                            base: "refs/heads/main", head: "4b825dc", prURL: "https://github.com/acme/\(lane.name)/pull/\([412, 97, 231, 318][index])")
+        }
+        var train = MissionTrain(order: lanes.map(\.spaceID), rules: MissionTrain.Rules(between: .stagingSoak, soakMinutes: 10), startedAt: now - 30 * 60)
+        let finished = blocked ? 2 : 1
+        for car in 0..<finished { for step in train.cars[car].steps.indices { train.cars[car].steps[step].status = .done; train.cars[car].steps[step].at = now - Double(20 - car * 5) * 60 } }
+        if blocked {
+            train.cars[2].steps[0].status = .failed
+            train.cars[2].steps[0].note = "code conflict with main in internal/events/emit.go"
+            train.pause("checkout-svc has a code conflict with main in internal/events/emit.go. Code conflicts pause and ask.")
+        } else {
+            for step in 0..<4 { train.cars[1].steps[step].status = .done; train.cars[1].steps[step].at = now - 8 * 60 }
+            train.cars[1].steps[4].status = .running
+            train.cars[1].steps[4].at = now - 4 * 60
+        }
+        run.train = train
+        return Mission(id: id, revision: 12, draft: MissionDraft(title: blocked ? "Order events" : "Checkout funnel events", goal: "Emit checkout funnel events",
+                                                                plan: MissionPlan(lanes: lanes)), approvedPlanRevision: 5, run: run)
     }
 }

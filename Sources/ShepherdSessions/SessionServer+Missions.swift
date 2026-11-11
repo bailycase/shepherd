@@ -334,9 +334,17 @@ extension SessionServer {
         case .done: "Turn finished"
         case .review: "Ready to review"
         }
+        // An automation's run that failed says so under the automation's name; its thread is what it opens.
+        let agent = store.state.agents.first { $0.id == agentID }
+        if kind == .error, let automation = store.state.automations.first(where: {
+            $0.agentID == agentID || $0.id == agent?.automationOrigin?.automationID }) {
+            pushNotifications.send(agentID: agentID, kind: kind, title: automation.name, preview: preview,
+                                   group: "automation:\(automation.id.rawValue)", subtitle: "Automation failed", detail: detail)
+            return
+        }
         guard let mission = store.state.missions.first(where: { $0.run?.attempts.contains { $0.agentID == agentID } == true }),
               let attempt = mission.run?.attempts.last(where: { $0.agentID == agentID }) else {
-            pushNotifications.send(agentID: agentID, kind: kind, title: store.state.agents.first { $0.id == agentID }?.name,
+            pushNotifications.send(agentID: agentID, kind: kind, title: agent?.name,
                                    preview: preview, subtitle: line, detail: detail)
             return
         }

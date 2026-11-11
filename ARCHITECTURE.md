@@ -33,12 +33,16 @@ otherwise. Who starts the host:
   pipe from the app closes, so an app crash takes it down. Quit asks first while agents are
   mid-turn. The child has no bundle watch and no drain. A host that finds the workspace owned
   exits with `SessionHost.ownedExitStatus`, and the app follows the owner until it lets go.
+  Relaunching restores the workspace and respawns each agent in its pi session.
+
+The app never runs a `SessionServer`. App tests serve one in process over a scratch `host.sock`
+and connect the app to it the way it connects to a real host.
 
 Both hosts are the same executable and log the same way: `ShepherdLog.connection` lines (the
 supervisor's lifecycle among them) reach unified logging under `com.shepherd.app`; the other
 `ShepherdLog` lines go to stderr, which is the app's console for its child.
 
-Either owner can also serve its agents to other devices over an authenticated TCP listener.
+Either host can also serve its agents to other devices over an authenticated TCP listener.
 
 [DESIGN.md](DESIGN.md) holds the UI rules. This document covers module boundaries, ownership,
 and where each feature lives. The code and its tests are the detail. [AGENTS.md](AGENTS.md) is
@@ -116,14 +120,14 @@ decodes on a concurrent queue while its session holds its later records in order
 - the side pane (its Changes tab, or the subagent inspector over it) and pi's dots on it
 - sheets, settings, appearance, and remote hosts
 
-It never owns a server: it takes the host's workspace as its own over `host.sock`
-(`ShepherdViewModel+LocalHost`) and sends each change there. A
-persistence task tail keeps user mutations ordered. If the server rejects a mutation, the view
-model reconciles itself and `TerminalSessionStore` from `server.state`.
+It never starts a server (`BackgroundHostClient`): it takes its host's workspace as its own over
+`host.sock` (`ShepherdViewModel+LocalHost`); every terminal is the host's (`HostTerminalLeaf`). A
+persistence task tail keeps user mutations ordered. If the host rejects a mutation, the view
+model adopts the host's state again.
 
 **Observation.** The view model and the app's stores (`NativeThreadStore`, `AppSettings`,
 `KeybindingsStore`, `ThemeManager`, `RemoteHostStore`, `AppUpdater`, the
-worktree models, terminal sessions) are `@MainActor @Observable`. Views read only what they draw and
+worktree models, terminal panels) are `@MainActor @Observable`. Views read only what they draw and
 take plain `Equatable` values, so a status report or a poll re-renders just the views whose
 values changed. The menu bar reads `MenuState` (`AppCommands.swift`), narrow cached values that
 change only when a menu's own value does.
@@ -142,10 +146,10 @@ Start at these files, then follow the code. There is no per-feature doc.
 | Design tool | `Extensions/shepherd-design*.ts`, `Extensions/design-skill/`, `ShepherdSessions/Design*Store.swift`, `DesignSurfaceKit` |
 | Skills, instructions, hooks | `ShepherdSessions/Skills*.swift`, `InstructionsStore.swift`, `Hooks/`; matching `Extensions/shepherd-*.ts` |
 | MCP | `Extensions/shepherd-mcp-*`, `ShepherdApp/MCP/`, `ShepherdSessions/ProjectMCP*.swift` |
-| Projects, missions, automations | `ShepherdSessions/SessionServer+*Project*.swift`, `SessionServer+Missions.swift`, `SessionServer+Automations.swift` (runs and triggers), `ShepherdApp/Automation*.swift`; the Mission and Project runtime (`ShepherdApp/MissionController*.swift`, `Project*Controller.swift`) runs where the agents run, built by `RuntimeHosting` in the app or in `Shepherd --host` |
+| Projects, missions, automations | `ShepherdSessions/SessionServer+*Project*.swift`, `SessionServer+Missions.swift`, `SessionServer+Automations.swift` (runs and triggers), `ShepherdApp/Automation*.swift`; the Mission and Project runtime (`ShepherdApp/MissionController*.swift`, `Project*Controller.swift`) runs where the agents run, in `Shepherd --host` (`RuntimeHosting.headless`) |
 | Goals | `Extensions/shepherd-goal.ts`, `ShepherdProtocol/NativeGoal.swift`, `ShepherdApp/Thread/GoalCard.swift` |
 | Remote listener and iOS client | `ShepherdSessions/Remote*.swift`, `ShepherdRemote/RemoteHostClient.swift`, `App/iOS/`, [remote protocol](docs/remote-protocol.md) |
-| Terminals | `ShepherdSessions/PTYSession.swift`, `ShepherdApp/TerminalSessions.swift`, `TerminalHost.swift` |
+| Terminals | `ShepherdSessions/PTYSession.swift`, `ShepherdApp/HostTerminalLeaf.swift`, `TerminalHost.swift` |
 | Issues & PRs | `ShepherdSessions/Forge/`, `ShepherdApp/Forge/`; threads' pull request links and close on merge in `ShepherdSessions/PullRequestLinks.swift` |
 | Pi engine, launch, home | `PiLaunch.swift`, `PiEngine.swift`, `PiHome.swift`, [pi engine](docs/pi-engine.md) |
 

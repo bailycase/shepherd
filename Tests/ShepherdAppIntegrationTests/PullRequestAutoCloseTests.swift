@@ -51,11 +51,29 @@ struct PullRequestAutoCloseTests {
             self.agent = agent
             vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
             app.settings.worktreeCloseOnMerge = true
-            vm.branchPullRequestLookup = { [unowned self] _ in
+            // The app looks links up for its badges; the host, which closes merged threads, for itself.
+            let lookup: @MainActor (String) async -> ThreadPullRequest? = { [unowned self] _ in
                 ThreadPullRequest(ref: PullRequestAutoCloseTests.ref, state: pullState,
                                   headRefName: PullRequestAutoCloseTests.branch, headRefOid: headRefOid)
             }
+            vm.branchPullRequestLookup = lookup
+            app.host?.pullRequestLookup = lookup
+            let app = app
+            try await eventuallyOnMain("the host to follow the switch") { app.hostSettings?.worktreeCloseOnMerge == true }
+            // The host starts every thread idle: the agent reports how it is.
+            if status != .idle {
+                let reporter = try ExtensionClient(path: app.scratch.socketPath)
+                try reporter.send(.setAgentStatus(agentID: agent.agent.id, status: status))
+                let server = app.server, id = agent.agent.id
+                try await eventuallyOnMain("the host to see the agent \(status)") { server.state.agents.first { $0.id == id }?.status == status }
+            }
         }
+
+        /// What the host says of a merged thread it kept.
+        var closeNote: String? { app.server.pullRequestLinks?.closeNotes[id] }
+
+        /// Looks the thread's pull request up on the host, as its poll or a turn's end does.
+        func refresh() async { _ = await app.server.pullRequestLinks?.refresh(id) }
 
         var id: AgentID { agent.agent.id }
         var checkout: String { agent.agent.worktreePath! }
@@ -64,9 +82,9 @@ struct PullRequestAutoCloseTests {
         /// Seen open, then merged: what the poll or a turn's end would read.
         func merge() async {
             pullState = .open
-            await vm.refreshPullRequestLink(id)
+            await refresh()
             pullState = .merged
-            await vm.refreshPullRequestLink(id)
+            await refresh()
         }
 
         func stop() { app.stop(); sandbox.remove() }
@@ -100,7 +118,7 @@ struct PullRequestAutoCloseTests {
         #expect(setup.deletedOnGitHub, "the branch on GitHub goes too")
         let delete = setup.commands.withValue { $0 }.first { $0.starts(with: ["gh", "api", "--method=DELETE"]) }
         #expect(delete?.last == "repos/acme/payments/git/refs/heads/agent/refund-events")
-        #expect(setup.vm.pullRequestLinks.isEmpty && setup.vm.remoteActionError == nil)
+        #expect(setup.app.server.pullRequestLinks?.links.isEmpty == true && setup.vm.remoteActionError == nil)
     }
 
     enum Skip: String, CaseIterable {
@@ -111,7 +129,6 @@ struct PullRequestAutoCloseTests {
     func aThreadThatMightLoseWorkStays(_ skip: Skip) async throws {
         let setup = try await Setup(status: skip == .running ? .working : skip == .asking ? .blocked : .idle)
         defer { setup.stop() }
-        let vm = setup.vm
         let checkout = URL(fileURLWithPath: setup.checkout)
         switch skip {
         case .dirty:
@@ -122,6 +139,8 @@ struct PullRequestAutoCloseTests {
             try git(["commit", "-qm", "Not pushed"], in: checkout)
         case .settingOff:
             setup.app.settings.worktreeCloseOnMerge = false
+            let app = setup.app
+            try await eventuallyOnMain("the host to follow the switch") { app.hostSettings?.worktreeCloseOnMerge == false }
         default:
             break
         }
@@ -129,13 +148,13 @@ struct PullRequestAutoCloseTests {
         switch skip {
         case .closedUnmerged:
             setup.pullState = .open
-            await vm.refreshPullRequestLink(setup.id)
+            await setup.refresh()
             setup.pullState = .closed
-            await vm.refreshPullRequestLink(setup.id)
+            await setup.refresh()
         case .mergedBeforeSeenOpen:
             // Found merged on the first look (a restart): never closed.
             setup.pullState = .merged
-            await vm.refreshPullRequestLink(setup.id)
+            await setup.refresh()
         default:
             await setup.merge()
         }
@@ -145,17 +164,13 @@ struct PullRequestAutoCloseTests {
         #expect(FileManager.default.fileExists(atPath: setup.checkout))
         #expect(try setup.sandbox.branches().contains(Self.branch))
         #expect(!setup.deletedOnGitHub)
-        let note = vm.pullRequestCloseNotes[setup.id]
+        let note = setup.closeNote
         switch skip {
         case .running: #expect(note == "it's running")
         case .asking: #expect(note == "it's waiting on your answer")
         case .dirty: #expect(note == "1 uncommitted change")
         case .unpushed: #expect(note == "1 unpushed commit")
         case .closedUnmerged, .settingOff, .mergedBeforeSeenOpen: #expect(note == nil)
-        }
-        if note != nil {
-            let row = try #require(vm.sidebarLists.all.first { $0.id == .local(setup.id) })
-            #expect(row.help.contains("kept open: \(note!)"), "the row says why")
         }
     }
 }

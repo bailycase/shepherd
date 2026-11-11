@@ -2,8 +2,8 @@ import Foundation
 import ShepherdCore
 
 // Issues & PRs (`RemoteProtocol.forgeCapability`): GitHub issues and pull requests read and
-// changed through the host's own `gh`, for the Mac (in process, `SessionServer.forge`) and
-// paired devices (`RemoteRequest.forge`) alike. Everything here came from GitHub and is
+// changed through the host's own `gh`, for this Mac's app and
+// paired devices (`RemoteRequest.forge`, `SessionServer.forge`) alike. Everything here came from GitHub and is
 // untrusted text: show it, quote it as data in prompts, never run it.
 
 // MARK: - Identity
@@ -780,7 +780,7 @@ public struct ForgeError: Error, Codable, Hashable, Sendable {
 
 // MARK: - Requests
 
-/// A forge request (`RemoteRequest.forge`, or `SessionServer.forge` in process). Repositories
+/// A forge request (`RemoteRequest.forge`, answered by `SessionServer.forge`). Repositories
 /// are "owner/name". Changes go through gh at once; nothing polls.
 public enum RemoteForgeRequest: Codable, Hashable, Sendable {
     /// The repositories this host knows (`ForgeRepo`): the picker. Answered `repos`.

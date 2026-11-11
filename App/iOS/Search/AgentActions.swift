@@ -40,6 +40,11 @@ enum AgentActions {
         try await perform(ref, .move(spaceID: space), hosts: hosts)
     }
 
+    /// Mute or Unmute Notifications: the thread's host keeps it, so every phone agrees.
+    static func mutePushes(_ ref: AgentRef, _ muted: Bool, hosts: MobileHosts) async throws {
+        try await perform(ref, .mutePushes(muted), hosts: hosts)
+    }
+
     /// Retires the agent only; a worktree checkout and its branch stay on the host.
     static func delete(_ ref: AgentRef, hosts: MobileHosts) async throws {
         try await perform(ref, .deleteKeepingWorktree, hosts: hosts)

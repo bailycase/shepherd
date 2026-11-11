@@ -20,7 +20,9 @@ struct TerminalPanelTests {
         vm.selectAgent(agent.agent.id)
 
         vm.newTerminalTab()
-        await app.settle()
+        try await eventuallyOnMain("the host to open the terminal and the keyboard to follow it") {
+            (vm.focusedPaneID).map { ![agent.piPane.id, agent.auxiliary[0].id].contains($0) } == true
+        }
 
         let layout = try #require(app.server.state.tabs.first?.layout)
         let tabs = TerminalPanel.tabs(in: layout, thread: agent.piPane.id)
@@ -42,7 +44,7 @@ struct TerminalPanelTests {
         vm.focusedPaneID = agent.auxiliary[0].id
 
         vm.newTerminalTab()
-        await app.settle()
+        try await eventuallyOnMain("the host to open the terminal") { app.server.state.tabs.first?.layout.leaves.count == 3 }
 
         let layout = try #require(app.server.state.tabs.first?.layout)
         #expect(TerminalPanel.tabs(in: layout, thread: agent.piPane.id).count == 2)
@@ -62,7 +64,9 @@ struct TerminalPanelTests {
         #expect(!vm.isTerminalPanelShowing)
 
         vm.toggleTerminalPanel()
-        await app.settle()
+        try await eventuallyOnMain("the host to open the terminal and the keyboard to follow it") {
+            vm.focusedPaneID != nil && vm.focusedPaneID != agent.piPane.id && vm.terminalTarget?.tabs.count == 1
+        }
 
         let layout = try #require(app.server.state.tabs.first?.layout)
         let terminal = try #require(layout.leaves.first { $0.id != agent.piPane.id })
@@ -166,7 +170,7 @@ struct TerminalPanelTests {
         let tab = try #require(target.tabs.first)
 
         vm.closeTerminalTab(tab, target: target)
-        await app.settle()
+        try await eventuallyOnMain("the host to close the terminal") { vm.terminalTarget?.tabs.isEmpty == true }
 
         #expect(app.server.state.tabs.first?.layout.leaves.map(\.id) == [agent.piPane.id])
         #expect(vm.focusedPaneID == agent.piPane.id)

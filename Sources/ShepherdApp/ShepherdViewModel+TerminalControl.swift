@@ -5,50 +5,12 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// The terminal panel's own actions (NewTerminalMenu): name a tab and kill what a tab runs. A
-/// local agent's go to this Mac's server; a remote agent's to its host
+/// local agent's go to the background host; a remote agent's to its host
 /// (`terminalControlCapability`), which serves them here for its own agents with the same rules.
 extension ShepherdViewModel {
     struct TerminalControlError: Error, CustomStringConvertible {
         let description: String
         init(_ description: String) { self.description = description }
-    }
-
-    /// A terminal of `agentID`'s layout: never its thread, never another agent's.
-    private func terminalLeaf(_ paneID: PaneID, of agentID: AgentID) throws -> (tab: Tab, leaf: LeafPane) {
-        guard let agent = state.agents.first(where: { $0.id == agentID }),
-              let tab = state.tabs.first(where: { $0.id == agent.tabID }),
-              let leaf = tab.layout.leaf(withID: paneID) else {
-            throw TerminalControlError("That terminal is not in this agent's layout.")
-        }
-        guard leaf.agentID == nil, leaf.id != agent.paneID else { throw TerminalControlError("That is the agent's thread, not a terminal.") }
-        return (tab, leaf)
-    }
-
-    /// Re-read committed ownership: stale client panes and review/primary panes cannot start.
-    func startTerminalPane(_ paneID: PaneID, of agentID: AgentID) throws {
-        let current = server.state
-        guard let agent = current.agents.first(where: { $0.id == agentID }),
-              let tab = current.tabs.first(where: { $0.id == agent.tabID }),
-              let pane = tab.layout.leaf(withID: paneID),
-              pane.agentID == nil, pane.id != agent.paneID, pane.isReview != true else {
-            throw TerminalControlError("That is not an auxiliary terminal of this agent.")
-        }
-        sessions.activateTerminal(pane, in: tab)
-    }
-
-    /// Names a tab (its terminal); a blank name goes back to what it runs.
-    func renameTerminalPane(_ paneID: PaneID, of agentID: AgentID, to title: String?) throws {
-        let (tab, _) = try terminalLeaf(paneID, of: agentID)
-        let name = title?.trimmingCharacters(in: .whitespacesAndNewlines)
-        setLayout(tab.layout.updatingLeaf(paneID) { $0.title = name?.isEmpty == false ? name : nil }, forTab: tab.id)
-    }
-
-    /// Kills the command running in a terminal, leaving its shell.
-    func killTerminalProcess(_ paneID: PaneID, of agentID: AgentID) async throws {
-        let (_, leaf) = try terminalLeaf(paneID, of: agentID)
-        guard let session = leaf.sessionID, await server.killForegroundCommand(sessionID: session) else {
-            throw TerminalControlError("Nothing is running in that terminal.")
-        }
     }
 
     // MARK: From the panel
@@ -74,11 +36,7 @@ extension ShepherdViewModel {
                 do { try await remoteHosts.agentAction(remote, action: .renameTerminal(paneID: rename.paneID, title: title)) }
                 catch { fail("Couldn’t rename the terminal", error) }
             }
-            return
         }
-        guard let agentID = rename.agentID else { return }
-        do { try renameTerminalPane(rename.paneID, of: agentID, to: title) }
-        catch { fail("Couldn’t rename the terminal", error) }
     }
 
     /// Kill process: the command running in the tab's terminal.
@@ -88,11 +46,6 @@ extension ShepherdViewModel {
                 do { try await remoteHosts.agentAction(remote, action: .killTerminalProcess(paneID: tab.id)) }
                 catch { NSSound.beep() }
             }
-            return
-        }
-        guard let agentID = agentID(of: target) else { return }
-        Task {
-            do { try await killTerminalProcess(tab.id, of: agentID) } catch { NSSound.beep() }
         }
     }
 

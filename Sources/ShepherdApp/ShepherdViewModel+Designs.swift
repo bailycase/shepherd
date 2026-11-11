@@ -152,58 +152,17 @@ extension ShepherdViewModel {
         Task {
             defer { startingDesignAgents.remove(id) }
             do {
-                // As the background host's client the host starts it, as a paired Mac's (`openRemoteDesign`).
-                if let library = localHost?.designs {
-                    guard case .agent(let agentID) = try await Self.remoteDesign(library, .ensureAgent(designID: id)) else {
-                        throw RemoteDesignReply.unexpected
-                    }
-                    // ponytail: polls for the host's push, as `createDesign` does.
-                    for _ in 0..<100 where self.agent(id: agentID) == nil { try await Task.sleep(for: .milliseconds(20)) }
-                    selectAgent(agentID)
-                    return
+                // The background host starts it, as a paired Mac's (`openRemoteDesign`).
+                guard case .agent(let agentID) = try await Self.remoteDesign(localDesigns, .ensureAgent(designID: id)) else {
+                    throw RemoteDesignReply.unexpected
                 }
-                _ = try await startDesignAgent(design, brief: nil, images: [])
+                // ponytail: polls for the host's push, as `createDesign` does.
+                for _ in 0..<100 where self.agent(id: agentID) == nil { try await Task.sleep(for: .milliseconds(20)) }
+                selectAgent(agentID)
             } catch {
                 remoteActionError = "Couldn't open \(design.name): \(error)"
             }
         }
-    }
-
-    /// Starts the agent that draws `design`, with the default model, and selects it (unless
-    /// `select` is false: another device asked). It lives in the reserved designs space and works
-    /// in the design's own folder (a system build: in the project it reads). `brief` is its
-    /// opening message.
-    @discardableResult
-    /// `model` and `thinking` are what New design's chips chose; nil takes Settings' defaults.
-    func startDesignAgent(_ design: Design, brief: String?, images: [NativeImage], select: Bool = true,
-                          model: String? = nil, thinking: ThinkingLevel? = nil) async throws -> AgentID {
-        let folder: String
-        if design.buildsSystem {
-            guard let space = design.sourceSpaceID.flatMap({ id in state.spaces.first { $0.id == id } }) else {
-                throw AgentStartFailure(message: "That space is gone.")
-            }
-            folder = space.path
-        } else {
-            guard let own = designStore.folder(for: design.id) else {
-                throw AgentStartFailure(message: "That design has no folder.")
-            }
-            folder = own.path
-        }
-        let spaceID = try await server.designsSpaceID()
-        if !state.spaces.contains(where: { $0.id == spaceID }) {
-            let canonical = server.state
-            sessions.stateDidChange(canonical)
-            adopt(canonical)
-        }
-        let defaults = settings.agentDefaults
-        var config = NewAgentConfig(spaceID: spaceID, workingDirectory: folder, model: model ?? settings.defaultModel(piHome: server.pi.home),
-                                    thinking: thinking ?? defaults.thinking, initialPrompt: brief)
-        config.initialImages = images
-        config.initialName = design.name
-        config.designID = design.id
-        let agentID = try await startAgent(config, selectAfter: select, focusWindow: false)
-        try await server.setDesignAgent(design.id, agentID: agentID)
-        return agentID
     }
 
     /// New design's Send: makes the design (in no project), installs the chosen design system in
@@ -212,21 +171,15 @@ extension ShepherdViewModel {
     @discardableResult
     func createDesign(brief: String, images: [NativeImage], system: String? = nil, model: String? = nil,
                       thinking: ThinkingLevel? = nil) async throws -> DesignID {
-        // As the background host's client the host makes it, its agent with these choices.
-        if let host = localHost {
-            guard case .created(let designID, let agentID) = try await Self.remoteDesign(host.designs, .create(RemoteDesignCreate(
-                brief: brief, systemNamespace: system, options: .init(model: model, thinking: thinking, images: images)))) else {
-                throw RemoteDesignReply.unexpected
-            }
-            // ponytail: polls for the host's push, as `startHostedAgent` does.
-            for _ in 0..<100 where !state.designs.contains(where: { $0.id == designID }) { try await Task.sleep(for: .milliseconds(20)) }
-            if let agentID { selectAgent(agentID) } else { openDesign(designID) }
-            return designID
+        // The background host makes it, its agent with these choices.
+        guard case .created(let designID, let agentID) = try await Self.remoteDesign(localDesigns, .create(RemoteDesignCreate(
+            brief: brief, systemNamespace: system, options: .init(model: model, thinking: thinking, images: images)))) else {
+            throw RemoteDesignReply.unexpected
         }
-        let design = try await makeDesign(brief: brief, system: system)
-        // A design whose agent failed to start still opens later, and starts one then.
-        try await startDesignAgent(design, brief: brief, images: images, model: model, thinking: thinking)
-        return design.id
+        // ponytail: polls for the host's push, as `startHostedAgent` does.
+        for _ in 0..<100 where !state.designs.contains(where: { $0.id == designID }) { try await Task.sleep(for: .milliseconds(20)) }
+        if let agentID { selectAgent(agentID) } else { openDesign(designID) }
+        return designID
     }
 
     /// The connected hosts New design can make a design on: those serving designs.
@@ -256,130 +209,62 @@ extension ShepherdViewModel {
         }
     }
 
-    /// The design record and folder, with `system` installed before any agent starts, so its
-    /// first turn reads it among the design's systems.
-    private func makeDesign(brief: String, system: String?) async throws -> Design {
-        let design = Design(name: NewAgentConfig.provisionalName(for: brief), createdAt: SessionServer.nowMilliseconds())
-        _ = try await server.createDesign(design)
-        if let system { _ = try await server.installDesignSystem(design.id, namespace: system) }
-        adopt(server.state)
-        return design
-    }
-
     // MARK: Screens
 
     /// The canvas state of `id`, made the first time it is shown.
     func designScreen(_ id: DesignID) -> DesignScreenModel {
         if let screen = designScreens[id] { return screen }
-        if let host = localHost { return localHostDesignScreen(id, library: host.designs) }
-        let server = server
-        let project = design(id).flatMap(designWorkingFolder)
-        let tweak = DesignTweakIO(
-            snapshot: { try await server.designSnapshot(id) },
-            board: { try await server.designBoard(id, path: $0) },
-            writeBoards: { try await server.writeDesignBoards(id, sources: $0, baseRevision: $1) },
-            updateIndex: { try await server.updateDesignIndex(id, patch: $0, baseRevision: $1) },
-            restore: { try await server.restoreDesignVersions(id, $0, ifCurrent: $1) },
-            projectTokens: { await DesignProjectTokens.read(project) },
-            isStale: { if case DesignStoreError.stale = $0 { true } else { false } })
-        let screen = DesignScreenModel(designID: id, host: designRendering.host(for: id),
-                                       snapshot: { try await server.designSnapshot($0) },
-                                       source: { try await server.designBoard($0, path: $1).source },
-                                       comments: designCommentActions(), tweak: tweak, actions: designCanvasActions())
-        if let design = design(id), let system = designSystemName(design) { screen.tweak?.systemName = system }
-        screen.referenceActions = designReferenceCanvasActions()
-        designScreens[id] = screen
-        return screen
+        // No host yet: a canvas whose reads fail until it connects, not kept.
+        guard let host = localHost else { return localHostDesignScreen(id, library: localDesigns, keep: false) }
+        return localHostDesignScreen(id, library: host.designs)
     }
 
+    /// The background host's designs; with no host yet, a library that answers nothing.
+    var localDesigns: RemoteDesignLibrary {
+        localHost?.designs ?? RemoteDesignLibrary(hostID: UUID(), cache: remoteHosts.designCache)
+    }
     /// The canvas of one of the background host's designs, as this app's own: its files read from
     /// the host's folder on this Mac (`designFolder`), its changes and comments through the host,
     /// and messages to its agent through the app's own thread.
-    private func localHostDesignScreen(_ id: DesignID, library: RemoteDesignLibrary) -> DesignScreenModel {
+    private func localHostDesignScreen(_ id: DesignID, library: RemoteDesignLibrary, keep: Bool = true) -> DesignScreenModel {
         let source = library.source(id)
         let tweak = Self.remoteDesignTweak(library, id)
-        let actions = remoteDesignCanvasActions(library, agent: design(id)?.agentID.map { RemoteAgentRef(hostID: library.hostID, agentID: $0) },
+        var actions = remoteDesignCanvasActions(library, agent: design(id)?.agentID.map { RemoteAgentRef(hostID: library.hostID, agentID: $0) },
                                                 ask: { [weak self] agentID, text, record in
             guard let self, self.state.agents.contains(where: { $0.id == agentID }) else { return false }
             await self.threadStores.store(for: agentID).send(text: text, designContext: record)
             return true
         })
+        // "Used in N boards", read from the host's folder on this Mac.
+        actions.usage = { [store = designStore] in try await store.usage($0) }
         let screen = DesignScreenModel(designID: id, host: designRendering.host(for: id),
                                        snapshot: { _ in try await source.sync().snapshot },
                                        source: { _, path in try await source.source(path) },
                                        comments: remoteDesignCommentActions(library), tweak: tweak, actions: actions)
         if let design = design(id), let system = designSystemName(design) { screen.tweak?.systemName = system }
         screen.referenceActions = designReferenceCanvasActions()
-        designScreens[id] = screen
+        if keep { designScreens[id] = screen }
         return screen
     }
 
-    /// A design's snapshot and comments from whoever keeps it: the background host as its client,
-    /// else the server.
+    /// A design's snapshot and comments from the background host that keeps it.
     func ownerDesignSnapshot(_ id: DesignID) async throws -> DesignSnapshot {
-        guard hostDesign(id) != nil, let host = localHost else { return try await server.designSnapshot(id) }
+        guard hostDesign(id) != nil, let host = localHost else { throw BackgroundHostClient.HostStarting() }
         return try await host.designs.source(id).sync().snapshot
     }
 
     func ownerDesignComments(_ id: DesignID) async throws -> DesignComments {
-        guard hostDesign(id) != nil, let host = localHost else { return try await server.designComments(id) }
+        guard hostDesign(id) != nil, let host = localHost else { throw BackgroundHostClient.HostStarting() }
         guard case .comments(let comments) = try await Self.remoteDesign(host.designs, .comments(designID: id)) else {
             throw RemoteDesignReply.unexpected
         }
         return comments
     }
 
-    /// The designs whose revisions are pushed: the background host's, as its client, else the server's.
+    /// The designs whose revisions are pushed: the background host's.
     private func watchDesigns() {
-        if let host = localHost { host.designs.watch(visibleDesigns) } else { server.watchDesignRevisions(of: visibleDesigns) }
+        localHost?.designs.watch(visibleDesigns)
     }
-
-    /// The canvas's own changes through the server (Duplicate, a board moved), and its messages to
-    /// the design agent (Variations, another direction), which carry a view record as data.
-    private func designCanvasActions() -> DesignCanvasActions {
-        let server = server
-        return DesignCanvasActions(
-            snapshot: { try await server.designSnapshot($0) },
-            duplicate: { try await server.duplicateDesignBoard($0, path: $1, baseRevision: $2) },
-            updateIndex: { try await server.updateDesignIndex($0, patch: $1, baseRevision: $2) },
-            ask: { [weak self] id, text, record in
-                guard let self, let agentID = self.design(id)?.agentID, self.state.agents.contains(where: { $0.id == agentID }) else {
-                    return false
-                }
-                await self.threadStores.store(for: agentID).send(text: text, designContext: record)
-                return true
-            },
-            report: { [weak self] in self?.remoteActionError = $0 },
-            usage: { try await server.designUsage($0) })
-    }
-
-    /// The canvas's comment changes through the server. A change based on comments that moved on
-    /// meanwhile is refused as stale: it reads them again and goes once more.
-    private func designCommentActions() -> DesignCommentActions {
-        let server = server
-        func again<T>(_ designID: DesignID, _ base: UInt64?, _ body: (UInt64?) async throws -> T) async throws -> T {
-            do {
-                return try await body(base)
-            } catch DesignStoreError.stale {
-                return try await body(try await server.designComments(designID).revision)
-            }
-        }
-        return DesignCommentActions(
-            list: { try await server.designComments($0) },
-            add: { id, draft, base in
-                let outcome = try await again(id, base) { try await server.addDesignComment(id, draft: draft, baseRevision: $0) }
-                return (outcome.comment, outcome.undelivered)
-            },
-            reply: { id, comment, text, base in
-                let outcome = try await again(id, base) { try await server.replyToDesignComment(id, commentID: comment, text: text, baseRevision: $0) }
-                return (outcome.comment, outcome.undelivered)
-            },
-            resolve: { id, comment, base in
-                try await again(id, base) { try await server.resolveDesignComment(id, commentID: comment, baseRevision: $0) }
-            },
-            report: { [weak self] in self?.remoteActionError = $0 })
-    }
-
     /// A design's layout came on screen or left it: only designs on screen take live views and
     /// get their revisions pushed.
     func designVisibility(_ id: DesignID, visible: Bool) {
@@ -474,15 +359,15 @@ final class NewDesignState {
     /// This Mac's model and level (Settings, else pi's default model) and its catalog, the
     /// catalog read once.
     private func loadDefaults(_ vm: ShepherdViewModel) {
-        if !edited.model { model = vm.settings.defaultModel(piHome: vm.server.pi.home) ?? "" }
+        if !edited.model { model = vm.settings.defaultModel(piHome: vm.pi.home) ?? "" }
         if !edited.thinking { thinking = vm.settings.defaultThinking }
         guard listing == nil, !loadingDefaults else { return }
         loadingDefaults = true
-        let server = vm.server
+        let pi = vm.pi
         Task {
             defer { loadingDefaults = false }
-            let listing = await Task.detached(priority: .userInitiated) { server.modelListing() }.value
-            let catalog = await ModelCatalog.loadLocal(from: server.pi.catalog)
+            let listing = await vm.modelListing()
+            let catalog = await ModelCatalog.loadLocal(from: pi.catalog)
             self.listing = listing
             self.catalog = catalog
         }

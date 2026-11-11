@@ -8,10 +8,11 @@
   extensions, `remote-token`, `automation-runs.json`, Settings ▸ Instructions' files
   (`instructions/`), Settings ▸ Skills' state and git caches (`skills/`), designs (`designs/`), design systems (`design-systems/`), and subagent artifacts. It wins over the edition's own folder
   (`Shepherd`, or `Shepherd Nightly` in Shepherd Nightly).
-- The app is always the host's client and needs no variable to be one. Shepherd Nightly registers
-  the host with launchd at launch (`BackgroundService`) and connects to it while Login Items
-  allows it; any other build, any launch with `SHEPHERD_SUPPORT_DIR` set, or the service off,
-  starts the host as the app's own child on the same support folder.
+- No variable picks the host: every launch is a client of the host that owns
+  `<support>/server.lock` (launchd's background service), else of the app's own
+  `Shepherd --host --supervised` child, which `HostSupervisor` restarts on a crash and stops at
+  Quit. Only Shepherd Nightly registers the service (`BackgroundService`); any other build, or any
+  launch with `SHEPHERD_SUPPORT_DIR` set, never registers and always runs its own child.
 - **`SHEPHERD_MCP_CONFIG`** moves the MCP servers file (Settings ▸ MCP servers) away from
   `~/.config/mcp/mcp.json`. Test isolation points it at a scratch file; setting it in the Dev
   scheme keeps Dev's servers apart from the everyday app's.

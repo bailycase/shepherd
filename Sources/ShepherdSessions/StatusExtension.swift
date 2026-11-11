@@ -55,14 +55,23 @@ public struct MCPLaunch: Equatable {
         return launch
     }
 
-    /// This launch with what the child space turns off of its parent's MCP servers and skills
-    /// (`SHEPHERD_PARENT_EXCLUDE`, read by `shepherd-mcp-parent.ts`). Only a launch that shares a
+    /// This launch with what the child space turns off of its parent's MCP servers, skills and
+    /// slash commands (`SHEPHERD_PARENT_EXCLUDE`, read by `shepherd-mcp-parent.ts`). Only a launch that shares a
     /// parent carries it.
     public func excluding(_ excluded: SpaceInheritanceExclusions) -> MCPLaunch {
         guard environment["SHEPHERD_PARENT_PROJECT"] != nil, !excluded.isEmpty,
               let data = try? JSONEncoder().encode(excluded) else { return self }
         var launch = self
         launch.environment["SHEPHERD_PARENT_EXCLUDE"] = String(decoding: data, as: UTF8.self)
+        return launch
+    }
+
+    /// This launch with the parent's extension files (`ProjectSettingsStore.inheritance`), loaded
+    /// with `-e` after the others. Only a launch that shares a parent carries them.
+    public func loadingParentExtensions(_ paths: [String]) -> MCPLaunch {
+        guard environment["SHEPHERD_PARENT_PROJECT"] != nil, !paths.isEmpty else { return self }
+        var launch = self
+        launch.extensions += paths
         return launch
     }
 }

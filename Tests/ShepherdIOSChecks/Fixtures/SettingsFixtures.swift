@@ -17,6 +17,8 @@ extension FixtureCatalog {
                                                                                MissionsFixtureData.running.rawValue: .onlyFailures]),
                                               hosts: app.hosts.hosts)
             }),
+            // Threads muted from their long-press menus, found again here with Unmute.
+            FixtureScreen(name: "notifications-muted", hosts: FixtureData.mutedThreads(), routes: [.settings(.notifications)], tab: .settings),
             FixtureScreen(name: "diagnostics", routes: [.settings(.diagnostics)], tab: .settings),
             FixtureScreen(name: "hosts", routes: [.settings(.hosts)], tab: .settings),
             FixtureScreen(name: "host", routes: [.settings(.hosts), .settings(.host(FixtureData.studio))], tab: .settings),
@@ -68,6 +70,15 @@ extension FixtureCatalog {
 
 extension FixtureData {
     /// The usual hosts, with the studio's background service turned off in Login Items.
+    /// Two of the studio's threads muted on the host (`Agent.pushMuted`).
+    static func mutedThreads() -> [FixtureHostData] {
+        hosts().map { host in
+            var host = host
+            if host.id == studio { for index in host.state.agents.indices.prefix(2) { host.state.agents[index].pushMuted = true } }
+            return host
+        }
+    }
+
     static func serviceOff() -> [FixtureHostData] {
         hosts().map { host in
             var host = host

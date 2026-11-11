@@ -54,7 +54,7 @@ public enum RemoteProtocol {
     /// And it answers what a background host's agent asks of Shepherd's window (`AppRelayJob`),
     /// which a host asks only of a local client that lists it.
     public static let appRelayCapability = "appRelay.v1"
-    public static let clientCapabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, missionsCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability, designRelayCapability, appRelayCapability]
+    public static let clientCapabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, missionsCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability, designRelayCapability, appRelayCapability, appsV2Capability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -142,6 +142,9 @@ public enum RemoteProtocol {
     /// The host reverts one file of a working-tree review (`RemoteAgentQuery.changesRevertFile`),
     /// fenced to the version the client displayed (`ChangesRevision`).
     public static let changesRevertCapability = "changes.revert.v1"
+    /// The host reads a `changes*` query's `cwd`: the repository an agent's `review_diff` asked to
+    /// review. Older hosts ignore it and answer for the agent's own folder.
+    public static let changesCwdCapability = "changes.cwd.v1"
     /// Older hosts' project inventory uses native .pi configuration paths.
     public static let projectsCapability = "projects.v1"
     /// Host-owned project files use .shepherd; clients must acknowledge this format before access.
@@ -155,6 +158,11 @@ public enum RemoteProtocol {
     /// The host records what a child space turns off of its parent's MCP servers and skills
     /// (`RemoteProjectsRequest.inheritance`) and reports it in the space's context.
     public static let projectInheritanceCapability = "projects.inheritance.v1"
+    /// Child spaces inherit their parent's slash commands and extensions too, and the host records
+    /// turning them off (`SpaceInheritanceExclusions.prompts`, `.extensions`).
+    public static let projectInheritedResourcesCapability = "projects.inheritance.resources.v1"
+    /// The host sets a space's parent space and name (`RemoteProjectsRequest.organize`).
+    public static let projectParentCapability = "projects.parent.v1"
     /// The host serves `RemoteRequest.skills`: the agent skills its pi reads (on, off,
     /// how each is used, updates), installs from a repository or a copied folder, and removal
     /// with undo (Settings ▸ Skills). Older hosts have none to show.
@@ -168,6 +176,9 @@ public enum RemoteProtocol {
     public static let hooksCapability = "hooks.v1"
     /// The host serves `RemoteRequest.apps`: a space's apps, run and stopped there.
     public static let appsCapability = "apps.v1"
+    /// The host serves `RemoteAppsRequest`'s This Mac apps with no space, `processes`, `restart`
+    /// and `output`; a local client that lists it (in `clientCapabilities`) is pushed `appsChanged`.
+    public static let appsV2Capability = "apps.v2"
     /// Offered only on the local socket (`host.sock`): the client is this Mac's own app, as a
     /// background host's client. Never in `capabilities`, which every client may be offered.
     public static let localCapability = "local.v1"
@@ -183,11 +194,16 @@ public enum RemoteProtocol {
     /// (Run in terminal, since removed) with `unsupported`.
     public static let terminalControlCapability = "terminal.control.v1"
     public static let terminalStartCapability = "terminal.start.v1"
+    /// `RemoteAgentAction.readCheckout`: the host reads a thread's checkout again.
+    public static let checkoutReadCapability = "checkout.read.v1"
     /// The host starts a thread's stopped pi again on request (`RemoteAgentAction.restartPi`).
     public static let agentRestartCapability = "agent.restart.v1"
     /// The host keeps which completion of each thread was opened (`Agent.seenCompletedAt`) and
     /// takes `RemoteAgentAction.markSeen`, so Done clears on every device at once.
     public static let completionSeenCapability = "agent.seen.v1"
+    /// The host keeps which threads are muted (`Agent.pushMuted`) and takes
+    /// `RemoteAgentAction.mutePushes`: a muted thread sends no push to any phone.
+    public static let pushMuteCapability = "push.mute.v1"
     /// The host takes a send's `designContext` (what the sender's design screen showed) and hands
     /// it to pi fenced as data. An older host would drop it, so a client leaves it out there.
     public static let designContextCapability = "design.context.v1"
@@ -234,7 +250,7 @@ public enum RemoteProtocol {
     /// The host saves a file of a thread's folder (`RemoteAgentQuery.fileWrite`), only over the text the client
     /// edited from (`ThreadFileSaveResult.changed` otherwise). Served only to a client offered `filesCapability`.
     public static let filesWriteCapability = "files.write.v1"
-    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, missionsCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, agentRestartCapability, completionSeenCapability]
+    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, missionsCapability, missionsTrainCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, missionsRetryLaneCapability, checkoutReadCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -367,6 +383,11 @@ public enum RemoteAgentAction: Codable, Hashable, Sendable {
     /// The person opened the thread's completion `upTo` (its `Agent.completedAt`): it leaves Done
     /// on every device. Never lowers what was seen (`completionSeenCapability`).
     case markSeen(upTo: Double)
+    /// Mutes or unmutes the thread's pushes on its host, for every phone (`pushMuteCapability`).
+    case mutePushes(Bool)
+    /// Reads the thread's branch and changed files again, after a change no state carries (a
+    /// file saved in the app) (`checkoutReadCapability`).
+    case readCheckout
 
     /// The capability a host must advertise before the action is sent to it.
     public var capability: String {
@@ -378,6 +399,8 @@ public enum RemoteAgentAction: Codable, Hashable, Sendable {
         case .openTerminal: RemoteProtocol.browserTunnelCapability
         case .restartPi: RemoteProtocol.agentRestartCapability
         case .markSeen: RemoteProtocol.completionSeenCapability
+        case .mutePushes: RemoteProtocol.pushMuteCapability
+        case .readCheckout: RemoteProtocol.checkoutReadCapability
         }
     }
 }
@@ -413,7 +436,7 @@ public struct RemoteThreadStart: Codable, Hashable, Sendable {
 }
 
 /// What this Mac's own app does to a space of its background host (`RemoteRequest.spaceAction`),
-/// as the in-process app does to its own: the sidebar's project menu and the base picker.
+/// the sidebar's project menu and the base picker.
 public enum RemoteSpaceAction: Codable, Hashable, Sendable {
     case rename(name: String)
     /// The branch new worktrees start from; nil goes back to Settings ▸ Worktrees.
@@ -426,6 +449,14 @@ public enum RemoteSpaceAction: Codable, Hashable, Sendable {
     /// Locate Folder…: points it, and everything recorded inside its old folder, at `path`. Its
     /// threads stop and their conversations move; the app starts them again (`restartPi`).
     case relocate(path: String)
+}
+
+/// What this Mac's own app asks of its background host's space registry (`RemoteRequest.projectRequest`),
+/// as an agent's project tool does: Add space, Space settings, and a child space.
+public enum RemoteProjectRequest: Codable, Hashable, Sendable {
+    case register(path: String, name: String)
+    case edit(spaceID: SpaceID, edit: ProjectEdit)
+    case child(parentPath: String, path: String, name: String, create: Bool)
 }
 
 public struct RemoteWorktreeInfo: Codable, Hashable, Sendable {
@@ -526,16 +557,17 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     /// Commit (then push, or open a pull request), as an operation polled with `worktreeStatus`.
     case commit(operationID: UUID, options: RemoteCommitOptions)
     /// The scope menu: every scope's diffstat, the branch's commits, the pull request
-    /// (`changesCapability`, like every `changes*` query).
-    case changesOverview
+    /// (`changesCapability`, like every `changes*` query). A read's `cwd` is the repository the
+    /// agent's `review_diff` asked for (`changesCwdCapability`); nil, the agent's own folder.
+    case changesOverview(cwd: String? = nil)
     /// A scope's files and counts, and the revision to fetch their hunks from.
-    case changesList(scope: ChangesScope, options: ChangesOptions)
+    case changesList(scope: ChangesScope, options: ChangesOptions, cwd: String? = nil)
     /// One file's hunks from a list's revision; `oldPath` for a rename.
-    case changesFile(revision: ChangesRevision, path: String, oldPath: String?, options: ChangesOptions)
+    case changesFile(revision: ChangesRevision, path: String, oldPath: String?, options: ChangesOptions, cwd: String? = nil)
     /// The base picker's branches.
-    case changesBranches
+    case changesBranches(cwd: String? = nil)
     /// A revision's diff as a patch (Copy as patch).
-    case changesPatch(revision: ChangesRevision, options: ChangesOptions)
+    case changesPatch(revision: ChangesRevision, options: ChangesOptions, cwd: String? = nil)
     /// Undo a turn's edits in the agent's working tree; Redo puts them back.
     case changesUndoTurn(turnID: UUID)
     case changesRedoTurn(turnID: UUID)
@@ -562,6 +594,15 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
         switch self {
         case .files, .fileRead, .fileWrite: true
         default: false
+        }
+    }
+
+    /// The repository a `changes*` read reviews instead of the agent's own folder.
+    public var changesCwd: String? {
+        switch self {
+        case .changesOverview(let cwd), .changesBranches(let cwd), .changesList(_, _, let cwd), .changesFile(_, _, _, _, let cwd),
+             .changesPatch(_, _, let cwd): cwd
+        default: nil
         }
     }
 
@@ -657,12 +698,18 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// Local clients only (`localCapability`): this Mac's own app changes one of its background
     /// host's spaces. Answered `ok`.
     case spaceAction(id: Int, spaceID: SpaceID, action: RemoteSpaceAction)
+    /// Local clients only (`localCapability`): this Mac's own app registers, edits or adds a child
+    /// to one of its background host's spaces. Answered `spaceAdded` with the space.
+    case projectRequest(id: Int, request: RemoteProjectRequest)
     /// Local clients only (`localCapability`): this Mac's own app starts a thread on its
-    /// background host as it would in process. Answered `agentCreated`.
+    /// host. Answered `agentCreated`.
     case startThread(id: Int, thread: RemoteThreadStart)
     /// Local clients only (`localCapability`): the thread this Mac's own app shows with Shepherd
     /// in front (nil: none), so the host's phone pushes for it stay quiet. Answered `ok`.
     case focusThread(id: Int, agentID: AgentID?)
+    /// Local clients only (`appRelayCapability`): the paired Macs this Mac's own app is connected
+    /// to, for the Projects its background host owns (`ProjectExecutorsUpdate`). Answered `ok`.
+    case projectExecutors(id: Int, update: ProjectExecutorsUpdate)
     /// Create an agent on the host: the host GUI runs its normal creation
     /// flow (spawn pi, seed the session file, bind the pane) and the new
     /// agent arrives at every client via the state push.
@@ -751,7 +798,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case text, submit, agentID, paneID, axis, relativeTo, split, ratio, action, query, fetchFirst, worktreeBase, worktreeFetchFirst
         case automationID, initialImages, serviceTier
         case requestToken, outcome, result
-        case thread, step
+        case thread, step, update
     }
 
     private enum Kind: String, Codable {
@@ -759,7 +806,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case nativeThread, nativeThreadSubscribe, fleetDigest, projectExecution
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
-        case listDir, listModels, drain, hostUpdateGate, addSpace, spaceAction, startThread, focusThread, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
+        case listDir, listModels, drain, hostUpdateGate, addSpace, spaceAction, projectRequest, startThread, focusThread, projectExecutors, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
         case automation, forge
         case logicalProjectRuntime
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
@@ -930,8 +977,12 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             )
         case .focusThread:
             self = .focusThread(id: try c.decode(Int.self, forKey: .id), agentID: try c.decodeIfPresent(AgentID.self, forKey: .agentID))
+        case .projectExecutors:
+            self = .projectExecutors(id: try c.decode(Int.self, forKey: .id), update: try c.decode(ProjectExecutorsUpdate.self, forKey: .update))
         case .startThread:
             self = .startThread(id: try c.decode(Int.self, forKey: .id), thread: try c.decode(RemoteThreadStart.self, forKey: .thread))
+        case .projectRequest:
+            self = .projectRequest(id: try c.decode(Int.self, forKey: .id), request: try c.decode(RemoteProjectRequest.self, forKey: .request))
         case .spaceAction:
             self = .spaceAction(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1171,10 +1222,18 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.focusThread, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encodeIfPresent(agentID, forKey: .agentID)
+        case .projectExecutors(let id, let update):
+            try c.encode(Kind.projectExecutors, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(update, forKey: .update)
         case .startThread(let id, let thread):
             try c.encode(Kind.startThread, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(thread, forKey: .thread)
+        case .projectRequest(let id, let request):
+            try c.encode(Kind.projectRequest, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(request, forKey: .request)
         case .spaceAction(let id, let spaceID, let action):
             try c.encode(Kind.spaceAction, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1329,10 +1388,14 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// A line the background host says in one of its threads (its account rotation), pushed only
     /// to this Mac's app that shows its threads as its own; never persisted.
     case threadNotice(agentID: AgentID, message: String)
+    /// Every app's run on the host (`RemoteAppsRequest.processes`), pushed when one changes (at
+    /// most ten times a second) and when the app connects, only to this Mac's app that shows the
+    /// host's threads as its own and lists `RemoteProtocol.appsV2Capability`.
+    case appsChanged(processes: [RemoteAppProcess])
     /// Why one of the background host's agents waits with its pi stopped (it couldn't start, or
     /// stopped on its own), or nil once pi starts again. Pushed only to this Mac's app that shows
     /// its threads as its own, as it happens and for every waiting agent when the app connects:
-    /// the thread's can't-start and sign-in cards, opened or not, as the in-process session's exit.
+    /// the thread's can't-start and sign-in cards, opened or not.
     case agentStartProblem(agentID: AgentID, problem: NativeStartProblem?)
     /// The background host's automations changed: a run's log, or a trigger's status. Pushed only
     /// to this Mac's app that shows its threads as its own, which reads them again. A hint; it
@@ -1354,6 +1417,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case token, jobFile, job
         case title, body
         case page, tool, problem
+        case processes
     }
 
     private enum Kind: String, Codable {
@@ -1367,7 +1431,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case mission, missionChanged, missionLive
         case tunnel
         case browserClaimed, browserDrive, logicalProjectRuntime
-        case designRelay, agentNotify, appRelay, settingsChanged, toolFinished, threadNotice, agentStartProblem, automationsChanged, automationNotify, designNotesChanged, designGitChanged, designImportProgress
+        case designRelay, agentNotify, appRelay, settingsChanged, toolFinished, threadNotice, agentStartProblem, automationsChanged, automationNotify, designNotesChanged, designGitChanged, designImportProgress, appsChanged
     }
 
     public init(from decoder: Decoder) throws {
@@ -1409,6 +1473,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
                                       problem: try c.decodeIfPresent(NativeStartProblem.self, forKey: .problem))
         case .automationsChanged:
             self = .automationsChanged
+        case .appsChanged:
+            self = .appsChanged(processes: try c.decode([RemoteAppProcess].self, forKey: .processes))
         case .automationNotify:
             self = .automationNotify(title: try c.decode(String.self, forKey: .title), body: try c.decode(String.self, forKey: .body))
         case .design:
@@ -1725,6 +1791,9 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encodeIfPresent(problem, forKey: .problem)
         case .automationsChanged:
             try c.encode(Kind.automationsChanged, forKey: .type)
+        case .appsChanged(let processes):
+            try c.encode(Kind.appsChanged, forKey: .type)
+            try c.encode(processes, forKey: .processes)
         case .automationNotify(let title, let body):
             try c.encode(Kind.automationNotify, forKey: .type)
             try c.encode(title, forKey: .title)

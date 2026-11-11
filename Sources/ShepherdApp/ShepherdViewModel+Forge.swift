@@ -176,7 +176,7 @@ extension ShepherdViewModel {
             throw AgentStartFailure(message: "This repository has no checkout on this Mac. Add it as a space to hand work to an agent.")
         }
         guard let spaceID = await forgeSpace(for: cwd) else { throw AgentStartFailure(message: "Couldn’t add a space for \(cwd).") }
-        var config = NewAgentConfig(spaceID: spaceID, workingDirectory: cwd, model: settings.defaultModel(piHome: server.pi.home),
+        var config = NewAgentConfig(spaceID: spaceID, workingDirectory: cwd, model: settings.defaultModel(piHome: pi.home),
                                     thinking: settings.defaultThinking, initialPrompt: brief.prompt)
         config.initialName = name
         if let branch = brief.worktreeBranch {

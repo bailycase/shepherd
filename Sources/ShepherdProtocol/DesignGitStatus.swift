@@ -1,7 +1,7 @@
 import Foundation
 
-// A shared design's Git state: what the server answers and the app draws, in process or over
-// the background host's connection (`RemoteDesignRequest.gitState` …, `design.git.v1`).
+// A shared design's Git state: what the host answers and the app draws, over
+// its connection (`RemoteDesignRequest.gitState` …, `design.git.v1`).
 
 // MARK: - What a shared design's Git status is
 

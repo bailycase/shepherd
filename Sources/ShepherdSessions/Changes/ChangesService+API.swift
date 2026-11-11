@@ -176,20 +176,21 @@ extension ChangesService {
     // MARK: Remote
 
     /// Answers a remote client's `changes*` query for an agent. The reply is kept under the
-    /// remote frame cap: a file's hunks and a patch are cut to `ChangesLimits.remoteBytes`.
+    /// remote frame cap: a file's hunks and a patch are cut to `ChangesLimits.remoteBytes`. A
+    /// query's `cwd` is checked by the server first (`SessionServer.reviewTargets`).
     public func answer(_ query: RemoteAgentQuery, agentID: AgentID) async throws -> RemoteAgentResult {
         switch query {
-        case .changesOverview:
-            return .changesOverview(try await overview(agentID: agentID))
-        case .changesList(let scope, let options):
-            return .changesList(try await list(agentID: agentID, scope: scope, options: options))
-        case .changesFile(let revision, let path, let oldPath, let options):
-            let diff = try await file(agentID: agentID, revision: revision, path: path, oldPath: oldPath, options: options)
+        case .changesOverview(let cwd):
+            return .changesOverview(try await overview(agentID: agentID, cwd: cwd))
+        case .changesList(let scope, let options, let cwd):
+            return .changesList(try await list(agentID: agentID, scope: scope, options: options, cwd: cwd))
+        case .changesFile(let revision, let path, let oldPath, let options, let cwd):
+            let diff = try await file(agentID: agentID, revision: revision, path: path, oldPath: oldPath, options: options, cwd: cwd)
             return .changesFile(Self.fitting(diff, bytes: ChangesLimits.remoteBytes))
-        case .changesBranches:
-            return .changesBranches(try await branches(agentID: agentID))
-        case .changesPatch(let revision, let options):
-            let text = try await patch(agentID: agentID, revision: revision, options: options)
+        case .changesBranches(let cwd):
+            return .changesBranches(try await branches(agentID: agentID, cwd: cwd))
+        case .changesPatch(let revision, let options, let cwd):
+            let text = try await patch(agentID: agentID, revision: revision, options: options, cwd: cwd)
             guard text.utf8.count > ChangesLimits.remoteBytes else { return .changesPatch(text: text, truncated: false) }
             let cut = String(decoding: text.utf8.prefix(ChangesLimits.remoteBytes), as: UTF8.self)
             return .changesPatch(text: cut, truncated: true)

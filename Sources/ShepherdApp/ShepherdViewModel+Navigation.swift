@@ -211,8 +211,6 @@ extension ShepherdViewModel {
         if destination != nil { destination = nil }
         selectionHistory.removeAll { $0 == id }
         selectionHistory.append(id)
-        // A restored agent still waiting to start its pi starts now, ahead of the others.
-        sessions.startAhead(id)
         selectedAgentID = id
         selectedSpaceID = agent.spaceID
         markAutomationRunsRead(id)
@@ -221,7 +219,6 @@ extension ShepherdViewModel {
         if pendingMountTabIDs.contains(agent.tabID) { pendingMountTabIDs.remove(agent.tabID) }
         openActivitySectionHoldingSelection()
         sidebarRevealRequest += 1
-        checkouts?.refresh(id, priority: true)
         focusedPaneID = restoredFocus(forTab: agent.tabID, fallback: agent.paneID)
     }
 

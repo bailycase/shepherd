@@ -146,7 +146,7 @@ struct AppSettingsCommands: Commands {
     var body: some Commands {
         CommandGroup(after: .appTermination) {
             // Only while the background service runs the agents; ⌘Q leaves them running.
-            if let service = vm?.backgroundService, BackgroundHostClient.owner == .host {
+            if let service = vm?.backgroundService, HostSupervisor.shared?.ownsAgents != true {
                 Button(ShortcutAction.quitAndStopAgents.title) {
                     do { try service.unregister() } catch { NSLog("Shepherd: background service not stopped: \(error)") }
                     NSApp.terminate(nil)

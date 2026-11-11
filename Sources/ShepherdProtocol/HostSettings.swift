@@ -111,6 +111,11 @@ public struct HostSettings: Codable, Hashable, Sendable {
     /// service runs them, false while that is turned off in Login Items, nil where the Mac has no
     /// service or is older (`hostSettingsBackgroundServiceCapability`).
     public var backgroundService: Bool?
+    /// Serve this Mac: the port the host's listener is bound to, nil when it isn't. Older hosts omit it.
+    public var listenerPort: UInt16?
+    /// Why the host's listener couldn't start: a sentence for Settings ▸ Remote and the technical reason.
+    public var listenerProblem: String?
+    public var listenerProblemDetail: String?
 
     /// Settings ▸ Experiments ▸ Design tool (`designToolExperimentCapability`). Older hosts omit
     /// it, which reads as false.
@@ -194,7 +199,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         case shepherdVersion, piVersion, defaultModel, defaultThinking, defaultServiceTier, namingModel, compactAtPercent
         case queueDelivery, goalCrossProviderEvaluation, goalsEnabled, projectsEnabled
         case worktreeBase, fetchBeforeCreating, commitRemainingWork, generatePRDescriptions
-        case deleteLocalBranch, mergePRAutomatically, mergeMethod, closeOnMerge, backgroundService, bundledExtensions, installedExtensions
+        case deleteLocalBranch, mergePRAutomatically, mergeMethod, closeOnMerge, backgroundService, listenerPort, listenerProblem, listenerProblemDetail, bundledExtensions, installedExtensions
         case updatePiDaily, updateExtensionsDaily
         case designToolEnabled, missionsEnabled, missionsActive, subagentDefaults, worktreeDeleteAction
         case skillsInSlashMenu, mcpProjectConfig, slashCommands, hiddenSlashCommands
@@ -223,6 +228,9 @@ public struct HostSettings: Codable, Hashable, Sendable {
         mergeMethod = (try? c.decodeIfPresent(MergeMethod.self, forKey: .mergeMethod)) ?? nil ?? .squash
         closeOnMerge = try c.decodeIfPresent(Bool.self, forKey: .closeOnMerge) ?? false
         backgroundService = try c.decodeIfPresent(Bool.self, forKey: .backgroundService)
+        listenerPort = try c.decodeIfPresent(UInt16.self, forKey: .listenerPort)
+        listenerProblem = try c.decodeIfPresent(String.self, forKey: .listenerProblem)
+        listenerProblemDetail = try c.decodeIfPresent(String.self, forKey: .listenerProblemDetail)
         designToolEnabled = try c.decodeIfPresent(Bool.self, forKey: .designToolEnabled) ?? false
         missionsEnabled = try c.decodeIfPresent(Bool.self, forKey: .missionsEnabled) ?? false
         missionsActive = try c.decodeIfPresent(Bool.self, forKey: .missionsActive) ?? false

@@ -6,25 +6,20 @@ import ShepherdSessions
 import ShepherdUI
 import SwiftUI
 
-/// Close threads when their pull request merges (Settings ▸ Worktrees), kept by the server
-/// (`PullRequestLinks`): what the app passes it, and the sidebar's badges.
+/// The sidebar's pull request badges: the app's own `PullRequestLinks` over its copy of the
+/// workspace. The background host keeps its own and closes merged threads (Settings ▸ Worktrees).
 @MainActor
 extension ShepherdViewModel {
-    /// Keeps the links in the server (`SessionServer.servePullRequestLinks`): the switch read from
-    /// Settings, the busy-checkout checks of Delete Worktree, and banners. `pullRequestLinks` and
-    /// `pullRequestCloseNotes` follow the server's. Installed once at VM creation.
+    /// `pullRequestLinks` and `pullRequestCloseNotes` follow `pullRequestLinker`'s. Installed once at VM creation.
     func installPullRequestLinks() {
         var hosting = PullRequestLinkHosting(
             // The background host closes its own merged threads; its app only shows their links.
-            closeOnMerge: { [weak self] in self?.localHost == nil && self?.settings.worktreeCloseOnMerge == true },
+            closeOnMerge: { false },
             lookup: { [weak self] cwd in await self?.branchPullRequestLookup(cwd) },
-            removeWorktreeAgent: { [weak self] id in
-                guard let self else { throw CancellationError() }
-                try await self.removeWorktreeAgent(id)
-            })
-        hosting.state = { [weak self] in self?.localHost == nil ? nil : self?.state }
+            removeWorktreeAgent: { _ in throw BackgroundHostClient.HostStarting() })
+        hosting.state = { [weak self] in self?.state }
         hosting.changed = { [weak self] in
-            guard let self, let links = server.pullRequestLinks else { return }
+            guard let self, let links = pullRequestLinker else { return }
             if pullRequestLinks != links.links { pullRequestLinks = links.links }
             if pullRequestCloseNotes != links.closeNotes { pullRequestCloseNotes = links.closeNotes }
         }
@@ -34,25 +29,25 @@ extension ShepherdViewModel {
         hosting.keptOpen = { [weak self] agent, link, reason in
             self?.notifications.post(AgentBanners.pullRequestKept(agent, number: link.ref.number, reason: reason))
         }
-        server.servePullRequestLinks(hosting)
+        pullRequestLinker = PullRequestLinks(hosting: hosting)
     }
 
     /// Looks the thread's pull request up again (`PullRequestLinks.refresh`).
     @discardableResult
     func refreshPullRequestLink(_ id: AgentID) async -> ThreadPullRequest? {
-        await server.pullRequestLinks?.refresh(id)
+        await pullRequestLinker?.refresh(id)
     }
 
-    /// The poll, started only where checkouts are read (the app, not model-only tests).
+    /// The poll, started only where pull requests are looked up (the app, not model-only tests).
     func installPullRequestPoll() {
-        guard checkouts != nil else { return }
+        guard looksUpPullRequests else { return }
         pullRequestPoll?.cancel()
-        pullRequestPoll = server.pullRequestLinks?.startPolling()
+        pullRequestPoll = pullRequestLinker?.startPolling()
     }
 
     /// A deleted thread's link goes with it.
     func forgetPullRequestLink(_ id: AgentID) {
-        server.pullRequestLinks?.forget(id)
+        pullRequestLinker?.forget(id)
         if pullRequestLinks[id] != nil { pullRequestLinks.removeValue(forKey: id) }
         if pullRequestCloseNotes[id] != nil { pullRequestCloseNotes.removeValue(forKey: id) }
         if branchPullRequests[id] != nil { branchPullRequests.removeValue(forKey: id) }

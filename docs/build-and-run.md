@@ -11,8 +11,8 @@ a package check and an Xcode build are not both required for every change.
 
 **The Mac app:** open `Shepherd.xcodeproj`, pick a scheme, choose My Mac, and Run. The Mac target
 is a shim (`App/ShepherdLauncher.swift` calls `ShepherdMacApp.main()` from the `ShepherdApp`
-library, or, given `--host`, the headless session host that launchd runs as Shepherd Nightly's
-background service). There is no `swift run` path for the GUI.
+library, or, given `--host`, the headless session host: Shepherd Nightly's background service
+under launchd, else the app's own supervised child). There is no `swift run` path for the GUI.
 
 A stable Shepherd and a development build cannot share state. The socket and `state.json` live
 in the support directory, and the server refuses to bind over a live socket. So there are three
@@ -48,9 +48,13 @@ settings, and each configuration compiles only its own icon.
 
 **The background service** (`Shepherd --host` under launchd, [ARCHITECTURE](../ARCHITECTURE.md))
 registers only for Shepherd Nightly run from a stable, signed bundle (`BackgroundService.mayRegister`).
-Dev and Prod never register it: Dev runs from DerivedData and sets `SHEPHERD_SUPPORT_DIR`. They
-start the host as the app's own child instead, so agents run in a second `Shepherd --host`
-process. To debug the host, use Xcode's Debug ▸ Attach to Process and pick `Shepherd --host`.
+Dev and Prod never register it (Dev runs from DerivedData and sets `SHEPHERD_SUPPORT_DIR`), so
+they run their agents in the app's own child, `Shepherd --host --supervised` (`HostSupervisor`).
+A host you start by hand on Dev's folder (`SHEPHERD_SUPPORT_DIR=… <built app>/Contents/MacOS/Shepherd --host`)
+owns the workspace first, and the scheme follows it instead. To debug that process, run the scheme, then Debug ▸ Attach to
+Process and pick the second `Shepherd` (or attach by its pid, which `log show --predicate
+'subsystem == "com.shepherd.app"'` prints in "host child started"). Its stderr shows in the
+app's console. Stopping the app in Xcode closes the child's stdin, so the child stops too.
 
 **The pi engine** (Node plus pi's bundle, pinned in `scripts/pi-engine-pin.json`) ships inside the
 Mac app, and every agent runs it, in Shepherd's own pi home ([docs/pi-engine.md](pi-engine.md)). Stage it

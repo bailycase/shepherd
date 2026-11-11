@@ -1,6 +1,7 @@
 import SwiftUI
 import ShepherdUI
 import AppKit
+import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
 import ShepherdRemote
@@ -76,52 +77,36 @@ public struct ShepherdMacApp: App {
                     bundleIdentifier: bundle.bundleIdentifier, bundlePath: bundle.bundlePath,
                     environment: ProcessInfo.processInfo.environment, adHoc: BackgroundService.isAdHoc()))
                 BackgroundHostClient.serviceStatus = status
-                guard BackgroundHostClient.requested() || status == .enabled else { return try SessionServer.shared.start() }
-                let socket = BackgroundHostClient.socketPath()
-                BackgroundHostClient.owner = try BackgroundHostClient.choose(
-                    answers: { RemoteHostClient.localSocketAnswers(socket) },
-                    own: { try SessionServer.shared.start() },
-                    wait: { Thread.sleep(forTimeInterval: 0.5) }, waitFirst: status == .enabled)
+                // Every launch is a client: of launchd's host when the service runs one, else of the app's own child.
+                let supervisor = HostSupervisor(.app(preferOwner: { status != nil && service.status() == .enabled }))
+                HostSupervisor.shared = supervisor
+                try supervisor.start()
             },
             makeModel: {
                 // Settings ▸ Advanced reads the job's status while this launch may use it.
                 let status = BackgroundHostClient.serviceStatus
                 let service = status.map { _ in BackgroundService.app(bundleIdentifier: Bundle.main.bundleIdentifier ?? "") }
-                if BackgroundHostClient.owner == .host {
-                    let vm = ShepherdViewModel(server: BackgroundHostClient.idleServer(), ownsWorkspace: false,
-                                               restoresAgentsAtLaunch: false, browserData: .persistent)
-                    vm.connectLocalHost(socket: BackgroundHostClient.socketPath(), token: BackgroundHostClient.token() ?? "")
-                    vm.backgroundService = service
-                    vm.backgroundServiceStatus = status
-                    let socket = BackgroundHostClient.socketPath()
-                    vm.remoteHosts.onLocalHostLost = { BackgroundHostClient.hostLost(service: service, socket: socket) }
-                    // A paired device's Update this Mac: the host relays it here, where Sparkle runs.
-                    AppUpdater.shared.connectRemoteUpdates(gate: .host { [weak vm] in (try? vm?.remoteHosts.thisMacHost()) ?? nil })
-                    return vm
-                }
-                AppUpdater.shared.connectRemoteUpdates(to: SessionServer.shared)
-                let resourceSampler = SessionResourceSampler()
-                ShepherdDiagnostics.shared.start(settings: .shared, resourceSampler: {
-                    await resourceSampler.sample(SessionServer.shared.resourceState())
-                })
-                if ShepherdDiagnostics.shared.isActive {
-                    SessionServer.shared.onDiagnosticDuration = { operation, seconds in
-                        ShepherdDiagnostics.shared.recordDuration(operation, seconds: seconds)
-                    }
-                    SessionServer.shared.onDiagnosticActivityDetails = { name, details in
-                        guard let activity = ShepherdDiagnostics.Activity(rawValue: name) else { return }
-                        ShepherdDiagnostics.shared.record(activity, details: details)
-                    }
-                }
-                let vm = ShepherdViewModel(server: .shared, welcomesYourPi: true, browserData: .persistent)
+                // App-side diagnostics only; the host's server metrics aren't reported to the app (#561 Q5).
+                ShepherdDiagnostics.shared.start(settings: .shared)
+                let vm = ShepherdViewModel(welcomesYourPi: true, browserData: .persistent)
+                vm.connectLocalHost(socket: BackgroundHostClient.socketPath(), token: BackgroundHostClient.token() ?? "")
                 vm.backgroundService = service
                 vm.backgroundServiceStatus = status
+                // The supervisor starts the host again; the store reconnects on its own.
+                HostSupervisor.agents = { [weak vm] in vm?.remoteHosts.localHost?.state.agents ?? [] }
+                if let supervisor = HostSupervisor.shared {
+                    supervisor.onFailure = { failure in
+                        if HostSupervisor.StartFailed.show(failure, canRetry: true) { supervisor.retry() } else { NSApp.terminate(nil) }
+                    }
+                }
+                // A paired device's Update this Mac: the host relays it here, where Sparkle runs.
+                AppUpdater.shared.connectRemoteUpdates(gate: .host { [weak vm] in (try? vm?.remoteHosts.thisMacHost()) ?? nil })
                 return vm
             },
             failed: { error in
-                NSLog("Shepherd: failed to start session server: \(error)")
-                if SessionServerError.isWorkspaceInUse(error) { WorkspaceInUseAlert.show() }
-                if error is BackgroundHostClient.HostStarting { WorkspaceInUseAlert.show(.hostStarting) }
+                NSLog("Shepherd: failed to start the session host: \(error)")
+                if error is BackgroundHostClient.HostStarting { WorkspaceInUseAlert.show() }
+                if let failure = error as? HostSupervisor.StartFailed { _ = HostSupervisor.StartFailed.show(failure, canRetry: false) }
                 exit(EXIT_FAILURE)
             })
         launch.begin()
@@ -141,7 +126,6 @@ public struct ShepherdMacApp: App {
                     .task {
                         AppSignposts.launch.emitEvent("root view task")
                         vm.applyRemoteListenerSetting()
-                        vm.startSkillChecks()
                     }
                 } else {
                     LaunchSurface()
@@ -221,44 +205,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    /// In process, quitting kills every agent process (sessions die with the app), so a quit while
-    /// agents are mid-turn asks first, in a dialog on the main window (`QuitConfirmation`).
+    /// When the app's own child host runs the agents, quitting stops every agent process, so a
+    /// quit while agents are mid-turn asks first, in a dialog on the main window
+    /// (`QuitConfirmation`), then `stop`s the child.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        // The background host keeps every agent running.
-        if BackgroundHostClient.owner == .host { return .terminateNow }
+        // launchd's background host keeps every agent running.
+        if HostSupervisor.shared?.ownsAgents != true { return .terminateNow }
         if let reply = AppUpdater.shared.remoteTerminationReply { return reply }
-        return QuitConfirmation.shared.shouldTerminate(agents: SessionServer.shared.state.agents)
+        return QuitConfirmation.shared.shouldTerminate(agents: HostSupervisor.agents())
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         BoundedCommand.stopForAppTermination()
-        if BackgroundHostClient.owner == .app { SessionServer.shared.stop() }
+        HostSupervisor.shared?.stop()
     }
 
 }
 
-/// What a launch says when another process (the background host, or another copy of the app)
-/// already owns this edition's workspace, instead of quitting silently.
+/// What a launch says when the workspace's owner (launchd's background host) holds it but hasn't
+/// answered yet, instead of quitting silently.
 enum WorkspaceInUseAlert {
-    /// Another process has it, or the background host holds it but hasn't answered yet.
-    enum Reason { case inUse, hostStarting }
+    static let message = "Shepherd's background service is starting"
+    static let detail = "Your agents keep running. Open Shepherd again in a moment."
 
-    static var message: String { "\(ShepherdEdition.current.displayName) is already running" }
-    static let detail = "Another Shepherd process has this workspace open. Quit it, then open Shepherd again."
-    static let hostStartingMessage = "Shepherd's background service is starting"
-    static let hostStartingDetail = "Your agents keep running. Open Shepherd again in a moment."
-
-    @MainActor static func make(_ reason: Reason = .inUse) -> NSAlert {
+    @MainActor static func make() -> NSAlert {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = reason == .inUse ? message : hostStartingMessage
-        alert.informativeText = reason == .inUse ? detail : hostStartingDetail
+        alert.messageText = message
+        alert.informativeText = detail
         alert.addButton(withTitle: "Quit")
         return alert
     }
 
-    @MainActor static func show(_ reason: Reason = .inUse) {
-        let alert = make(reason)
+    @MainActor static func show() {
+        let alert = make()
         NSApp.activate()
         alert.runModal()
     }
@@ -271,7 +251,7 @@ extension ShepherdHost {
     /// TCP listener as the app would; a change to it takes effect when the host next starts. The
     /// listener's port, when it opened.
     @discardableResult
-    @MainActor static func serveSettings(_ settings: AppSettings, on server: SessionServer) -> UInt16? {
+    @MainActor static func serveSettings(_ settings: AppSettings, on server: SessionServer, listenerFailed: ((Error) -> Void)? = nil) -> UInt16? {
         settings.followOtherProcesses()
         server.setProjectsEnabled(settings.projectsEnabled)
         settings.onProjectsChange = { [weak server] in server?.setProjectsEnabled($0) }
@@ -295,6 +275,7 @@ extension ShepherdHost {
                                                   tokenURL: server.supportDirectory.appendingPathComponent("remote-token"))
         } catch {
             ShepherdLog.error("host's remote listener failed to start: \(error)")
+            listenerFailed?(error)
             return nil
         }
     }
@@ -305,79 +286,163 @@ extension ShepherdHost {
 /// (`BackgroundService`).
 public enum ShepherdHost {
     public static let argument = "--host"
-    /// Missions and the Project runtime, served for the life of the host.
-    @MainActor private static var runtime: (missions: MissionController, coordinator: ProjectCoordinatorController,
-                                            execution: ProjectExecutionController)?
+    /// With `argument`: the app's own child (`HostSupervisor`), not launchd's service.
+    static let supervisedArgument = "--supervised"
+    /// What the host serves, kept for the life of the process.
+    @MainActor private static var services: Services?
 
     /// Agents respawn, and automation runs start, with the app's settings and its MCP servers
     /// (their Keychain secrets read here, as the app reads them). Merged threads close per
     /// Settings ▸ Worktrees. Banners post as the app's would, with nobody watching; a click opens
     /// the app, and answers and Retry act here.
     public static func main() -> Never {
-        let settings = AppSettings.shared
-        let (mcpStore, notifications) = MainActor.assumeIsolated {
-            (MCPStore(dependencies: .app(pi: SessionServer.shared.pi, openURL: { _ in }, copy: { _ in })),
-             AgentNotifications(activate: { NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: .init()) }))
-        }
-        let mcp = MainActor.assumeIsolated { MCPLaunch.spawnMCP(settings: settings, store: mcpStore) }
         MainActor.assumeIsolated {
+            let settings = AppSettings.shared
+            let mcpStore = MCPStore(dependencies: .app(pi: SessionServer.shared.pi, openURL: { _ in }, copy: { _ in }))
+            let notifications = AgentNotifications(activate: { NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: .init()) })
             notifications.onResponse = { response in
                 guard case .agent(let id) = response.target, let action = response.action else { return }
                 Task { await SessionHost.banners?.respond(id, action: action, question: response.question,
                                                           text: response.text, recovery: response.recovery) }
             }
-        }
-        SessionHost.run(respawn: {
-            var spawn = AgentSpawn(agent: $0, cwd: "", settings: settings.agentLaunch)
-            spawn.mcp = mcp
-            return spawn
-        }, configure: { server in
             // The host is the service: it says so from launchd's own status of its job.
             let service = BackgroundService.app(bundleIdentifier: Bundle.main.bundleIdentifier ?? "")
-            HostSettingsMapping.serve(on: server, settings: settings) { service.status().keepsAgentsRunning }
-            serveSettings(settings, on: server)
-            // Settings ▸ MCP, Subagents and Sign-in, with the MCP store agents launch with.
-            let subagents = SubagentDefinitionsModel(pi: server.pi)
-            let stores = HostStores(mcp: mcpStore, subagents: { subagents }, piAuth: PiAuthStore(pi: server.pi), yourPi: YourPiModel(pi: server.pi),
-                                    remoteSignIns: RemoteSignIns())
-            stores.serve(on: server)
-            stores.serveTurnErrors(on: server)
-            let worktrees = server.serveAgentQueries(WorktreeHosting(defaults: { settings.worktreeHostingDefaults },
-                                                                     deleteAgent: { id, _ in try await server.deleteAgent(id) }))
-            // Missions and Projects run here, where their agents run: they keep acting with the app quit.
-            runtime = RuntimeHosting.headless(server: server, settings: settings, worktrees: worktrees, mcp: mcp) {
-                notifications.post(AgentBanners.automation(title: $0, body: $1))
-            }.serve()
-        }, threads: { server in
-            ThreadHosting(defaults: {
-                ThreadHosting.Defaults(model: settings.defaultModel(piHome: server.pi.home), thinking: settings.defaultThinking,
-                                       serviceTier: settings.defaultServiceTier, worktreeBaseMode: settings.worktreeBaseMode,
-                                       worktreeFetchBeforeCreate: settings.worktreeFetchBeforeCreate)
-            }, launch: { settings.agentLaunch }, mcp: mcp, shell: { ShellIntegration.command(shell: settings.shellCommand) })
-        }, automations: { server in
-            var hosting = server.headlessAutomationHosting(launch: { settings.agentLaunch }, mcp: mcp, defaults: {
-                AutomationHosting.Defaults(model: settings.defaultModel(piHome: server.pi.home), thinking: settings.defaultThinking,
-                                           serviceTier: settings.defaultServiceTier,
-                                           worktreeFetchBeforeCreate: settings.worktreeFetchBeforeCreate,
-                                           projectsEnabled: settings.projectsEnabled)
-            })
-            hosting.notify = { notifications.post(AgentBanners.automation(title: $0, body: $1)) }
-            return hosting
-        }, pullRequests: { server in
-            var hosting = server.headlessPullRequestHosting(closeOnMerge: { settings.worktreeCloseOnMerge })
-            hosting.closed = { agent, link, branch, remote in
-                notifications.post(AgentBanners.pullRequestClosed(agent, number: link.ref.number, branch: branch, remote: remote))
+            let services = Services(settings: settings, mcpStore: mcpStore, notifications: notifications) { service.status().keepsAgentsRunning }
+            Self.services = services
+            SessionHost.run(supervised: CommandLine.arguments.contains(supervisedArgument), respawn: services.respawn,
+                            configure: services.configure, threads: services.threads, automations: services.automations,
+                            pullRequests: services.pullRequests, banners: services.banners)
+        }
+    }
+
+    /// Everything the host serves on its server beside the server's own: Settings, its stores,
+    /// threads, worktrees, automations, Missions and Projects, pull request links and banners,
+    /// each with the app's settings. `main` runs it; app tests serve their in-process host with it.
+    @MainActor final class Services {
+        let settings: AppSettings
+        let mcpStore: MCPStore
+        let notifications: AgentNotifications
+        let keepsAgentsRunning: @MainActor () -> Bool?
+        let mcp: AgentSpawn.MCP
+        /// The shell a client's terminal starts.
+        var shell: () -> SessionCommand
+        /// Missions and the Project runtime, served for the life of the host.
+        private(set) var runtime: (missions: MissionController, coordinator: ProjectCoordinatorController,
+                                   execution: ProjectExecutionController)?
+        /// Worktree requests and commits from review, served for the life of the host.
+        private(set) var worktrees: WorktreeQueries?
+        /// Serve this Mac's listener as it started, for Settings ▸ Remote.
+        private(set) var listener: (port: UInt16?, failure: RemoteListenerFailure?) = (nil, nil)
+        /// Stands in for `gh` in looking up a thread's pull request (tests).
+        var pullRequestLookup: (@MainActor (String) async -> ThreadPullRequest?)?
+
+        init(settings: AppSettings, mcpStore: MCPStore, notifications: AgentNotifications, keepsAgentsRunning: @escaping @MainActor () -> Bool?) {
+            self.settings = settings
+            self.mcpStore = mcpStore
+            self.notifications = notifications
+            self.keepsAgentsRunning = keepsAgentsRunning
+            mcp = MCPLaunch.spawnMCP(settings: settings, store: mcpStore)
+            shell = { ShellIntegration.command(shell: settings.shellCommand) }
+        }
+
+        /// `SessionHost.serve` with these services, for a host the test process runs.
+        @discardableResult
+        func serve(_ server: SessionServer, socket: String, tokenURL: URL, recovering: Bool = true) async -> ThreadBanners? {
+            await SessionHost.serve(server, socket: socket, tokenURL: tokenURL, recovering: recovering, respawn: respawn, configure: configure,
+                                    threads: threads, automations: automations, pullRequests: pullRequests, banners: banners)
+        }
+
+        var respawn: @MainActor (Agent) -> AgentSpawn {
+            { [settings, mcp] in
+                var spawn = AgentSpawn(agent: $0, cwd: "", settings: settings.agentLaunch)
+                spawn.mcp = mcp
+                return spawn
             }
-            hosting.keptOpen = { agent, link, reason in
-                notifications.post(AgentBanners.pullRequestKept(agent, number: link.ref.number, reason: reason))
+        }
+
+        var configure: @MainActor (SessionServer) -> Void {
+            { [self] server in
+                HostSettingsMapping.serve(on: server, settings: settings, backgroundService: keepsAgentsRunning) { [weak self] in
+                    self?.listener ?? (nil, nil)
+                }
+                listener.port = serveSettings(settings, on: server) { [weak self, settings] error in
+                    self?.listener.failure = RemoteListenerFailure(error, port: UInt16(clamping: settings.remoteListenerPort))
+                }
+                // Settings ▸ MCP, Subagents and Sign-in, with the MCP store agents launch with.
+                let subagents = SubagentDefinitionsModel(pi: server.pi)
+                let stores = HostStores(mcp: mcpStore, subagents: { subagents }, piAuth: PiAuthStore(pi: server.pi), yourPi: YourPiModel(pi: server.pi),
+                                        remoteSignIns: RemoteSignIns())
+                stores.serve(on: server)
+                stores.serveTurnErrors(on: server)
+                let settings = settings
+                let worktrees = server.serveAgentQueries(WorktreeHosting(defaults: { settings.worktreeHostingDefaults },
+                                                                         deleteAgent: { id, _ in try await server.deleteAgent(id) }))
+                self.worktrees = worktrees
+                // Missions and Projects run here, where their agents run: they keep acting with the app quit.
+                runtime = RuntimeHosting.headless(server: server, settings: settings, worktrees: worktrees, mcp: mcp) { [notifications] in
+                    notifications.post(AgentBanners.automation(title: $0, body: $1))
+                }.serve()
+                // Skills look for newer commits a minute in, then hourly once the last check is a day old.
+                let skills = server.skills
+                Task.detached(priority: .utility) {
+                    try? await Task.sleep(for: .seconds(60))
+                    while !Task.isCancelled {
+                        skills.checkUpdatesIfDue()
+                        try? await Task.sleep(for: .seconds(3_600))
+                    }
+                }
             }
-            return hosting
-        }, banners: { server in
-            var sink = ThreadBanners.Sink(post: notifications.post, remove: notifications.remove, isWatching: { _ in false },
-                                          notifyOnTurnFinished: { settings.notifyOnTurnFinished })
-            // The app, connected and showing these threads as its own, posts their banners.
-            sink.quiet = { server.localAppConnected }
-            return sink
-        })
+        }
+
+        var threads: @MainActor (SessionServer) -> ThreadHosting {
+            { [settings, mcp, shell] server in
+                ThreadHosting(defaults: {
+                    ThreadHosting.Defaults(model: settings.defaultModel(piHome: server.pi.home), thinking: settings.defaultThinking,
+                                           serviceTier: settings.defaultServiceTier, worktreeBaseMode: settings.worktreeBaseMode,
+                                           worktreeFetchBeforeCreate: settings.worktreeFetchBeforeCreate)
+                }, launch: { settings.agentLaunch }, mcp: mcp, shell: shell)
+            }
+        }
+
+        var automations: @MainActor (SessionServer) -> AutomationHosting {
+            { [settings, mcp, notifications] server in
+                var hosting = server.headlessAutomationHosting(launch: { settings.agentLaunch }, mcp: mcp, defaults: {
+                    AutomationHosting.Defaults(model: settings.defaultModel(piHome: server.pi.home), thinking: settings.defaultThinking,
+                                               serviceTier: settings.defaultServiceTier,
+                                               worktreeFetchBeforeCreate: settings.worktreeFetchBeforeCreate,
+                                               projectsEnabled: settings.projectsEnabled)
+                })
+                hosting.notify = { notifications.post(AgentBanners.automation(title: $0, body: $1)) }
+                return hosting
+            }
+        }
+
+        var pullRequests: @MainActor (SessionServer) -> PullRequestLinkHosting {
+            { [weak self, settings, notifications] server in
+                var hosting = server.headlessPullRequestHosting(closeOnMerge: { settings.worktreeCloseOnMerge })
+                let lookup = hosting.lookup
+                hosting.lookup = { [weak self] cwd in
+                    if let stand = self?.pullRequestLookup { return await stand(cwd) }
+                    return await lookup(cwd)
+                }
+                hosting.closed = { agent, link, branch, remote in
+                    notifications.post(AgentBanners.pullRequestClosed(agent, number: link.ref.number, branch: branch, remote: remote))
+                }
+                hosting.keptOpen = { agent, link, reason in
+                    notifications.post(AgentBanners.pullRequestKept(agent, number: link.ref.number, reason: reason))
+                }
+                return hosting
+            }
+        }
+
+        var banners: @MainActor (SessionServer) -> ThreadBanners.Sink {
+            { [settings, notifications] server in
+                var sink = ThreadBanners.Sink(post: notifications.post, remove: notifications.remove, isWatching: { _ in false },
+                                              notifyOnTurnFinished: { settings.notifyOnTurnFinished })
+                // The app, connected and showing these threads as its own, posts their banners.
+                sink.quiet = { server.localAppConnected }
+                return sink
+            }
+        }
     }
 }

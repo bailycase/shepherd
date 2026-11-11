@@ -8,21 +8,7 @@ import ShepherdRemote
 @MainActor
 extension ShepherdViewModel {
     func installReviewHandler() {
-        server.onReviewRequest = { [weak self] request, respond in
-            MainActor.assumeIsolated {
-                guard let self else {
-                    respond(.failed(code: "unavailable", message: "workspace is gone"))
-                    return
-                }
-                guard case .start(let agentID, let cwd, let reference) = request else {
-                    respond(.failed(code: "invalid_request", message: "unsupported review request"))
-                    return
-                }
-                self.beginReview(agentID: agentID, cwd: cwd, reference: reference, respond: respond)
-            }
-        }
-        // The background host on this Mac has no window: what its agents ask of one is answered
-        // here, as this app answers its own server's agents.
+        // The background host on this Mac has no window: what its agents ask of one is answered here.
         remoteHosts.onAppRelay = { [weak self] client, token, job in
             let answer = { (result: AppRelayResult) in client.appRelayAnswer(token: token, result: result) }
             guard let self else { return answer(.failed(code: "unavailable", message: "The workspace is gone.")) }
@@ -48,7 +34,31 @@ extension ShepherdViewModel {
             case .hostUpdate(let request):
                 // The host checked the device before relaying; its gate fences the install.
                 Task { answer(.hostUpdate(status: await AppUpdater.shared.remoteUpdate(request, authorized: { true }))) }
+            // A Project the host owns reaches a paired Mac through this app's connection to it; the
+            // host keeps the owner's checks.
+            case .projectPlacement(let host, let request):
+                let executors = self.remoteHosts.projectExecutors
+                Task {
+                    do { answer(.projectExecution(result: try await executors.place(host, request))) }
+                    catch { answer(Self.relayFailure(error)) }
+                }
+            case .projectWorkerThread(let host, let agentID, let request):
+                let executors = self.remoteHosts.projectExecutors
+                Task {
+                    do { answer(.nativeThread(result: try await executors.workerThread(host, agentID, request))) }
+                    catch { answer(Self.relayFailure(error)) }
+                }
             }
+        }
+    }
+
+    /// An error, as the background host reads it back (`RuntimeHosting.ProjectExecutors.relayed`).
+    nonisolated static func relayFailure(_ error: Error) -> AppRelayResult {
+        switch error {
+        case let error as LogicalProjectsError: .failed(code: error.code, message: error.description)
+        case RemoteHostClientError.rejected(let code, let message): .failed(code: code, message: message)
+        case RemoteHostClientError.outcomeUnknown(let message): .failed(code: "outcome_unknown", message: message)
+        default: .failed(code: "executor_unavailable", message: String(describing: error))
         }
     }
 
@@ -308,11 +318,13 @@ extension ShepherdViewModel {
 
     // MARK: Loading
 
-    /// The person changed files in `agentID`'s working tree (a Files-tab Save): the branch chip
-    /// counts them now, and the Changes tab, which is out of sight while they edit, reloads the
-    /// next time it shows.
+    /// The person changed files in `agentID`'s working tree (a Files-tab Save): the Changes tab,
+    /// which is out of sight while they edit, reloads the next time it shows.
     func workingTreeChanged(_ agentID: AgentID) {
-        checkouts?.refresh(agentID, priority: true)
+        // The header's chip: the host reads the checkout again (an older host doesn't know how).
+        if let ref = localRef(agentID), localHost?.supportsCheckoutRead == true {
+            Task { try? await remoteHosts.agentAction(ref, action: .readCheckout) }
+        }
         guard let session = reviewSessions.values.first(where: { $0.agentID == agentID }), !session.workingTreeChanged else { return }
         session.workingTreeChanged = true
     }
@@ -358,9 +370,6 @@ extension ShepherdViewModel {
                 session.loadError = String(describing: error)
             }
             session.isLoading = false
-            // The header's count follows what the review just read (a commit or a revert
-            // reloads it too).
-            checkouts?.refresh(session.agentID)
         }
     }
 
@@ -405,7 +414,6 @@ extension ShepherdViewModel {
                 session.loadErrorIsNotice = [ChangesError.unavailable, ChangesError.notARepository].contains(changes?.code)
             }
             session.isLoading = false
-            if case .local(let agentID)? = owner(of: session) { checkouts?.refresh(agentID) }
         }
         loadChangesOverview(session)
     }
@@ -507,28 +515,19 @@ extension ShepherdViewModel {
 
     /// This Mac's engine for an agent's review (`cwd`: the directory under review).
     func localChangesEngine(agentID: AgentID, cwd: String) -> ChangesEngine {
-        // The background host's Changes engine follows its agents' turns.
-        if let ref = localRef(agentID) { return remoteChangesEngine(ref) }
-        let changes = server.changes
-        return ChangesEngine(
-            overview: { try await changes.overview(agentID: agentID, cwd: cwd) },
-            list: { scope, options in try await changes.list(agentID: agentID, scope: scope, options: options, cwd: cwd) },
-            diffs: { list, options in
-                let files = try await changes.diffs(agentID: agentID, revision: list.revision, options: options, cwd: cwd)
-                // The engine cuts a file at `ChangesLimits.fileLines`; one that reaches it was cut.
-                let cut = files.filter { $0.hunks.reduce(0) { $0 + $1.lines.count } >= ChangesLimits.fileLines }
-                return (files, Set(cut.map(\.id)))
-            },
-            file: { revision, file, options in
-                try await changes.file(agentID: agentID, revision: revision, path: file.path, oldPath: file.oldPath, options: options, cwd: cwd)
-            },
-            branches: { try await changes.branches(agentID: agentID, cwd: cwd) },
-            patch: { revision, options in (try await changes.patch(agentID: agentID, revision: revision, options: options, cwd: cwd), false) })
+        // The background host's Changes engine follows its agents' turns (a host not connected
+        // yet answers nothing). Another folder than the agent's own is named (`changes.cwd.v1`).
+        let own = state.agents.first { $0.id == agentID }.flatMap { agent in
+            state.tabs.first { $0.id == agent.tabID }.flatMap { tab in
+                (tab.layout.leaves.first { $0.agentID == agentID } ?? tab.layout.leaves.first).map { ($0.cwd as NSString).expandingTildeInPath }
+            }
+        }
+        return remoteChangesEngine(localRef(agentID) ?? RemoteAgentRef(hostID: UUID(), agentID: agentID), cwd: cwd == own ? nil : cwd)
     }
 
     /// A remote host's engine (`changes.v1`): each file's hunks is its own request, a few at a
     /// time, each kept under the frame cap.
-    func remoteChangesEngine(_ target: RemoteAgentRef) -> ChangesEngine {
+    func remoteChangesEngine(_ target: RemoteAgentRef, cwd: String? = nil) -> ChangesEngine {
         let query: @MainActor (RemoteAgentQuery) async throws -> RemoteAgentResult = { [weak self] query in
             guard let self else { throw ChangesError(ChangesError.unavailable, "Shepherd is closing.") }
             return try await self.remoteHosts.agentQuery(target, query: query)
@@ -536,11 +535,11 @@ extension ShepherdViewModel {
         func unexpected() -> ChangesError { ChangesError(ChangesError.invalid, "The host answered with something else.") }
         return ChangesEngine(
             overview: {
-                guard case .changesOverview(let overview) = try await query(.changesOverview) else { throw unexpected() }
+                guard case .changesOverview(let overview) = try await query(.changesOverview(cwd: cwd)) else { throw unexpected() }
                 return overview
             },
             list: { scope, options in
-                guard case .changesList(let list) = try await query(.changesList(scope: scope, options: options)) else { throw unexpected() }
+                guard case .changesList(let list) = try await query(.changesList(scope: scope, options: options, cwd: cwd)) else { throw unexpected() }
                 return list
             },
             diffs: { list, options in
@@ -553,7 +552,7 @@ extension ShepherdViewModel {
                         group.addTaskUnlessCancelled { @MainActor in
                             try Task.checkCancellation()
                             guard case .changesFile(let diff) = try await query(.changesFile(revision: list.revision, path: file.path,
-                                                                                               oldPath: file.oldPath, options: options))
+                                                                                               oldPath: file.oldPath, options: options, cwd: cwd))
                             else { throw unexpected() }
                             return diff
                         }
@@ -570,15 +569,15 @@ extension ShepherdViewModel {
             },
             file: { revision, file, options in
                 guard case .changesFile(let diff) = try await query(.changesFile(revision: revision, path: file.path, oldPath: file.oldPath,
-                                                                                 options: options)) else { throw unexpected() }
+                                                                                 options: options, cwd: cwd)) else { throw unexpected() }
                 return diff
             },
             branches: {
-                guard case .changesBranches(let branches) = try await query(.changesBranches) else { throw unexpected() }
+                guard case .changesBranches(let branches) = try await query(.changesBranches(cwd: cwd)) else { throw unexpected() }
                 return branches
             },
             patch: { revision, options in
-                guard case .changesPatch(let text, let truncated) = try await query(.changesPatch(revision: revision, options: options))
+                guard case .changesPatch(let text, let truncated) = try await query(.changesPatch(revision: revision, options: options, cwd: cwd))
                 else { throw unexpected() }
                 return (text, truncated)
             })
@@ -600,12 +599,8 @@ extension ShepherdViewModel {
         do {
             switch owner {
             case .local(let agentID):
-                if let ref = localRef(agentID) {
-                    _ = try await remoteHosts.agentQuery(ref, query: redo ? .changesRedoTurn(turnID: turnID) : .changesUndoTurn(turnID: turnID))
-                    return nil
-                }
-                _ = redo ? try await server.changes.redoTurn(agentID: agentID, turnID: turnID)
-                    : try await server.changes.undoTurn(agentID: agentID, turnID: turnID)
+                guard let ref = localRef(agentID) else { throw BackgroundHostClient.HostStarting() }
+                _ = try await remoteHosts.agentQuery(ref, query: redo ? .changesRedoTurn(turnID: turnID) : .changesUndoTurn(turnID: turnID))
             case .remote(let target):
                 _ = try await remoteHosts.agentQuery(target, query: redo ? .changesRedoTurn(turnID: turnID) : .changesUndoTurn(turnID: turnID))
             }

@@ -5,13 +5,13 @@
 - **Listener:** `SessionServer.startRemoteListener(port:tokenURL:)` binds TCP on **all
   interfaces** (default 7433, or 7434 in Shepherd Nightly so both apps can serve; port 0 picks
   an ephemeral port, and the bound port is returned).
-  Settings ▸ Remote ▸ Serve this Mac toggles it, and bind failures show there. Under the
-  background service the host opens it (`ShepherdHost.serveSettings`), so it stays reachable
-  while the app is quit, with the same token.
+  Settings ▸ Remote ▸ Serve this Mac toggles it, and bind failures show there. The host opens it
+  (`ShepherdHost.serveSettings`), so under the background service it stays reachable while the
+  app is quit, with the same token.
 - **Local socket:** `SessionServer.startLocalListener(path:tokenURL:)` binds `<support>/host.sock`
-  (mode 0600; the path must fit a unix socket's 104 bytes) for the app as a background host's
-  client (`RemoteHostClient(localSocket:)`). Only the headless host (`Shepherd --host`) starts
-  it. At accept, before any frame is read, `LocalPeer` checks that the peer is this user's
+  (mode 0600; the path must fit a unix socket's 104 bytes) for the app, always its
+  host's client (`RemoteHostClient(localSocket:)`). Only the headless host (`Shepherd --host`,
+  launchd's or the app's child) starts it. At accept, before any frame is read, `LocalPeer` checks that the peer is this user's
   (`getpeereid`) and that its code satisfies the host's own designated requirement (its audit
   token through `SecCodeCopyGuestWithAttributes`, then `SecCodeCheckValidity`; an ad-hoc build's
   requirement is its cdhash). pi and its agents run as the same user and can read the token, but
@@ -24,11 +24,12 @@
   it keeps serving and exits once no agent is working, blocked or starting, or after two hours
   (`HostDrain`). It drains on its own when its bundle's `CFBundleVersion` on disk changes or the
   bundle is gone (`BundleVersionWatch`). Local clients alone may send `spaceAction` (rename,
-  base, hide, reorder or remove a space) and `startThread` (a thread with a fork's session, an
+  base, hide, reorder or remove a space), `projectRequest` (register, edit or add a child space,
+  answered `spaceAdded`) and `startThread` (a thread with a fork's session, an
   existing checkout, its own folder, a name or an id); TCP clients are refused. An app that lists
   `local.threads.v1` in hello shows the host's threads as its own and posts their turn and question
   banners, so the host doesn't while it is connected. Agent queries over the local socket judge a
-  worktree's loss by the in-process rule (`GitWorktree.checkedUnreconciledWork(otherBranchesKeep:)`).
+  worktree's loss by the same rule (`GitWorktree.checkedUnreconciledWork(otherBranchesKeep:)`).
   `agent.restart.v1` hosts take `restartPi`, a stopped pi's Retry. A local client may also send
   `focusThread` (the thread it shows, so phone pushes for it stay quiet; cleared when it
   disconnects), and while it lists `local.threads.v1` the notify tool's banners go to it as an
@@ -40,6 +41,11 @@
   post), `automationsChanged` (a run log or trigger changed: read the runs and statuses again) and
   `agentStartProblem` (why an agent's pi stopped and it waits, nil once pi starts again; every
   agent's once when the client connects).
+  A local client with `appRelay.v1` also sends `projectExecutors` (the paired Macs it is connected
+  to, and their execution hints), and answers the host's `projectPlacement` and
+  `projectWorkerThread` relays through its connection to exactly that host and binding: a Project
+  the host owns places work on another Mac only while this Mac's app runs, and says to open it
+  otherwise.
   Only a local client may send the `automation` request `setRunPullRequest` (the pull request a
   run's thread opened, as the app read it through gh). The local link ends only when its socket
   closes: a request the host is slow to answer, or one the client's write queue can't hold, fails
@@ -52,7 +58,7 @@
   design, Open, Import and Build from a repo (`SessionServer.serveDesigns`). It answers host settings
   (`HostSettingsMapping.serve`) and, when Serve this Mac is on, opens the TCP listener itself
   (`ShepherdHost.serveSettings`; switching it takes effect when the host next starts), and
-  `hostInventory` and `hostConfig` through the same `HostStores` the app serves. It answers
+  `hostInventory` and `hostConfig` through `HostStores`. It answers
   worktree info and delete, commit from review (`WorktreeQueries`), subagents, transcript search and the working tree's review
   (`SessionServer.serveAgentQueries`); review panes and the inspector are refused.
   With no page of its own, the host hands an agent's browser call that no viewer claimed to the
@@ -163,8 +169,11 @@
     always past the one before) and keeps the latest one a person opened (`Agent.seenCompletedAt`,
     persisted, never lowered). Every client's Done lists a finished thread only while the two
     differ, and reports the completion it showed when the person leaves it or presses Mark all
-    seen. The Mac as the background host's client sends it over `host.sock`; in process it calls
-    the server. Clients of an older host (no `completedAt`) keep their own per-device Done.
+    seen. The Mac sends it to its host over `host.sock`. Clients of an older host (no `completedAt`) keep their own per-device Done.
+  - `agentAction.mutePushes(_:)`, behind `push.mute.v1`: the host keeps the thread's mute
+    (`Agent.pushMuted`, persisted, written only when true) and sends no push for a muted thread to
+    any phone. The Mac's thread options menu and the iPhone's row menu send it; an older host
+    offers neither.
   - `agentQuery`/`agentAction`: rename, delete, reorder, review, subagents, search, worktree
     info/delete, `terminals` (what each terminal runs; answered by the
     server itself, `terminal.activity.v1`), and commit from review (`commitInfo`,
@@ -173,7 +182,9 @@
     `changesBranches`, `changesPatch`, `changesUndoTurn`, `changesRedoTurn` behind `changes.v1`,
     answered by the server itself; thread snapshots carry `turnChanges`; `changesRevertFile`
     behind `changes.revert.v1` reverts one file of an uncommitted list to HEAD, refused when the
-    file changed since the list's revision, the working tree only, as Undo). Older hosts review the
+    file changed since the list's revision, the working tree only, as Undo; a read's `cwd`, behind
+    `changes.cwd.v1`, reviews the repository the agent's `review_diff` asked for, refused for any
+    other folder than that and the agent's own). Older hosts review the
     working tree only (`review`). The terminal panel's own actions on an agent's terminals
     ride `agentAction` behind `terminal.control.v1`: `renameTerminal` (Rename tab) and
     `killTerminalProcess` (Kill process), each refused on the agent's thread. An older
@@ -183,13 +194,16 @@
     even with a persisted session ID (it may predate a host restart); repeated demand is idempotent.
     Primary, review, deleted and foreign panes are refused. Hidden views and `terminals` activity
     polls never demand processes; clients of older hosts keep the existing attach-only path.
+    `readCheckout`, behind `checkout.read.v1`, has the host read the thread's branch and changed
+    files again after a change no state carries (a file saved in the app's Files tab); this
+    Mac's `focusThread` does the same for the thread it shows.
   - **Terminal compatibility** (no wire or capability change): a current client's +, ⌘D and ⌘J send the same `openPane` they
     always did, naming the thread as `relativeTo` (axis horizontal, `TerminalPanel.newTabAnchor`).
     A current host ignores `axis` and `relativeTo` and opens a new tab in the thread's folder (or
     the request's `cwd`), answering `paneOpened`; there is no split request anywhere. So an older
     client's Split right or down opens a tab and it then sees the flattened layout; its
     `resizePaneSplit` is answered `unsupported` ("Terminals are tabs and have no splits to
-    resize.") without reaching the GUI handler, and the connection stays; `closePane` of the
+    resize.") without reaching the pane handler, and the connection stays; `closePane` of the
     thread still answers `not_closable`. A current client never offers Split: against an older
     host its `openPane` naming the thread splits the thread there, which is a new tab, and it
     draws that host's split tabs as one tab per terminal (`TerminalPanel.tabs`); a host without
@@ -205,7 +219,7 @@
     capability shows them read-only
   - `forge` (`issuesAndPRs.v1`, `RemoteForgeRequest`, answered `forgeResult` or an error whose
     code is a `ForgeError.Code`): Issues & PRs through the host's own gh, the same answers the Mac
-    gets in process (`SessionServer.forge`). Reads: the repositories the host knows (its spaces' and
+    gets from its host (`SessionServer.forge`). Reads: the repositories the host knows (its spaces' and
     threads' checkouts with a GitHub `origin`), a repository's pull request or issue sections
     (Needs my team's review and Closed only when asked), a search, a pull request (reviewers,
     checks, activity, blockers, merge methods, the thread whose branch is its head), its diff
@@ -257,14 +271,14 @@
     when their pull request merges (missing from an older host: off).
   - `hostInventory` (`hostInventory.v1`): read-only, what the host's Settings ▸ MCP, Subagents and
     Sign-in show (`RemoteHostInventoryRequest`: `mcp`, `subagents`, `subagent(file:)`,
-    `providers`), answered by the GUI. A sign-in column in words that name no machine ("Not
+    `providers`), answered by the host through `HostStores`. A sign-in column in words that name no machine ("Not
     signed in", "Expired"; an older host's "Sign in on the Mac" reads as the state alone),
     a key's variable name but never its mask, account counts (with `hostConfig.v1`, each saved
     account's opaque id and name), never a credential; nothing here changes the host. With
     `hostConfig.v1` it adds each server's exposure, tool names, allowed tools and OAuth state, and
     each profile's fingerprint.
   - `hostConfig` (`hostConfig.v1`, `RemoteHostConfigRequest`): changes what `hostInventory`
-    reads, answered by the GUI through the stores its own Settings uses. MCP: read one entry's
+    reads, answered by the host through the stores Settings uses (`HostStores`). MCP: read one entry's
     JSON (references such as `${keychain:…}` and `${VAR}` stay as written; any other env or header
     value is masked as `••••••••`, and a save that carries the mask back keeps the host's value),
     save (add, or edit with `replacing`;
@@ -302,6 +316,12 @@
     resource file, only while it holds the text the client read) and `installSkills` (copies
     skills from a repository into the space's `.pi/skills` on the host). `save` also takes those
     resource paths. Both clients refuse these before sending to a host without the capability.
+  - `projects.inheritance.resources.v1`: a child space also inherits its parent's slash commands
+    (through `shepherd-mcp-parent.ts`) and extensions (`-e` at launch), and `inheritance` records
+    `prompts` and `extensions` it turns off. The client refuses those lists to an older host.
+  - `projects.parent.v1`: adds `organize`, which sets a registered space's parent space on the
+    same host and its name (`editProject`), and answers the listing's first page. Add space and the
+    space's Settings use it; with an older host the parent picker is disabled and says why.
   - `logicalProjects` (`logicalProjects.v1`): NEW logical `Project` records on the owner,
     separate from `projects` below. `LogicalProjectsRequest`/`LogicalProjectsResult` serve list,
     get, idempotent create with atomic initial owner-local Space links, revision-checked edit,
@@ -363,7 +383,12 @@
     and SIGKILL after a grace period; each answers the list as it is afterwards. A hidden or missing
     space is `no_such_space`, an unknown app `no_such_app`, a refused start `start_failed`. The
     server answers itself (`AppTools.remote`, `AppProcesses`). The iPhone and iPad thread header's
-    Run reads the list while the thread is on screen; older hosts show no Run
+    Run reads the list while the thread is on screen; older hosts show no Run. `apps.v2` is how
+    this Mac's app runs Settings › Apps on its host, the one owner of app processes: `run` and
+    `stop` with no space act on This Mac's app, `restart` runs an ended one again (same command and
+    folder), `output` answers its last lines, `processes` every run (each `RemoteAppRun` then
+    carries its command, folder and output revision); a local client that lists `apps.v2` is
+    pushed `appsChanged` with every run when it connects and when one changes
   - `design` (`designs.v1`, offered only while the host's Design tool experiment is on): its
     designs and systems, a design's index with every project file's hash, changed files only
     (inline up to 256 KiB, larger ones and uploads in resumable pieces), comments and the
@@ -389,13 +414,19 @@
     when the shown revision moved; Pause and Stop of a running mission halt whatever its revision),
     a review's files and fingerprints and one file's `DiffFile`, the Spec Kit reads, and the host's
     templates (`templates`; `create` may name one, and `saveTemplate` saves a finished mission's map;
-    the app sends these only to the background host on its own Mac). Answered
+    the app sends these only to its own host on this Mac). `retryLane(attempts:hint:)`,
+    behind `missions.retryLane.v1`, is a blocked push's Retry with hint: the stuck lane
+    (`Mission.stuck`, as the push's `detail.stuck` shows it) gets one attempt past its retry limit
+    with the hint in its prompts, and the mission resumes; `attempts` is the stuck count the push
+    showed, and a lane that moved since is refused `stale_mission`. Answered
     by the host's own `MissionController` (reads by the server), with the same guards as its page:
     Publish carries the run's `reviewFingerprint` and Spec Kit consent the preflight's
-    `consentFingerprint` the client showed, and the host checks both again. Missions never ride
+    `consentFingerprint` the client showed, and the host checks both again. A host with
+    `missions.train.v1` also serves a published mission's merge train (`MissionRun.train` in the
+    record, `pauseTrain` and `resumeTrain`); the iPhone and iPad show the train only there. Missions never ride
     `stateChanged` (still `withoutMissions`), except to this Mac's app showing the host's threads as
     its own (`local.threads.v1`), which is sent the whole workspace (missions, Project coordinators
-    and executions) as the app holds it in process; a capable client gets a pushed
+    and executions); a capable client gets a pushed
     `missionChanged(missionID:revision:)` hint (nil: it went) and pulls. What running agents say
     (`RemoteMissionLive`: the planner's or working station's words and each working attempt's, 4 KiB
     each, at most 16) comes with `get` and as a `missionLive` push at most every half second (empty
@@ -449,7 +480,7 @@
     Check is non-destructive; installation requires explicit confirmation of the current offer
     (expires after five minutes), then downloads, verifies with Sparkle's existing signed feed,
     installs and restarts as one operation. There is no remote channel switch or force install.
-    A background host has no updater: it relays the request to this Mac's app (`appRelay`'s
+    A host has no updater: it relays the request to this Mac's app (`appRelay`'s
     `hostUpdate` job; with no app connected, status says to open Shepherd), whose Sparkle asks the
     host before it reserves, restarts or quits (`hostUpdateGate`, local clients only).
     Status exposes version/build/channel/phase/offer/error/canInstall and is explicitly polled,
@@ -489,8 +520,8 @@
   replay watermark happen in one turn.
 - **Host-side handlers:** remote terminal and agent-creation requests go through
   `onRemotePaneRequest` and `onRemoteCreateAgent` with the same authorization as local requests,
-  and host settings through `onRemoteHostSettings` (the GUI owns `AppSettings`). A server without
-  those handlers rejects them. Detaching a remote terminal never kills the host session.
+  and host settings through `onRemoteHostSettings` (the host's own `AppSettings`, installed by
+  `HostSettingsMapping.serve`). A server without those handlers rejects them. Detaching a remote terminal never kills the host session.
 - **Client:** `RemoteHostStore` persists host configs, **including tokens**, in UserDefaults
   (`shepherd.remote.hosts`). It keeps one `RemoteHostClient` per host, with exponential backoff
   capped at 30 s. A refused token or another protocol version is not retried: the host shows

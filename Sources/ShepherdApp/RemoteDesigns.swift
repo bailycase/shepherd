@@ -154,7 +154,17 @@ extension ShepherdViewModel {
                 await self.remoteThreadStores.store(for: agent).send(text: text, designContext: record)
                 return true
             },
-            report: { [weak self] in self?.remoteActionError = $0 })
+            report: { [weak self] in self?.remoteActionError = $0 },
+            usage: { id in
+                // Which boards import which, from this Mac's synced copy, as the host's `designUsage` reads its own.
+                let source = library.source(id)
+                var imports: [DesignPath: [DesignImports.Reference]] = [:]
+                for file in try await source.sync().files {
+                    guard let path = DesignPath.systemComponent(file.path) ?? DesignPath(file.path) else { continue }
+                    imports[path] = DesignBoardTree(source: try await source.source(path)).map { DesignImports.references(in: $0, of: path) } ?? []
+                }
+                return DesignUsageIndex.build(imports: imports, boards: Set(imports.keys))
+            })
     }
 
     /// Comments through the host: pinned, answered and resolved there, handed to its design agent

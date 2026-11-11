@@ -74,6 +74,8 @@ struct PiSignInFlowTests {
         let auth = try setup.store()
 
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]), restoringAgents: true, piAuth: auth)
+        // Its thread asks for it, as the one on screen does: the host starts its pi.
+        _ = try? await app.server.nativeThread(agentID: id, request: .snapshot())
 
         try await eventuallyOnMain("the agent to wait on a sign-in", timeout: .seconds(20)) { vm.notSignedIn[id] != nil }
         #expect(vm.notSignedIn[id]?.provider == "anthropic", "its model's provider")

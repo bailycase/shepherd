@@ -3,7 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// What a host with no app starts a client's threads and terminals with (`serveThreads`), read
+/// What the host starts a client's threads and terminals with (`serveThreads`), read
 /// at each request.
 public struct ThreadHosting {
     public struct Defaults: Sendable {
@@ -39,10 +39,8 @@ public struct ThreadHosting {
     }
 }
 
-/// Threads and terminals with no app: the requests a client (the app over `host.sock`, an
-/// iPhone, another Mac) makes of them, and an agent's own `terminal_*` tools, answered here as the
-/// app's view model answers them in process. The app keeps pane binding for its own views; here
-/// a terminal's shell starts when a client asks for it.
+/// Threads and terminals on the host: the requests a client (the app over `host.sock`, an
+/// iPhone, another Mac) makes of them, and an agent's own `terminal_*` tools, answered here. A terminal's shell starts when a client asks for it.
 extension SessionServer {
     /// Serves threads and terminals from here on. Once per server, before clients connect.
     @MainActor
@@ -155,6 +153,9 @@ extension SessionServer {
             onStatus?(id, status, failure)
             MainActor.assumeIsolated { monitor.refresh(id, after: .milliseconds(300)) }
         }
+        // The thread the app shows, after a selection or the app coming back: a commit in a
+        // terminal or an editor's save changed no state.
+        onThreadFocused = { id in MainActor.assumeIsolated { monitor.refresh(id, priority: true) } }
         monitor.sync(directories: CheckoutMonitor.directories(state), order: state.agents.map(\.id))
     }
 
@@ -292,6 +293,8 @@ extension SessionServer {
             }
             await startThreadPi(agentID, hosting: hosting, checksResume: !newConversation, model: model)
         case .markSeen(let upTo): try await markCompletionSeen(agentID, upTo: upTo)
+        case .mutePushes(let muted): try await setPushMuted(agentID, muted: muted)
+        case .readCheckout: onThreadFocused?(agentID)
         }
     }
 

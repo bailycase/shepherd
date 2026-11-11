@@ -143,7 +143,7 @@ struct AutomationEditorSheet: View {
                     if form.kind == .manual, local {
                         // A run starts on the same default every thread does (Settings ▸ Agents, else Shepherd's pi's own).
                         SheetRow("Model") {
-                            Text(AutomationEditorSheet.modelLine(vm.settings.defaultModel(piHome: vm.server.pi.home)))
+                            Text(AutomationEditorSheet.modelLine(vm.settings.defaultModel(piHome: vm.pi.home)))
                                 .font(.sh(.caption))
                                 .foregroundStyle(Color.sh.textSecondary)
                                 .accessibilityLabel("Model")

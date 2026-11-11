@@ -11,21 +11,13 @@ extension ShepherdViewModel {
         remoteHosts.onBrowserDrive = { [weak self] hostID, client, push in
             MainActor.assumeIsolated { self?.remoteBrowserDrive(hostID: hostID, client: client, push: push) }
         }
-        // The host's own address for the agent's page, for a viewer that claims it to open.
-        server.onBrowserPageURL = { [weak self] agentID in
-            MainActor.assumeIsolated {
-                guard let session = self?.browsers.existing(agentID), let url = session.tabs.agentTarget?.url,
-                      BrowserDriveURL.offered(url.absoluteString) != nil else { return nil }
-                return url.absoluteString
-            }
-        }
     }
 
     /// One thing a host said about an agent's browser.
     func remoteBrowserDrive(hostID: UUID, client: RemoteHostClient, push: BrowserDrivePush) {
         let ref = RemoteAgentRef(hostID: hostID, agentID: push.agentID)
         // A thread of the background host that the app shows as its own: its page is the thread's
-        // local one, as in process (`localHost`).
+        // local one (`localHost`).
         let own = localHost?.id == hostID && state.agents.contains { $0.id == push.agentID }
         switch push {
         case .request(let token, _, let request):

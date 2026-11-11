@@ -36,11 +36,7 @@ final class ProjectCoordinatorController {
         switch request {
         case .hosts:
             return .hosts([.init(reference: .local, name: Host.current().localizedName ?? "This Mac", spaces: server.state.spaces.filter { !$0.hidden })]
-                + hosting.connections().filter { $0.phase == .connected }.map {
-                    let capable = $0.browserClient?.capabilities.isSuperset(of: [RemoteProtocol.projectExecutionCapability, RemoteProtocol.projectPlacementCapability]) == true
-                    return .init(reference: .remote(hostID: $0.config.id, bindingID: $0.config.bindingID), name: $0.config.name,
-                                 spaces: capable ? $0.state.spaces.filter { !$0.hidden } : nil)
-                })
+                + (await hosting.executors.hosts()))
         case .action(let id, let revision, let action): return .project(try await perform(projectID: id, expectedRevision: revision, request: action))
         case .conversation(let id, let request): return .native(try await server.projectConversation(id, request: request))
         case .worker(let id, let task, let request): return .native(try await worker(projectID: id, taskID: task, request: request))
@@ -100,28 +96,16 @@ final class ProjectCoordinatorController {
             _ = try await server.projectRuntime(projectID, expectedRevision: routed.revision, request: .worker(taskID: taskID))
             try await server.validateProjectWorkerRead(projectID, grant: grant, task: task)
             return result
-        case .remote(let hostID, let bindingID):
-            guard let connection = hosting.connections().first(where: { $0.id == hostID && $0.config.bindingID == bindingID }),
-                  connection.phase == .connected, let client = connection.browserClient,
-                  client.capabilities.isSuperset(of: [RemoteProtocol.projectExecutionCapability, RemoteProtocol.projectPlacementCapability]) else {
-                throw LogicalProjectsError("executor_unavailable", "The thread's exact executor binding is unavailable. No fallback host was selected.")
-            }
-            do {
-                let result = try await client.nativeThread(agentID: task.workerAgentID, request: request)
-                _ = try await server.projectRuntime(projectID, expectedRevision: routed.revision, request: .worker(taskID: taskID))
-                try await server.validateProjectWorkerRead(projectID, grant: grant, task: task)
-                return result
-            }
-            catch RemoteHostClientError.outcomeUnknown(let message) { throw LogicalProjectsError("outcome_unknown", message) }
-            catch RemoteHostClientError.rejected(let code, let message) { throw LogicalProjectsError(code, message) }
+        case .remote:
+            let result = try await hosting.executors.workerThread(task.destination, task.workerAgentID, request)
+            _ = try await server.projectRuntime(projectID, expectedRevision: routed.revision, request: .worker(taskID: taskID))
+            try await server.validateProjectWorkerRead(projectID, grant: grant, task: task)
+            return result
         }
     }
 
     func place(host: ProjectHostReference, request: ProjectExecutionRequest) async throws -> ProjectExecutionResult {
-        guard case .remote(let hostID, let bindingID) = host,
-              let connection = hosting.connections().first(where: { $0.id == hostID && $0.config.bindingID == bindingID }),
-              let client = connection.browserClient,
-              client.capabilities.isSuperset(of: [RemoteProtocol.projectExecutionCapability, RemoteProtocol.projectPlacementCapability]) else {
+        guard case .remote = host else {
             throw AgentStartFailure(message: "The exact executor binding is unavailable. No fallback host was selected.")
         }
         switch request {
@@ -135,13 +119,14 @@ final class ProjectCoordinatorController {
             guard let project = server.state.projects.first(where: { $0.id == request.key.projectID && $0.ownerID == request.key.ownerID }),
                   !project.paused, project.tasks.contains(where: { $0.executionAssignment == assignment && $0.destination == host }),
                   project.settings.hostPolicy == .anyConnected || project.settings.allowedHosts.contains(host),
-                  project.linkedSpaces.contains(where: { $0.destination == host && $0.spaceID == assignment.executorSpaceID }),
-                  connection.state.spaces.contains(where: { $0.id == assignment.executorSpaceID && !$0.hidden }) else {
+                  project.linkedSpaces.contains(where: { $0.destination == host && $0.spaceID == assignment.executorSpaceID }) else {
                 throw AgentStartFailure(message: "Project placement was revoked or its executor Space is unavailable.")
             }
         }
         try await server.validateProjectPlacementRequest(request)
-        return try await client.projectExecution(request)
+        // The executor's own checks (its exact binding, the Space still visible there) run where
+        // the connection is: in this Mac's app.
+        return try await hosting.executors.place(host, request)
     }
 
     func conversationStore(agentID: AgentID) -> NativeThreadStore? { hosting.threadStore(agentID) }
@@ -233,28 +218,81 @@ extension ProjectCoordinatorController {
     }
 }
 
+extension RemoteHostStore {
+    /// The connected paired hosts, with their visible Spaces when they take Project placements.
+    var projectHostOptions: [ProjectHostOption] {
+        pairedConnections.filter { $0.phase == .connected }.map {
+            let capable = $0.browserClient?.capabilities.isSuperset(of: [RemoteProtocol.projectExecutionCapability, RemoteProtocol.projectPlacementCapability]) == true
+            return ProjectHostOption(reference: .remote(hostID: $0.config.id, bindingID: $0.config.bindingID), name: $0.config.name,
+                                     spaces: capable ? $0.state.spaces.filter { !$0.hidden } : nil)
+        }
+    }
+
+    /// The paired hosts that may run a Project's work, each reached only by its exact host id and
+    /// binding: the host's Projects, through this Mac's app.
+    var projectExecutors: RuntimeHosting.ProjectExecutors {
+        func capable(_ connection: Connection) -> RemoteHostClient? {
+            guard let client = connection.browserClient,
+                  client.capabilities.isSuperset(of: [RemoteProtocol.projectExecutionCapability, RemoteProtocol.projectPlacementCapability])
+            else { return nil }
+            return client
+        }
+        func exact(_ host: ProjectHostReference) -> Connection? {
+            guard case .remote(let hostID, let bindingID) = host else { return nil }
+            return pairedConnections.first { $0.id == hostID && $0.config.bindingID == bindingID }
+        }
+        return RuntimeHosting.ProjectExecutors(
+            hosts: { [weak self] in self?.projectHostOptions ?? [] },
+            place: { host, request in
+                guard let connection = exact(host), let client = capable(connection) else {
+                    throw AgentStartFailure(message: "The exact executor binding is unavailable. No fallback host was selected.")
+                }
+                if case .execute(let assignment) = request,
+                   !connection.state.spaces.contains(where: { $0.id == assignment.executorSpaceID && !$0.hidden }) {
+                    throw AgentStartFailure(message: "Project placement was revoked or its executor Space is unavailable.")
+                }
+                return try await client.projectExecution(request)
+            },
+            workerThread: { host, agentID, request in
+                guard let connection = exact(host), connection.phase == .connected, let client = capable(connection) else {
+                    throw LogicalProjectsError("executor_unavailable", "The thread's exact executor binding is unavailable. No fallback host was selected.")
+                }
+                do { return try await client.nativeThread(agentID: agentID, request: request) }
+                catch RemoteHostClientError.outcomeUnknown(let message) { throw LogicalProjectsError("outcome_unknown", message) }
+                catch RemoteHostClientError.rejected(let code, let message) { throw LogicalProjectsError(code, message) }
+            })
+    }
+}
+
 extension ShepherdViewModel {
+    /// The paired hosts a Project may place work on, sent to the background host
+    /// (`projectExecutors`) when they change.
     func refreshProjectHosts() {
-        let hosts: [ProjectHostReference] = [.local] + remoteHosts.allConnections.filter { $0.phase == .connected }.map {
-            .remote(hostID: $0.config.id, bindingID: $0.config.bindingID)
+        let options = remoteHosts.projectHostOptions
+        guard let host = localHost, host.phase == .connected, let client = host.browserClient else { return }
+        let sent = (ObjectIdentifier(client), options)
+        guard sentProjectHosts.map({ $0.0 != sent.0 || $0.1 != sent.1 }) ?? true else { return }
+        sentProjectHosts = sent
+        Task { [weak self] in
+            do { try await client.projectExecutors(.hosts(options)) } catch { self?.sentProjectHosts = nil }
         }
-        server.setProjectEligibleHosts(hosts)
-        var spaces: [ProjectHostReference: [Space]] = [:]
-        for connection in remoteHosts.allConnections where connection.phase == .connected {
-            guard connection.browserClient?.capabilities.isSuperset(of: [RemoteProtocol.projectExecutionCapability, RemoteProtocol.projectPlacementCapability]) == true else { continue }
-            spaces[.remote(hostID: connection.config.id, bindingID: connection.config.bindingID)] = connection.state.spaces
-        }
-        server.setProjectExecutionSpaces(spaces)
     }
 
     func installProjectRuntime() {
         refreshProjectHosts()
         remoteHosts.onProjectExecutionChanged = { [weak self] host, key in
-            self?.server.reconcileProjectExecutions(host: host, key: key)
+            self?.projectExecutionChanged(host, key: key)
         }
         remoteHosts.onProjectExecutorConnected = { [weak self] host in
             self?.refreshProjectHosts()
-            self?.server.reconcileProjectExecutions(host: host)
+            self?.projectExecutionChanged(host, key: nil)
         }
+    }
+
+    /// A paired host's execution changed, or it connected again: its receipts are read again by
+    /// whoever owns this Mac's Projects.
+    private func projectExecutionChanged(_ host: ProjectHostReference, key: ProjectExecutionKey?) {
+        guard let local = localHost, case .remote(let hostID, _) = host, hostID != local.id, let client = local.browserClient else { return }
+        Task { try? await client.projectExecutors(.changed(host: host, key: key)) }
     }
 }

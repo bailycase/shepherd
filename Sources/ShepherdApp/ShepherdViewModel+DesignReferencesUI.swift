@@ -17,13 +17,10 @@ extension ShepherdViewModel {
     // MARK: A thread's references
 
     /// A local thread's references, while the Design tool is on; nil for a design's own agent
-    /// (its chat never shows another design's pieces) and for a thread that is gone. Reads the
-    /// server's copy of the state, so a layout asking observes only the Design tool's switch.
+    /// (its chat never shows another design's pieces) and for a thread that is gone.
     func designReferenceChips(for agentID: AgentID) -> DesignReferenceChips? {
         guard settings.designToolEnabled else { return nil }
         if let chips = referenceChips[agentID] { return chips }
-        // As the background host's client the app's own copy of its workspace (the server's is empty).
-        let state = localHost == nil ? server.state : self.state
         guard let agent = state.agents.first(where: { $0.id == agentID }), !state.isDesignAgent(agent), agent.designID == nil else {
             return nil
         }
@@ -56,21 +53,23 @@ extension ShepherdViewModel {
     }
 
     private func referenceIO(_ agentID: AgentID) -> DesignReferenceChips.IO {
-        let server = server
+        // What the background host keeps and reads of its designs' pieces comes from it, as for a
+        // host's thread (none answers before it connects); the pictures, opening and sending stay the app's own.
+        let remote = remoteReferenceIO(RemoteAgentRef(hostID: localHost?.id ?? UUID(), agentID: agentID))
         var io = DesignReferenceChips.IO(
-            payload: { await server.designReferencePayload(agentID: agentID, payloadID: $0) },
-            freshness: { await server.designReferenceFreshness(agentID: agentID, payloadID: $0) },
-            pinnedFreshness: { await server.designReferenceFreshness($0) },
-            lookedAt: { await server.designReferenceLookedAt(agentID: agentID, ref: $0, aspects: $1) },
+            payload: remote.payload,
+            freshness: remote.freshness,
+            pinnedFreshness: remote.pinnedFreshness,
+            lookedAt: remote.lookedAt,
             picture: { [weak self] in self?.referencePicture($0) },
-            catalog: { await server.designMentionCatalog() },
+            catalog: remote.catalog,
             rowPicture: { [weak self] in self?.mentionPicture($0) },
             wantCrop: { [weak self] in self?.wantMentionCrop($0, board: $1, tids: $2) },
             wantPictures: { [weak self] in self?.wantMentionPictures($0) },
             rowVisibility: { [weak self] in self?.mentionPictureVisibility($0, visible: $1, consumer: $2) },
             open: { [weak self] in self?.openDesignReference($0) },
             showBeside: { [weak self] in self?.showBoardBeside(.local(agentID), $0) },
-            settle: { _ = try await server.settleDesignBoardProposal(agentID: agentID, payloadID: $0, accept: $1) },
+            settle: remote.settle,
             attach: { [weak self] reference in
                 guard let self else { return }
                 try await self.attachDesignReference(reference, to: agentID)
@@ -87,22 +86,14 @@ extension ShepherdViewModel {
                 }
             },
             startDesign: { [weak self] in self?.openNewDesign() })
-        // As the background host's client, what the host keeps and reads of its designs' pieces
-        // comes from it, as for a host's thread; the pictures, opening and sending stay the app's own.
         if let host = localHost {
-            let remote = remoteReferenceIO(RemoteAgentRef(hostID: host.id, agentID: agentID))
-            io.payload = remote.payload
-            io.freshness = remote.freshness
-            io.pinnedFreshness = remote.pinnedFreshness
-            io.lookedAt = remote.lookedAt
-            // Every design's rows, as in process: the host reads them all (`mentionCatalog`).
+            // Every design's rows: the host reads them all (`mentionCatalog`).
             let library = host.designs
             io.catalog = {
                 guard case .mentionCatalog(let data)? = try? await Self.remoteDesign(library, .mentionCatalog),
                       let catalog = try? JSONDecoder().decode(DesignMentionCatalog.self, from: data) else { return await remote.catalog() }
                 return catalog
             }
-            io.settle = remote.settle
             io.wantPictures = { [weak self] scope in
                 self?.wantMentionPictures(scope)
                 self?.wantRemoteMentionPictures(scope, host: host.id)
@@ -201,7 +192,6 @@ extension ShepherdViewModel {
         case .design(let design, _): id = design
         case .board(let reference, _, _): id = reference.designID
         }
-        let server = server
         Task {
             guard let snapshot = try? await ownerDesignSnapshot(id) else { return }
             rendering.boardPictures.request(id, snapshot: snapshot)

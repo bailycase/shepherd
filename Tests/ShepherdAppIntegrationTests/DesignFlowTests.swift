@@ -309,10 +309,11 @@ struct DesignFlowTests {
         let view = host.liveView(a)
         let server = app.server
         var pushes = 0
-        let forward = server.onDesignRevision
-        server.onDesignRevision = { id in
-            pushes += 1
-            forward?(id)
+        // What the host pushes this Mac's app for the design.
+        let forward = app.remoteHosts.onDesignChanged
+        app.remoteHosts.onDesignChanged = { hostID, id, revision, comments in
+            if id == design.id { pushes += 1 }
+            forward?(hostID, id, revision, comments)
         }
         let before = (reloads: host.reloads, snapshots: host.snapshotsTaken, pulls: screen.pulls, tokenB: host.tokens[b])
 

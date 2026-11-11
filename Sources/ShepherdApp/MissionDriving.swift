@@ -96,8 +96,8 @@ final class RemoteMissionDriver: MissionDriving {
     var error: String?
     var viewed: [MissionID: Set<String>] = [:]
     var startRequested = false
-    /// Each review read, with every file's hunks.
-    private(set) var reviews: [MissionID: [MissionRepositoryReview]] = [:]
+    /// Each review read, with every file's hunks (set by previews whose worktrees are records).
+    var reviews: [MissionID: [MissionRepositoryReview]] = [:]
     @ObservationIgnored private weak var vm: ShepherdViewModel?
 
     init(connection: RemoteHostStore.Connection, vm: ShepherdViewModel) {
@@ -115,7 +115,9 @@ final class RemoteMissionDriver: MissionDriving {
     var availableSpaces: [Space] { missions.startOptions?.spaces ?? [] }
     var branchChoices: [SpaceID: [String]] { missions.startOptions?.branchChoices ?? [:] }
     var defaultBranches: [SpaceID: String] { missions.startOptions?.defaultBranches ?? [:] }
-    var specKitReports: [MissionID: [SpaceID: SpecKitPreflight]] { missions.specKit.mapValues(\.reports) }
+    var specKitReports: [MissionID: [SpaceID: SpecKitPreflight]] { injectedSpecKitReports ?? missions.specKit.mapValues(\.reports) }
+    /// Set by previews whose checkouts are records the host can't preflight; nil reads the host's.
+    var injectedSpecKitReports: [MissionID: [SpaceID: SpecKitPreflight]]?
     /// Templates are This Mac's: the background host's, which runs its missions. A paired host's
     /// stay on that host; its page lists none here.
     private(set) var templates: [MissionTemplate] = []
@@ -169,11 +171,11 @@ final class RemoteMissionDriver: MissionDriving {
         }
         let steerable = attempt.status == .running && mission.run?.phase.active == true
         let store = isLocalHost ? vm.threadStores.store(for: agentID) : vm.remoteThreadStores.store(for: ref)
-        // This Mac's session files are the app's to read, as in process: a finished step shows its history.
+        // This Mac's session files are the app's to read: a finished step shows its history.
         var preview: NativeThreadStore.Preview?
         if isLocalHost, let agent = connection?.state.agents.first(where: { $0.id == agentID }),
            let cwd = agent.worktreePath ?? mission.run?.checkouts.first?.path {
-            preview = PiSessionFile.previewLoader(sessionID: agent.effectivePiSessionID, cwd: cwd, sessionsRoot: vm.server.pi.sessionsRoot)
+            preview = PiSessionFile.previewLoader(sessionID: agent.effectivePiSessionID, cwd: cwd, sessionsRoot: vm.pi.sessionsRoot)
         }
         return MissionThreadSource(agentID: agentID, store: store, request: request, preview: preview,
                                    send: steerable ? { [weak self] text in

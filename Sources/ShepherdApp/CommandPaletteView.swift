@@ -23,7 +23,7 @@ struct CommandPaletteView: View {
             close: { vm.showCommandPalette = false },
             contentSearch: { query, existing in
                 let targets = vm.paletteSearchTargets
-                let root = vm.server.pi.sessionsRoot
+                let root = vm.pi.sessionsRoot
                 let matches = await PaletteContentSearch.search(query: query, agents: targets, sessionsRoot: root)
                 guard !Task.isCancelled else { return [] }
                 let local = vm.paletteContentRows(matches: matches, excluding: existing)

@@ -45,11 +45,8 @@ final class AppHarness {
     }
 
     /// Seeds `state` (if any), then builds the view model and waits until it has adopted the
-    /// server's snapshot. `restoringAgents` leaves settled agents dormant and starts selected or
-    /// recoverable work, as a launch does; otherwise pi starts when asked for a pane session (most tests
-    /// seed agents only to look at them, with no pi on PATH). `readingCheckouts` turns on the
-    /// header's checkout reads, which would otherwise change the workspace under a test that
-    /// seeded a repository.
+    /// host's snapshot. `restoringAgents` has the host recover unfinished work as it does at its
+    /// start. `readingCheckouts` turns on the app's pull request lookups (`gh`).
     /// `welcomingYourPi` runs the first launch's copy from "your pi" and its welcome step, which
     /// hold restored agents, as the app does; `yourPi` replaces the model that runs them.
     @discardableResult
@@ -58,10 +55,9 @@ final class AppHarness {
                yourPi: YourPiModel? = nil, piAuth: PiAuthStore? = nil) async throws -> ShepherdViewModel {
         if let state { try await server.putState(state) }
         let vm = ShepherdViewModel(
-            server: server, settings: settings, keybindings: keybindings, themeManager: themeManager,
+            pi: server.pi, settings: settings, keybindings: keybindings, themeManager: themeManager,
             remoteHosts: remoteHosts, sidebarDefaults: defaults, themeInstaller: { _ in },
-            restoresAgentsAtLaunch: restoringAgents,
-            checkoutReader: readingCheckouts ? CheckoutMonitor.git : nil,
+            looksUpPullRequests: readingCheckouts,
             mcp: mcp,
             welcomesYourPi: welcomingYourPi,
             yourPi: yourPi,
@@ -72,9 +68,43 @@ final class AppHarness {
             apps: AppsModel(home: dir.appendingPathComponent("apps-home").path)
         )
         self.vm = vm
+        let token = try await serveHost(mcp: mcp, recovering: restoringAgents)
+        let connection = vm.connectLocalHost(socket: hostSocket, token: token)
         let server = server
-        try await eventuallyOnMain("the view model to adopt the server's workspace") { vm.state == server.state }
+        try await eventuallyOnMain("the view model to adopt the host's workspace", timeout: .seconds(30)) {
+            connection.phase == .connected && vm.state == server.state
+        }
         return vm
+    }
+
+    var hostSocket: String { dir.appendingPathComponent("h.sock").path }
+    /// The host's own settings, over the app's preferences, following the app's writes as the
+    /// `Shepherd --host` process does.
+    private(set) var hostSettings: AppSettings?
+    /// What `Shepherd --host` serves on the scratch server: the same services, in this process.
+    private(set) var host: ShepherdHost.Services?
+    private var hostBanners: ThreadBanners?
+
+    /// Serves the scratch server as the app's host, as `Shepherd --host` does, on `hostSocket`.
+    /// `recovering` respawns unfinished work as the host does at its start. Returns the token.
+    private func serveHost(mcp: MCPStore?, recovering: Bool) async throws -> String {
+        let tokenURL = dir.appendingPathComponent("remote-token")
+        if host == nil {
+            let notice = "shepherd-test-settings-\(UUID().uuidString)"
+            settings.followOtherProcesses(notice: notice)
+            // Its own instance over the same preferences, as the host process's own: a write
+            // (and its change notice) is one side's, so neither follows its own.
+            let hostSettings = AppSettings(store: UserDefaults(suiteName: defaults.name)!)
+            hostSettings.followOtherProcesses(notice: notice)
+            self.hostSettings = hostSettings
+            let services = ShepherdHost.Services(
+                settings: hostSettings,
+                mcpStore: mcp ?? MCPStore(dependencies: .app(pi: server.pi, openURL: { _ in }, copy: { _ in })),
+                notifications: AgentNotifications(activate: {}), keepsAgentsRunning: { nil })
+            host = services
+            hostBanners = await services.serve(server, socket: hostSocket, tokenURL: tokenURL, recovering: recovering)
+        }
+        return try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Waits for every queued optimistic write to reach the server.
@@ -83,7 +113,7 @@ final class AppHarness {
     }
 
     func stop() {
-        for connection in remoteHosts.connections { remoteHosts.removeHost(id: connection.id) }
+        for connection in remoteHosts.allConnections { remoteHosts.removeHost(id: connection.id) }
         vm = nil
         scratch.stop()
     }
@@ -132,6 +162,36 @@ enum Fixture {
     /// A state with `spaces` and the given agents' tabs and records.
     static func state(spaces: [Space], agents: [AgentFixture]) -> ShepherdState {
         ShepherdState(spaces: spaces, tabs: agents.map(\.tab), agents: agents.map(\.agent))
+    }
+}
+
+// MARK: Host terminals
+
+@MainActor
+extension ShepherdViewModel {
+    /// The session the host bound to a pane, as its state says.
+    func hostTerminalSession(_ pane: PaneID) -> SessionID? {
+        state.tabs.lazy.compactMap { $0.layout.leaf(withID: pane)?.sessionID }.first
+    }
+
+    /// The app's side of the shell the host runs in `pane` (what `HostTerminalLeaf` draws), once
+    /// the host has bound one; made and attached on first use, as the leaf does.
+    func hostPaneSession(_ pane: PaneID) -> RemotePaneSession? {
+        guard let connection = localHost, let id = hostTerminalSession(pane) else { return nil }
+        return remoteHosts.paneSession(connection: connection, sessionID: id)
+    }
+
+    /// Has the host start `pane`'s shell, as showing it does, and waits until the app is attached to it.
+    @discardableResult
+    func startHostTerminal(_ pane: PaneID, of agent: AgentID) async throws -> RemotePaneSession {
+        let ref = try #require(localRef(agent))
+        try await remoteHosts.agentAction(ref, action: .startTerminal(paneID: pane))
+        var session: RemotePaneSession?
+        try await eventuallyOnMain("the app to attach to the host's shell", timeout: .seconds(30)) {
+            session = hostPaneSession(pane)
+            return session?.phase == .live
+        }
+        return try #require(session)
     }
 }
 

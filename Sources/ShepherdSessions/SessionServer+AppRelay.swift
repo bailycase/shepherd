@@ -4,7 +4,7 @@ import ShepherdProtocol
 
 /// What an agent asks of Shepherd's window, on a host with none: `review_diff` and
 /// `project_delete`'s confirmation go to the app connected over `host.sock` (`relayToApp`), which
-/// answers as it does in process. The other `project_*` tools change only the workspace, so the
+/// answers. The other `project_*` tools change only the workspace, so the
 /// host answers them itself.
 extension SessionServer {
     static let reviewWindowClosed = "Shepherd's window is closed, so nothing is marked yet. The review is in this thread's "
@@ -23,7 +23,7 @@ extension SessionServer {
                 switch result {
                 case .done(let text)?: respond(.submitted(text: text))
                 case .failed(let code, let message)?: respond(.failed(code: code, message: message))
-                case .hostUpdate?: respond(.failed(code: "protocol", message: "unexpected answer"))
+                case .hostUpdate?, .projectExecution?, .nativeThread?: respond(.failed(code: "protocol", message: "unexpected answer"))
                 case nil:
                     guard self.state.agents.contains(where: { $0.id == agentID }) else {
                         return respond(.failed(code: "no_such_agent", message: "unknown agent \(agentID)"))
@@ -54,7 +54,7 @@ extension SessionServer {
                     switch result {
                     case .done?: respond(.success((space, false)))
                     case .failed(let code, let message)?: respond(.failure(ProjectFileError(code, message)))
-                    case .hostUpdate?: respond(.failure(ProjectFileError("protocol", "unexpected answer")))
+                    case .hostUpdate?, .projectExecution?, .nativeThread?: respond(.failure(ProjectFileError("protocol", "unexpected answer")))
                     case nil: respond(.failure(ProjectFileError("unavailable", Self.spaceDeleteWindowClosed)))
                     }
                 }
@@ -93,4 +93,41 @@ extension SessionServer {
     }
 
     static let hostUpdateWindowClosed = "Open Shepherd on this Mac to update it."
+}
+
+/// A background host has no connections to paired Macs: this Mac's own app does. While the app is
+/// connected it says which paired Macs it reaches (`ProjectExecutorsUpdate`), and the host's
+/// Projects place work there through it (`AppRelayJob.projectPlacement`). With the app quit, placing on another Mac says to open it.
+extension SessionServer {
+    /// Why a Project the host owns can't reach another Mac right now.
+    public static let appClosedForPlacement = "Open Shepherd on this Mac to place work on another Mac."
+
+    /// Projects on this server place work on other Macs only through this Mac's app (`Shepherd --host`).
+    public func relayProjectPlacementThroughApp() {
+        queue.async { self.projectPlacementThroughApp = true }
+    }
+
+    /// The paired Macs the app last said it reaches; none without the app.
+    public func appProjectExecutors() async -> [ProjectHostOption] {
+        (try? await enqueue { self.appRelayConnected ? self.appExecutors : [] }) ?? []
+    }
+
+    /// Server queue: a local app's `projectExecutors`.
+    func applyProjectExecutors(_ update: ProjectExecutorsUpdate) {
+        switch update {
+        case .hosts(let options):
+            appExecutors = options
+            setProjectEligibleHosts([.local] + options.map(\.reference))
+            setProjectExecutionSpaces(Dictionary(options.compactMap { option in option.spaces.map { (option.reference, $0) } },
+                                                 uniquingKeysWith: { first, _ in first }))
+        case .changed(let host, let key):
+            reconcileProjectExecutions(host: host, key: key)
+        }
+    }
+
+    /// Server queue: the app left; what it reached is gone with it.
+    func appExecutorsLeft() {
+        guard !appRelayConnected, !appExecutors.isEmpty else { return }
+        applyProjectExecutors(.hosts([]))
+    }
 }

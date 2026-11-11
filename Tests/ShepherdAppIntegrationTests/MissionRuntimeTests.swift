@@ -24,6 +24,13 @@ struct MissionRuntimeTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func retryWithAHintGivesOnlyTheStuckLaneOneMoreAttemptCarryingTheHint() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.retryLaneScenario() }
+        }
+        expectScenarioCompleted(result)
+    }
+
     @Test func aRevisedMapWaitsAsAPatchUntilTheOwnerAppliesOrRejectsIt() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
             await completingScenario { try await Self.patchScenario() }
@@ -585,6 +592,50 @@ struct MissionRuntimeTests {
         try fixture.expectUnpublished(id)
     }
 
+    /// A blocked push's Retry with hint (`RemoteMissionAction.retryLane`), from a paired device over `missions.v1`.
+    static func retryLaneScenario() async throws {
+        let fixture = try MissionRuntimeFixture(); defer { fixture.stop() }
+        try await fixture.start()
+        let id = try await fixture.create()
+        let lane = fixture.spaces[0].id
+        try Data(lane.rawValue.utf8).write(to: fixture.root.appendingPathComponent("fail-lane"))
+        try await fixture.launch(id)
+        try await fixture.wait(id, phase: .paused)
+        let blocked = try fixture.controller.record(id)
+        let stuck = try #require(blocked.stuck)
+        #expect(stuck.lane.spaceID == lane)
+        let shown = try #require(PushDetail.blocked(blocked)?.stuck)
+        #expect(shown.count == stuck.attempts.count)
+        // The other lane's finished stations; it was waiting on the stuck lane's halt, not stuck itself.
+        let finished = try #require(blocked.draft.plan?.stations.filter { station in
+            station.laneID == fixture.spaces[1].id && blocked.run?.latest(station.id)?.status == .succeeded
+        })
+        #expect(!finished.isEmpty)
+        let counts = { (run: MissionRun?) in finished.map { station in run?.attempts.filter { $0.stationID == station.id }.count ?? 0 } }
+
+        // A count the owner didn't see (the lane moved since) is refused and changes nothing.
+        let retry = { (attempts: Int) in
+            try await fixture.controller.remote(.action(missionID: id, revision: fixture.controller.record(id).revision,
+                                                        action: .retryLane(attempts: attempts, hint: "HINT-FOR-THE-FIXTURE: compare bytes")))
+        }
+        await #expect(throws: MissionError.self) { _ = try await retry(shown.count - 1) }
+        #expect(try fixture.controller.record(id).revision == blocked.revision)
+
+        _ = try await retry(shown.count)
+        try await fixture.wait(id, phase: .review)
+        let mission = try fixture.controller.record(id)
+        let run = try #require(mission.run)
+        #expect(run.retryGrants?[lane] == MissionRetryGrant(extra: 1, hint: "HINT-FOR-THE-FIXTURE: compare bytes"))
+        #expect(run.attempts.filter { $0.stationID == stuck.station.id }.count == stuck.attempts.count + 1, "exactly one more attempt")
+        #expect(counts(run) == counts(blocked.run), "the other lane's finished stations ran nothing again")
+        let calls = try String(contentsOf: fixture.calls, encoding: .utf8).split(separator: "\n")
+        #expect(calls.contains { $0.contains("The owner's hint for this retry (follow it within the approved scope): HINT-FOR-THE-FIXTURE") })
+        #expect(!calls.contains { $0.contains("Owned lane: \(fixture.spaces[1].id.rawValue)") && $0.contains("HINT-FOR-THE-FIXTURE") }, "only the stuck lane hears the hint")
+        // Once it moved on, the same retry is stale.
+        await #expect(throws: MissionError.self) { _ = try await retry(shown.count) }
+        try fixture.expectUnpublished(id)
+    }
+
     static func stopScenario() async throws {
         let fixture = try MissionRuntimeFixture(); defer { fixture.stop() }
         try await fixture.start()
@@ -618,8 +669,8 @@ struct MissionRuntimeTests {
         fixture.app.scratch.stop(keepFiles: true)
         let restarted = try AppHarness(directory: fixture.app.dir, modelCatalog: { .init(models: [MissionRuntimeFixture.model], defaultModel: MissionRuntimeFixture.model) })
         defer { restarted.stop() }
-        let vm = try await restarted.start(restoringAgents: true)
-        let controller = vm.missions
+        try await restarted.start(restoringAgents: true)
+        let controller = restarted.missions
         let retained = try controller.record(id)
         #expect(retained.run?.phase == .paused)
         #expect(retained.run?.checkouts == before.run?.checkouts)

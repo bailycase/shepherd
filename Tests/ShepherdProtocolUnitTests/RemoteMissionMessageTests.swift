@@ -29,7 +29,7 @@ enum RemoteMissionSamples {
         .startTrain(order: [space], rules: MissionTrain.Rules(between: .stagingSoak, staging: [space: "make deploy-staging"], health: [space: "make health"])),
         .changeTrain(order: [space], rules: MissionTrain.Rules()), .pauseTrain, .resumeTrain, .skipSoak,
         .laneLock(spaceID: space, choice: .stack), .saveTemplate(name: "Checkout events", summary: "Add an event", team: space),
-        .saveTemplate(name: "Mine", summary: "", team: nil),
+        .saveTemplate(name: "Mine", summary: "", team: nil), .retryLane(attempts: 3, hint: "Pass the order's tx into outbox.Write"),
     ]
     static let requests: [RemoteMissionRequest] = [
         .list, .get(missionID: mission.id), .startOptions,

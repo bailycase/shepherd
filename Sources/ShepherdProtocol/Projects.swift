@@ -33,20 +33,42 @@ public enum RemoteProjectsRequest: Codable, Hashable, Sendable {
     /// own record on the host (`projectInheritanceCapability`). The parent's files are never written.
     case inheritance(directory: String, excluded: SpaceInheritanceExclusions)
     public var requiresInheritance: Bool { if case .inheritance = self { true } else { false } }
+    /// Names a registered space (`ProjectSummary.projectID`) and sets its parent space on the same
+    /// host, nil for a root space, and its display name when given (`projectParentCapability`). It
+    /// is Shepherd's organization (`Space.parentID`): no folder moves and nothing is written into one.
+    case organize(spaceID: SpaceID, name: String?, parentID: SpaceID?)
+    public var requiresParent: Bool { if case .organize = self { true } else { false } }
 }
 
-/// The parent MCP servers and skills (by name) a child space turns off for itself. Inheritance
-/// follows folders (`ProjectNesting.parent`); a missing list decodes empty.
+/// The parent MCP servers, skills (folder name), slash commands (template name) and extensions
+/// (file name) a child space turns off for itself. Inheritance follows folders
+/// (`ProjectNesting.parent`); a missing list decodes empty. `prompts` and `extensions` need
+/// `projectInheritedResourcesCapability`: an older host drops them.
 public struct SpaceInheritanceExclusions: Codable, Hashable, Sendable {
     public var mcp: [String]
     public var skills: [String]
-    public var isEmpty: Bool { mcp.isEmpty && skills.isEmpty }
-    public init(mcp: [String] = [], skills: [String] = []) { self.mcp = mcp; self.skills = skills }
-    private enum CodingKeys: String, CodingKey { case mcp, skills }
+    public var prompts: [String]
+    public var extensions: [String]
+    public var isEmpty: Bool { mcp.isEmpty && skills.isEmpty && prompts.isEmpty && extensions.isEmpty }
+    public var names: [String] { mcp + skills + prompts + extensions }
+    public init(mcp: [String] = [], skills: [String] = [], prompts: [String] = [], extensions: [String] = []) {
+        self.mcp = mcp; self.skills = skills; self.prompts = prompts; self.extensions = extensions
+    }
+    private enum CodingKeys: String, CodingKey { case mcp, skills, prompts, extensions }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         mcp = try c.decodeIfPresent([String].self, forKey: .mcp) ?? []
         skills = try c.decodeIfPresent([String].self, forKey: .skills) ?? []
+        prompts = try c.decodeIfPresent([String].self, forKey: .prompts) ?? []
+        extensions = try c.decodeIfPresent([String].self, forKey: .extensions) ?? []
+    }
+    /// Older peers and files never see the new keys while they are empty.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(mcp, forKey: .mcp)
+        try c.encode(skills, forKey: .skills)
+        if !prompts.isEmpty { try c.encode(prompts, forKey: .prompts) }
+        if !extensions.isEmpty { try c.encode(extensions, forKey: .extensions) }
     }
 }
 

@@ -18,7 +18,7 @@ struct ProjectRenamePreviewTests {
         try FileManager.default.createDirectory(atPath: a.path + "/.shepherd", withIntermediateDirectories: true)
         try Data(#"{"mcpServers":{"docs":{"command":"true"}}}"#.utf8).write(to: URL(fileURLWithPath: a.path + "/.shepherd/mcp.json"))
         try await world.local.server.putState(ShepherdState(spaces: [a, b, child]))
-        world.vm.adopt(world.local.server.state)
+        try await world.synced()
         await world.vm.projects.load(world.vm.projectsSources, force: true)
         try await Preview.renderMatrix("projects-explicit-organization", size: CGSize(width: 1440, height: 900)) {
             SettingsView(vm: world.vm)

@@ -34,6 +34,12 @@ public struct MissionRun: Codable, Hashable, Sendable, Identifiable {
     public var train: MissionTrain?
     /// This mission's repositories another mission holds (MXLocks), with the owner's choice for each.
     public var held: [SpaceID: MissionLaneLock]?
+    /// The owner's Retry with hint, by lane (`RemoteMissionAction.retryLane`): attempts granted past the
+    /// approved retry limit for that lane's stations, and the hint their next prompts carry.
+    public var retryGrants: [SpaceID: MissionRetryGrant]?
+
+    /// Attempts the owner granted `lane` past the approved retry limit.
+    public func extraAttempts(_ lane: SpaceID?) -> Int { lane.flatMap { retryGrants?[$0]?.extra } ?? 0 }
 
     public init(id: UUID = UUID(), model: String, phase: Phase = .map, messages: [MissionChatMessage] = [],
                 checkouts: [MissionCheckout] = [], attempts: [MissionAttempt] = [], elapsedSeconds: Double = 0,
@@ -85,6 +91,9 @@ public struct MissionRun: Codable, Hashable, Sendable, Identifiable {
         guard (held?.count ?? 0) <= 32, held?.values.allSatisfy({ $0.overlap.count <= 64 && $0.holderTitle.utf8.count <= 800 && $0.since.isFinite }) ?? true else {
             throw MissionError("invalid_mission_run", "Invalid path lock record.")
         }
+        guard (retryGrants?.count ?? 0) <= 32, retryGrants?.values.allSatisfy({ (1...20).contains($0.extra) && !$0.hint.isEmpty && $0.hint.utf8.count <= MissionRetryGrant.hintBytes }) ?? true else {
+            throw MissionError("invalid_mission_run", "Invalid retry grant.")
+        }
         guard (decisions?.count ?? 0) <= 32, decisions?.allSatisfy({ $0.station.utf8.count <= 800 && $0.answer.utf8.count <= 400 && $0.at.isFinite }) ?? true else {
             throw MissionError("invalid_mission_run", "Invalid decision log.")
         }
@@ -115,6 +124,25 @@ public struct MissionRun: Codable, Hashable, Sendable, Identifiable {
                 throw MissionError("invalid_mission_run", "Invalid mission worktree receipt.")
             }
         }
+    }
+}
+
+public struct MissionRetryGrant: Codable, Hashable, Sendable {
+    public static let hintBytes = 2_000
+    public var extra: Int
+    public var hint: String
+    public init(extra: Int, hint: String) { self.extra = extra; self.hint = hint }
+}
+
+public extension Mission {
+    /// The lane stuck at its retry limit, as a blocked push shows it: the first lane station in plan order
+    /// whose latest attempt failed, and its attempts at the approved plan (`PushDetail.Stuck.count`).
+    var stuck: (station: MissionStation, lane: MissionLane, attempts: [MissionAttempt])? {
+        guard let run, let plan = draft.plan,
+              let station = plan.stations.first(where: { $0.laneID != nil && run.latest($0.id)?.status == .failed }),
+              let lane = plan.lanes.first(where: { $0.spaceID == station.laneID }) else { return nil }
+        let attempts = run.attempts.filter { $0.stationID == station.id && $0.planRevision == approvedPlanRevision }
+        return attempts.isEmpty ? nil : (station, lane, attempts)
     }
 }
 

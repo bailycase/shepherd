@@ -9,6 +9,13 @@ import Testing
 /// A repository at `<root>/proj` with one commit on `main`. Worktrees `GitWorktree.add`
 /// creates land in the scratch support folder. With `origin`, a
 /// local bare repository stands in for the remote (no network).
+/// `state` with no agent's checkout read, which the host refreshes on its own.
+func withoutCheckouts(_ state: ShepherdState) -> ShepherdState {
+    var state = state
+    for index in state.agents.indices { state.agents[index].checkout = nil }
+    return state
+}
+
 struct WorktreeSandbox {
     let root: URL
     let repo: URL
@@ -332,6 +339,8 @@ struct WorktreeAgentTests {
             try git(["branch", "-D", branch], in: sandbox.repo)
         }
         let vm = try await app.start(with: Fixture.state(spaces: [agent.space], agents: [agent]))
+        // The host reads the checkout and records the branch it is on now.
+        try await eventuallyOnMain("the host to record the switch") { vm.state.agents.first?.worktreeBranch == "nightly" }
 
         vm.deleteWorktreeAgent(agent.agent.id, removeWorktree: true)
 
@@ -357,7 +366,8 @@ struct WorktreeAgentTests {
         vm.deleteWorktreeAgent(agent.agent.id, removeWorktree: true)
 
         try await eventuallyOnMain("the repository mismatch to be reported before retiring the agent") { vm.remoteActionError != nil }
-        #expect(app.server.state == original && vm.state == original)
+        // The host reads checkouts on its own: everything else stands.
+        #expect(withoutCheckouts(app.server.state) == withoutCheckouts(original) && withoutCheckouts(vm.state) == withoutCheckouts(original))
         #expect(FileManager.default.fileExists(atPath: sandbox.path(branch)))
         #expect(FileManager.default.fileExists(atPath: foreignPath))
     }
@@ -429,7 +439,8 @@ struct WorktreeAgentTests {
         vm.deleteWorktreeAgent(agent.agent.id, removeWorktree: true)
 
         try await eventuallyOnMain("the failure to be reported") { vm.remoteActionError != nil }
-        #expect(app.server.state == original && vm.state == original)
+        // The host reads checkouts on its own: everything else stands.
+        #expect(withoutCheckouts(app.server.state) == withoutCheckouts(original) && withoutCheckouts(vm.state) == withoutCheckouts(original))
         #expect(try String(contentsOfFile: sandbox.path("worktree/stuck") + "/work.txt", encoding: .utf8) == "keep me")
     }
 }

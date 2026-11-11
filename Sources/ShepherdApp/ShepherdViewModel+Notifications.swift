@@ -24,10 +24,10 @@ extension ShepherdViewModel {
         destination == nil && !showSettings && !showComponentGallery
     }
 
-    /// Tells the server which local thread you are watching, so its phone pushes stay quiet too.
+    /// Tells the background host which local thread you are watching, so its phone pushes stay quiet too.
     func syncFocusedThread() {
         let watched = selectedAgentID.flatMap { isWatching(.agent($0)) ? $0 : nil }
-        if localHost != nil { remoteHosts.focusLocalThread(watched) } else { server.setFocusedThread(watched) }
+        if localHost != nil { remoteHosts.focusLocalThread(watched) }
     }
 
     /// Calls `syncFocusedThread` now and whenever the selection or what covers it changes.
@@ -81,7 +81,7 @@ extension ShepherdViewModel {
         var live = Set<RemoteAgentRef>()
         var hosts = Set<UUID>()
         // The background host on this Mac is transport only: its threads are the app's own and post
-        // as in process, and losing it is `onLocalHostLost`'s, never a host-offline banner.
+        // as the app's own, and losing it means the host is restarting, never a host-offline banner.
         for connection in remoteHosts.connections {
             hosts.insert(connection.id)
             let away = HostAway.reconnecting(connection.phase, lastSeen: connection.lastSeen)

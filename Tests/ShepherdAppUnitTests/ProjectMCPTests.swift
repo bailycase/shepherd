@@ -144,7 +144,7 @@ struct ProjectMCPTests {
                     self.text = text
                     return .text(ProjectFileText(file: self.reference, text: text))
                 case .open: return .opened
-                case .resources, .delete, .installSkills, .inheritance: throw ProjectFileError("unsupported", "Not in this test.")
+                case .resources, .delete, .installSkills, .inheritance, .organize: throw ProjectFileError("unsupported", "Not in this test.")
                 case .mcp(let directory, let path, let action):
                     #expect(directory == summary.directory && path == self.path)
                     if action == .approveProject {

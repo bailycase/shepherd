@@ -31,6 +31,16 @@ extension AgentState {
         }
     }
 
+    /// A merge train car's pill (MXTrain): blocked is the Mac's stopped car.
+    init(_ car: RemoteMissionTrainCar.State) {
+        switch car {
+        case .waiting: self = .idle
+        case .inTrain, .staging, .soaking: self = .running
+        case .merged: self = .done
+        case .blocked: self = .failed
+        }
+    }
+
     init(_ status: MissionAttempt.Status) {
         switch status {
         case .running: self = .running

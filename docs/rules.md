@@ -81,7 +81,7 @@ callbacks, extension handlers and remote connections exclude each other without 
 - Attach is atomic: snapshot, registration and output watermark in one queue turn.
 - Callbacks hop to the main queue in FIFO order; never call them from the server queue. `onThreadRevision`
   is paced (once per display frame) and carries no state.
-- The app is always the host's client and never blocks the main thread on `host.sock`: every
+- As its host's client, the app never blocks the main thread on `host.sock`: every
   request is async, as to a paired Mac.
 
 ## PTY children
@@ -106,9 +106,9 @@ escalates to SIGKILL.
   `Agent.lastFailure` (a failed turn's error, or why pi couldn't start or stopped) is what survives it.
 - Startup reconciliation drops shell tabs, `inspectorFor` tabs, review leaves and automation runs,
   and settles design agents into the designs space. Never keep a run agent across a server start.
-  A server start is the host's start: login, a drain, Quit and Stop Agents, a crash, or the app
-  starting its own child host. Relaunching the app while launchd's host runs is not one: the host
-  keeps its shells, terminals and runs.
+  A server start is the host's start: login, a drain, Quit and Stop Agents, a crash, or the
+  launch of the app's own child host. Relaunching the app while launchd's host runs is not one:
+  the host keeps its shells, terminals and runs.
 - Agent names settle once: `setAgentName` never overwrites a final name, naming never blocks pi,
   and moving an agent to a different pi session clears `nameIsFinal`.
 - Dropped images are resized to 2000 px on the way in and the user's own file is never rewritten.

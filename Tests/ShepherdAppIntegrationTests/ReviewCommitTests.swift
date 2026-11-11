@@ -309,9 +309,9 @@ struct ReviewCommitTests {
         let space = Fixture.space("proj", path: sandbox.repo.path)
         let agent = Fixture.agent(in: space)
         remote.host.settings.worktreeGeneratePRDescription = false
-        let hostVM = try await remote.host.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        try await remote.host.start(with: Fixture.state(spaces: [space], agents: [agent]))
         let runner = Runner()
-        hostVM.reviewCommitRunner = runner.closure
+        remote.host.host?.worktrees?.commitRunner = runner.closure
         try await local.start()
         let connection = try await remote.connect(local.remoteHosts)
         #expect(connection.supportsReviewCommit)
@@ -346,8 +346,8 @@ struct ReviewCommitTests {
         let space = Fixture.space("proj", path: sandbox.repo.path)
         let agent = Fixture.agent("busy", in: space, status: .working)
         remote.host.settings.worktreeGeneratePRDescription = false
-        let hostVM = try await remote.host.start(with: Fixture.state(spaces: [space], agents: [agent]))
-        hostVM.reviewCommitRunner = Runner().closure
+        try await remote.host.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        remote.host.host?.worktrees?.commitRunner = Runner().closure
         // The host resets persisted statuses at start: the agent reports working again.
         let reporter = try ExtensionClient(path: remote.host.scratch.socketPath)
         try reporter.send(.setAgentStatus(agentID: agent.agent.id, status: .working))
@@ -387,7 +387,8 @@ struct ReviewCommitTests {
 
         func poll(_ store: ReviewCommitStore, host: ShepherdViewModel, agentID: AgentID) async {
             guard store.submitting, let id = store.operationID else { return }
-            let known = try? await host.handleReviewCommit(agentID, query: .worktreeStatus(operationID: id))
+            let known = try? await host.remoteHosts.agentQuery(RemoteAgentRef(hostID: host.localHost?.id ?? UUID(), agentID: agentID),
+                                                               query: .worktreeStatus(operationID: id))
             hostKnew.append(known != nil)
             finished.append(await store.pollOnce())
             errors.append(store.error)
@@ -404,7 +405,8 @@ struct ReviewCommitTests {
         harness.settings.worktreeGeneratePRDescription = false
         let vm = try await harness.start(with: Fixture.state(spaces: [space], agents: [agent]))
         let runner = Runner()
-        vm.reviewCommitRunner = runner.closure
+        let worktrees = try #require(harness.host?.worktrees)
+        worktrees.commitRunner = runner.closure
         vm.selectAgent(agent.agent.id)
         vm.openUserReview()
         let session = try #require(vm.reviewSessions.values.first)
@@ -415,7 +417,7 @@ struct ReviewCommitTests {
         let early = EarlyPolls()
         let agentID = agent.agent.id
         // The host checks the checkout before it takes the commit: poll from inside that check.
-        vm.reviewCommitRunner = { [weak vm] script, cwd in
+        worktrees.commitRunner = { [weak vm] script, cwd in
             if let vm { await early.poll(store, host: vm, agentID: agentID) }
             return Runner.run(script, cwd: cwd)
         }
@@ -435,14 +437,16 @@ struct ReviewCommitTests {
         defer { harness.stop() }
         let vm = try await harness.start()
         let agentID = AgentID()
-        let store = ReviewCommitStore { try await vm.handleReviewCommit(agentID, query: $0) }
+        let ref = RemoteAgentRef(hostID: try #require(vm.localHost?.id), agentID: agentID)
+        let store = ReviewCommitStore { try await vm.remoteHosts.agentQuery(ref, query: $0) }
         // As after a host restart: the sheet holds an operation the host has never heard of.
         store.adopt(RemoteWorktreeOperation(id: UUID(), progress: ["check the checkout: working…"]))
 
         #expect(await store.pollOnce() == false)
 
-        #expect(store.error == "Operation is unknown. It may predate a host restart. "
-            + "Check the repository before committing again. Don't commit again.")
+        // The background host answers, in its words for a client.
+        #expect(store.error?.contains("Operation is unknown. It may predate a host restart.") == true)
+        #expect(store.error?.hasSuffix("Don't commit again.") == true)
         #expect(store.outcome == .running, "the sheet keeps the operation rather than inviting a second commit")
     }
 
@@ -455,7 +459,7 @@ struct ReviewCommitTests {
         let agent = Fixture.agent(in: space)
         harness.settings.worktreeGeneratePRDescription = false
         let vm = try await harness.start(with: Fixture.state(spaces: [space], agents: [agent]))
-        vm.reviewCommitRunner = Runner().closure
+        harness.host?.worktrees?.commitRunner = Runner().closure
         vm.selectAgent(agent.agent.id)
         vm.openUserReview()
         let session = try #require(vm.reviewSessions.values.first)

@@ -23,6 +23,7 @@ enum PushActions {
     /// Runs `action` on `payload`'s host. Throws `GlanceFailure` with the words to show.
     @MainActor
     static func perform(_ action: String, text: String?, payload: PushPayload, hosts: MobileHosts,
+                        retryTarget: (mission: String, attempts: Int)? = nil,
                         authenticate: () async throws -> Void = faceID) async throws {
         guard let ref = payload.agentRef else { return }
         switch action {
@@ -42,6 +43,20 @@ enum PushActions {
             try await hosts.withClient(ref.host) { client in
                 _ = try await client.mission(.action(missionID: MissionID(rawValue: mission.id), revision: mission.revision,
                                                      action: .publish(fingerprint: mission.fingerprint)))
+            }
+        case PushButtons.retry:
+            guard let target = retryTarget else { throw GlanceFailure("Open the mission to retry this lane.") }
+            let hint = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !hint.isEmpty else { throw GlanceFailure("Type a hint to retry with.") }
+            try await hosts.withClient(ref.host) { client in
+                guard client.capabilities.contains(RemoteProtocol.missionsRetryLaneCapability) else {
+                    throw GlanceFailure("Update Shepherd on this Mac to retry from a notification.")
+                }
+                let id = MissionID(rawValue: target.mission)
+                // The revision is the mission's now; the stuck count the push showed is what the host checks.
+                guard case .mission(let mission, _) = try await client.mission(.get(missionID: id)) else { return }
+                _ = try await client.mission(.action(missionID: id, revision: mission.revision,
+                                                     action: .retryLane(attempts: target.attempts, hint: hint)))
             }
         default:
             return

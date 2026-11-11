@@ -14,7 +14,7 @@ extension ShepherdViewModel {
     }
 
     func applyCompactionThreshold() {
-        let pi = server.pi
+        let pi = self.pi
         let percent = settings.compactAtPercent
         Task.detached(priority: .utility) {
             do {

@@ -15,27 +15,8 @@ extension ShepherdViewModel {
     /// Export (the design header's, or Export… in a design's menu): the sheet, with the boards the
     /// canvas has selected ticked (every board when none is, or when the canvas hasn't been shown).
     func openDesignExport(_ id: DesignID) {
-        if let ref = hostDesign(id) { return openRemoteDesignExport(ref) }
-        guard let design = design(id) else { return }
-        let screen = designScreens[id]
-        var selected = Set(screen?.picks.map(\.board) ?? [])
-        if let presented = screen?.presented { selected.insert(presented) }
-        if let index = screen?.snapshot?.index {
-            designExport = DesignExportModel(designID: id, designName: design.name,
-                                             selection: DesignExportSelection(index: index, selected: selected),
-                                             threads: designAttachTargets)
-            return
-        }
-        Task {
-            do {
-                let snapshot = try await ownerDesignSnapshot(id)
-                designExport = DesignExportModel(designID: id, designName: design.name,
-                                                 selection: DesignExportSelection(index: snapshot.index, selected: []),
-                                                 threads: designAttachTargets)
-            } catch {
-                remoteActionError = "Couldn't export \(design.name): \(error)"
-            }
-        }
+        // The background host's design, as a paired Mac's.
+        if let ref = hostDesign(id) { openRemoteDesignExport(ref) }
     }
 
     /// Export… of a host's design: the sheet over this Mac's synced copy of its files, written
@@ -64,10 +45,7 @@ extension ShepherdViewModel {
     /// The files an export writes and the renderer that draws them: This Mac's design's, or a
     /// host's from this Mac's synced copy.
     private func designExportInputs(_ model: DesignExportModel) async throws -> (files: DesignExportFiles, tokens: DesignTokens, rendering: DesignRendering) {
-        guard let host = model.hostID else {
-            let files = try await server.designExportFiles(model.designID, boards: model.selection.boards)
-            return (files, await designTokens(model.designID, files: files), designRendering)
-        }
+        guard let host = model.hostID else { throw BackgroundHostClient.HostStarting() }
         guard let connection = remoteHosts.allConnections.first(where: { $0.id == host }), let rendering = remoteDesignRendering(host) else {
             throw RemoteHostClientError.rejected(code: "offline", message: "the host isn't connected")
         }

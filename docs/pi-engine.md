@@ -107,7 +107,10 @@ leader closes, including descendants that ignore SIGTERM. MCP shutdown also clos
 initializing or listing tools, without waiting for their request timeout. The MCP fixes cover the
 modular runtime, pinned stdio dependency and bundled SDK. RPC input starts before extension
 initialization finishes so startup UI answers can get through; all other commands wait for
-initialization. Its hash is recorded in the engine pin.
+initialization. MCP's OAuth store keys a server the global `mcp.json` doesn't name by the space in
+`SHEPHERD_MCP_SPACE` (a space's parent when it has one, the owning space for a worktree), so two spaces
+can sign the same server name and URL into different accounts; a space takes over its old unscoped
+sign-in. Its hash is recorded in the engine pin.
 The same patch adds message-free checkpoint recovery to the readable SDK, RPC and bundled SDK/CLI.
 `checkpoint-recovery.js` owns validation and append-only receipts; its declaration file describes
 that SDK contract. This is a Shepherd patch, not a claim that unpatched upstream Pi exposes recovery.

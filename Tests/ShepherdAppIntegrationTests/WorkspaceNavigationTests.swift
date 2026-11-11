@@ -157,7 +157,7 @@ struct WorkspaceNavigationTests {
 
     /// Cold parking at the view-model seam: a layout holding a terminal pane, hidden past the
     /// delay and outside the four most recently shown, unmounts; selecting it again remounts it
-    /// at once. An agent's pane is its RPC thread, so its pane session survives parking.
+    /// at once.
     @Test func hiddenLayoutsParkPastTheDelayAndUnparkWhenSelected() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -171,8 +171,6 @@ struct WorkspaceNavigationTests {
             vm.selectAgent(agent.agent.id)
             vm.noteActiveTabVisited()
         }
-        let firstSession = vm.sessions.session(for: agents[0].piPane, in: agents[0].tab)
-        try await eventuallyOnMain("the first agent's pane to bind its running pi") { firstSession.phase == .live }
         #expect(vm.mountedTabs.count == 6)
 
         vm.sweepColdPanes()
@@ -181,7 +179,6 @@ struct WorkspaceNavigationTests {
         vm.sweepColdPanes(now: Date().addingTimeInterval(60))
         #expect(vm.parkedTabIDs == [agents[0].tab.id])
         #expect(!vm.mountedTabs.contains { $0.id == agents[0].tab.id })
-        #expect(vm.sessions.session(for: agents[0].piPane, in: agents[0].tab) === firstSession)
 
         vm.selectAgent(agents[0].agent.id)
         vm.noteActiveTabVisited()
@@ -583,6 +580,9 @@ struct WorkspaceNavigationTests {
         defer { window.close() }
         try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
         let deck = try Self.deck(in: window)
+        // The host runs every layout's shell, hidden or not.
+        var terminals: [AppTerminalModel] = []
+        for agent in agents { terminals.append(try await vm.startHostTerminal(agent.auxiliary[0].id, of: agent.agent.id).terminal) }
 
         for shown in [0, 2, 1, 0] {
             vm.selectAgent(agents[shown].agent.id)
@@ -590,7 +590,7 @@ struct WorkspaceNavigationTests {
                 ListPerf.settle(window)
                 return agents.indices.allSatisfy { index in
                     let agent = agents[index]
-                    let terminal = vm.sessions.session(for: agent.auxiliary[0], in: agent.tab).terminal.model
+                    let terminal = terminals[index].model
                     guard let surface = TerminalFirstResponder.view(ownedBy: terminal.viewState, in: window.window) else { return false }
                     let visible = index == shown
                     return vm.threadStores.store(for: agent.agent.id).isLive == visible

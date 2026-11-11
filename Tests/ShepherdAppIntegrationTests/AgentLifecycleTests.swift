@@ -181,7 +181,7 @@ struct AgentLifecycleTests {
         #expect(vm.state == original)
     }
 
-    /// pi exiting on its own keeps the agent with its layout: its pane waits, stopped, for Retry.
+    /// pi exiting on its own keeps the agent with its layout: it waits, stopped, for Retry.
     @Test func anAgentWhosePiExitsKeepsItsLayoutUntilRetry() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -189,21 +189,19 @@ struct AgentLifecycleTests {
         let agent = try await app.liveAgent(in: space)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
         vm.selectAgent(agent.agent.id)
-        let pane = vm.sessions.session(for: agent.piPane, in: agent.tab)
-        try await eventuallyOnMain("the pi pane to bind its running process") { pane.phase == .live }
         let snapshot = try await app.readyThread(agent.agent.id)
 
         _ = try? await app.server.nativeThread(agentID: agent.agent.id, request: .send(
             expectedSessionID: snapshot.piSessionID, generation: snapshot.generation,
             operationID: UUID(), text: "die", delivery: .followUp))
 
-        try await eventuallyOnMain("the pane to see pi stop") { pane.phase == .stopped }
+        try await eventuallyOnMain("the agent to wait for Retry") { vm.cannotStart.contains(agent.agent.id) }
         let server = app.server
+        #expect(await server.sessionInfo(sessionID: try #require(agent.piPane.sessionID))?.isAlive != true)
         #expect(server.state.agents.map(\.id) == [agent.agent.id] && server.state.tabs.map(\.id) == [agent.tab.id])
         #expect(vm.state.agents.map(\.id) == [agent.agent.id] && vm.state.tabs.map(\.id) == [agent.tab.id])
         #expect(vm.selectedAgentID == agent.agent.id)
-        #expect(vm.cannotStart.contains(agent.agent.id))
-        #expect(vm.sessions.session(for: agent.piPane, in: agent.tab) === pane)
+        #expect(server.state.tabs.first?.layout.leaf(withID: agent.piPane.id)?.sessionID == agent.piPane.sessionID)
     }
 }
 
@@ -231,7 +229,7 @@ struct AgentLaunchTests {
         #expect(tab.layout.leaves.map(\.id) == [agent.paneID], "a new agent is exactly its pi pane")
         #expect(vm.selectedAgentID == other.agent.id, "a background start leaves the selection alone")
         let piPane = try #require(agent.paneID)
-        let sessionID = try #require(vm.sessions.liveSession(forPane: piPane))
+        let sessionID = try #require(vm.hostTerminalSession(piPane))
         let info = try #require(await app.server.sessionInfo(sessionID: sessionID))
         #expect(info.command.last?.contains("&& exec '\(app.server.pi.launcher.path)' --mode rpc --session-dir ") == true)
         #expect(info.command.last?.hasPrefix("cd -- '\(app.dir.path)' && ") == true)
@@ -242,21 +240,22 @@ struct AgentLaunchTests {
         }
     }
 
-    @Test func aRestoredAgentWithoutARunningPiRespawnsWhenItsPaneMounts() async throws {
+    /// The host respawns it when its thread is asked for.
+    @Test func aRestoredAgentWithoutARunningPiRespawnsWhenItsThreadIsAskedFor() async throws {
         try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         // A layout from a previous run: bound to a session that died with that run.
         let agent = Fixture.agent(in: space, piSession: SessionID())
-        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
 
-        let pane = vm.sessions.session(for: agent.piPane, in: agent.tab)
-
-        #expect(pane.isRPC)
-        try await eventuallyOnMain("the pane to respawn pi", timeout: .seconds(20)) { pane.phase == .live }
-        #expect(!pane.hasTerminalModel, "an RPC pane never builds a terminal surface")
         _ = try await app.readyThread(agent.agent.id)
+
+        let bound = try #require(app.server.state.tabs.first?.layout.leaf(withID: agent.piPane.id)?.sessionID)
+        #expect(bound != agent.piPane.sessionID)
+        let info = try #require(await app.server.sessionInfo(sessionID: bound))
+        #expect(info.isAlive && info.command.last?.contains("--mode rpc") == true)
     }
 
     @Test func importingALinkedWorktreeStartsAnAgentCarryingItsIdentity() async throws {

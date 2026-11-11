@@ -73,13 +73,12 @@ struct AgentStartProblemTests {
                                                   sessionsRoot: app.server.pi.sessionsRoot)
         let polling = Task { await store.run(request: { try await server.nativeThread(agentID: id, request: $0) }, preview: preview) }
         defer { polling.cancel(); store.stop() }
-        let pane = vm.sessions.session(for: agent.piPane, in: agent.tab)
+        let launches = { StubPi.launches().filter { $0.env["SHEPHERD_AGENT_ID"] == id.rawValue }.count }
 
         try await eventuallyOnMain("the thread to say why pi stopped", timeout: .seconds(20)) { store.startProblem != nil }
         #expect(store.startProblem?.kind == c.kind)
         #expect(store.startProblem?.lines.isEmpty == false)
-        #expect(pane.phase == .stopped)
-        #expect(vm.cannotStart.contains(id))
+        try await eventuallyOnMain("the agent to wait for Retry") { vm.cannotStart.contains(id) }
         #expect(!store.ready && !store.starting && !store.awaitingPi && !store.acceptsSend && store.loadError == nil)
         // A real snapshot can beat resumed-as-new stderr on the other pipe. Keep that history,
         // or wait for the disk preview if no snapshot landed, without requiring preview mode.
@@ -96,14 +95,14 @@ struct AgentStartProblemTests {
             #expect(row.leading == .dot(.failed) && row.accessory == .text("can't start", tone: .failed))
         }
         // A stopped agent's pane never starts pi again on its own.
-        #expect(vm.sessions.session(for: agent.piPane, in: agent.tab) === pane)
+        #expect(launches() == 1)
 
         try Self.healPi(in: app.dir)
         vm.retryAgentStart(id)
         #expect(store.startProblem == nil && store.starting, "Retry takes the banner away at once")
         #expect(!vm.cannotStart.contains(id))
         try await eventuallyOnMain("pi to serve after Retry", timeout: .seconds(20)) { store.ready }
-        #expect(pane.phase == .live && store.startProblem == nil)
+        #expect(store.startProblem == nil && launches() == 2)
         #expect(store.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891"])
     }
 
@@ -124,7 +123,6 @@ struct AgentStartProblemTests {
                                                   sessionsRoot: app.server.pi.sessionsRoot)
         let polling = Task { await store.run(request: { try await server.nativeThread(agentID: id, request: $0) }, preview: preview) }
         defer { polling.cancel(); store.stop() }
-        let pane = vm.sessions.session(for: agent.piPane, in: agent.tab)
         let history = ["user:1733234567890", "assistant:1733234567891"]
 
         try await eventuallyOnMain("pi to serve", timeout: .seconds(20)) { store.ready && store.messages.map(\.entryID) == history }
@@ -143,21 +141,19 @@ struct AgentStartProblemTests {
 
         try await eventuallyOnMain("the thread to say pi stopped", timeout: .seconds(20)) { store.startProblem?.kind == .stopped }
         #expect(store.startProblem?.signal == 9)
-        #expect(pane.phase == .stopped)
-        #expect(vm.cannotStart.contains(id))
+        try await eventuallyOnMain("the agent to wait for Retry") { vm.cannotStart.contains(id) }
         #expect(store.loadError == nil && !store.ready && !store.acceptsSend)
         #expect(vm.state.agents.contains { $0.id == id } && server.state.agents.contains { $0.id == id })
         let row = try #require(vm.sidebarLists.recents.first { $0.id == .local(id) })
         #expect(row.leading == .dot(.failed) && row.accessory == .text("can't start", tone: .failed))
         #expect(vm.sidebarLists.working.isEmpty)
         #expect(store.draft == "also check the logs", "the draft nobody sent stays")
-        #expect(vm.sessions.session(for: agent.piPane, in: agent.tab) === pane, "the same pane session waits")
         #expect(launches() == launched, "nothing starts pi again on its own")
 
         vm.retryAgentStart(id)
         #expect(store.startProblem == nil && store.starting, "Retry takes the banner away at once")
         try await eventuallyOnMain("pi to serve after Retry", timeout: .seconds(20)) { store.ready }
-        #expect(pane.phase == .live && !vm.cannotStart.contains(id))
+        #expect(!vm.cannotStart.contains(id))
         #expect(store.snapshot?.piSessionID == conversation, "Retry resumes the same conversation")
         #expect(store.messages.map(\.entryID) == history)
         try await eventuallyOnMain("the queue to come back") { store.queue.count == 1 }
@@ -213,15 +209,15 @@ struct AgentStartProblemTests {
         let server = app.server, id = agent.agent.id
         let polling = Task { await store.run { try await server.nativeThread(agentID: id, request: $0) } }
         defer { polling.cancel(); store.stop() }
-        let pane = vm.sessions.session(for: agent.piPane, in: agent.tab)
+        let launches = { StubPi.launches().filter { $0.env["SHEPHERD_AGENT_ID"] == id.rawValue }.count }
 
         try await eventuallyOnMain("pi to be stopped", timeout: .seconds(20)) { store.startProblem?.kind == .resumedAsNew }
         vm.retryAgentStart(id)
         try await eventuallyOnMain("Retry to meet the same problem", timeout: .seconds(20)) {
-            store.startProblem?.kind == .resumedAsNew && pane.phase == .stopped
+            store.startProblem?.kind == .resumedAsNew && launches() == 2
         }
         vm.retryAgentStart(id, newConversation: true)
         try await eventuallyOnMain("pi to serve its new conversation", timeout: .seconds(20)) { store.ready }
-        #expect(store.startProblem == nil && !vm.cannotStart.contains(id) && pane.phase == .live)
+        #expect(store.startProblem == nil && !vm.cannotStart.contains(id))
     }
 }

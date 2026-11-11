@@ -361,7 +361,7 @@ final class ReviewStore {
         let agent = host.agent(ref.agent)
         let options = options
         let guess = pickedScope ?? overview?.defaultScope ?? (agent?.worktreeBase != nil ? .branch(base: nil) : .uncommitted)
-        async let overviewReply = try? query(.changesOverview)
+        async let overviewReply = try? query(.changesOverview())
         do {
             let list = try await changesList(guess, options: options)
             guard loadID == id else { return }
@@ -488,7 +488,7 @@ final class ReviewStore {
     func loadBranches() async {
         guard usesChanges, branches == nil else { return }
         do {
-            guard case .changesBranches(let branches) = try await query(.changesBranches) else { throw RemoteReviewError.unexpectedReply }
+            guard case .changesBranches(let branches) = try await query(.changesBranches()) else { throw RemoteReviewError.unexpectedReply }
             self.branches = branches
             branchesError = nil
         } catch {
