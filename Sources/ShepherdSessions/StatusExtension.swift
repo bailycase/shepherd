@@ -128,6 +128,8 @@ public enum StatusExtension {
         namerExtensionPath: String? = nil,
         needsName: Bool = false,
         textGenerationModel: String = "",
+        visionExtensionPath: String? = nil,
+        visionModel: String = "",
         isAutomation: Bool = false,
         instructions: (extensionPath: String, directory: String)? = nil,
         suggestFiles: [String] = [],
@@ -165,7 +167,7 @@ public enum StatusExtension {
         let askExtensionPath = isAutomation ? nil : AskExtension.path(in: home)
         var extensions = [extensionPath, ServiceTierExtension.path(in: home), instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath,
                           childrenExtensionPath, GoalExtension.path(in: home), askExtensionPath, HooksExtension.path(in: home), namerExtensionPath, design?.extensionPath ?? designTools?.extensionPath, designReferences?.extensionPath,
-                          browserExtensionPath].compactMap { $0 } + (mcp?.extensions ?? toolSearch) + [contextExtensionPath].compactMap { $0 }
+                          browserExtensionPath, visionExtensionPath].compactMap { $0 } + (mcp?.extensions ?? toolSearch) + [contextExtensionPath].compactMap { $0 }
         if let projectContext {
             if projectContext.coordinator { extensions = [extensionPath, ServiceTierExtension.path(in: home)] }
             extensions.append(projectContext.path)
@@ -199,6 +201,12 @@ public enum StatusExtension {
             env["SHEPHERD_NEEDS_NAME"] = "1"
             // Settings ▸ Agents ▸ Text generation model; the namer still falls back to the agent's own model.
             if !textGenerationModel.isEmpty { env["SHEPHERD_TEXT_GENERATION_MODELS"] = textGenerationModel }
+        }
+        // Settings ▸ Agents ▸ Image reading model: shepherd-vision describes each image for a
+        // model that cannot view images; an empty pick is Automatic (the cheapest that can).
+        if let visionExtensionPath {
+            env["SHEPHERD_EXT_VISION"] = visionExtensionPath
+            if !visionModel.isEmpty { env["SHEPHERD_VISION_MODELS"] = visionModel }
         }
         if isAutomation { env["SHEPHERD_AUTOMATION"] = "1" }
         if askExtensionPath != nil { env[AskExtension.environmentKey] = "1" }

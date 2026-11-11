@@ -118,6 +118,7 @@ struct HostSettingsMappingTests {
     /// Every change the protocol names reaches the setting it names, as the snapshot reads back.
     @Test(arguments: [
         HostSettingChange.defaultThinking(.low), .textGenerationModel("cheap/mini"), .textGenerationModel(nil), .namingModel("cheap/mini"),
+        .visionModel("cheap/sees"), .visionModel(nil),
         .goalsEnabled(true), .goalsEnabled(false), .projectsEnabled(true), .projectsEnabled(false),
         .fetchBeforeCreating(false),
         .generatePRDescriptions(false),

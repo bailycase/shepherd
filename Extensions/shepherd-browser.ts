@@ -223,9 +223,10 @@ export default function shepherdBrowser(pi: ExtensionAPI) {
     const content: Record<string, unknown>[] = [{ type: "text", text: clip(reply.text as string) }];
     const image = reply.image;
     if (image && typeof image.data === "string" && image.data.length > 0 && typeof image.mimeType === "string") {
-      // A model whose input kinds are known and lack images gets the words instead of a picture.
+      // A model whose input kinds are known and lack images gets the words instead of a picture,
+      // unless shepherd-vision is loaded to describe the picture for it (SHEPHERD_EXT_VISION).
       const kinds = ctx?.model?.input;
-      if (Array.isArray(kinds) && !kinds.includes("image")) {
+      if (Array.isArray(kinds) && !kinds.includes("image") && !process.env.SHEPHERD_EXT_VISION) {
         content[0].text = `${content[0].text}\n\n${NO_IMAGES}`;
       } else {
         content.push({ type: "image", data: image.data, mimeType: image.mimeType });

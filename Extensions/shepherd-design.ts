@@ -617,9 +617,10 @@ export default function shepherdDesign(pi: ExtensionAPI) {
       const split = reply.text.indexOf(marker);
       const words = split < 0 ? reply.text : reply.text.slice(0, split + marker.length) + fenced(reply.text.slice(split + marker.length));
       const content: Record<string, unknown>[] = [{ type: "text", text: words }];
-      // A model whose input kinds are known and lack images gets the words instead of a picture.
+      // A model whose input kinds are known and lack images gets the words instead of a picture,
+      // unless shepherd-vision is loaded to describe the picture for it (SHEPHERD_EXT_VISION).
       const kinds = ctx?.model?.input;
-      if (Array.isArray(kinds) && !kinds.includes("image")) {
+      if (Array.isArray(kinds) && !kinds.includes("image") && !process.env.SHEPHERD_EXT_VISION) {
         content[0].text = `${words}\n${NO_IMAGES}`;
       } else {
         content.push({ type: "image", data: image.data, mimeType: image.mimeType });

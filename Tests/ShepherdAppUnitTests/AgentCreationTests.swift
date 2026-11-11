@@ -190,6 +190,8 @@ struct AgentLaunchCommandTests {
         enabled: Set<Int> = [],
         needsName: Bool = false,
         textGenerationModel: String = "",
+        vision: Bool = false,
+        visionModel: String = "",
         isAutomation: Bool = false,
         goalsEnabled: Bool = false,
         worktreeOwningSpace: String? = nil,
@@ -204,7 +206,8 @@ struct AgentLaunchCommandTests {
             panesExtensionPath: path(0), reviewExtensionPath: path(1), subagentsExtensionPath: path(2),
             childrenExtensionPath: path(4), childEnvironment: ["SHEPHERD_CHILD_CONCURRENCY": "7"],
             goalsEnabled: goalsEnabled,
-            namerExtensionPath: path(3), needsName: needsName, textGenerationModel: textGenerationModel, isAutomation: isAutomation,
+            namerExtensionPath: path(3), needsName: needsName, textGenerationModel: textGenerationModel,
+            visionExtensionPath: vision ? "/tmp/vision.ts" : nil, visionModel: visionModel, isAutomation: isAutomation,
             worktreeOwningSpace: worktreeOwningSpace,
             model: model, thinking: thinking
         )
@@ -352,6 +355,18 @@ struct AgentLaunchCommandTests {
         #expect(command(enabled: [3], needsName: true, textGenerationModel: "cheap/mini").env["SHEPHERD_TEXT_GENERATION_MODELS"] == "cheap/mini")
         #expect(command(enabled: [3], needsName: true).env["SHEPHERD_TEXT_GENERATION_MODELS"] == nil)
         #expect(command(enabled: [3], needsName: false, textGenerationModel: "cheap/mini").env["SHEPHERD_TEXT_GENERATION_MODELS"] == nil)
+    }
+
+    /// The image reading extension always loads, so a mid-thread switch to a text-only model
+    /// is covered; a picked model rides in its variable and Automatic leaves it unset.
+    @Test func theImageReadingModelRidesAlongWhenPicked() {
+        let launch = command(vision: true, visionModel: "cheap/sees")
+        #expect(launch.argv.joined(separator: " ").contains("/tmp/vision.ts"))
+        #expect(launch.env["SHEPHERD_EXT_VISION"] == "/tmp/vision.ts")
+        #expect(launch.env["SHEPHERD_VISION_MODELS"] == "cheap/sees")
+        #expect(command(vision: true).env["SHEPHERD_VISION_MODELS"] == nil)
+        #expect(command(vision: true).env["SHEPHERD_EXT_VISION"] == "/tmp/vision.ts")
+        #expect(command().env["SHEPHERD_EXT_VISION"] == nil)
     }
 
     /// Settings ▸ Instructions reach pi through their extension, loaded right after status, and

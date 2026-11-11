@@ -13,6 +13,7 @@ import ShepherdRemote
 struct DefaultsScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @State private var models: [String] = []
+    @State private var imageModels: [String] = []
 
     var body: some View {
         let store = SettingsStore.of(hosts)
@@ -63,6 +64,24 @@ struct DefaultsScreen: View {
                     }
                 }
             }
+            if host.serves(RemoteProtocol.hostSettingsVisionModelCapability) {
+                SettingsSection("Image reading") {
+                    SHListCard {
+                        SettingsControlRow("Image reading model", note: "When a thread's model can't view images, this model describes each image for it: the pictures you attach, screenshots and board renders. Automatic uses the cheapest model the host is signed in to that takes images.") {
+                            Menu {
+                                Button("Automatic") { store.hostSettings.post(.visionModel(nil), on: host) }
+                                Divider()
+                                ForEach(Self.options(imageModels, current: settings.visionModel), id: \.self) { model in
+                                    Button(model) { store.hostSettings.post(.visionModel(model), on: host) }
+                                }
+                            } label: {
+                                SettingsMenuLabel(settings.visionModel ?? "Automatic", mono: settings.visionModel != nil)
+                            }
+                            .accessibilityLabel("Image reading model")
+                        }
+                    }
+                }
+            }
             if agentDefaults {
                 SettingsSection("Context") {
                     SHListCard {
@@ -87,7 +106,11 @@ struct DefaultsScreen: View {
                     }
                 }
             }
-            .task(id: host.id) { models = await Self.models(of: store.mobileHost(host.id)) }
+            .task(id: host.id) {
+                let listing = await Self.listing(of: store.mobileHost(host.id))
+                models = listing?.models ?? []
+                imageModels = listing?.imageCapableModels ?? []
+            }
             if host.serves(RemoteProtocol.hostSettingsV2Capability) {
                 SubagentDefaultsSection(defaults: settings.subagentDefaults, models: models) {
                     store.hostSettings.post(.subagentDefaults($0), on: host)
@@ -101,9 +124,9 @@ struct DefaultsScreen: View {
     static let contextSwitches: Set<String> = ["context", "deferTools", "codemode"]
 
     /// The host's model catalog, asked once per connection.
-    private static func models(of host: MobileHost?) async -> [String] {
-        guard let host else { return [] }
-        return await ComposerStates.shared.listing(for: host)?.models ?? []
+    private static func listing(of host: MobileHost?) async -> ModelListing? {
+        guard let host else { return nil }
+        return await ComposerStates.shared.listing(for: host)
     }
 
     /// The catalog, with the current model kept even when the catalog lacks it.

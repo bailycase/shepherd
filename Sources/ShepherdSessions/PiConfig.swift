@@ -72,10 +72,10 @@ public enum PiConfig {
         var entries: [PiModelCatalog.Entry] = []
         var seen = Set<String>()
 
-        func add(_ id: String, reasoning: Bool) {
+        func add(_ id: String, reasoning: Bool, images: Bool? = nil) {
             let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty, seen.insert(trimmed).inserted else { return }
-            entries.append(PiModelCatalog.Entry(id: trimmed, reasoning: reasoning))
+            entries.append(PiModelCatalog.Entry(id: trimmed, reasoning: reasoning, images: images))
         }
 
         if let providers = (root as? [String: Any])?["providers"] as? [String: Any] {
@@ -83,7 +83,8 @@ public enum PiConfig {
                 guard let models = (providers[name] as? [String: Any])?["models"] as? [Any] else { continue }
                 for case let model as [String: Any] in models {
                     guard let id = model["id"] as? String, !id.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
-                    add("\(name)/\(id.trimmingCharacters(in: .whitespaces))", reasoning: model["reasoning"] as? Bool ?? false)
+                    add("\(name)/\(id.trimmingCharacters(in: .whitespaces))", reasoning: model["reasoning"] as? Bool ?? false,
+                        images: (model["input"] as? [String]).map { $0.contains("image") })
                 }
             }
             return entries

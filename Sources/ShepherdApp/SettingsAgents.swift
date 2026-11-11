@@ -11,6 +11,8 @@ struct AgentSettings: View {
     let pi: PiSetup
     @Bindable private var settings: AppSettings
     @State private var modelOptions: [String] = []
+    /// The models pi's catalog does not call text-only, for the image reading pick.
+    @State private var imageModelOptions: [String] = []
     /// pi's own default from its settings.json, read with the catalog (never in `body`).
     @State private var piDefaultModel: String?
 
@@ -62,6 +64,20 @@ struct AgentSettings: View {
                     .accessibilityLabel("Text generation model")
                 }
             }
+            SettingsGroup(title: "Image reading") {
+                SettingsRow(title: "Image reading model",
+                            subtitle: "When a thread's model can't view images, this model describes each image for it: the pictures you attach, screenshots and board renders. The thread keeps the real image, and only what the model is sent changes. Automatic uses the cheapest model you're signed in to that takes images. New agents follow a change; running ones at their next launch.") {
+                    SHPopupMenu(settings.visionModel.isEmpty ? "Automatic" : settings.visionModel,
+                                mono: !settings.visionModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
+                        Button("Automatic") { settings.visionModel = "" }
+                        Divider()
+                        ForEach(imageModelOptions, id: \.self) { id in
+                            Button(id) { settings.visionModel = id }
+                        }
+                    }
+                    .accessibilityLabel("Image reading model")
+                }
+            }
             SettingsGroup(title: "While the agent is working") {
                 SettingsRow(title: "When a turn ends, send the queue", subtitle: "All at once arrives as one turn, in the order you queued it.") {
                     SHSegmentedPicker("When a turn ends, send the queue", selection: $settings.queueDelivery,
@@ -100,10 +116,11 @@ struct AgentSettings: View {
         }
         .task {
             let pi = pi
-            let (ids, fallback) = await Task.detached(priority: .userInitiated) {
-                (pi.catalog.entriesOrConfigured().map(\.id), PiConfig.defaultModel(in: pi.home))
+            let (entries, fallback) = await Task.detached(priority: .userInitiated) {
+                (pi.catalog.entriesOrConfigured(), PiConfig.defaultModel(in: pi.home))
             }.value
-            modelOptions = ids
+            modelOptions = entries.map(\.id)
+            imageModelOptions = entries.filter { $0.images != false }.map(\.id)
             if let fallback { piDefaultModel = fallback }
         }
     }
