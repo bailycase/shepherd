@@ -24,8 +24,7 @@ struct SubagentSettingsControlTests {
         let defaults = ScratchDefaults()
         let vm = ShepherdViewModel(pi: scratch.server.pi, settings: AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
                                    themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
-                                   remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
-                                   looksUpPullRequests: false)
+                                   remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in })
         model.settings = vm.settings
         vm.madeSubagentDefinitions = model; vm.showSettings = true; vm.settingsSection = .subagents
         var revealed: URL?, opened: URL?

@@ -318,13 +318,17 @@ extension ShepherdViewModel {
 
     // MARK: Loading
 
+    /// The header's chip after a change no state carries (a save, a branch card git action): the
+    /// host reads the checkout again (an older host doesn't know how).
+    func readCheckoutOnHost(_ agentID: AgentID) {
+        guard let ref = localRef(agentID), localHost?.supportsCheckoutRead == true else { return }
+        Task { try? await remoteHosts.agentAction(ref, action: .readCheckout) }
+    }
+
     /// The person changed files in `agentID`'s working tree (a Files-tab Save): the Changes tab,
     /// which is out of sight while they edit, reloads the next time it shows.
     func workingTreeChanged(_ agentID: AgentID) {
-        // The header's chip: the host reads the checkout again (an older host doesn't know how).
-        if let ref = localRef(agentID), localHost?.supportsCheckoutRead == true {
-            Task { try? await remoteHosts.agentAction(ref, action: .readCheckout) }
-        }
+        readCheckoutOnHost(agentID)
         guard let session = reviewSessions.values.first(where: { $0.agentID == agentID }), !session.workingTreeChanged else { return }
         session.workingTreeChanged = true
     }

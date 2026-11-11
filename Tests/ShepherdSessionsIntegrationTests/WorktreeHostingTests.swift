@@ -134,6 +134,29 @@ struct WorktreeHostingTests {
         #expect(try git(["status", "--porcelain"], in: hosted.repo) == "?? notes.txt\n")
     }
 
+    /// The header's branch chip follows a commit from review and a review's load at once: the
+    /// host reads the thread's checkout again (`onThreadFocused`, what `watchCheckouts` reads on).
+    @Test func aCommitOrAReviewLoadReadsTheCheckoutAgain() async throws {
+        let hosted = try await host()
+        defer { hosted.stop() }
+        try "changed\n".write(to: hosted.repo.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        let agentID = try await addAgent("docs", cwd: hosted.repo.path, in: hosted)
+        let reads = Locked<[AgentID]>([])
+        hosted.scratch.server.onThreadFocused = { id in reads.withValue { $0.append(id) } }
+
+        _ = try await hosted.client.agentQuery(agentID: agentID, query: .changesList(scope: .uncommitted, options: ChangesOptions()))
+        try await eventuallyOnMain("the review's load to read the checkout") { reads.current == [agentID] }
+
+        guard case .commitInfo(let info) = try await hosted.client.agentQuery(agentID: agentID, query: .commitInfo) else {
+            Issue.record("expected commit info"); return
+        }
+        let id = UUID()
+        _ = try await hosted.client.agentQuery(agentID: agentID, query: .commit(operationID: id, options: RemoteCommitOptions(
+            head: info.head, files: info.files, title: "Update the readme", body: "", push: .none)))
+        #expect(try await finished(id, agentID: agentID, in: hosted).error == nil)
+        try await eventuallyOnMain("the commit to read the checkout") { reads.current == [agentID, agentID] }
+    }
+
     @Test func aClientReadsAThreadsSubagentsTranscriptAndWorkingTree() async throws {
         let hosted = try await host()
         defer { hosted.stop() }

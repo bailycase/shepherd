@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdTestSupport
 import Testing
 import ShepherdSessions
@@ -18,7 +19,7 @@ struct CheckoutMonitorTests {
         defer { try? FileManager.default.removeItem(at: repo) }
         let space = Fixture.space(path: repo.path)
         let agent = Fixture.agent(in: space)
-        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]), readingCheckouts: true)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
         let server = app.server
         try await eventuallyOnMain("the first read") {
             server.state.agents.first?.checkout == AgentCheckout(branch: "main", changedFiles: 0)
@@ -34,6 +35,31 @@ struct CheckoutMonitorTests {
             server.state.agents.first?.checkout == AgentCheckout(branch: "main", changedFiles: 2)
         }
         #expect(vm.state.agents.first?.checkout == AgentCheckout(branch: "main", changedFiles: 2))
+    }
+
+    /// A branch card's switch (git run by the app) and a review's load (read by the host) move the
+    /// chip at once, with no turn, tool or selection to read the checkout after.
+    @Test func aBranchSwitchOrAReviewLoadMovesTheChipAtOnce() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let repo = try makeScratchRepo(files: ["file.txt": "before\n"])
+        defer { try? FileManager.default.removeItem(at: repo) }
+        try sh("git branch feature", in: repo)
+        let space = Fixture.space(path: repo.path)
+        let agent = Fixture.agent(in: space)
+        let id = agent.agent.id
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        let server = app.server
+        func branch() -> String? { server.state.agents.first?.checkout?.branch }
+        try await eventuallyOnMain("the first read") { branch() == "main" }
+
+        let cwd = repo.path
+        vm.branchGit(id, "Couldn’t switch") { try BranchGit.switchBranch(cwd: cwd, to: "feature") }
+        try await eventuallyOnMain("the switch on the chip") { branch() == "feature" && vm.state.agents.first?.checkout?.branch == "feature" }
+
+        try sh("git switch -q main", in: repo)
+        _ = try await app.remoteHosts.agentQuery(try #require(vm.localRef(id)), query: .changesList(scope: .uncommitted, options: ChangesOptions()))
+        try await eventuallyOnMain("the review's load on the chip") { branch() == "main" }
     }
 
     /// Distinct checkouts keep the concurrency cap and one follow-up read for a refresh burst.

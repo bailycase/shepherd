@@ -7,12 +7,15 @@ import ShepherdRemote
 /// read and changed through the Issues & PRs forge like the destination's page, in a store of its own.
 @MainActor
 extension ShepherdViewModel {
-    /// Looks the branch's pull request up again (the pane opened, a turn ended) and reads it.
+    /// Has the host look the branch's pull request up again (the pane opened) and reads it.
     /// No pull request, or none gh can find, drops the tab.
     func refreshBranchPullRequest(_ agentID: AgentID) {
-        guard pullRequestLinker?.isLookingUp(agentID) != true, state.agents.contains(where: { $0.id == agentID }) else { return }
+        guard let ref = localRef(agentID), state.agents.contains(where: { $0.id == agentID }) else { return }
         Task {
-            guard let ref = await refreshPullRequestLink(agentID)?.ref, state.agents.contains(where: { $0.id == agentID }) else {
+            // The host looks it up (and pushes the sidebar's badge).
+            var link: ThreadPullRequest?
+            if case .pullRequest(let found)? = try? await remoteHosts.agentQuery(ref, query: .pullRequest) { link = found }
+            guard let ref = link?.ref, state.agents.contains(where: { $0.id == agentID }) else {
                 if branchPullRequests[agentID] != nil { branchPullRequests.removeValue(forKey: agentID) }
                 return
             }

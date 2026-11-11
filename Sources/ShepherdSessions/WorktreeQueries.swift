@@ -256,6 +256,8 @@ public final class WorktreeQueries {
                 }
                 operations[id]?.finished = true
                 hosting.committed(agentID)
+                // The header's branch chip follows the commit (and a new branch) at once.
+                server.onThreadFocused?(agentID)
             }
             return .worktreeOperation(operations[id]!)
         default:
@@ -302,6 +304,8 @@ extension SessionServer {
             return try await queries.worktree(agentID, query: query, local: local)
         case .commitInfo, .commitMessage, .commit:
             return try await queries.commit(agentID, query: query)
+        case .pullRequest:
+            return .pullRequest(await pullRequestLinks?.refresh(agentID))
         case .children:
             // Swept on read rather than on a timer: a publisher that went quiet keeps only its
             // finished transcripts.
@@ -317,6 +321,8 @@ extension SessionServer {
                 return .search(snippet: matches.first?.snippet)
             }
             let pullRequest = if case .review(pullRequest: true) = query { true } else { false }
+            // The header's count follows what the review reads.
+            defer { onThreadFocused?(agentID) }
             return try await Task.detached {
                 let reference = pullRequest ? GitDiff.pullRequestReference(cwd: cwd) : nil
                 return RemoteAgentResult.review(files: try JSONEncoder().encode(GitDiff.load(cwd: cwd, reference: reference)), reference: reference)

@@ -128,6 +128,7 @@ struct BranchUpdateSheet: View {
             } catch {
                 stage = .failed(ActionError.describe(error))
             }
+            vm.readCheckoutOnHost(agentID)
         }
     }
 
@@ -140,6 +141,7 @@ struct BranchUpdateSheet: View {
             } catch {
                 stage = .failed(ActionError.describe(error))
             }
+            vm.readCheckoutOnHost(agentID)
         }
     }
 

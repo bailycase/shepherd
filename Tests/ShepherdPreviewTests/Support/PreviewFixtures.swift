@@ -34,7 +34,6 @@ final class PreviewWorkspace {
             pi: scratch.server.pi, settings: settings, keybindings: KeybindingsStore(store: defaults),
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .light),
             remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
-            looksUpPullRequests: false,
             mcp: mcp,
             yourPi: YourPiModel(pi: scratch.server.pi, survey: yourPi),
             // Hooks read the scratch folder's home, never this machine's.
@@ -65,6 +64,8 @@ final class PreviewWorkspace {
         let socket = dir.appendingPathComponent("h.sock").path, tokenURL = dir.appendingPathComponent("remote-token")
         let services = ShepherdHost.Services(settings: settings, mcpStore: vm.mcp, notifications: AgentNotifications(activate: {}),
                                              keepsAgentsRunning: { nil })
+        // No `gh` on this Mac: a preview that draws a pull request stands one in.
+        services.pullRequestLookup = { _ in nil }
         await services.serve(server, socket: socket, tokenURL: tokenURL, recovering: false)
         vm.connectLocalHost(socket: socket, token: try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines))
         return services
