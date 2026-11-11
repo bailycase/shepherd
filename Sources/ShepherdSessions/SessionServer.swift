@@ -2845,6 +2845,8 @@ public final class SessionServer: @unchecked Sendable {
                     guard self.clients[client.fd] === client else { return }
                     switch result {
                     case .success(let value): self.send(.logicalProjectRuntime(id: id, result: value), to: client)
+                    // A thread's own refusal (its pi `native_starting`) keeps its code, as the thread's own request does.
+                    case .failure(RemoteHostClientError.rejected(let code, let message)): self.send(.error(id: id, code: code, message: message), to: client)
                     case .failure(let error): self.send(.error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed", message: String(describing: error)), to: client)
                     }
                 }
