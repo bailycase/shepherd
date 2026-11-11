@@ -81,7 +81,7 @@ callbacks, extension handlers and remote connections exclude each other without 
 - Attach is atomic: snapshot, registration and output watermark in one queue turn.
 - Callbacks hop to the main queue in FIFO order; never call them from the server queue. `onThreadRevision`
   is paced (once per display frame) and carries no state.
-- As the background service's client, the app never blocks the main thread on `host.sock`: every
+- As its host's client, the app never blocks the main thread on `host.sock`: every
   request is async, as to a paired Mac.
 
 ## PTY children

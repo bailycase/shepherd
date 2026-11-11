@@ -68,7 +68,7 @@ Integration and preview targets use `Tests/ShepherdTestSupport`, which re-export
   browser tests. Never the network.
 - `eventually("what", …)` and `eventuallyOnMain`: named 10 ms polls that throw `WaitTimeout` saying
   what never happened. Never sleep a fixed amount.
-- `AppHarness`: the Mac app's stores and views as the client of a scratch server served as `Shepherd --host` serves (`ShepherdHost.Services`) over a real `host.sock`, with a per-harness pi home. `inProcess: true` marks a test not yet moved off the in-process app.
+- `AppHarness`: the Mac app's stores and views as the client of a scratch server served as `Shepherd --host` serves (`ShepherdHost.Services`) over a real `host.sock`, with a per-harness pi home.
 - `OffscreenWindow`, `ControlPress`: an off-screen window and a press through the accessibility
   tree (below).
 - `ScrollTrace`: a thread's scroll view recorded as it changes, for scroll-rule tests.
@@ -79,7 +79,9 @@ Integration and preview targets use `Tests/ShepherdTestSupport`, which re-export
 Previews: each domain has a suite in `Tests/ShepherdPreviewTests` (`ThreadPreviewTests`,
 `NavigationPreviewTests`, `AgentsPreviewTests`, `ReviewPreviewTests`, `SettingsPreviewTests`,
 `DesignPreviewTests`, `PreviewTests` for the rest). `Preview.render` draws light and dark;
-`Preview.renderMatrix` adds text scale 1.3. Drive a preview from the real producer (a store, an
+`Preview.renderMatrix` adds text scale 1.3. `PreviewWorkspace` serves its workspace as a host and
+draws the view model as its client; the This Mac renders compare against the PNGs in
+`Tests/ShepherdPreviewTests/Baselines`. Drive a preview from the real producer (a store, an
 extension's output, a formatter), not strings copied from a design.
 
 ## Rules

@@ -29,7 +29,7 @@
   existing checkout, its own folder, a name or an id); TCP clients are refused. An app that lists
   `local.threads.v1` in hello shows the host's threads as its own and posts their turn and question
   banners, so the host doesn't while it is connected. Agent queries over the local socket judge a
-  worktree's loss by the in-process rule (`GitWorktree.checkedUnreconciledWork(otherBranchesKeep:)`).
+  worktree's loss by the same rule (`GitWorktree.checkedUnreconciledWork(otherBranchesKeep:)`).
   `agent.restart.v1` hosts take `restartPi`, a stopped pi's Retry. A local client may also send
   `focusThread` (the thread it shows, so phone pushes for it stay quiet; cleared when it
   disconnects), and while it lists `local.threads.v1` the notify tool's banners go to it as an
@@ -52,16 +52,14 @@
   alone; host frames to a local client may reach `NDJSON.localMaxPayloadBytes` (16 MiB, so a large
   workspace's state still arrives) and queue up to 64 MiB; and a terminal it is attached to stops
   being read while it has 4 MiB unwritten, as a slow terminal emulator slows its program. Both
-  sides log every drop with its reason (`ShepherdLog.connection`, category `Connection`). With no app, the host
+  sides log every drop with its reason (`ShepherdLog.connection`, category `Connection`). The host
   answers threads and terminals itself (`SessionServer.serveThreads`): new threads, their
   actions (Move as the app's drag), a dormant thread's pi on demand, terminals' shells, and New
-  design, Open, Import and Build from a repo (`SessionServer.serveDesigns`, which the app serves
-  too, starting the agent its own way). It answers host settings
+  design, Open, Import and Build from a repo (`SessionServer.serveDesigns`). It answers host settings
   (`HostSettingsMapping.serve`) and, when Serve this Mac is on, opens the TCP listener itself
   (`ShepherdHost.serveSettings`; switching it takes effect when the host next starts), and
-  `hostInventory` and `hostConfig` through the same `HostStores` the app serves. It answers
-  worktree info and delete, commit from review (the same `WorktreeQueries` the app
-  serves in process), subagents, transcript search and the working tree's review
+  `hostInventory` and `hostConfig` through `HostStores`. It answers
+  worktree info and delete, commit from review (`WorktreeQueries`), subagents, transcript search and the working tree's review
   (`SessionServer.serveAgentQueries`); review panes and the inspector are refused.
   With no page of its own, the host hands an agent's browser call that no viewer claimed to the
   app over `host.sock` (a `browserDrive` request to the local client that lists the drive
@@ -171,8 +169,7 @@
     always past the one before) and keeps the latest one a person opened (`Agent.seenCompletedAt`,
     persisted, never lowered). Every client's Done lists a finished thread only while the two
     differ, and reports the completion it showed when the person leaves it or presses Mark all
-    seen. The Mac as the background host's client sends it over `host.sock`; in process it calls
-    the server. Clients of an older host (no `completedAt`) keep their own per-device Done.
+    seen. The Mac sends it to its host over `host.sock`. Clients of an older host (no `completedAt`) keep their own per-device Done.
   - `agentAction.mutePushes(_:)`, behind `push.mute.v1`: the host keeps the thread's mute
     (`Agent.pushMuted`, persisted, written only when true) and sends no push for a muted thread to
     any phone. The Mac's thread options menu and the iPhone's row menu send it; an older host
@@ -222,7 +219,7 @@
     capability shows them read-only
   - `forge` (`issuesAndPRs.v1`, `RemoteForgeRequest`, answered `forgeResult` or an error whose
     code is a `ForgeError.Code`): Issues & PRs through the host's own gh, the same answers the Mac
-    gets in process (`SessionServer.forge`). Reads: the repositories the host knows (its spaces' and
+    gets from its host (`SessionServer.forge`). Reads: the repositories the host knows (its spaces' and
     threads' checkouts with a GitHub `origin`), a repository's pull request or issue sections
     (Needs my team's review and Closed only when asked), a search, a pull request (reviewers,
     checks, activity, blockers, merge methods, the thread whose branch is its head), its diff
@@ -429,7 +426,7 @@
     record, `pauseTrain` and `resumeTrain`); the iPhone and iPad show the train only there. Missions never ride
     `stateChanged` (still `withoutMissions`), except to this Mac's app showing the host's threads as
     its own (`local.threads.v1`), which is sent the whole workspace (missions, Project coordinators
-    and executions) as the app holds it in process; a capable client gets a pushed
+    and executions); a capable client gets a pushed
     `missionChanged(missionID:revision:)` hint (nil: it went) and pulls. What running agents say
     (`RemoteMissionLive`: the planner's or working station's words and each working attempt's, 4 KiB
     each, at most 16) comes with `get` and as a `missionLive` push at most every half second (empty
