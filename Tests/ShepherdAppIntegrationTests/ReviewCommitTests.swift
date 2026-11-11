@@ -395,7 +395,7 @@ struct ReviewCommitTests {
     }
 
     @Test func aPollWhileTheHostTakesTheCommitWaitsForItInsteadOfCallingItUnknown() async throws {
-        let harness = try AppHarness()
+        let harness = try AppHarness(inProcess: true)
         let sandbox = try WorktreeSandbox(origin: true)
         defer { harness.stop(); sandbox.remove() }
         try write("changed\n", "README.md", in: sandbox)
@@ -447,7 +447,7 @@ struct ReviewCommitTests {
     }
 
     @Test func aLocalReviewCommitsTheDirectoryItsDiffCameFromAndReloads() async throws {
-        let harness = try AppHarness()
+        let harness = try AppHarness(inProcess: true)
         let sandbox = try WorktreeSandbox(origin: true)
         defer { harness.stop(); sandbox.remove() }
         try write("changed\n", "README.md", in: sandbox)

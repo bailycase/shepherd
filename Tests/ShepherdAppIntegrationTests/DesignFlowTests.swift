@@ -297,7 +297,7 @@ struct DesignFlowTests {
     /// One write to a board is one revision pushed and one board reloaded in place (the live one,
     /// with no new view); the others are untouched. New boards appear and removed ones leave.
     @Test func aBoardTheAgentRewritesReloadsInPlaceAlone() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let (vm, window, design, _, _) = try await openCanvas(app)
         defer { window.close() }

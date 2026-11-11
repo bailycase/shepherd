@@ -58,7 +58,7 @@ struct PiHomeLaunchTests {
     /// than starting afresh; "your pi" is byte-identical afterwards, with no lock left in it.
     @Test func aRestoredAgentAdoptsItsConversationFromYourPiAndLeavesItUntouched() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let plainDir = app.dir.appendingPathComponent("plain", isDirectory: true)
         let linkedDir = app.dir.appendingPathComponent("linked", isDirectory: true)

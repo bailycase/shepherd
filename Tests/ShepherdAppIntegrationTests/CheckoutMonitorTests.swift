@@ -12,7 +12,7 @@ import ShepherdSessions
 struct CheckoutMonitorTests {
     /// A new agent's checkout is read at once; selecting it again reads the files it changed.
     @Test func anAgentsBranchAndChangedFilesReachTheWorkspace() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let repo = try makeScratchRepo(files: ["file.txt": "before\n"])
         defer { try? FileManager.default.removeItem(at: repo) }

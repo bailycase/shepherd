@@ -320,7 +320,7 @@ struct WorktreeAgentTests {
 
     @Test(arguments: [false, true])
     func deletingASwitchedWorktreePreservesItsCurrentBranch(originalBranchDeleted: Bool) async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let sandbox = try WorktreeSandbox()
         defer { sandbox.remove() }
@@ -343,7 +343,7 @@ struct WorktreeAgentTests {
     }
 
     @Test func deletingAForeignCheckoutKeepsTheAgentAndBothWorktrees() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let sandbox = try WorktreeSandbox(), foreign = try WorktreeSandbox()
         defer { sandbox.remove(); foreign.remove() }
@@ -415,7 +415,7 @@ struct WorktreeAgentTests {
     }
 
     @Test func aWorktreeDeletionTheServerCannotPersistKeepsTheAgentAndCheckout() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let sandbox = try WorktreeSandbox()
         defer { sandbox.remove() }

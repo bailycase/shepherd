@@ -34,7 +34,7 @@ struct ChangesAfterSaveTests {
     }
 
     private func open() async throws -> Setup {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         let repo = try makeScratchRepo(files: ["notes.txt": "before\n"])
         let space = Fixture.space(path: repo.path)
         let agent = Fixture.agent(in: space)

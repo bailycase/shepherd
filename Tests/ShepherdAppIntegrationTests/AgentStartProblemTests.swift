@@ -60,7 +60,7 @@ struct AgentStartProblemTests {
     @Test(arguments: cases)
     func aRestoredAgentWhosePiCannotStartWaitsWithItsReasonUntilRetry(_ c: Case) async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         try Self.configurePi(in: app.dir, c.config)
         let space = Fixture.space(path: app.dir.path)
@@ -112,7 +112,7 @@ struct AgentStartProblemTests {
     /// and Retry starts pi on the same conversation with the queue paused.
     @Test func aServedAgentWhosePiStopsOnItsOwnKeepsItsThreadDraftAndQueueUntilRetry() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent("worker", in: space, piSession: SessionID())
@@ -202,7 +202,7 @@ struct AgentStartProblemTests {
     /// lets it start one, as pi would on its own.
     @Test func startNewConversationLetsAPiThatCannotFindItsConversationStart() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         try Self.configurePi(in: app.dir, ["newSession": "1"])
         let space = Fixture.space(path: app.dir.path)

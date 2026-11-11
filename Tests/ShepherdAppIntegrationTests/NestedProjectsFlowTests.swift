@@ -11,7 +11,7 @@ import ShepherdTestSupport
 @MainActor
 struct NestedProjectsFlowTests {
     @Test func addingAChildOpensItsParentWithoutChangingSelection() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let parent = Fixture.space("Platform", path: app.dir.path)
         let fixture = Fixture.agent("Parent work", in: parent, order: 0)

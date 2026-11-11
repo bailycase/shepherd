@@ -69,7 +69,7 @@ struct YourPiFirstLaunchTests {
         try StubPi.installAsEngine()
         let setup = try Setup()
         defer { setup.remove() }
-        let app = try AppHarness(pi: setup.pi)
+        let app = try AppHarness(pi: setup.pi, inProcess: true)
         defer { app.stop() }
         let (space, agent) = try setup.agent()
         try Self.requireSignIn(in: space)
@@ -133,7 +133,7 @@ struct YourPiFirstLaunchTests {
         try StubPi.installAsEngine()
         let setup = try Setup()
         defer { setup.remove() }
-        let app = try AppHarness(pi: setup.pi)
+        let app = try AppHarness(pi: setup.pi, inProcess: true)
         defer { app.stop() }
         let (space, agent) = try setup.agent()
         let gate = DispatchSemaphore(value: 0)
@@ -200,7 +200,7 @@ struct YourPiFirstLaunchTests {
         try StubPi.installAsEngine()
         let setup = try Setup()
         defer { setup.remove() }
-        let app = try AppHarness(pi: setup.pi)
+        let app = try AppHarness(pi: setup.pi, inProcess: true)
         defer { app.stop() }
         let (space, signedIn) = try setup.agent()
         var waiting = Fixture.agent("needs xai", in: space, cwd: space.path, piSession: SessionID())
@@ -230,7 +230,7 @@ struct YourPiFirstLaunchTests {
         defer { setup.remove() }
         #expect(setup.pi.copyYourPiOnce()?.first == true)
         try Data(#"{"xai": {"type": "api_key", "key": "$XAI_API_KEY"}}"#.utf8).write(to: setup.yours.appendingPathComponent("auth.json"))
-        let app = try AppHarness(pi: setup.pi)
+        let app = try AppHarness(pi: setup.pi, inProcess: true)
         defer { app.stop() }
         let (space, agent) = try setup.agent()
 
@@ -248,7 +248,7 @@ struct YourPiFirstLaunchTests {
         try StubPi.installAsEngine()
         let setup = try Setup(yourPi: false)
         defer { setup.remove() }
-        let app = try AppHarness(pi: setup.pi)
+        let app = try AppHarness(pi: setup.pi, inProcess: true)
         defer { app.stop() }
         let (space, agent) = try setup.agent()
         try Self.requireSignIn(in: space)
@@ -312,7 +312,7 @@ struct YourPiFirstLaunchTests {
         try setup.pi.importedState().setExtension(copy.destination, on: true)
         let entry = setup.pi.home.appendingPathComponent(copy.destination).standardizedFileURL.path
         let before = try YourPiFixture.tree(setup.yours)
-        let app = try AppHarness(pi: setup.pi)
+        let app = try AppHarness(pi: setup.pi, inProcess: true)
         defer { app.stop() }
         let (space, agent) = try setup.agent()
         let id = agent.agent.id

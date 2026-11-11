@@ -58,7 +58,7 @@ struct LogicalProjectControlTests {
 
     private static func sidebar() async throws {
         AccessibilityNode.enable()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         app.settings.projectsEnabled = true  // Projects is an opt-in experiment
         defer { app.stop() }
         let vm = try await app.start(with: Fixture.state(spaces: [Fixture.space("web", path: app.dir.path)], agents: []))
@@ -100,7 +100,7 @@ struct LogicalProjectControlTests {
     /// suggestion fills the composer without sending, and a context row opens its settings tab. The Project is the owner's own create.
     private static func overview() async throws {
         AccessibilityNode.enable()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         app.settings.projectsEnabled = true  // Projects is an opt-in experiment
         defer { app.stop() }
         let folder = app.dir.appendingPathComponent("sample-app-api")
@@ -178,7 +178,7 @@ struct LogicalProjectControlTests {
     /// what "Add to project" does is `folderPicker`'s.
     private static func firstFolderInNewProject() async throws {
         AccessibilityNode.enable()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         app.settings.projectsEnabled = true
         defer { app.stop() }
         let vm = try await app.start(with: ShepherdState(spaces: []))
@@ -204,7 +204,7 @@ struct LogicalProjectControlTests {
     /// The same from Project settings' Spaces tab with no Space at all.
     private static func firstFolderInSettings() async throws {
         AccessibilityNode.enable()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         app.settings.projectsEnabled = true
         defer { app.stop() }
         let vm = try await app.start(with: ShepherdState())
@@ -234,7 +234,7 @@ struct LogicalProjectControlTests {
     /// Space without opening a thread and hands it over (Project settings links it); a folder that is already a Space is reused.
     private static func folderPicker() async throws {
         AccessibilityNode.enable()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         app.settings.projectsEnabled = true
         defer { app.stop() }
         let first = app.dir.appendingPathComponent("api"), second = app.dir.appendingPathComponent("web")
@@ -272,7 +272,7 @@ struct LogicalProjectControlTests {
 
     private static func create() async throws {
         AccessibilityNode.enable()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         app.settings.projectsEnabled = true  // Projects is an opt-in experiment
         defer { app.stop() }
         let folder = app.dir.appendingPathComponent("sample-app-api")
@@ -355,7 +355,7 @@ struct LogicalProjectControlTests {
     }
 
     private static func stale() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         app.settings.projectsEnabled = true  // Projects is an opt-in experiment
         defer { app.stop() }
         _ = try await app.start()
@@ -384,7 +384,7 @@ struct LogicalProjectControlTests {
 
     private static func automations() async throws {
         AccessibilityNode.enable()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         app.settings.projectsEnabled = true  // Projects is an opt-in experiment
         defer { app.stop() }
         let folder = app.dir.appendingPathComponent("research")
@@ -432,7 +432,7 @@ struct LogicalProjectControlTests {
 
     private static func delete() async throws {
         AccessibilityNode.enable()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         app.settings.projectsEnabled = true  // Projects is an opt-in experiment
         defer { app.stop() }
         let vm = try await app.start()

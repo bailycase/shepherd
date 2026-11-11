@@ -37,7 +37,7 @@ struct RemoteBrowserTests {
     }
 
     private func setup(threads: Int = 1, capabilities: [String]? = nil) async throws -> (Setup, [RemoteAgentRef]) {
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
         if let capabilities { remote.host.server.advertisedCapabilities = capabilities }
         let space = Fixture.space(path: local.dir.path)
         let agents = (0..<threads).map { Fixture.agent("web\($0)", in: space, order: $0) }
@@ -249,7 +249,7 @@ struct RemoteBrowserTests {
         let folder = try makeScratchDirectory("remote-web")
         defer { try? FileManager.default.removeItem(at: folder) }
         try Data(#"{"name":"acme-web","scripts":{"dev":"vite"}}"#.utf8).write(to: folder.appendingPathComponent("package.json"))
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: folder.path)
         let agent = Fixture.agent("web", in: space, order: 0)

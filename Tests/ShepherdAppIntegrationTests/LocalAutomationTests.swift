@@ -29,7 +29,7 @@ struct LocalAutomationTests {
     }
 
     @Test func aStartingRunReadsLiveARefusedRunNowSaysSoAndStopLeavesTheHiddenSpace() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let runs = Space(name: "Automations", path: "~", hidden: true)

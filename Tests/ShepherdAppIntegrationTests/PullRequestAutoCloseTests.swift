@@ -35,7 +35,7 @@ struct PullRequestAutoCloseTests {
                     return ForgeOutput(output: Data(json.utf8))
                 }
                 return ForgeOutput()
-            })
+            }, inProcess: true)
             sandbox = try WorktreeSandbox(origin: true)
             let path = try GitWorktree.add(repo: sandbox.repo.path, branch: PullRequestAutoCloseTests.branch)
             let checkout = URL(fileURLWithPath: path)

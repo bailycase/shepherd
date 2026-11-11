@@ -22,13 +22,18 @@ final class AppHarness {
     private(set) var vm: ShepherdViewModel!
 
     var server: SessionServer { scratch.server }
+    /// The app on the server in its own process, the mode slice 7 deletes: only the tests not
+    /// yet moved to the client harness ask for it. Every other harness's app is the client of the
+    /// scratch server served as `Shepherd --host` serves (`ShepherdHost.Services`).
+    let inProcess: Bool
     var dir: URL { scratch.dir }
 
     /// Each harness gets its own pi home; pass `.app` explicitly to share process history.
     /// `directory` is a scratch directory the test already filled (a saved `state.json` for a cold launch).
     init(directory existing: URL? = nil, pi: PiSetup? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels },
          triggerSource: AutomationTriggers.Source = ScratchServer.noGitHub,
-         forgeRunner: @escaping ForgeService.Runner = ScratchServer.noForge) throws {
+         forgeRunner: @escaping ForgeService.Runner = ScratchServer.noForge, inProcess: Bool = false) throws {
+        self.inProcess = inProcess
         // Focus tracking reads NSApp even in model-only tests; no window is created.
         _ = NSApplication.shared
         let directory = try existing ?? makeScratchDirectory("srv")
@@ -57,8 +62,9 @@ final class AppHarness {
                readingCheckouts: Bool = false, mcp: MCPStore? = nil, welcomingYourPi: Bool = false,
                yourPi: YourPiModel? = nil, piAuth: PiAuthStore? = nil) async throws -> ShepherdViewModel {
         if let state { try await server.putState(state) }
+        let clientDir = dir.appendingPathComponent("client", isDirectory: true)
         let vm = ShepherdViewModel(
-            server: server, settings: settings, keybindings: keybindings, themeManager: themeManager,
+            server: inProcess ? server : BackgroundHostClient.idleServer(directory: clientDir), ownsWorkspace: inProcess, settings: settings, keybindings: keybindings, themeManager: themeManager,
             remoteHosts: remoteHosts, sidebarDefaults: defaults, themeInstaller: { _ in },
             restoresAgentsAtLaunch: restoringAgents,
             checkoutReader: readingCheckouts ? CheckoutMonitor.git : nil,
@@ -72,9 +78,48 @@ final class AppHarness {
             apps: AppsModel(home: dir.appendingPathComponent("apps-home").path)
         )
         self.vm = vm
+        if inProcess {
+            let server = server
+            try await eventuallyOnMain("the view model to adopt the server's workspace") { vm.state == server.state }
+            return vm
+        }
+        let token = try await serveHost(mcp: mcp, recovering: restoringAgents)
+        let connection = vm.connectLocalHost(socket: hostSocket, token: token)
         let server = server
-        try await eventuallyOnMain("the view model to adopt the server's workspace") { vm.state == server.state }
+        try await eventuallyOnMain("the view model to adopt the host's workspace", timeout: .seconds(30)) {
+            connection.phase == .connected && vm.state == server.state
+        }
         return vm
+    }
+
+    var hostSocket: String { dir.appendingPathComponent("h.sock").path }
+    /// The host's own settings, over the app's preferences, following the app's writes as the
+    /// `Shepherd --host` process does.
+    private(set) var hostSettings: AppSettings?
+    /// What `Shepherd --host` serves on the scratch server: the same services, in this process.
+    private(set) var host: ShepherdHost.Services?
+    private var hostBanners: ThreadBanners?
+
+    /// Serves the scratch server as the app's host, as `Shepherd --host` does, on `hostSocket`.
+    /// `recovering` respawns unfinished work as the host does at its start. Returns the token.
+    private func serveHost(mcp: MCPStore?, recovering: Bool) async throws -> String {
+        let tokenURL = dir.appendingPathComponent("remote-token")
+        if host == nil {
+            let notice = "shepherd-test-settings-\(UUID().uuidString)"
+            settings.followOtherProcesses(notice: notice)
+            // Its own instance over the same preferences, as the host process's own: a write
+            // (and its change notice) is one side's, so neither follows its own.
+            let hostSettings = AppSettings(store: UserDefaults(suiteName: defaults.name)!)
+            hostSettings.followOtherProcesses(notice: notice)
+            self.hostSettings = hostSettings
+            let services = ShepherdHost.Services(
+                settings: hostSettings,
+                mcpStore: mcp ?? MCPStore(dependencies: .app(pi: server.pi, openURL: { _ in }, copy: { _ in })),
+                notifications: AgentNotifications(activate: {}), keepsAgentsRunning: { nil })
+            host = services
+            hostBanners = await services.serve(server, socket: hostSocket, tokenURL: tokenURL, recovering: recovering)
+        }
+        return try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Waits for every queued optimistic write to reach the server.
@@ -83,7 +128,7 @@ final class AppHarness {
     }
 
     func stop() {
-        for connection in remoteHosts.connections { remoteHosts.removeHost(id: connection.id) }
+        for connection in remoteHosts.allConnections { remoteHosts.removeHost(id: connection.id) }
         vm = nil
         scratch.stop()
     }
@@ -202,8 +247,8 @@ final class RemoteHostHarness {
     let token: String
 
     init(modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels },
-         triggerSource: AutomationTriggers.Source = ScratchServer.noGitHub) throws {
-        host = try AppHarness(modelCatalog: modelCatalog, triggerSource: triggerSource)
+         triggerSource: AutomationTriggers.Source = ScratchServer.noGitHub, inProcess: Bool = false) throws {
+        host = try AppHarness(modelCatalog: modelCatalog, triggerSource: triggerSource, inProcess: inProcess)
         let tokenURL = host.dir.appendingPathComponent("remote-token")
         port = try host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)

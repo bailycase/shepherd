@@ -37,7 +37,7 @@ struct AgentStartupTests {
     @Test(arguments: [(false, true), (true, true), (false, false), (true, false)])
     func worktreeCreationAndRestoreUseHostMCPSettingsAndOwningSpace(restoring: Bool, mcpEnabled: Bool) async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         app.settings.piMCPExtension = mcpEnabled
         app.settings.mcpProjectConfig = false
@@ -92,7 +92,7 @@ struct AgentStartupTests {
         } else {
             checkout = registered
         }
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         app.settings.piMCPExtension = true
         let space = Fixture.space(path: sandbox.repo.path)
@@ -169,7 +169,7 @@ struct AgentStartupTests {
     /// stays one row, the same row, when the host's first snapshot carries it and when pi starts it.
     @Test func aNewAgentsOpeningPromptShowsWhilePiStartsAndStaysOneRow() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
         let space = Fixture.space(path: app.dir.path)
@@ -232,7 +232,7 @@ struct AgentStartupTests {
 
     @Test func anOpeningCommandThatStartsNoTurnReturnsToRecents() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
         let space = Fixture.space(path: app.dir.path)
@@ -258,7 +258,7 @@ struct AgentStartupTests {
     /// away from and back to meanwhile starts again, and all come up with their history.
     @Test func restoredAgentsStartQuietlyAfterARelaunch() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
         let space = Fixture.space(path: app.dir.path)
@@ -299,7 +299,7 @@ struct AgentStartupTests {
     /// Mounting hidden layouts is not demand. Selection starts only that agent and its terminals.
     @Test func settledRestoredAgentsStayDormantUntilSelectedOrDemanded() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
         let space = Fixture.space(path: app.dir.path)
@@ -351,7 +351,7 @@ struct AgentStartupTests {
     @Test(arguments: [false, true])
     func hiddenMountedThreadsDoNotDemandTheirDormantProcesses(dark: Bool) async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agents = (0..<4).map { Fixture.agent("worker \($0)", in: space, order: $0, auxiliary: 1, piSession: SessionID()) }
@@ -409,7 +409,7 @@ struct AgentStartupTests {
     @Test(arguments: [false, true])
     func fallbackSelectionActivatesRestoredTerminals(deletingSpace: Bool) async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let other = app.dir.appendingPathComponent("other", isDirectory: true)
         try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
@@ -433,7 +433,7 @@ struct AgentStartupTests {
 
     @Test func unfinishedOrdinaryWorkAndItsQueueStartWithoutSelection() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         var selected = Fixture.agent("selected", in: space, order: 0)
@@ -462,7 +462,7 @@ struct AgentStartupTests {
     /// restored agents still waiting their turn.
     @Test func aNewAgentsPiStartsAtOnceWhileRestoredAgentsWaitTheirTurn() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
         let space = Fixture.space(path: app.dir.path)
@@ -502,7 +502,7 @@ struct AgentStartupTests {
     /// once: the others start then, not when its hold (`AgentStartQueue.aheadHold`) runs out.
     @Test func anAgentOnScreenWhosePiExitsAtLaunchLetsTheOthersStartAtOnce() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let broken = app.dir.appendingPathComponent("broken")
         try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
@@ -542,7 +542,7 @@ struct AgentStartupTests {
     func restoringAMissingFolderPreservesTheThreadAndConversation(worktree: Bool, restoring: Bool) async throws {
         _ = NSApplication.shared
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let missing = app.dir.appendingPathComponent("missing")
         let space = Fixture.space(path: worktree ? app.dir.path : missing.path)
@@ -583,7 +583,7 @@ struct AgentStartupTests {
     /// has started (a view detached and remounted) binds at once.
     @Test func aPaneSessionMadeAgainAfterItsAgentStartedBindsAtOnce() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent("worker", in: space, piSession: SessionID())
@@ -603,7 +603,7 @@ struct AgentStartupTests {
     /// polls on its own, so only that signal can bring it up.
     @Test func aThreadComesUpTheMomentItsPiServesWithoutWaitingForAPoll() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
         let space = Fixture.space(path: app.dir.path)
@@ -648,7 +648,7 @@ struct AgentStartupTests {
     /// not live, and pi's first snapshot then lands on the same rows: the thread never empties.
     @Test func aRestoredThreadShowsItsHistoryFromDiskUntilPiServesTheSameRows() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
         let space = Fixture.space(path: app.dir.path)
@@ -692,7 +692,7 @@ struct AgentStartupTests {
     /// (AgentStartProblemTests has every cause), never an endless start.
     @Test func aPiThatExitsWhileStartingEndsInItsReasonNotAnEndlessStart() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         try Self.holdPi(in: app.dir, exit: 127)
         let space = Fixture.space(path: app.dir.path)

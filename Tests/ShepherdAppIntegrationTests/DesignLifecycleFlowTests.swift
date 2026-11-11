@@ -37,7 +37,7 @@ struct DesignLifecycleFlowTests {
 
     @Test func deletingAnOpenDesignGoesBackToDesignsAndUndoBringsItAllBack() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let vm = try await start(app)
         let design = try await openDesign(app, vm)
@@ -186,7 +186,7 @@ struct DesignLifecycleFlowTests {
     }
 
     @Test func deletingASystemSaysWhoUsesItAndTheyKeepTheirCopy() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let vm = try await start(app)
         let design = Design(name: "Events explorer", createdAt: 1_000)

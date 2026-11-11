@@ -105,28 +105,10 @@ public enum SessionHost {
                     drain.begin("bundle version \(server.hostBuild ?? "?") is now \($0 ?? "gone")")
                 }
             }
-            configure?(server)
-            if let threads { server.serveThreads(threads(server)) }
-            // The app's way in (`host.sock`), once its threads are served; a path too long for a
-            // unix socket leaves the app to run in process.
             let support = server.supportDirectory
-            do {
-                try server.startLocalListener(path: support.appendingPathComponent("host.sock").path,
-                                              tokenURL: support.appendingPathComponent("remote-token"))
-            } catch {
-                ShepherdLog.error("host has no local socket: \(error)")
-            }
-            if let banners {
-                let observer = ThreadBanners(server: server, state: { server.state }, sink: banners(server))
-                observer.observeServer()
-                Self.banners = observer
-            }
-            // Agents' automation_* tools are served before the respawn awaits, so a respawned
-            // agent's first call isn't refused as unsupported.
-            if let automations { server.serveAutomations(automations(server)) }
-            await server.respawnAgentsNeedingRecovery(respawn)
-            if let pullRequests { server.servePullRequestLinks(pullRequests(server)).startPolling() }
-            if automations != nil { await server.autoStartAutomations() }
+            await serve(server, socket: support.appendingPathComponent("host.sock").path,
+                        tokenURL: support.appendingPathComponent("remote-token"), respawn: respawn, configure: configure,
+                        threads: threads, automations: automations, pullRequests: pullRequests, banners: banners)
         }
         ready()
         signalSources = sources
@@ -134,6 +116,42 @@ public enum SessionHost {
         // Called off the main thread (an exit test): whoever runs the main thread serves the
         // main queue, where the signal handler and the server's callbacks run.
         while true { pause() }
+    }
+
+    /// What `run` serves once its server is up, in order: `configure`, threads, the app's socket
+    /// (`socket`), banners, automations, the respawn of unfinished work, pull request links and
+    /// enabled automations. App tests serve their in-process host through it, as the host does;
+    /// `recovering` false leaves unfinished work for a test that only draws it.
+    /// Returns the banners' observer (also `banners`, the process's last), when `banners` was given.
+    @MainActor @discardableResult
+    public static func serve(_ server: SessionServer, socket: String, tokenURL: URL, recovering: Bool = true, respawn: @escaping @MainActor (Agent) -> AgentSpawn,
+                             configure: (@MainActor (SessionServer) -> Void)? = nil,
+                             threads: (@MainActor (SessionServer) -> ThreadHosting)? = nil,
+                             automations: (@MainActor (SessionServer) -> AutomationHosting)? = nil,
+                             pullRequests: (@MainActor (SessionServer) -> PullRequestLinkHosting)? = nil,
+                             banners: (@MainActor (SessionServer) -> ThreadBanners.Sink)? = nil) async -> ThreadBanners? {
+        configure?(server)
+        if let threads { server.serveThreads(threads(server)) }
+        // The app's way in (`host.sock`), once its threads are served.
+        do {
+            try server.startLocalListener(path: socket, tokenURL: tokenURL)
+        } catch {
+            ShepherdLog.error("host has no local socket: \(error)")
+        }
+        var observer: ThreadBanners?
+        if let banners {
+            let made = ThreadBanners(server: server, state: { server.state }, sink: banners(server))
+            made.observeServer()
+            observer = made
+            Self.banners = made
+        }
+        // Agents' automation_* tools are served before the respawn awaits, so a respawned
+        // agent's first call isn't refused as unsupported.
+        if let automations { server.serveAutomations(automations(server)) }
+        if recovering { await server.respawnAgentsNeedingRecovery(respawn) }
+        if let pullRequests { server.servePullRequestLinks(pullRequests(server)).startPolling() }
+        if automations != nil { await server.autoStartAutomations() }
+        return observer
     }
 }
 

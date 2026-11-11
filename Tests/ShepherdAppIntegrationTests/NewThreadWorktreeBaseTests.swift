@@ -30,7 +30,7 @@ struct NewThreadWorktreeBaseTests {
         try StubPi.installAsEngine()
         let repo = try Self.repo()
         defer { try? FileManager.default.removeItem(at: repo) }
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let vm = try await app.start(with: ShepherdState(spaces: [Fixture.space("proj", path: repo.path)]))
         vm.openNewThread()
@@ -58,7 +58,7 @@ struct NewThreadWorktreeBaseTests {
         let repo = try Self.repo()
         defer { try? FileManager.default.removeItem(at: repo) }
         for index in 0..<30 { try git(["branch", "feat/ledger-\(index)"], in: repo) }
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let branches = try await app.server.changes.branches(agentID: nil, cwd: repo.path)
         let options = changesBaseOptions(branches, selected: "feat/ledger-1", includeCurrent: true)
@@ -70,7 +70,7 @@ struct NewThreadWorktreeBaseTests {
         try StubPi.installAsEngine()
         let repo = try Self.repo()
         defer { try? FileManager.default.removeItem(at: repo) }
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let branches = try await app.server.changes.branches(agentID: nil, cwd: repo.path)
         let names = changesBaseNames(branches)
@@ -91,7 +91,7 @@ struct NewThreadWorktreeBaseTests {
         AccessibilityNode.enable()
         let repo = try Self.repo()
         defer { try? FileManager.default.removeItem(at: repo) }
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let vm = try await app.start(with: ShepherdState(spaces: [Fixture.space("proj", path: repo.path)]))
         var chosen: [String] = []
@@ -132,7 +132,7 @@ extension NewThreadWorktreeBaseTests {
         try StubPi.installAsEngine()
         let one = try Self.repo(), two = try Self.repo()
         defer { try? FileManager.default.removeItem(at: one); try? FileManager.default.removeItem(at: two) }
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let first = Fixture.space("one", path: one.path), second = Fixture.space("two", path: two.path)
         let vm = try await app.start(with: ShepherdState(spaces: [first, second]))
@@ -173,7 +173,7 @@ extension NewThreadWorktreeBaseTests {
         let newest = try git(["rev-parse", "HEAD"], in: other)
         #expect(cached != newest)
 
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         app.settings.worktreeFetchBeforeCreate = fetch
         let vm = try await app.start(with: ShepherdState(spaces: [Fixture.space("proj", path: sandbox.repo.path)]))
@@ -211,7 +211,7 @@ extension NewThreadWorktreeBaseTests {
         try StubPi.installAsEngine()
         let repo = try Self.repo()
         defer { try? FileManager.default.removeItem(at: repo) }
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let vm = try await app.start(with: ShepherdState(spaces: [Fixture.space("proj", path: repo.path)]))
         vm.openNewThread()
@@ -288,7 +288,7 @@ extension NewThreadWorktreeBaseTests {
         try StubPi.installAsEngine()
         let repo = try Self.repo()
         defer { try? FileManager.default.removeItem(at: repo) }
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space("proj", path: repo.path)
         let vm = try await app.start(with: ShepherdState(spaces: [space]))
@@ -330,7 +330,7 @@ extension NewThreadWorktreeBaseTests {
         try StubPi.installAsEngine()
         let repo = try Self.repo(), plain = try Self.repo()
         defer { try? FileManager.default.removeItem(at: repo); try? FileManager.default.removeItem(at: plain) }
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let pinned = Space(name: "pinned", path: repo.path, worktreeBase: "release")
         let other = Fixture.space("plain", path: plain.path)
@@ -363,7 +363,7 @@ extension NewThreadWorktreeBaseTests {
         try StubPi.installAsEngine()
         let repo = try Self.repo()
         defer { try? FileManager.default.removeItem(at: repo) }
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Space(name: "pinned", path: repo.path, worktreeBase: "gone")
         let vm = try await app.start(with: ShepherdState(spaces: [space]))

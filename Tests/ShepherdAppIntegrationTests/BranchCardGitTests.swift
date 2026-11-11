@@ -49,7 +49,7 @@ struct BranchCardGitTests {
 @MainActor
 struct BranchCardActionTests {
     @Test func theCardListsTheSpaceAndCommitOpensItsSheet() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let repo = try makeScratchRepo(files: ["file.txt": "before\n"])
         defer { try? FileManager.default.removeItem(at: repo) }

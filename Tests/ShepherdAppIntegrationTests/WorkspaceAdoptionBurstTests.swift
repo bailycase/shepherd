@@ -11,7 +11,7 @@ import Testing
 @MainActor
 struct WorkspaceAdoptionBurstTests {
     @Test func statusBurstsAdoptEverySnapshotButPruneOnlyOnMembershipChange() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space("one", path: app.dir.appendingPathComponent("one").path)
         let agents = (0..<50).map { Fixture.agent("agent-\($0)", in: space, order: $0) }

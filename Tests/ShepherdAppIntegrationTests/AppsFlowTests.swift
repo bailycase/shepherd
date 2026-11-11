@@ -103,7 +103,7 @@ struct AppsFlowTests {
     }
 
     @Test func quittingStopsEveryApp() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         let space = Fixture.space("payments", path: app.dir.path)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: []))
         let key = AppKey(scope: .mac, name: "Postgres")
@@ -191,7 +191,7 @@ struct AppsFlowTests {
 @MainActor
 struct AppToolsFlowTests {
     @Test func anAgentRunsReadsAndStopsItsSpacesAppAndIsRefusedTheRest() async throws {
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let payments = app.dir.appendingPathComponent("payments"), ledger = app.dir.appendingPathComponent("ledger")
         try AppsFile.save([AppDefinition(name: "Worker", command: "echo worker-up; sleep 60", agents: true),

@@ -116,7 +116,7 @@ struct DesignSystemFlowTests {
 
     @Test func buildingASystemFromARepoShowsItOnItsPageAndLeavesTheRepoAsItWas() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let repo = try makeScratchRepo(files: Self.repoFiles)
         let before = Self.workingTree(repo)

@@ -62,7 +62,7 @@ struct PiSignInFlowTests {
         try StubPi.installAsEngine()
         let setup = try Setup()
         defer { setup.remove() }
-        let app = try AppHarness(pi: setup.pi)
+        let app = try AppHarness(pi: setup.pi, inProcess: true)
         defer { app.stop() }
         let work = setup.dir.appendingPathComponent("work", isDirectory: true)
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)

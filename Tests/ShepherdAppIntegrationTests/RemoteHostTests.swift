@@ -168,7 +168,7 @@ struct RemoteHostTests {
 
     @Test func selectedVisibleRemoteTerminalDemandsOnlyItsOwnProcess() async throws {
         try StubPi.installAsEngine()
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         let agent = Fixture.agent(in: space, auxiliary: 2)
@@ -208,7 +208,7 @@ struct RemoteHostTests {
 
     @Test(arguments: [false, true], [false, true])
     func remoteTerminalDemandStartsOnlyTheRequestedRestoredShell(staleBinding: Bool, olderHost: Bool) async throws {
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         var agent = Fixture.agent(in: space, auxiliary: 4)
@@ -328,7 +328,7 @@ struct RemoteHostTests {
     }
 
     @Test func remoteSubagentsFollowTheHostAndClearWhenTheAgentOrHostGoes() async throws {
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         let agent = Fixture.agent("parent", in: space)
@@ -355,7 +355,7 @@ struct RemoteHostTests {
     /// A subagent asks its parent, never the user. A live child keeps its idle parent working
     /// locally and remotely, without putting it in Needs you; the tray shows the child's question.
     @Test func aSubagentThatAskedItsParentNeverPutsItsAgentInNeedsYouOnTheHostOrItsClients() async throws {
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         let fixture = Fixture.agent("parent", in: space)

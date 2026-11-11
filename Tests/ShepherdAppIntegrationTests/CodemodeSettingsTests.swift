@@ -18,7 +18,7 @@ struct CodemodeSettingsTests {
     private static func pressAndLaunch() async throws {
         AccessibilityNode.enable()
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let app = try AppHarness(inProcess: true)
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: []))
