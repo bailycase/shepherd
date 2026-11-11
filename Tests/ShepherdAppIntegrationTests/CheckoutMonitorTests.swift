@@ -10,9 +10,9 @@ import ShepherdSessions
 @Suite("Checkout monitor", .mainActorExclusive)
 @MainActor
 struct CheckoutMonitorTests {
-    /// A new agent's checkout is read at once; selecting it again reads the files it changed.
+    /// A new agent's checkout is read at once; showing it again reads the files it changed.
     @Test func anAgentsBranchAndChangedFilesReachTheWorkspace() async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let repo = try makeScratchRepo(files: ["file.txt": "before\n"])
         defer { try? FileManager.default.removeItem(at: repo) }
@@ -27,6 +27,8 @@ struct CheckoutMonitorTests {
         try "after\n".write(to: repo.appendingPathComponent("file.txt"), atomically: true, encoding: .utf8)
         try "fresh\n".write(to: repo.appendingPathComponent("new.txt"), atomically: true, encoding: .utf8)
         vm.selectAgent(agent.agent.id)
+        // What the app, active, tells its host as the selection lands (`syncFocusedThread`).
+        app.remoteHosts.focusLocalThread(agent.agent.id)
 
         try await eventuallyOnMain("the changed files") {
             server.state.agents.first?.checkout == AgentCheckout(branch: "main", changedFiles: 2)
