@@ -3,9 +3,10 @@ import ShepherdCore
 import Testing
 @testable import ShepherdApp
 
-/// Switching agents is a visibility flip, never a remount: every mounted layout stays in the
-/// view tree in a stable order and exactly one is visible. Reordering `mountedTabs` would
-/// change ForEach identity and rebuild the very surfaces this exists to preserve.
+/// Switching agents is a visibility flip, never a remount: every mounted layout (the ones
+/// shown this session) stays in the view tree in a stable order and exactly one is visible.
+/// Reordering `mountedTabs` would change ForEach identity and rebuild the very surfaces this
+/// exists to preserve.
 @Suite("Workspace selection")
 struct WorkspaceSelectionTests {
     private struct Workspace {
@@ -26,8 +27,10 @@ struct WorkspaceSelectionTests {
 
         var stableOrder: [TabID] { [a.tab.id, b.tab.id, c.tab.id] }
 
-        func selecting(_ agent: Agent?, in space: Space? = nil) -> WorkspaceSelection {
-            WorkspaceSelection(state: state, selectedSpaceID: (space ?? home).id, selectedAgentID: agent?.id)
+        /// A selection with `shown` layouts mounted behind it; every tab by default.
+        func selecting(_ agent: Agent?, in space: Space? = nil, shown: Set<TabID>? = nil) -> WorkspaceSelection {
+            WorkspaceSelection(state: state, selectedSpaceID: (space ?? home).id, selectedAgentID: agent?.id,
+                               shownTabIDs: shown ?? Set(state.tabs.map(\.id)))
         }
     }
 
@@ -55,7 +58,8 @@ struct WorkspaceSelectionTests {
         var coordinator = w.b.agent
         coordinator.coordinatorFor = ProjectID()
         let state = ShepherdState(spaces: [w.home, w.other], tabs: [w.c.tab, w.b.tab, w.a.tab], agents: [w.a.agent, coordinator, w.c.agent])
-        var selection = WorkspaceSelection(state: state, selectedSpaceID: w.home.id, selectedAgentID: nil)
+        var selection = WorkspaceSelection(state: state, selectedSpaceID: w.home.id, selectedAgentID: nil,
+                                           shownTabIDs: Set(state.tabs.map(\.id)))
         selection.destination = .project
         #expect(selection.mountedTabs.map(\.id) == [w.a.tab.id, w.c.tab.id])
     }
@@ -68,10 +72,12 @@ struct WorkspaceSelectionTests {
         project.tasks = [ProjectTask(operationID: UUID(), workerAgentID: w.b.agent.id, spaceID: w.home.id, title: "T", prompt: "p")]
         let state = ShepherdState(spaces: [w.home, w.other], tabs: [w.c.tab, w.b.tab, w.a.tab], agents: [w.a.agent, w.b.agent, w.c.agent],
                                   projects: [project])
-        var selection = WorkspaceSelection(state: state, selectedSpaceID: w.home.id, selectedAgentID: nil)
+        var selection = WorkspaceSelection(state: state, selectedSpaceID: w.home.id, selectedAgentID: nil,
+                                           shownTabIDs: Set(state.tabs.map(\.id)))
         selection.destination = .project
         #expect(selection.mountedTabs.map(\.id) == [w.a.tab.id, w.c.tab.id])
-        let opened = WorkspaceSelection(state: state, selectedSpaceID: w.home.id, selectedAgentID: w.b.agent.id)
+        let opened = WorkspaceSelection(state: state, selectedSpaceID: w.home.id, selectedAgentID: w.b.agent.id,
+                                        shownTabIDs: Set(state.tabs.map(\.id)))
         #expect(opened.mountedTabs.map(\.id).contains(w.b.tab.id))
     }
 
@@ -130,7 +136,8 @@ struct WorkspaceSelectionTests {
         let w = Workspace()
         var state = w.state
         state.tabs.removeAll { $0.id == w.a.tab.id }
-        let selection = WorkspaceSelection(state: state, selectedSpaceID: w.home.id, selectedAgentID: w.a.agent.id)
+        let selection = WorkspaceSelection(state: state, selectedSpaceID: w.home.id, selectedAgentID: w.a.agent.id,
+                                           shownTabIDs: Set(state.tabs.map(\.id)))
         #expect(selection.activeTabID == nil)
     }
 
@@ -245,50 +252,86 @@ struct WorkspaceSelectionTests {
         #expect(WorkspaceSelection.terminalTabs(in: state) == expected)
     }
 
-    // MARK: Mounting at launch
+    // MARK: Mounting when shown
 
-    @Test func pendingLayoutsWaitToMount() {
+    /// A layout nobody has shown is not mounted, whatever the others are.
+    @Test func onlyShownLayoutsMount() {
+        let w = Workspace()
+        #expect(w.selecting(w.a.agent, shown: []).mountedTabs.map(\.id) == [w.a.tab.id])
+        #expect(w.selecting(w.a.agent, shown: [w.a.tab.id, w.c.tab.id]).mountedTabs.map(\.id) == [w.a.tab.id, w.c.tab.id])
+        #expect(w.selecting(nil, shown: []).mountedTabs.isEmpty, "with nothing on screen, nothing mounts")
+    }
+
+    /// The layout on screen mounts in the update that selected it, before anything has recorded
+    /// it as shown.
+    @Test func theActiveLayoutMountsBeforeItIsRecorded() {
+        let w = Workspace()
+        #expect(w.selecting(w.b.agent, shown: []).mountedTabs.map(\.id) == [w.b.tab.id])
+        #expect(w.selecting(w.b.agent, shown: [w.a.tab.id]).mountedTabs.map(\.id) == [w.a.tab.id, w.b.tab.id])
+    }
+
+    /// Once shown, a layout stays mounted behind another agent, a page and a remote selection.
+    @Test func aShownLayoutStaysMountedBehindAnotherAgentAPageOrARemoteSelection() {
+        let w = Workspace()
+        let shown: Set = [w.a.tab.id, w.b.tab.id]
+        #expect(w.selecting(w.b.agent, shown: shown).mountedTabs.map(\.id) == [w.a.tab.id, w.b.tab.id])
+        var page = w.selecting(w.b.agent, shown: shown)
+        page.destination = .newThread
+        #expect(page.mountedTabs.map(\.id) == [w.a.tab.id, w.b.tab.id])
+        var remote = w.selecting(w.b.agent, shown: shown)
+        remote.remoteSelectionActive = true
+        #expect(remote.mountedTabs.map(\.id) == [w.a.tab.id, w.b.tab.id])
+    }
+
+    /// Layouts shown in any order land in their place in the stable order: showing one never
+    /// moves a layout already mounted.
+    @Test(arguments: [[0, 1, 2], [2, 0, 1], [1, 2, 0]])
+    func shownLayoutsMountInTheStableOrderWhateverOrderTheyWereShownIn(order: [Int]) {
+        let w = Workspace()
+        var shown: Set<TabID> = []
+        for index in order {
+            shown.insert(w.stableOrder[index])
+            let selection = w.selecting(nil, shown: shown)
+            #expect(selection.mountedTabs.map(\.id) == w.stableOrder.filter(shown.contains))
+        }
+        #expect(w.selecting(nil, shown: shown).mountedTabs.map(\.id) == w.stableOrder)
+    }
+
+    /// A shown layout that holds a terminal parks like any other, and the one on screen never does.
+    @Test func coldParkingStillUnmountsAShownTerminalLayoutButNeverTheActiveOne() {
         let w = Workspace()
         var selection = w.selecting(w.a.agent)
-        selection.pendingMountTabIDs = [w.b.tab.id, w.c.tab.id]
+        selection.parkedTabIDs = [w.a.tab.id, w.b.tab.id]
+        #expect(selection.mountedTabs.map(\.id) == [w.a.tab.id, w.c.tab.id])
+        selection.parkedTabIDs = Set(w.stableOrder)
         #expect(selection.mountedTabs.map(\.id) == [w.a.tab.id])
     }
 
-    /// An agent selected before its turn to mount mounts at once.
-    @Test func theActiveLayoutMountsEvenWhilePending() {
+    /// A shown tab whose layout is gone from the state mounts nothing.
+    @Test func aShownTabThatIsGoneDoesNotMount() {
         let w = Workspace()
-        var selection = w.selecting(w.b.agent)
-        selection.pendingMountTabIDs = Set(w.stableOrder)
-        #expect(selection.mountedTabs.map(\.id) == [w.b.tab.id])
+        var state = w.state
+        state.tabs.removeAll { $0.id == w.b.tab.id }
+        let selection = WorkspaceSelection(state: state, selectedSpaceID: w.home.id, selectedAgentID: w.a.agent.id,
+                                           shownTabIDs: Set(w.stableOrder))
+        #expect(selection.mountedTabs.map(\.id) == [w.a.tab.id, w.c.tab.id])
     }
 
-    @Test func theVisibleSpaceMountsFirst() {
+    /// A Project's worker, shown earlier, is drawn by its Project page: its layout mounts only
+    /// while it is the thread open, and its coordinator's never does.
+    @Test func aShownProjectWorkerStillMountsOnlyWhileOpen() {
         let w = Workspace()
-        var inOther = w.selecting(w.c.agent, in: w.other)
-        inOther.pendingMountTabIDs = [w.a.tab.id, w.b.tab.id]
-        #expect(inOther.mountOrder == [w.a.tab.id, w.b.tab.id])
-        var inHome = w.selecting(w.a.agent)
-        inHome.pendingMountTabIDs = [w.b.tab.id, w.c.tab.id]
-        #expect(inHome.mountOrder == [w.b.tab.id, w.c.tab.id])
-        var otherFirst = w.selecting(w.c.agent, in: w.other)
-        otherFirst.pendingMountTabIDs = [w.a.tab.id, w.c.tab.id]
-        #expect(otherFirst.mountOrder == [w.c.tab.id, w.a.tab.id])
-    }
-
-    /// Mounting in any order never moves a layout already mounted: each lands in its place in
-    /// the stable order.
-    @Test(arguments: [[0, 1, 2], [2, 0, 1], [1, 2, 0]])
-    func draininglayoutsKeepsTheStableOrder(drain: [Int]) {
-        let w = Workspace()
-        var selection = w.selecting(nil)
-        selection.pendingMountTabIDs = Set(w.stableOrder)
-        var drained: Set<TabID> = []
-        for index in drain {
-            drained.insert(w.stableOrder[index])
-            selection.pendingMountTabIDs.remove(w.stableOrder[index])
-            #expect(selection.mountedTabs.map(\.id) == w.stableOrder.filter(drained.contains))
-        }
-        #expect(selection.mountedTabs.map(\.id) == w.stableOrder)
+        var project = Project(name: "P")
+        project.tasks = [ProjectTask(operationID: UUID(), workerAgentID: w.b.agent.id, spaceID: w.home.id, title: "T", prompt: "p")]
+        var coordinator = w.c.agent
+        coordinator.coordinatorFor = project.id
+        let state = ShepherdState(spaces: [w.home, w.other], tabs: [w.c.tab, w.b.tab, w.a.tab], agents: [w.a.agent, w.b.agent, coordinator],
+                                  projects: [project])
+        let shown = Set(state.tabs.map(\.id))
+        let away = WorkspaceSelection(state: state, selectedSpaceID: w.home.id, selectedAgentID: w.a.agent.id, shownTabIDs: shown)
+        #expect(away.mountedTabs.map(\.id) == [w.a.tab.id])
+        let open = WorkspaceSelection(state: state, selectedSpaceID: w.home.id, selectedAgentID: w.b.agent.id, shownTabIDs: shown)
+        #expect(open.mountedTabs.map(\.id) == [w.a.tab.id, w.b.tab.id])
     }
 
     @Test func theFourMostRecentlyShownLayoutsNeverPark() {

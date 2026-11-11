@@ -89,14 +89,22 @@ test("a yielded settle does not continue, and unyield on an idle goal kicks it o
   assert.equal(f.prompts.length, prompts + 1);
 });
 
-test("a question stops the goal on the user and Resume waits for the answer", async () => {
+test("a question stops the goal on the user and the answer resumes it", async () => {
   const f = fixture();
   await f.action({ action: "set", text: "Acceptance passes" });
+  await f.emit("before_agent_start");
   await f.emit("tool_execution_start", { toolName: "ask_user", toolCallId: "q" });
   assert.equal(f.goal.state, "needsYou"); assert.equal(f.goal.reason, "waiting for your answer");
   await assert.rejects(f.action({ action: "resume" }), /Answer the question/);
-  await f.emit("tool_execution_end", { toolCallId: "q" });
-  assert.equal(f.goal.reason, "answer received · resume to continue");
+  await f.emit("tool_execution_end", { toolCallId: "q", isError: false });
+  assert.equal(f.goal.state, "working"); assert(f.goal.runningSince); assert(f.active.includes("goal_finish"));
+  // The same run settles into a goal continuation, not a stop.
+  assert.equal((await f.emit("agent_before_settle", { entries: [], outcome: "completed" }))?.continue, true);
+
+  await f.emit("tool_execution_start", { toolName: "ask_user", toolCallId: "q2" });
+  await f.emit("tool_execution_end", { toolCallId: "q2", isError: false, result: { details: { cancelled: true } } });
+  assert.equal(f.goal.state, "needsYou"); assert.equal(f.goal.reason, "no answer · resume to continue");
+  assert.equal(await f.emit("agent_before_settle", { entries: [], outcome: "completed" }), undefined);
   await f.action({ action: "resume" }); assert.equal(f.goal.state, "working");
 });
 

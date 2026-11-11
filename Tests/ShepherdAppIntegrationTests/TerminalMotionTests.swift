@@ -74,6 +74,8 @@ struct TerminalMotionTests {
         let hidden = try await app.liveAgent("hidden", in: space, order: 1, auxiliary: 1)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [shown, hidden]))
         vm.selectAgent(shown.agent.id)
+        // The other agent was shown earlier this session, so its layout mounts hidden.
+        MountedWorkspace.markEveryLayoutShown(vm)
         let window = OffscreenWindow(size: CGSize(width: 1200, height: 600), dark: false, WorkspaceView(vm: vm))
         defer { window.close() }
         try await eventuallyOnMain("both layouts to mount") { vm.mountedTabs.count == 2 }

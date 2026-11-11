@@ -3,7 +3,8 @@ import ShepherdCore
 
 /// Which pane layouts the workspace mounts, and which single one is visible.
 ///
-/// The workspace keeps every *mounted* layout (each agent's thread plus any terminal panes
+/// A layout mounts the first time its agent is shown, and stays mounted from then on: the
+/// workspace keeps every *mounted* layout (each agent's thread plus any terminal panes
 /// beside it) in the view tree and toggles visibility, rather than swapping layouts in and
 /// out of the view tree. Unmounting destroys the pane's Ghostty surface, so returning to an agent
 /// has to rebuild it, wait for it to become ready, and replay the whole
@@ -21,8 +22,8 @@ import ShepherdCore
 /// returning re-mounts from a snapshot (single-digit ms) instead of a blank
 /// surface. A layout that is only a thread never parks.
 ///
-/// At launch the layouts mount in turn (`pendingMountTabIDs`): the visible
-/// one in the first frame, the rest after it.
+/// At launch only the visible layout mounts, in the first frame. An agent nobody has opened has
+/// no mounted layout: nothing waits for one to draw.
 ///
 /// Pure value type so this (the part that is easy to get subtly wrong) is
 /// testable without constructing a view model, which owns the session server.
@@ -39,9 +40,9 @@ struct WorkspaceSelection: Equatable {
     /// Layouts to keep unmounted (decided by `coldParkCandidates`, applied
     /// by the view model). Never contains the active tab.
     var parkedTabIDs: Set<TabID> = []
-    /// Layouts not mounted yet at launch: the visible one mounts first, and the view model
-    /// mounts the rest after its first frame, a few per run-loop turn (`mountOrder`).
-    var pendingMountTabIDs: Set<TabID> = []
+    /// Layouts shown at least once this session. They mount, with the active one, until their tab
+    /// goes, cold parking takes them or (a Project's worker) another thread is open.
+    var shownTabIDs: Set<TabID> = []
 
     /// The space the workspace stands in. With an agent selected, the selected space while it
     /// exists. With none, a hidden space never stands: the reserved automations space holds only
@@ -92,7 +93,8 @@ struct WorkspaceSelection: Equatable {
         }.map(\.id))
     }
 
-    /// Layouts kept in the view tree, ordered stably by (space, tab order) —
+    /// Layouts kept in the view tree: the active one, and every one shown this session
+    /// (`shownTabIDs`) that is not parked. Ordered stably by (space, tab order) —
     /// never by selection. Reordering would change the ForEach identity order
     /// and make SwiftUI rebuild the very views this exists to preserve;
     /// adding a space appends its tabs without disturbing earlier ones, and a
@@ -111,16 +113,8 @@ struct WorkspaceSelection: Equatable {
         }
         return Self.stable(state.tabs.filter { tab in
             (!projectTabs.contains(tab.id) || (tab.id == active && !coordinatorTabs.contains(tab.id)))
-                && (tab.id == active || (!parkedTabIDs.contains(tab.id) && !pendingMountTabIDs.contains(tab.id)))
+                && (tab.id == active || (shownTabIDs.contains(tab.id) && !parkedTabIDs.contains(tab.id)))
         }, in: state)
-    }
-
-    /// The order the pending layouts mount in: the visible layout's space first, then the rest
-    /// in their stable order.
-    var mountOrder: [TabID] {
-        let space = activeTab?.spaceID ?? selectedSpaceID
-        let pending = Self.stable(state.tabs.filter { pendingMountTabIDs.contains($0.id) }, in: state)
-        return (pending.filter { $0.spaceID == space } + pending.filter { $0.spaceID != space }).map(\.id)
     }
 
     private static func stable(_ tabs: [Tab], in state: ShepherdState) -> [Tab] {

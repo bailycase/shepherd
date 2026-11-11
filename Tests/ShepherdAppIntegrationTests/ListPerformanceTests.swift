@@ -1595,23 +1595,85 @@ struct ListPerformanceTests {
 
     // MARK: Workspace
 
-    /// Launching into a workspace of many agents builds the visible layout first: its first
-    /// frame holds one layout and its thread, and the rest mount after it, a few per turn.
-    @Test func launchBuildsOnlyTheVisibleLayoutFirst() async throws {
+    /// Launching into a workspace of many agents builds the visible layout and nothing else: its
+    /// first frame holds one layout and its thread, and once that thread is ready no other
+    /// layout has mounted, until its agent is shown.
+    @Test func launchBuildsOnlyTheVisibleLayout() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let (vm, agents) = try await MountedWorkspace.start(12, in: app)
+        let (vm, agents) = try await MountedWorkspace.start(12, in: app, mounting: .launch)
         var window: OffscreenWindow!
+        let visible = vm.threadStores.store(for: agents[0].agent.id)
 
-        let first = ListPerf.counting {
-            window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true, WorkspaceView(vm: vm))
-            ListPerf.settle(window)
-        }
+        SHRenderProbe.start()
+        window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true, WorkspaceView(vm: vm))
         defer { window.close() }
+        ListPerf.settle(window)
+        let first = SHRenderProbe.counts
+        let total: [String: Int]
+        do {
+            try await eventuallyOnMain("the visible thread to load", timeout: .seconds(60)) { visible.ready }
+            ListPerf.settle(window)
+            total = SHRenderProbe.stop()
+        } catch {
+            SHRenderProbe.stop()
+            throw error
+        }
 
         #expect(first["layout.agentLayout", default: 0] == 1, "\(first)")
         #expect(first["thread.view", default: 0] <= 2, "\(first)")
-        try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
+        #expect(total["deck.mount", default: 0] == 1, "\(total)")
+        #expect(total["deck.hiddenLayout", default: 0] == 0, "\(total)")
+        #expect(try WorkspaceNavigationTests.deck(in: window).pages.count == 1)
+        #expect(vm.mountedTabs.count == 1)
+    }
+
+    /// What a launch builds does not grow with the agents nobody opened: beside thirty of them
+    /// the window holds the same layouts, hosts and views as alone, and its renders stay within a
+    /// twentieth.
+    @Test func aLaunchBuildsTheSameBesideThirtyAgentsNobodyOpened() async throws {
+        func views(_ view: NSView) -> Int { 1 + view.subviews.reduce(0) { $0 + views($1) } }
+        func launch(beside others: Int) async throws -> (counts: [String: Int], views: Int) {
+            let app = try AppHarness()
+            defer { app.stop() }
+            let space = Fixture.space(path: app.dir.path)
+            var agents = [try await app.liveAgent("shown", in: space, order: 0)]
+            for index in 0..<others { agents.append(Fixture.agent("nobody opened \(index)", in: space, order: index + 1)) }
+            let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
+            vm.selectAgent(agents[0].agent.id)
+            let shown = vm.threadStores.store(for: agents[0].agent.id)
+
+            SHRenderProbe.start()
+            let window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true, WorkspaceView(vm: vm))
+            defer { window.close() }
+            do {
+                try await eventuallyOnMain("the shown thread to load", timeout: .seconds(60)) { shown.ready }
+                ListPerf.settle(window)
+                // What the launch set off after the thread, until the window holds still.
+                var settled = 0
+                try await eventuallyOnMain("the window to hold still") {
+                    ListPerf.settle(window)
+                    let now = views(window.host)
+                    defer { settled = now }
+                    return now == settled
+                }
+            } catch {
+                SHRenderProbe.stop()
+                throw error
+            }
+            return (SHRenderProbe.stop(), views(window.host))
+        }
+
+        let alone = try await launch(beside: 0)
+        let crowded = try await launch(beside: 30)
+
+        #expect(crowded.counts["deck.mount", default: 0] == alone.counts["deck.mount", default: 0], "\(crowded.counts)")
+        #expect(crowded.counts["deck.hiddenLayout", default: 0] == alone.counts["deck.hiddenLayout", default: 0], "\(crowded.counts)")
+        #expect(crowded.views == alone.views, "\(crowded.views) views beside thirty, \(alone.views) alone")
+        for key in ["layout.agentLayout", "layout.paneTreeGeo", "thread.view", "composer.body"] {
+            let base = alone.counts[key, default: 0]
+            #expect(abs(crowded.counts[key, default: 0] - base) <= max(2, base / 20), "\(key): alone \(alone.counts), beside thirty \(crowded.counts)")
+        }
     }
 
     /// Dragging the window's edge relays out the visible layout alone: hidden layouts keep

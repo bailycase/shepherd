@@ -183,10 +183,12 @@ extension ShepherdViewModel {
     }
 
     /// Has the host start `pane`'s shell, as showing it does, and waits until the app is attached to it.
+    /// A shell the shown layout is already starting is waited for, not started twice.
     @discardableResult
     func startHostTerminal(_ pane: PaneID, of agent: AgentID) async throws -> RemotePaneSession {
         let ref = try #require(localRef(agent))
-        try await remoteHosts.agentAction(ref, action: .startTerminal(paneID: pane))
+        do { try await remoteHosts.agentAction(ref, action: .startTerminal(paneID: pane)) }
+        catch where "\(error)".contains("That terminal is starting") {}
         var session: RemotePaneSession?
         try await eventuallyOnMain("the app to attach to the host's shell", timeout: .seconds(30)) {
             session = hostPaneSession(pane)
