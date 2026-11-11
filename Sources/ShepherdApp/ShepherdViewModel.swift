@@ -302,7 +302,7 @@ final class ShepherdViewModel {
         }
     }
     /// Where a local review reads its changes from; tests put a fixed engine here. Nil: this Mac's
-    /// `server.changes`.
+    /// host (`changes*` queries).
     @ObservationIgnored var changesEngineOverride: ((AgentID, String) -> ChangesEngine)?
     /// When each thread's review was last sent (ms): a review opened after the agent replied
     /// opens on Last turn.
