@@ -262,9 +262,12 @@
   - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Agents, Worktrees and Pi set,
     the pi packages its pi loads, and its Shepherd and pi versions; one change per request
     (`HostSettingChange`), applied as the Mac's own Settings would. `hostSettings.agentDefaults.v1`
-    adds the speed for new threads, the session naming model and Compact at (missing from an
-    older host: Standard, Automatic, pi's default); `HostSettingChange.capability` names what a
-    change needs, and an older host refuses the change as unknown.
+    adds the speed for new threads and Compact at (missing from an older host: Standard, pi's
+    default); `HostSettingChange.capability` names what a change needs, and an older host refuses
+    the change as unknown. `hostSettings.textGenerationModel.v1` takes the text generation
+    model's change, which replaced the session naming model's: a host still applies an older
+    client's `namingModel` change to the same setting, and no client offers the picker to a host
+    without the capability.
     `hostSettings.v2` adds Subagent defaults, Deleting a worktree agent, Skills in the / menu, a
     repo's `.mcp.json`, and the slash commands with their switches (missing from an older host:
     the Mac's defaults). `experiments.designTool.v1` switches the Design tool; it is offered while

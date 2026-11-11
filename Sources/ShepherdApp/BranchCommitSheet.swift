@@ -208,8 +208,9 @@ struct BranchCommitSheet: View {
         drafting = true
         error = nil
         let paths = current.info.files.filter { current.selected.contains($0.id) }.flatMap(\.paths)
+        let model = vm.settings.textGenerationModel
         Task {
-            let message = await ReviewCommitGit.draftMessage(root: current.info.repository, paths: paths, pi: vm.pi) {
+            let message = await ReviewCommitGit.draftMessage(root: current.info.repository, paths: paths, model: model, pi: vm.pi) {
                 await LoginShell.run($0, cwd: $1, timeout: 45)
             }
             form?.title = message.title

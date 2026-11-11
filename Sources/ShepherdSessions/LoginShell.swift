@@ -154,13 +154,22 @@ extension LoginShell {
         return reordered.joined(separator: "\n")
     }
 
-    /// `pi --print` with the prompt alone, on the drafting model (`SHEPHERD_PR_DESCRIPTION_MODEL`,
-    /// else Haiku): no session, tools, extensions or context files. Commit messages from review
-    /// are drafted this way.
-    public static func draftCommand(prompt: String, home: PiHome) -> String {
-        let model = ProcessInfo.processInfo.environment["SHEPHERD_PR_DESCRIPTION_MODEL"]
-            .flatMap { $0.split(separator: ",").first.map(String.init) }
-            ?? "anthropic/claude-haiku-4-5"
-        return PiLaunch.draft(home: home, model: model, prompt: prompt).script
+    /// `pi --print` with the prompt alone, on the text generation model: no session, tools,
+    /// extensions or context files. Commit messages from review are drafted this way.
+    public static func draftCommand(prompt: String, model: String, home: PiHome) -> String {
+        PiLaunch.draft(home: home, model: draftModel(model, environment: ProcessInfo.processInfo.environment), prompt: prompt).script
+    }
+
+    /// The one model a draft runs on: the text generation model from Settings, else the first of
+    /// `SHEPHERD_TEXT_GENERATION_MODELS` (the namer's list), else Haiku. A draft is one `pi --print`
+    /// call, so unlike the namer it cannot walk a list or fall back to a thread's own model.
+    static func draftModel(_ configured: String, environment: [String: String]) -> String {
+        let picked = configured.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !picked.isEmpty { return picked }
+        if let first = environment["SHEPHERD_TEXT_GENERATION_MODELS"]?.split(separator: ",").first {
+            let fromEnvironment = String(first).trimmingCharacters(in: .whitespaces)
+            if !fromEnvironment.isEmpty { return fromEnvironment }
+        }
+        return "anthropic/claude-haiku-4-5"
     }
 }

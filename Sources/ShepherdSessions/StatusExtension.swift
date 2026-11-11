@@ -127,7 +127,7 @@ public enum StatusExtension {
         goalsEnabled: Bool = false,
         namerExtensionPath: String? = nil,
         needsName: Bool = false,
-        namingModel: String = "",
+        textGenerationModel: String = "",
         isAutomation: Bool = false,
         instructions: (extensionPath: String, directory: String)? = nil,
         suggestFiles: [String] = [],
@@ -197,8 +197,8 @@ public enum StatusExtension {
         }
         if namerExtensionPath != nil && needsName {
             env["SHEPHERD_NEEDS_NAME"] = "1"
-            // Settings ▸ Agents ▸ Session naming model; the namer still falls back to the agent's own model.
-            if !namingModel.isEmpty { env["SHEPHERD_NAMER_MODELS"] = namingModel }
+            // Settings ▸ Agents ▸ Text generation model; the namer still falls back to the agent's own model.
+            if !textGenerationModel.isEmpty { env["SHEPHERD_TEXT_GENERATION_MODELS"] = textGenerationModel }
         }
         if isAutomation { env["SHEPHERD_AUTOMATION"] = "1" }
         if askExtensionPath != nil { env[AskExtension.environmentKey] = "1" }
