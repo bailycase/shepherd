@@ -442,6 +442,8 @@ struct AgentStartupTests {
         next.agent.lastActiveAt = 10
         let vm = try await app.start(with: Fixture.state(spaces: [firstSpace, nextSpace], agents: [first, next]), restoringAgents: true)
         #expect(vm.selectedAgentID == first.agent.id)
+        // The other thread was shown earlier this session, so its layout mounts hidden.
+        MountedWorkspace.markEveryLayoutShown(vm)
         let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: false, WorkspaceView(vm: vm))
         defer { window.close() }
         vm.terminalPanels.update(.init(host: nil, tab: next.tab.id)) { $0.shown = true }
