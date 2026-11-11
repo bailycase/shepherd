@@ -499,8 +499,9 @@ public final class NativeThreadStore {
     @ObservationIgnored private(set) var mainParsedBytes = 0
     /// How many times `derive` ran (tests).
     @ObservationIgnored private(set) var derivations = 0
-    /// Oversized prose/thinking, including cold loads, replacements and final text, parse off
-    /// main. Keep the prior presentation (or empty blocks) until a text/mode-fenced result lands.
+    /// A text this long that no cached state can grow within the tail budget below (a cold load, a
+    /// replacement, a tail past the budget) parses off main. Keep the prior presentation (or empty
+    /// blocks) until a text/mode-fenced result lands.
     nonisolated public static let offMainProseBytes = 8 * 1024
     /// A growing text whose unfinished tail is within both bounds advances on the main actor; the cost of a
     /// parse follows its lines more than its bytes (a 22 KB line takes microseconds, a 64 KB fence of 1,600
