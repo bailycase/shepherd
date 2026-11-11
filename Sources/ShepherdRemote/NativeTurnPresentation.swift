@@ -83,8 +83,24 @@ public struct NativeTurnPresentation: Equatable, Sendable {
     public var changes: NativeTurnChanges?
     /// Tool calls the reader can count: spawn calls a card replaced are not among them.
     public var toolCalls: Int
-    /// The turn's prose, for Copy.
-    public var copyText: String
+    /// The turn's prose, for Copy. Joined when read, not kept: a growing reply would hold its text a
+    /// second time in every presentation it rebuilds and compare it again in every `==`.
+    public var copyText: String {
+        var texts: [String] = []
+        for case .prose(_, let text, _) in items { texts.append(text) }
+        return texts.joined(separator: "\n\n")
+    }
+
+    /// Whether `copyText` has anything in it, without joining it.
+    public var hasCopyText: Bool {
+        var seen = false
+        for case .prose(_, let text, _) in items {
+            if seen || !text.isEmpty { return true }
+            seen = true
+        }
+        return false
+    }
+
     /// When the turn's last message landed (ms).
     public var endedAt: Double?
     /// The live turn has nothing moving (LiveText): no call running, no thinking streaming, and
@@ -101,12 +117,11 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         return false
     }
 
-    public init(items: [Item], changes: NativeTurnChanges?, toolCalls: Int, copyText: String, endedAt: Double?,
+    public init(items: [Item], changes: NativeTurnChanges?, toolCalls: Int, endedAt: Double?,
                 betweenTools: Bool = false, timing: NativeResponseTimingReport? = nil) {
         self.items = items
         self.changes = changes
         self.toolCalls = toolCalls
-        self.copyText = copyText
         self.endedAt = endedAt
         self.betweenTools = betweenTools
         self.timing = timing
@@ -235,7 +250,6 @@ public func nativeTurnPresentation(
     var items: [NativeTurnPresentation.Item] = []
     var calls: [NativeActivityCall] = []
     var toolCalls = 0
-    var copy: [String] = []
     var ordinal = 0
     var placedStart = false
     var placedFinish = false
@@ -320,7 +334,6 @@ public func nativeTurnPresentation(
             let id = nextID("prose")
             let parsed = prose(id, text, live && streaming)
             items.append(.prose(id: id, text: text, prose: parsed))
-            copy.append(text)
         case .goalRecord(let text):
             flushStretch()
             items.append(.goalRecord(id: nextID("goal"), text: text))
@@ -395,7 +408,6 @@ public func nativeTurnPresentation(
     }
     return NativeTurnPresentation(items: items, changes: live ? nil : nativeTurnChanges(calls), toolCalls: toolCalls,
                                   // A question's record is stamped when it was answered, not when pi worked.
-                                  copyText: copy.joined(separator: "\n\n"),
                                   endedAt: messages.filter { $0.question == nil }.compactMap(\.timestamp).max(),
                                   betweenTools: betweenTools && !endsInError, timing: timing)
 }
