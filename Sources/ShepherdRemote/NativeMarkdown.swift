@@ -757,10 +757,14 @@ private func parseDetails(_ lines: [String], from start: Int, _ context: Markdow
         if depth <= 0 { closed = true; break }
     }
     var body = raw.joined(separator: "\n")
-    // The opening tag, and the closing one when it has arrived.
-    if let open = body.range(of: "<details", options: .caseInsensitive),
-       let end = body[open.upperBound...].firstIndex(of: ">") {
-        body.removeSubrange(open.lowerBound...end)
+    // The opening tag, and the closing one when it has arrived. A tag whose end has not arrived
+    // loses its name alone: the body must not open with it again, or it parses as this block forever.
+    if let open = body.range(of: "<details", options: .caseInsensitive) {
+        if let end = body[open.upperBound...].firstIndex(of: ">") {
+            body.removeSubrange(open.lowerBound...end)
+        } else {
+            body.removeSubrange(open)
+        }
     }
     if closed, let close = body.range(of: "</details>", options: [.caseInsensitive, .backwards]) {
         body.removeSubrange(close)

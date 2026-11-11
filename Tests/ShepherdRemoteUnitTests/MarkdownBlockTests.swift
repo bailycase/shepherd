@@ -403,6 +403,17 @@ struct MarkdownBlockTests {
         #expect(nativeMarkdownBlocks(text) == blocks)
     }
 
+    /// A `<details` whose `>` never arrived (a reply cut off mid-tag) is a block with no tag left, not a
+    /// parse that opens the same block again until the stack is gone.
+    @Test(arguments: [
+        ("<details", [NativeMarkdownBlock.details(summary: "Details", blocks: [])]),
+        ("<details open\nstill writing", [.details(summary: "Details", blocks: [.paragraph("open\nstill writing")])]),
+        ("Intro\n\n<DETAILS\nbody", [.paragraph("Intro"), .details(summary: "Details", blocks: [.paragraph("body")])]),
+    ])
+    func aDetailsTagWhoseEndNeverArrivedEndsTheParse(text: String, blocks: [NativeMarkdownBlock]) {
+        #expect(nativeMarkdownBlocks(text) == blocks)
+    }
+
     @Test(arguments: [
         // Block tags are dropped and their text kept; inline tags stay for the renderer.
         ("<div align=\"center\">Centered <b>text</b></div>", [NativeMarkdownBlock.paragraph("Centered <b>text</b>")]),
