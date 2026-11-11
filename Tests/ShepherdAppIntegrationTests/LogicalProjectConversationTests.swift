@@ -1741,9 +1741,9 @@ private static func chipsAndLinks() async throws {
         let coordinator = try #require(r.app.server.state.projects.first?.coordinatorAgentID)
         let agent = try #require(r.vm.state.agents.first { $0.id == coordinator })
         let pane = try #require(agent.paneID)
-        let oldSession = try #require(r.vm.sessions.liveSession(forPane: pane))
+        let oldSession = try #require(r.vm.hostTerminalSession(pane))
         await r.app.server.stopKeepingAgent(sessionID: oldSession)
-        try await eventuallyOnMain("coordinator exits") { r.vm.sessions.liveSession(forPane: pane) == nil }
+        try await eventuallyOnMain("coordinator exits") { r.vm.hostTerminalSession(pane) == nil }
         #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "second message"))
         #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "third message"))
         try await eventuallyOnMain("queued messages delivered after coordinator relaunch", timeout: .seconds(40)) {
@@ -1752,7 +1752,7 @@ private static func chipsAndLinks() async throws {
         }
         let store = r.vm.threadStores.store(for: coordinator)
         try await eventuallyOnMain("the same conversation leaves starting") { window.layout(); return store.ready && !store.awaitingPi }
-        #expect(r.vm.sessions.liveSession(forPane: pane) != oldSession)
+        #expect(r.vm.hostTerminalSession(pane) != oldSession)
     }
 
     // MARK: Cold launch of a saved conversation

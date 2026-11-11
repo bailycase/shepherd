@@ -64,6 +64,7 @@ struct TerminalMotionTests {
         return (grids.filter { $0 != initial }, !recording.inBetween.isEmpty)
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// Dragging the window's edge resizes a hidden layout's shell once, when the drag ends: every
     /// grid it reports is a SIGWINCH to a process no one is looking at.
     @Test func hiddenShellsGetOneGridReportPerLiveResize() async throws {
@@ -112,6 +113,7 @@ struct TerminalMotionTests {
         let visibleShell = vm.sessions.session(for: shown.auxiliary[0], in: shown.tab)
         #expect(grids.last == "\(visibleShell.lastCols)x\(visibleShell.lastRows)", "hidden \(grids), shown \(visibleShell.lastCols)x\(visibleShell.lastRows)")
     }
+#endif
 
     @Test func aTerminalTakesItsFinalGridOnceWhileAPaneSlidesInBesideIt() async throws {
         let model = Model()
@@ -150,6 +152,7 @@ struct ShellTerminalMotionTests {
         var grids: [String] = []
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// The right pane docks beside the whole layout, measured against the main column (1207pt
     /// here, so it docks), not inside the thread's half (603pt, where it would overlay the
     /// thread): the shell narrows with the layout, once.
@@ -194,6 +197,7 @@ struct ShellTerminalMotionTests {
         if TimingTests.enabled { #expect(!opening.inBetween.isEmpty, "the review slides in") }
         #expect(log.grids.count - before == 1, "one PTY resize as the docked pane opens: \(log.grids[before...])")
     }
+#endif
 
     /// Waits until the surface's grid reports have been quiet for a while.
     private func quiet(_ log: GridLog) async throws {

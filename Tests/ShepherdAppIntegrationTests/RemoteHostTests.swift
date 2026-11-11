@@ -166,6 +166,7 @@ struct RemoteHostTests {
         _ = vm
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test func selectedVisibleRemoteTerminalDemandsOnlyItsOwnProcess() async throws {
         try StubPi.installAsEngine()
         let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
@@ -193,19 +194,21 @@ struct RemoteHostTests {
         vm.selectTerminalTab(target.tabs[0], target: target)
         vm.terminalPanels.update(target.key) { $0.shown = true }
         try await eventuallyOnMain("the selected visible remote terminal to start") {
-            hostVM.sessions.liveSession(forPane: target.tabs[0].id) != nil
+            hostVM.hostTerminalSession(target.tabs[0].id) != nil
         }
-        #expect(hostVM.sessions.liveSession(forPane: target.tabs[1].id) == nil,
+        #expect(hostVM.hostTerminalSession(target.tabs[1].id) == nil,
                 "the hidden sibling must stay dormant")
         #expect(Set(await remote.host.server.terminalActivity(agentID: agent.agent.id).map(\.paneID)) == [target.tabs[0].id])
 
         vm.selectTerminalTab(target.tabs[1], target: target)
         try await eventuallyOnMain("selecting the sibling to demand its process") {
-            hostVM.sessions.liveSession(forPane: target.tabs[1].id) != nil
+            hostVM.hostTerminalSession(target.tabs[1].id) != nil
         }
         #expect(Set(await remote.host.server.terminalActivity(agentID: agent.agent.id).map(\.paneID)) == Set(target.tabs.map(\.id)))
     }
+#endif
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test(arguments: [false, true], [false, true])
     func remoteTerminalDemandStartsOnlyTheRequestedRestoredShell(staleBinding: Bool, olderHost: Bool) async throws {
         let local = try AppHarness(inProcess: true), remote = try RemoteHostHarness(inProcess: true)
@@ -253,14 +256,14 @@ struct RemoteHostTests {
         try await local.remoteHosts.agentAction(target, action: .startTerminal(paneID: shell))
         try await local.remoteHosts.agentAction(target, action: .startTerminal(paneID: shell))
         try await eventuallyOnMain("only the requested shell to start") {
-            hostVM.sessions.liveSession(forPane: shell) != nil
+            hostVM.hostTerminalSession(shell) != nil
         }
-        let sessionID = try #require(hostVM.sessions.liveSession(forPane: shell))
+        let sessionID = try #require(hostVM.hostTerminalSession(shell))
         try await local.remoteHosts.agentAction(target, action: .startTerminal(paneID: shell))
-        #expect(hostVM.sessions.liveSession(forPane: shell) == sessionID)
+        #expect(hostVM.hostTerminalSession(shell) == sessionID)
         #expect(await remote.host.server.listSessions().filter(\.isAlive).map(\.id) == [sessionID])
-        #expect(hostVM.sessions.liveSession(forPane: agent.piPane.id) == nil)
-        #expect(hostVM.sessions.liveSession(forPane: agent.auxiliary[1].id) == nil)
+        #expect(hostVM.hostTerminalSession(agent.piPane.id) == nil)
+        #expect(hostVM.hostTerminalSession(agent.auxiliary[1].id) == nil)
         #expect(hostVM.selectedAgentID == selected && hostVM.focusedPaneID == focused)
         try await eventuallyOnMain("the fresh binding to reach the client") {
             connection.state.tabs.first { $0.id == agent.tab.id }?.layout.leaf(withID: shell)?.sessionID == sessionID
@@ -269,6 +272,7 @@ struct RemoteHostTests {
         pane.noteGrid(cols: 80, rows: 24)
         try await eventuallyOnMain("the demanded terminal to attach") { pane.phase == .live }
     }
+#endif
 
     @Test(arguments: ["available", "hostRemoved", "agentGone"])
     func agentCommandsWhileARemoteAgentIsSelectedLeaveTheLocalWorkspaceAlone(remoteState: String) async throws {

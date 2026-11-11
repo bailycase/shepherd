@@ -95,11 +95,10 @@ struct LocalHostRuntimeTests {
         settings.projectsEnabled = true
         settings.missionsEnabled = true
         let hosts = RemoteHostStore(defaults: defaults, childRefreshInterval: .milliseconds(200))
-        let vm = ShepherdViewModel(
-            server: BackgroundHostClient.idleServer(directory: clientDir), ownsWorkspace: false, settings: settings,
+        let vm = ShepherdViewModel(settings: settings,
             keybindings: KeybindingsStore(store: defaults),
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
-            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, restoresAgentsAtLaunch: false, checkoutReader: nil,
+            remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in }, looksUpPullRequests: false,
             hooks: HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
         vm.connectLocalHost(socket: socket, token: token)

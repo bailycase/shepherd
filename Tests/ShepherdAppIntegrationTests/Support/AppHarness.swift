@@ -20,11 +20,12 @@ final class AppHarness {
     let themeManager: ThemeManager
     let remoteHosts: RemoteHostStore
     private(set) var vm: ShepherdViewModel!
+    /// Each started view model's harness (`HarnessShims`).
+    static var started: [ObjectIdentifier: Weak] = [:]
 
     var server: SessionServer { scratch.server }
-    /// The app on the server in its own process, the mode slice 7 deletes: only the tests not
-    /// yet moved to the client harness ask for it. Every other harness's app is the client of the
-    /// scratch server served as `Shepherd --host` serves (`ShepherdHost.Services`).
+    /// No longer means anything: every harness's app is the client of the scratch server served
+    /// as `Shepherd --host` serves (`ShepherdHost.Services`). The tests still passing it move next.
     let inProcess: Bool
     var dir: URL { scratch.dir }
 
@@ -50,11 +51,8 @@ final class AppHarness {
     }
 
     /// Seeds `state` (if any), then builds the view model and waits until it has adopted the
-    /// server's snapshot. `restoringAgents` leaves settled agents dormant and starts selected or
-    /// recoverable work, as a launch does; otherwise pi starts when asked for a pane session (most tests
-    /// seed agents only to look at them, with no pi on PATH). `readingCheckouts` turns on the
-    /// header's checkout reads, which would otherwise change the workspace under a test that
-    /// seeded a repository.
+    /// host's snapshot. `restoringAgents` has the host recover unfinished work as it does at its
+    /// start. `readingCheckouts` turns on the app's pull request lookups (`gh`).
     /// `welcomingYourPi` runs the first launch's copy from "your pi" and its welcome step, which
     /// hold restored agents, as the app does; `yourPi` replaces the model that runs them.
     @discardableResult
@@ -62,12 +60,10 @@ final class AppHarness {
                readingCheckouts: Bool = false, mcp: MCPStore? = nil, welcomingYourPi: Bool = false,
                yourPi: YourPiModel? = nil, piAuth: PiAuthStore? = nil) async throws -> ShepherdViewModel {
         if let state { try await server.putState(state) }
-        let clientDir = dir.appendingPathComponent("client", isDirectory: true)
         let vm = ShepherdViewModel(
-            server: inProcess ? server : BackgroundHostClient.idleServer(directory: clientDir), ownsWorkspace: inProcess, settings: settings, keybindings: keybindings, themeManager: themeManager,
+            pi: server.pi, settings: settings, keybindings: keybindings, themeManager: themeManager,
             remoteHosts: remoteHosts, sidebarDefaults: defaults, themeInstaller: { _ in },
-            restoresAgentsAtLaunch: restoringAgents,
-            checkoutReader: readingCheckouts ? CheckoutMonitor.git : nil,
+            looksUpPullRequests: readingCheckouts,
             mcp: mcp,
             welcomesYourPi: welcomingYourPi,
             yourPi: yourPi,
@@ -78,11 +74,7 @@ final class AppHarness {
             apps: AppsModel(home: dir.appendingPathComponent("apps-home").path)
         )
         self.vm = vm
-        if inProcess {
-            let server = server
-            try await eventuallyOnMain("the view model to adopt the server's workspace") { vm.state == server.state }
-            return vm
-        }
+        Self.started[ObjectIdentifier(vm)] = Weak(harness: self)
         let token = try await serveHost(mcp: mcp, recovering: restoringAgents)
         let connection = vm.connectLocalHost(socket: hostSocket, token: token)
         let server = server

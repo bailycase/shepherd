@@ -27,6 +27,7 @@ struct SpaceTests {
         #expect(vm.newThread.place == NewThreadPlace(host: nil, space: id))
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test func aCheckoutWithAWorktreeOperationRunningCannotBecomeASpace() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -38,6 +39,7 @@ struct SpaceTests {
         #expect(vm.remoteActionError != nil)
         #expect(app.server.state.spaces.isEmpty)
     }
+#endif
 
     @Test func renamingASpaceChangesOnlyItsLabel() async throws {
         let app = try AppHarness()

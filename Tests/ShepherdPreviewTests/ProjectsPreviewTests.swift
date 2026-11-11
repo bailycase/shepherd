@@ -287,10 +287,10 @@ final class ProjectsPreviewWorld {
         let defaults = ScratchDefaults()
         let settings = AppSettings(store: defaults)
         let hosts = RemoteHostStore(defaults: defaults)
-        vm = ShepherdViewModel(server: local.server, settings: settings, keybindings: KeybindingsStore(store: defaults),
+        vm = ShepherdViewModel(pi: local.server.pi, settings: settings, keybindings: KeybindingsStore(store: defaults),
                                themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .light),
                                remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in },
-                               restoresAgentsAtLaunch: false, checkoutReader: nil)
+                               looksUpPullRequests: false)
         vm.showSettings = true; vm.settingsSection = .projects
         if !empty {
             let names = [long ? "dashboard-with-a-very-long-name-and-an-equally-long-directory" : detail ? "payments" : "dashboard", "mobile", "ops-scripts"]

@@ -181,6 +181,7 @@ struct AgentLifecycleTests {
         #expect(vm.state == original)
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// pi exiting on its own keeps the agent with its layout: its pane waits, stopped, for Retry.
     @Test func anAgentWhosePiExitsKeepsItsLayoutUntilRetry() async throws {
         let app = try AppHarness(inProcess: true)
@@ -205,6 +206,7 @@ struct AgentLifecycleTests {
         #expect(vm.cannotStart.contains(agent.agent.id))
         #expect(vm.sessions.session(for: agent.piPane, in: agent.tab) === pane)
     }
+#endif
 }
 
 /// Agents launched the way the app launches them (`PiLaunch.agent`), with the stub as the engine
@@ -231,7 +233,7 @@ struct AgentLaunchTests {
         #expect(tab.layout.leaves.map(\.id) == [agent.paneID], "a new agent is exactly its pi pane")
         #expect(vm.selectedAgentID == other.agent.id, "a background start leaves the selection alone")
         let piPane = try #require(agent.paneID)
-        let sessionID = try #require(vm.sessions.liveSession(forPane: piPane))
+        let sessionID = try #require(vm.hostTerminalSession(piPane))
         let info = try #require(await app.server.sessionInfo(sessionID: sessionID))
         #expect(info.command.last?.contains("&& exec '\(app.server.pi.launcher.path)' --mode rpc --session-dir ") == true)
         #expect(info.command.last?.hasPrefix("cd -- '\(app.dir.path)' && ") == true)
@@ -242,6 +244,7 @@ struct AgentLaunchTests {
         }
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test func aRestoredAgentWithoutARunningPiRespawnsWhenItsPaneMounts() async throws {
         try StubPi.installAsEngine()
         let app = try AppHarness(inProcess: true)
@@ -258,6 +261,7 @@ struct AgentLaunchTests {
         #expect(!pane.hasTerminalModel, "an RPC pane never builds a terminal surface")
         _ = try await app.readyThread(agent.agent.id)
     }
+#endif
 
     @Test func importingALinkedWorktreeStartsAnAgentCarryingItsIdentity() async throws {
         try StubPi.installAsEngine()

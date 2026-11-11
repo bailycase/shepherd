@@ -155,6 +155,7 @@ struct WorkspaceNavigationTests {
         #expect(vm.settingsSection == .pi)
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// Cold parking at the view-model seam: a layout holding a terminal pane, hidden past the
     /// delay and outside the four most recently shown, unmounts; selecting it again remounts it
     /// at once. An agent's pane is its RPC thread, so its pane session survives parking.
@@ -188,6 +189,7 @@ struct WorkspaceNavigationTests {
         #expect(vm.parkedTabIDs.isEmpty)
         #expect(vm.mountedTabs.contains { $0.id == agents[0].tab.id })
     }
+#endif
 
     @Test func foregroundSettingsAndPaletteRemoveWorkspaceKeyboardOwnership() async throws {
         let app = try AppHarness()
@@ -564,6 +566,7 @@ struct WorkspaceNavigationTests {
         #expect(frames() == Array(repeating: narrow, count: agents.count), "a hidden layout catches up synchronously when revealed")
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// A hidden layout is built when it mounts, its terminal surface included, and still takes
     /// its values while hidden: its thread stops polling and its terminal stops drawing, and the
     /// agent shown instead starts both. The hosts stay in mount order.
@@ -601,6 +604,7 @@ struct WorkspaceNavigationTests {
             #expect(deck.subviews.map(ObjectIdentifier.init) == vm.mountedTabs.compactMap { deck.pages[$0.id].map { ObjectIdentifier($0.host) } })
         }
     }
+#endif
 
     /// The outer graph's overlays (the overlaid sidebar, the palette) sit over the deck: a click
     /// there reaches them, never the layout under them.

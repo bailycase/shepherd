@@ -310,7 +310,7 @@ struct LogicalProjectPreviewTests {
         // `onAgentChildren` path), so the row's pill is the live count, not a typed string.
         if workers.count > 1 {
             let runs = (1...2).map { ChildRun(runID: "run-\($0)", label: "worker \($0)", state: "running", startedAt: Date().timeIntervalSince1970 * 1000) }
-            vm.sessions.onAgentChildren?(workers[1], runs)
+            vm.applyAgentChildren(workers[1], runs)
         }
         for id in workers { Task { await vm.threadStores.store(for: id).run(request: { try await vm.server.nativeThread(agentID: id, request: $0) }) } }
         let ready: @MainActor () -> Bool = {

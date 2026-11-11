@@ -53,7 +53,7 @@ struct LiveModelUseCaseTests {
 
         let settings = AppSettings(store: defaults)
         settings.worktreeGeneratePRDescription = false
-        let vm = ShepherdViewModel(server: server, settings: settings, keybindings: KeybindingsStore(store: defaults),
+        let vm = ShepherdViewModel(pi: server.pi, settings: settings, keybindings: KeybindingsStore(store: defaults),
                                    themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
                                    remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in })
         let space = Space(name: "calc", path: cwd.path)

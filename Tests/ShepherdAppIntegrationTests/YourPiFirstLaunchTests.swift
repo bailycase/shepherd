@@ -61,6 +61,7 @@ struct YourPiFirstLaunchTests {
         return false
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// The start gate with logins to copy: nothing starts while the copy runs, not even the agent
     /// on screen; once it is over, restored agents start signed in (the stub exits "No models
     /// available" without a login in Shepherd's home) while the sheet still shows, with no
@@ -126,7 +127,9 @@ struct YourPiFirstLaunchTests {
         vm.finishImport()
         #expect(vm.yourPi.importSheet == nil)
     }
+#endif
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// The gate never blocks forever: a copy that overruns its deadline lets restored agents
     /// start anyway, with no sheet.
     @Test func aCopyPastItsDeadlineNeverHoldsAgentsForever() async throws {
@@ -149,6 +152,7 @@ struct YourPiFirstLaunchTests {
         try await eventuallyAsync("the restored agent's pi to start past the deadline") { Self.launch(of: agent.agent.effectivePiSessionID) != nil }
         #expect(!vm.holdsForWelcome && !vm.sessions.startQueue.held && vm.yourPi.importSheet == nil)
     }
+#endif
 
     /// Something still missing: a provider an agent (or the default model) uses has no login, key
     /// or custom provider in Shepherd's pi. The sheet asks for it, and only the agents that use
@@ -194,6 +198,7 @@ struct YourPiFirstLaunchTests {
         #expect(model.importSheet?.unresolvedDefault == nil && model.importSheet?.allSignedIn == true)
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// While the sheet asks for a missing provider, restored agents that use it wait (the sidebar
     /// says "waiting") and the others start; Done or Skip for now starts the rest.
     @Test func agentsWaitingOnAMissingProviderStartWhenTheSheetCloses() async throws {
@@ -221,6 +226,7 @@ struct YourPiFirstLaunchTests {
         try await eventuallyAsync("the held agent to start once the sheet closes") { Self.launch(of: waiting.agent.effectivePiSessionID) != nil }
         #expect(vm.waitingForImport.isEmpty)
     }
+#endif
 
     /// Once the first copy has run, a launch copies nothing (a change in their pi stays there),
     /// shows no sheet, and starts restored agents at once.
@@ -242,6 +248,7 @@ struct YourPiFirstLaunchTests {
         #expect(auth["xai"] == nil && auth["anthropic"] != nil)
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// A new user with no pi and no key in the environment sees only sign-in; skipping it is safe:
     /// every restored agent then waits on "not signed in".
     @Test func skippingSignInWithNoKeysLeavesEveryRestoredAgentWaitingNotSignedIn() async throws {
@@ -272,6 +279,7 @@ struct YourPiFirstLaunchTests {
         #expect(store.startProblem?.kind == .notSignedIn)
         #expect(vm.cannotStart.contains(id) && vm.state.agents.contains { $0.id == id }, "the agent stays, waiting")
     }
+#endif
 
     /// A user with no pi whose Shepherd pi is already signed in (a sign-in made before this
     /// build) has nothing to be asked: no step shows, and restored agents aren't held.

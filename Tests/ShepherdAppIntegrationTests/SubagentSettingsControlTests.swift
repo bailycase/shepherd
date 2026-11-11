@@ -22,10 +22,10 @@ struct SubagentSettingsControlTests {
         let files = try SubagentFixtures.store(in: scratch.dir, populated: true)
         let model = SubagentDefinitionsModel(store: files)
         let defaults = ScratchDefaults()
-        let vm = ShepherdViewModel(server: scratch.server, settings: AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
+        let vm = ShepherdViewModel(pi: scratch.server.pi, settings: AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
                                    themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
                                    remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
-                                   restoresAgentsAtLaunch: false, checkoutReader: nil)
+                                   looksUpPullRequests: false)
         model.settings = vm.settings
         vm.madeSubagentDefinitions = model; vm.showSettings = true; vm.settingsSection = .subagents
         var revealed: URL?, opened: URL?

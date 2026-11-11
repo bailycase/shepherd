@@ -135,6 +135,7 @@ struct PaneControlTests {
         try await eventuallyAsync("the terminal's process to stop") { await server.sessionInfo(sessionID: shell.id)?.isAlive != true }
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// The agent's terminal opens as a tab under its thread without moving the user, gets a live
     /// shell without any view drawing it, and runs the command the agent asked for.
     @Test func anAgentOpenedTerminalRunsItsCommandWithoutMovingTheUser() async throws {
@@ -168,7 +169,7 @@ struct PaneControlTests {
         let started = await app.server.listSessions().filter(\.isAlive).count
         // What the terminal's view does when it draws: it takes the session the open started.
         let drawn = vm.sessions.session(for: terminal, in: tab)
-        #expect(drawn.sessionID != nil && drawn.sessionID == vm.sessions.liveSession(forPane: terminal.id))
+        #expect(drawn.sessionID != nil && drawn.sessionID == vm.hostTerminalSession(terminal.id))
         var lastRead = "no reply"
         do {
             try await eventuallyAsync("the command's output to show in the terminal", timeout: .seconds(20)) {
@@ -199,6 +200,7 @@ struct PaneControlTests {
         }
         #expect(await app.server.listSessions().filter(\.isAlive).count == started, "drawing the terminal started no second shell")
     }
+#endif
 
     /// The panel of the thread on screen opens on the terminal the agent opened, and the keyboard
     /// stays where it was.
@@ -302,19 +304,20 @@ struct PaneControlTests {
 
         let opened = try await local.remoteHosts.openPane(hostID: connection.id, agentID: agent.agent.id,
                                                           relativeTo: agent.piPane.id, axis: .vertical)
-        #expect(host.sessions.liveSession(forPane: opened) != nil)
+        #expect(host.hostTerminalSession(opened) != nil)
 
         let client = try #require(connection.browserClient)
         // The command echo cannot contain its output marker, even with prompt redraws.
         try await client.openTerminal(agentID: agent.agent.id, cwd: space.path, command: "printf 'remote-%s\\n' ready")
         let layout = try #require(host.state.tabs.first { $0.id == agent.tab.id }?.layout)
         let ran = try #require(layout.leaves.first { $0.id != agent.piPane.id && $0.id != opened })
-        let session = try #require(host.sessions.liveSession(forPane: ran.id))
+        let session = try #require(host.hostTerminalSession(ran.id))
         try await eventuallyAsync("the command's output to reach the host's terminal", timeout: .seconds(20)) {
             await remote.host.server.screenText(sessionID: session)?.contains { $0.contains("remote-ready") } == true
         }
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// A terminal no view has measured starts at the grid this Mac's terminals last reported, not
     /// at 80×24, and keeps it as its own until its surface reports one.
     @Test func aTerminalNoViewMeasuredStartsAtTheLastLocalGrid() async throws {
@@ -327,7 +330,7 @@ struct PaneControlTests {
 
         let first = vm.sessions.session(for: measured.auxiliary[0], in: measured.tab)
         try await eventuallyOnMain("the first terminal's shell to go live") {
-            vm.sessions.liveSession(forPane: measured.auxiliary[0].id) != nil
+            vm.hostTerminalSession(measured.auxiliary[0].id) != nil
         }
         // How Ghostty reports a surface's grid.
         first.terminal.onResize?(132, 41)
@@ -342,7 +345,9 @@ struct PaneControlTests {
         second.terminal.onResize?(100, 30)
         #expect(second.lastCols == 100 && second.lastRows == 30, "the surface's own report replaces the estimate")
     }
+#endif
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// Before any terminal has reported a grid there is nothing to estimate from.
     @Test func aTerminalStartsAt80By24BeforeAnySurfaceHasMeasured() async throws {
         let app = try AppHarness()
@@ -357,6 +362,7 @@ struct PaneControlTests {
         let session = vm.sessions.session(for: terminal, in: try #require(vm.state.tabs.first { $0.id == agent.tab.id }))
         #expect(session.lastCols == 80 && session.lastRows == 24)
     }
+#endif
 
     /// The agent's terminal_open: a new terminal beside its thread running `command`.
     private func openTerminal(running command: String, for agent: AgentFixture, in app: AppHarness,

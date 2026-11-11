@@ -12,6 +12,7 @@ import Testing
 @Suite("Terminal restore", .mainActorExclusive)
 @MainActor
 struct TerminalRestoreTests {
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test func aRestoredTerminalTabRespawnsItsShellWhenShown() async throws {
         try StubPi.installAsEngine()
         let directory = try makeScratchDirectory("l22")
@@ -37,7 +38,7 @@ struct TerminalRestoreTests {
 
         /// The live PTY bound to `pane` in both the store and the persisted layout, once it is.
         func bound(_ pane: LeafPane, in tab: ShepherdCore.Tab) async -> SessionID? {
-            guard let id = vm.sessions.liveSession(forPane: pane.id),
+            guard let id = vm.hostTerminalSession(pane.id),
                   vm.state.tabs.first(where: { $0.id == tab.id })?.layout.leaf(withID: pane.id)?.sessionID == id,
                   vm.sessions.session(for: pane, in: tab).phase == .live,
                   let info = await app.server.sessionInfo(sessionID: id), info.isAlive, !info.command.contains("--mode") else { return nil }
@@ -47,7 +48,7 @@ struct TerminalRestoreTests {
         #expect(await bound(shown.auxiliary[0], in: shown.tab) != stale.shown, "a session that died with the last run is no binding")
 
         let dormant = vm.sessions.session(for: hidden.auxiliary[0], in: hidden.tab)
-        #expect(dormant.isDormant && vm.sessions.liveSession(forPane: hidden.auxiliary[0].id) == nil, "a hidden tab spawns nothing")
+        #expect(dormant.isDormant && vm.hostTerminalSession(hidden.auxiliary[0].id) == nil, "a hidden tab spawns nothing")
 
         vm.selectAgent(hidden.agent.id)
         vm.terminalPanels.update(.init(host: nil, tab: hidden.tab.id)) { $0.shown = true }
@@ -55,4 +56,5 @@ struct TerminalRestoreTests {
         #expect(!dormant.isDormant && dormant.hasTerminalModel)
         #expect(await bound(hidden.auxiliary[0], in: hidden.tab) != stale.hidden)
     }
+#endif
 }

@@ -522,9 +522,8 @@ extension PreviewTests {
         vm.selectAgent(agent.id)
         vm.toggleRightPane()
         let store = vm.threadStores.store(for: agent.id)
-        let shell = vm.sessions.session(for: terminal, in: split)
         try await Preview.render("app-window-review-split", size: CGSize(width: 1440, height: 900), ready: {
-            store.ready && shell.phase == .live && vm.reviewSessions.values.first?.isLoading == false
+            store.ready && vm.hostTerminalLive(terminal.id) && vm.reviewSessions.values.first?.isLoading == false
         }) {
             RootView(vm: vm)
         }
@@ -581,10 +580,10 @@ extension PreviewTests {
             $0.maximized = maximized
         }
         let store = vm.threadStores.store(for: agent.id)
-        let shells = [shell, second].map { vm.sessions.session(for: $0, in: panel) }
+        let shells = [shell, second].map(\.id)
         try await Preview.render(maximized ? "app-window-terminal-maximized" : "app-window-terminal-panel",
                                  size: CGSize(width: 1440, height: 900), ready: {
-            (maximized || store.ready) && shells.allSatisfy { $0.phase == .live } && vm.terminalPanels.activity[key]?.count == 2
+            (maximized || store.ready) && shells.allSatisfy(vm.hostTerminalLive) && vm.terminalPanels.activity[key]?.count == 2
         }) {
             RootView(vm: vm)
         }
@@ -611,11 +610,11 @@ extension PreviewTests {
             $0.chosenTab = shell.id
         }
         let store = vm.threadStores.store(for: agent.id)
-        let shells = [shell, dev].map { vm.sessions.session(for: $0, in: panel) }
-        let session = try #require(await vm.sessions.awaitSession(forPane: dev.id, timeout: .seconds(10)))
-        vm.server.typeCommand("sleep 600", sessionID: session)
+        let shells = [shell, dev].map(\.id)
+        try await eventuallyOnMain("the dev terminal's session") { vm.hostTerminalLive(dev.id) }
+        workspace.server.typeCommand("sleep 600", sessionID: try #require(vm.hostTerminalSession(dev.id)))
         try await Preview.render("app-window-terminal-running", size: CGSize(width: 1440, height: 900), ready: {
-            store.ready && shells.allSatisfy { $0.phase == .live } && vm.terminalPanels.activity[key]?[dev.id]?.isRunning == true
+            store.ready && shells.allSatisfy(vm.hostTerminalLive) && vm.terminalPanels.activity[key]?[dev.id]?.isRunning == true
         }) {
             RootView(vm: vm)
         }
@@ -642,9 +641,9 @@ extension PreviewTests {
         }
         vm.terminalPanels.menu = TerminalMenuRequest(key: key, tab: shell.id, anchor: 150)
         let store = vm.threadStores.store(for: agent.id)
-        let shells = [shell, logs].map { vm.sessions.session(for: $0, in: panel) }
+        let shells = [shell, logs].map(\.id)
         try await Preview.render("app-window-terminal-menu", size: CGSize(width: 1440, height: 900), ready: {
-            store.ready && shells.allSatisfy { $0.phase == .live }
+            store.ready && shells.allSatisfy(vm.hostTerminalLive)
         }) {
             RootView(vm: vm)
         }

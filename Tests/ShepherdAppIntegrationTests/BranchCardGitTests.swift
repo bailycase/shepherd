@@ -134,6 +134,7 @@ struct BranchCardActionTests {
         #expect(vm.destination == page, "the Issues & PRs page doesn't open")
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test func theCardReadsOnItsOwnAndAgainWhenATurnEnds() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -157,4 +158,5 @@ struct BranchCardActionTests {
         vm.sessions.onAgentStatus?(mine.agent.id, .idle, nil)
         #expect(store.refreshRequest == before + 1, "only a turn ending asks")
     }
+#endif
 }

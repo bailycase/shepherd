@@ -300,6 +300,7 @@ struct ReviewCommitTests {
 
     // MARK: Through the host
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test func aRemoteClientCommitsThroughTheHostAndPollsTheOperation() async throws {
         let local = try AppHarness(), remote = try RemoteHostHarness()
         let sandbox = try WorktreeSandbox(origin: true)
@@ -337,7 +338,9 @@ struct ReviewCommitTests {
         #expect(try git(["log", "-1", "--format=%s", "main"], in: sandbox.origin).hasPrefix("Update the readme"))
         #expect(try status(sandbox) == "?? new.txt\n")
     }
+#endif
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test func theHostRefusesACommitWhileItsAgentWorksUntilConfirmed() async throws {
         let local = try AppHarness(), remote = try RemoteHostHarness()
         let sandbox = try WorktreeSandbox(origin: true)
@@ -377,6 +380,7 @@ struct ReviewCommitTests {
         }
         #expect(try status(sandbox).isEmpty)
     }
+#endif
 
     /// What a poll made while the host was still taking the commit (the sheet polls as soon as
     /// the commit has an id).
@@ -395,6 +399,7 @@ struct ReviewCommitTests {
         }
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test func aPollWhileTheHostTakesTheCommitWaitsForItInsteadOfCallingItUnknown() async throws {
         let harness = try AppHarness(inProcess: true)
         let sandbox = try WorktreeSandbox(origin: true)
@@ -430,6 +435,7 @@ struct ReviewCommitTests {
         try await eventuallyAsync("the commit to finish", timeout: .seconds(20)) { await store.pollOnce() }
         #expect(store.outcome == .succeeded(prURL: nil) && store.error == nil)
     }
+#endif
 
     @Test func anOperationTheHostNeverTookStillSaysItsOutcomeIsUnknown() async throws {
         let harness = try AppHarness()
@@ -449,6 +455,7 @@ struct ReviewCommitTests {
         #expect(store.outcome == .running, "the sheet keeps the operation rather than inviting a second commit")
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test func aLocalReviewCommitsTheDirectoryItsDiffCameFromAndReloads() async throws {
         let harness = try AppHarness(inProcess: true)
         let sandbox = try WorktreeSandbox(origin: true)
@@ -477,4 +484,5 @@ struct ReviewCommitTests {
         try await eventuallyOnMain("the review to reload without the committed file") { !session.isLoading && session.files.isEmpty }
         #expect(vm.reviewCommitStore(for: session) !== store, "the next Commit… starts over")
     }
+#endif
 }

@@ -42,8 +42,8 @@ struct DesignLifecycleFlowTests {
         let vm = try await start(app)
         let design = try await openDesign(app, vm)
         let agent = try #require(vm.selectedAgent)
-        try await eventuallyOnMain("the agent's pi to run") { vm.sessions.liveSession(forPane: agent.paneID!) != nil }
-        let session = try #require(vm.sessions.liveSession(forPane: agent.paneID!))
+        try await eventuallyOnMain("the agent's pi to run") { vm.hostTerminalSession(agent.paneID!) != nil }
+        let session = try #require(vm.hostTerminalSession(agent.paneID!))
 
         vm.requestDesignDelete(.local(design.id))
         try await eventuallyOnMain("the dialog") { vm.designDeleteRequest != nil }
@@ -73,7 +73,7 @@ struct DesignLifecycleFlowTests {
         vm.openDesign(design.id)
         try await eventuallyOnMain("its agent on screen again") { vm.shownDesign?.id == design.id && vm.selectedAgentID == agent.id }
         let restored = try #require(vm.state.agents.first { $0.id == agent.id })
-        try await eventuallyOnMain("a fresh pi for it") { vm.sessions.liveSession(forPane: restored.paneID!) != nil }
+        try await eventuallyOnMain("a fresh pi for it") { vm.hostTerminalSession(restored.paneID!) != nil }
 
         // After its "Don't ask again", Delete acts at once, Undo toast and all.
         vm.designToast = nil

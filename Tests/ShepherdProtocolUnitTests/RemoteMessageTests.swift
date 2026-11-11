@@ -393,7 +393,7 @@ struct RemoteRequestTests {
     static func caseName(_ request: RemoteRequest) -> String {
         switch request {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
-             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .startThread, .focusThread, .projectExecutors, .createAgent, .upload,
+             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .projectRequest, .startThread, .focusThread, .projectExecutors, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps:
             return Wire.caseName(request)
@@ -439,6 +439,9 @@ struct RemoteRequestTests {
         .spaceAction(id: 5, spaceID: S.space, action: .move(before: nil)),
         .spaceAction(id: 5, spaceID: S.space, action: .delete),
         .spaceAction(id: 5, spaceID: S.space, action: .relocate(path: "/Users/demo/Developer/acme-web")),
+        .projectRequest(id: 5, request: .register(path: "/Users/demo/Developer/acme-web", name: "acme-web")),
+        .projectRequest(id: 5, request: .edit(spaceID: S.space, edit: ProjectEdit(parentProjectID: ""))),
+        .projectRequest(id: 5, request: .child(parentPath: "/Users/demo/Developer/acme", path: "/Users/demo/Developer/acme/web", name: "web", create: true)),
         .startThread(id: 6, thread: RemoteThreadStart(spaceID: nil, agentID: S.agent)),
         .focusThread(id: 7, agentID: S.agent),
         .focusThread(id: 7, agentID: nil),

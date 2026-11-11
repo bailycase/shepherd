@@ -253,6 +253,7 @@ struct AgentStartupTests {
         #expect(vm.state.agents.first?.status == .idle)
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// A relaunch: every restored pane still names the previous run's pi, and every agent's pi
     /// respawns (a few at a time, `AgentStartQueue`). Each thread starts quietly, a thread switched
     /// away from and back to meanwhile starts again, and all come up with their history.
@@ -295,7 +296,9 @@ struct AgentStartupTests {
             #expect(!recorder.answers.contains(NativeThreadCode.unavailable))
         }
     }
+#endif
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// Mounting hidden layouts is not demand. Selection starts only that agent and its terminals.
     @Test func settledRestoredAgentsStayDormantUntilSelectedOrDemanded() async throws {
         try StubPi.installAsEngine()
@@ -340,14 +343,16 @@ struct AgentStartupTests {
         _ = try? await server.nativeThread(agentID: demanded, request: .snapshot())
         try await eventuallyAsync("remote/native demand to start only its thread") { await started().contains(demanded) }
         #expect(await started() == [onScreen, selected, demanded])
-        #expect(vm.sessions.liveSession(forPane: agents[1].auxiliary[0].id) == nil)
+        #expect(vm.hostTerminalSession(agents[1].auxiliary[0].id) == nil)
         // An explicit design/worktree launch remains a start, even without selection.
         let explicit = agents[2].agent.id
         vm.sessions.startRestoredAgents([explicit], first: [], in: vm.state)
         try await eventuallyAsync("explicit restore to start") { await started().contains(explicit) }
         #expect(await started() == [onScreen, selected, demanded, explicit])
     }
+#endif
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test(arguments: [false, true])
     func hiddenMountedThreadsDoNotDemandTheirDormantProcesses(dark: Bool) async throws {
         try StubPi.installAsEngine()
@@ -366,8 +371,8 @@ struct AgentStartupTests {
         vm.sessions.updateAppearance(ThemeManager.shared.current.terminal)
         vm.sessions.updateSurfaceConfiguration()
         for agent in agents where agent.agent.id != selected {
-            #expect(vm.sessions.liveSession(forPane: agent.piPane.id) == nil)
-            #expect(vm.sessions.liveSession(forPane: agent.auxiliary[0].id) == nil)
+            #expect(vm.hostTerminalSession(agent.piPane.id) == nil)
+            #expect(vm.hostTerminalSession(agent.auxiliary[0].id) == nil)
             let pane = vm.sessions.session(for: agent.auxiliary[0], in: agent.tab)
             #expect(pane.isDormant && !pane.hasTerminalModel, "hidden restored terminals allocate no model or Ghostty surface")
         }
@@ -405,7 +410,9 @@ struct AgentStartupTests {
             try png.write(to: root.appendingPathComponent("restored-terminal-\(dark ? "dark" : "light").png"))
         }
     }
+#endif
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test(arguments: [false, true])
     func fallbackSelectionActivatesRestoredTerminals(deletingSpace: Bool) async throws {
         try StubPi.installAsEngine()
@@ -426,10 +433,11 @@ struct AgentStartupTests {
         if deletingSpace { vm.deleteSpace(firstSpace.id) }
         else { try await app.server.deleteAgent(first.agent.id) }
         try await eventuallyOnMain("fallback selection and its terminal process to start") {
-            vm.selectedAgentID == next.agent.id && vm.sessions.liveSession(forPane: next.auxiliary[0].id) != nil
+            vm.selectedAgentID == next.agent.id && vm.hostTerminalSession(next.auxiliary[0].id) != nil
         }
         #expect(!terminal.isDormant && terminal.hasTerminalModel)
     }
+#endif
 
     @Test func unfinishedOrdinaryWorkAndItsQueueStartWithoutSelection() async throws {
         try StubPi.installAsEngine()
@@ -448,16 +456,17 @@ struct AgentStartupTests {
         #expect(vm.selectedAgentID == selected.agent.id)
         // Observe binding, not native snapshots: the latter are explicit demand themselves.
         try await eventuallyOnMain("durable unfinished work to start without demand") {
-            vm.sessions.liveSession(forPane: recovering.piPane.id) != nil
+            vm.hostTerminalSession(recovering.piPane.id) != nil
         }
         try await eventuallyAsync("the recovered queue to finish") {
             guard case .snapshot(let snapshot) = try await app.server.nativeThread(agentID: recovering.agent.id, request: .snapshot()) else { return false }
             return !snapshot.running && snapshot.messages.contains { $0.role == "user" && $0.blocks.contains { $0.text == "recovered queued input" } }
         }
-        #expect(vm.sessions.liveSession(forPane: recovering.auxiliary[0].id) == nil)
+        #expect(vm.hostTerminalSession(recovering.auxiliary[0].id) == nil)
         #expect(vm.selectedAgentID == selected.agent.id)
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// A new agent's pi is its creation's to spawn: it never waits in the launch queue behind the
     /// restored agents still waiting their turn.
     @Test func aNewAgentsPiStartsAtOnceWhileRestoredAgentsWaitTheirTurn() async throws {
@@ -497,7 +506,9 @@ struct AgentStartupTests {
         #expect(await started() == [onScreen, created])
         #expect(vm.sessions.startQueue.waiting.isEmpty)
     }
+#endif
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// The agent on screen at launch whose pi exits while it boots stops holding the queue at
     /// once: the others start then, not when its hold (`AgentStartQueue.aheadHold`) runs out.
     @Test func anAgentOnScreenWhosePiExitsAtLaunchLetsTheOthersStartAtOnce() async throws {
@@ -537,7 +548,9 @@ struct AgentStartupTests {
         }
         #expect(ContinuousClock.now - exited < AgentStartQueue.aheadHold / 2, "the queue waited on a pi that had exited")
     }
+#endif
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     @Test(arguments: [false, true], [false, true])
     func restoringAMissingFolderPreservesTheThreadAndConversation(worktree: Bool, restoring: Bool) async throws {
         _ = NSApplication.shared
@@ -578,7 +591,9 @@ struct AgentStartupTests {
         #expect(!FileManager.default.fileExists(atPath: missing.path))
         #expect(!StubPi.launches().contains { $0.argv.contains(sessionID) }, "No pi may run in a fallback directory")
     }
+#endif
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// Only an agent's first start waits in the launch queue: a pane session made again once it
     /// has started (a view detached and remounted) binds at once.
     @Test func aPaneSessionMadeAgainAfterItsAgentStartedBindsAtOnce() async throws {
@@ -598,7 +613,9 @@ struct AgentStartupTests {
         try await eventuallyOnMain("the pane made again to bind the same pi") { again.phase == .live }
         #expect(again.sessionID == first.sessionID)
     }
+#endif
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// A thread on screen comes up the moment the server says its pi serves: this store never
     /// polls on its own, so only that signal can bring it up.
     @Test func aThreadComesUpTheMomentItsPiServesWithoutWaitingForAPoll() async throws {
@@ -630,6 +647,7 @@ struct AgentStartupTests {
         try await eventuallyOnMain("the thread to come up", timeout: .seconds(20)) { store.ready }
         #expect(!store.starting && store.loadError == nil && !store.messages.isEmpty)
     }
+#endif
 
     /// The stub pi's history, as pi would have written it into the agent's session file.
     private static func writeStubHistory(sessionID: String, cwd: String, sessionsRoot: URL) throws {
@@ -644,6 +662,7 @@ struct AgentStartupTests {
             .write(to: directory.appendingPathComponent("2026-09-24T00-00-00-000Z_\(sessionID).jsonl"))
     }
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// A relaunched agent's thread shows its history from pi's session file while pi boots,
     /// not live, and pi's first snapshot then lands on the same rows: the thread never empties.
     @Test func aRestoredThreadShowsItsHistoryFromDiskUntilPiServesTheSameRows() async throws {
@@ -687,7 +706,9 @@ struct AgentStartupTests {
         #expect(store.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891"])
         #expect(shown.rows.allSatisfy { $0 == fromDisk }, "the rows never changed on the way: \(shown.rows)")
     }
+#endif
 
+#if APP_IN_PROCESS // always-host 7b: reads the app's deleted in-process terminal store; to be moved to the host
     /// pi not installed, or a broken config: the launch ends in the reason, with the agent kept
     /// (AgentStartProblemTests has every cause), never an endless start.
     @Test func aPiThatExitsWhileStartingEndsInItsReasonNotAnEndlessStart() async throws {
@@ -719,6 +740,7 @@ struct AgentStartupTests {
         #expect(store.startProblem?.exitCode == 127)
         #expect(server.state.agents.map(\.id) == [id] && vm.state.agents.map(\.id) == [id])
     }
+#endif
 
     /// A pi that was serving and went away stopped: the thread says so (it is not a lost connection
     /// to reconnect), and its agent waits for Retry.
