@@ -216,24 +216,42 @@ extension ShepherdViewModel {
         guard config.designID == nil, config.coordinatorFor == nil, space != nil || config.reservedAgentID != nil else {
             throw AgentStartFailure(message: space == nil ? "space no longer exists" : "Shepherd's background service can't start this kind of thread yet.")
         }
-        let id = try await remoteHosts.startThread(hostID: host.id, RemoteThreadStart(
-            spaceID: space?.id, cwd: space == nil ? nil : config.workingDirectory, model: config.model, thinking: config.thinking,
-            serviceTier: config.serviceTier, initialPrompt: config.initialPrompt, initialImages: config.initialImages,
-            name: config.initialName, piSessionID: config.piSessionID, agentID: config.reservedAgentID,
-            worktreeBranch: config.worktreeBranch, worktreeBase: config.worktreeBase, worktreePath: config.worktreePath))
+        // Its id is chosen here, so its opening turn and prompt show from the host's first push.
+        let id = config.reservedAgentID ?? AgentID()
+        let opening = OpeningPrompt(config.initialPrompt, images: config.initialImages, agentID: id)
+        if opening != nil || config.openingReferencesPending {
+            sidebarPreparingOpeningTurns.insert(id)
+            sidebarOpeningTurns.insert(id)
+        }
         // The prompt shows while the host's pi starts, as the row the host's first snapshot carries.
         let empty = PiSessionPreview.empty(sessionID: "", model: config.model ?? PiConfig.defaultModel(in: pi.home),
                                            thinking: config.thinking.rawValue)
-        let opening = OpeningPrompt(config.initialPrompt, images: config.initialImages, agentID: id)
         threadStores.store(for: id).preview(opening.map { $0.preview(empty) } ?? empty)
+        do {
+            _ = try await remoteHosts.startThread(hostID: host.id, RemoteThreadStart(
+                spaceID: space?.id, cwd: space == nil ? nil : config.workingDirectory, model: config.model, thinking: config.thinking,
+                serviceTier: config.serviceTier, initialPrompt: config.initialPrompt, initialImages: config.initialImages,
+                name: config.initialName, piSessionID: config.piSessionID, agentID: id,
+                worktreeBranch: config.worktreeBranch, worktreeBase: config.worktreeBase, worktreePath: config.worktreePath))
+        } catch {
+            sidebarPreparingOpeningTurns.remove(id)
+            sidebarOpeningTurns.remove(id)
+            throw error
+        }
         // ponytail: polls for the host's push (it usually lands before the reply); a push waiter if this shows.
         for _ in 0..<100 where !state.agents.contains(where: { $0.id == id }) { try await Task.sleep(for: .milliseconds(20)) }
+        // Its revisions could not be asked for before the host had it.
+        if sidebarOpeningTurns.contains(id) { watchThreadRevisions(of: threadStores.live.union(sidebarOpeningTurns)) }
         if selectAfter {
             selectAgent(id)
             if focusWindow {
                 NSApp?.activate(ignoringOtherApps: false)
                 window?.makeKeyAndOrderFront(nil)
             }
+        }
+        if !config.openingReferencesPending {
+            sidebarPreparingOpeningTurns.remove(id)
+            reconcileSidebarOpeningTurn(id)
         }
         return id
     }
