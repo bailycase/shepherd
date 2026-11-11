@@ -25,8 +25,8 @@ enum HostSettingsMapping {
 
     /// Serves `server`'s clients `settings` (Settings on the iPhone and the iPad, and the app as the
     /// background host's client): what Settings ▸ Agents, Worktrees and Pi set, and one change at
-    /// a time, applied as the Mac's own Settings would. Installed once, by the app or by the
-    /// headless host. `backgroundService` is whether this Mac keeps agents running when Shepherd
+    /// a time, applied as the Mac's own Settings would. Installed once, by the
+    /// host. `backgroundService` is whether this Mac keeps agents running when Shepherd
     /// is quit (`HostSettings.backgroundService`).
     static func serve(on server: SessionServer, settings app: AppSettings,
                       backgroundService: @escaping @MainActor () -> Bool? = { nil }) {
