@@ -21,7 +21,9 @@ extension ListPerformanceTests {
         try packed.write(to: repo.appendingPathComponent(".git/packed-refs"), atomically: true, encoding: .utf8)
         let app = try AppHarness()
         defer { app.stop() }
-        let vm = try await app.start()
+        // The host lists the branches of a space it has.
+        let space = Fixture.space(path: repo.path)
+        let vm = try await app.start(with: ShepherdState(spaces: [space]))
         let branches = try await app.server.changes.branches(agentID: nil, cwd: repo.path)
         #expect(branches.branches.count >= 300)
 
@@ -30,7 +32,7 @@ extension ListPerformanceTests {
         let onScreen = Int(ChangesMenuLayout.listMaxHeight / SHChangesMenuMetrics.rowHeight) + 1
         // Counted from before the window opens until the branches are in and drawn.
         SHRenderProbe.start()
-        window = OffscreenWindow(size: size, dark: true, WorktreeBasePicker(vm: vm, space: SpaceID(), repo: repo.path, selected: nil, choose: { _ in }, close: {}))
+        window = OffscreenWindow(size: size, dark: true, WorktreeBasePicker(vm: vm, space: space.id, repo: repo.path, selected: nil, choose: { _ in }, close: {}))
         defer { window.close() }
         try await eventuallyOnMain("the branches to load") {
             ListPerf.settle(window)

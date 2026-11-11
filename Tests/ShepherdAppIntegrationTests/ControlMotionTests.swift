@@ -327,7 +327,7 @@ struct SettingsMotionTests {
     /// Motion it is still a (shorter) cross-fade.
     @Test(arguments: [false, true])
     func settingsCrossFadesInAndOutHoweverItOpens(reduceMotion: Bool) async throws {
-        let app = try AppHarness(inProcess: true)
+        let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start()
         let window = OffscreenWindow(size: Self.window, dark: false,
