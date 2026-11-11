@@ -11,7 +11,7 @@
 - No variable picks the host: every launch is a client of the host that owns
   `<support>/server.lock` (launchd's background service), else of the app's own
   `Shepherd --host --supervised` child, which `HostSupervisor` restarts on a crash and stops at
-  Quit. Only Shepherd Nightly registers the service (`BackgroundService`); any other build, or any
+  Quit. Shepherd and Shepherd Nightly register the service (`BackgroundService`); Dev, or any
   launch with `SHEPHERD_SUPPORT_DIR` set, never registers and always runs its own child.
 - **`SHEPHERD_MCP_CONFIG`** moves the MCP servers file (Settings ▸ MCP servers) away from
   `~/.config/mcp/mcp.json`. Test isolation points it at a scratch file; setting it in the Dev

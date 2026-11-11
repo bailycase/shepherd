@@ -39,12 +39,12 @@ struct BackgroundService {
             openLoginItems: { SMAppService.openSystemSettingsLoginItems() })
     }
 
-    /// Whether this launch may register the job: Shepherd Nightly only for now, never with a
+    /// Whether this launch may register the job: Shepherd and Shepherd Nightly, never with a
     /// support folder moved (Dev, tests), and only from a stable, signed bundle. BTM records the
     /// path it registers, so a translocated copy (opened from the DMG or Downloads) or an ad-hoc
     /// build would leave a job pointing nowhere.
     static func mayRegister(bundleIdentifier: String?, bundlePath: String, environment: [String: String], adHoc: Bool) -> Bool {
-        bundleIdentifier == ShepherdEdition.nightlyBundleIdentifier
+        [ShepherdEdition.mainBundleIdentifier, ShepherdEdition.nightlyBundleIdentifier].contains(bundleIdentifier)
             && environment["SHEPHERD_SUPPORT_DIR"] == nil
             && !bundlePath.contains("/AppTranslocation/")
             && !adHoc
