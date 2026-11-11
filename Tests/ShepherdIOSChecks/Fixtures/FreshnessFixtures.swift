@@ -440,7 +440,7 @@ extension FixtureCatalog {
         func makeStore() -> ReviewStore {
             ReviewStore(ref: FixtureData.ref(FixtureData.preview), prepareText: { worker.prepare($0, $1, $2) }) { _, _, query in
                 switch query {
-                case .changesList(let scope, _):
+                case .changesList(let scope, _, _):
                     return .changesList(ChangesList(scope: scope, revision: ChangesRevision(old: "aaaa", new: "bbbb"),
                                                    comparison: ChangesComparison(head: "working", base: "HEAD"),
                                                    files: [ChangesFixture.listed(file(0))]))

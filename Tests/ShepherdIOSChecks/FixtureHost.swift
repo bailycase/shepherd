@@ -269,7 +269,7 @@ final class FixtureHost: @unchecked Sendable {
             return [.error(id: id, code: "fixture", message: refused)]
         case .projectExecution(let id, _):
             return [.error(id: id, code: "unsupported", message: "Fixture has no executor.")]
-        case .logicalProjects(let id, _):
+        case .logicalProjects(let id, _), .projectRequest(let id, _):
             return [.error(id: id, code: "unsupported", message: "This fixture does not serve logical projects.")]
         case .automation(let id, _, let command):
             // Reading an automation's runs or its trigger's status changes nothing.

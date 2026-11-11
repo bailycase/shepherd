@@ -476,10 +476,10 @@ enum ClientStateChecks {
         }
         let store = ReviewStore(ref: FixtureData.ref(FixtureData.preview)) { _, _, query in
             switch query {
-            case .changesList(let scope, _):
+            case .changesList(let scope, _, _):
                 return .changesList(ChangesList(scope: scope, revision: revision,
                                                comparison: ChangesComparison(head: "working", base: "HEAD"), files: [entry]))
-            case .changesFile(_, _, _, let options):
+            case .changesFile(_, _, _, let options, _):
                 requests.append(options)
                 if requests.count == 1 { return try await oldGate.wait() }
                 if requests.count == 2 { return try await newGate.wait() }
@@ -521,7 +521,7 @@ extension ClientStateChecks {
                             hunks: [DiffHunk(header: "@@ -1 +1 @@", lines: [DiffLine(kind: .added, text: "let x = 1", oldLine: nil, newLine: 1, id: 1)])])
         let store = ReviewStore(ref: FixtureData.ref(FixtureData.preview)) { _, _, query in
             switch query {
-            case .changesList(let scope, _):
+            case .changesList(let scope, _, _):
                 return .changesList(ChangesList(scope: scope, revision: ChangesRevision(old: "aaaa", new: "bbbb"),
                                                comparison: ChangesComparison(head: "working", base: "HEAD"),
                                                files: [ChangesFile(path: path, status: .modified, added: 1, removed: 0)]))
