@@ -330,6 +330,28 @@ struct SidebarActivityFlowTests {
         #expect(live.samples == Array(repeating: 16, count: 8))
     }
 
+    /// Agents whose held samples fall due a few milliseconds apart publish in one pass of the sidebar, as one wait
+    /// ends: a pass for each would cost more than the redraws it saves.
+    @Test func samplesDueAFewMillisecondsApartPublishTogether() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start()
+        let ids = (0..<3).map { _ in AgentID() }
+        let start = Date(timeIntervalSince1970: 0)
+        for (index, id) in ids.enumerated() {
+            let first = start.addingTimeInterval(Self.toolGap + Double(index) * 0.005)
+            vm.sidebarActivityLast[id] = first.addingTimeInterval(-Self.toolGap)
+            vm.recordSidebarActivity(id, at: first)
+            vm.recordSidebarActivity(id, at: start.addingTimeInterval(0.2))
+            #expect(vm.agentLive(id).samples.count == 1, "the first sample landed, the second is held")
+        }
+        let wake = try #require(vm.sidebarActivityFlush?.due)
+        #expect(wake == start.addingTimeInterval(Self.toolGap + ActivityPacing.interval + ActivityPacing.coalescing))
+        vm.flushSidebarActivity(at: wake)
+        #expect(ids.map { vm.agentLive($0).samples.count } == [2, 2, 2])
+        #expect(vm.sidebarActivityFlush == nil)
+    }
+
     /// Eight working threads finishing a tool every 62.5 to 125 ms for three seconds, each at a different rate than
     /// the last (a tail of equal rates would draw the same row again): a row is drawn when its sparkline is published,
     /// not for every tool.

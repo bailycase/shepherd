@@ -126,6 +126,9 @@ extension SidebarLists {
 /// times a second, not once per tool.
 struct ActivityPacing {
     static let interval: TimeInterval = 0.25
+    /// How long past its deadline a flush waits, so the agents whose deadlines fall a few milliseconds apart publish
+    /// in one pass of the sidebar, not one pass each.
+    static let coalescing: TimeInterval = 0.025
 
     private var published: [AgentID: Date] = [:]
     private var held: [AgentID: [Double]] = [:]
@@ -230,21 +233,23 @@ extension ShepherdViewModel {
     }
 
     /// One short-lived wait for the earliest held samples, on the events' own clock: it sleeps what is left of
-    /// their interval, then publishes as of the moment they were due.
+    /// their interval and a little more (`ActivityPacing.coalescing`), then publishes every sample due by then.
     private func armSidebarActivityFlush(after now: Date) {
         guard let next = sidebarActivityPacing.nextDue else { return }
-        if let armed = sidebarActivityFlush, armed.due <= next { return }
+        let at = next.addingTimeInterval(ActivityPacing.coalescing)
+        if let armed = sidebarActivityFlush, armed.due <= at { return }
         sidebarActivityFlush?.task.cancel()
-        let wait = min(max(next.timeIntervalSince(now), 0), ActivityPacing.interval)
+        let wait = min(max(at.timeIntervalSince(now), 0), ActivityPacing.interval + ActivityPacing.coalescing)
         let task = Task { [weak self] in
             try? await Task.sleep(for: .seconds(wait))
             guard !Task.isCancelled else { return }
-            self?.flushSidebarActivity(at: next)
+            self?.flushSidebarActivity(at: at)
         }
-        sidebarActivityFlush = (task, next)
+        sidebarActivityFlush = (task, at)
     }
 
     func flushSidebarActivity(at now: Date) {
+        sidebarActivityFlush?.task.cancel()
         sidebarActivityFlush = nil
         let due = sidebarActivityPacing.due(at: now)
         for (id, samples) in due.publish { agentLives[id]?.samples = samples }
