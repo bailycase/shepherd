@@ -336,7 +336,10 @@ final class FleetIndexService: @unchecked Sendable {
             state.pending = []
             state.acked = nil
             state.forceFull = true
-            if wasFull { state.refused += 1 } else { resyncRequested(step.repo) }
+            if wasFull { state.refused += 1 }
+            // A peer with no copy, or one of another generation (this host restarted), answers a head with a resend and that is no
+            // evidence of anything: a delta it can't apply is.
+            else if step.kind == .delta { resyncRequested(step.repo) }
             return
         }
         switch step.kind {
