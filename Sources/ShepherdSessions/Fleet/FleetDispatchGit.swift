@@ -6,48 +6,42 @@ import ShepherdProtocol
 /// prompts, and reads or writes only what the plan allows (`git fetch origin` and the worktree the
 /// thread starts in; nothing is ever applied to the sender's checkout).
 enum FleetDispatchGit {
-    static func run(_ arguments: [String], in directory: String? = nil, timeout: TimeInterval = 15) -> (status: Int32, output: String)? {
+    static func run(_ arguments: [String], in directory: String? = nil, timeout: TimeInterval = 15, environment extra: [String: String] = [:]) -> (status: Int32, output: String)? {
         var argv = ["/usr/bin/git"]
         if let directory { argv += ["-C", directory] }
         argv += arguments
-        let environment = ProcessInfo.processInfo.environment.merging(["GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"]) { $1 }
+        let environment = ProcessInfo.processInfo.environment.merging(["GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"]) { $1 }.merging(extra) { $1 }
         guard let result = try? BoundedCommand.run(argv, environment: environment, timeout: timeout) else { return nil }
         return (result.status, String(decoding: result.output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
-    /// What the sending checkout is at: the commit to pin and the folder under the repo's root.
+    /// What the sending checkout is at: the commit to pin, the folder under the repo's root, the checkout's top, and whether HEAD
+    /// has commits no remote ref holds (they travel as a bundle, slice 4c).
     struct Pin: Equatable, Sendable {
         var sha: String
         var subdir: String?
+        var root: String
+        var unpushed: Bool
     }
 
     enum PinFailure: Error, Equatable {
         case notARepository
-        /// Edits, untracked files or commits origin doesn't have: only a snapshot carries them (slice 4c).
-        case needsBundle
     }
 
-    /// The commit `cwd`'s checkout is at, when a fresh worktree of it on another Mac would be the same
-    /// tree: no edits, no untracked files (ignored files don't hold it back, they travel with 4c) and
-    /// a HEAD that some remote already has.
+    /// The commit `cwd`'s checkout is at. Edits, untracked and ignored files and unpushed commits don't hold it back: they go in the
+    /// snapshot (`FleetSnapshotSender`).
     static func pin(cwd: String) -> Result<Pin, PinFailure> {
         guard let top = run(["rev-parse", "--show-toplevel"], in: cwd), top.status == 0, !top.output.isEmpty,
               let head = run(["rev-parse", "HEAD"], in: cwd), head.status == 0, isCommit(head.output) else { return .failure(.notARepository) }
-        // Edits and untracked files, with ignored ones left out.
-        guard let status = run(["status", "--porcelain", "--untracked-files=normal"], in: cwd, timeout: 60), status.status == 0 else {
-            return .failure(.notARepository)
-        }
-        if !status.output.isEmpty { return .failure(.needsBundle) }
         // A commit no remote-tracking ref holds is one origin may not have.
         guard let unpushed = run(["rev-list", "-n", "1", "HEAD", "--not", "--remotes"], in: cwd), unpushed.status == 0 else {
             return .failure(.notARepository)
         }
-        if !unpushed.output.isEmpty { return .failure(.needsBundle) }
         let root = URL(fileURLWithPath: top.output).resolvingSymlinksInPath().path
         let here = URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath).resolvingSymlinksInPath().path
         var subdir: String?
         if here != root, here.hasPrefix(root + "/") { subdir = String(here.dropFirst(root.count + 1)) }
-        return .success(Pin(sha: head.output, subdir: subdir))
+        return .success(Pin(sha: head.output, subdir: subdir, root: root, unpushed: !unpushed.output.isEmpty))
     }
 
     /// A full commit id: 40 (SHA-1) or 64 (SHA-256) hex digits.
@@ -62,11 +56,13 @@ enum FleetDispatchGit {
         return !parts.contains { $0.isEmpty || $0 == ".." || $0 == "." || $0 == ".git" }
     }
 
-    /// Fetches origin (a failed fetch leaves what the repo has) and says whether `sha` is a commit here.
+    /// Says whether `sha` is a commit here, fetching origin first (a failed fetch leaves what the repo has) only when it isn't.
     static func hasCommit(_ sha: String, in repo: String, fetching: Bool = true) -> Bool {
         guard isCommit(sha) else { return false }
+        func has() -> Bool { run(["cat-file", "-e", "\(sha)^{commit}"], in: repo)?.status == 0 }
+        if has() { return true }
         if fetching { _ = run(["fetch", "--quiet", "origin"], in: repo, timeout: 90) }
-        return run(["cat-file", "-e", "\(sha)^{commit}"], in: repo)?.status == 0
+        return has()
     }
 
     /// `fleet/<slug of the title>`, with a short suffix of `dispatchID` only when that branch or its

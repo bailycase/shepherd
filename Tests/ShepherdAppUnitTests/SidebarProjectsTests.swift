@@ -26,10 +26,8 @@ struct SidebarProjectsTests {
         return agent
     }
 
-    private func tree(_ state: ShepherdState, hosts: [SidebarSource.Host] = [], groupByHost: Bool = false,
-                      cutoff: Double? = nil) -> SidebarTree {
-        SidebarDerivation.tree(SidebarSource(local: state, hosts: hosts),
-                               options: SidebarTreeOptions(groupByHost: groupByHost, idleCutoff: cutoff))
+    private func tree(_ state: ShepherdState, hosts: [SidebarSource.Host] = [], cutoff: Double? = nil) -> SidebarTree {
+        SidebarDerivation.tree(SidebarSource(local: state, hosts: hosts), options: SidebarTreeOptions(idleCutoff: cutoff))
     }
 
     private func titles(_ project: SidebarProject?) -> [String] { project?.rows.map(\.title) ?? [] }
@@ -229,8 +227,7 @@ struct SidebarProjectsTests {
                            offline: offline)
     }
 
-    @Test(arguments: [false, true])
-    func nestingUsesPathsOnlyWithinTheSameHost(grouped: Bool) {
+    @Test func nestingUsesPathsOnlyWithinTheSameHost() {
         let remoteParent = Fixture.space("Remote parent", path: "/srv/platform")
         let remoteChild = Fixture.space("Remote child", path: "/srv/platform/hub")
         let localLookalike = Fixture.space("Local lookalike", path: "/srv/platform/local")
@@ -238,14 +235,14 @@ struct SidebarProjectsTests {
         let built = tree(ShepherdState(spaces: [localLookalike]), hosts: [
             remoteHost(spaces: [remoteChild, remoteParent], agents: []),
             remoteHost("other", spaces: [secondHostChild], agents: [], id: UUID()),
-        ], groupByHost: grouped)
-        let parentID: SidebarProjectID = grouped ? .remote(hostID: host, remoteParent.id) : .named(remoteParent.name)
+        ])
+        let parentID: SidebarProjectID = .named(remoteParent.name)
         #expect(built.projects.first { $0.name == remoteChild.name }?.parentID == parentID)
         #expect(built.projects.first { $0.name == localLookalike.name }?.parentID == nil)
         #expect(built.projects.first { $0.name == secondHostChild.name }?.parentID == nil)
     }
 
-    /// Not grouped, a host's threads sit in the project of the same name, tagged with the host
+    /// A host's threads sit in the project of the same name, tagged with the host
     /// like Recents; a project only a host has follows This Mac's, by name.
     @Test func aHostsThreadsJoinTheirProjectByNameWithTheHostAsATag() {
         let theirs = Fixture.space("shepherd", path: "/srv/shepherd")
@@ -259,29 +256,6 @@ struct SidebarProjectsTests {
         #expect(built.projects.first?.rows.first?.accessory == .tag("horizon"))
         #expect(built.projects.first?.places == [nil: shepherd.id, host: theirs.id])
         #expect(built.projects.last?.rollup == .running)
-    }
-
-    /// Grouped, a section per host, This Mac first, each with its projects; the rows lose the
-    /// host's tag, and an unreachable host says so and dims what it last sent.
-    @Test func groupedByHostEachHostIsASectionThisMacFirst() {
-        let theirs = Fixture.space("shepherd", path: "/srv/shepherd")
-        let state = ShepherdState(spaces: [shepherd], agents: [agent("mine", in: shepherd, at: 10)])
-        let away = UUID()
-        let built = tree(state, hosts: [
-            remoteHost("build-01", spaces: [theirs], agents: [agent("theirs", in: theirs, at: 20)]),
-            remoteHost("horizon", spaces: [dashboard], agents: [agent("stale", in: dashboard, at: 1)], offline: true, id: away),
-        ], groupByHost: true)
-        #expect(built.sections.map(\.header) == [
-            .host(name: "This Mac", id: nil, unreachable: false),
-            .host(name: "build-01", id: host, unreachable: false),
-            .host(name: "horizon", id: away, unreachable: true),
-        ])
-        #expect(built.sections.map { $0.projects.map(\.id) } == [
-            [.local(shepherd.id)], [.remote(hostID: host, theirs.id)], [.remote(hostID: away, dashboard.id)],
-        ])
-        #expect(built.sections[1].projects.first?.rows.first?.accessory == SHSidebarRow.Accessory.none)
-        #expect(built.sections[2].projects.first?.dimmed == true)
-        #expect(built.sections[2].projects.first?.rows.first?.offline == true)
     }
 
     // MARK: Presentation
@@ -361,8 +335,7 @@ struct SidebarProjectsTests {
     }
 
     /// A pin lifts a child out of its parent, with its own descendants, without changing storage.
-    @Test(arguments: [false, true])
-    func pinnedSpacesLeaveTheirParentsForASeparateSection(grouped: Bool) {
+    @Test func pinnedSpacesLeaveTheirParentsForASeparateSection() {
         let dotfiles = Fixture.space("dotfiles", path: "/code/dotfiles")
         let hub = Fixture.space("hub", path: shepherd.path + "/hub")
         let admin = Fixture.space("admin", path: shepherd.path + "/admin")
@@ -370,7 +343,7 @@ struct SidebarProjectsTests {
         let state = ShepherdState(spaces: [dashboard, shepherd, admin, hub, dotfiles, leaf],
                                   agents: [agent("hub work", in: hub, at: 1), agent("leaf work", in: leaf, status: .blocked, at: 2)])
         let pinned = SidebarDerivation.tree(SidebarSource(local: state),
-                                            options: SidebarTreeOptions(groupByHost: grouped, pinnedSpaces: [hub.id, dotfiles.id]))
+                                            options: SidebarTreeOptions(pinnedSpaces: [hub.id, dotfiles.id]))
         #expect(pinned.sections.count == 2)
         #expect(pinned.sections.first?.id == "header.pinnedSpaces")
         #expect(pinned.sections.first?.projects.map(\.name) == ["hub", "leaf", "dotfiles"])

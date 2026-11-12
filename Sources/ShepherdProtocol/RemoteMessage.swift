@@ -771,6 +771,11 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// After `hello` with a peer's token (`fleetSnapshotCapability`): one step of what this Mac holds of a repository.
     /// Answered `fleetRepoManifestAck`.
     case fleetRepoManifest(id: Int, update: FleetRepoManifestUpdate)
+    /// After `hello` with a peer's token (`fleetSnapshotCapability`): one part of the manifest of the snapshot a `fleetDispatchCreate`
+    /// announced, or a question about where this Mac stands (`FleetSnapshotPart`). Answered `fleetSnapshotAck`.
+    case fleetSnapshotPart(id: Int, dispatchID: UUID, part: FleetSnapshotPart)
+    /// After `hello` with a peer's token: a piece of a content the snapshot lacks here (`FleetBlobChunk`). Answered `fleetSnapshotAck`.
+    case fleetBlobPush(id: Int, dispatchID: UUID, chunk: FleetBlobChunk)
     /// Authenticate with the host's shared token (`remote-token` in its
     /// support directory). `capabilities` says what the client understands
     /// (`RemoteProtocol.clientCapabilities`); older clients send none.
@@ -918,14 +923,14 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case requestToken, outcome, result
         case thread, step, update
         case code, from, introduction, hostID, at, sync, device, devices
-        case sample, report, manifest
+        case sample, report, manifest, part, chunk
         case create, control, record, dispatchID, branchFacts
     }
 
     private enum Kind: String, Codable {
         case pushRegistration, pushUnregister
         case fleetIdentify, fleetPair, fleetEstablish, fleetIntroduce, fleetRevoke, fleetRead, fleetAction
-        case fleetPressure, fleetReadiness, fleetPressureNow, fleetRepoManifest
+        case fleetPressure, fleetReadiness, fleetPressureNow, fleetRepoManifest, fleetSnapshotPart, fleetBlobPush
         case fleetDispatchCreate, fleetDispatchControl, fleetDispatchChanged, fleetDispatchResult
         case fleetSync
         case fleetPairDevice, fleetEnrollDevice, fleetSyncDevices
@@ -1000,6 +1005,12 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
                                         branchFacts: try c.decodeIfPresent(FleetBranchFacts.self, forKey: .branchFacts))
         case .fleetRepoManifest:
             self = .fleetRepoManifest(id: try c.decode(Int.self, forKey: .id), update: try c.decode(FleetRepoManifestUpdate.self, forKey: .manifest))
+        case .fleetSnapshotPart:
+            self = .fleetSnapshotPart(id: try c.decode(Int.self, forKey: .id), dispatchID: try c.decode(UUID.self, forKey: .dispatchID),
+                                      part: try c.decode(FleetSnapshotPart.self, forKey: .part))
+        case .fleetBlobPush:
+            self = .fleetBlobPush(id: try c.decode(Int.self, forKey: .id), dispatchID: try c.decode(UUID.self, forKey: .dispatchID),
+                                  chunk: try c.decode(FleetBlobChunk.self, forKey: .chunk))
         case .tunnel:
             self = .tunnel(try c.decode(BrowserTunnelFrame.self, forKey: .frame))
         case .browserClaim:
@@ -1260,6 +1271,16 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.fleetRepoManifest, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(update, forKey: .manifest)
+        case .fleetSnapshotPart(let id, let dispatchID, let part):
+            try c.encode(Kind.fleetSnapshotPart, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(dispatchID, forKey: .dispatchID)
+            try c.encode(part, forKey: .part)
+        case .fleetBlobPush(let id, let dispatchID, let chunk):
+            try c.encode(Kind.fleetBlobPush, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(dispatchID, forKey: .dispatchID)
+            try c.encode(chunk, forKey: .chunk)
         case .nativeThreadSubscribe(let id, let agentIDs):
             try c.encode(Kind.nativeThreadSubscribe, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1551,6 +1572,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case fleetDispatchState(id: Int, record: FleetDispatchRecord)
     /// The answer to `RemoteRequest.fleetRepoManifest`.
     case fleetRepoManifestAck(id: Int, ack: FleetRepoManifestAck)
+    /// The answer to `RemoteRequest.fleetSnapshotPart` and `fleetBlobPush`: what the receiving Mac holds of the snapshot.
+    case fleetSnapshotAck(id: Int, ack: FleetSnapshotAck)
     /// A device paired or was given its token, or devices were synced (`fleetPairDevice`, `fleetEnrollDevice`, `fleetSyncDevices`).
     case fleetDevices(id: Int, result: FleetDevicesResult)
     /// Generic success for acked requests with no payload (paste).
@@ -1710,7 +1733,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     private enum Kind: String, Codable {
         case nativeThread, nativeThreadChanged, fleetDigest, projectExecution, projectExecutionChanged
         case fleetIdentity, fleetPaired, fleetResult, fleetDevices, fleetPressureSample
-        case fleetSyncReply, fleetRepoManifestAck, fleetDispatchAccepted, fleetDispatchState
+        case fleetSyncReply, fleetRepoManifestAck, fleetSnapshotAck, fleetDispatchAccepted, fleetDispatchState
         case agentResult, helloOk, ok, paneOpened, error, state, stateChanged, attached, output, sessionExited
         case dirListing, models, spaceAdded, agentCreated, uploadResult, creationOptions
         case automationResult, forgeResult
@@ -1815,6 +1838,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             self = .fleetDispatchState(id: try c.decode(Int.self, forKey: .id), record: try c.decode(FleetDispatchRecord.self, forKey: .record))
         case .fleetRepoManifestAck:
             self = .fleetRepoManifestAck(id: try c.decode(Int.self, forKey: .id), ack: try c.decode(FleetRepoManifestAck.self, forKey: .manifest))
+        case .fleetSnapshotAck:
+            self = .fleetSnapshotAck(id: try c.decode(Int.self, forKey: .id), ack: try c.decode(FleetSnapshotAck.self, forKey: .manifest))
         case .fleetDevices:
             self = .fleetDevices(id: try c.decode(Int.self, forKey: .id), result: try c.decode(FleetDevicesResult.self, forKey: .result))
         case .uploadResult:
@@ -1995,6 +2020,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(record, forKey: .record)
         case .fleetRepoManifestAck(let id, let ack):
             try c.encode(Kind.fleetRepoManifestAck, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(ack, forKey: .manifest)
+        case .fleetSnapshotAck(let id, let ack):
+            try c.encode(Kind.fleetSnapshotAck, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(ack, forKey: .manifest)
         case .fleetDevices(let id, let result):

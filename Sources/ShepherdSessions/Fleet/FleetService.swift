@@ -118,6 +118,8 @@ final class FleetService: @unchecked Sendable {
         index.onChange = { [weak self] in self?.onChange?() }
         self.pressure.linkConnected = { [weak self] in self?.links.values.contains { $0.phase == .connected } == true }
         self.pressure.pushTargets = { [weak self] in self?.links.values.compactMap { $0.phase == .connected ? $0.client : nil } ?? [] }
+        dispatch.indexService = index
+        index.onSpaces = { [weak dispatch] spaces in dispatch?.refreshSpares(spaces) }
         dispatch.membership = { [weak self] in self?.membership ?? false }
         dispatch.hostName = { [weak self] in self?.name ?? "" }
         dispatch.peers = { [weak self] in
@@ -284,7 +286,7 @@ final class FleetService: @unchecked Sendable {
         // Pairing Macs, removing them and joining are a member's: with Fleet off they are refused, as they always were.
         switch request {
         case .fleetPair(let id, _, _), .fleetEstablish(let id, _), .fleetIntroduce(let id, _), .fleetRevoke(let id, _, _), .fleetSync(let id, _),
-             .fleetPressure(let id, _), .fleetReadiness(let id, _), .fleetPressureNow(let id), .fleetRepoManifest(let id, _),
+             .fleetPressure(let id, _), .fleetReadiness(let id, _), .fleetPressureNow(let id), .fleetRepoManifest(let id, _), .fleetSnapshotPart(let id, _, _), .fleetBlobPush(let id, _, _),
              .fleetDispatchCreate(let id, _), .fleetDispatchControl(let id, _, _), .fleetDispatchChanged(let id, _), .fleetDispatchResult(let id, _, _, _):
             guard membership else { return reply(Self.off(id)) }
         case .fleetAction(let id, let action) where !action.isDeviceAction:
@@ -358,6 +360,26 @@ final class FleetService: @unchecked Sendable {
             }
             guard update.isValid else { return reply(Self.refusal(id, FleetSnapshotProtocol.Code.invalid, "That manifest step is malformed.")) }
             reply(.fleetRepoManifestAck(id: id, ack: index.received(update, from: from)))
+        case .fleetSnapshotPart(let id, let dispatchID, let part):
+            guard caller.access == .member, let from = caller.peerHostID else {
+                return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet sends a snapshot."))
+            }
+            dispatch.receiveSnapshotPart(dispatchID, part, from: from) { result in
+                switch result {
+                case .success(let ack): reply(.fleetSnapshotAck(id: id, ack: ack))
+                case .failure(let refusal): reply(Self.refusal(id, refusal.code, refusal.message))
+                }
+            }
+        case .fleetBlobPush(let id, let dispatchID, let chunk):
+            guard caller.access == .member, let from = caller.peerHostID else {
+                return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet sends a snapshot."))
+            }
+            dispatch.receiveBlobPush(dispatchID, chunk, from: from) { result in
+                switch result {
+                case .success(let ack): reply(.fleetSnapshotAck(id: id, ack: ack))
+                case .failure(let refusal): reply(Self.refusal(id, refusal.code, refusal.message))
+                }
+            }
         case .fleetSync(let id, let request):
             // Members only: a client device or the shared token never reads or writes the fleet's store.
             guard caller.access == .member, let from = caller.peerHostID else {
@@ -808,6 +830,31 @@ final class FleetService: @unchecked Sendable {
                     reply(.fleetResult(id: id, result: FleetResult(snapshot: self.snapshot(), appToken: token)))
                 }
             }
+        case .sendThread(let thread):
+            dispatch.dispatchUserThread(thread) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success(let record): reply(.fleetResult(id: id, result: FleetResult(snapshot: self.snapshot(), dispatch: record)))
+                case .failure(let refusal): reply(Self.refusal(id, refusal.code, refusal.message))
+                }
+            }
+        case .retryDispatch(let dispatchID, let target):
+            if let target, target != identity.hostID, peers.record(target).map({ !$0.revoked }) != true {
+                return reply(Self.refusal(id, FleetProtocol.Code.invalid, "That Mac isn't in the fleet."))
+            }
+            dispatch.retry(dispatchID, host: target) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success(let record): reply(.fleetResult(id: id, result: FleetResult(snapshot: self.snapshot(), dispatch: record.summary)))
+                case .failure(let refusal): reply(Self.refusal(id, refusal.code, refusal.message))
+                }
+            }
+        case .cancelDispatch(let dispatchID):
+            guard dispatch.record(dispatchID) != nil else {
+                return reply(Self.refusal(id, FleetDispatchProtocol.Code.unknownDispatch, "This Mac has no such dispatch."))
+            }
+            dispatch.cancel(dispatchID)
+            reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot(), dispatch: dispatch.record(dispatchID)?.summary)))
         case .adopt(let hosts):
             Task { [weak self] in
                 guard let self else { return }

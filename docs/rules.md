@@ -225,7 +225,14 @@ going from open to merged in this host's run, it deletes the thread, removes its
 branch through Delete Worktree's path, and deletes the head branch on GitHub through the forge's
 merged-only, never-a-fork deletion; only for a worktree in Shepherd's support folder whose branch is
 the pull request's head, and never while the thread runs or asks or its checkout has uncommitted
-changes or commits GitHub doesn't have (it stays, with a note). Nothing else.
+changes or commits GitHub doesn't have (it stays, with a note). A fleet dispatch's snapshot
+(`FleetSnapshotApply.swift`, `FleetSpare.swift`; only with Fleet on, on the Mac that receives the work):
+inside the fresh dispatch worktree (`git worktree add --no-checkout` of a new `fleet/<slug>` branch, then
+`clonefile` and writes of its files and its index, never anything in an existing checkout), objects fetched
+from origin or from the sender's bundle with the one `refs/fleet/<dispatchID>` ref the bundle lands in, and
+the plain spare directory under `<support>/fleet/spares/` (the tracked files at the base tip, built with a
+private `GIT_INDEX_FILE` and `--work-tree`, registering nothing in the repository). A failed dispatch removes
+its worktree, branch and ref; a worktree is never made in, or applied to, the sender's checkout. Nothing else.
 Shepherd may remove or prune worktrees it created.
 
 ## Reviews dock; they don't split

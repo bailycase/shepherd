@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import ShepherdCore
 
@@ -41,10 +42,13 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
     public var model: String?
     public var thinking: String?
     public var from: FleetDispatchSender
+    /// What the work carries beyond its commit (slice 4c): edits, untracked and ignored files, and the unpushed commits. The
+    /// parts and contents follow (`fleetSnapshotPart`, `fleetBlobPush`); the receiver starts the thread once they check out.
+    public var snapshot: FleetSnapshotHeader?
 
     public init(dispatchID: UUID, kind: FleetDispatchRecord.Kind = .agentDispatch, task: String, title: String, repoKey: String,
                 commitSHA: String? = nil, subdir: String? = nil, branch: String? = nil, model: String? = nil, thinking: String? = nil,
-                from: FleetDispatchSender) {
+                from: FleetDispatchSender, snapshot: FleetSnapshotHeader? = nil) {
         self.dispatchID = dispatchID
         self.kind = kind
         self.task = task
@@ -56,9 +60,10 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         self.model = model
         self.thinking = thinking
         self.from = from
+        self.snapshot = snapshot
     }
 
-    private enum CodingKeys: String, CodingKey { case dispatchID, kind, task, title, repoKey, commitSHA, subdir, branch, model, thinking, from }
+    private enum CodingKeys: String, CodingKey { case dispatchID, kind, task, title, repoKey, commitSHA, subdir, branch, model, thinking, from, snapshot }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -73,6 +78,7 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         model = try c.decodeIfPresent(String.self, forKey: .model)
         thinking = try c.decodeIfPresent(String.self, forKey: .thinking)
         from = try c.decode(FleetDispatchSender.self, forKey: .from)
+        snapshot = try c.decodeIfPresent(FleetSnapshotHeader.self, forKey: .snapshot)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -88,6 +94,33 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         try c.encodeIfPresent(model, forKey: .model)
         try c.encodeIfPresent(thinking, forKey: .thinking)
         try c.encode(from, forKey: .from)
+        try c.encodeIfPresent(snapshot, forKey: .snapshot)
+    }
+}
+
+/// `FleetAction.sendThread`: a thread the person started in New thread, to run on the Mac Auto picks or on one named. The
+/// folder is one of this Mac's spaces; the Mac that runs it finds its own checkout of the same repository. The id is made
+/// by the app, so a retry can't start it twice.
+public struct FleetUserThread: Codable, Hashable, Sendable {
+    public var dispatchID: UUID
+    /// A space of the Mac the app belongs to.
+    public var spaceID: SpaceID
+    public var task: String
+    public var title: String?
+    /// A Mac's name or id, or nil (or "auto") for Auto.
+    public var host: String?
+    public var model: String?
+    public var thinking: String?
+
+    public init(dispatchID: UUID = UUID(), spaceID: SpaceID, task: String, title: String? = nil, host: String? = nil,
+                model: String? = nil, thinking: String? = nil) {
+        self.dispatchID = dispatchID
+        self.spaceID = spaceID
+        self.task = task
+        self.title = title
+        self.host = host
+        self.model = model
+        self.thinking = thinking
     }
 }
 
@@ -132,6 +165,10 @@ public enum FleetDispatchControl: Codable, Hashable, Sendable {
 }
 
 public enum FleetDispatchProtocol {
+    /// What a dispatched thread's first message adds after the task (`FleetDispatch.prompt`): a rule line, then the sentence
+    /// naming who sent it. The From box draws the task alone, so it cuts the message here.
+    public static let promptSeparator = "\n\n---\nYou were started by "
+
     /// The codes the receiver answers a refused create or control with.
     public enum Code {
         /// The receiver holds no dispatch with that id.
@@ -211,5 +248,19 @@ public struct FleetDispatchInfo: Codable, Hashable, Sendable {
         self.init(dispatchID: record.id.uuidString.lowercased(), state: record.state.rawValue, host: record.targetHostName, title: record.title,
                   branch: record.branch, activity: record.activity, resultText: record.resultText, branchFacts: record.resultBranchFacts,
                   failure: record.failure, detail: record.failureDetail)
+    }
+}
+
+/// The id of the dispatch a `fleet_dispatch` tool call made. The panes extension derives it from the thread and the call
+/// (`dispatchIDFor` in shepherd-panes.ts), so a retried call can't start the work twice; a client derives the same id to
+/// find the dispatch a call in the transcript made.
+public enum FleetDispatchID {
+    public static func forToolCall(_ toolCallID: String, agent: AgentID) -> UUID? {
+        let digest = SHA256.hash(data: Data("\(agent.rawValue)\0\(toolCallID)".utf8))
+        let hex = Array(digest.map { String(format: "%02x", $0) }.joined())
+        guard hex.count == 64, let variantNibble = UInt8(String(hex[16]), radix: 16) else { return nil }
+        let variant = String((variantNibble & 0x3) | 0x8, radix: 16)
+        func part(_ range: Range<Int>) -> String { String(hex[range]) }
+        return UUID(uuidString: "\(part(0..<8))-\(part(8..<12))-5\(part(13..<16))-\(variant)\(part(17..<20))-\(part(20..<32))")
     }
 }

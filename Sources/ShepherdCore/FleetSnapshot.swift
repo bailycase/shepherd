@@ -175,6 +175,16 @@ public struct FleetGitBlobID: Hashable, Sendable, Codable, CustomStringConvertib
     public var hex: String { String(format: "%016llx%016llx%08x", a, b, c) }
     public var description: String { hex }
 
+    /// The 20 bytes, in order.
+    public var bytes: [UInt8] {
+        var out = [UInt8]()
+        out.reserveCapacity(20)
+        for shift in stride(from: 56, through: 0, by: -8) { out.append(UInt8(truncatingIfNeeded: a >> UInt64(shift))) }
+        for shift in stride(from: 56, through: 0, by: -8) { out.append(UInt8(truncatingIfNeeded: b >> UInt64(shift))) }
+        for shift in stride(from: 24, through: 0, by: -8) { out.append(UInt8(truncatingIfNeeded: c >> UInt32(shift))) }
+        return out
+    }
+
     /// The id git gives `content` as a blob: SHA-1 of "blob <size>\0" and the content.
     public static func of(_ content: some DataProtocol) -> FleetGitBlobID {
         var hasher = Insecure.SHA1()
@@ -341,6 +351,23 @@ public struct FleetMerkleTree: Sendable {
         // A file where a directory was (or the other way round) replaces it.
         if children[parent]?[name]?.kind == .directory { remove(path) }
         children[parent, default: [:]][name] = node
+        markDirty(from: parent)
+    }
+
+    /// Records a whole directory by its hash, with nothing beneath it (a snapshot that says "your `node_modules` is the one I
+    /// have"). The tree's hash comes out the same as if every file under it had been set.
+    public mutating func setDirectory(_ path: String, hash: FleetHash) {
+        let (parent, name) = Self.split(path)
+        var current = parent
+        while !current.isEmpty {
+            let (up, directory) = Self.split(current)
+            if children[current] == nil { children[current] = [:] }
+            if children[up]?[directory] != nil { break }
+            children[up, default: [:]][directory] = Node(kind: .directory, hash: FleetHash(a: 0, b: 0, c: 0, d: 0))
+            current = up
+        }
+        if children[parent]?[name]?.kind == .directory, children[path] != nil { dropDirectory(path) }
+        children[parent, default: [:]][name] = Node(kind: .directory, hash: hash)
         markDirty(from: parent)
     }
 

@@ -16,8 +16,10 @@ final class FleetIndexService: @unchecked Sendable {
     /// What the host tells the service about its spaces. All on the server queue.
     struct Host {
         var spaces: () -> [Space]
-        /// A space's own changes to what stays home (`fleet.snapshotExcludes.<spaceID>`); none until Settings sets them (slice 4c).
+        /// A space's own changes to what stays home (`fleet.snapshotExcludes.<spaceID>`).
         var overrides: (SpaceID) -> FleetExclusions.Overrides = { _ in FleetExclusions.Overrides() }
+        /// The folders threads work in (their worktrees), with the space each belongs to: a dispatch is sent from one of them.
+        var worktrees: () -> [(space: SpaceID, path: String)] = { [] }
     }
 
     private final class Root {
@@ -61,6 +63,8 @@ final class FleetIndexService: @unchecked Sendable {
     var host: Host? { didSet { reconcile() } }
     /// Server queue: what the app draws of the index changed.
     var onChange: (() -> Void)?
+    /// Server queue: the spaces this host indexes were looked at again (the spares of their repositories follow them).
+    var onSpaces: (([Space]) -> Void)?
     /// Tests: how each index classifies files, how often it checks itself, and how long changes wait to be sent.
     var classifier: FleetGitClassifier = .git
     var verifyInterval: TimeInterval = 300
@@ -126,13 +130,19 @@ final class FleetIndexService: @unchecked Sendable {
     func reconcile() {
         guard isActive, let host = host?.spaces() else { return }
         var wanted: [String: (space: Space, repo: String)] = [:]
-        for space in host where FleetSpacesSource.syncs(space) {
-            let expanded = (space.path as NSString).expandingTildeInPath
+        let bySpace = Dictionary(host.map { ($0.id, $0) }) { first, _ in first }
+        var folders: [(space: Space, path: String)] = host.filter(FleetSpacesSource.syncs).map { ($0, $0.path) }
+        for worktree in self.host?.worktrees() ?? [] {
+            if let space = bySpace[worktree.space], FleetSpacesSource.syncs(space) { folders.append((space, worktree.path)) }
+        }
+        for (space, path) in folders {
+            let expanded = (path as NSString).expandingTildeInPath
             var isDirectory: ObjCBool = false
             guard FileManager.default.fileExists(atPath: expanded, isDirectory: &isDirectory), isDirectory.boolValue else { continue }
             let real = FleetContentIndex.realPath(expanded)
             if wanted[real] == nil { wanted[real] = (space, FleetSnapshotProtocol.repoName(key: space.repoKey, space: space.id.rawValue)) }
         }
+        onSpaces?(host.filter(FleetSpacesSource.syncs))
         for (path, root) in roots where wanted[path] == nil && !root.removing { erase(root, at: path) }
         for (path, entry) in wanted {
             let rules = FleetExclusions(overrides: self.host?.overrides(entry.space.id) ?? FleetExclusions.Overrides())
@@ -219,6 +229,7 @@ final class FleetIndexService: @unchecked Sendable {
     }
 
     private func verifyAll() {
+        if let spaces = host?.spaces() { onSpaces?(spaces.filter(FleetSpacesSource.syncs)) }
         for root in roots.values { root.index.queue.async { [index = root.index] in index.verify(reclassifying: true) } }
     }
 
@@ -381,6 +392,24 @@ final class FleetIndexService: @unchecked Sendable {
     private func flushSaves(wait: Bool = false) {
         let job = peerCopies.takeSave(to: peersDirectory)
         if wait { persistQueue.sync { job?() } } else if let job { persistQueue.async(execute: job) }
+    }
+
+    // MARK: Snapshots (server queue)
+
+    /// The index of the checkout at `folder` (a git work tree's top), and the manifest name of its repository; nil when this host doesn't index it.
+    func snapshotSource(folder: String) -> (index: FleetContentIndex, repo: String)? {
+        guard isActive, let root = roots[FleetContentIndex.realPath(folder)], root.state != .notGit else { return nil }
+        return (root.index, root.repo)
+    }
+
+    /// Every index this host keeps (for finding where a content is held).
+    func indexes() -> [FleetContentIndex] { roots.values.map(\.index) }
+
+    /// A peer's copy of a repository's manifest was found to claim what the peer doesn't hold: it is dropped, so the peer's next step is
+    /// answered with a request for everything again.
+    func dropPeerCopy(peer: UUID, repo: String) {
+        peerCopies.drop(peer: peer, repo: repo)
+        scheduleSave()
     }
 
     // MARK: Reading (server queue)

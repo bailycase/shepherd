@@ -64,6 +64,22 @@ extension FleetDispatch {
             title: Self.title(create.title, task: create.task), task: create.task, repoKey: create.repoKey, commitSHA: create.commitSHA,
             subdir: create.subdir, branch: nil, model: create.model, thinking: create.thinking, createdAt: now)
         record.updatedAt = record.createdAt
+        if let header = create.snapshot {
+            guard header.isValid, header.commit == create.commitSHA else {
+                return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "That snapshot doesn't belong to that commit.")))
+            }
+            record.snapshotBytes = header.bytes
+            record.snapshotProgress = 0
+            record.snapshotFiles = header.files + header.directories
+            // The pieces come over the link next (`fleetSnapshotPart`, `fleetBlobPush`); the worktree is built when they are all here.
+            let snap = SnapshotIn(header: header, space: space, requestedBranch: create.branch)
+            let (id, title, repo, requested, claims) = (record.id, record.title, space.path, create.branch, claimedBranches)
+            snap.branch = Task.detached { claims.claim { FleetDispatchGit.branchName(title: title, requested: requested, dispatchID: id, repo: repo, claimed: $0) } }
+            snapshotsIn[record.id] = snap
+            inbound[record.id] = Inbound(record: record, acceptedAt: now)
+            save()
+            return reply(.success(record))
+        }
         inbound[record.id] = Inbound(record: record, acceptedAt: now)
         save()
         reply(.success(record))
@@ -72,27 +88,64 @@ extension FleetDispatch {
 
     /// Fetch, the branch, the worktree and the thread: off the server queue, with each step's outcome
     /// written to the record and pushed to the sender.
-    private func prepare(_ id: UUID, space: Space, requestedBranch: String?) {
+    func prepare(_ id: UUID, space: Space, requestedBranch: String?) {
         guard let entry = inbound[id] else { return }
         let record = entry.record
         let repo = space.path
+        let snapshot = snapshotsIn[id]
         Task.detached { [weak self] in
-            // The commit has to be here: origin's, or already in the repo.
-            if let sha = record.commitSHA, !FleetDispatchGit.hasCommit(sha, in: repo) {
+            // The commit has to be here: origin's, or already in the repo. (A snapshot's own steps make it present, from the bundle too.)
+            if snapshot == nil, let sha = record.commitSHA, !FleetDispatchGit.hasCommit(sha, in: repo) {
                 self?.queue.async { self?.failInbound(id, FleetDispatchCode.commitUnreachable, nil) }
                 return
             }
             guard let self else { return }
-            let branch = self.claimedBranches.claim {
-                FleetDispatchGit.branchName(title: record.title, requested: requestedBranch, dispatchID: id, repo: repo, claimed: $0)
+            let branch: String
+            if let early = snapshot?.branch {
+                branch = await early.value
+            } else {
+                branch = self.claimedBranches.claim {
+                    FleetDispatchGit.branchName(title: record.title, requested: requestedBranch, dispatchID: id, repo: repo, claimed: $0)
+                }
             }
             defer { self.claimedBranches.release(branch) }
             // Written before the worktree exists, so a retry agrees on the name.
             self.queue.async { self.named(id, branch: branch) }
-            let request = await self.onQueue { self.threadRequest(for: record, branch: branch, space: space) }
+            // The snapshot's worktree is built and checked against the sender's digest here; nothing starts in it before that.
+            var built: FleetSnapshotApply.Applied?
+            if let snapshot, let manifest = snapshot.manifest {
+                let indexes = await self.onQueue { self.indexService?.indexes() ?? [] }
+                var apply = FleetSnapshotApply(.init(id: id, repo: repo, base: space.worktreeBase, branch: branch, header: snapshot.header, manifest: manifest,
+                                                     blobs: self.blobs, spares: self.spares, indexes: indexes, began: snapshot.began))
+                switch apply.run() {
+                case .failure(let failure):
+                    self.queue.async { self.failInbound(id, failure.code, failure.detail) }
+                    return
+                case .success(let applied):
+                    built = applied
+                    await self.onQueue { self.applied(id, applied) }
+                }
+            }
+            let request = await self.onQueue { self.threadRequest(for: record, branch: branch, space: space, worktree: built?.path) }
+            // Stopped while the worktree was being built: no thread starts, and the worktree goes.
+            if let built, await self.onQueue({ self.inbound[id]?.record.state != .preparing }) {
+                FleetSnapshotApply.discard(repo: repo, worktree: built.path, branch: branch, ref: built.madeRef ? id : nil)
+                return
+            }
             let outcome = await self.host.createThread(request)
+            if let built, case .failure = outcome {
+                FleetSnapshotApply.discard(repo: repo, worktree: built.path, branch: branch, ref: built.madeRef ? id : nil)
+            }
             self.queue.async { self.prepared(id, outcome) }
         }
+    }
+
+    /// The worktree passed its digest: how long the file part took, and what it did.
+    private func applied(_ id: UUID, _ applied: FleetSnapshotApply.Applied) {
+        guard inbound[id]?.record.state == .preparing else { return }
+        inbound[id]?.record.fileMillis = applied.fileMillis
+        applyStats[id] = applied.stats
+        save()
     }
 
     private func named(_ id: UUID, branch: String) {
@@ -101,11 +154,15 @@ extension FleetDispatch {
         save()
     }
 
-    private func threadRequest(for record: FleetDispatchRecord, branch: String, space: Space) -> RemoteCreateAgentRequest {
+    private func threadRequest(for record: FleetDispatchRecord, branch: String, space: Space, worktree: String? = nil) -> RemoteCreateAgentRequest {
         var request = RemoteCreateAgentRequest(
             spaceID: space.id, cwd: space.path, model: record.model, thinking: record.thinking.flatMap(ThinkingLevel.init(rawValue:)),
             initialPrompt: Self.prompt(for: record, branch: branch), worktreeBranch: branch, worktreeBase: record.commitSHA,
-            worktreeFetchFirst: false)
+            // A thread from a thread starts at its pinned commit; one the person started starts where this Mac's
+            // Settings ▸ Worktrees say (the space's base, fetched first when that is on).
+            worktreeFetchFirst: record.commitSHA == nil ? nil : false)
+        // A snapshot's worktree is already made: the thread works in it.
+        request.worktreePath = worktree
         request.name = record.title
         request.subdirectory = record.subdir
         request.dispatchedFrom = DispatchedFrom(hostID: record.parentHostID, hostName: record.parentHostName, agentID: record.parentAgentID,
@@ -115,12 +172,14 @@ extension FleetDispatch {
 
     /// What the thread is asked: the task, and where its work goes.
     static func prompt(for record: FleetDispatchRecord, branch: String) -> String {
-        record.task + "\n\n---\nYou were started by \(record.parentTitle.isEmpty ? "the person" : record.parentTitle) on \(record.parentHostName) to do the task above. "
-            + "Your branch is \(branch). Commit your work there and push it with git push -u origin \(branch). "
-            + "Your last message goes back to whoever sent you."
+        let sender = record.kind == .userThread || record.parentTitle.isEmpty ? "the person" : record.parentTitle
+        let tail = record.kind == .userThread ? "" : " Your last message goes back to whoever sent you."
+        return record.task + FleetDispatchProtocol.promptSeparator + "\(sender) on \(record.parentHostName) to do the task above. "
+            + "Your branch is \(branch). Commit your work there and push it with git push -u origin \(branch)." + tail
     }
 
     private func prepared(_ id: UUID, _ outcome: Result<AgentID, RemoteCreateAgentError>) {
+        snapshotsIn[id] = nil
         guard var entry = inbound[id], entry.record.state == .preparing else {
             // Cancelled while it was being made: the thread that came out of it is stopped.
             if case .success(let agent) = outcome { host.stopThread(agent) }
@@ -144,7 +203,8 @@ extension FleetDispatch {
         pushPending()
     }
 
-    private func failInbound(_ id: UUID, _ code: String, _ detail: String?) {
+    func failInbound(_ id: UUID, _ code: String, _ detail: String?) {
+        dropSnapshot(id)
         guard var entry = inbound[id], entry.record.state == .preparing else { return }
         entry.record.state = .failed
         entry.record.failure = code
@@ -182,6 +242,7 @@ extension FleetDispatch {
             entry.expectsResult = false
             entry.unsent = true
             inbound[id] = entry
+            dropSnapshot(id)
             if let agent = entry.record.remoteAgentID { host.stopThread(agent) }
             save()
             reply(.success(entry.record))

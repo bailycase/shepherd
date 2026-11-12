@@ -129,6 +129,10 @@ final class AppSettings {
         static let fleetWeights = "shepherd.fleet.weights"
         static let fleetThreadsCanSend = "shepherd.fleet.threadsCanSend"
         static let fleetThreadCap = "shepherd.fleet.threadCap"
+        static let fleetUncommitted = "shepherd.fleet.uncommitted"
+        static let fleetSnapshotExcludes = "shepherd.fleet.snapshotExcludes"
+        static let fleetAutoDispatch = "shepherd.fleet.autoDispatch"
+        static let fleetBatteryCountsHalf = "shepherd.fleet.batteryCountsHalf"
         static let missionsEnabled = "shepherd.experiments.missions"
         static let implementOpensThread = "shepherd.designs.implementOpensThread"
 
@@ -144,7 +148,7 @@ final class AppSettings {
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeGeneratePRDescription, worktreeDeleteAction, worktreeCloseOnMerge, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
             mcpProjectConfig,
-            goalsEnabled, projectsEnabled, designToolEnabled, fleetEnabled, fleetWeights, fleetThreadsCanSend, fleetThreadCap, missionsEnabled, implementOpensThread,
+            goalsEnabled, projectsEnabled, designToolEnabled, fleetEnabled, fleetWeights, fleetThreadsCanSend, fleetThreadCap, fleetAutoDispatch, fleetBatteryCountsHalf, fleetUncommitted, fleetSnapshotExcludes, missionsEnabled, implementOpensThread,
             filesWordWrap, filesMarkdownPreview,
         ]
 
@@ -556,6 +560,48 @@ final class AppSettings {
         }
     }
 
+    /// Settings ▸ Fleet ▸ Code ▸ Uncommitted changes (`HostSettings.fleetUncommitted`). Synced across the fleet.
+    var fleetUncommitted: FleetUncommittedChanges {
+        didSet { store.set(fleetUncommitted.rawValue, forKey: Key.fleetUncommitted) }
+    }
+
+    /// Settings ▸ Fleet ▸ Code ▸ Ignored files ▸ Per space, under the setting keys `fleet.snapshotExcludes.<spaceID>`. Synced across the fleet.
+    var fleetSnapshotExcludes: [String: FleetSnapshotExcludes] {
+        didSet {
+            if let data = try? JSONEncoder().encode(fleetSnapshotExcludes) { store.set(data, forKey: Key.fleetSnapshotExcludes) }
+        }
+    }
+
+    func fleetExcludes(of spaceID: SpaceID) -> FleetSnapshotExcludes {
+        fleetSnapshotExcludes[FleetSnapshotExcludes.settingKey(spaceID: spaceID.rawValue)] ?? FleetSnapshotExcludes()
+    }
+
+    func setFleetExcludes(_ excludes: FleetSnapshotExcludes, of spaceID: SpaceID) {
+        let key = FleetSnapshotExcludes.settingKey(spaceID: spaceID.rawValue)
+        if excludes.isEmpty { fleetSnapshotExcludes[key] = nil } else { fleetSnapshotExcludes[key] = excludes }
+    }
+
+    /// Settings ▸ Fleet ▸ Auto dispatch (`HostSettings.fleetAutoDispatch`): New thread's Auto place sends the work to the Mac with
+    /// the most room. Nil until the person chooses; it then reads as on once a second Mac is paired (`autoDispatch(pairedMacs:)`).
+    /// Synced across the fleet.
+    var fleetAutoDispatch: Bool? {
+        didSet {
+            if let fleetAutoDispatch { store.set(fleetAutoDispatch, forKey: Key.fleetAutoDispatch) } else { store.removeObject(forKey: Key.fleetAutoDispatch) }
+            if fleetAutoDispatch != oldValue { onFleetWeightsChange?() }
+        }
+    }
+
+    /// Settings ▸ Fleet ▸ On battery (`HostSettings.fleetBatteryCountsHalf`): a Mac on battery counts half when Auto picks one. Synced.
+    var fleetBatteryCountsHalf: Bool {
+        didSet {
+            store.set(fleetBatteryCountsHalf, forKey: Key.fleetBatteryCountsHalf)
+            if fleetBatteryCountsHalf != oldValue { onFleetWeightsChange?() }
+        }
+    }
+
+    /// Whether Auto places New thread's work: the person's choice, else on while this Mac is paired with another.
+    func autoDispatch(pairedMacs: Int) -> Bool { fleetAutoDispatch ?? (pairedMacs > 0) }
+
     func fleetWeight(of hostID: UUID) -> FleetSendWeight {
         fleetWeights[FleetSendWeight.settingKey(hostID: hostID)] ?? .normal
     }
@@ -610,6 +656,10 @@ final class AppSettings {
         fleetWeights = (store.dictionary(forKey: Key.fleetWeights) as? [String: String] ?? [:]).compactMapValues(FleetSendWeight.init(rawValue:))
         fleetThreadsCanSend = store.object(forKey: Key.fleetThreadsCanSend) as? Bool ?? false
         fleetThreadCap = HostSettings.clampedThreadCap(store.object(forKey: Key.fleetThreadCap) as? Int ?? HostSettings.fleetThreadCapDefault)
+        fleetUncommitted = store.string(forKey: Key.fleetUncommitted).flatMap(FleetUncommittedChanges.init(rawValue:)) ?? .sendThem
+        fleetSnapshotExcludes = (store.data(forKey: Key.fleetSnapshotExcludes).flatMap { try? JSONDecoder().decode([String: FleetSnapshotExcludes].self, from: $0) }) ?? [:]
+        fleetAutoDispatch = store.object(forKey: Key.fleetAutoDispatch) as? Bool
+        fleetBatteryCountsHalf = store.object(forKey: Key.fleetBatteryCountsHalf) as? Bool ?? true
         // Naming is always on now; only its model is a setting.
         store.removeObject(forKey: "shepherd.agent.autoName")
         // The session naming model became the text generation model: move its stored choice to
@@ -738,6 +788,10 @@ final class AppSettings {
         fleetWeights = [:]
         fleetThreadsCanSend = false
         fleetThreadCap = HostSettings.fleetThreadCapDefault
+        fleetUncommitted = .sendThem
+        fleetSnapshotExcludes = [:]
+        fleetAutoDispatch = nil
+        fleetBatteryCountsHalf = true
         shareDiagnostics = false
         textGenerationModel = ""
         visionModel = ""

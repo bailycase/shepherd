@@ -4,7 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// Settings ▸ Fleet (FleetSettings): the Macs paired with this one, and the two ways to add one.
-/// Only the parts that exist yet: sync, dispatch and code rows arrive with the slices that build them.
+/// Sync, dispatch and code rows.
 struct FleetSettings: View {
     var model: FleetSettingsModel
     /// Agents keep running (and Fleet keeps its links) with Shepherd quit: the background service
@@ -19,7 +19,12 @@ struct FleetSettings: View {
     /// fleet peers (a Mac without Fleet, a host paired as a client).
     var clients: [FleetMacRow] = []
     var removeClient: (UUID) -> Void = { _ in }
+    /// Settings ▸ Fleet ▸ Code (slice 4c); nil draws no Code group.
+    var code: FleetCodeSettings?
+    /// The Dispatch group's controls (`AppSettings`, synced across the fleet); nil draws none.
+    var dispatch: FleetDispatchControls?
 
+    @State var excluding = false
     @State private var adding = false
     @State private var joining = false
     @State private var addingDevice = false
@@ -40,7 +45,8 @@ struct FleetSettings: View {
     var body: some View {
         SettingsPage(title: "Fleet", explanation: enabled ? Self.explanation : Self.offExplanation,
                      status: enabled ? model.syncLine.map { AnyView(FleetSyncLineView(line: $0)) } : nil) {
-            if enabled { macs } else { hosts }
+            if enabled, let dispatch { FleetDispatchGroup(controls: dispatch) }
+            if enabled { codeGroup; macs } else { hosts }
             if enabled, !clients.isEmpty { otherHosts }
             devices
             if !enabled { serving }
@@ -59,6 +65,9 @@ struct FleetSettings: View {
         }
         .sheet(isPresented: $joining) {
             FleetJoinView(model: model) { joining = false }
+        }
+        .sheet(isPresented: $excluding) {
+            FleetExcludesSheet(spaces: code?.spaces ?? [], save: { code?.setExcludes($0, $1) }) { excluding = false }
         }
         .sheet(isPresented: $addingDevice) {
             FleetDeviceSheet(model: model) { addingDevice = false }
@@ -110,6 +119,54 @@ struct FleetSettings: View {
                         if let hostID = row.hostID { Task { await model.remove(hostID) } }
                     },
                 ])
+        }
+    }
+}
+
+/// What Settings ▸ Fleet ▸ Dispatch changes, as bindings the caller makes over its settings.
+struct FleetDispatchControls {
+    var autoDispatch: Binding<Bool>
+    var threadsCanSend: Binding<Bool>
+    var threadCap: Binding<Int>
+    var batteryCountsHalf: Binding<Bool>
+}
+
+/// Settings ▸ Fleet ▸ Dispatch (FleetSettings): how work moves between Macs on its own.
+private struct FleetDispatchGroup: View {
+    let controls: FleetDispatchControls
+
+    static func capTitle(_ cap: Int) -> String { "\(cap) at a time" }
+
+    var body: some View {
+        SettingsGroup(title: "Dispatch") {
+            SettingsRow(title: "Auto dispatch", subtitle: "New threads go to the Mac with the most room. You can still pick a Mac in the composer.") {
+                SettingsSwitch(label: "Auto dispatch", isOn: controls.autoDispatch)
+            }
+            SettingsRow(title: "Threads can send work to other Macs",
+                        subtitle: "A thread hands separate work to the Mac with room and wakes up with the result. Threads it sends can’t send more.") {
+                SettingsSwitch(label: "Threads can send work to other Macs", isOn: controls.threadsCanSend)
+            }
+            SettingsRow(title: "At most per thread", subtitle: "Sent threads running at once, across every Mac.") {
+                SHPopupMenu(Self.capTitle(controls.threadCap.wrappedValue)) {
+                    Picker("At most per thread", selection: controls.threadCap) {
+                        ForEach(Array(HostSettings.fleetThreadCapRange), id: \.self) { Text(Self.capTitle($0)).tag($0) }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                }
+                .accessibilityLabel("At most per thread")
+            }
+            SettingsRow(title: "On battery", subtitle: "How a Mac running on battery counts when Shepherd picks one.") {
+                SHPopupMenu(controls.batteryCountsHalf.wrappedValue ? "Counts half" : "Counts full") {
+                    Picker("On battery", selection: controls.batteryCountsHalf) {
+                        Text("Counts half").tag(true)
+                        Text("Counts full").tag(false)
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                }
+                .accessibilityLabel("On battery")
+            }
         }
     }
 }

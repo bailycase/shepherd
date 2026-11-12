@@ -19,7 +19,7 @@ struct ThreadHeader: View, Equatable {
             && (a.togglePane == nil) == (b.togglePane == nil) && (a.showChanges == nil) == (b.showChanges == nil)
             && (a.rename == nil) == (b.rename == nil) && a.pinned == b.pinned && (a.togglePin == nil) == (b.togglePin == nil)
             && a.muted == b.muted && (a.toggleMute == nil) == (b.toggleMute == nil)
-            && a.apps == b.apps
+            && a.apps == b.apps && a.sentBy == b.sentBy && a.sentByOnline == b.sentByOnline && (a.openSender == nil) == (b.openSender == nil)
     }
 
     var store: NativeThreadStore
@@ -46,6 +46,10 @@ struct ThreadHeader: View, Equatable {
     /// Whether the thread's pushes are muted on its host, and Mute or Unmute; nil where its host takes no Mute.
     var muted: Bool?
     var toggleMute: (() -> Void)?
+    /// A thread another thread (or the person) sent to this Mac: its Mac as a pill and "sent by" with a link to the sender (FleetRemote).
+    var sentBy: FleetSentBy?
+    var sentByOnline = true
+    var openSender: (() -> Void)?
     /// The space's quick actions (AppsQuickAction board); nil draws no Run button.
     var apps: QuickApps?
     var runApp: (AppKey) -> Void = { _ in }
@@ -57,6 +61,7 @@ struct ThreadHeader: View, Equatable {
     var body: some View {
         let _ = SHRenderProbe.tick("thread.header")
         SHThreadToolbar(title, project: project, titleHelp: "\(project) / \(title)", leadingInset: leadingInset, sidebar: showSidebar) {
+            if let sentBy { FleetSentByHeader(sentBy: sentBy, online: sentByOnline, openSender: openSender).equatable() }
         } trailing: {
             ThreadGoalHeader(store: store)
             if let apps {
