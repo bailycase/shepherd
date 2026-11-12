@@ -118,9 +118,9 @@ public struct SHAgentProse<Code: View>: View {
     }
 }
 
-extension SHAgentProse where Code == SHCodeBlock {
+extension SHAgentProse where Code == EquatableView<SHCodeBlock> {
     public init(_ blocks: [SHProseBlock], maxWidth: CGFloat = SHThreadMetrics.proseMeasure, writingFence: Bool = false) {
-        self.init(blocks, maxWidth: maxWidth, writingFence: writingFence) { SHCodeBlock($0, language: $1) }
+        self.init(blocks, maxWidth: maxWidth, writingFence: writingFence) { SHCodeBlock($0, language: $1).equatable() }
     }
 }
 
