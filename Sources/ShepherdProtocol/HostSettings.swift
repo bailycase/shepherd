@@ -93,6 +93,9 @@ public struct HostSettings: Codable, Hashable, Sendable {
     public var goalsEnabled: Bool
     /// Settings ▸ Experiments ▸ Projects, default off on each owner and executor.
     public var projectsEnabled: Bool
+    /// Settings ▸ Experiments ▸ Fleet (`fleetExperimentCapability`), default off. Older hosts omit
+    /// it, which reads as off.
+    public var fleetEnabled: Bool
 
     public var worktreeBase: WorktreeBase
     public var fetchBeforeCreating: Bool
@@ -153,7 +156,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
                 defaultModel: String? = nil, defaultThinking: ThinkingLevel = .medium,
                 defaultServiceTier: ServiceTier = .standard, textGenerationModel: String? = nil, visionModel: String? = nil, compactAtPercent: Int? = nil,
                 queueDelivery: NativeQueueMode = .all,
-                goalCrossProviderEvaluation: Bool = false, goalsEnabled: Bool = false, projectsEnabled: Bool = false,
+                goalCrossProviderEvaluation: Bool = false, goalsEnabled: Bool = false, projectsEnabled: Bool = false, fleetEnabled: Bool = false,
                 worktreeBase: WorktreeBase = .fresh, fetchBeforeCreating: Bool = true, commitRemainingWork: Bool = true,
                 generatePRDescriptions: Bool = true, deleteLocalBranch: Bool = true, mergePRAutomatically: Bool = false,
                 mergeMethod: MergeMethod = .squash, closeOnMerge: Bool = false, backgroundService: Bool? = nil,
@@ -175,6 +178,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         self.goalCrossProviderEvaluation = goalCrossProviderEvaluation
         self.goalsEnabled = goalsEnabled
         self.projectsEnabled = projectsEnabled
+        self.fleetEnabled = fleetEnabled
         self.worktreeBase = worktreeBase
         self.fetchBeforeCreating = fetchBeforeCreating
         self.commitRemainingWork = commitRemainingWork
@@ -201,7 +205,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case shepherdVersion, piVersion, defaultModel, defaultThinking, defaultServiceTier, textGenerationModel, visionModel, compactAtPercent
-        case queueDelivery, goalCrossProviderEvaluation, goalsEnabled, projectsEnabled
+        case queueDelivery, goalCrossProviderEvaluation, goalsEnabled, projectsEnabled, fleetEnabled
         case worktreeBase, fetchBeforeCreating, commitRemainingWork, generatePRDescriptions
         case deleteLocalBranch, mergePRAutomatically, mergeMethod, closeOnMerge, backgroundService, listenerPort, listenerProblem, listenerProblemDetail, bundledExtensions, installedExtensions
         case updatePiDaily, updateExtensionsDaily
@@ -224,6 +228,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         goalCrossProviderEvaluation = try c.decodeIfPresent(Bool.self, forKey: .goalCrossProviderEvaluation) ?? false
         goalsEnabled = try c.decodeIfPresent(Bool.self, forKey: .goalsEnabled) ?? false
         projectsEnabled = try c.decodeIfPresent(Bool.self, forKey: .projectsEnabled) ?? false
+        fleetEnabled = try c.decodeIfPresent(Bool.self, forKey: .fleetEnabled) ?? false
         worktreeBase = try c.decode(WorktreeBase.self, forKey: .worktreeBase)
         fetchBeforeCreating = try c.decode(Bool.self, forKey: .fetchBeforeCreating)
         commitRemainingWork = try c.decodeIfPresent(Bool.self, forKey: .commitRemainingWork) ?? true
@@ -264,6 +269,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         case .goalCrossProviderEvaluation(let on): goalCrossProviderEvaluation = on
         case .goalsEnabled(let on): goalsEnabled = on
         case .projectsEnabled(let on): projectsEnabled = on
+        case .fleetEnabled(let on): fleetEnabled = on
         case .worktreeBase(let base): worktreeBase = base
         case .fetchBeforeCreating(let on): fetchBeforeCreating = on
         case .commitRemainingWork(let on): commitRemainingWork = on
@@ -317,6 +323,8 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
     case goalCrossProviderEvaluation(Bool)
     case goalsEnabled(Bool)
     case projectsEnabled(Bool)
+    /// `RemoteProtocol.fleetExperimentCapability`.
+    case fleetEnabled(Bool)
     case worktreeBase(HostSettings.WorktreeBase)
     case fetchBeforeCreating(Bool)
     /// Legacy: older clients' Finalize settings. A host ignores `commitRemainingWork`,
@@ -351,6 +359,7 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
         switch self {
         case .goalsEnabled: RemoteProtocol.goalExperimentCapability
         case .projectsEnabled: RemoteProtocol.projectsExperimentCapability
+        case .fleetEnabled: RemoteProtocol.fleetExperimentCapability
         case .defaultServiceTier, .namingModel, .compactAtPercent: RemoteProtocol.hostSettingsAgentDefaultsCapability
         case .textGenerationModel: RemoteProtocol.hostSettingsTextGenerationModelCapability
         case .visionModel: RemoteProtocol.hostSettingsVisionModelCapability

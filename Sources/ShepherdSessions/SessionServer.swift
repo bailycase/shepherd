@@ -183,6 +183,13 @@ public final class SessionServer: @unchecked Sendable {
 
         /// Connected through the local socket (`host.sock`): the app itself, offered `local.v1`.
         var isLocal = false
+        /// The Mac this connection authenticated as, with its fleet token (`FleetService`); nil for
+        /// the shared token and the local app. Such a connection is sent no workspace state.
+        var fleetPeerID: UUID?
+        /// Where a remote connection came from, as text (a peer Mac's address, for pairing).
+        var peerHost: String?
+        /// Fleet requests this connection sent before `hello`; the host closes it past a few.
+        var unauthenticatedFleetRequests = 0
         /// Terminals whose PTY is not read until this local app catches up (`localOutputHighWaterMark`).
         var heldOutput: Set<SessionID> = []
 
@@ -828,6 +835,10 @@ public final class SessionServer: @unchecked Sendable {
     private var localAcceptSource: DispatchSourceRead?
     private var localSocketPath: String?
     private var localToken: String?
+    /// This host's fleet (`FleetService`), present only while Settings ▸ Experiments ▸ Fleet is on. Server queue.
+    var fleet: FleetService?
+    /// The port the remote listener is bound to, nil while it isn't open. Server queue.
+    private var remoteListenPort: UInt16?
     /// This host's build, said in `helloOk` (nil: none to say, as in tests).
     public var hostBuild: String? = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
     /// Which remote clients (by fd) stream each session's output. Registered
@@ -1081,6 +1092,7 @@ public final class SessionServer: @unchecked Sendable {
                 && (designsServed && designs || !RemoteProtocol.designCapabilities.contains($0))
                 && (tunnelsServed || ($0 != RemoteProtocol.browserTunnelCapability && $0 != RemoteProtocol.browserDriveCapability))
                 && ($0 != RemoteProtocol.missionsCapability || missionsServed && onRemoteMission != nil)
+                && ($0 != RemoteProtocol.fleetCapability || fleet != nil)
         }
     }
 
@@ -1235,6 +1247,71 @@ public final class SessionServer: @unchecked Sendable {
             }
             // What they are sent of the workspace changed with it: its designs and their agents.
             if !self.store.state.designs.isEmpty { self.broadcastRemoteState(self.store.state, to: readers) }
+        }
+    }
+
+    // MARK: - Fleet (server queue)
+
+    /// Takes part in a fleet while `enabled` (Settings ▸ Experiments ▸ Fleet): this host's
+    /// identity, its links to the Macs it is paired with, its Bonjour advertisement and the fleet
+    /// requests (`FleetService`). Off ends the links and refuses every fleet message with "Enable
+    /// Fleet in Settings ▸ Experiments"; saved pairings stay and come back when it is turned on.
+    /// `name` is what other Macs call this one (the Mac's own name unless a test names it).
+    public func setFleetEnabled(_ enabled: Bool, name: String? = nil, advertises: Bool = true) {
+        queue.async { [self] in
+            guard enabled != (fleet != nil) else { return }
+            guard enabled else {
+                fleet?.stop()
+                fleet = nil
+                for client in Array(clients.values) where client.fleetPeerID != nil { disconnect(client, reason: "fleet turned off") }
+                pushSettingsChanged(.fleet)
+                return
+            }
+            do {
+                let service = try FleetService(queue: queue, directory: supportDirectory.appendingPathComponent("fleet", isDirectory: true),
+                                               name: name ?? Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
+                                               build: hostBuild, advertises: advertises)
+                service.onChange = { [weak self] in self?.pushSettingsChanged(.fleet) }
+                service.onPeerRemoved = { [weak self] hostID in
+                    guard let self else { return }
+                    for client in Array(self.clients.values) where client.fleetPeerID == hostID { self.disconnect(client, reason: "removed from the fleet") }
+                }
+                fleet = service
+                service.listenerChanged(remoteListenPort)
+                service.start()
+            } catch {
+                ShepherdLog.error("fleet could not start: \(error)")
+            }
+        }
+    }
+
+    /// Hands a fleet request to `FleetService`, or refuses it while Fleet is off.
+    private func serveFleet(_ request: RemoteRequest, from client: ExtensionConnection) {
+        let id: Int
+        switch request {
+        case .fleetIdentify(let value), .fleetPair(let value, _, _), .fleetEstablish(let value, _), .fleetIntroduce(let value, _),
+             .fleetRevoke(let value, _, _), .fleetRead(let value), .fleetAction(let value, _):
+            id = value
+        default: return
+        }
+        guard let fleet else {
+            // Off: the app still reads an empty fleet to draw the switch's state.
+            if case .fleetRead = request, client.isLocal {
+                send(.fleetResult(id: id, result: FleetResult(snapshot: FleetSnapshot())), to: client)
+            } else {
+                send(.error(id: id, code: FleetProtocol.Code.off, message: "Enable Fleet in Settings ▸ Experiments."), to: client)
+            }
+            return
+        }
+        let caller = FleetCaller(connection: client.fd, isLocal: client.isLocal, authenticated: client.authenticated,
+                                 peerHostID: client.fleetPeerID, observedHost: client.peerHost)
+        let connection = ChangesUnchecked(value: client)
+        fleet.serve(request, from: caller) { [weak self] reply in
+            self?.queue.async {
+                let client = connection.value
+                guard let self, self.clients[client.fd] === client else { return }
+                self.send(reply, to: client)
+            }
         }
     }
 
@@ -2313,6 +2390,8 @@ public final class SessionServer: @unchecked Sendable {
         remoteAcceptSource = source
         source.activate()
         ShepherdLog.info("remote listener on port \(boundPort)")
+        remoteListenPort = boundPort
+        fleet?.listenerChanged(boundPort)
         return boundPort
     }
 
@@ -2324,6 +2403,8 @@ public final class SessionServer: @unchecked Sendable {
         remoteAcceptSource = nil
         remoteListenFD = -1
         remoteToken = nil
+        remoteListenPort = nil
+        fleet?.listenerChanged(nil)
     }
 
     /// Load the shared remote token, generating one (32 random bytes as hex,
@@ -2447,6 +2528,7 @@ public final class SessionServer: @unchecked Sendable {
             _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
 
             let client = ExtensionConnection(fd: fd, isRemote: true)
+            client.peerHost = FleetAddresses.peerHost(of: fd)
             let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
             source.setEventHandler { [weak self] in self?.handleReadable(fd: fd) }
             source.setCancelHandler { close(fd) }
@@ -2476,6 +2558,18 @@ public final class SessionServer: @unchecked Sendable {
         }
 
         guard client.authenticated else {
+            // The two fleet requests answered before `hello`: who is there, and pairing with a code.
+            switch request {
+            case .fleetIdentify(let id), .fleetPair(let id, _, _):
+                client.unauthenticatedFleetRequests += 1
+                guard client.unauthenticatedFleetRequests <= FleetService.unauthenticatedRequestLimit else {
+                    sendFinal(.error(id: id, code: FleetProtocol.Code.busy, message: "Too many requests."), to: client)
+                    return
+                }
+                serveFleet(request, from: client)
+                return
+            default: break
+            }
             guard case .hello(let id, let token, let clientName, let protocolVersion, let capabilities) = request else {
                 ShepherdLog.warning("remote request before hello on fd \(client.fd)")
                 sendFinal(.error(id: 0, code: "unauthenticated", message: "hello required"), to: client)
@@ -2489,11 +2583,16 @@ public final class SessionServer: @unchecked Sendable {
                 ), to: client)
                 return
             }
-            guard let expected = client.isLocal ? localToken : remoteToken, RemoteToken.matches(token, expected: expected) else {
+            // The shared token, or a paired Mac's own (a fleet peer; never on the local socket).
+            let shared = (client.isLocal ? localToken : remoteToken).map { RemoteToken.matches(token, expected: $0) } ?? false
+            let peer = shared || client.isLocal ? nil : fleet?.authenticate(token: token)
+            guard shared || peer != nil else {
                 ShepherdLog.warning("remote client '\(clientName)' rejected: bad token (fd \(client.fd))")
                 sendFinal(.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token"), to: client)
                 return
             }
+            client.fleetPeerID = peer
+            if let peer { fleet?.peerAuthenticated(peer, from: client.peerHost) }
             client.authenticated = true
             client.clientCapabilities = Set(capabilities ?? [])
             if client.isLocal { localAppsChanged() }
@@ -2501,7 +2600,8 @@ public final class SessionServer: @unchecked Sendable {
                 id: id,
                 protocolVersion: RemoteProtocol.version,
                 capabilities: offeredCapabilities(to: client),
-                hostBuild: hostBuild
+                hostBuild: hostBuild,
+                hostID: fleet?.hostID
             ), to: client)
             sendStartProblems(to: client)
             sendAppProcesses(to: client)
@@ -2513,6 +2613,8 @@ public final class SessionServer: @unchecked Sendable {
         }
 
         switch request {
+        case .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction:
+            serveFleet(request, from: client)
         case .pushRegistration(let id, let registration):
             guard offeredCapabilities.contains(RemoteProtocol.pushNotificationsCapability),
                   client.clientCapabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
@@ -4544,7 +4646,7 @@ public final class SessionServer: @unchecked Sendable {
     /// Push a fresh state snapshot to every authenticated remote client.
     /// Runs on the server queue alongside the mutation that produced it.
     private func broadcastRemoteState(_ full: ShepherdState, wholeOnly: Bool = false) {
-        broadcastRemoteState(full, to: clients.values.filter { $0.isRemote && $0.authenticated && (!wholeOnly || takesWholeWorkspace($0)) })
+        broadcastRemoteState(full, to: clients.values.filter { $0.isRemote && $0.authenticated && $0.fleetPeerID == nil && (!wholeOnly || takesWholeWorkspace($0)) })
     }
 
     /// Each client's view of `full` (`remoteState`), encoded once per view actually sent: with
@@ -4739,6 +4841,7 @@ public final class SessionServer: @unchecked Sendable {
                 + "(\(client.queuedReplyBytes) B unwritten)")
         }
         hostUpdateRequests[client.fd] = nil
+        fleet?.connectionClosed(client.fd)
         clients.removeValue(forKey: client.fd)
         for (token, request) in agentRequests where !request.deletionConfirmed && (request.caller === client || request.target === client) {
             finishAgentRequest(token, result: .init(text: "agent connection closed", code: "disconnected"))
