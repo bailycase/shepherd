@@ -310,14 +310,18 @@ struct ProseView: View, Equatable {
     }
 }
 
-/// One chunk of a reply's prose (`ProseView`), drawn by `SHAgentProse`. Equatable, so a chunk
+/// One chunk of a reply's prose (`ProseView`), drawn by `SHProseChunk`. Equatable, so a chunk
 /// that did not change is not drawn again.
 struct ProseChunkView: View, Equatable {
     let chunk: NativeProseChunk
     let writingFence: Bool
 
     var body: some View {
-        SHAgentProse(ProseView.proseBlocks(chunk.blocks), writingFence: writingFence)
+        let parts = zip(chunk.parts, ProseView.proseBlocks(chunk.blocks)).map { part, block in
+            SHProsePart(id: .init(block: part.id.block, stretch: part.id.stretch), block: block)
+        }
+        SHProseChunk<SHCodeBlock>(parts, writingFence: writingFence)
+            .frame(maxWidth: SHThreadMetrics.proseMeasure, alignment: .leading)
     }
 }
 
