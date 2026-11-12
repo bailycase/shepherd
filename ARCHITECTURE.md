@@ -125,7 +125,9 @@ It never starts a server (`BackgroundHostClient`): it takes its host's workspace
 persistence task tail keeps user mutations ordered. If the host rejects a mutation, the view
 model adopts the host's state again. It adopts the newest of the host's pushes: one with a newer
 push already queued behind it (`RemoteHostClient.newerStateQueued`) is skipped, though its status
-changes still run their effects, and at least every 32nd push is adopted (`StateAdoption`).
+changes still run their effects, and at least every 32nd push is adopted (`StateAdoption`). The
+connection holds a skipped push without the host projection (`RemoteHostStore.onProjectionChanged`),
+which the push behind it runs once.
 
 **Observation.** The view model and the app's stores (`NativeThreadStore`, `AppSettings`,
 `KeybindingsStore`, `ThemeManager`, `RemoteHostStore`, `AppUpdater`, the

@@ -1227,6 +1227,11 @@ final class ShepherdViewModel {
         notifyStatus(agent, from: old, failure: failure)
     }
 
+    /// Whether the next push of the host's workspace is left unadopted when a newer one is queued behind it
+    /// (`receiveLocalHostState`). The connection asks before it holds the push, and a push it leaves is not
+    /// projected (`RemoteHostStore.Connection.skip`). The first adoption is never skipped.
+    var leavesQueuedHostState: Bool { didAdopt && adoption.leavesQueued }
+
     /// A push of the host's workspace (`RemoteHostStore.onLocalHostState`). Its status changes run their
     /// effects now, against the newest snapshot received before it, so none is merged away; the snapshot is
     /// adopted unless a newer one is already queued behind it (`StateAdoption`).

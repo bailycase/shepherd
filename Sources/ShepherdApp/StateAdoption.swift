@@ -10,9 +10,14 @@ struct StateAdoption {
     private(set) var unadopted: ShepherdState?
     private(set) var skipped = 0
 
+    /// Whether a snapshot received now is left unadopted when a newer one is queued behind it: not once `maxSkips`
+    /// in a row have been. The connection asks before it holds the snapshot, so it can leave the projection to the
+    /// one behind (`RemoteHostStore.leavesQueuedLocalHostState`).
+    var leavesQueued: Bool { skipped < Self.maxSkips }
+
     /// What to adopt for `state`, a snapshot received now: nil when a newer one is queued behind it.
     mutating func received(_ state: ShepherdState, newerQueued: Bool) -> ShepherdState? {
-        guard newerQueued, skipped < Self.maxSkips else {
+        guard newerQueued, leavesQueued else {
             unadopted = nil
             skipped = 0
             return state
