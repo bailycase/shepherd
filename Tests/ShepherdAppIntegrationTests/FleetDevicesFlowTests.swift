@@ -127,6 +127,84 @@ struct FleetDevicesFlowTests {
         #expect(store.hosts.last?.token == "x" && store.hosts.last?.ownToken == false)
     }
 
+    /// With Fleet off nothing needs membership: a phone pairs with a Mac by its Add a device code, and a Mac's app
+    /// pairs with another Mac as a client (what Remote's Add host did) with the same flow and no pasted token.
+    @Test func withFleetOffAPhonePairsAndAMacAppPairsToAnotherMacAsAClient() async throws {
+        let a = try await FleetApp("MacBook Pro", fleet: false, serving: true), b = try await FleetApp("Mac mini", fleet: false, serving: true)
+        defer { a.stop(); b.stop() }
+        await a.model.refresh()
+        #expect(a.model.devicesReady && !a.model.snapshot.enabled && a.model.rows.isEmpty && a.model.snapshot.port == a.port)
+
+        // A phone pairs with A: code, list, revoke.
+        await a.model.startDeviceCode()
+        let (phone, phoneToken) = Self.introduction()
+        _ = try await Self.pair(phone, with: a, code: try #require(a.model.deviceCode).code)
+        try await FleetSettingsFlowTests.waitFor("the phone to be listed") {
+            await a.model.refresh()
+            return a.model.deviceRows.map(\.title) == ["iPhone"] && a.model.deviceCodeEnd == .added("iPhone")
+        }
+        let onA = RemoteHostClient()
+        defer { onA.disconnect() }
+        _ = try await onA.connect(host: "127.0.0.1", port: try #require(a.port), token: phoneToken, clientName: "iPhone")
+        #expect(!onA.capabilities.contains(RemoteProtocol.fleetCapability))
+
+        // A's app pairs with B as a client, through the model's pairing and the store.
+        let defaults = ScratchDefaults()
+        let store = RemoteHostStore(defaults: defaults, connects: false)
+        a.model.pairClient = { host, port, code in try await store.pairAsClient(host: host, port: port, code: code) }
+        await b.model.startDeviceCode()
+        let code = try #require(b.model.deviceCode).code
+        let added = await a.model.pairAsClient(with: b.found, code: code)
+        #expect(added && a.model.pairing == .idle)
+        let held = try #require(store.hosts.first)
+        #expect(held.name == "Mac mini" && held.host == "127.0.0.1" && held.port == b.port && held.ownToken && !held.fleetManaged)
+        #expect(held.token != b.token, "its own token, not the shared one")
+        let reloaded = try #require(RemoteHostStore(defaults: defaults, connects: false).hosts.first)
+        #expect(reloaded.ownToken && reloaded.token == held.token && reloaded.bindingID == held.bindingID)
+
+        // B knows it as a Mac app, and it connects as a client.
+        try await FleetSettingsFlowTests.waitFor("B to list the Mac app") {
+            await b.model.refresh()
+            return b.model.deviceRows.first?.detail.hasPrefix("Mac · paired ") == true
+        }
+        let asClient = RemoteHostClient()
+        defer { asClient.disconnect() }
+        _ = try await asClient.connect(host: "127.0.0.1", port: try #require(b.port), token: held.token, clientName: "MacBook Pro")
+        #expect(!asClient.capabilities.contains(RemoteProtocol.fleetCapability))
+
+        // The same code is spent; a wrong one says what the Mac said and adds nothing.
+        let again = await a.model.pairAsClient(with: b.found, code: code)
+        #expect(!again && store.hosts.count == 1)
+        if case .failed(let message) = a.model.pairing { #expect(!message.isEmpty) } else { Issue.record("expected a refusal") }
+
+        // Its row, then Remove forgets it (the Mac still lists the device until it is revoked there).
+        let row = FleetMacRow.client(id: held.id, name: held.name, host: held.host, port: held.port, phase: .disconnected)
+        #expect(row.title == "Mac mini" && row.detail == "127.0.0.1:\(b.port ?? 0) · disconnected" && row.state == .offline && row.hostID == held.id)
+        store.removeHost(id: held.id)
+        #expect(store.hosts.isEmpty)
+        await b.model.refresh()
+        #expect(b.model.deviceRows.count == 1)
+        await b.model.revokeDevice(try #require(b.model.deviceRows.first).id)
+        let refused = RemoteHostClient()
+        defer { refused.disconnect() }
+        do { _ = try await refused.connect(host: "127.0.0.1", port: try #require(b.port), token: held.token, clientName: "x", fetchesState: false); Issue.record("a revoked Mac app connected") }
+        catch RemoteHostClientError.rejected(let code, _) { #expect(code == RemoteProtocol.unauthorizedCode) }
+    }
+
+    /// A legacy host on the shared token keeps working with Fleet off, and is listed like the others.
+    @Test func aLegacyHostOnTheSharedTokenStaysAndIsListedWithFleetOff() async throws {
+        let a = try await FleetApp("MacBook Pro", fleet: false), b = try await FleetApp("Mac mini", fleet: false, serving: true)
+        defer { a.stop(); b.stop() }
+        let store = RemoteHostStore(defaults: ScratchDefaults(), connects: false)
+        store.addHost(name: "mini", host: "127.0.0.1", port: try #require(b.port), token: b.token)
+        let legacy = try #require(store.hosts.first)
+        #expect(!legacy.ownToken && !legacy.fleetManaged)
+        let probe = RemoteHostClient()
+        defer { probe.disconnect() }
+        _ = try await probe.connect(host: "127.0.0.1", port: try #require(b.port), token: legacy.token, clientName: "MacBook Pro")
+        #expect(FleetMacRow.client(id: legacy.id, name: "mini", host: legacy.host, port: legacy.port, phase: .connected).state == .connected)
+    }
+
     @Test func deviceRowsSayWhatEachIs() {
         let ms = 1_750_000_000_000.0
         let snapshot = FleetSnapshot(enabled: true, devices: FleetDevicesSnapshot(devices: [

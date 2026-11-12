@@ -407,12 +407,34 @@ final class RemoteHostStore {
         return connection
     }
 
-    func addHost(name: String, host: String, port: UInt16, token: String) {
-        let config = HostConfig(name: name, host: host, port: port, token: token)
+    @discardableResult
+    func addHost(name: String, host: String, port: UInt16, token: String, ownToken: Bool = false) -> UUID {
+        let config = HostConfig(name: name, host: host, port: port, token: token, ownToken: ownToken)
         let connection = Connection(config: config, designCache: designCache)
         allConnections.append(connection)
         persist()
         connect(connection)
+        return config.id
+    }
+
+    /// Pairs this app as a device (a client) of the Mac at `host`:`port` with the code its Settings ▸ Fleet ▸
+    /// Add a device shows, and connects to it with a token of its own that the Mac keeps only the hash of.
+    /// Nothing is typed but the code, and the Mac need not be in a fleet. A Mac already held at that address
+    /// is given the new token instead of being added twice. Returns the host's id.
+    @discardableResult
+    func pairAsClient(host: String, port: UInt16, code: String) async throws -> UUID {
+        let token = FleetProtocol.makeToken()
+        let device = FleetDeviceIntroduction(deviceID: UUID(), name: Host.current().localizedName ?? "Mac", kind: .macApp,
+                                             tokenHash: FleetProtocol.hash(token))
+        let answered = try await RemoteHostClient.fleetPairDevice(host: host, port: port, code: code, device: device).result
+        if let held = pairedConnections.first(where: { $0.config.host == host && $0.config.port == port }) {
+            held.config.token = token
+            held.config.ownToken = true
+            persist()
+            reconnect(id: held.id)
+            return held.id
+        }
+        return addHost(name: answered.name, host: host, port: port, token: token, ownToken: true)
     }
 
     /// Update a host's config and reconnect with the new values.

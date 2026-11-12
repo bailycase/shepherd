@@ -247,7 +247,11 @@ struct SettingsView: View {
             FleetSettings(model: vm.fleet, serviceKeepsRunning: vm.backgroundServiceStatus?.keepsAgentsRunning, enabled: vm.settings.fleetEnabled,
                           serve: FleetServe(isOn: Binding(get: { vm.remoteListenerEnabled }, set: { vm.setRemoteListenerEnabled($0) }),
                                             status: vm.remoteListenerStatus, problem: vm.remoteListenerProblem,
-                                            problemDetail: vm.remoteListenerProblemDetail))
+                                            problemDetail: vm.remoteListenerProblemDetail),
+                          clients: vm.remoteHosts.pairedConnections.filter { !vm.settings.fleetEnabled || !$0.config.fleetManaged }.map {
+                              .client(id: $0.id, name: $0.config.name, host: $0.config.host, port: $0.config.port, phase: $0.phase)
+                          },
+                          removeClient: { vm.remoteHosts.removeHost(id: $0) })
                 .task { await vm.refreshRemoteListener() }
         case .keyboard: KeyboardSettings(vm: vm)
         case .advanced: AdvancedSettings(vm: vm)

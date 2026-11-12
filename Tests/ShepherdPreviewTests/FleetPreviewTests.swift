@@ -16,14 +16,15 @@ struct FleetPreviewTests {
     static let now = Date(timeIntervalSince1970: 1_750_000_000)
     static let ms = now.timeIntervalSince1970 * 1000
 
-    static func model(peers: [FleetPeerStatus], port: UInt16? = 7434, devices: FleetDevicesSnapshot? = nil) -> FleetSettingsModel {
+    static func model(peers: [FleetPeerStatus], port: UInt16? = 7434, devices: FleetDevicesSnapshot? = nil, enabled: Bool = true) -> FleetSettingsModel {
         let model = FleetSettingsModel()
-        let snapshot = FleetSnapshot(enabled: true, hostID: UUID(), name: "MacBook Pro", addresses: ["192.168.1.40"], port: port,
+        let snapshot = FleetSnapshot(enabled: enabled, hostID: UUID(), name: "MacBook Pro", addresses: ["192.168.1.40"], port: port,
                                      advertising: port != nil, peers: peers, devices: devices)
         model.deviceRows = FleetDeviceRow.rows(of: snapshot, locale: Locale(identifier: "en_US"), calendar: Calendar(identifier: .gregorian))
         model.snapshot = snapshot
-        model.rows = FleetMacRow.rows(of: snapshot, locale: Locale(identifier: "en_US"), calendar: Calendar(identifier: .gregorian))
-        model.loaded = true
+        model.rows = enabled ? FleetMacRow.rows(of: snapshot, locale: Locale(identifier: "en_US"), calendar: Calendar(identifier: .gregorian)) : []
+        model.loaded = enabled
+        model.devicesReady = devices != nil
         return model
     }
 
@@ -148,12 +149,36 @@ struct FleetPreviewTests {
         }
     }
 
-    @Test func settingsFleetOffServesThisMacForDevicesAlreadyPaired() async throws {
-        let model = Self.model(peers: [])
+    static let clientRows = [
+        FleetMacRow(id: "mini", hostID: UUID(), title: "Mac mini", detail: "192.168.1.52:7434 · connected", state: .connected),
+        FleetMacRow(id: "studio", hostID: UUID(), title: "Mac Studio", detail: "192.168.1.60:7434 · unreachable", state: .offline),
+    ]
+
+    /// Fleet off: Macs this app is a client of, devices and the listener (what Remote and Add a device did, without a token).
+    @Test func settingsFleetOffShowsClientMacsDevicesAndTheListener() async throws {
+        let model = Self.model(peers: [], devices: Self.devices, enabled: false)
         let serve = FleetServe(isOn: .constant(true), status: "Serving on port 7434", problem: nil, problemDetail: nil)
-        try await Preview.render("fleet-settings-off", size: CGSize(width: 1000, height: 420)) {
+        try await Preview.renderMatrix("fleet-settings-off", size: CGSize(width: 1000, height: 1240)) {
+            FleetSettings(model: model, serviceKeepsRunning: true, enabled: false, serve: serve, clients: Self.clientRows)
+                .frame(width: 1000, height: 1240).background(Color.sh.bgWindow)
+        }
+    }
+
+    @Test func settingsFleetOffWithNothingPairedYet() async throws {
+        let model = Self.model(peers: [], devices: FleetDevicesSnapshot(), enabled: false)
+        let serve = FleetServe(isOn: .constant(false), status: "Not serving", problem: nil, problemDetail: nil)
+        try await Preview.render("fleet-settings-off-empty", size: CGSize(width: 1000, height: 760)) {
             FleetSettings(model: model, serviceKeepsRunning: true, enabled: false, serve: serve)
-                .frame(width: 1000, height: 420).background(Color.sh.bgWindow)
+                .frame(width: 1000, height: 760).background(Color.sh.bgWindow)
+        }
+    }
+
+    /// Add a Mac with Fleet off: pairs as a client with the code Add a device shows.
+    @Test func addAMacAsAClientWithFleetOff() async throws {
+        let model = Self.model(peers: [], enabled: false)
+        model.browse = { update in update(Self.found); return {} }
+        try await Preview.render("fleet-pair-client", size: CGSize(width: 640, height: 700)) {
+            FleetPairSheet(model: model, asClient: true, code: "4829") {}.padding(SH.Space.xxl).frame(width: 640, height: 700).background(Color.sh.scrim)
         }
     }
 

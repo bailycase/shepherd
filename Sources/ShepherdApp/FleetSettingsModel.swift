@@ -45,6 +45,19 @@ struct FleetMacRow: Identifiable, Equatable {
     }
 }
 
+extension FleetMacRow {
+    /// A Mac this app is a client of (`RemoteHostStore`): where it is and how the connection stands.
+    static func client(id: UUID, name: String, host: String, port: UInt16, phase: RemoteHostStore.Phase) -> FleetMacRow {
+        let (word, state): (String, FleetMacRowState) = switch phase {
+        case .connected: ("connected", .connected)
+        case .connecting: ("connecting…", .connecting)
+        case .failed(let failure): (failure.headline.lowercased(), .offline)
+        case .disconnected: ("disconnected", .offline)
+        }
+        return FleetMacRow(id: id.uuidString, hostID: id, title: name, detail: "\(host):\(port) · \(word)", state: state)
+    }
+}
+
 enum FleetMacRowState: Equatable {
     case thisMac, connected, connecting, offline
 }
@@ -114,8 +127,10 @@ final class FleetSettingsModel {
     }
 
     /// The host's fleet: this Mac, the Macs it is paired with and each link. Empty (not enabled)
-    /// until the host answers, and while Fleet is off.
+    /// until the host answers, and while Fleet is off (its devices and port are still read then).
     var snapshot = FleetSnapshot()
+    /// The host answered with its devices: Add a device and the list work (Fleet on or off).
+    var devicesReady = false
     /// This Mac and each Mac it is paired with, as Settings lists them.
     var rows: [FleetMacRow] = []
     /// The host has answered at least once since Fleet was switched on.
@@ -138,6 +153,8 @@ final class FleetSettingsModel {
 
     /// This Mac's host, over its local socket; throws while it is away.
     @ObservationIgnored var host: () throws -> RemoteHostClient? = { nil }
+    /// Pairs this app as a device of a Mac that is not in its fleet (Fleet off): the app does it, not its host.
+    @ObservationIgnored var pairClient: (String, UInt16, String) async throws -> Void = { _, _, _ in }
     /// Starts finding Macs; the answer stops it. Replaced by a fixture in tests.
     @ObservationIgnored var browse: @MainActor (@escaping @Sendable ([FoundMac]) -> Void) -> () -> Void = { _ in {} }
     @ObservationIgnored private var stopBrowsing: (() -> Void)?
@@ -165,11 +182,12 @@ final class FleetSettingsModel {
     private func apply(_ result: FleetResult) {
         if result.snapshot != snapshot {
             snapshot = result.snapshot
-            rows = FleetMacRow.rows(of: result.snapshot)
+            rows = result.snapshot.enabled ? FleetMacRow.rows(of: result.snapshot) : []
             let devices = FleetDeviceRow.rows(of: result.snapshot)
             if devices != deviceRows { deviceRows = devices }
         }
         loaded = result.snapshot.enabled
+        devicesReady = result.snapshot.devices != nil
         if join != nil, result.snapshot.join == nil {
             // The window is closed: a Mac paired (it is in the list now) or it ran out.
             let joined = result.snapshot.peers.first { !joinBaseline.contains($0.hostID) }
@@ -303,6 +321,20 @@ final class FleetSettingsModel {
         do {
             guard let client = try host() else { pairing = .failed("Shepherd's background service isn't answering."); return false }
             apply(try await client.fleetAction(.pair(host: address, port: port, code: code)))
+            pairing = .idle
+            return true
+        } catch {
+            pairing = .failed(Self.words(error))
+            return false
+        }
+    }
+
+    /// Enters `code` on `mac` and adds it as a Mac this app is a client of (Fleet off). True when it did.
+    func pairAsClient(with mac: FoundMac, code: String) async -> Bool {
+        guard let address = mac.address, let port = mac.port else { return false }
+        pairing = .working
+        do {
+            try await pairClient(address, port, code)
             pairing = .idle
             return true
         } catch {
