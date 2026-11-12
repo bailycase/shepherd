@@ -68,6 +68,9 @@ struct FixtureHostData {
     var forge: (@Sendable (RemoteForgeRequest) -> RemoteForgeResult?)? = nil
     /// Issues & PRs' page reads go unanswered, so a page stays loading.
     var forgeHoldsPages = false
+    /// The fleet this Mac serves a phone (`fleet.view.v1`, its Fleet experiment on): what `fleetRead` answers and
+    /// `.watching` asks the host to sample for. nil: Fleet is off here, and the capability isn't offered.
+    var fleet: FleetSnapshot? = nil
 
     /// Everything this build knows, `designs.v1` only while the host has designs to serve,
     /// `missions.v1` only while it has missions, and `issuesAndPRs.v1` only while it answers them.
@@ -75,6 +78,7 @@ struct FixtureHostData {
         RemoteProtocol.capabilities.filter {
             (designs != nil || !RemoteProtocol.designCapabilities.contains($0)) && (missions != nil || $0 != RemoteProtocol.missionsCapability)
                 && (forge != nil || ($0 != RemoteProtocol.forgeCapability && $0 != RemoteProtocol.forgeBrowseCapability))
+                && (fleet != nil || $0 != RemoteProtocol.fleetViewCapability)
         }
     }
 }
@@ -206,7 +210,7 @@ enum FixtureData {
 /// Every screen, by track. A track edits only its own file's list.
 @MainActor enum FixtureCatalog {
     static var all: [FixtureScreen] {
-        home + thread + context + newThread + subagents + review + changes + commit + search + settings + hooks + automations + automationFlow + windows + terminal + clientState + duo
+        home + thread + context + newThread + subagents + review + changes + commit + search + settings + hooks + automations + automationFlow + windows + terminal + clientState + duo + fleetScreens
             + designs + designPad + designPadMarkup + designPages + browser + files + missions + ProjectFixtures.screens + hostConfig + freshness + forge + tailFrames
     }
 

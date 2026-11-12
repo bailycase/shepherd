@@ -150,12 +150,12 @@ final class SettingsStore {
     /// Some connected Mac serves the fleet (`fleet.view.v1`, its Fleet experiment on): Settings and the sidebar draw Fleet.
     var showsFleet: Bool { ClientFleet.isAvailable(hosts) }
 
-    /// Fleet's value on the list: "1 asleep" when a Mac is, else how many Macs, once read.
+    /// Fleet's value on the list: "1 asleep" when a Mac is, else how many Macs, once read. A sleeping Mac isn't an alarm.
     var fleetValue: SHListRow.Trailing {
         let page = fleet.page
         guard !page.cards.isEmpty else { return .none }
         let asleep = page.footer.asleepCount
-        return asleep > 0 ? .alert("\(asleep) asleep") : .value("\(page.cards.count) \(page.cards.count == 1 ? "Mac" : "Macs")")
+        return .value(asleep > 0 ? "\(asleep) asleep" : "\(page.cards.count) \(page.cards.count == 1 ? "Mac" : "Macs")")
     }
 
     /// About's agent: "agent 0.87.1", from the settings host.

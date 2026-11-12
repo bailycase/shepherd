@@ -59,7 +59,9 @@ struct FleetScreen: View {
         .toolbar {
             if !wide {
                 ToolbarItem(placement: .topBarTrailing) {
+                    // The board's plus is `textPrimary`, not the app's accent.
                     Button("Add a Mac", systemImage: "plus", action: addMac)
+                        .tint(Color.sh.textPrimary)
                 }
             }
         }
