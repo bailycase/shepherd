@@ -63,8 +63,8 @@ struct ProseLinkTests {
 
     /// A new opener above a prose view does not redraw what reads the action prose gives its links: the action is made once
     /// per prose view and the opener is only handed to it, so a streaming reply under a conversation that rebuilds its
-    /// opener on every body redraws no link, image chip or task chip. Run in its own process: SwiftUI's comparison of
-    /// the environment is what is measured, and one run in a crowded process saw the reader drawn on every pull.
+    /// opener on every body redraws no link, image chip or task chip once the window has settled. Run in its own process:
+    /// SwiftUI's comparison of the environment is what is measured.
     @Test func aNewOpenerAboveProseRedrawsNothingThatReadsItsLinkAction() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
             await completingScenario { try await Self.readerBesideChangingOpeners() }
@@ -81,13 +81,21 @@ struct ProseLinkTests {
             SHRenderProbe.stop()
         }
         ListPerf.settle(window)
-        let first = SHRenderProbe.count("prose.linkReader")
-        #expect(first >= 1, "the reader was drawn")
-        for _ in 1...5 {
+        var drawn = SHRenderProbe.count("prose.linkReader")
+        #expect(drawn >= 1, "the reader was drawn")
+        // SwiftUI draws a reader again on the first few updates of a new window, and how many depends on how busy the
+        // machine is; a reader of an action that is stable draws nothing after that, one of a new action draws on every pull.
+        var quiet = 0
+        var pulls = 0
+        while quiet < 5, pulls < 40 {
+            pulls += 1
             ticks.count += 1
             ListPerf.settle(window)
+            let now = SHRenderProbe.count("prose.linkReader")
+            quiet = now == drawn ? quiet + 1 : 0
+            drawn = now
         }
-        #expect(SHRenderProbe.count("prose.linkReader") == first, "the reader was drawn \(SHRenderProbe.count("prose.linkReader")) times")
+        #expect(quiet == 5, "the reader was still drawn on pull \(pulls) (\(drawn) times)")
     }
 }
 
