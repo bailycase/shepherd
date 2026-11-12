@@ -119,7 +119,7 @@ final class FleetIndexService: @unchecked Sendable {
     func stop() {
         setActive(false)
         sessions = [:]
-        flushSaves()
+        flushSaves(wait: true)
     }
 
     /// The spaces changed (or the service started): index the checkouts that need it, drop the rest.
@@ -373,8 +373,10 @@ final class FleetIndexService: @unchecked Sendable {
         }
     }
 
-    private func flushSaves() {
-        if let job = peerCopies.takeSave(to: peersDirectory) { persistQueue.async(execute: job) }
+    /// Writes the copies that changed, off the server queue; `wait` for the host that is stopping, which has to leave them on disk.
+    private func flushSaves(wait: Bool = false) {
+        guard let job = peerCopies.takeSave(to: peersDirectory) else { return }
+        if wait { persistQueue.sync(execute: job) } else { persistQueue.async(execute: job) }
     }
 
     // MARK: Reading (server queue)

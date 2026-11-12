@@ -96,6 +96,8 @@ final class FleetContentIndex: @unchecked Sendable {
     }
     /// Full walks made (the first scan included): what a test reads to tell a rescan from an event.
     private(set) var rescans = 0
+    /// Batches of events that said some were lost (the kernel's buffer overflowed, the root moved): the reason for a rescan nobody asked for.
+    private(set) var lostEvents = 0
     /// The index came from disk at start, not from a scan.
     private(set) var loadedFromDisk = false
     /// How long the first scan took, with git's classes and the save (what a person waits for the first time, in the background).
@@ -485,7 +487,7 @@ final class FleetContentIndex: @unchecked Sendable {
         var deep = Set<String>(), directories = Set<String>(), files = Set<String>()
         var gitChanged = false
         for event in batch {
-            if event.idsWrapped || event.dropped || event.rootChanged || event.isMount { rescanAll = true; continue }
+            if event.idsWrapped || event.dropped || event.rootChanged || event.isMount { rescanAll = true; lostEvents += 1; continue }
             guard let path = relative(event.path) else { continue }
             if event.mustScan { deep.insert(path); continue }
             if path == ".git" || path.hasPrefix(".git/") {

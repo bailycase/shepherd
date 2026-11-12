@@ -168,7 +168,7 @@ extension FleetSnapshotIndexTests {
         let peer = ContinuousClock.now - started
         print("MEASURE 4b: 5 files edited and 1 removed, warm: local index reflects in \(local), the peer's manifest in \(peer)")
         // Through events, not a rescan; and the copy is exactly the sender's.
-        #expect(index.queue.sync { index.rescans } == rescans)
+        #expect(index.queue.sync { index.rescans == rescans || index.lostEvents > 0 }, "no rescan unless the kernel said it lost events")
         try await eventually("B's copy to settle on A's manifest") { try await b.peerHolds(b, of: a) }
         let theirs = try #require(b.manifest(of: aID))
         for content in edits.values { #expect(theirs.contains(hash(content))) }
@@ -194,7 +194,7 @@ extension FleetSnapshotIndexTests {
         let rescans = index.queue.sync { index.rescans }
         try git(["rm", "-q", "--cached", "src/wip.ts"], in: repo)
         try await eventually("git rm --cached to untrack it") { index.queue.sync { index.entries["src/wip.ts"]?.state == .untracked } }
-        #expect(index.queue.sync { index.rescans } == rescans)
+        #expect(index.queue.sync { index.rescans == rescans || index.lostEvents > 0 })
     }
 
     // MARK: Drift
@@ -251,7 +251,7 @@ extension FleetSnapshotIndexTests {
         try await eventually("B's copy to be A's again") { try await b.peerHolds(b, of: a) }
         #expect(b.manifest(of: aID)?.contains(hash("export const app = 'next'\n")) == true)
         // A looked at its own index when the copy was refused (a sample of it against the disk): it found nothing wrong, so no rescan.
-        #expect(index.queue.sync { index.rescans } == rescans)
+        #expect(index.queue.sync { index.rescans == rescans || index.lostEvents > 0 })
     }
 
     // MARK: Restart
@@ -281,11 +281,16 @@ extension FleetSnapshotIndexTests {
         }
         // From the saved index and the journal of events, not a walk of the tree.
         let index = try #require(back.index(repo))
-        #expect(index.queue.sync { index.loadedFromDisk } && index.queue.sync { index.rescans } == 0)
+        #expect(index.queue.sync { index.loadedFromDisk }, "the index came from disk")
+        // (A machine busy enough to overflow the kernel's event buffer is told so, and walks the tree: that is the design, not a failure.)
+        #expect(index.queue.sync { index.rescans == 0 || index.lostEvents > 0 }, "and replayed events instead of walking the tree")
         try await back.waitForLink(to: b)
-        try await eventually("B to hold the restarted A's manifest") { try await b.peerHolds(b, of: back) }
-        #expect(b.manifest(of: aID)?.contains(hash("down\n")) == true && b.manifest(of: aID)?.contains(hash("#!/bin/sh\necho hi\n")) == false)
-        #expect(try #require(b.manifest(of: aID)).count == (try #require(back.localManifest())).count && held > 0)
+        try await eventually("B to hold what changed while the host was down") {
+            guard let theirs = b.manifest(of: aID) else { return false }
+            return theirs.contains(self.hash("down\n")) && !theirs.contains(self.hash("#!/bin/sh\necho hi\n")) && theirs.contains(self.hash("export const app = 'while down'\n"))
+        }
+        try await eventually("B's copy to be the restarted A's manifest") { try await b.peerHolds(b, of: back) }
+        #expect(held > 0)
     }
 
     @Test func aReceiversCopySurvivesItsOwnRestartAndFindsTheSendersHeadStillGood() async throws {
@@ -300,8 +305,10 @@ extension FleetSnapshotIndexTests {
         try await eventually("B's copy to be on disk") {
             FileManager.default.fileExists(atPath: b.host.dir.appendingPathComponent("fleet/index/peers/\(aID.uuidString)").path)
         }
-        let digest = try #require(b.manifest(of: aID)).digest
         b.stop(keepFiles: true)
+        // What the copy on disk is, as the host stopped (it is saved as the host stops, not only a moment after a change).
+        let saved = FleetPeerManifests.load(from: dir.appendingPathComponent("fleet/index/peers", isDirectory: true))
+        let digest = try #require(saved.manifest(of: aID, repo: Self.origin)).digest
         let back = try await Mac("Mac mini", dir: dir, port: port)
         defer { back.stop() }
         // Known before any link is up.
