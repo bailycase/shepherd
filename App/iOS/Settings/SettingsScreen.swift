@@ -31,7 +31,6 @@ private struct SettingsList: View {
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        let model = HomeFeed.of(hosts).model
         let designs = MobileDesigns.of(hosts).model
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
@@ -61,10 +60,8 @@ private struct SettingsList: View {
                 }
                 SettingsSection("Machines") {
                     SHListCard {
-                        // While a Mac serves the fleet (its Fleet experiment on): the Macs' room and the Dispatches log.
-                        if store.showsFleet { row(.fleet, trailing: store.fleetValue) }
-                        row(.hosts, trailing: model.offlineCount > 0 ? .alert("\(model.offlineCount) offline")
-                            : .value(model.hosts.isEmpty ? "None" : String(model.hosts.count)))
+                        // The Macs this device is paired with, their room, and Add a Mac (what Hosts was).
+                        row(.fleet, trailing: store.fleetValue)
                         row(.spaces, trailing: SHListRow.Trailing.none)
                         row(.worktrees, trailing: SHListRow.Trailing.none)
                     }
@@ -112,7 +109,7 @@ private struct SettingsSplit: View {
         PadListDetail(listWidth: MobileLayout.settingsListWidth) {
             ScrollView {
                 VStack(alignment: .leading, spacing: MobileLayout.settingsListRowSpacing) {
-                    ForEach(SettingsPage.allCases.filter { ($0 != .hooks || store.showsHooks) && ($0 != .fleet || store.showsFleet) }, id: \.self) { page in
+                    ForEach(SettingsPage.allCases.filter { $0 != .hooks || store.showsHooks }, id: \.self) { page in
                         SettingsListItem(page: page, selected: selection.page == page) { selection.page = page }
                     }
                 }
@@ -183,7 +180,6 @@ struct SettingsPageView: View {
         case .skills: SkillsScreen()
         case .hooks: HooksScreen()
         case .fleet: FleetScreen()
-        case .hosts: HostsScreen()
         case .spaces: SpacesScreen()
         case .notifications: NotificationsScreen()
         case .experiments: ExperimentsScreen()

@@ -21,6 +21,7 @@ struct FleetViewCheck {
 
         let gib: UInt64 = 1 << 30
         let fleet = FakeFleet()
+        fleet.hostID = here
         let mac = try FakeMac(name: "MacBook Pro", fleet: fleet)
         fleet.members = [mac]
         defer { mac.stop() }
@@ -68,6 +69,17 @@ struct FleetViewCheck {
         check(fleet.changes == [.fleetWeight(hostID: studio, weight: .manualOnly)], "exactly that change reached the Mac: \(fleet.changes)")
         check(fleet.weights[FleetSendWeight.settingKey(hostID: studio)] == .manualOnly && model.problem == nil, "the Mac holds it")
 
+        // The Mac's fleet id is kept with the pairing, so the Fleet screen finds it while it is away; Forget clears it.
+        let defaults = hosts.defaults
+        check(hosts.hosts[0].fleetID == here, "the pairing holds the Mac's fleet id")
+        check((defaults.dictionary(forKey: MobileHosts.fleetIDKey) as? [String: String]) == [hosts.hosts[0].id.uuidString: here.uuidString], "kept across launches")
+        let reopened = MobileHosts(defaults: defaults, tokens: HostTokens.memory(), device: .init(name: "Ada's iPhone", kind: .iphone))
+        check(reopened.hosts.first?.fleetID == here, "a new launch knows it before connecting")
+        let rows = FleetDeviceList.rows(page: model.page, held: reopened.hosts.map {
+            FleetHeldMac(configID: $0.id, fleetID: $0.fleetID, name: $0.name, link: .offline)
+        })
+        check(rows.map(\.card.name) == ["MacBook Pro", "Mac mini", "Mac Studio"] && rows.compactMap(\.held) == [hosts.hosts[0].id], "the away Mac is one row with the fleet's card, not two: \(rows.map(\.card.name))")
+
         // Leaving the screen stops the sampling the Mac was asked for.
         await model.stopWatching(settingsHosts())
         check(fleet.watching == [true, false], "leaving the page told the Mac")
@@ -87,8 +99,13 @@ struct FleetViewCheck {
         mac.push(capabilities: [RemoteProtocol.nativeThreadCapability, RemoteProtocol.hostSettingsCapability])
         try await waitUntil("the capability to be withdrawn") { !hosts.hosts[0].supports(RemoteProtocol.fleetViewCapability) }
         check(!ClientFleet.isAvailable(settingsHosts()), "Fleet hides once no Mac serves it")
+        // Forget this Mac: the pairing, its token and its fleet id go; a Mac the fleet still names has no pairing left.
+        let forgotten = hosts.hosts[0].id
+        try hosts.forget(forgotten)
+        check(hosts.hosts.isEmpty && (defaults.dictionary(forKey: MobileHosts.fleetIDKey) as? [String: String])?.isEmpty == true, "forgotten, with its fleet id")
+        check(FleetDeviceList.rows(page: model.page, held: []).allSatisfy { $0.held == nil && !$0.canRetry }, "the fleet's Macs remain, with nothing to forget")
         hosts.setForeground(false)
-        print("PASS: a phone is offered the fleet view, reads the Macs and their room, writes the weight as a host setting, sends nothing a member sends, and hides Fleet when the Mac turns it off")
+        print("PASS: a phone is offered the fleet view, reads the Macs and their room, writes the weight as a host setting, sends nothing a member sends, and hides Fleet when the Mac turns it off, keeps each Mac's fleet id with its pairing and joins it to the fleet's card, and forgets a Mac")
     }
 
     static func check(_ condition: @autoclosure () throws -> Bool, _ what: String) rethrows {

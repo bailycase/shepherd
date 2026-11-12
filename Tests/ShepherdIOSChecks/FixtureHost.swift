@@ -152,7 +152,7 @@ final class FixtureHost: @unchecked Sendable {
                 return [.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token")]
             }
             let capabilities = (data.capabilities ?? data.defaultCapabilities).filter { $0 != RemoteProtocol.projectMessageImagesCapability && $0 != RemoteProtocol.logicalProjectsCapability && $0 != RemoteProtocol.projectWorkerCapability && $0 != RemoteProtocol.logicalProjectFilesCapability && $0 != RemoteProtocol.projectExecutionCapability }
-            return [.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: capabilities)]
+            return [.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: capabilities, hostID: data.fleetID)]
         case .stateFetch(let id):
             note("stateFetch")
             return [.state(id: id, state: data.state)]

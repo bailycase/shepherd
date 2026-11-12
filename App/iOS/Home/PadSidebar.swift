@@ -30,6 +30,7 @@ struct PadSidebar: View {
         let groups = SidebarThreads.of(hosts).groups(model, unread: automations.unreadRuns, paused: automations.pausedTriggers)
         let recents = designs.recents(groups.recents)
         let selected = navigator.selectedThread
+        let fleetRows = settings.fleetRows
         let pushed = navigator.padPath.last
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -147,8 +148,7 @@ struct PadSidebar: View {
         }
         .background(Color.sh.bgBase)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            SidebarFooter(count: model.hosts.count, offline: model.offlineCount, names: model.hostNames,
-                          fleet: settings.showsFleet && !settings.fleet.page.cards.isEmpty ? settings.fleet.page.footer : nil)
+            SidebarFooter(fleet: fleetRows.isEmpty ? nil : FleetDeviceList.footer(fleetRows))
         }
         .task { await feed.watch() }
         // The Fleet row's "1 asleep", read every so often while a Mac serves the fleet (the Fleet screen reads faster).
@@ -245,18 +245,13 @@ private struct SidebarHeader: View {
     }
 }
 
-/// The sidebar's foot (DuoOpenThread): Settings, as on the Mac; while a host is offline, "1 of 2 offline" beside it opens Settings ▸
-/// Hosts. While a Mac serves the fleet, "Fleet · 1 asleep" takes that place and opens Fleet (iPadFleet).
+/// The sidebar's foot (DuoOpenThread): Settings, as on the Mac, and "Fleet · 1 asleep" beside it, which opens Fleet (iPadFleet).
+/// Fleet is where the Macs this device is paired with live; there is no Hosts entry.
 private struct SidebarFooter: View, Equatable {
-    let count: Int
-    let offline: Int
-    let names: String
     let fleet: FleetFooter?
     @Environment(MobileNavigator.self) private var navigator
 
-    static func == (a: SidebarFooter, b: SidebarFooter) -> Bool {
-        a.count == b.count && a.offline == b.offline && a.names == b.names && a.fleet == b.fleet
-    }
+    static func == (a: SidebarFooter, b: SidebarFooter) -> Bool { a.fleet == b.fleet }
 
     var body: some View {
         let sh = Color.sh
@@ -287,19 +282,6 @@ private struct SidebarFooter: View, Equatable {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(fleet.label)
-                } else if offline > 0 {
-                    Button { navigator.open(.settings(.hosts)) } label: {
-                        Label("\(offline) of \(count) offline", systemImage: "desktopcomputer")
-                            .font(.sh(.caption, weight: .medium))
-                            .foregroundStyle(sh.failed)
-                            .lineLimit(1)
-                            .frame(minHeight: SH.Height.touch)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Hosts")
-                    .accessibilityValue("\(offline) offline")
-                    .accessibilityHint(names)
                 }
             }
             .padding(.horizontal, SH.Space.l)

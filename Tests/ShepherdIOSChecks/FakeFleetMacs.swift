@@ -11,7 +11,7 @@ import ShepherdRemote
 /// token, and what was heard.
 final class FakeFleet: @unchecked Sendable {
     private let lock = NSLock()
-    let hostID = UUID()
+    var hostID = UUID()
     let sharedToken = "shared-token"
     var members: [FakeMac] = []
     private var _code = "", _accepted: [String] = [], _devices: [FleetDeviceIntroduction] = [], _revoked = Set<UUID>()

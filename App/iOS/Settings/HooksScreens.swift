@@ -46,7 +46,7 @@ struct HooksScreen: View {
                 if let host, let state {
                     content(state, host: host, model: model)
                 } else {
-                    SettingsFootnote("Add a host in Settings ▸ Hosts to manage its hooks.")
+                    SettingsFootnote("Add a host in Settings ▸ Fleet to manage its hooks.")
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
@@ -136,7 +136,7 @@ private struct HookHostMenu: View {
         } label: {
             HStack(spacing: SH.Space.m) {
                 if !pad {
-                    Image(systemName: SettingsPage.hosts.symbol).font(.sh(.ui)).foregroundStyle(sh.textSecondary).accessibilityHidden(true)
+                    Image(systemName: SettingsPage.fleet.symbol).font(.sh(.ui)).foregroundStyle(sh.textSecondary).accessibilityHidden(true)
                 }
                 Text(host.name).font(.sh(.ui)).foregroundStyle(sh.textPrimary).lineLimit(1)
                 if !pad {
@@ -342,7 +342,7 @@ struct HookSourcesScreen: View {
                         }
                     }
                 } else {
-                    SettingsFootnote(host.map { "\($0.name)'s files show here once its hooks are read." } ?? "Add a host in Settings ▸ Hosts to manage its hooks.")
+                    SettingsFootnote(host.map { "\($0.name)'s files show here once its hooks are read." } ?? "Add a host in Settings ▸ Fleet to manage its hooks.")
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)

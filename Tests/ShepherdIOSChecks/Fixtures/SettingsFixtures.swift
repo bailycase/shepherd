@@ -21,22 +21,14 @@ extension FixtureCatalog {
             // Threads muted from their long-press menus, found again here with Unmute.
             FixtureScreen(name: "notifications-muted", hosts: FixtureData.mutedThreads(), routes: [.settings(.notifications)], tab: .settings),
             FixtureScreen(name: "diagnostics", routes: [.settings(.diagnostics)], tab: .settings),
-            FixtureScreen(name: "hosts", routes: [.settings(.hosts)], tab: .settings),
-            FixtureScreen(name: "host", routes: [.settings(.hosts), .settings(.host(FixtureData.studio))], tab: .settings),
-            // Its background service turned off in Login Items: agents stop when Shepherd quits.
-            FixtureScreen(name: "host-service-off", hosts: FixtureData.serviceOff(),
-                          routes: [.settings(.hosts), .settings(.host(FixtureData.studio))], tab: .settings),
-            FixtureScreen(name: "host-offline", routes: [.settings(.hosts), .settings(.host(FixtureData.laptop))], tab: .settings),
-            FixtureScreen(name: "hosts-refused", hosts: FixtureData.refusingLaptop(), routes: [.settings(.hosts)], tab: .settings),
-            FixtureScreen(name: "host-refused", hosts: FixtureData.refusingLaptop(),
-                          routes: [.settings(.hosts), .settings(.host(FixtureData.laptop))], tab: .settings),
+            // Hosts became Fleet (`fleet`, `fleet-off`, `fleet-forget`): a paired host's form is no longer reachable.
             // Add a Mac: the Macs Bonjour found, the code half entered, and the ways it can go wrong.
-            FixtureScreen(name: "addhost", routes: [.settings(.hosts), .settings(.host(nil))], tab: .settings,
+            FixtureScreen(name: "addhost", routes: [.settings(.fleet), .settings(.host(nil))], tab: .settings,
                           setup: { FixtureData.pairing(code: "4829") }),
             FixtureScreen(name: "addhost-sheet", presented: .settings(.host(nil)), setup: { FixtureData.pairing(code: "4829") }),
-            FixtureScreen(name: "addhost-refused", routes: [.settings(.hosts), .settings(.host(nil))], tab: .settings,
+            FixtureScreen(name: "addhost-refused", routes: [.settings(.fleet), .settings(.host(nil))], tab: .settings,
                           setup: { FixtureData.pairing(code: "482913", failure: "That code isn't right. 4 tries left.") }),
-            FixtureScreen(name: "addhost-none", routes: [.settings(.hosts), .settings(.host(nil))], tab: .settings,
+            FixtureScreen(name: "addhost-none", routes: [.settings(.fleet), .settings(.host(nil))], tab: .settings,
                           setup: { FixtureData.pairing(found: [], code: "") }),
             // Each host's own settings (hostSettings.v1).
             FixtureScreen(name: "settings-defaults", routes: [.settings(.defaults)], tab: .settings),

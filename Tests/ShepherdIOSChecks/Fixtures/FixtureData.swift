@@ -71,6 +71,8 @@ struct FixtureHostData {
     /// The fleet this Mac serves a phone (`fleet.view.v1`, its Fleet experiment on): what `fleetRead` answers and
     /// `.watching` asks the host to sample for. nil: Fleet is off here, and the capability isn't offered.
     var fleet: FleetSnapshot? = nil
+    /// The id this Mac says it has in a fleet (`helloOk.hostID`, offered while its Fleet is on).
+    var fleetID: UUID? = nil
 
     /// Everything this build knows, `designs.v1` only while the host has designs to serve,
     /// `missions.v1` only while it has missions, and `issuesAndPRs.v1` only while it answers them.

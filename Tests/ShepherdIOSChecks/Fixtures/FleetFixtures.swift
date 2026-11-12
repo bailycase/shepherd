@@ -34,6 +34,11 @@ extension FixtureCatalog {
                 app.navigator.settingsSelection.page = .fleet
                 await FleetFixtureData.settle(app)
             }),
+            // Fleet is off on every Mac: the Macs this device is paired with, the third asleep (it can't be reached).
+            FixtureScreen(name: "fleet-off", hosts: FleetFixtureData.hosts(snapshot: nil), routes: [.settings(.fleet)], tab: .settings),
+            // Forget this Mac, as a swipe on its row (or its context menu) leads to it.
+            FixtureScreen(name: "fleet-forget", hosts: FleetFixtureData.hosts(), routes: [.settings(.fleet)], tab: .settings,
+                          setup: { FleetScreen.preview = .forgetting("Mac Studio") }, prepare: { app in await FleetFixtureData.settle(app) }),
             FixtureScreen(name: "fleet-busy", hosts: FleetFixtureData.hosts(snapshot: FleetFixtureData.busy()), routes: [.settings(.fleet)],
                           tab: .settings, prepare: { app in await FleetFixtureData.settle(app) }),
         ]
@@ -87,17 +92,19 @@ enum FleetFixtureData {
     }
 
     /// The usual hosts as Macs of one fleet: each online one serves the view, the weights are the board's (the mini preferred).
-    static func hosts(snapshot: FleetSnapshot = snapshot()) -> [FixtureHostData] {
+    static func hosts(snapshot: FleetSnapshot? = snapshot()) -> [FixtureHostData] {
         FixtureData.hosts().map { host in
             var host = host
             switch host.id {
-            case FixtureData.studio: host.name = "MacBook Pro"
-            case FixtureData.buildBox: host.name = "Mac mini"
-            default: host.name = "Mac Studio"
+            case FixtureData.studio: (host.name, host.fleetID) = ("MacBook Pro", here)
+            case FixtureData.buildBox: (host.name, host.fleetID) = ("Mac mini", mini)
+            default: (host.name, host.fleetID) = ("Mac Studio", studio)
             }
-            if host.online {
-                host.fleet = snapshot
-                host.hostSettings?.fleetWeights = [FleetSendWeight.settingKey(hostID: mini): .prefer]
+            if let snapshot {
+                host.fleet = host.online ? snapshot : nil
+                if host.online { host.hostSettings?.fleetWeights = [FleetSendWeight.settingKey(hostID: mini): .prefer] }
+            } else {
+                host.fleetID = nil
             }
             return host
         }

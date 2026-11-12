@@ -9,13 +9,25 @@ import ShepherdUI
 /// narrow window draw one card of rows; a wide detail draws a card per Mac with its readings and the Send work
 /// here menu, the one thing a device may change (it writes the weight to a Mac as a host setting, and the fleet
 /// syncs it). The page is `ClientFleet`'s, derived from the same presentation the Mac draws.
+///
+/// This is also where the Macs this device is paired with live (what Hosts was): "+" is Add a Mac, a Mac this device can't
+/// reach sits in the list asleep, and a Mac it paired with can be forgotten (swipe on a row, or its context menu) or tried
+/// again. A row opens nothing else.
 struct FleetScreen: View {
     @Environment(MobileHosts.self) private var hosts
+    @Environment(\.mobileApp) private var app
     @Environment(MobileNavigator.self) private var navigator
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.settingsColumn) private var inColumn
     /// The detail is wide enough for cards. Measured; until it is, the size class guesses.
     @State private var measuredWide: Bool?
+    /// The row whose Forget is being confirmed.
+    @State private var forgetting: FleetListRow?
+    @State private var forgetFailure: String?
+
+    /// What a preview shows that a touch would: Forget's confirmation, as a swipe on the row leads to it. Set by the fixtures, never the app.
+    enum Preview { case forgetting(String) }
+    nonisolated(unsafe) static var preview: Preview?
 
     private var wide: Bool { measuredWide ?? (sizeClass == .regular && !inColumn) }
     /// The title is drawn in the content, not the bar's: the iPad's, and iPhone Duo open or half open, whose bar the system
@@ -26,8 +38,10 @@ struct FleetScreen: View {
         let store = SettingsStore.of(hosts)
         let fleet = store.fleet
         let page = fleet.page
-        // Fleet's own phase, and whether any Mac still serves it (Fleet switched off on the Mac while this is open).
+        let rows = store.fleetRows
+        // Whether any Mac serves the fleet's view (Fleet switched off on the Mac while this is open).
         let serves = store.showsFleet
+        let actions = FleetRowActions(forget: { forgetting = $0 }, retry: { hosts.retry($0) })
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
                 if contentTitle { FleetHeader(page: page, add: wide ? addMac : nil) } else if !page.cards.isEmpty { FleetSubtitle(page: page) }
@@ -37,11 +51,19 @@ struct FleetScreen: View {
                 if case .failed(let message) = fleet.phase {
                     SHBanner(.failed, title: message) { Button("Try again") { Task { await fleet.refresh(store.hosts, watching: true) } }.buttonStyle(.sh(.secondary)) }
                 }
-                if page.cards.isEmpty {
-                    empty(fleet.phase, serves: serves)
+                if let failure = forgetFailure {
+                    SHBanner(.failed, title: failure) { Button("OK") { forgetFailure = nil }.buttonStyle(.sh(.secondary)) }
+                }
+                if rows.isEmpty {
+                    empty()
                 } else {
-                    Macs(page: page, wide: wide, closed: navigator.hingeClosed == true, open: navigator.hingeClosed == false) { weight, id in
+                    Macs(rows: rows, wide: wide, closed: navigator.hingeClosed == true, open: navigator.hingeClosed == false, actions: actions) { weight, id in
                         fleet.choose(weight, for: id, store.hosts)
+                    }
+                    if !serves {
+                        Text(fleet.phase == .off ? "Fleet is off on this Mac. Switch it on in Settings ▸ Experiments on a Mac."
+                             : "Room and readings show while a Mac has Fleet on (Settings ▸ Experiments ▸ Fleet).")
+                            .shText(.caption).foregroundStyle(Color.sh.textTertiary).padding(.horizontal, SH.Space.xs)
                     }
                     FleetSectionLabel(title: wide ? "Dispatches today" : "Dispatches", capitals: navigator.hingeClosed == nil)
                         .padding(.top, wide ? SH.Space.s : 0)
@@ -54,8 +76,23 @@ struct FleetScreen: View {
         }
         .background(Color.sh.bgWindow)
         .onGeometryChange(for: Bool.self) { $0.size.width >= MobileLayout.fleetCardsMinWidth && !inColumn } action: { measuredWide = $0 }
-        .refreshable { await fleet.refresh(store.hosts, watching: true) }
+        .swipeActionsContainer()
+        .refreshable {
+            hosts.retryAll()
+            await fleet.refresh(store.hosts, watching: true)
+        }
+        .confirmationDialog(forgetting.map { "Forget \($0.card.name)?" } ?? "", isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
+                            titleVisibility: .visible, presenting: forgetting) { row in
+            Button("Forget this Mac", role: .destructive) { forget(row) }
+        } message: { row in
+            Text("This device stops reading \(row.card.name) and deletes its token. Other Macs in the fleet are unchanged, and the Mac can be added again with a new code.")
+        }
         .task { await watch(store) }
+        .task(id: rows.count) {
+            guard case .forgetting(let name)? = Self.preview, let row = rows.first(where: { $0.card.name == name && $0.held != nil }) else { return }
+            Self.preview = nil
+            forgetting = row
+        }
         .navigationTitle("Fleet")
         .navigationBarTitleDisplayMode(contentTitle || inColumn ? .inline : .large)
         .toolbar(removing: contentTitle ? .title : nil)
@@ -72,6 +109,13 @@ struct FleetScreen: View {
 
     private func addMac() { navigator.open(.settings(.host(nil))) }
 
+    private func forget(_ row: FleetListRow) {
+        guard let id = row.held else { return }
+        Task {
+            do { try await app?.forget(host: id) } catch { forgetFailure = error.localizedDescription }
+        }
+    }
+
     /// Reads the page now and every few seconds while it is on screen, asking the Mac to sample each time (it stops when
     /// this ends, or the connection does).
     private func watch(_ store: SettingsStore) async {
@@ -84,35 +128,79 @@ struct FleetScreen: View {
         Task { await fleet.stopWatching(held) }
     }
 
-    @ViewBuilder private func empty(_ phase: ClientFleet.Phase, serves: Bool) -> some View {
-        if phase == .off || (!serves && phase != .idle) {
-            SHEmptyState(Text("Fleet is off"), message: "Switch it on in Settings ▸ Experiments on a Mac.") { EmptyView() }
-        } else if case .failed = phase {
-            EmptyView()
-        } else {
-            ProgressView().frame(maxWidth: .infinity).padding(.vertical, MobileLayout.sectionSpacing)
+    /// No Mac at all: the one thing to do is add one.
+    private func empty() -> some View {
+        SHEmptyState(Text("No Macs yet"), message: "Pair with a Mac running Shepherd, with the code it shows, to see its threads and room here.") {
+            Button("Add a Mac", action: addMac).buttonStyle(.sh(.primary))
         }
+        .frame(maxWidth: .infinity)
+        .padding(.top, MobileLayout.sectionSpacing)
     }
+}
+
+/// What a Mac's row can do: forget the pairing, or try the connection again.
+struct FleetRowActions {
+    let forget: (FleetListRow) -> Void
+    let retry: (UUID) -> Void
 }
 
 /// The Macs: a card of rows, or on a wide detail a card each.
 private struct Macs: View {
-    let page: FleetPage
+    let rows: [FleetListRow]
     let wide: Bool
     let closed: Bool
     let open: Bool
+    let actions: FleetRowActions
     let choose: (FleetSendWeight, UUID) -> Void
 
     var body: some View {
         if wide {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: MobileLayout.fleetCardMinWidth), spacing: MobileLayout.blockSpacing, alignment: .top)],
                       alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                ForEach(page.cards) { card in FleetMacCardView(card: card, choose: choose).equatable() }
+                ForEach(rows) { row in
+                    FleetMacCardView(card: row.card, choose: choose).equatable().fleetRowActions(row, actions)
+                }
             }
         } else {
             SHListCard {
-                ForEach(page.cards) { card in FleetMacRow(card: card, style: closed ? .compact : open ? .duo : .phone).equatable() }
+                ForEach(rows) { row in
+                    FleetMacRow(card: row.card, style: closed ? .compact : open ? .duo : .phone).equatable().fleetRowActions(row, actions)
+                }
             }
+        }
+    }
+}
+
+extension View {
+    /// A Mac this device paired with: Forget by swiping the row (and from its context menu on the iPad and Duo), and Retry
+    /// while it can't be reached. A Mac the fleet only told it about has neither.
+    fileprivate func fleetRowActions(_ row: FleetListRow, _ actions: FleetRowActions) -> some View {
+        modifier(FleetRowMenu(row: row, actions: actions))
+    }
+}
+
+private struct FleetRowMenu: ViewModifier {
+    let row: FleetListRow
+    let actions: FleetRowActions
+
+    func body(content: Content) -> some View {
+        if let held = row.held {
+            content
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button("Forget this Mac", systemImage: "trash", role: .destructive) { actions.forget(row) }
+                }
+                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                    if row.canRetry {
+                        Button("Retry", systemImage: "arrow.clockwise") { actions.retry(held) }.tint(Color.sh.textTertiary)
+                    }
+                }
+                .contextMenu {
+                    if row.canRetry { Button("Retry", systemImage: "arrow.clockwise") { actions.retry(held) } }
+                    Button("Forget this Mac", systemImage: "trash", role: .destructive) { actions.forget(row) }
+                }
+                .accessibilityAction(named: "Forget this Mac") { actions.forget(row) }
+        } else {
+            content
         }
     }
 }
@@ -189,7 +277,7 @@ struct FleetMacCardView: View, Equatable {
                 FleetFact("Agents") { Text(card.agents).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary) }
             }
             Spacer(minLength: 0)
-            FleetWeightMenu(card: card, choose: choose)
+            if card.takesWeight { FleetWeightMenu(card: card, choose: choose) }
         }
         .padding(SH.Space.l)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

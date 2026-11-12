@@ -76,6 +76,9 @@ public struct FleetMacCard: Identifiable, Equatable, Sendable {
     public var since: String?
     /// Threads working on the Mac now; nil while it isn't answering.
     public var working: Int?
+    /// The Mac is one of the fleet's (its id is a fleet host id), so a Send work here weight can be set for it. False for a
+    /// Mac this device holds that no fleet Mac has told it about (`FleetDeviceList`).
+    public var takesWeight = true
     /// Names the Mac's weight control for VoiceOver ("Send work to Mac mini").
     public var weightLabel: String { "Send work to \(name)" }
     public var isThisMac: Bool { status == .thisMac }
@@ -380,5 +383,103 @@ public enum FleetPagePresentation {
 
     private static func time(_ milliseconds: Double, locale: Locale, calendar: Calendar) -> String {
         Date(timeIntervalSince1970: milliseconds / 1000).formatted(Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone).hour().minute())
+    }
+}
+
+// MARK: A device's list of Macs
+
+/// A Mac this device is paired with (`MobileHosts`): what the Fleet screen needs of it beyond the fleet's own view.
+public struct FleetHeldMac: Equatable, Sendable {
+    public enum Link: Equatable, Sendable { case connected, connecting, offline }
+
+    /// This device's own id for the pairing (what Forget and Retry act on).
+    public var configID: UUID
+    /// The Mac's fleet host id, once it has said it (`helloOk.hostID`); how its card is found in the fleet's view.
+    public var fleetID: UUID?
+    public var name: String
+    public var link: Link
+    /// When this device's connection to it last ended.
+    public var lastSeen: Date?
+
+    public init(configID: UUID, fleetID: UUID?, name: String, link: Link, lastSeen: Date? = nil) {
+        self.configID = configID
+        self.fleetID = fleetID
+        self.name = name
+        self.link = link
+        self.lastSeen = lastSeen
+    }
+}
+
+/// One row of a device's Fleet screen: a Mac's card, and the pairing this device holds with it (nil for a Mac the fleet
+/// told it about and it never paired with, which it can't forget).
+public struct FleetListRow: Identifiable, Equatable, Sendable {
+    public var card: FleetMacCard
+    public var held: UUID?
+    public var id: UUID { card.id }
+    /// This device can't reach the Mac itself (it is offline or asleep): Retry tries again now.
+    public var canRetry: Bool { held != nil && card.canRetry }
+}
+
+/// The Macs a phone or iPad lists on its Fleet screen: the fleet's own cards, each joined to the pairing this device
+/// holds with it, then the Macs it holds that the fleet's view doesn't show (the fleet couldn't be read, Fleet is off on
+/// that Mac, or it is an older one), drawn as asleep or waiting in the same list.
+public enum FleetDeviceList {
+    public static func rows(page: FleetPage, held: [FleetHeldMac], locale: Locale = .current, calendar: Calendar = .current) -> [FleetListRow] {
+        let byFleetID = Dictionary(held.compactMap { mac in mac.fleetID.map { ($0, mac) } }, uniquingKeysWith: { first, _ in first })
+        var rows = page.cards.map { FleetListRow(card: $0, held: byFleetID[$0.id]?.configID) }
+        let shown = Set(rows.compactMap(\.held))
+        for mac in held where !shown.contains(mac.configID) {
+            rows.append(FleetListRow(card: heldCard(mac, locale: locale, calendar: calendar), held: mac.configID))
+        }
+        return rows
+    }
+
+    /// The Mac's card from what this device knows of it alone.
+    static func heldCard(_ mac: FleetHeldMac, locale: Locale, calendar: Calendar) -> FleetMacCard {
+        let status: FleetMacCard.Status = switch mac.link {
+        case .connected: .connected
+        case .connecting: .connecting
+        case .offline: .asleep
+        }
+        let seen = mac.lastSeen.map {
+            $0.formatted(Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone).hour().minute())
+        }
+        var card = FleetMacCard(
+            id: mac.fleetID ?? mac.configID, name: mac.name, hardware: "", status: status,
+            statusText: status == .connected ? "Connected" : status == .connecting ? "Connecting" : seen == nil ? "Offline" : "Asleep",
+            room: FleetMetric(fraction: 0, text: "Not counted", tone: .tertiary), cpu: nil, memory: nil,
+            power: FleetLine(text: status == .asleep ? (seen.map { "Last seen \($0)" } ?? "Not seen yet") : "Waiting for a reading", tone: .tertiary),
+            ready: FleetLine(text: status == .asleep ? "Catches up when it wakes" : "Checking…", tone: .tertiary),
+            agents: "—", note: nil, weight: .normal, repos: [], canRetry: status == .asleep)
+        card.since = seen
+        card.takesWeight = mac.fleetID != nil
+        return card
+    }
+
+    /// "3 Macs · 1 asleep": the Settings row's trail, nil with no Mac.
+    public static func trail(_ rows: [FleetListRow]) -> String? {
+        guard !rows.isEmpty else { return nil }
+        let asleep = rows.filter { $0.card.status == .asleep }.count
+        return ["\(rows.count) \(rows.count == 1 ? "Mac" : "Macs")", asleep > 0 ? "\(asleep) asleep" : nil].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// The sidebar's Fleet row: "1 asleep", "All awake" or "One Mac"; and what VoiceOver reads.
+    public static func footer(_ rows: [FleetListRow]) -> FleetFooter {
+        let asleep = rows.filter { $0.card.status == .asleep }
+        let dots: [FleetFooter.Dot] = rows.map {
+            switch $0.card.status {
+            case .thisMac: .thisMac
+            case .connected: .connected
+            case .connecting: .connecting
+            case .asleep: .asleep
+            }
+        }
+        let detail = asleep.isEmpty ? (rows.count <= 1 ? "One Mac" : "All awake") : "\(asleep.count) asleep"
+        let label = switch asleep.count {
+        case 0: "Fleet: \(rows.count) \(rows.count == 1 ? "Mac" : "Macs")"
+        case 1: "Fleet: \(rows.count) Macs, \(asleep[0].card.name) asleep"
+        default: "Fleet: \(rows.count) Macs, \(asleep.count) asleep"
+        }
+        return FleetFooter(dots: dots, detail: detail, label: label, asleepCount: asleep.count)
     }
 }

@@ -640,7 +640,7 @@ private struct HostConfigPage<Content: View>: View {
                         }
                     }
                 } else {
-                    SettingsFootnote("Add a host in Settings ▸ Hosts to see this.")
+                    SettingsFootnote("Add a host in Settings ▸ Fleet to see this.")
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)

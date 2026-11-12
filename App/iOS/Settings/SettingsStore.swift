@@ -35,6 +35,7 @@ final class SettingsStore {
     @ObservationIgnored private let mobileHosts: MobileHosts
     @ObservationIgnored private var inputs: [Input] = []
     @ObservationIgnored private var watchers = 0
+    @ObservationIgnored private var fleetRowsCache: (page: FleetPage, held: [FleetHeldMac], rows: [FleetListRow])?
 
     /// What decides the hosts: a new connection (`session`) is read again.
     private struct Input: Equatable {
@@ -147,15 +148,26 @@ final class SettingsStore {
         ClientHooks.host(chosen: chosenHost, in: hosts).flatMap { hooks.state(of: $0).page }.map { String($0.hookCount) }
     }
 
-    /// Some connected Mac serves the fleet (`fleet.view.v1`, its Fleet experiment on): Settings and the sidebar draw Fleet.
+    /// Some connected Mac serves the fleet (`fleet.view.v1`, its Fleet experiment on): Fleet reads it and draws its room.
     var showsFleet: Bool { ClientFleet.isAvailable(hosts) }
 
-    /// Fleet's value on the list: "1 asleep" when a Mac is, else how many Macs, once read. A sleeping Mac isn't an alarm.
-    var fleetValue: SHListRow.Trailing {
+    /// The Macs Fleet lists: the fleet's own, each joined to the pairing this device holds with it, then the Macs it holds
+    /// that the fleet doesn't show (asleep, or not read yet). Derived again only when the page or a pairing changes.
+    var fleetRows: [FleetListRow] {
+        let held = mobileHosts.hosts.map { host in
+            FleetHeldMac(configID: host.id, fleetID: host.fleetID, name: host.name,
+                         link: host.phase.isConnected ? .connected : host.phase == .connecting ? .connecting : .offline, lastSeen: host.lastSeen)
+        }
         let page = fleet.page
-        guard !page.cards.isEmpty else { return .none }
-        let asleep = page.footer.asleepCount
-        return .value(asleep > 0 ? "\(asleep) asleep" : "\(page.cards.count) \(page.cards.count == 1 ? "Mac" : "Macs")")
+        if let cached = fleetRowsCache, cached.page == page, cached.held == held { return cached.rows }
+        let rows = FleetDeviceList.rows(page: page, held: held)
+        fleetRowsCache = (page, held, rows)
+        return rows
+    }
+
+    /// Fleet's value on the list: "3 Macs · 1 asleep", in the quiet value tone (a sleeping Mac isn't an alarm).
+    var fleetValue: SHListRow.Trailing {
+        FleetDeviceList.trail(fleetRows).map(SHListRow.Trailing.value) ?? .none
     }
 
     /// About's agent: "agent 0.87.1", from the settings host.

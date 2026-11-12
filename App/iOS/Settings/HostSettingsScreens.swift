@@ -357,7 +357,7 @@ private struct HostSettingsPage<Content: View>: View {
                         SettingsFootnote(reason, tone: .failed)
                     }
                 } else {
-                    SettingsFootnote("Add a host in Settings ▸ Hosts to change its settings here.")
+                    SettingsFootnote("Add a host in Settings ▸ Fleet to change its settings here.")
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
