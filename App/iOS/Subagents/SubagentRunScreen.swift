@@ -70,6 +70,8 @@ struct SubagentRunView: View {
     @State private var transcript = SubagentTranscriptModel()
     @State private var draft = ""
     @State private var follower = NativeScrollFollower()
+    /// Lands the run on its tail after layout; only a mount's first few landings run inside it (ThreadTailPin).
+    @State private var tailPin = ThreadTailPin()
     @State private var copyNotice: String?
     @FocusState private var steering: Bool
     @Environment(\.scenePhase) private var scenePhase
@@ -128,39 +130,67 @@ struct SubagentRunView: View {
             .defaultScrollAnchor(run?.isTerminal == true ? .top : .bottom, for: .initialOffset)
             .scrollDismissesKeyboard(.interactively)
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar(run, summary: summary, commands: commands) }
-            .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
-                if follower.observe(from: old, to: new, gesture: follower.userScrolling, nativeAnchor: false), run?.isTerminal == false {
-                    SHRenderProbe.tick("thread.tailLandingInPass")
-                    SHRenderProbe.tick("subagent.tailLanding")
-                    proxy.scrollTo("run-bottom", anchor: .bottom)
-                }
+            .onScrollGeometryChange(for: TailReading.self, of: Self.reading) { old, new in
+                // This runs inside the layout pass, so it records and the pin lands after it; only
+                // a mount's first few landings run here, so its first frames are already at the tail.
+                let wants = follow { $0.observe(from: old.probe, to: new.probe, gesture: $0.userScrolling, nativeAnchor: false) }
+                tailPin.reading(distance: NativeTailRepin.distance(of: new.probe, belowMarker: MobileLayout.gutter),
+                                wants: wants && run?.isTerminal == false, resized: new.resized(from: old), land: lander(proxy))
             }
             .onScrollPhaseChange { old, phase, context in
-                follower.userScrolling = phase == .interacting
-                if phase == .idle, old == .interacting || old == .decelerating {
-                    follower.observe(distanceFromBottom: Self.probe(context.geometry).distance, userIntent: true)
+                follow { follower in
+                    follower.userScrolling = phase == .interacting
+                    if phase == .idle, old == .interacting || old == .decelerating {
+                        follower.observe(distanceFromBottom: Self.probe(context.geometry).distance, userIntent: true)
+                    }
+                    return false
                 }
+                tailPin.reader(scrolling: phase != .idle, touching: phase == .tracking || phase == .interacting)
             }
             .onChange(of: transcript.turns.last) { _, _ in
-                follower.contentArrived()
-                if follower.sticky, !transcript.loadingOlder, run?.isTerminal == false {
-                    SHRenderProbe.tick("subagent.tailLanding")
-                    proxy.scrollTo("run-bottom", anchor: .bottom)
-                }
+                follow { $0.contentArrived(); return false }
+                if !transcript.loadingOlder, run?.isTerminal == false { tailPin.outputArrived() }
             }
             .overlay(alignment: .bottom) {
                 SHJumpToLatest(action: follower.showsJump(running: run?.isTerminal == false) ? {
-                    follower.jumpToLatest()
-                    SHRenderProbe.tick("subagent.tailLanding")
-                    proxy.scrollTo("run-bottom", anchor: .bottom)
+                    follow { $0.jumpToLatest(); return false }
+                    tailPin.asked(lander(proxy))
                 } : nil)
             }
+            .onDisappear { tailPin.stop() }
         }
         .task(id: FollowKey(runID: runID, startedAt: run?.startedAt, ready: store.ready, active: scenePhase == .active)) {
             guard store.ready, scenePhase == .active else { return }
             let store = store, runID = runID
             await transcript.follow(store: store, runID: runID) { store.subagents.first { $0.runID == runID }?.isTerminal != true }
         }
+    }
+
+    /// Applies a change to the follower, writing it back only when it changed, so a scroll frame
+    /// that changes nothing redraws nothing. Returns what the change returned.
+    @discardableResult
+    private func follow(_ change: (inout NativeScrollFollower) -> Bool) -> Bool {
+        var next = follower
+        let result = change(&next)
+        if next != follower { follower = next }
+        return result
+    }
+
+    /// What the pin calls once the layout pass that asked is over: a live run lands on its tail
+    /// while the reader still follows it and has not taken hold of it.
+    private func lander(_ proxy: ScrollViewProxy) -> ThreadTailPin.Land {
+        { resized in
+            guard follower.sticky, !follower.userScrolling,
+                  store.subagents.first(where: { $0.runID == runID })?.isTerminal == false else { return }
+            SHRenderProbe.tick(resized ? "subagent.tailLandingResized" : "subagent.tailLanding")
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { proxy.scrollTo("run-bottom", anchor: .bottom) }
+        }
+    }
+
+    private static func reading(_ geometry: ScrollGeometry) -> TailReading {
+        TailReading(probe: probe(geometry), width: geometry.containerSize.width)
     }
 
     private static func probe(_ geometry: ScrollGeometry) -> NativeScrollProbe {
