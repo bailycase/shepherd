@@ -3187,7 +3187,7 @@ public final class SessionServer: @unchecked Sendable {
                     guard let self, self.clients[client.fd] === client else { return }
                     self.send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel,
                                      withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels,
-                                     serviceTiers: listing.serviceTiers, contexts: listing.contexts), to: client)
+                                     serviceTiers: listing.serviceTiers, contexts: listing.contexts, withoutImages: listing.withoutImages), to: client)
                 }
             }
         case .addSpace(let id, let path):

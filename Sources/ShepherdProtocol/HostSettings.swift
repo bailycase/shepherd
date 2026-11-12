@@ -77,6 +77,9 @@ public struct HostSettings: Codable, Hashable, Sendable {
     public var defaultServiceTier: ServiceTier
     /// Settings ▸ Agents ▸ Text generation model; nil for Automatic.
     public var textGenerationModel: String?
+    /// Settings ▸ Agents ▸ Image reading model; nil for Automatic. Older hosts omit it
+    /// (`RemoteProtocol.hostSettingsVisionModelCapability`).
+    public var visionModel: String?
     /// Settings ▸ Agents ▸ Compact at: a share of the model's window (`compactAtChoices`); nil
     /// for pi's own default.
     public var compactAtPercent: Int?
@@ -148,7 +151,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
 
     public init(shepherdVersion: String? = nil, piVersion: String? = nil,
                 defaultModel: String? = nil, defaultThinking: ThinkingLevel = .medium,
-                defaultServiceTier: ServiceTier = .standard, textGenerationModel: String? = nil, compactAtPercent: Int? = nil,
+                defaultServiceTier: ServiceTier = .standard, textGenerationModel: String? = nil, visionModel: String? = nil, compactAtPercent: Int? = nil,
                 queueDelivery: NativeQueueMode = .all,
                 goalCrossProviderEvaluation: Bool = false, goalsEnabled: Bool = false, projectsEnabled: Bool = false,
                 worktreeBase: WorktreeBase = .fresh, fetchBeforeCreating: Bool = true, commitRemainingWork: Bool = true,
@@ -166,6 +169,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         self.defaultThinking = defaultThinking
         self.defaultServiceTier = defaultServiceTier
         self.textGenerationModel = textGenerationModel
+        self.visionModel = visionModel
         self.compactAtPercent = compactAtPercent
         self.queueDelivery = queueDelivery
         self.goalCrossProviderEvaluation = goalCrossProviderEvaluation
@@ -196,7 +200,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case shepherdVersion, piVersion, defaultModel, defaultThinking, defaultServiceTier, textGenerationModel, compactAtPercent
+        case shepherdVersion, piVersion, defaultModel, defaultThinking, defaultServiceTier, textGenerationModel, visionModel, compactAtPercent
         case queueDelivery, goalCrossProviderEvaluation, goalsEnabled, projectsEnabled
         case worktreeBase, fetchBeforeCreating, commitRemainingWork, generatePRDescriptions
         case deleteLocalBranch, mergePRAutomatically, mergeMethod, closeOnMerge, backgroundService, listenerPort, listenerProblem, listenerProblemDetail, bundledExtensions, installedExtensions
@@ -214,6 +218,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         // A tier this client does not know reads as Standard.
         defaultServiceTier = (try? c.decodeIfPresent(ServiceTier.self, forKey: .defaultServiceTier)) ?? nil ?? .standard
         textGenerationModel = try c.decodeIfPresent(String.self, forKey: .textGenerationModel)
+        visionModel = try c.decodeIfPresent(String.self, forKey: .visionModel)
         compactAtPercent = try c.decodeIfPresent(Int.self, forKey: .compactAtPercent)
         queueDelivery = try c.decode(NativeQueueMode.self, forKey: .queueDelivery)
         goalCrossProviderEvaluation = try c.decodeIfPresent(Bool.self, forKey: .goalCrossProviderEvaluation) ?? false
@@ -253,6 +258,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         case .defaultThinking(let level): defaultThinking = level
         case .defaultServiceTier(let tier): defaultServiceTier = tier
         case .textGenerationModel(let model), .namingModel(let model): textGenerationModel = model
+        case .visionModel(let model): visionModel = model
         case .compactAtPercent(let percent): compactAtPercent = percent
         case .queueDelivery(let mode): queueDelivery = mode
         case .goalCrossProviderEvaluation(let on): goalCrossProviderEvaluation = on
@@ -299,6 +305,9 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
     /// The text generation model; nil for Automatic.
     /// `RemoteProtocol.hostSettingsTextGenerationModelCapability`.
     case textGenerationModel(String?)
+    /// The image reading model; nil for Automatic.
+    /// `RemoteProtocol.hostSettingsVisionModelCapability`.
+    case visionModel(String?)
     /// Legacy: the same choice as an older client sends it, from when the setting was the session
     /// naming model. A host applies it to the text generation model; no client sends it now.
     case namingModel(String?)
@@ -344,6 +353,7 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
         case .projectsEnabled: RemoteProtocol.projectsExperimentCapability
         case .defaultServiceTier, .namingModel, .compactAtPercent: RemoteProtocol.hostSettingsAgentDefaultsCapability
         case .textGenerationModel: RemoteProtocol.hostSettingsTextGenerationModelCapability
+        case .visionModel: RemoteProtocol.hostSettingsVisionModelCapability
         case .designToolEnabled: RemoteProtocol.designToolExperimentCapability
         case .missionsEnabled: RemoteProtocol.missionsExperimentCapability
         case .subagentDefaults, .worktreeDeleteAction, .skillsInSlashMenu, .mcpProjectConfig, .slashCommand:

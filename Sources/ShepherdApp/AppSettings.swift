@@ -80,6 +80,7 @@ final class AppSettings {
         static let defaultThinking = "shepherd.agent.defaultThinking"
         static let defaultServiceTier = "shepherd.agent.defaultServiceTier"
         static let textGenerationModel = "shepherd.agent.textGenerationModel"
+        static let visionModel = "shepherd.agent.visionModel"
         /// Where the same choice lived while the setting was the session naming model. Read once
         /// at load to move the choice over, then removed: the old setting is gone.
         static let legacyNamingModel = "shepherd.agent.namingModel"
@@ -132,7 +133,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, defaultServiceTier, textGenerationModel, queueDelivery, trimToolOutput, notifyOnTurnFinished, deferTools, codemode, compactAtPercent, shellPath, editor,
+            defaultThinking, defaultServiceTier, textGenerationModel, visionModel, queueDelivery, trimToolOutput, notifyOnTurnFinished, deferTools, codemode, compactAtPercent, shellPath, editor,
             piPanesExtension, piReviewExtension, subagentDisplay, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext,
@@ -209,6 +210,14 @@ final class AppSettings {
     /// agent's own model; a draft falls back to Haiku.
     var textGenerationModel: String {
         didSet { store.set(textGenerationModel, forKey: Key.textGenerationModel) }
+    }
+
+    /// Settings ▸ Agents ▸ Image reading model: "provider/id" for the model that describes
+    /// each image to a thread whose own model cannot view images, or "" for Automatic (the
+    /// cheapest signed-in model that takes images). New agents follow a change; running ones
+    /// at their next launch.
+    var visionModel: String {
+        didSet { store.set(visionModel, forKey: Key.visionModel) }
     }
 
     /// Settings ▸ Skills ▸ Skills in the / menu: the composer lists pi's `/skill:name` commands.
@@ -574,6 +583,7 @@ final class AppSettings {
         }
         store.removeObject(forKey: Key.legacyNamingModel)
         textGenerationModel = store.string(forKey: Key.textGenerationModel) ?? ""
+        visionModel = store.string(forKey: Key.visionModel) ?? ""
         skillsInSlashMenu = store.object(forKey: Key.skillsInSlashMenu) as? Bool ?? Defaults.skillsInSlashMenu
         hiddenSlashCommands = Set(store.stringArray(forKey: Key.hiddenSlashCommands) ?? [])
         // The directory now uses Shepherd's public API; discard the retired credential.
@@ -692,6 +702,7 @@ final class AppSettings {
         projectsEnabled = false
         shareDiagnostics = false
         textGenerationModel = ""
+        visionModel = ""
         skillsInSlashMenu = Defaults.skillsInSlashMenu
         hiddenSlashCommands = []
         mcpProjectConfig = false
@@ -829,7 +840,7 @@ final class AppSettings {
     private static let followed: [(AppSettings, AppSettings) -> Void] = [
         take(\.terminalFontFamily), take(\.terminalFontSize), take(\.defaultModel), take(\.defaultThinking),
         take(\.defaultServiceTier), take(\.goalsEnabled), take(\.projectsEnabled), take(\.shareDiagnostics),
-        take(\.textGenerationModel), take(\.skillsInSlashMenu), take(\.hiddenSlashCommands), take(\.mcpProjectConfig),
+        take(\.textGenerationModel), take(\.visionModel), take(\.skillsInSlashMenu), take(\.hiddenSlashCommands), take(\.mcpProjectConfig),
         take(\.mcpSameEverywhere), take(\.queueDelivery), take(\.trimToolOutput), take(\.notifyOnTurnFinished),
         take(\.deferTools), take(\.codemode), take(\.compactAtPercent), take(\.uiDensity), take(\.uiTextScale),
         take(\.sidebarWidth), take(\.sidebarRowDensity), take(\.sidebarStyle), take(\.sidebarGroupByHost),

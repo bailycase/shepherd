@@ -13,9 +13,10 @@ struct PiModelCatalogTests {
     """
 
     @Test func rpcModelsKeepComposedThinkingLevelsAndOnlyCapabilityFields() {
-        let reply = #"{"type":"response","id":"shepherd-models","command":"get_available_models","success":true,"data":{"models":[{"provider":"custom","id":"~openai/gpt-5","api":"openai-responses","contextWindow":400000,"reasoning":true,"thinkingLevelMap":{"minimal":null,"xhigh":"xhigh","max":"max"},"headers":{"Authorization":"fixture-only"}},{"provider":"fixture","id":"plain","reasoning":false,"contextWindow":1000000}]}}"#
+        let reply = #"{"type":"response","id":"shepherd-models","command":"get_available_models","success":true,"data":{"models":[{"provider":"custom","id":"~openai/gpt-5","api":"openai-responses","contextWindow":400000,"reasoning":true,"input":["text","image"],"thinkingLevelMap":{"minimal":null,"xhigh":"xhigh","max":"max"},"headers":{"Authorization":"fixture-only"}},{"provider":"fixture","id":"plain","reasoning":false,"input":["text"],"contextWindow":1000000}]}}"#
         let entries = PiModelCatalog.parseEntries(reply)
         #expect(entries.map(\.id) == ["custom/~openai/gpt-5", "fixture/plain"])
+        #expect(entries.first?.images == true && entries.last?.images == false)
         #expect(entries.first?.context == "400K" && entries.last?.context == "1M")
         #expect(entries.first?.api == "openai-responses")
         #expect(entries.first?.thinkingLevels == ["off", "low", "medium", "high", "xhigh", "max"])
@@ -26,6 +27,8 @@ struct PiModelCatalogTests {
                 "pi's composed map wins over incomplete configuration")
         #expect(listing.offeredThinkingLevels("fixture/plain").isEmpty)
         #expect(listing.entries.first?.context == "400K", "the shared listing keeps picker context labels")
+        #expect(listing.withoutImages == ["fixture/plain"] && listing.imageCapableModels == ["custom/~openai/gpt-5"])
+        #expect(listing.entries.first?.images == true && listing.entries.last?.images == false)
     }
 
     @Test func rpcStateIdentifiesTheAutomaticDefaultWithoutReadingProviderConfiguration() {
@@ -44,8 +47,8 @@ struct PiModelCatalogTests {
 
     @Test func entriesReadContextAndThinkingByHeaderPosition() {
         let entries = PiModelCatalog.parseEntries(table)
-        #expect(entries.first == .init(id: "anthropic/claude-opus-4-6", context: "1M", reasoning: true))
-        #expect(entries.last == .init(id: "cpa/~anthropic/claude-opus-latest", context: "128K", reasoning: false))
+        #expect(entries.first == .init(id: "anthropic/claude-opus-4-6", context: "1M", reasoning: true, images: true))
+        #expect(entries.last == .init(id: "cpa/~anthropic/claude-opus-latest", context: "128K", reasoning: false, images: false))
         #expect(entries.last?.provider == "cpa")
     }
 
@@ -101,5 +104,16 @@ struct ModelListingTests {
 
     @Test func anOlderHostsListingReadsAsModelsThatReason() {
         #expect(ModelListing(models: ["a/b"], defaultModel: "a/b").entries == [PiModelCatalog.Entry(id: "a/b", reasoning: true)])
+    }
+
+    /// Image support travels the same way: a listing built from a catalog that knows keeps it,
+    /// and one from a host that does not say offers every model to an image reading pick.
+    @Test func aCatalogKeepsWhichModelsTakeImagesThroughAListing() {
+        let entries = [PiModelCatalog.Entry(id: "qa/blind", images: false), PiModelCatalog.Entry(id: "qa/sees", images: true)]
+        let listing = ModelListing(entries: entries, defaultModel: nil)
+        #expect(listing.withoutImages == ["qa/blind"] && listing.imageCapableModels == ["qa/sees"])
+        #expect(listing.entries == entries)
+        #expect(ModelListing(models: ["a/b"], defaultModel: nil).imageCapableModels == ["a/b"])
+        #expect(ModelListing(entries: [PiModelCatalog.Entry(id: "a/b")], defaultModel: nil).withoutImages == nil)
     }
 }

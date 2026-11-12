@@ -65,7 +65,7 @@ struct RemoteHostSettingsPreviewTests {
     }
 
     static let newer: Set<String> = [RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostSettingsAgentDefaultsCapability,
-                                     RemoteProtocol.hostSettingsTextGenerationModelCapability,
+                                     RemoteProtocol.hostSettingsTextGenerationModelCapability, RemoteProtocol.hostSettingsVisionModelCapability,
                                      RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostInventoryCapability,
                                      RemoteProtocol.hostConfigCapability, RemoteProtocol.goalExperimentCapability,
                                      RemoteProtocol.projectsExperimentCapability, RemoteProtocol.designToolExperimentCapability,

@@ -85,12 +85,16 @@ public final class ClientHostSettings {
     private var loaded: [UUID: State] = [:]
     /// Each host's model catalog, once read (`loadModels`).
     private var catalogs: [UUID: [String]] = [:]
+    /// Each host's models that take images, read with its catalog (all of them when the host
+    /// does not say).
+    private var imageCatalogs: [UUID: [String]] = [:]
     @ObservationIgnored private var forgotten: Set<UUID> = []
 
     public func forget(host: UUID) {
         forgotten.insert(host)
         loaded[host] = nil
         catalogs[host] = nil
+        imageCatalogs[host] = nil
     }
 
     /// The models a host's model menus offer, with `current` kept even when the catalog lacks it.
@@ -100,11 +104,20 @@ public final class ClientHostSettings {
         return [current] + models
     }
 
+    /// The models a host's image reading menu offers: the ones its catalog does not call
+    /// text-only, with `current` kept even when it is not among them.
+    public func imageModels(of host: SettingsHost, current: String? = nil) -> [String] {
+        let models = imageCatalogs[host.id] ?? catalogs[host.id] ?? []
+        guard let current, !current.isEmpty, !models.contains(current) else { return models }
+        return [current] + models
+    }
+
     /// Reads a host's model catalog (asking its pi), once per call.
     public func loadModels(_ host: SettingsHost) async {
         guard !forgotten.contains(host.id), let client = host.client,
               let listing = try? await client.listModels(), !forgotten.contains(host.id) else { return }
         catalogs[host.id] = listing.models
+        imageCatalogs[host.id] = listing.imageCapableModels
     }
     /// The last change a host refused, in words.
     public private(set) var problem: String?

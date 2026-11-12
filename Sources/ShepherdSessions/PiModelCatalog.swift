@@ -19,14 +19,17 @@ public final class PiModelCatalog: @unchecked Sendable {
         public var api: String?
         /// The composed model's levels, including built-in and extension-supplied maps.
         public var thinkingLevels: [String]?
+        /// Whether the model's catalog input kinds include images; nil when pi did not say.
+        public var images: Bool?
 
-        public init(id: String, context: String? = nil, contextWindow: Int? = nil, reasoning: Bool = true, api: String? = nil, thinkingLevels: [String]? = nil) {
+        public init(id: String, context: String? = nil, contextWindow: Int? = nil, reasoning: Bool = true, api: String? = nil, thinkingLevels: [String]? = nil, images: Bool? = nil) {
             self.id = id
             self.context = context
             self.contextWindow = contextWindow
             self.reasoning = reasoning
             self.api = api
             self.thinkingLevels = thinkingLevels
+            self.images = images
         }
 
         public var provider: String { id.split(separator: "/", maxSplits: 1).first.map(String.init) ?? id }
@@ -148,6 +151,7 @@ public final class PiModelCatalog: @unchecked Sendable {
         var reasoning: Bool
         var api: String?
         var thinkingLevelMap: [String: String?]?
+        var input: [String]?
     }
     private struct Response: Decodable {
         struct Payload: Decodable { var models: [Model]?; var model: Model? }
@@ -183,7 +187,8 @@ public final class PiModelCatalog: @unchecked Sendable {
                         : count >= 1_000 ? String(format: "%.3gK", Double(count) / 1_000) : String(count)
                 }
                 return Entry(id: id, context: context, contextWindow: model.contextWindow, reasoning: model.reasoning, api: model.api,
-                             thinkingLevels: ThinkingLevel.supported(reasoning: model.reasoning, levelMap: model.thinkingLevelMap).map(\.rawValue))
+                             thinkingLevels: ThinkingLevel.supported(reasoning: model.reasoning, levelMap: model.thinkingLevelMap).map(\.rawValue),
+                             images: model.input.map { $0.contains("image") })
             }
         }
         // Keep accepting the older table format from alternate/debug engines.
@@ -202,7 +207,8 @@ public final class PiModelCatalog: @unchecked Sendable {
             func column(_ name: String) -> String? {
                 header.firstIndex(of: name).flatMap { fields.indices.contains($0) ? fields[$0] : nil }
             }
-            entries.append(Entry(id: id, context: column("context"), reasoning: column("thinking").map { $0 != "no" } ?? true))
+            entries.append(Entry(id: id, context: column("context"), reasoning: column("thinking").map { $0 != "no" } ?? true,
+                                 images: column("images").map { $0 == "yes" }))
         }
         return entries
     }
@@ -222,7 +228,8 @@ extension ModelListing {
             }
         }
         self.init(models: entries.map(\.id), defaultModel: defaultModel,
-                  withoutThinking: entries.filter { !$0.reasoning }.map(\.id), thinkingLevels: levels.isEmpty ? nil : levels)
+                  withoutThinking: entries.filter { !$0.reasoning }.map(\.id), thinkingLevels: levels.isEmpty ? nil : levels,
+                  withoutImages: entries.contains { $0.images != nil } ? entries.filter { $0.images == false }.map(\.id) : nil)
         let contexts = entries.compactMap { entry in entry.context.map { (entry.id, $0) } }
         self.contexts = contexts.isEmpty ? nil : Dictionary(contexts, uniquingKeysWith: { first, _ in first })
     }
@@ -231,6 +238,10 @@ extension ModelListing {
     /// not say takes no thinking level reasons (`takesThinking`).
     public var entries: [PiModelCatalog.Entry] {
         let plain = Set(withoutThinking ?? [])
-        return models.map { PiModelCatalog.Entry(id: $0, context: contexts?[$0], reasoning: !plain.contains($0)) }
+        let blind = withoutImages.map(Set.init)
+        return models.map { id in
+            PiModelCatalog.Entry(id: id, context: contexts?[id], reasoning: !plain.contains(id),
+                                 images: blind.map { !$0.contains(id) })
+        }
     }
 }

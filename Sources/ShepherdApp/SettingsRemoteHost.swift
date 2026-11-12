@@ -211,6 +211,14 @@ private struct RemoteSettingsSectionPage: View {
                             }
                         }
                     }
+                    if host.serves(RemoteProtocol.hostSettingsVisionModelCapability) {
+                        SettingsRow(title: "Image reading model") {
+                            ModelMenu(label: "Image reading model", none: "Automatic", current: s.visionModel,
+                                      models: settings.imageModels(of: host, current: s.visionModel)) {
+                                settings.post(.visionModel($0), on: host)
+                            }
+                        }
+                    }
                     SettingsRow(title: "When a turn ends, send the queue") {
                         SHSegmentedPicker("When a turn ends, send the queue", selection: bind(s.queueDelivery) { .queueDelivery($0) },
                                           options: [(.oneAtATime, "One per turn"), (.all, "All at once")])
