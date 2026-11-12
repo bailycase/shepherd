@@ -4,6 +4,12 @@
 <dict>
 	<key>ShepherdSentryDSN</key>
 	<string>$(SHEPHERD_SENTRY_DSN)</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_shepherd._tcp</string>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Scan the code a Shepherd Mac shows to pair this device with it.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

@@ -219,6 +219,7 @@ final class FixtureRunner {
             online.allSatisfy { app.hosts.host($0)?.phase.isConnected == true }
         }
         app.navigator.tab = screen.tab
+        screen.setup?()
         for route in screen.routes { app.navigator.open(route) }
         if let presented = screen.presented { app.navigator.present(presented) }
         if environment["FIXTURE_SIDEBAR"] == "shown" { app.navigator.padColumns = .all }

@@ -2,7 +2,7 @@ import SwiftUI
 import ShepherdUI
 
 /// Settings ▸ Hosts (home track): every host with its connection and what runs there, Retry while
-/// it is offline, and Add host. A card opens the host's form.
+/// it is offline, and Add a Mac. A card opens the host's form.
 struct HostsScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
@@ -12,7 +12,7 @@ struct HostsScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
                 if cards.isEmpty {
-                    Text("No hosts yet. Add the Macs you run Shepherd on.")
+                    Text("No Macs yet. Add a Mac with the code it shows.")
                         .shText(.caption).foregroundStyle(Color.sh.textSecondary)
                         .padding(.horizontal, SH.Space.xs)
                 }
@@ -20,9 +20,9 @@ struct HostsScreen: View {
                           alignment: .leading, spacing: MobileLayout.blockSpacing) {
                     ForEach(cards) { card in HostCardView(card: card, presentsForm: false) }
                 }
-                Button("Add host", systemImage: "plus") { navigator.open(.settings(.host(nil))) }
+                Button("Add a Mac", systemImage: "plus") { navigator.open(.settings(.host(nil))) }
                     .buttonStyle(.sh(.secondary, size: .l))
-                Text("Trusted LAN or VPN only: the connection has no TLS.")
+                Text("Macs pair with a code on the same local network. The connection has no TLS, so keep it on a network you trust.")
                     .shText(.caption).foregroundStyle(Color.sh.textTertiary)
                     .padding(.horizontal, SH.Space.xs)
             }

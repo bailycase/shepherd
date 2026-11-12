@@ -5,9 +5,9 @@
 - **Listener:** `SessionServer.startRemoteListener(port:tokenURL:)` binds TCP on **all
   interfaces** (default 7433, or 7434 in Shepherd Nightly so both apps can serve; port 0 picks
   an ephemeral port, and the bound port is returned).
-  Settings ▸ Remote ▸ Serve this Mac toggles it, and bind failures show there. The host opens it
-  (`ShepherdHost.serveSettings`), so under the background service it stays reachable while the
-  app is quit, with the same token.
+  Settings ▸ Fleet ▸ Serve this Mac (shown while Fleet is off; Fleet opens the listener itself)
+  toggles it, and bind failures show there. The host opens it (`ShepherdHost.serveSettings`), so
+  under the background service it stays reachable while the app is quit.
 - **Local socket:** `SessionServer.startLocalListener(path:tokenURL:)` binds `<support>/host.sock`
   (mode 0600; the path must fit a unix socket's 104 bytes) for the app, always its
   host's client (`RemoteHostClient(localSocket:)`). Only the headless host (`Shepherd --host`,
@@ -73,11 +73,20 @@
   `DesignRelayJob` travels as a JSON file under `design-relay/` in the support directory, named
   by `jobFile`, since a design's files outgrow a frame; the host removes it once answered. With no
   app connected after a few seconds' wait they fail as `render_unavailable` or `export_unavailable`.
-- **Auth:** the first frame must be `hello` with the token from `remote-token` in the support
-  directory (32 random bytes as hex, mode 0600, created on first use) and a matching
-  `RemoteProtocol.version`, listing what the client understands
-  (`RemoteProtocol.clientCapabilities`; older clients list nothing). **There is no TLS.** A VPN
-  or trusted network is the transport boundary. Never describe the listener as internet-safe.
+- **Auth:** the first frame must be `hello` with a token and a matching `RemoteProtocol.version`,
+  listing what the client understands (`RemoteProtocol.clientCapabilities`; older clients list
+  nothing). The host accepts, in this order, and records which one opened the connection:
+  the token of a **device** (a phone, iPad or Mac app paired as a client: `devices.json`, below), the
+  token of a **peer Mac** (`peers.json`), or the **shared token** (`remote-token` in the support
+  directory: 32 random bytes as hex, mode 0600, created on first use). There is no password and no
+  pasted token anywhere: devices and Macs pair with a 6 digit code (Fleet, below). The shared token
+  is the pre-fleet way in. It stays accepted while Fleet is off and while Fleet is on until Settings ▸
+  Fleet ▸ Devices ▸ Stop accepting it, which the host refuses while a client it saw on the shared
+  token hasn't been given its own (`devices_waiting`; Forget drops one that will not return). After
+  that only device and peer tokens connect (this Mac's own app on `host.sock` keeps its own token), and
+  connections that came in on the shared token end. Turning Fleet off ends peer and device
+  connections (they connect only while Fleet is on); a retired shared token stays retired, read from `devices.json`. **There is no TLS.** A VPN or trusted
+  network is the transport boundary. Never describe the listener as internet-safe.
 - **Protocol** (NDJSON, `RemoteMessage.swift`):
   - state fetch and pushed `stateChanged`
   - `native.startup-dialogs.v1` is advertised by both peers. Opted-in clients can answer
@@ -546,6 +555,13 @@
   a configured destination, not an authenticated machine identity; future dispatch must compare
   the saved binding before using a host connection.
 - **Exact Project results:** `logicalProjects.result.v1` gates exact archived-worker snapshot reads (`ProjectRuntimeRequest.worker(taskID:)`, `ProjectExecutionRequest.worker(key:)`) and `ProjectExecutionRequest.result(key:offset:sha256:)` and owner `ProjectRuntimeRequest.result(taskID:operationID:offset:sha256:)`. Result pages use optional compatible fields on the existing reply models, at most 8 KiB of redacted visible final text, total length/digest, next byte offset, availability, stop reason and exact owner/executor identities. Remote reads keep the original host/binding and owner authorization; metadata cache hits cannot bypass revocation. Permission generations are rechecked after asynchronous I/O; disable/re-enable or remove/restore of the exact executor Space/path/binding cannot revive an old grant. Owner-directory and executor-Space tokens track only current eligible routes, scoped by Space ID and path. On the executor, removing, hiding, reserving or replacing the target rotates only its grant; no-op refreshes, renames and unrelated Space additions/updates/removals preserve it. Restoring the target requires a fresh grant, while global Projects-enablement and restart fences still apply. Disabled-executor cancellation, pause and receipt reconciliation keep their existing exemptions, not the new result/worker-content endpoints. Archived worker reads use the exact original task/session and executor binding and are snapshots only. Older peers refuse before transmission, never substitute snapshot text. `history(taskID:beforeSequence:)` is explicit bounded owner-record discovery, not arbitrary native transcript access.
+- **Devices need no fleet** (`fleet.devices.v1`, offered whenever the host runs, never to a device): `FleetService` exists for as long as the
+  host does and Fleet switches only its **membership** (links, pairing Macs, Join, peer tokens, `fleet.v1`). With Fleet off the host still
+  advertises `_shepherd._tcp` while its listener is open, takes devices by `fleetPairDevice`, keeps `devices.json`, and answers the app's
+  device actions (Add a device, Revoke, retire the shared token, `enrollApp`); `fleetIdentify` then says `fleetEnabled: false`, and every
+  member request (`fleetPair`, `fleetEstablish`, `fleetIntroduce`, `fleetRevoke`, and the Join, pair, remove and adopt actions) is
+  refused `fleet_off`. A Mac's own app is a client of another Mac the same way (`RemoteHostStore.pairAsClient`: its own device token,
+  `ownToken` in its config), with Fleet on or off. Turning Fleet off ends peer connections only; devices stay connected.
 - **Fleet** (`fleet.v1`, offered only while Settings ▸ Experiments ▸ Fleet is on; `experiments.fleet.v1` switches it from a
   client): every host has a `hostID` (`<support>/fleet/identity.json`, made once) that `helloOk` now carries (optional,
   absent from older hosts), and a client that expects an id never sends a token to an address that answers with another.
@@ -561,6 +577,23 @@
   it for Add a Mac and hands the address to the host. Fleet needs the listener, so it opens it even with Serve this Mac
   off. Shepherd adds no TLS: the fleet runs over the user's own network. A paired Mac the app reached with the shared
   token is marked `fleetManaged` in `RemoteHostStore` (its address and token are the fleet's), keeping its `bindingID`.
+  **Devices** (phones, iPads and Macs' apps) are clients: `FleetAccess` is `local`, `member` (a peer Mac), `device` or
+  `shared`, and only the first two take part in the fleet's store. A device is offered no capability in
+  `RemoteProtocol.fleetMemberCapabilities` (later fleet units add theirs), and every fleet request except the
+  pre-hello pairing ones is refused to it with `forbidden`. A device pairs with `fleetPairDevice` (before `hello`, the
+  same identify-first rule as `fleetPair`) with the code of Settings ▸ Fleet ▸ Add a device (its own window, not the
+  Join one; the QR holds `shepherd-pair://device?code=…&mac=<id hash>`, so a phone aims at the Mac it scanned). The
+  device made its token and sends only its hash with its id, name and kind (`FleetDeviceIntroduction`); the host answers
+  `fleetDevices` with the other Macs of its fleet, after they have taken the device in (`fleetSyncDevices` over the
+  peer links, at most a few seconds) so one pairing works on every Mac. A client already connected on the shared
+  token and seeing `fleet.v1` is offered its own the same way (`fleetEnrollDevice`) and stores it before it is used; a
+  Mac's app asks its own host (`FleetAction.enrollApp`, local socket) and the host never keeps that token (with Fleet on; a Mac
+  that is only a client of another pairs itself, above). `devices.json`
+  holds each device's hash and a tombstone for a revoked one, equal on every Mac (a revocation always wins, and a Mac
+  that was away hears of it when its link comes up). Revoking (`FleetAction.revokeDevice`, from any Mac) ends the device's
+  connections on every Mac and refuses its token; a revoked id can't pair again, so the device makes a new identity
+  (`device_revoked`). The iOS client keeps one identity for every Mac in the Keychain and saves each host's token there too;
+  `MobileHosts.ownTokenKey` records which hosts are on it.
 - **Protocol changes** touch the request and reply enums with every Codable arm, `RemoteProtocol`
   capabilities where relevant, server handling, `RemoteHostClient` (Mac and iOS), and the
   round-trip and listener tests.

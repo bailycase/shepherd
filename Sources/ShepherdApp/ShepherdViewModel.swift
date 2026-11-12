@@ -832,6 +832,7 @@ final class ShepherdViewModel {
         installProjectRuntime()
         self.hooks.spacePaths = { [weak self] in self?.state.spaces.filter { !$0.hidden }.map(\.path) ?? [] }
         self.fleet.host = { [weak self] in try self?.remoteHosts.thisMacHost() }
+        self.fleet.pairClient = { [weak self] host, port, code in try await self?.remoteHosts.pairAsClient(host: host, port: port, code: code) }
         self.fleet.browse = { update in
             let browser = FleetBrowser()
             browser.start(update)
