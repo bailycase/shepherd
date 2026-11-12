@@ -105,7 +105,9 @@ enum HostSettingsMapping {
             bundledExtensions: bundled.map { HostSettings.BundledExtension(id: $0.id, name: $0.name, on: app[keyPath: $0.keyPath]) },
             updatePiDaily: false,
             updateExtensionsDaily: false,
-            fleetWeights: app.fleetWeights
+            fleetWeights: app.fleetWeights,
+            fleetThreadsCanSend: app.fleetThreadsCanSend,
+            fleetThreadCap: app.fleetThreadCap
         )
     }
 
@@ -137,6 +139,8 @@ enum HostSettingsMapping {
             guard let keyPath = bundled.first(where: { $0.id == id })?.keyPath else { return nil }
             app[keyPath: keyPath] = on
         case .fleetWeight(let hostID, let weight): app.setFleetWeight(weight, of: hostID)
+        case .fleetThreadsCanSend(let on): app.fleetThreadsCanSend = on
+        case .fleetThreadCap(let cap): app.fleetThreadCap = cap
         case .updatePiDaily, .updateExtensionsDaily:
             // An older client's switches: Shepherd's pi updates only with Shepherd.
             break

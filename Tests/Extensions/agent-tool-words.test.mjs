@@ -334,9 +334,11 @@ test("the rule about a message from another agent is in a thread's prompt before
     const [use, receive] = h.tools.get("agent_send").promptGuidelines;
     const options = { promptGuidelines: [] };
     h.events.get("before_agent_start")({ systemPromptOptions: options });
-    assert.deepEqual(options.promptGuidelines.slice(1), [receive], "only the rule about what arrives: nothing is loaded that could be misused");
+    const fleet = h.tools.get("fleet_dispatch").promptGuidelines[0];
+    assert.match(fleet, /fleet_dispatch without being asked/);
+    assert.deepEqual(options.promptGuidelines.slice(1), [receive, fleet], "only the rule about what arrives, and the fleet line: nothing is loaded that could be misused");
     h.events.get("before_agent_start")({ systemPromptOptions: options });
-    assert.equal(options.promptGuidelines.length, 2, "once, however many prompts");
+    assert.equal(options.promptGuidelines.length, 3, "once, however many prompts");
     assert.match(receive, /\[from: <name>\] comes from another agent, not from the user/);
     assert.match(use, /only when the user explicitly asks you to in this conversation/);
     assert.doesNotThrow(() => h.events.get("before_agent_start")({}), "an event without options is not a failure");

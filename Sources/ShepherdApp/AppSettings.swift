@@ -127,6 +127,8 @@ final class AppSettings {
         static let designToolEnabled = "shepherd.experiments.designTool"
         static let fleetEnabled = "shepherd.experiments.fleet"
         static let fleetWeights = "shepherd.fleet.weights"
+        static let fleetThreadsCanSend = "shepherd.fleet.threadsCanSend"
+        static let fleetThreadCap = "shepherd.fleet.threadCap"
         static let missionsEnabled = "shepherd.experiments.missions"
         static let implementOpensThread = "shepherd.designs.implementOpensThread"
 
@@ -142,7 +144,7 @@ final class AppSettings {
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeGeneratePRDescription, worktreeDeleteAction, worktreeCloseOnMerge, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
             mcpProjectConfig,
-            goalsEnabled, projectsEnabled, designToolEnabled, fleetEnabled, fleetWeights, missionsEnabled, implementOpensThread,
+            goalsEnabled, projectsEnabled, designToolEnabled, fleetEnabled, fleetWeights, fleetThreadsCanSend, fleetThreadCap, missionsEnabled, implementOpensThread,
             filesWordWrap, filesMarkdownPreview,
         ]
 
@@ -539,6 +541,21 @@ final class AppSettings {
     }
     @ObservationIgnored var onFleetWeightsChange: (() -> Void)?
 
+    /// Settings ▸ Fleet ▸ Threads can send work (`HostSettings.fleetThreadsCanSend`): a thread may
+    /// dispatch work to another Mac on its own. Off until turned on. Synced across the fleet.
+    var fleetThreadsCanSend: Bool {
+        didSet { store.set(fleetThreadsCanSend, forKey: Key.fleetThreadsCanSend) }
+    }
+
+    /// How many dispatches one thread may have in flight (`HostSettings.fleetThreadCap`). Synced across the fleet.
+    var fleetThreadCap: Int {
+        didSet {
+            let clamped = HostSettings.clampedThreadCap(fleetThreadCap)
+            if clamped != fleetThreadCap { fleetThreadCap = clamped; return }
+            store.set(fleetThreadCap, forKey: Key.fleetThreadCap)
+        }
+    }
+
     func fleetWeight(of hostID: UUID) -> FleetSendWeight {
         fleetWeights[FleetSendWeight.settingKey(hostID: hostID)] ?? .normal
     }
@@ -591,6 +608,8 @@ final class AppSettings {
         projectsEnabled = store.object(forKey: Key.projectsEnabled) as? Bool ?? false
         fleetEnabled = store.object(forKey: Key.fleetEnabled) as? Bool ?? false
         fleetWeights = (store.dictionary(forKey: Key.fleetWeights) as? [String: String] ?? [:]).compactMapValues(FleetSendWeight.init(rawValue:))
+        fleetThreadsCanSend = store.object(forKey: Key.fleetThreadsCanSend) as? Bool ?? false
+        fleetThreadCap = HostSettings.clampedThreadCap(store.object(forKey: Key.fleetThreadCap) as? Int ?? HostSettings.fleetThreadCapDefault)
         // Naming is always on now; only its model is a setting.
         store.removeObject(forKey: "shepherd.agent.autoName")
         // The session naming model became the text generation model: move its stored choice to
@@ -717,6 +736,8 @@ final class AppSettings {
         projectsEnabled = false
         fleetEnabled = false
         fleetWeights = [:]
+        fleetThreadsCanSend = false
+        fleetThreadCap = HostSettings.fleetThreadCapDefault
         shareDiagnostics = false
         textGenerationModel = ""
         visionModel = ""

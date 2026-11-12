@@ -168,7 +168,7 @@ def tool_group(name: str, source: str) -> str:
     if base == "shepherd-panes.ts":
         if name.startswith("terminal_"):
             return "tools.terminal"
-        if name.startswith("agent_"):
+        if name.startswith("agent_") or name.startswith("fleet_"):
             return "tools.agent"
         return "tools.automation"
     return {"shepherd-review.ts": "tools.review", "shepherd-children.ts": "tools.children", "shepherd-browser.ts": "tools.browser",

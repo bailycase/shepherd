@@ -34,15 +34,19 @@ public struct FleetReadinessReport: Codable, Hashable, Sendable {
     public var missing: [FleetMissingTool]
     /// The projects this Mac has a folder for, by name, sorted.
     public var repos: [String]
+    /// The repositories those projects are, by canonical key (`CanonicalRepoKey`), sorted: what a dispatch
+    /// is matched against. Empty from an older Mac, which no dispatch is placed on.
+    public var repoKeys: [String]
 
-    public init(model: String = "Mac", chip: String = "", missing: [FleetMissingTool] = [], repos: [String] = []) {
+    public init(model: String = "Mac", chip: String = "", missing: [FleetMissingTool] = [], repos: [String] = [], repoKeys: [String] = []) {
         self.model = model
         self.chip = chip
         self.missing = missing
         self.repos = repos
+        self.repoKeys = repoKeys
     }
 
-    private enum CodingKeys: String, CodingKey { case model, chip, missing, repos }
+    private enum CodingKeys: String, CodingKey { case model, chip, missing, repos, repoKeys }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -50,6 +54,7 @@ public struct FleetReadinessReport: Codable, Hashable, Sendable {
         chip = try c.decodeIfPresent(String.self, forKey: .chip) ?? ""
         missing = try c.decodeIfPresent([FleetMissingTool].self, forKey: .missing) ?? []
         repos = try c.decodeIfPresent([String].self, forKey: .repos) ?? []
+        repoKeys = try c.decodeIfPresent([String].self, forKey: .repoKeys) ?? []
     }
 }
 

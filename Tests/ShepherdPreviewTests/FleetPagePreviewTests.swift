@@ -61,6 +61,31 @@ struct FleetPagePreviewTests {
         }
     }
 
+    /// The Dispatches log with real records: a sent thread, one the person picked a Mac for, a finished one, one
+    /// waiting for a sleeping Mac, a held one and a refused one.
+    @Test func dispatchesLog() async throws {
+        let now = Date()
+        func record(_ title: String, _ state: FleetDispatchState, ago: TimeInterval, kind: FleetDispatchRecord.Kind = .agentDispatch, parent: String = "Speed up checkout CI",
+                    host: String? = "Mac mini", reasons: [FleetPlacementReason] = [], failure: String? = nil) -> FleetDispatchRecord {
+            FleetDispatchRecord(kind: kind, parentHostID: Self.here, parentHostName: "MacBook Pro", parentTitle: kind == .userThread ? "" : parent,
+                                targetHostName: host, state: state, failure: failure, title: title, task: "", repoKey: "github.com/acme/web",
+                                reasonCodes: reasons, createdAt: (now.timeIntervalSince1970 - ago) * 1000)
+        }
+        var snapshot = Self.snapshot
+        snapshot.dispatches = [
+            record("Fix flaky payment test", .running, ago: 240, reasons: [FleetPlacementReason(.localIneligible, skip: "cpu"), FleetPlacementReason(.mostRoom)]),
+            record("Migrate orders to Postgres 17", .running, ago: 1_320, kind: .userThread, reasons: [FleetPlacementReason(.named)]),
+            record("Bump Swift tools to 6.2", .done, ago: 3_600, parent: "Regenerate API client", reasons: [FleetPlacementReason(.mostRoom)]),
+            record("Profile cold launch", .waitingWake, ago: 7_200, kind: .userThread, host: "Mac Studio"),
+            record("Add retry to webhooks", .heldLimit, ago: 9_000, host: nil),
+            record("Index the changelog", .failed, ago: 10_800, parent: "Regenerate API client", host: nil, failure: FleetDispatchCode.repoMissing),
+        ]
+        let page = FleetPagePresentation.make(snapshot: snapshot, weight: { [Self.mini: FleetSendWeight.prefer][$0] ?? .normal }, now: now)
+        try await Preview.renderMatrix("fleet4a-page-dispatches", size: CGSize(width: 1208, height: 990)) {
+            FleetPageContent(page: page, actions: Self.noActions).frame(width: 1208, height: 990)
+        }
+    }
+
     /// A Mac with nothing reported yet, one connecting, a full one, and a lone Mac: the other states.
     @Test func fleetPageStates() async throws {
         var snapshot = Self.snapshot

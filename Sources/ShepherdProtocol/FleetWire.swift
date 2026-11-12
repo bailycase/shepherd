@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import ShepherdCore
 
 /// Fleet: Macs that pair once with a code and then hold links between their hosts (`fleet.v1`).
 /// The payloads of `RemoteRequest.fleet*` and `RemoteReply.fleet*`. Nothing here carries a usable
@@ -167,15 +168,19 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
     public var sync: FleetSyncStatus?
     /// Phones, iPads and Mac apps paired as clients, and the shared token's state; nil from a host without them.
     public var devices: FleetDevicesSnapshot?
+    /// The dispatches this Mac sent, newest first, without their task and result text (the Fleet page's
+    /// Dispatches log); empty from a host that doesn't dispatch.
+    public var dispatches: [FleetDispatchRecord]
     /// Where this Mac's content index stands (`FleetSnapshotWire.swift`); nil while it isn't indexing (Fleet off, or no Mac paired).
     public var index: FleetIndexStatus?
 
     public init(enabled: Bool = false, hostID: UUID? = nil, name: String = "", build: String? = nil, addresses: [String] = [],
                 port: UInt16? = nil, advertising: Bool = false, peers: [FleetPeerStatus] = [], join: FleetJoinStatus? = nil,
                 sync: FleetSyncStatus? = nil, devices: FleetDevicesSnapshot? = nil, macs: [FleetMacState] = [],
-                index: FleetIndexStatus? = nil) {
+                dispatches: [FleetDispatchRecord] = [], index: FleetIndexStatus? = nil) {
         self.index = index
         self.devices = devices
+        self.dispatches = dispatches
         self.enabled = enabled
         self.hostID = hostID
         self.name = name
@@ -189,7 +194,7 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         self.sync = sync
     }
 
-    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, advertising, peers, join, macs, devices, sync, index }
+    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, advertising, peers, join, macs, devices, sync, dispatches, index }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -206,13 +211,14 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         macs = try c.decodeIfPresent([FleetMacState].self, forKey: .macs) ?? []
         devices = try c.decodeIfPresent(FleetDevicesSnapshot.self, forKey: .devices)
         sync = try c.decodeIfPresent(FleetSyncStatus.self, forKey: .sync)
+        dispatches = (try? c.decodeIfPresent([FleetDispatchRecord].self, forKey: .dispatches)) ?? []
         index = try c.decodeIfPresent(FleetIndexStatus.self, forKey: .index)
     }
 }
 
 extension FleetSnapshot {
     /// What a client (a phone or an iPad) may read: the Macs, whether each is reachable, and their load and
-    /// readiness. Not where any Mac listens, a code window, the devices, the sync state or the build.
+    /// readiness. Not where any Mac listens, a code window, the devices, the sync state, the dispatches or the build.
     public var clientView: FleetSnapshot {
         FleetSnapshot(enabled: enabled, hostID: hostID, name: name,
                       peers: peers.map {
