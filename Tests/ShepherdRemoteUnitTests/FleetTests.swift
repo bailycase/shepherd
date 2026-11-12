@@ -372,7 +372,7 @@ struct FleetTests {
         (.failed(RemoteHostFailure(kind: .unreachable, detail: "connect failed: Connection refused (errno 61)")), [],
          "Shepherd isn't running on Studio, or it can't be reached.", true),
         (.failed(RemoteHostFailure(kind: .tokenRefused, detail: "unauthorized: bad token")), [],
-         "Studio refused the token. Edit the host to paste its current token.", true),
+         "Studio refused the token. This device may have been revoked, or the Mac may have stopped accepting its old token. Pair it again with a code.", true),
         (.disconnected, [], "Not connected", true),
     ] as [(RemoteHostPhase, [Agent], String, Bool)])
     func aHostCardSummarizesItsThreadsOrWhyItIsOffline(phase: RemoteHostPhase, agents: [Agent], summary: String, retry: Bool) throws {

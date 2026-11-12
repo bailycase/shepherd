@@ -210,8 +210,8 @@ struct NoHostsState: View {
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        SHEmptyState(Text("Add a host"), message: "Connect to a Mac running Shepherd to see its threads.") {
-            Button("Add host") { navigator.present(.settings(.host(nil))) }.buttonStyle(.sh(.primary))
+        SHEmptyState(Text("Add a Mac"), message: "Pair with a Mac running Shepherd to see its threads.") {
+            Button("Add a Mac") { navigator.present(.settings(.host(nil))) }.buttonStyle(.sh(.primary))
         }
         .frame(maxWidth: .infinity)
         .padding(.top, MobileLayout.sectionSpacing)

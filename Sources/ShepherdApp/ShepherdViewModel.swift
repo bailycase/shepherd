@@ -838,6 +838,7 @@ final class ShepherdViewModel {
         self.fleetPage.setWeight = { [weak self] in self?.settings.setFleetWeight($0, of: $1) }
         self.fleet.onSnapshot = { [fleetPage] in fleetPage.update($0) }
         self.settings.onFleetWeightsChange = { [fleetPage] in fleetPage.recompute() }
+        self.fleet.pairClient = { [weak self] host, port, code in try await self?.remoteHosts.pairAsClient(host: host, port: port, code: code) }
         self.fleet.browse = { update in
             let browser = FleetBrowser()
             browser.start(update)

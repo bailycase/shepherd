@@ -8,7 +8,7 @@ struct SettingsSearchTests {
     @Test func theNavListsEveryPageInDesignOrder() {
         #expect(SettingsSection.allCases.map(\.title) == [
             "Appearance", "Terminal", "Agents", "Subagents", "Worktrees", "Spaces", "Sign-in", "Pi", "Instructions", "Skills",
-            "Extensions", "Slash commands", "Apps", "Hooks", "MCP servers", "Fleet", "Remote", "Keyboard", "Advanced", "Experiments",
+            "Extensions", "Slash commands", "Apps", "Hooks", "MCP servers", "Fleet", "Keyboard", "Advanced", "Experiments",
         ])
     }
 
@@ -32,8 +32,9 @@ struct SettingsSearchTests {
         // Keywords people search for that aren't row titles.
         ("dark", .appearance, ["Mode"]),
         ("zoom", .appearance, ["Text size"]),
-        ("tailscale", .remote, ["Hosts"]),
-        ("port", .remote, ["Listener"]),
+        ("iphone", .fleet, ["Devices"]),
+        ("qr", .fleet, ["Add a device"]),
+        ("port", .fleet, ["Listener"]),
         ("hotkey", .keyboard, ["Shortcuts"]),
         ("nightly", .advanced, ["Update channel"]),
         ("telemetry", .advanced, ["Share diagnostics"]),
@@ -127,7 +128,7 @@ struct SettingsSearchTests {
     @Test func mcpServersAreFoundByName() {
         #expect(SettingsSection.mcp.matches(for: "lin", rows: ["linear", "notion"]) == ["linear"])
         #expect(SettingsSection.mcp.matches(for: "stdio", rows: ["postgres"]) == ["Add server"])
-        #expect(SettingsSection.remote.matches(for: "lin").isEmpty)
+        #expect(SettingsSection.fleet.matches(for: "lin").isEmpty)
     }
 
     @Test func aKeywordFindsOnlyTheSectionsThatOwnIt() {

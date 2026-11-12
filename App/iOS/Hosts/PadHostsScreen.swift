@@ -75,7 +75,7 @@ struct PadHostsScreen: View {
             }
             .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .primaryAction) {
-                Button("Add host", systemImage: "plus") { navigator.present(.settings(.host(nil))) }
+                Button("Add a Mac", systemImage: "plus") { navigator.present(.settings(.host(nil))) }
             }
         }
     }

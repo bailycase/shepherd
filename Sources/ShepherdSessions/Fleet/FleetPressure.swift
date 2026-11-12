@@ -101,6 +101,13 @@ final class FleetPressure: @unchecked Sendable {
         }
     }
 
+    /// Fleet was switched off: no Mac is sampled for, and the Fleet page isn't shown.
+    func reset() {
+        watchers = []
+        peers = [:]
+        refresh()
+    }
+
     func stop() {
         stopped = true
         watchers = []

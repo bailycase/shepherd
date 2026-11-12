@@ -1,6 +1,7 @@
 import SwiftUI
 import ShepherdUI
 import ShepherdProtocol
+import ShepherdRemote
 
 /// Add a Mac (FleetPair): pick a Mac Bonjour found, enter the code its Join screen shows. This
 /// Mac's host does the pairing, so the Mac it adds and every other member are introduced even
@@ -8,13 +9,16 @@ import ShepherdProtocol
 /// shows its address on its own Join screen.
 struct FleetPairSheet: View {
     var model: FleetSettingsModel
+    /// Fleet is off: the Mac is added as one this app is a client of (what it shows is Add a device), not into a fleet.
+    var asClient = false
     let dismiss: () -> Void
 
     @State private var picked: String?
     @State private var code: String
 
-    init(model: FleetSettingsModel, code: String = "", dismiss: @escaping () -> Void) {
+    init(model: FleetSettingsModel, asClient: Bool = false, code: String = "", dismiss: @escaping () -> Void) {
         self.model = model
+        self.asClient = asClient
         self.dismiss = dismiss
         _code = State(initialValue: code)
     }
@@ -25,40 +29,54 @@ struct FleetPairSheet: View {
 
     var body: some View {
         let sh = Color.sh
-        SHDialog("Add a Mac to your fleet", message: "Open Shepherd on the other Mac. It needs to be on the same local network.",
+        SHDialog(asClient ? "Add a Mac" : "Add a Mac to your fleet", message: "Open Shepherd on the other Mac. It needs to be on the same local network.",
                  width: AppLayout.fleetPairWidth) {
             VStack(alignment: .leading, spacing: 0) {
                 section("1 · Pick the Mac") { macs }
                 SHHairline()
                 section("2 · Enter the code it shows") {
-                    Text("On \(theirName): Settings ▸ Fleet ▸ Join a fleet. The code lasts 5 minutes.")
+                    Text("On \(theirName): Settings ▸ Fleet ▸ \(asClient ? "Add a device" : "Join a fleet"). The code lasts 5 minutes.")
                         .font(.sh(.ui))
                         .foregroundStyle(sh.textSecondary)
                     FleetCodeField(code: $code)
                         .disabled(model.pairing == .working)
                 }
                 SHHairline()
-                section("What \(mac?.name ?? "it") gets") { gets }
+                section(asClient ? "What this Mac gets" : "What \(mac?.name ?? "it") gets") { asClient ? AnyView(clientGets) : AnyView(gets) }
                 SHHairline()
             }
         } status: {
             switch model.pairing {
             case .failed(let message): SHDialogStatus(message, isError: true)
             case .working: SHDialogStatus("Adding \(theirName)…")
-            case .idle: SHDialogStatus("You can remove a Mac from any Mac in the fleet.")
+            case .idle: SHDialogStatus(asClient ? "The Mac can revoke this one any time." : "You can remove a Mac from any Mac in the fleet.")
             }
         } actions: {
             Button("Cancel") { dismiss() }
                 .buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
             Button(mac.map { "Add \($0.name)" } ?? "Add Mac") {
                 guard let mac else { return }
-                Task { if await model.pair(with: mac, code: code) { dismiss() } }
+                Task {
+                    let added = asClient ? await model.pairAsClient(with: mac, code: code) : await model.pair(with: mac, code: code)
+                    if added { dismiss() }
+                }
             }
             .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
             .disabled(!ready)
         }
         .task { model.startFinding() }
         .onDisappear { model.stopFinding() }
+    }
+
+    /// A client of a Mac outside a fleet: its threads, and nothing of its settings.
+    private var clientGets: some View {
+        let sh = Color.sh
+        return Grid(alignment: .topLeading, horizontalSpacing: SH.Space.m, verticalSpacing: SH.Space.s) {
+            row(true, "Its threads in your sidebar: read them, send, start new ones and answer questions")
+            row(false, "Not a fleet. Its settings, sign-ins and checkouts stay on it, and this Mac keeps its own.")
+        }
+        .font(.sh(.ui))
+        .foregroundStyle(sh.textSecondary)
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {

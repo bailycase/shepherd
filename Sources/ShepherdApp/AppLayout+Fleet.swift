@@ -1,7 +1,7 @@
 import SwiftUI
 import ShepherdUI
 
-/// Settings ▸ Fleet and its sheets (FleetPair, FleetStates' Join a fleet).
+/// Settings ▸ Fleet and its sheets (FleetPair, FleetStates' Join a fleet, Add a device).
 extension AppLayout {
     /// Add a Mac: 520pt wide (FleetPair).
     static let fleetPairWidth: CGFloat = 520
@@ -18,6 +18,8 @@ extension AppLayout {
     /// Join a fleet (FleetStates): the code in mono at 40pt, its two groups of three a space apart.
     static let fleetJoinWidth: CGFloat = 460
     static let fleetJoinCodeSize: CGFloat = 40
+    /// Add a device: the QR of the same code, a square this many points a side.
+    static let fleetQRSize: CGFloat = 168
     /// A Macs row's status dot.
     static let fleetDotSize: CGFloat = 6
 

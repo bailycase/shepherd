@@ -45,8 +45,50 @@ struct FleetMacRow: Identifiable, Equatable {
     }
 }
 
+extension FleetMacRow {
+    /// A Mac this app is a client of (`RemoteHostStore`): where it is and how the connection stands.
+    static func client(id: UUID, name: String, host: String, port: UInt16, phase: RemoteHostStore.Phase) -> FleetMacRow {
+        let (word, state): (String, FleetMacRowState) = switch phase {
+        case .connected: ("connected", .connected)
+        case .connecting: ("connecting…", .connecting)
+        case .failed(let failure): (failure.headline.lowercased(), .offline)
+        case .disconnected: ("disconnected", .offline)
+        }
+        return FleetMacRow(id: id.uuidString, hostID: id, title: name, detail: "\(host):\(port) · \(word)", state: state)
+    }
+}
+
 enum FleetMacRowState: Equatable {
     case thisMac, connected, connecting, offline
+}
+
+/// One row of Settings ▸ Fleet's Devices: a phone, an iPad or a Mac's app paired as a client.
+struct FleetDeviceRow: Identifiable, Equatable {
+    let id: UUID
+    let title: String
+    let kind: FleetDeviceKind
+    /// What it is, when it was paired and whether it is connected here.
+    let detail: String
+    let connected: Bool
+
+    static func rows(of snapshot: FleetSnapshot, locale: Locale = .current, calendar: Calendar = .current) -> [FleetDeviceRow] {
+        func date(_ milliseconds: Double) -> String {
+            Date(timeIntervalSince1970: milliseconds / 1000).formatted(Date.FormatStyle(locale: locale, calendar: calendar).month(.abbreviated).day())
+        }
+        func time(_ milliseconds: Double) -> String {
+            Date(timeIntervalSince1970: milliseconds / 1000).formatted(Date.FormatStyle(locale: locale, calendar: calendar).hour().minute())
+        }
+        return (snapshot.devices?.devices ?? []).map { device in
+            let kind = switch device.kind {
+            case .iphone: "iPhone"
+            case .ipad: "iPad"
+            case .macApp: "Mac"
+            }
+            let seen = device.connected ? "connected here" : device.lastSeen.map { "last seen \(time($0))" } ?? "not connected yet"
+            return FleetDeviceRow(id: device.deviceID, title: device.name, kind: device.kind,
+                                  detail: "\(kind) · paired \(date(device.pairedAt)) · \(seen)", connected: device.connected)
+        }
+    }
 }
 
 /// Settings ▸ Fleet: this Mac's fleet as its host reports it (`FleetService`), the Macs Bonjour
@@ -70,6 +112,14 @@ final class FleetSettingsModel {
         case closed
     }
 
+    /// How an Add a device screen ended.
+    enum DeviceCodeEnd: Equatable {
+        /// A device paired with this Mac: its name.
+        case added(String)
+        /// The window closed with nobody.
+        case closed
+    }
+
     enum Pairing: Equatable {
         case idle
         case working
@@ -77,8 +127,10 @@ final class FleetSettingsModel {
     }
 
     /// The host's fleet: this Mac, the Macs it is paired with and each link. Empty (not enabled)
-    /// until the host answers, and while Fleet is off.
+    /// until the host answers, and while Fleet is off (its devices and port are still read then).
     var snapshot = FleetSnapshot()
+    /// The host answered with its devices: Add a device and the list work (Fleet on or off).
+    var devicesReady = false
     /// This Mac and each Mac it is paired with, as Settings lists them.
     var rows: [FleetMacRow] = []
     /// The host has answered at least once since Fleet was switched on.
@@ -91,9 +143,18 @@ final class FleetSettingsModel {
     var pairing: Pairing = .idle
     /// The last thing that failed on the page, said under the Macs.
     var problem: String?
+    /// The phones, iPads and Mac apps paired as clients, as Settings lists them.
+    var deviceRows: [FleetDeviceRow] = []
+    /// The code this Mac shows while its Add a device screen is open.
+    var deviceCode: Join?
+    var deviceCodeEnd: DeviceCodeEnd?
+    /// The last thing that failed on the Devices, said under them.
+    var deviceProblem: String?
 
     /// This Mac's host, over its local socket; throws while it is away.
     @ObservationIgnored var host: () throws -> RemoteHostClient? = { nil }
+    /// Pairs this app as a device of a Mac that is not in its fleet (Fleet off): the app does it, not its host.
+    @ObservationIgnored var pairClient: (String, UInt16, String) async throws -> Void = { _, _, _ in }
     /// Starts finding Macs; the answer stops it. Replaced by a fixture in tests.
     @ObservationIgnored var browse: @MainActor (@escaping @Sendable ([FoundMac]) -> Void) -> () -> Void = { _ in {} }
     /// Every snapshot the host answered with, for the Fleet page (`FleetPageModel`).
@@ -103,6 +164,7 @@ final class FleetSettingsModel {
     @ObservationIgnored private var stopBrowsing: (() -> Void)?
     @ObservationIgnored private var everyFound: [FoundMac] = []
     @ObservationIgnored private var joinBaseline: Set<UUID> = []
+    @ObservationIgnored private var deviceBaseline: Set<UUID> = []
     @ObservationIgnored private var adopting: Set<UUID> = []
     @ObservationIgnored private var notFleet: Set<UUID> = []
 
@@ -124,15 +186,24 @@ final class FleetSettingsModel {
     private func apply(_ result: FleetResult) {
         if result.snapshot != snapshot {
             snapshot = result.snapshot
-            rows = FleetMacRow.rows(of: result.snapshot)
+            rows = result.snapshot.enabled ? FleetMacRow.rows(of: result.snapshot) : []
+            let devices = FleetDeviceRow.rows(of: result.snapshot)
+            if devices != deviceRows { deviceRows = devices }
         }
         loaded = result.snapshot.enabled
         onSnapshot?(result.snapshot)
+        devicesReady = result.snapshot.devices != nil
         if join != nil, result.snapshot.join == nil {
             // The window is closed: a Mac paired (it is in the list now) or it ran out.
             let joined = result.snapshot.peers.first { !joinBaseline.contains($0.hostID) }
             join = nil
             joinEnd = joined.map { .joined($0.name) } ?? .closed
+        }
+        if deviceCode != nil, result.snapshot.devices?.code == nil {
+            // The window is closed: a device paired (it is in the list now) or it ran out.
+            let added = deviceRows.first { !deviceBaseline.contains($0.id) }
+            deviceCode = nil
+            deviceCodeEnd = added.map { .added($0.title) } ?? .closed
         }
         filterFound()
     }
@@ -160,6 +231,63 @@ final class FleetSettingsModel {
     func stopJoin() async {
         guard let client = try? host() else { return }
         if let result = try? await client.fleetAction(.stopJoin) { apply(result) }
+    }
+
+    // MARK: Devices: this Mac shows a code a phone or iPad enters
+
+    /// Opens the code window of Add a device on the host and shows its code.
+    func startDeviceCode() async {
+        do {
+            guard let client = try host() else { return }
+            deviceCodeEnd = nil
+            deviceCode = nil
+            let result = try await client.fleetAction(.startDeviceCode)
+            deviceBaseline = Set(FleetDeviceRow.rows(of: result.snapshot).map(\.id))
+            apply(result)
+            if let opened = result.deviceCode {
+                deviceCode = Join(code: opened.code, expiresAt: Date(timeIntervalSince1970: opened.expiresAt / 1000))
+            }
+        } catch {
+            deviceProblem = Self.words(error)
+        }
+    }
+
+    /// The Add a device screen closed: so does the window, and its code stops working.
+    func stopDeviceCode() async {
+        guard let client = try? host() else { return }
+        if let result = try? await client.fleetAction(.stopDeviceCode) { apply(result) }
+    }
+
+    /// Revokes a device here and on every Mac in the fleet: its connections end and its token is refused.
+    func revokeDevice(_ id: UUID) async {
+        await deviceAction(.revokeDevice(id))
+    }
+
+    /// Stops accepting the shared token. The host refuses while a device that used it hasn't switched.
+    func retireSharedToken() async {
+        await deviceAction(.retireSharedToken)
+    }
+
+    /// Stops waiting for a client that connected with the shared token and may never come back.
+    func forgetWaiting(_ id: String) async {
+        await deviceAction(.forgetLegacyClient(id))
+    }
+
+    private func deviceAction(_ action: FleetAction) async {
+        do {
+            guard let client = try host() else { return }
+            apply(try await client.fleetAction(action))
+            deviceProblem = nil
+        } catch {
+            deviceProblem = Self.words(error)
+        }
+    }
+
+    /// A token for this Mac's app to reach the other Macs of the fleet with, made by the host; nil while it is away.
+    func enrollApp(name: String) async -> String? {
+        guard let client = try? host(), let result = try? await client.fleetAction(.enrollApp(name: name)) else { return nil }
+        apply(result)
+        return result.appToken
     }
 
     // MARK: Adding: another Mac's code is entered here
@@ -198,6 +326,20 @@ final class FleetSettingsModel {
         do {
             guard let client = try host() else { pairing = .failed("Shepherd's background service isn't answering."); return false }
             apply(try await client.fleetAction(.pair(host: address, port: port, code: code)))
+            pairing = .idle
+            return true
+        } catch {
+            pairing = .failed(Self.words(error))
+            return false
+        }
+    }
+
+    /// Enters `code` on `mac` and adds it as a Mac this app is a client of (Fleet off). True when it did.
+    func pairAsClient(with mac: FoundMac, code: String) async -> Bool {
+        guard let address = mac.address, let port = mac.port else { return false }
+        pairing = .working
+        do {
+            try await pairClient(address, port, code)
             pairing = .idle
             return true
         } catch {

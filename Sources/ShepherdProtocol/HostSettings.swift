@@ -119,7 +119,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
     public var backgroundService: Bool?
     /// Serve this Mac: the port the host's listener is bound to, nil when it isn't. Older hosts omit it.
     public var listenerPort: UInt16?
-    /// Why the host's listener couldn't start: a sentence for Settings ▸ Remote and the technical reason.
+    /// Why the host's listener couldn't start: a sentence for Settings ▸ Fleet and the technical reason.
     public var listenerProblem: String?
     public var listenerProblemDetail: String?
 
