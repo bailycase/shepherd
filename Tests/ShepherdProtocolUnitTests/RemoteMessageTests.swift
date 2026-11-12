@@ -48,6 +48,9 @@ enum RemoteSamples {
                                  change: .blob(hash: String(repeating: "cd", count: 32), size: 424), seed: true, macName: "MacBook Pro")
     static let fleetSettingOp = FleetOp(mac: fleetHost, seq: 4, hlc: FleetHLC(wallMs: 1_790_000_000_200), unit: "setting:host.defaultModel",
                                         change: .value("\"acme/model\""))
+    /// A sign-in, as the fleet carries it: inline, pi's own JSON for one provider (a made up token).
+    static let fleetCredentialOp = FleetOp(mac: fleetHost, seq: 5, hlc: FleetHLC(wallMs: 1_790_000_000_300), unit: "credential:acme-ai",
+                                           change: .value(#"{"access":"fake-access","expires":1790003600000,"refresh":"fake-refresh","type":"oauth"}"#))
     static let fleetVector = FleetVersionVector([fleetHost: 4, UUID(uuidString: "00000000-0000-0000-0000-0000000000F2")!: 9])
 
     static let commitFile = RemoteCommitFile(path: "App/iOS/FleetView.swift", status: "M", added: 9, removed: 7, fingerprint: "f1")
@@ -469,6 +472,8 @@ struct RemoteRequestTests {
         .fleetIntroduce(id: 74, introduction: FleetIntroduce(member: RemoteSamples.fleetMember, theirTokenHash: RemoteSamples.fleetHash)),
         .fleetRevoke(id: 75, hostID: RemoteSamples.fleetHost, at: 1_790_000_000_123),
         .fleetSync(id: 82, request: .hello(vector: RemoteSamples.fleetVector)),
+        .fleetSync(id: 86, request: .hello(vector: RemoteSamples.fleetVector, fresh: true)),
+        .fleetSync(id: 87, request: .op(RemoteSamples.fleetCredentialOp)),
         .fleetSync(id: 83, request: .ops([RemoteSamples.fleetOp, RemoteSamples.fleetSettingOp])),
         .fleetSync(id: 84, request: .op(RemoteSamples.fleetSettingOp)),
         .fleetSync(id: 85, request: .blob(hash: String(repeating: "cd", count: 32), offset: 262_144)),
