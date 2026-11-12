@@ -3,11 +3,15 @@
 // reported to the Shepherd extension socket as a newline-delimited JSON
 // setAgentName message. Three sources, cheapest first:
 //   1. pi's own session name (/name here or on another system) — free.
-//   2. For a provisional agent (SHEPHERD_NEEDS_NAME=1), one LLM call when its
-//      first run ends, on the opening prompt plus the agent's last reply (the
-//      reply says which feature, file or bug the work turned out to be): a
-//      single tool call (not structured JSON output) on the cheapest authed
-//      model, with the agent's own model as the last resort.
+//   2. For a provisional agent (SHEPHERD_NEEDS_NAME=1), one LLM call when a run
+//      settles (agent_settled: no retry or continuation left), on the opening
+//      prompt plus the agent's last reply (the reply says which feature, file
+//      or bug the work turned out to be): a single tool call (not structured
+//      JSON output) on the cheapest authed model, with the agent's own model
+//      as the last resort. A run whose last reply failed (a model outage)
+//      names nothing and the prompt stays for the next settled run; a call that
+//      produces no title is tried again after the next one, up to
+//      MAX_NAMING_TRIES per pi, one in flight.
 //   3. On /resume into an unnamed conversation, the same single call on that
 //      conversation's first user message and last reply — once per session id,
 //      and never on a plain relaunch (reason "startup"), so restarts cost nothing.
@@ -29,6 +33,7 @@ const DEFAULT_TEXT_GENERATION_MODELS = [
 ];
 
 const MAX_TITLE_LENGTH = 60;
+const MAX_NAMING_TRIES = 3;
 const PROMPT_BUDGET = 4000;
 const REPLY_BUDGET = 2000;
 // Other threads' names, so a new title doesn't repeat one. Best effort: a slow
@@ -372,9 +377,12 @@ export default function shepherdNamer(pi: ExtensionAPI) {
     if (title) report(title);
   });
 
-  // The opening prompt is the durable objective; hold it until the first run
-  // ends so the agent's reply can say what the work is about. Once per process.
+  // The opening prompt is the durable objective; hold it until a run settles
+  // so the agent's reply can say what the work is about. Captured once per
+  // process; kept until it names the thread or the tries run out.
   let opening: { prompt: string; origin: string; epoch: number } | undefined;
+  let namingTries = 0;
+  let naming = false;
   pi.on("before_agent_start", (event) => {
     if (!wanted || done) return;
     const prompt = (event.prompt ?? "").trim();
@@ -383,25 +391,44 @@ export default function shepherdNamer(pi: ExtensionAPI) {
     opening = { prompt, origin: sessionID, epoch: generation };
   });
 
-  pi.on("agent_end", (event, ctx) => {
+  // agent_end also fires for an attempt pi is about to retry; agent_settled
+  // fires once nothing more will run, so a model outage in the first turn
+  // does not spend the one chance to name the thread.
+  pi.on("agent_settled", (_event, ctx) => {
     const pending = opening;
-    opening = undefined;
+    if (!pending || naming) return;
     // A /new or /resume during the run makes the title moot: skip the call.
-    if (!pending || pending.origin !== sessionID || pending.epoch !== generation) return;
+    if (pending.origin !== sessionID || pending.epoch !== generation) {
+      opening = undefined;
+      return;
+    }
     let reply: string | undefined;
     try {
-      reply = lastAssistantText(event.messages);
+      const messages = ctx.sessionManager.getEntries()
+        .filter((entry) => entry.type === "message")
+        .map((entry) => entry.message);
+      // The run's last word was an error: a title from it would name the outage.
+      if (messages.findLast((m) => m?.role === "assistant")?.stopReason === "error") return;
+      reply = lastAssistantText(messages);
     } catch {
       // Swallow; the prompt alone still names it.
     }
 
+    namingTries++;
+    naming = true;
     // Detached on purpose: naming must never delay what comes after the run.
     void (async () => {
       try {
         const title = await generate(pending.prompt, reply, ctx);
-        if (title) report(title, pending.origin, pending.epoch);
+        if (title) {
+          opening = undefined;
+          report(title, pending.origin, pending.epoch);
+        }
       } catch {
         // Swallow.
+      } finally {
+        naming = false;
+        if (namingTries >= MAX_NAMING_TRIES) opening = undefined;
       }
     })();
   });
