@@ -8,21 +8,12 @@ struct PushPayload: Codable, Hashable, Sendable {
     let agentID: String
     let eventID: String
     let kind: String
-    /// A `review` push: the mission and exactly what Approve publishes.
-    var mission: Mission?
 
     /// Where a tap or an action goes; not part of the push.
     var destination = Destination.thread
-    /// `mission`: the mission a blocked push stacks under (its `mission:<id>` thread identifier);
     /// `automation`: the automation a run that never started names (`automation:<id>`).
-    enum Destination: Hashable, Sendable { case thread, changes, missionReview, mission(String), automation(String) }
-    private enum CodingKeys: String, CodingKey { case hostID, agentID, eventID, kind, mission }
-
-    struct Mission: Codable, Hashable, Sendable {
-        let id: String
-        let revision: UInt64
-        let fingerprint: String
-    }
+    enum Destination: Hashable, Sendable { case thread, changes, automation(String) }
+    private enum CodingKeys: String, CodingKey { case hostID, agentID, eventID, kind }
 
     /// Parses from the raw userInfo dictionary APNs delivers.
     static func from(_ userInfo: [AnyHashable: Any]) -> PushPayload? {

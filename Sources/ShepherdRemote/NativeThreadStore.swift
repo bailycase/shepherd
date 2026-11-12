@@ -1341,8 +1341,8 @@ public final class NativeThreadStore {
     // The view's foreground task owns this loop, while the thread is on screen. Only an
     // explicit, unchanged connection epoch can reuse a ready snapshot across visibility flips.
     /// `preview` is read alongside the first pull while the thread has nothing to show yet.
-    /// `owner`: the view whose loop this is. Several views can show one agent's store (a hidden deck thread
-    /// and a Mission station's): the newest one's loop runs, and only that owner's `suspend(owner:)` or
+    /// `owner`: the view whose loop this is. Several views can show one agent's store: the newest
+    /// one's loop runs, and only that owner's `suspend(owner:)` or
     /// `stop(owner:)` ends it. `connection` must identify one validated transport epoch; nil or a
     /// changed token always bootstraps fresh, while visibility-only resumes may reuse a revision.
     public func run(request: @escaping Request, preview: Preview? = nil, owner: UUID? = nil, connection: AnyHashable? = nil) async {

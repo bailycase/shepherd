@@ -8,9 +8,8 @@ import Testing
 @testable import ShepherdApp
 
 /// A client changing this Mac's Settings over the listener, through the view model's real
-/// handlers: the Experiments switches (Design tool while it is off, Missions under a live mission)
-/// and the configuration a client edits (an MCP server with a secret, a subagent profile fenced by
-/// its fingerprint).
+/// handlers: the Experiments switches (the Design tool while it is off) and the configuration a
+/// client edits (an MCP server with a secret, a subagent profile fenced by its fingerprint).
 @Suite("Remote host configuration", .integrationTimeLimit)
 @MainActor
 struct RemoteHostConfigFlowTests {
@@ -23,14 +22,10 @@ struct RemoteHostConfigFlowTests {
         return client
     }
 
-    @Test func aClientTurnsTheDesignToolOnWhileItIsOffAndCantTurnMissionsOffUnderALiveMission() async throws {
+    @Test func aClientTurnsTheDesignToolOnWhileItIsOff() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         try await app.start()
-        let mission = try await app.server.createMission(draft: MissionDraft(title: "Ship", goal: "Ship it."))
-        _ = try await app.server.setMissionRun(id: mission.id, expectedRevision: mission.revision,
-                                               run: MissionRun(model: "anthropic/claude", phase: .planning))
-        try await eventuallyOnMain("the mission to plan") { app.vm.state.missions.first?.run?.phase == .planning }
         let client = try await Self.connect(app)
         defer { client.disconnect() }
 
@@ -38,19 +33,10 @@ struct RemoteHostConfigFlowTests {
         #expect(client.capabilities.contains(RemoteProtocol.designToolExperimentCapability))
         #expect(!client.capabilities.contains(RemoteProtocol.designsCapability))
         let fetched = try await client.hostSettings()
-        #expect(!fetched.designToolEnabled && fetched.missionsActive)
+        #expect(!fetched.designToolEnabled)
         #expect(try await client.hostSettings(.change(.designToolEnabled(true))).designToolEnabled)
         #expect(app.settings.designToolEnabled)
         try await eventuallyOnMain("the host to offer designs") { client.capabilities.contains(RemoteProtocol.designsCapability) }
-
-        #expect(try await client.hostSettings(.change(.missionsEnabled(true))).missionsEnabled)
-        do {
-            try await client.hostSettings(.change(.missionsEnabled(false)))
-            Issue.record("Missions went off under a live mission")
-        } catch RemoteHostClientError.rejected(let code, let message) {
-            #expect(code == "settings_failed" && message == HostSettingsMapping.missionsLocked)
-        }
-        #expect(app.settings.missionsEnabled, "the host kept Missions on")
 
         // hostSettings.v2 reaches the Mac's own settings.
         let defaults = HostSettings.SubagentDefaults(concurrency: 3, model: "openai/gpt-5-mini", thinking: .low, context: .fork)

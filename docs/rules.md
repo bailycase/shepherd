@@ -182,20 +182,7 @@ Project workers still draw over the deck and rebuild when shown.
 
 Worktree add (`GitWorktree.swift`), Delete Worktree Agent (confirmed), per-file Revert in the Changes pane (confirmed),
 Commit from review (`ReviewCommit.swift`: only the ticked files, refuses a dirty HEAD state, never
-force-pushes), Mission PR publication (`MissionController+Review.swift`: explicit approval binds the
-validation contract and worktree contents; commits through `ReviewCommit.swift`, pushes the exact
-approved commit and creates or reuses its PR; never merges, tags, deploys or force-pushes), the Mission
-merge train (`MissionController+Train.swift`: only after publication, on the owner's Start with the order and rules
-it showed, from the Mac or a paired device over `missions.v1`; one PR at a time through the owner's gh:
-`pr update-branch` (a merge of the base, never a rebase), `pr merge --merge`, and `pr revert` only under the
-red-CI rule; under the lockfile rule a merge of the base in the mission's own worktree, the lockfile's
-regeneration command, a commit and a plain push of the mission branch; the owner's own staging and health
-commands in that worktree; a restart leaves it paused), Mission
-Spec Kit setup (the owner's click runs stock `specify init` or `specify integration` in the mission's own
-worktree; that approval and publication's may come from a paired device over the authenticated
-`missions.v1` connection, carrying the exact review or consent fingerprint the device showed, never
-defaulted on the host) and its per-turn worktree snapshots (a private copy of the index; only objects are written),
-a shared design's own repository under `<designs>/.git/<id>/`, the Changes engine's
+force-pushes), a shared design's own repository under `<designs>/.git/<id>/`, the Changes engine's
 snapshots (its own index file; the user's index, tree, HEAD, refs and stash are never written),
 Undo and Redo of a turn (the turn's own files only: what changed while it ran, less what Shepherd wrote for the person; while another agent's turn ran in the same working tree, another agent's edit, write or subagent landed in it, or the person ran a branch action or a commit in it, only the files its own edit and write calls (and its own subagents) named and no other call or subagent named; refused when any changed since), Save in the Files
 tab (`FileTreeModel.save`: the person's Save, Save chord or Overwrite; one existing local text file inside

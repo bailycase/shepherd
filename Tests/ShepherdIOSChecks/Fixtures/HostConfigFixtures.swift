@@ -24,16 +24,14 @@ extension FixtureCatalog {
 }
 
 extension FixtureData {
-    /// Studio as a current Shepherd: Goals and Missions on with a mission running, the Design tool
-    /// off, Subagent defaults set, and an inventory of servers, profiles and accounts.
+    /// Studio as a current Shepherd: Goals on, the Design tool off, Subagent defaults set, and
+    /// an inventory of servers, profiles and accounts.
     static func configuredHosts() -> [FixtureHostData] {
         hosts().map { host in
             var host = host
             guard host.id == studio else { return host }
             var settings = hostSettings()
             settings.goalsEnabled = true
-            settings.missionsEnabled = true
-            settings.missionsActive = true
             settings.subagentDefaults = HostSettings.SubagentDefaults(concurrency: 6, model: "anthropic/claude-sonnet", thinking: .low, context: .fork)
             host.hostSettings = settings
             host.reply = { request in

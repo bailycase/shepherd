@@ -47,8 +47,7 @@ final class PreviewWorkspace {
 
     /// The host's services on the scratch server, once `seed` served them.
     private(set) var host: ShepherdHost.Services?
-    /// Missions and the Project runtime the host runs, once `seed` served them.
-    var missions: MissionController { host!.runtime!.missions }
+    /// The Project runtime the host runs, once `seed` served it.
     var coordinator: ProjectCoordinatorController { host!.runtime!.coordinator }
 
     /// Replaces the server's workspace and waits for the view model to adopt it.

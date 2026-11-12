@@ -223,19 +223,6 @@
     },
     {
       "tools": [
-        "shepherd_mission"
-      ],
-      "group": "subagents",
-      "extension": "shepherd-children.ts",
-      "verdicts": {
-        "thread": "drop",
-        "automation": "drop",
-        "design": "drop"
-      },
-      "reason": "Missions are deferred and no screen shows them, so the model gets no mission tool or parameter and no record is written for a run (dropped now; SHEPHERD_MISSIONS=1 brings it back)."
-    },
-    {
-      "tools": [
         "browser_open",
         "browser_read",
         "browser_click",

@@ -423,7 +423,7 @@ public enum GitWorktree {
         environment["GIT_TERMINAL_PROMPT"] = "0"
         let result: BoundedCommand.Result
         do {
-            // Bounded so a cancelled mission or app quit can stop it; generous because a big repository's
+            // Bounded so cancellation or app quit can stop it; generous because a big repository's
             // `worktree add` or status legitimately takes minutes and was never cut short before.
             result = try BoundedCommand.run(["/usr/bin/git"] + arguments, environment: environment, timeout: timeout ?? 600)
         } catch {

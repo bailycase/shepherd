@@ -51,16 +51,12 @@ final class PushRouter {
         return true
     }
 
-    /// The screen a push opens: its thread, that thread's Changes, or its mission's review.
+    /// The screen a push opens: its thread or that thread's Changes.
     static func route(_ payload: PushPayload) -> MobileRoute? {
         guard let ref = payload.agentRef else { return nil }
         switch payload.destination {
         case .thread: return .thread(ref)
         case .changes: return .review(.changes(ref, file: nil))
-        case .missionReview:
-            guard let mission = payload.mission else { return .thread(ref) }
-            return .missions(.review(host: ref.host, mission: MissionID(rawValue: mission.id)))
-        case .mission(let id): return .missions(.mission(host: ref.host, mission: MissionID(rawValue: id)))
         case .automation(let id): return .automations(.detail(host: ref.host, automation: AutomationID(rawValue: id)))
         }
     }

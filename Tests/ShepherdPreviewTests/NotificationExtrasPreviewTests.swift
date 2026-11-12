@@ -52,38 +52,28 @@ struct NotificationExtrasPreviewTests {
         }
     }
 
-    /// A blocked mission's push opened with a long press (NotifPhoneRich): the preview from real `PushDetail`, then
-    /// the buttons `PushButtons.actions` gives a stuck lane, and Retry with hint's text field once tapped.
-    @Test func retryWithHint() async throws {
-        let detail = try PushPreviewTests.wire(PushDetail.blocked(PushPreviewTests.stuck()))
-        try await Preview.render("push-retry-hint", size: CGSize(width: 900, height: 760)) {
-            HStack(alignment: .top, spacing: SH.Space.xxl) {
-                VStack(alignment: .leading, spacing: SH.Space.l) {
-                    SHPushPreview(title: "Checkout funnel events", subtitle: "Blocked", body: nil, date: Date(), detail: detail)
-                        .frame(width: 370)
-                        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    menu {
-                        item("Retry with hint", "arrow.clockwise")
-                        Divider()
-                        item("Open mission", "chevron.right")
-                    }
-                }
-                VStack(alignment: .leading, spacing: SH.Space.s) {
-                    Text("Retry with hint").font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
-                    HStack {
-                        Text("A hint for \(detail?.stuck?.lane ?? "")").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
-                        Spacer()
-                        Text("Retry").font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.lanternText)
-                    }
-                    .padding(SH.Space.m)
-                    .frame(width: 340)
-                    .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.l, style: .continuous))
+    /// A question push opened with a long press (NotifPhoneRich): the preview from real `PushDetail`, then
+    /// the buttons `PushButtons.actions` gives it (each option, Reply…, Open).
+    @Test func questionOptions() async throws {
+        let detail = try PushPreviewTests.wire(PushDetail.question(options: ["checkout_id", "order_id"]))
+        try await Preview.render("push-question", size: CGSize(width: 500, height: 520)) {
+            VStack(alignment: .leading, spacing: SH.Space.l) {
+                SHPushPreview(title: "Refunds in the ledger", subtitle: "Question",
+                              body: "Which key joins a refund to the funnel?", date: Date(), detail: detail)
+                    .frame(width: 370)
+                    .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                menu {
+                    item("checkout_id")
+                    item("order_id")
+                    Divider()
+                    item("Reply…")
+                    item("Open", "chevron.right")
                 }
             }
             .padding(SH.Space.xxl)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color.sh.bgBase)
         }
-        #expect(detail?.stuck?.count == 3)
+        #expect(detail?.options == ["checkout_id", "order_id"])
     }
 }

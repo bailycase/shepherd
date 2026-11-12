@@ -121,14 +121,11 @@ final class RemoteHostStore {
         /// The host's designs (`designs.v1`, while its Design tool is on): its listing and each
         /// design's files, fetched by hash into the store's cache.
         let designs: RemoteDesignLibrary
-        /// The host's missions (`missions.v1`, while its Missions experiment is on).
-        let missions: RemoteMissions
 
         init(config: HostConfig, designCache: RemoteDesignCache = RemoteDesignCache()) {
             self.config = config
             self.id = config.id
             designs = RemoteDesignLibrary(hostID: config.id, cache: designCache)
-            missions = RemoteMissions(hostID: config.id)
         }
 
         /// Takes a push that a newer one is queued behind and the app leaves unadopted. `state` holds it at once, so
@@ -138,13 +135,6 @@ final class RemoteHostStore {
             projects = false
             state = push
             projects = true
-        }
-
-        /// Points the host's missions at `client` (nil: disconnected) and reads them when it offers them.
-        fileprivate func connectMissions(_ client: RemoteHostClient?) {
-            let available = client?.capabilities.contains(RemoteProtocol.missionsCapability) == true
-            missions.connect(client.map { client in { try await client.mission($0) } }, available: available)
-            if available { Task { await missions.refresh() } }
         }
 
         /// The host serves designs now (observed: it can change while connected).
@@ -451,7 +441,6 @@ final class RemoteHostStore {
         connection.client?.disconnect()
         connection.client = nil
         connection.designs.connect(nil, available: false)
-        connection.connectMissions(nil)
         for pane in connection.panes.values {
             pane.phase = .failed("host removed")
         }
@@ -472,7 +461,6 @@ final class RemoteHostStore {
         let oldClient = connection.client
         connection.client = nil
         connection.designs.connect(nil, available: false)
-        connection.connectMissions(nil)
         oldClient?.disconnect()
         connection.reconnectDelay = .seconds(1)
         connect(connection)
@@ -527,7 +515,6 @@ final class RemoteHostStore {
                 self.threadHints.forget(connection.id)
                 self.sendThreadHints()
                 connection.designs.connect(client, available: client.capabilities.contains(RemoteProtocol.designsCapability))
-                connection.connectMissions(client)
                 connection.startChildRefresh(client: client, every: childRefreshInterval)
                 connection.reconnectDelay = .seconds(1)
                 if connection.isLocalHost, BackgroundHostClient.asksToDrain(appBuild: self.appBuild, hostBuild: client.hostBuild,
@@ -638,14 +625,6 @@ final class RemoteHostStore {
             connection.designs.systemsChanged()
             if connection.isLocalHost { self?.onLocalDesignSystemsChanged?() }
         }
-        client.onMissionChanged = { [weak connection] mission, revision in
-            guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
-            connection.missions.changed(mission, revision: revision)
-        }
-        client.onMissionLive = { [weak connection] mission, live in
-            guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
-            connection.missions.liveChanged(mission, live)
-        }
         client.onNativeThreadChanged = { [weak self, weak connection] agent in
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onNativeThreadChanged?(RemoteAgentRef(hostID: connection.id, agentID: agent))
@@ -666,7 +645,6 @@ final class RemoteHostStore {
         client.onCapabilitiesChanged = { [weak self, weak connection, weak client] capabilities in
             guard let connection, let client, connection.client === client, connection.phase == .connected else { return }
             connection.designs.connect(client, available: capabilities.contains(RemoteProtocol.designsCapability))
-            connection.connectMissions(client)
             self?.onProjectionChanged?()
         }
         client.onDisconnected = { [weak self, weak connection] reason in
@@ -675,7 +653,6 @@ final class RemoteHostStore {
             connection.phase = .failed(RemoteHostFailure(disconnect: reason))
             connection.client = nil
             connection.designs.connect(nil, available: false)
-            connection.connectMissions(nil)
             connection.stopChildRefresh()
             if connection.isLocalHost {
                 // This Mac's host keeps its terminals across a dropped link: each pane keeps its

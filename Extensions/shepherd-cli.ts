@@ -36,7 +36,7 @@ export function cliBudget(signal) {
 }
 
 export function cliRelayAllowed(name) {
-  return !/^(?:shepherd_(?:child_|workflow$|parent_message$|mission$)|subagent$|agent_|automation_|browser_|codemode$|tool_search$|comment_reply$|markup_propose$|checkpoint_restore$)/.test(name);
+  return !/^(?:shepherd_(?:child_|workflow$|parent_message$)|subagent$|agent_|automation_|browser_|codemode$|tool_search$|comment_reply$|markup_propose$|checkpoint_restore$)/.test(name);
 }
 
 export async function expandCliPrompt(text, ctx) {

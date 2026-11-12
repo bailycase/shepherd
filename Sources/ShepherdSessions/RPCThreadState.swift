@@ -517,10 +517,6 @@ final class RPCThreadState {
     /// pi's own queue as its last `queue_update` had it.
     var piSteering: [String] = []
     var piFollowUp: [String] = []
-    /// Steers that belong to the run they were sent into (a Mission's): one pi has not read when that run
-    /// ends is dropped rather than queued for a later turn, and recorded in `undeliveredSteers`.
-    var oneShotSteers: [UUID: String] = [:]
-    var undeliveredSteers: Set<UUID> = []
     /// What a delete or a clear removed, for an undo.
     var deleted: [(item: QueueItem, index: Int)] = []
     /// Copies a send is granting that have not reached this thread yet: the server marks them in

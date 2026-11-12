@@ -4,7 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 
 // Settings ▸ Experiments on iPhone and iPad (MobileExperiments; home track): features still
-// being tried, each off until turned on. Goals, Projects, the Design tool and Missions are per-host
+// being tried, each off until turned on. Goals, Projects and the Design tool are per-host
 // switches, each where the host takes it (`HostSettingChange.capability`). Suggested instructions: agents
 // draft a line for the root instructions when they learn something the hard way, and nothing is
 // written until you add it. It spans every host (`suggestions.v1`): turning it on or choosing
@@ -153,7 +153,7 @@ private struct SuggestedInstructionsCard: View {
 }
 
 /// One host's switchable experiments, each shown only where the host takes its switch: Goals,
-/// Projects, the Design tool and Missions (locked on while a mission runs there).
+/// Projects and the Design tool.
 private struct HostExperiments: View {
     let host: SettingsHost
     let settings: HostSettings
@@ -178,14 +178,6 @@ private struct HostExperiments: View {
                                text: "Describe a page or flow and a design agent draws it as HTML boards on a canvas. Adds Designs to the host's sidebar and “Start a design” to New thread.") {
                 Image(systemName: "paintbrush.pointed")
             } toggle: { post(.designToolEnabled($0)) }
-        }
-        if host.serves(RemoteProtocol.missionsExperimentCapability) {
-            let locked = settings.missionsEnabled && settings.missionsActive
-            HostExperimentCard(title: "Missions", host: host.name, isOn: settings.missionsEnabled,
-                               text: "Describe an end state across your repositories; a planner maps it, agents do the work, and you publish the pull requests. Turning this off hides Missions and keeps your missions and files.",
-                               lockedNote: locked ? "Pause or stop running missions on \(host.name) before turning this off." : nil) {
-                Image(systemName: "flag.checkered")
-            } toggle: { post(.missionsEnabled($0)) }
         }
         SettingsFootnote("Changes apply on \(host.name) at once.")
     }

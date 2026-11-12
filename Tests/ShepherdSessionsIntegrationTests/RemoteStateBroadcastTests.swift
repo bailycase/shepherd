@@ -7,9 +7,9 @@ import ShepherdRemote
 import ShepherdTestSupport
 
 /// The workspace as a client that lists no capabilities is sent it: no designs, Project
-/// coordinators, executions or missions, and only the thinking levels it can decode.
+/// coordinators or executions, and only the thinking levels it can decode.
 private func view(_ state: ShepherdState) -> ShepherdState {
-    let shown = state.withoutDesigns.withoutProjectCoordinators.withoutProjectExecutions.withoutMissions
+    let shown = state.withoutDesigns.withoutProjectCoordinators.withoutProjectExecutions
     return shown.usesOnlyLegacyThinkingLevels ? shown : shown.legacyThinkingLevels()
 }
 

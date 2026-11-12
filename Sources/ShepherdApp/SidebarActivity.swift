@@ -11,9 +11,6 @@ enum SidebarActivitySection: String, CaseIterable, Hashable {
     case automations
     /// The new Projects (ProjectLead boards). Its rows are `SidebarLogicalProject`s, not thread rows.
     case projects
-    /// Missions, one row each. A mission's planner, worker and validator threads are its own and
-    /// never appear in the thread groups.
-    case missions
 
     var title: String {
         switch self {
@@ -25,7 +22,6 @@ enum SidebarActivitySection: String, CaseIterable, Hashable {
         case .designs: "Designs"
         case .automations: "Automations"
         case .projects: "Projects"
-        case .missions: "Missions"
         }
     }
 }
@@ -37,7 +33,6 @@ enum SidebarActivityItem: Identifiable, Equatable {
     /// An active automation in Automations; `expanded` is nil while it has no runs to fold.
     case automation(SidebarAutomation, expanded: Bool?)
     case project(SidebarLogicalProject)
-    case mission(SidebarMission)
     /// A pull request or issue pinned from Issues & PRs, in Pinned (PRSidebarPinned).
     case forgePin(SidebarForgePin)
 
@@ -47,44 +42,14 @@ enum SidebarActivityItem: Identifiable, Equatable {
         case .row(let row): AnyHashable(row.id)
         case .automation(let automation, _): AnyHashable(automation.key)
         case .project(let project): AnyHashable(project.ref)
-        case .mission(let mission): AnyHashable(mission.id)
         case .forgePin(let pin): AnyHashable(pin.ref)
         }
     }
 }
 
-/// A mission's sidebar row: its name, state dot and what it is doing or waiting on.
-struct SidebarMission: Equatable, Identifiable {
-    let mission: MissionID
-    let title: String
-    let state: AgentState
-    let word: String
-    let needsYou: Bool
-    var selected = false
-    /// The connected host it runs on; nil is This Mac.
-    var host: UUID? = nil
-    var id: String { "\(host?.uuidString ?? "local")/\(mission.rawValue)" }
-
-    /// Waiting on you first, then working, then the rest; newest first within each. A host's
-    /// missions name it after their word.
-    static func rows(_ missions: [Mission], selected: MissionID?, host: (id: UUID, name: String)? = nil) -> [SidebarMission] {
-        let rows = missions.reversed().map { mission in
-            let pill = mission.pill
-            let word = String(pill.label.lowercased().split(separator: " · ").first ?? "")
-            return SidebarMission(mission: mission.id, title: mission.draft.title.isEmpty ? mission.draft.goal : mission.draft.title,
-                                  // One short word, like a design's board count: amber already says it needs you.
-                                  state: pill.state, word: host.map { "\(word) · \($0.name)" } ?? word,
-                                  needsYou: pill.state == .attention,
-                                  selected: mission.id == selected, host: host?.id)
-        }
-        func rank(_ row: SidebarMission) -> Int { row.needsYou ? 0 : row.state == .running ? 1 : 2 }
-        return rows.enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
-    }
-}
-
 extension SidebarLists {
-    /// The user's order: Designs, Projects (and Missions), Automations, Needs you, Working, Done, Pinned, Recents.
-    /// Pinned is opt-in and follows Done. Projects and Missions are not thread rows; `items` places them right after
+    /// The user's order: Designs, Projects, Automations, Needs you, Working, Done, Pinned, Recents.
+    /// Pinned is opt-in and follows Done. Projects are not thread rows; `items` places them right after
     /// Designs, so thread status, attention and pins never move them. Automations' rows are its run threads, which
     /// `items` folds under `automationRows`.
     var sections: [(section: SidebarActivitySection, rows: [SidebarListRow])] {
@@ -104,7 +69,7 @@ extension SidebarLists {
 
     /// `selectedAutomation`: the automation the Automations page shows, marked on its row.
     func items(collapsed: Set<SidebarActivitySection>, openRunGroups: Set<String> = [], projects: [SidebarLogicalProject] = [],
-               showsProjects: Bool = true, missions: [SidebarMission] = [], showsMissions: Bool = false,
+               showsProjects: Bool = true,
                selectedAutomation: AutomationKey? = nil, forgePins: [SidebarForgePin] = []) -> [SidebarActivityItem] {
         func block(_ section: SidebarActivitySection, _ rows: [SidebarListRow]) -> [SidebarActivityItem] {
             guard !rows.isEmpty else { return [] }
@@ -128,7 +93,6 @@ extension SidebarLists {
             // Projects follow Designs and sit above every thread group, whether or not there are any: the header and its
             // New project chip are the way to make the first one.
             if section == .designs, showsProjects { items += projectBlock(projects, collapsed: collapsed) }
-            if section == .designs, showsMissions { items += missionBlock(missions, collapsed: collapsed) }
         }
         return items
     }
@@ -150,13 +114,6 @@ extension SidebarLists {
         return items
     }
 
-    /// Missions sit with Projects, above every thread group: the header (and its New mission) even before
-    /// the first one, as Projects'.
-    private func missionBlock(_ missions: [SidebarMission], collapsed: Set<SidebarActivitySection>) -> [SidebarActivityItem] {
-        let folded = collapsed.contains(.missions)
-        return [.header(.missions, count: missions.count, collapsed: folded)] + (folded ? [] : missions.map(SidebarActivityItem.mission))
-    }
-
     private func projectBlock(_ projects: [SidebarLogicalProject], collapsed: Set<SidebarActivitySection>) -> [SidebarActivityItem] {
         let folded = collapsed.contains(.projects)
         return [.header(.projects, count: projects.count, collapsed: folded)] + (folded ? [] : projects.map(SidebarActivityItem.project))
@@ -168,7 +125,6 @@ extension ShepherdViewModel {
     var sidebarActivityItems: [SidebarActivityItem] {
         presentedSidebarLists.items(collapsed: collapsedActivitySections, openRunGroups: collapsedProjects,
                                     projects: sidebarLogicalProjects, showsProjects: projectsEnabled,
-                                    missions: sidebarMissions, showsMissions: settings.missionsEnabled,
                                     selectedAutomation: shownDestination == .automations ? automationsPageSelection : nil,
                                     forgePins: sidebarForgePins)
     }
@@ -178,61 +134,6 @@ extension ShepherdViewModel {
         guard let sidebar = forgeStore.sidebar else { return [] }
         let viewer = forgeStore.lists.values.lazy.compactMap(\.viewer).first
         return sidebar.pins.map { SidebarForgePin($0, viewer: viewer) }
-    }
-
-    /// The Missions section's rows, shared by every sidebar style.
-    var sidebarMissions: [SidebarMission] {
-        // Hidden with the experiment; the missions and their receipts stay.
-        guard settings.missionsEnabled else { return [] }
-        let shown = shownDestination == .missions
-        let local = SidebarMission.rows(state.missions, selected: shown && missionsHost == nil ? thisMacMissionsSelection : nil)
-        // Each connected host's missions (`missions.v1`), in configured order, after This Mac's (the background host's among them).
-        return local + remoteHosts.connections.flatMap { connection in
-            SidebarMission.rows(connection.missions.records,
-                                selected: shown && missionsHost == connection.id ? remoteMissionDrivers[connection.id]?.selectedID : nil,
-                                host: (connection.id, connection.config.name))
-        }
-    }
-
-    /// This Mac's missions behind the Missions page: the background host's (it runs them); nil
-    /// until it is added.
-    var thisMacMissions: RemoteMissionDriver? { localHost.flatMap { missionDriver(for: $0.id) } }
-
-    /// The mission This Mac's page shows, read without making a driver while a view draws.
-    private var thisMacMissionsSelection: MissionID? {
-        localHost.flatMap { remoteMissionDrivers[$0.id]?.selectedID }
-    }
-
-    /// A host's missions behind the Missions page, made on first use; nil for a host that is gone.
-    func missionDriver(for host: UUID) -> RemoteMissionDriver? {
-        if let driver = remoteMissionDrivers[host] { return driver }
-        guard let connection = remoteHosts.allConnections.first(where: { $0.id == host }) else { return nil }
-        let driver = RemoteMissionDriver(connection: connection, vm: self)
-        remoteMissionDrivers[host] = driver
-        return driver
-    }
-
-    /// A mission's sidebar row: the Missions page on that mission, on This Mac or `host`.
-    func openMission(_ id: MissionID, host: UUID? = nil) {
-        guard settings.missionsEnabled else { return }
-        if let host {
-            guard let driver = missionDriver(for: host) else { return }
-            driver.selectedID = id
-        } else {
-            thisMacMissions?.selectedID = id
-        }
-        missionsHost = host
-        openDestination(.missions)
-    }
-
-    /// The Missions section's "New mission": the Missions page's start page, on This Mac.
-    func openNewMission() {
-        guard settings.missionsEnabled else { return }
-        guard let page = thisMacMissions else { return }
-        page.selectedID = nil
-        missionsHost = nil
-        page.startRequested = true
-        openDestination(.missions)
     }
 
     func toggleActivitySection(_ section: SidebarActivitySection) {
