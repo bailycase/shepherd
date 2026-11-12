@@ -65,7 +65,7 @@ struct FleetHostTag: View {
     var body: some View {
         let sh = Color.sh
         Text(FleetWherePicker.tagName(name))
-            .font(.shMono(10))
+            .font(.shMono(AppLayout.fleetTagFont))
             .foregroundStyle(sh.textSecondary)
             .lineLimit(1)
             .padding(.horizontal, SH.Space.xs)

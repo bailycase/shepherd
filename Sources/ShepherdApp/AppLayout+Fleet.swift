@@ -46,6 +46,8 @@ extension AppLayout {
     static let fleetWeightHeight: CGFloat = 24
     /// A repo tag.
     static let fleetTagHeight: CGFloat = 16
+    /// A Mac's tag ("mini") is mono 10 (FleetDispatch, FleetSidebar).
+    static let fleetTagFont: CGFloat = 10
     /// A card of a Mac that isn't answering fades.
     static let fleetAsleepOpacity: Double = 0.72
     /// The sidebar's Fleet row: 36pt tall, its glyph 16pt.

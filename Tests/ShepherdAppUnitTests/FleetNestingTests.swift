@@ -45,7 +45,7 @@ struct FleetNestingTests {
         // Newest first would put the dispatched thread on top; it sits right under its sender instead.
         #expect(built.working.map(\.title) == ["Migrate orders", "Speed up checkout CI", "Fix flaky payment test"])
         let nested = built.working.last
-        #expect(nested?.fleetNested == true && nested?.accessory == .tag("Mac mini"))
+        #expect(nested?.fleetNested == true && nested?.accessory == .tag("mini"))
         #expect(built.working.dropLast().allSatisfy { !$0.fleetNested })
     }
 
@@ -64,7 +64,7 @@ struct FleetNestingTests {
         let built = lists(local: [agent("Speed up checkout CI", .working, in: space, at: 10)], hosts: [host([gone, elsewhere, byYou])])
         #expect(built.working.count == 4)
         #expect(built.working.allSatisfy { !$0.fleetNested })
-        #expect(built.working.filter { $0.accessory == .tag("Mac mini") }.count == 3, "each keeps its Mac tag")
+        #expect(built.working.filter { $0.accessory == .tag("mini") }.count == 3, "each keeps its Mac tag")
     }
 
     @Test func aThreadInAnotherGroupThanItsSenderIsOrdinary() {

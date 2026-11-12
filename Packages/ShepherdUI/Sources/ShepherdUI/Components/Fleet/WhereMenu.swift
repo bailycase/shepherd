@@ -39,6 +39,8 @@ public enum SHFleetPlaceMetrics {
     static let roomColumn: CGFloat = 72
     static let gauge: CGFloat = 64
     static let gaugeHeight: CGFloat = 4
+    /// The room word under the gauge, in mono (FleetNewThread).
+    static let roomWordFont: CGFloat = 10
 }
 
 /// The popover: "Where it runs", a row each for Auto and every Mac, and a line about which Macs have the repository.
@@ -97,7 +99,7 @@ public struct SHFleetPlaceMenu: View {
                                 Capsule().fill(color(row.tone))
                                     .frame(width: SHFleetPlaceMetrics.gauge * max(0, min(1, row.room)), height: SHFleetPlaceMetrics.gaugeHeight)
                             }
-                        Text(row.roomWord).font(.shMono(10)).foregroundStyle(color(row.tone)).lineLimit(1)
+                        Text(row.roomWord).font(.shMono(SHFleetPlaceMetrics.roomWordFont)).foregroundStyle(color(row.tone)).lineLimit(1)
                     }
                     .frame(width: SHFleetPlaceMetrics.roomColumn, alignment: .trailing)
                 }
