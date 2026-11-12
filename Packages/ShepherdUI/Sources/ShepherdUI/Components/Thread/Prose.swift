@@ -113,6 +113,7 @@ public struct SHAgentProse<Code: View>: View {
             SHProseBlocks(blocks: blocks, code: code)
         }
         .frame(maxWidth: maxWidth, alignment: .leading)
+        .shProseLinks()
         .environment(\.shWritingFence, writingFence ? SHProseBlock.lastCodePath(blocks) : nil)
     }
 }
@@ -149,7 +150,6 @@ struct SHProseBlocks<Code: View>: View {
     @Environment(\.shProseTaskLinks) private var taskLinks
     @Environment(\.shProseFileRoot) private var fileRoot
     @Environment(\.shProseFileLinks) private var fileLinks
-    @Environment(\.openURL) private var openURL
 
     var body: some View {
         let sh = Color.sh
@@ -196,11 +196,6 @@ struct SHProseBlocks<Code: View>: View {
                 SHProseFootnotes(notes: notes)
             }
         }
-        .environment(\.openURL, OpenURLAction { url in
-            guard let destination = SHProseLink.destination(url, root: fileRoot) else { return .discarded }
-            openURL(destination)
-            return .handled
-        })
     }
 
     private func list(ordered: Bool, start: Int, items: [SHProseListItem], tone: Color, path: [Int]) -> some View {

@@ -437,6 +437,7 @@ public struct SHThinking: View {
                 .padding(.leading, SH.Space.l)
                 .overlay(alignment: .leading) { sh.lineStrong.frame(width: SHThreadMetrics.ruleWidth) }
                 .frame(maxWidth: SHThreadMetrics.proseMeasure, alignment: .leading)
+                .shProseLinks()
                 .shTransition(.disclosure)
             }
         }
