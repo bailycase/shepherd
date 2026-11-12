@@ -180,4 +180,16 @@ struct CodeHighlightTests {
         #expect(CodeHighlightCache.render(key, style: style, isCancelled: { true }) == nil)
         #expect(CodeHighlightCache.render(key, style: style, isCancelled: { false }) != nil)
     }
+
+    /// A fence is drawn again only when its code, language or writing flag changes: what it renders (colors, throttle) is
+    /// state, never an input.
+    @Test func aFenceIsComparedByItsCodeLanguageAndWritingFlag() {
+        let fence = HighlightedCodeBlock(code: "var a = 1", language: "go", writing: false)
+        #expect(fence == HighlightedCodeBlock(code: "var a = 1", language: "go", writing: false))
+        #expect(fence != HighlightedCodeBlock(code: "var a = 1\n", language: "go", writing: false))
+        #expect(fence != HighlightedCodeBlock(code: "var a = 1", language: "python", writing: false))
+        #expect(fence != HighlightedCodeBlock(code: "var a = 1", language: "go", writing: true))
+        #expect(SHCodeBlock("var a = 1", language: "go") == SHCodeBlock("var a = 1", language: "go"))
+        #expect(SHCodeBlock("var a = 1", language: "go") != SHCodeBlock("var a = 1", language: "go", highlighted: AttributedString("var a = 1")))
+    }
 }
