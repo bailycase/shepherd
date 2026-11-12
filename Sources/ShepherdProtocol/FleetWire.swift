@@ -160,6 +160,9 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
     public var advertising: Bool
     public var peers: [FleetPeerStatus]
     public var join: FleetJoinStatus?
+    /// This Mac and each peer with the last pressure sample and readiness report the host holds
+    /// (`FleetPressureWire.swift`); a Mac with nothing yet is absent.
+    public var macs: [FleetMacState]
     /// Where sync stands with each Mac (`FleetSyncStatus`); nil while this host doesn't sync.
     public var sync: FleetSyncStatus?
     /// Phones, iPads and Mac apps paired as clients, and the shared token's state; nil from a host without them.
@@ -167,7 +170,7 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
 
     public init(enabled: Bool = false, hostID: UUID? = nil, name: String = "", build: String? = nil, addresses: [String] = [],
                 port: UInt16? = nil, advertising: Bool = false, peers: [FleetPeerStatus] = [], join: FleetJoinStatus? = nil,
-                sync: FleetSyncStatus? = nil, devices: FleetDevicesSnapshot? = nil) {
+                sync: FleetSyncStatus? = nil, devices: FleetDevicesSnapshot? = nil, macs: [FleetMacState] = []) {
         self.devices = devices
         self.enabled = enabled
         self.hostID = hostID
@@ -178,7 +181,27 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         self.advertising = advertising
         self.peers = peers
         self.join = join
+        self.macs = macs
         self.sync = sync
+    }
+
+    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, advertising, peers, join, macs, devices, sync }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decode(Bool.self, forKey: .enabled)
+        hostID = try c.decodeIfPresent(UUID.self, forKey: .hostID)
+        name = try c.decode(String.self, forKey: .name)
+        build = try c.decodeIfPresent(String.self, forKey: .build)
+        addresses = try c.decode([String].self, forKey: .addresses)
+        port = try c.decodeIfPresent(UInt16.self, forKey: .port)
+        advertising = try c.decode(Bool.self, forKey: .advertising)
+        peers = try c.decode([FleetPeerStatus].self, forKey: .peers)
+        join = try c.decodeIfPresent(FleetJoinStatus.self, forKey: .join)
+        // A host from before pressure has none.
+        macs = try c.decodeIfPresent([FleetMacState].self, forKey: .macs) ?? []
+        devices = try c.decodeIfPresent(FleetDevicesSnapshot.self, forKey: .devices)
+        sync = try c.decodeIfPresent(FleetSyncStatus.self, forKey: .sync)
     }
 }
 
@@ -236,6 +259,11 @@ public enum FleetAction: Codable, Hashable, Sendable {
     case remove(hostID: UUID)
     /// Make these known hosts fleet peers where they can be (`FleetAdoption`).
     case adopt([FleetLegacyHost])
+    /// The Fleet page is on screen (true) or isn't (false): the host samples and pushes while it
+    /// is, and stops when the connection that said so closes.
+    case watching(Bool)
+    /// Try the link to this Mac again now, without waiting out its backoff.
+    case reconnect(hostID: UUID)
     /// Open the code window of Add a device and answer its code (`FleetResult.deviceCode`).
     case startDeviceCode
     /// Close it (the Add a device screen closed).
@@ -254,7 +282,7 @@ public enum FleetAction: Codable, Hashable, Sendable {
     public var isDeviceAction: Bool {
         switch self {
         case .startDeviceCode, .stopDeviceCode, .revokeDevice, .forgetLegacyClient, .retireSharedToken, .enrollApp: true
-        case .startJoin, .stopJoin, .pair, .remove, .adopt: false
+        case .startJoin, .stopJoin, .pair, .remove, .adopt, .watching, .reconnect: false
         }
     }
 }

@@ -154,3 +154,19 @@ struct FleetSyncWireTests {
         #expect(FleetHostSetting.named(unit: "setting:host.fleetEnabled") == nil && FleetHostSetting.named(unit: "setting:pi.theme") == nil)
     }
 }
+
+@Suite("Fleet weight units")
+struct FleetWeightUnitTests {
+    @Test func aWeightIsAUnitPerMacAndOnlyAWellFormedOneIsRead() {
+        let id = UUID()
+        let unit = FleetWeightSetting.unit(hostID: id)
+        #expect(unit == "setting:fleet.weight.\(id.uuidString)" && FleetWeightSetting.hostID(unit: unit) == id)
+        #expect(FleetWeightSetting.hostID(unit: "setting:fleet.weight.nope") == nil && FleetWeightSetting.hostID(unit: "setting:host.defaultModel") == nil)
+        var settings = HostSettings()
+        settings.fleetWeights[FleetSendWeight.settingKey(hostID: id)] = .lessOften
+        settings.fleetWeights["fleet.weight.junk"] = .prefer
+        #expect(FleetWeightSetting.values(in: settings) == [unit: "\"\(FleetSendWeight.lessOften.rawValue)\""])
+        #expect(FleetWeightSetting.change(hostID: id, fromJSON: "\"\(FleetSendWeight.lessOften.rawValue)\"") == .fleetWeight(hostID: id, weight: .lessOften))
+        #expect(FleetWeightSetting.change(hostID: id, fromJSON: "\"sideways\"") == nil)
+    }
+}

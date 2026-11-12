@@ -76,3 +76,32 @@ public enum FleetHostSetting: String, CaseIterable, Sendable {
         return (try? encoder.encode(value)).flatMap { String(data: $0, encoding: .utf8) } ?? "null"
     }
 }
+
+/// `setting:fleet.weight.<hostID>`: where Fleet sends work, per Mac (`FleetSendWeight`), the same on every
+/// Mac. One unit per Mac in the fleet, so the units are those of the weights a Mac holds and of the
+/// ones the store decided; the value is the weight's name as JSON.
+public enum FleetWeightSetting {
+    public static func unit(hostID: UUID) -> String { FleetUnit.setting(FleetSendWeight.settingKey(hostID: hostID)) }
+
+    /// The Mac a unit names the weight of; nil for any other unit.
+    public static func hostID(unit: String) -> UUID? {
+        guard FleetUnit.kind(of: unit) == "setting", let name = FleetUnit.name(of: unit), name.hasPrefix("fleet.weight.") else { return nil }
+        guard let id = UUID(uuidString: String(name.dropFirst("fleet.weight.".count))) else { return nil }
+        return unit == Self.unit(hostID: id) ? id : nil
+    }
+
+    /// Every weight `settings` holds: unit to JSON.
+    public static func values(in settings: HostSettings) -> [String: String] {
+        var out: [String: String] = [:]
+        for (key, weight) in settings.fleetWeights {
+            guard let id = UUID(uuidString: String(key.dropFirst("fleet.weight.".count))), key == FleetSendWeight.settingKey(hostID: id) else { continue }
+            out[unit(hostID: id)] = "\"\(weight.rawValue)\""
+        }
+        return out
+    }
+
+    /// The change a unit's value makes; nil when the text isn't a weight.
+    public static func change(hostID: UUID, fromJSON json: String) -> HostSettingChange? {
+        (try? JSONDecoder().decode(String.self, from: Data(json.utf8))).flatMap(FleetSendWeight.init(rawValue:)).map { .fleetWeight(hostID: hostID, weight: $0) }
+    }
+}

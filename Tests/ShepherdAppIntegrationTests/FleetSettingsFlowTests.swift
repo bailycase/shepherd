@@ -229,4 +229,72 @@ struct FleetSettingsFlowTests {
             return a.model.rows.map(\.state) == [.thisMac, .connected]
         }
     }
+
+    // MARK: The Fleet page
+
+    /// Two paired Macs, the first one's page model wired as the app wires it, and the host told the page is on screen.
+    @Test func theFleetPageShowsEachMacWithRealReadingsAndTheHostSamplesOnlyWhileItIsOnScreen() async throws {
+        let a = try await FleetApp("MacBook Pro"), b = try await FleetApp("Mac mini")
+        defer { a.stop(); b.stop() }
+        let page = FleetPageModel()
+        page.weight = { [settings = a.settings] in settings.fleetWeight(of: $0) }
+        page.setWeight = { [settings = a.settings] in settings.setFleetWeight($0, of: $1) }
+        a.model.onSnapshot = { page.update($0) }
+        a.settings.onFleetWeightsChange = { page.recompute() }
+        await b.model.startJoin()
+        #expect(await a.model.pair(with: b.found, code: try #require(b.model.join?.code)))
+
+        // Not on screen: the host holds links but nobody asked for the page, so there is no reading of this Mac.
+        try await Self.waitFor("the page to list both Macs") {
+            await a.model.refresh()
+            return page.page.cards.map(\.name) == ["This Mac", "Mac mini"]
+        }
+
+        await a.model.watch(true)
+        try await Self.waitFor("both Macs to show a reading and the report") {
+            await a.model.refresh()
+            let cards = page.page.cards
+            return cards.count == 2 && cards.allSatisfy { $0.cpu != nil && $0.memory != nil && !$0.hardware.isEmpty } && cards[1].statusText == "Connected"
+        }
+        let (here, mini) = (page.page.cards[0], page.page.cards[1])
+        #expect(here.statusText == "This Mac" && here.isThisMac && mini.id == b.model.snapshot.hostID)
+        // Real readings of a machine that may be busy: any room word is right, a blank one is not.
+        #expect(["Most room", "Some room", "Little room", "Room to spare", "No room"].contains(here.room.text), "\(here.room.text)")
+        #expect(page.page.footer.dots == [.thisMac, .connected] && page.page.footer.detail == "All awake")
+
+        // Send work here writes the setting the host settings and Fleet's own keys share.
+        let miniID = try #require(b.model.snapshot.hostID)
+        page.choose(.manualOnly, for: miniID)
+        #expect(a.settings.fleetWeights == [FleetSendWeight.settingKey(hostID: miniID): .manualOnly])
+        #expect(page.page.cards[1].weight == .manualOnly && page.page.nextGoesTo != "Mac mini", "Auto no longer picks it")
+
+        // Retry on a Mac that is connected changes nothing; the page stays as it was.
+        await a.model.reconnect(miniID)
+        #expect(a.model.snapshot.peers.first?.link == .connected)
+        await a.model.watch(false)
+    }
+
+    @Test func aMacThatGoesAwayShowsAsleepWithWhenItWasSeenAndNothingMovesToIt() async throws {
+        let a = try await FleetApp("MacBook Pro"), b = try await FleetApp("Mac mini")
+        defer { a.stop() }
+        let page = FleetPageModel()
+        a.model.onSnapshot = { page.update($0) }
+        await b.model.startJoin()
+        #expect(await a.model.pair(with: b.found, code: try #require(b.model.join?.code)))
+        await a.model.watch(true)
+        try await Self.waitFor("the Mac to show as connected") {
+            await a.model.refresh()
+            return page.page.cards.count == 2 && page.page.cards[1].statusText == "Connected"
+        }
+        b.stop()
+        try await Self.waitFor("the Mac to show as asleep") {
+            await a.model.refresh()
+            return page.page.cards.count == 2 && page.page.cards[1].statusText == "Asleep"
+        }
+        let asleep = page.page.cards[1]
+        #expect(asleep.canRetry && asleep.room.text == "Not counted" && asleep.cpu == nil && asleep.ready.text == "Catches up when it wakes")
+        #expect(asleep.power.text.hasPrefix("Last seen ") && page.page.footer.detail == "1 asleep")
+        #expect(page.page.nextGoesTo != "Mac mini", "an asleep Mac is never picked")
+        #expect(page.page.summary.hasPrefix("2 Macs · 1 asleep"))
+    }
 }

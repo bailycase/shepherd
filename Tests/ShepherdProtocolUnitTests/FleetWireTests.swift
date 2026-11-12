@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ShepherdCore
 @testable import ShepherdProtocol
 
 @Suite("Fleet wire")
@@ -35,5 +36,33 @@ struct FleetWireTests {
     @Test func aJoinStatusHoldsNoCode() throws {
         let object = try Wire.object(FleetJoinStatus(expiresAt: 5, attemptsLeft: 3))
         #expect(Set(object.keys) == ["expiresAt", "attemptsLeft"])
+    }
+
+    // MARK: Pressure
+
+    @Test func aSnapshotFromAHostWithoutPressureDecodesWithNoMacs() throws {
+        let old = Data(#"{"enabled":true,"name":"Mac mini","addresses":[],"advertising":false,"peers":[]}"#.utf8)
+        let snapshot = try JSONDecoder().decode(FleetSnapshot.self, from: old)
+        #expect(snapshot.enabled && snapshot.macs.isEmpty)
+    }
+
+    @Test func aReadinessReportWithMissingFieldsDecodesWithDefaults() throws {
+        let report = try JSONDecoder().decode(FleetReadinessReport.self, from: Data("{}".utf8))
+        #expect(report == FleetReadinessReport())
+        #expect(report.model == "Mac" && report.missing.isEmpty && report.repos.isEmpty)
+    }
+
+    @Test func hostSettingsFromAnOlderHostHoldNoWeightsAndAnUnknownWeightIsDropped() throws {
+        var settings = HostSettings(defaultThinking: .low, queueDelivery: .all, worktreeBase: .fresh, fetchBeforeCreating: true, generatePRDescriptions: true,
+                                    bundledExtensions: [], installedExtensions: [], updatePiDaily: false, updateExtensionsDaily: false)
+        var object = try Wire.object(settings)
+        object["fleetWeights"] = nil
+        #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: object)).fleetWeights.isEmpty)
+        let host = UUID()
+        object["fleetWeights"] = [FleetSendWeight.settingKey(hostID: host): "preferred-by-a-newer-host", "fleet.weight.other": "prefer"]
+        let decoded = try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(decoded.fleetWeights == ["fleet.weight.other": .prefer])
+        settings.apply(.fleetWeight(hostID: host, weight: .lessOften))
+        #expect(settings.fleetWeights[FleetSendWeight.settingKey(hostID: host)] == .lessOften)
     }
 }

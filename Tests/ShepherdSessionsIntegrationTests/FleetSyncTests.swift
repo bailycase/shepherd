@@ -305,6 +305,19 @@ struct FleetSyncTests {
         #expect(!b.settings.current.missionsEnabled && !b.settings.current.fleetEnabled)
     }
 
+    /// Where Fleet sends work (`fleet.weight.<hostID>`) is chosen once for the fleet: a Mac that never heard
+    /// of the weight's Mac still takes it, and a later choice on another Mac wins.
+    @Test func aSendWeightChosenOnOneMacAppliesOnTheOther() async throws {
+        let (a, b) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let studio = UUID()
+        let key = FleetSendWeight.settingKey(hostID: studio)
+        a.change(.fleetWeight(hostID: studio, weight: .prefer))
+        try await eventually("B to apply A's weight") { b.settings.current.fleetWeights[key] == .prefer }
+        b.change(.fleetWeight(hostID: studio, weight: .manualOnly))
+        try await eventually("A to follow B's later weight") { a.settings.current.fleetWeights[key] == .manualOnly }
+    }
+
     @Test func aMacThatNeverChoseASettingDoesNotOutvoteOneThatDid() async throws {
         let a = try await Mac("MacBook Pro", enable: false), b = try await Mac("Mac mini", enable: false)
         defer { a.stop(); b.stop() }

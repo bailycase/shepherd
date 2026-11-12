@@ -159,6 +159,10 @@ final class FleetSettingsModel {
     @ObservationIgnored var pairClient: (String, UInt16, String) async throws -> Void = { _, _, _ in }
     /// Starts finding Macs; the answer stops it. Replaced by a fixture in tests.
     @ObservationIgnored var browse: @MainActor (@escaping @Sendable ([FoundMac]) -> Void) -> () -> Void = { _ in {} }
+    /// Every snapshot the host answered with, for the Fleet page (`FleetPageModel`).
+    @ObservationIgnored var onSnapshot: ((FleetSnapshot) -> Void)?
+    /// The Fleet page is on screen: the host is told again when its connection is made anew.
+    @ObservationIgnored private(set) var wantsWatch = false
     @ObservationIgnored private var stopBrowsing: (() -> Void)?
     @ObservationIgnored private var everyFound: [FoundMac] = []
     @ObservationIgnored private var joinBaseline: Set<UUID> = []
@@ -190,6 +194,7 @@ final class FleetSettingsModel {
             syncLine = result.snapshot.sync.flatMap(FleetSyncPresentation.line)
         }
         loaded = result.snapshot.enabled
+        onSnapshot?(result.snapshot)
         devicesReady = result.snapshot.devices != nil
         if join != nil, result.snapshot.join == nil {
             // The window is closed: a Mac paired (it is in the list now) or it ran out.
@@ -357,6 +362,22 @@ final class FleetSettingsModel {
         } catch {
             problem = Self.words(error)
         }
+    }
+
+    // MARK: The Fleet page
+
+    /// Tells the host the Fleet page is on screen: it samples this Mac and pushes each sample
+    /// while it says so, and stops when this connection closes.
+    func watch(_ on: Bool) async {
+        wantsWatch = on
+        guard let client = try? host(), let result = try? await client.fleetAction(.watching(on)) else { return }
+        apply(result)
+    }
+
+    /// Retry on a Mac that isn't answering: the host tries its link again now.
+    func reconnect(_ hostID: UUID) async {
+        guard let client = try? host(), let result = try? await client.fleetAction(.reconnect(hostID: hostID)) else { return }
+        apply(result)
     }
 
     // MARK: Moving a pre-fleet pairing over

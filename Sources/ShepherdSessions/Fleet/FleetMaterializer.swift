@@ -7,6 +7,9 @@ import ShepherdRemote
 protocol FleetUnitSource: AnyObject {
     /// Every unit this source can read and write.
     var units: [String] { get }
+    /// A unit that isn't listed in `units` until a Mac first has a value for it (one per Mac in the fleet)
+    /// but is this source's to write.
+    func owns(_ unit: String) -> Bool
     /// Whether it can be read now (a source fed by the app is not, until the app reports).
     var isReady: Bool { get }
     /// The files behind the units, which the watcher keeps an eye on (none for a source the app feeds).
@@ -33,6 +36,7 @@ struct FleetUnitRefused: Error, CustomStringConvertible {
 }
 
 extension FleetUnitSource {
+    func owns(_ unit: String) -> Bool { false }
     var isReady: Bool { true }
     var watchedFiles: [URL] { [] }
     var writesAsynchronously: Bool { false }
@@ -74,7 +78,10 @@ final class FleetMaterializer {
 
     var watchedFiles: [URL] { sources.flatMap(\.watchedFiles) }
 
-    private func source(for unit: String) -> FleetUnitSource? { sources.first { $0.units.contains(unit) } }
+    /// What `source` reads and writes: its units, and any the store decided that it owns.
+    private func units(of source: FleetUnitSource) -> [String] {
+        source.units + store.units.filter { source.owns($0) && !source.units.contains($0) }
+    }
 
     static func fingerprint(_ value: Data?) -> String { value.map { FleetSyncProtocol.hash($0) } ?? "-" }
 
@@ -88,7 +95,7 @@ final class FleetMaterializer {
         var changed = false
         for source in sources where source.isReady {
             let present = source.read()
-            for unit in source.units {
+            for unit in units(of: source) {
                 let value = present[unit]
                 let hash = Self.fingerprint(value)
                 if let waiting = pending[unit] {
@@ -159,7 +166,7 @@ final class FleetMaterializer {
         var changed = false
         for source in sources where source.isReady {
             let present = source.read()
-            for unit in source.units {
+            for unit in units(of: source) {
                 guard let winner = store.winner(of: unit), winner.mac != store.mac || observed[unit] != nil else { continue }
                 let target: Data?
                 switch winner.change {

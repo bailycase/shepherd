@@ -139,8 +139,11 @@ extension ShepherdViewModel {
             guard let host = try? remoteHosts.thisMacHost(), let settings = try? await host.hostSettings() else { return }
             slashCommands.catalog = settings.slashCommands
         case .remote: await refreshRemoteListener()
+        case .fleetPressure: await fleet.refresh()
         case .fleet:
             await fleet.refresh()
+            // A host that started again (or this app's connection to it) forgot the page is on screen.
+            if fleet.wantsWatch { await fleet.watch(true) }
             // Fleet came up, or its listener did: a host this Mac already reached becomes a peer.
             await adoptLegacyFleetHosts()
         }

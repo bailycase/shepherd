@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdCore
 import ShepherdProtocol
 
 /// `instruction:AGENTS.md` and `instruction:APPEND_SYSTEM.md`: Shepherd's root instructions,
@@ -102,7 +103,11 @@ final class FleetPiSettingsSource: FleetUnitSource {
 final class FleetHostSettingsSource: FleetUnitSource {
     private var settings: HostSettings?
     private let apply: @Sendable (HostSettingChange) -> Void
-    let units = FleetHostSetting.allCases.map(\.unit)
+    /// The settings and the weights this Mac holds; the weights of other Macs the store decided come through `owns`.
+    var units: [String] {
+        FleetHostSetting.allCases.map(\.unit) + (settings.map { Array(FleetWeightSetting.values(in: $0).keys) } ?? [])
+    }
+    func owns(_ unit: String) -> Bool { FleetWeightSetting.hostID(unit: unit) != nil }
 
     init(apply: @escaping @Sendable (HostSettingChange) -> Void) { self.apply = apply }
 
@@ -116,15 +121,26 @@ final class FleetHostSettingsSource: FleetUnitSource {
 
     func read() -> [String: Data] {
         guard let settings else { return [:] }
-        return FleetHostSetting.values(in: settings).mapValues { Data($0.utf8) }
+        return FleetHostSetting.values(in: settings).merging(FleetWeightSetting.values(in: settings)) { $1 }.mapValues { Data($0.utf8) }
     }
 
     func isSeedable(_ unit: String, _ value: Data) -> Bool {
-        guard let settings, let setting = FleetHostSetting.named(unit: unit) else { return false }
+        guard let settings else { return false }
+        // A weight set to Normal is what no choice means.
+        if FleetWeightSetting.hostID(unit: unit) != nil { return String(decoding: value, as: UTF8.self) != "\"\(FleetSendWeight.normal.rawValue)\"" }
+        guard let setting = FleetHostSetting.named(unit: unit) else { return false }
         return !setting.isDefault(in: settings)
     }
 
     func write(_ unit: String, _ value: Data?, origin: String) throws {
+        if let id = FleetWeightSetting.hostID(unit: unit) {
+            // A deletion is back to the default.
+            let json = value.map { String(decoding: $0, as: UTF8.self) } ?? "\"\(FleetSendWeight.normal.rawValue)\""
+            guard let change = FleetWeightSetting.change(hostID: id, fromJSON: json) else {
+                throw FleetUnitRefused(description: "\(unit) holds a value this version doesn't know")
+            }
+            return apply(change)
+        }
         guard let value else { return }
         guard let setting = FleetHostSetting.named(unit: unit),
               let change = setting.change(fromJSON: String(decoding: value, as: UTF8.self)) else {
