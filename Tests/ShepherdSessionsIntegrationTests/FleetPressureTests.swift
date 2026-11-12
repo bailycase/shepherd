@@ -394,4 +394,48 @@ struct FleetPressureIntegrationTests {
         do { _ = try await a.local.fleetAction(.reconnect(hostID: UUID())); Issue.record("retried a Mac that isn't in the fleet") }
         catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetProtocol.Code.invalid) }
     }
+
+    // MARK: Access
+
+    /// A phone is offered no pressure capability and can't push, ask for or watch a Mac's load: the
+    /// request is a member's (`FleetAccess`). What it may see of the fleet is a later slice's read.
+    @Test func aDeviceIsOfferedNoPressureAndCannotSpeakForAMac() async throws {
+        let host = try await FleetPairingTests.Mac("Mac mini")
+        defer { host.stop() }
+        let phone = FleetDevicesIntegrationTests.Device()
+        defer { phone.stop() }
+        _ = try await phone.pair(with: host, code: try #require(try await host.local.fleetAction(.startDeviceCode).deviceCode).code)
+        let client = try await phone.connect(to: host)
+        #expect(!client.capabilities.contains(RemoteProtocol.fleetPressureCapability))
+        let sample = FleetPressureSample(cpuUtilization: 0.1, cpuCount: 8, totalMemoryBytes: 1 << 30, availableMemoryBytes: 1 << 29)
+        for (name, attempt) in [
+            ("fleetPressure", { try await client.fleetPressure(sample) }),
+            ("fleetReadiness", { try await client.fleetReadiness(FleetReadinessReport()) }),
+            ("fleetPressureNow", { _ = try await client.fleetPressureNow() }),
+            ("watching", { _ = try await client.fleetAction(.watching(true)) }),
+        ] as [(String, () async throws -> Void)] {
+            do { try await attempt(); Issue.record("\(name): a device used a member's request") }
+            catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetProtocol.Code.forbidden, "\(name)") }
+        }
+        let local = try await host.read()
+        #expect(local.macs.isEmpty)
+    }
+
+    /// Fleet off: the host lives on for devices, but nobody is sampled for and the page isn't served.
+    @Test func withFleetOffNothingIsSampledAndEveryPressureRequestIsRefused() async throws {
+        let a = try await Mac("MacBook Pro", busy: 30), b = try await Mac("Mac mini", busy: 60)
+        defer { a.stop(); b.stop() }
+        try await Self.pair(a, b)
+        let (aID, bID) = (try await a.hostID(), try await b.hostID())
+        try await eventually("A to sample for its peer") { a.isSampling }
+        try await eventually("B to hold A's sample") { try await b.state(of: aID)?.sample != nil }
+
+        a.server.setFleetEnabled(false)
+        try await eventually("A to stop sampling") { !a.isSampling }
+        #expect(try await a.read().macs.isEmpty && a.server.queue.sync { a.server.fleet?.pressure.isWatched } == false)
+        do { _ = try await a.local.fleetAction(.watching(true)); Issue.record("the page was served with Fleet off") }
+        catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetProtocol.Code.off) }
+        #expect(!a.isSampling)
+        _ = bID
+    }
 }
