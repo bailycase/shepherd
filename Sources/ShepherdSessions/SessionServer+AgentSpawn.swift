@@ -56,12 +56,13 @@ public struct PaneBindingFailed: Error, CustomStringConvertible {
 extension SessionServer {
     /// Respawns an agent's pi into its own pane after a launch, and binds it there. Nil, with
     /// nothing spawned, when its pane no longer holds it or is already bound to a live session,
-    /// or when `stillWanted` says no. A folder that is gone keeps the agent's place with a start
+    /// when `startNewAgent` is still starting it, or when `stillWanted` says no. A folder that is gone keeps the agent's place with a start
     /// problem. `spawn.cwd` is ignored: the pane's folder is the agent's.
     @MainActor
     public func respawnAgent(_ spawn: AgentSpawn) async throws -> SessionInfo? {
         let agentID = spawn.agent.id, state = self.state
-        guard let agent = state.agents.first(where: { $0.id == agentID }), let paneID = agent.paneID,
+        guard !creatingAgents.contains(agentID),
+              let agent = state.agents.first(where: { $0.id == agentID }), let paneID = agent.paneID,
               let tab = state.tabs.first(where: { $0.id == agent.tabID }),
               let pane = tab.layout.leaf(withID: paneID), pane.agentID == agentID else { return nil }
         var spawn = spawn
