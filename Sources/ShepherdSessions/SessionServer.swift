@@ -1337,6 +1337,7 @@ public final class SessionServer: @unchecked Sendable {
                     for client in Array(clients.values) where client.fleetPeerID != nil { disconnect(client, reason: "fleet turned off") }
                 }
                 pushSettingsChanged(.fleet)
+                announceFleetCapabilities()
                 return
             }
             do {
@@ -1376,9 +1377,18 @@ public final class SessionServer: @unchecked Sendable {
                 if let source = fleetHostSettings { service.syncEngine.add(source) }
                 service.listenerChanged(remoteListenPort)
                 service.start()
+                if enabled { announceFleetCapabilities() }
             } catch {
                 ShepherdLog.error("fleet could not start: \(error)")
             }
+        }
+    }
+
+    /// Fleet went on or off: remote clients (a phone drawing or hiding its Fleet screen) are told what the host offers now.
+    private func announceFleetCapabilities() {
+        for client in clients.values where client.isRemote && !client.isLocal && client.authenticated && client.fleetPeerID == nil {
+            guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: offeredCapabilities(to: client))) else { continue }
+            enqueuePayload(payload, to: client)
         }
     }
 

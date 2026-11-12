@@ -330,10 +330,12 @@ struct FleetPairingTests {
         defer { a.stop() }
         let remote = try await RemoteHostClient.connected(to: a)
         defer { remote.disconnect() }
-        for attempt in [{ _ = try await remote.fleetRead() }, { _ = try await remote.fleetAction(.startJoin) }] {
-            do { try await attempt(); Issue.record("a remote client used the app's fleet requests") }
-            catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetProtocol.Code.forbidden) }
-        }
+        do { _ = try await remote.fleetAction(.startJoin); Issue.record("a remote client used the app's fleet requests") }
+        catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetProtocol.Code.forbidden) }
+        // It reads what a phone does (`fleet.view.v1`): the Macs and their load, not how they are reached.
+        let view = try await remote.fleetRead().snapshot
+        let hostID = try await a.read().hostID
+        #expect(view.hostID == hostID && view.addresses.isEmpty && view.port == nil && view.devices == nil)
         // Nor does one pair, remove or introduce with the shared token.
         do { _ = try await remote.fleetRevoke(hostID: UUID(), at: 1); Issue.record("a shared token removed a Mac") }
         catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetProtocol.Code.forbidden) }
