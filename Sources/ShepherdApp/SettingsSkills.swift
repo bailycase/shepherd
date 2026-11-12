@@ -535,7 +535,7 @@ private struct SkillsListRow: View, Equatable {
             source(skill).frame(width: AppLayout.skillsSourceColumn, alignment: .leading)
             SkillUseTag(invocation: skill.invocation).frame(width: AppLayout.skillsUseColumn, alignment: .leading)
             updated.frame(width: AppLayout.skillsUpdatedColumn, alignment: .leading)
-            Image(systemName: open ? "chevron.down" : "chevron.right")
+            SHTurningChevron(isOpen: open)
                 .font(.shSans(AppLayout.skillsMetaSize, .semibold))
                 .foregroundStyle(sh.textTertiary)
                 .frame(width: AppLayout.skillsChevronColumn)

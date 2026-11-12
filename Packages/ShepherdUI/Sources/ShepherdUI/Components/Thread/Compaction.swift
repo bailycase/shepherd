@@ -102,7 +102,7 @@ public struct SHCompactionDivider: View {
             Button(action: toggle) {
                 HStack(spacing: SH.Space.xs) {
                     Text(expanded ? "Hide summary" : "Show summary").font(.shSans(12)).foregroundStyle(sh.textPrimary)
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                    SHTurningChevron(isOpen: expanded, closed: .down, open: .up)
                         .font(.system(size: SHCompactionMetrics.chevron - 1, weight: .semibold))
                         .foregroundStyle(sh.textTertiary)
                 }

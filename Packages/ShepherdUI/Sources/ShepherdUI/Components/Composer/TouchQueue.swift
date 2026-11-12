@@ -122,7 +122,7 @@ private struct SHTouchQueueHeader<Options: View>: View {
                 .accessibilityLabel("Queue options")
                 if let onToggle {
                     Button(action: onToggle) {
-                        Image(systemName: collapsed ? "chevron.up" : "chevron.down")
+                        SHTurningChevron(isOpen: !collapsed, closed: .up, open: .down)
                             .foregroundStyle(sh.textSecondary)
                             .frame(width: SH.Height.touch, height: SH.Height.touch)
                     }

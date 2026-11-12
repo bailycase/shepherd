@@ -76,9 +76,13 @@ public struct SHCommitMessageEditor: View {
                 if source == .drafting && !mentionsUntickedFiles {
                     ProgressView().progressViewStyle(.shSpinner).controlSize(.mini)
                 } else {
-                    Image(systemName: mentionsUntickedFiles ? "exclamationmark.circle" : source == .drafted ? "sparkle" : "list.bullet")
-                        .font(.sh(.micro))
-                        .accessibilityHidden(true)
+                    ZStack {
+                        Image(systemName: noteSymbol)
+                            .font(.sh(.micro))
+                            .id(noteSymbol)
+                            .shTransition(.content)
+                    }
+                    .accessibilityHidden(true)
                 }
                 Text(note)
                     .font(.sh(.caption))
@@ -95,6 +99,12 @@ public struct SHCommitMessageEditor: View {
         .padding(.vertical, SH.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
         .shCard(radius: radius, fill: fill, line: sh.lineStrong)
+    }
+
+    /// Keyed on its name, so one symbol fades out as the next fades in. Not a renamed symbol: that
+    /// draws through RenderBox, which loads about 258 MB of accelerated drawing pool each time.
+    private var noteSymbol: String {
+        mentionsUntickedFiles ? "exclamationmark.circle" : source == .drafted ? "sparkle" : "list.bullet"
     }
 
     private var note: String {

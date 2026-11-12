@@ -11,7 +11,7 @@ enum DesignRule: String, CaseIterable, Sendable, CustomTestStringConvertible {
     case statusTintByOpacity = "status-tint-by-opacity"
     case rawColor = "raw-color"
     case rawGlyphName = "raw-glyph-name"
-    case symbolSwapInTransition = "symbol-swap-in-transition"
+    case symbolRenameUnderAnimation = "symbol-rename-under-animation"
 
     var testDescription: String { rawValue }
 
@@ -26,8 +26,8 @@ enum DesignRule: String, CaseIterable, Sendable, CustomTestStringConvertible {
             "A view never hardcodes a color: Color(red:…), Color(light: \"#…\"), a hex string, Color.white, .foregroundStyle(.gray), NSColor.white. (DESIGN.md › Shepherd Design)"
         case .rawGlyphName:
             "A glyph with a shared definition is never named as a raw SF Symbol string: it comes from SHGlyph (Tokens/Glyphs.swift). (DESIGN.md › Shepherd Design › Icons)"
-        case .symbolSwapInTransition:
-            "An SF Symbol is never renamed inside a content transition: Image(systemName: a ? \"x\" : \"y\") under .shContentTransition(.crossFade) or (.symbol) draws through RenderBox, which loads about 258 MB of accelerated drawing pool for 1.2 to 1.6 s after each change. (DESIGN.md › Shepherd Design › Motion)"
+        case .symbolRenameUnderAnimation:
+            "An SF Symbol is never renamed where an animation can reach it: an Image(systemName:) or systemImage: whose name follows state (a ? \"x\" : \"y\"), or any dynamic name under .shAnimation, .animation or a content transition. SwiftUI draws the rename through RenderBox, which loads about 258 MB of accelerated drawing pool for 1.2 to 1.6 s on every animated change, from any ancestor's .shAnimation or withSHAnimation. (DESIGN.md › Shepherd Design › Motion)"
         }
     }
 
@@ -42,8 +42,8 @@ enum DesignRule: String, CaseIterable, Sendable, CustomTestStringConvertible {
             "Use Color.sh.<role>. A color that has no role is a new role on ThemeColors, filled in both variants of every theme, with a contrast rule if it carries text. A color that is the user's own data (a design system's swatch) goes in the allowlist with that reason."
         case .rawGlyphName:
             "Draw it through SHGlyph (SHGlyph.fastBolt.image, or SHFastBolt for the Fast mark) or pass SHGlyph.<case>.symbolName where an API takes a symbol name. A new glyph that more than one view draws is a new case in Tokens/Glyphs.swift."
-        case .symbolSwapInTransition:
-            "Stack the glyphs in a ZStack, each an Image with a fixed name, and cross-fade them by opacity under .shAnimation(.content, value:) (SHComposerActionButton); or key one image with .id(state) and .shTransition(.content) in a ZStack (SHCopyGlyph, SHStateGlyph). Put no content transition on the image."
+        case .symbolRenameUnderAnimation:
+            "A disclosure chevron is one SHTurningChevron that turns. Any other pair is two images that fade: stack fixed images and fade them by opacity under .shAnimation(.content, value:) (SHComposerActionButton), or key one image with .id(state) and .shTransition(.content) in a ZStack (SHCopyGlyph, SHStateGlyph, SHCommitMessageEditor). A name that follows state where nothing animates (a menu or toolbar item, a kind that is fixed for the row) goes in the allowlist with why."
         }
     }
 }
@@ -119,31 +119,69 @@ enum DesignRules {
         return broken
     }
 
-    // MARK: Symbols renamed under a content transition
+    // MARK: Symbols renamed where an animation can reach them
 
-    private static let symbolTransition = try! NSRegularExpression(pattern: #"ontentTransition\(\s*\.(?:crossFade|symbol|opacity|symbolEffect)\b"#)
-    /// An `Image(systemName:)` whose name is not a string literal or a registered glyph: one that can change.
-    private static let renamedSymbol = try! NSRegularExpression(pattern: #"Image\(systemName:(?!\s*")(?!\s*SHGlyph\.\w+\.symbolName\))"#)
+    private static let symbolSite = try! NSRegularExpression(pattern: #"Image\(systemName:|\bsystemImage:"#)
+    private static let animationModifier = try! NSRegularExpression(
+        pattern: #"\.(?:shAnimation|shComponentAnimation|animation|shContentTransition|contentTransition|shTransition|transition|symbolEffect)\("#)
+    /// `SHGlyph.pin.symbolName`, `ForgeSymbol.filter`: a named constant is one symbol.
+    private static let constantName = try! NSRegularExpression(pattern: #"^[A-Z]\w*(?:\.\w+)+$"#)
 
-    /// The `Image(systemName:)` lines in `source` whose name can change and that sit under a
-    /// content transition that fades or replaces symbols (`.crossFade`, `.symbol`). The image is the
-    /// head of the modifier chain the transition ends: the transition's own line, or the first line
-    /// above it that does not begin with a modifier.
-    static func symbolSwaps(in source: String) -> [(line: Int, text: String)] {
-        let lines = source.split(separator: "\n", omittingEmptySubsequences: false)
+    /// The text of the argument that starts at `start` in `line`: up to the comma or the closing
+    /// bracket that ends it, with strings and nested brackets skipped.
+    private static func argument(in line: String, from start: String.Index) -> String {
+        var depth = 0, inString = false
+        var previous: Character = " "
+        var end = start
+        while end < line.endIndex {
+            let character = line[end]
+            if character == "\"", previous != "\\" { inString.toggle() }
+            else if !inString {
+                if "([{".contains(character) { depth += 1 }
+                else if ")]}".contains(character) {
+                    if depth == 0 { break }
+                    depth -= 1
+                } else if character == ",", depth == 0 { break }
+            }
+            previous = character
+            end = line.index(after: end)
+        }
+        return line[start..<end].trimmingCharacters(in: .whitespaces)
+    }
+
+    /// The `Image(systemName:)` and `systemImage:` arguments in `source` that can rename a symbol
+    /// while an animation reaches it, reported at the line of the name.
+    ///
+    /// A name that follows state (`a ? "x" : "y"`) is always a rename: the animation that decides
+    /// whether it costs the drawing pool is on some ancestor, or in a `withSHAnimation` in the
+    /// caller, which a scan of one file cannot see. Any other name that is not a constant is a
+    /// rename only where its own modifier chain animates (`.shAnimation`, a content transition).
+    /// An image keyed with `.id(…)` is a new image on each change, not a renamed one.
+    static func symbolRenames(in source: String) -> [(line: Int, text: String)] {
+        let lines = source.split(separator: "\n", omittingEmptySubsequences: false).map { String(strippingComment($0)) }
         func trimmed(_ index: Int) -> Substring { lines[index].drop { $0 == " " || $0 == "\t" } }
-        func isRenamed(_ index: Int) -> Bool {
-            let text = String(strippingComment(lines[index]))
-            return renamedSymbol.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+        func matches(_ expression: NSRegularExpression, _ text: String) -> Bool {
+            expression.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
         }
         var found: [(line: Int, text: String)] = []
         for index in lines.indices {
-            let text = String(strippingComment(lines[index]))
-            guard text.contains("ontentTransition("),
-                  symbolTransition.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil else { continue }
-            var head = index
-            while !isRenamed(head), trimmed(head).hasPrefix("."), head > 0, index - head < 12 { head -= 1 }
-            if isRenamed(head) { found.append((head + 1, String(trimmed(head)))) }
+            let text = lines[index]
+            guard text.contains("systemName:") || text.contains("systemImage:"), !trimmed(index).hasPrefix("//") else { continue }
+            for site in symbolSite.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+                guard let end = Range(site.range, in: text)?.upperBound else { continue }
+                let name = argument(in: text, from: end)
+                let isLiteral = name.hasPrefix("\"") && name.hasSuffix("\"") && name.count > 1 && !name.dropFirst().dropLast().contains("\"")
+                // A declaration (`let systemImage: String`, `systemImage: String,`) names no symbol.
+                guard !name.isEmpty, !isLiteral, !matches(constantName, name), !name.hasPrefix("String") else { continue }
+                var chain = text
+                var next = index + 1
+                while next < lines.count, trimmed(next).hasPrefix(".") { chain += " " + lines[next]; next += 1 }
+                guard !chain.contains(".id(") else { continue }
+                if name.contains(" ? ") || matches(animationModifier, chain) {
+                    found.append((index + 1, String(trimmed(index))))
+                    break
+                }
+            }
         }
         return found
     }
@@ -236,12 +274,10 @@ enum DesignRules {
                         }
                     }
                 }
-                if data.range(of: Data("ontentTransition(".utf8)) != nil {
-                    let first = violations.count
-                    for swap in symbolSwaps(in: String(decoding: data, as: UTF8.self)) {
-                        violations.append(DesignViolation(rule: .symbolSwapInTransition, path: path, line: swap.line, text: swap.text))
+                if data.range(of: Data("systemName:".utf8)) != nil || data.range(of: Data("systemImage:".utf8)) != nil {
+                    for rename in symbolRenames(in: String(decoding: data, as: UTF8.self)) {
+                        violations.append(DesignViolation(rule: .symbolRenameUnderAnimation, path: path, line: rename.line, text: rename.text))
                     }
-                    violations[first...].sort { $0.line < $1.line }
                 }
             }
         }
