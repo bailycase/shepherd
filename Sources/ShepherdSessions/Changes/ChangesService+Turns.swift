@@ -5,12 +5,13 @@ import ShepherdProtocol
 // Last turn (ChangesLastTurn) and the "Edited N files" card: when pi starts a run the host
 // snapshots the agent's working tree, when the run settles it snapshots it again, and the
 // turn's changes are the diff between the two trees, less what Shepherd wrote for the person.
-// Where another agent's turn, or its edit or write, shared the working tree during the run,
-// the changes are cut to the files the turn's own edit and write calls named and no other
-// call named (TurnAttribution, WriterLog): the cut becomes the turn's `endTree`, so the card,
-// Last turn, the counts, Undo and Redo all agree. Undo writes the start tree's version of
-// exactly those files back into the working tree (Redo the end tree's), refusing when any of
-// them changed since, or when a late writer turns out to have shared one.
+// Where another agent's turn, its edit or write, or its subagent, shared the working tree during
+// the run, the changes are cut to the files the turn's own edit and write calls (and its own
+// subagents) named and no other call or subagent named (TurnAttribution, WriterLog): the cut
+// becomes the turn's `endTree`, so the card, Last turn, the counts, Undo and Redo all agree.
+// Undo writes the start tree's version of exactly those files back into the working tree (Redo
+// the end tree's), refusing when any of them changed since, or when a late writer turns out to
+// have shared one.
 
 /// One recorded turn: its public face and the trees it runs between.
 struct TurnRecord: Codable, Hashable, Sendable {

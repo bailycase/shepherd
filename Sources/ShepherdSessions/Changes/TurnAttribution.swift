@@ -4,9 +4,9 @@ import ShepherdProtocol
 
 /// Which of a turn's changed files are its own. A turn's record is the working-tree diff over
 /// its window; when another writer was in the same working tree during that window, the diff is
-/// cut to the files the turn's own successful `edit` and `write` calls named and no other
-/// writer's call named. Pure, so the unit tests read it; the engine supplies the evidence
-/// (`WriterLog`) and the git work (`ChangesService+Turns`).
+/// cut to the files the turn's own successful `edit` and `write` calls (and its own subagents'
+/// files) named and no other writer's call or subagent named. Pure, so the unit tests read it;
+/// the engine supplies the evidence (`WriterLog`) and the git work (`ChangesService+Turns`).
 enum TurnAttribution {
     /// Receipt lag of pi's events, in ms: a tool call or a turn pi started itself is stamped
     /// when the host read its event, a moment after the write may have begun.
@@ -76,9 +76,10 @@ enum TurnAttribution {
     /// What the writer log says about one turn's window.
     struct Evidence: Equatable, Sendable {
         var shared = false
-        /// Repository-relative paths of the turn's own successful calls.
+        /// Repository-relative paths of the turn's own successful calls and of the files its own
+        /// subagent runs named.
         var named: Set<String> = []
-        /// Paths other agents' calls named, whatever those calls' outcome, and who.
+        /// Paths other agents' calls and subagent runs named, whatever the calls' outcome, and who.
         var foreign: [String: AgentID] = [:]
         /// Paths Shepherd wrote for the person during the window.
         var saved: Set<String> = []
@@ -116,8 +117,23 @@ enum TurnAttribution {
             join(call.agent)
             if let landing { evidence.foreign[landing] = evidence.foreign[landing] ?? call.agent }
         }
+        for run in log.runs where overlapping(run.interval) {
+            let landing = run.files.compactMap { relative($0, run.cwd) }
+            if run.agent == window.agent {
+                // A helper outlives the turn that started it: its files are the agent's own writer.
+                evidence.named.formUnion(landing)
+                continue
+            }
+            guard !landing.isEmpty || sameTree(run.cwd) else { continue }
+            join(run.agent)
+            for path in landing where evidence.foreign[path] == nil { evidence.foreign[path] = run.agent }
+        }
         for span in log.spans where overlapping(span.interval) {
-            evidence.saved.formUnion(span.paths.compactMap(savedPath))
+            if let tree = span.tree {
+                if sameTree(tree) { evidence.shared = true }
+            } else {
+                evidence.saved.formUnion(span.paths.compactMap(savedPath))
+            }
         }
         if log.lost.contains(where: overlapping) {
             evidence.lossy = true

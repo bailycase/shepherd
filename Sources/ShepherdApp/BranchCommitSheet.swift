@@ -229,7 +229,10 @@ struct BranchCommitSheet: View {
         let message = reviewCommitMessageText(title: current.title, body: current.details)
         let (cwd, amend, branch, id) = (current.info.repository, amend, current.info.branch, agentID)
         Task {
+            // Its hooks can rewrite files under a turn running here.
+            let end = await vm.personWriteBegan(id)
             do {
+                defer { end?() }
                 let commit = try await Task.detached { try BranchGit.commit(cwd: cwd, paths: paths, message: message, amend: amend) }.value
                 vm.branchSheet = nil
                 if push, let branch {

@@ -2219,7 +2219,7 @@ struct NativeThreadStoreTests {
         ("thinking", { _ = $0.thinking }), ("stats", { _ = $0.stats }), ("supportedActions", { _ = $0.supportedActions }),
         ("clipNotice", { _ = $0.clipNotice }), ("running", { _ = $0.running }), ("hostRunning", { _ = $0.hostRunning }),
         ("showsThinking", { _ = $0.showsThinking }), ("userTurnCount", { _ = $0.userTurnCount }),
-        ("hasSubagents", { _ = $0.hasSubagents }),
+        ("hasSubagents", { _ = $0.hasSubagents }), ("hasLiveSubagents", { _ = $0.hasLiveSubagents }), ("hasTray", { _ = $0.hasTray }),
     ]
 
     /// Which chrome properties announced a change while `change` ran.
@@ -2261,7 +2261,10 @@ struct NativeThreadStoreTests {
             (["widgets"], { $0.widgets = [NativeThreadWidget(namespace: "x", key: "k", kind: .status, text: "on")] }),
             (["commands"], { $0.commands = [NativeCommand(name: "review")] }),
             (["clipNotice"], { $0.clips = NativeThreadClips(history: true); $0.clipped = true }),
-            (["hasSubagents"], { $0.subagents = [F.run("r")] }),
+            (["hasSubagents", "hasLiveSubagents", "hasTray"], { $0.subagents = [F.run("r")] }),
+            // A child's tool call moves its run; whether any run lives and whether the tray shows stay.
+            ([], { $0.subagents = [Self.working(F.run("r"), calls: 3)] }),
+            (["hasLiveSubagents", "hasTray"], { $0.subagents = [F.run("r", state: "complete")] }),
             (["userTurnCount"], { $0.messages += [F.assistant("Done.", id: "a"), F.user("next", id: "u2")] }),
             (["dialogs", "showsThinking"], { $0.dialogs = [NativeThreadDialog(id: "d", kind: .confirm, title: "Go?")] }),
             (["session"], { $0.generation = "g2" }),
@@ -2270,6 +2273,45 @@ struct NativeThreadStoreTests {
             let fired = await serve(edit)
             #expect(fired == expected, "step \(index)")
         }
+    }
+
+    private static func working(_ run: ChildRun, calls: Int) -> ChildRun {
+        var run = run
+        run.toolCalls = calls
+        run.lastActivity = ChildActivity(tool: "read", preview: "Sources/Step\(calls).swift", at: 1_000 + Double(calls))
+        return run
+    }
+
+    /// The composer docks the tray on `hasTray` and words Stop on `hasLiveSubagents`, so a child's
+    /// tool call (which moves the tray's rows and the runs) wakes neither; the tray's own reads do
+    /// hear of it. A run ending, the last one, does move `hasLiveSubagents`.
+    @Test func aChildsToolCallMovesTheTrayRowsAndNotWhetherTheTrayShows() async {
+        var opening = F.user("go", id: "u1")
+        opening.timestamp = 100
+        let start = F.run("worker", startedAt: 110)
+        let (store, host, task) = await started(F.snapshot(messages: [opening], subagents: [start]))
+        defer { task.cancel() }
+        #expect(store.hasTray && store.hasLiveSubagents)
+
+        let composer = Flag(), tray = Flag()
+        withObservationTracking { _ = store.hasTray; _ = store.hasLiveSubagents } onChange: { composer.set() }
+        withObservationTracking { _ = store.tray; _ = store.subagents } onChange: { tray.set() }
+        host.snapshot = F.snapshot(revision: 2, messages: [opening], subagents: [Self.working(start, calls: 5)])
+        await store.refresh()
+
+        #expect(store.tray?.rows.first?.line == .working(verb: "Read", subject: "Step5.swift", live: false))
+        #expect(tray.value, "the tray's rows hear of the call")
+        #expect(!composer.value, "the composer's reads do not")
+
+        withObservationTracking { _ = store.hasTray; _ = store.hasLiveSubagents } onChange: { composer.set() }
+        var done = Self.working(start, calls: 6)
+        done.state = "complete"
+        done.endedAt = 400
+        host.snapshot = F.snapshot(revision: 3, messages: [opening], subagents: [done])
+        await store.refresh()
+
+        #expect(!store.hasLiveSubagents && store.hasTray, "a finished run keeps the tray until the next message")
+        #expect(composer.value, "the last run ending changes what Stop says")
     }
 
     /// A thread far from the screen lets its history go and keeps the draft; shown again, it

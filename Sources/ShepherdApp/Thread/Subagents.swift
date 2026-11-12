@@ -164,30 +164,26 @@ struct SubagentTrayRow: View, Equatable {
     }
 }
 
-/// The card above the composer: the tray, then Up next, in one card (SubagentsQueue).
+/// The card above the composer: the goal, the tray, then Up next, in one card (SubagentsQueue).
+/// It reads whether the tray shows, never the runs: the rows move with each child tool call
+/// (`DockedTray` reads them), and the dock and the composer around it stay as they were.
 struct ComposerDock<Queue: View>: View {
-    let tray: NativeSubagentTray?
+    let store: NativeThreadStore
     let trayState: SubagentTrayState
-    let runs: [ChildRun]
     let actions: SubagentActions?
     let showsQueue: Bool
-    var goalStore: NativeThreadStore? = nil
     var goalActive = true
     @ViewBuilder let queue: () -> Queue
 
     var body: some View {
-        if goalStore?.hasGoal == true || (tray != nil && actions != nil) {
+        if store.hasGoal || (store.hasTray && actions != nil) {
             SHDockStack(showsTray: true, showsQueue: showsQueue) {
                 VStack(spacing: 0) {
-                    if let goalStore, goalStore.hasGoal {
-                        ThreadGoalCard(store: goalStore, active: goalActive, framed: false)
+                    if store.hasGoal {
+                        ThreadGoalCard(store: store, active: goalActive, framed: false)
                     }
-                    if let tray, let actions {
-                        SubagentTrayView(tray: tray, state: trayState, runs: runs, actions: actions,
-                                         goalPresent: goalStore?.hasGoal == true)
-                            .overlay(alignment: .top) {
-                                if goalStore?.hasGoal == true { SHHairline(color: Color.sh.lineStrong) }
-                            }
+                    if store.hasTray, let actions {
+                        DockedTray(store: store, state: trayState, actions: actions)
                     }
                 }
             } queue: {
@@ -196,6 +192,23 @@ struct ComposerDock<Queue: View>: View {
         } else {
             // Up next alone draws its own card.
             queue()
+        }
+    }
+}
+
+/// The tray in the dock, reading the store's tray and runs itself: a child's tool call redraws
+/// this and its changed rows alone.
+private struct DockedTray: View {
+    let store: NativeThreadStore
+    let state: SubagentTrayState
+    let actions: SubagentActions
+
+    var body: some View {
+        if let tray = store.tray {
+            SubagentTrayView(tray: tray, state: state, runs: store.subagents, actions: actions, goalPresent: store.hasGoal)
+                .overlay(alignment: .top) {
+                    if store.hasGoal { SHHairline(color: Color.sh.lineStrong) }
+                }
         }
     }
 }

@@ -204,6 +204,10 @@ public enum RemoteProtocol {
     public static let terminalStartCapability = "terminal.start.v1"
     /// `RemoteAgentAction.readCheckout`: the host reads a thread's checkout again.
     public static let checkoutReadCapability = "checkout.read.v1"
+    /// Offered only on the local socket: the host takes `RemoteAgentQuery.changesWriteBegan` and
+    /// `.changesWriteEnded`, this Mac's app telling its host's Changes engine what it writes for
+    /// the person. Never in `capabilities`.
+    public static let changesWritesCapability = "changes.writes.v1"
     /// `RemoteAgentQuery.pullRequest`: the host looks a thread's branch's pull request up again.
     public static let pullRequestLinkCapability = "pullrequest.link.v1"
     /// The host starts a thread's stopped pi again on request (`RemoteAgentAction.restartPi`).
@@ -599,6 +603,13 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     /// modified or deleted file comes back from HEAD; a new one goes to the Trash; a rename
     /// restores `oldPath` and trashes `path`. The index is never touched, as with Undo.
     case changesRevertFile(revision: ChangesRevision, path: String, oldPath: String?)
+    /// Local clients only (`changesWritesCapability`): this Mac's own app is about to change the
+    /// thread's working tree for the person, so no turn running meanwhile takes it for the agent's.
+    /// `paths` (absolute) are the files a Save or a Revert writes; nil is a branch action or a
+    /// commit that rewrites the tree. Answered `.ok` once the host has it, before the app writes;
+    /// `span` is the app's, and `changesWriteEnded` closes it.
+    case changesWriteBegan(span: UUID, paths: [String]?)
+    case changesWriteEnded(span: UUID)
     /// The dev servers the agent's folder on the host offers (`DevServerDiscovery`): the Browser's
     /// Nothing open (`browserTunnelCapability`). Answered by the host's server itself.
     case devServers
@@ -634,7 +645,16 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     /// Answered by the host's server itself, without the GUI.
     public var isChanges: Bool {
         switch self {
-        case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn, .changesRevertFile: true
+        case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn, .changesRevertFile,
+             .changesWriteBegan, .changesWriteEnded: true
+        default: false
+        }
+    }
+
+    /// What this Mac's app reports of its own writes (`changesWritesCapability`).
+    public var isPersonWrite: Bool {
+        switch self {
+        case .changesWriteBegan, .changesWriteEnded: true
         default: false
         }
     }

@@ -30,7 +30,13 @@
   `local.threads.v1` in hello shows the host's threads as its own and posts their turn and question
   banners, so the host doesn't while it is connected. Agent queries over the local socket judge a
   worktree's loss by the same rule (`GitWorktree.checkedUnreconciledWork(otherBranchesKeep:)`).
-  `agent.restart.v1` hosts take `restartPi`, a stopped pi's Retry. A local client may also send
+  `agent.restart.v1` hosts take `restartPi`, a stopped pi's Retry. A local client alone is offered
+  `changes.writes.v1` (never in `capabilities`) and may send the `changesWriteBegan` and
+  `changesWriteEnded` agent queries: the app tells its host's Changes engine what it writes for
+  the person (a Files-tab Save or pane Revert, naming the absolute paths; a branch action or a
+  commit, naming none) so no turn running meanwhile takes it for the agent's. The app waits for the
+  host's `ok` before it writes; the host closes whatever a closed connection left open. A paired
+  device's Save (`fileWrite`) is noted by the host itself. A local client may also send
   `focusThread` (the thread it shows, so phone pushes for it stay quiet, and the pane with its
   keyboard, which `terminal_list` marks focused; cleared when it disconnects), and while it lists `local.threads.v1` the notify tool's banners go to it as an
   `agentNotify` push instead of posting on the host, and a `settingsChanged` push names the
