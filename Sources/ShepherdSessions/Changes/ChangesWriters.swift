@@ -139,6 +139,12 @@ struct WriterLog {
         }
     }
 
+    /// The agent was deleted with its records: its windows stay as evidence for the turns they
+    /// overlapped, but nothing is left to re-cut.
+    mutating func forget(_ agent: AgentID) {
+        for i in windows.indices where windows[i].agent == agent { windows[i].settled = nil }
+    }
+
     /// The turn's record was cut from the log as it stood at `settled.sequence`.
     mutating func settle(turn: UUID, _ settled: Settled) {
         guard let index = windows.lastIndex(where: { $0.turn == turn }) else { return }

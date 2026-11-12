@@ -24,16 +24,17 @@ enum SHProseLink {
 struct SHProseImageView: View {
     let image: SHProseImage
     @Environment(\.shProseFileRoot) private var root
-    @Environment(\.openURL) private var openURL
+    @Environment(\.shProseLinkRouter) private var router
     @Environment(\.displayScale) private var displayScale
     @State private var thumbnail: (url: URL, image: CGImage)?
 
     var body: some View {
+        let _ = SHRenderProbe.tick("prose.image")
         let source = SHProseImageSource(image.source, root: root)
         Group {
             if case .file(let url) = source,
                let cg = (thumbnail?.url == url ? thumbnail?.image : nil) ?? SHProseThumbnails.cached(url) {
-                Button { openURL(url) } label: {
+                Button { router?.open(url) } label: {
                     Image(decorative: cg, scale: displayScale)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
@@ -63,7 +64,7 @@ struct SHProseImageView: View {
     @ViewBuilder private func chip(_ source: SHProseImageSource) -> some View {
         let label = SHProseImageChip(name: image.alt.isEmpty ? source.name : image.alt, detail: source.detail)
         if case .web(let url) = source {
-            Button { openURL(url) } label: { label }
+            Button { router?.open(url) } label: { label }
                 .buttonStyle(.plain)
                 .shFocusRing(radius: SH.Radius.s)
                 .help(url.absoluteString)

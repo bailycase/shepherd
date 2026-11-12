@@ -171,7 +171,7 @@ extension SHUserBubble where Leading == EmptyView {
 /// A fenced block (SHThread board): `bgSunken`, a 1px line, radius 8; a 28pt header with the
 /// language and a copy button that appears on hover (and for keyboard focus); code in mono 12
 /// at 1.6, syntax colored when `highlighted` is given.
-public struct SHCodeBlock: View {
+public struct SHCodeBlock: View, Equatable {
     let code: String
     let language: String?
     let highlighted: AttributedString?
@@ -190,6 +190,10 @@ public struct SHCodeBlock: View {
         self.code = code
         self.language = language
         self.highlighted = highlighted
+    }
+
+    nonisolated public static func == (lhs: SHCodeBlock, rhs: SHCodeBlock) -> Bool {
+        lhs.code == rhs.code && lhs.language == rhs.language && lhs.highlighted == rhs.highlighted
     }
 
     public var body: some View {
@@ -427,7 +431,7 @@ public struct SHThinking: View {
             .shAnimation(.content, value: live)
             if isExpanded, kind.opens {
                 VStack(alignment: .leading, spacing: SH.Space.m) {
-                    SHProseBlocks(blocks: blocks, voice: .thinking) { SHCodeBlock($0, language: $1) }
+                    SHProseBlocks(blocks: blocks, voice: .thinking) { SHCodeBlock($0, language: $1).equatable() }
                     if kind == .liveDisclosure {
                         Text(Self.summarySource).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -437,6 +441,7 @@ public struct SHThinking: View {
                 .padding(.leading, SH.Space.l)
                 .overlay(alignment: .leading) { sh.lineStrong.frame(width: SHThreadMetrics.ruleWidth) }
                 .frame(maxWidth: SHThreadMetrics.proseMeasure, alignment: .leading)
+                .shProseLinks()
                 .shTransition(.disclosure)
             }
         }
