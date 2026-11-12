@@ -153,6 +153,7 @@ final class FleetDispatch: @unchecked Sendable {
     var snapshotsIn: [UUID: SnapshotIn] = [:]
     /// Tests: what the receiver did to build each worktree, and a way to change a content on the wire.
     var applyStats: [UUID: FleetSnapshotApply.Stats] = [:]
+    var senderLog: [UUID: (phases: [String], git: [String])] = [:]
     var wire: (@Sendable (FleetBlobChunk) async throws -> FleetBlobChunk)?
     /// Tests: where a snapshot warns and where it is refused.
     var caps: (warn: UInt64, refuse: UInt64) = (FleetSnapshotCap.warnAbove, FleetSnapshotCap.refuseAbove)
@@ -217,6 +218,9 @@ final class FleetDispatch: @unchecked Sendable {
         var needOrder: [FleetHash] = []
         var computing = false
         var building = false
+        /// Milliseconds since the create arrived at each step of the arrival (parts whole, contents worked out, contents in), for the log.
+        var events: [String] = []
+        func mark(_ name: String) { events.append("\(name) \(Int((ContinuousClock.now - began) / .milliseconds(1)))") }
         /// The branch name, chosen while the snapshot is still arriving (its git calls then overlap the transfer).
         var branch: Task<String, Never>?
         init(header: FleetSnapshotHeader, space: Space?, requestedBranch: String?) { (self.header, self.space, self.requestedBranch) = (header, space, requestedBranch) }
@@ -438,8 +442,10 @@ final class FleetDispatch: @unchecked Sendable {
         placing.insert(id)
         waiters[id, default: []].append(reply)
         let (spaceID, folder, known) = (space.id, space.path, space.repoKey)
+        // The snapshot will need the commit's tree: it starts being listed the moment the commit is known, while the dispatch is placed.
+        let prefetching = indexService != nil && (host.settings()?.fleetUncommitted ?? .sendThem) == .sendThem
         Task.detached { [weak self] in
-            let pinned = FleetDispatchGit.pin(cwd: (cwd as NSString).expandingTildeInPath)
+            let pinned = FleetDispatchGit.pin(cwd: (cwd as NSString).expandingTildeInPath, prefetchingTree: prefetching)
             let origin = FleetDispatchGit.origin(cwd: (folder as NSString).expandingTildeInPath)
             // A repository with no origin is named by its first commit: another Mac can't clone it, so it is sent the repository itself.
             let key = known ?? FleetRepoKeys.localKey(folder: (folder as NSString).expandingTildeInPath)

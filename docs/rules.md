@@ -227,7 +227,9 @@ merged-only, never-a-fork deletion; only for a worktree in Shepherd's support fo
 the pull request's head, and never while the thread runs or asks or its checkout has uncommitted
 changes or commits GitHub doesn't have (it stays, with a note). A fleet dispatch's snapshot
 (`FleetSnapshotApply.swift`, `FleetSpare.swift`; only with Fleet on, on the Mac that receives the work):
-inside the fresh dispatch worktree (`git worktree add --no-checkout` of a new `fleet/<slug>` branch, then
+inside the fresh dispatch worktree (`git worktree add --no-checkout` of a new `fleet/<slug>` branch, or the same
+files written directly (the branch ref, the `.git/worktrees/<name>` entry, the `.git` file) when the repository keeps
+the plain layout (`FleetFastWorktree`; any extension, hooks path or taken name leaves it to git), then
 `clonefile` and writes of its files and its index, never anything in an existing checkout), objects fetched
 from origin or from the sender's bundle with the one `refs/fleet/<dispatchID>` ref the bundle lands in, and
 the plain spare directory under `<support>/fleet/spares/` (the tracked files at the base tip, built with a

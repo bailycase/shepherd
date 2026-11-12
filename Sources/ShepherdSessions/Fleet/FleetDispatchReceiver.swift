@@ -137,7 +137,7 @@ extension FleetDispatch {
             if let snapshot, let manifest = snapshot.manifest {
                 let indexes = await self.onQueue { self.indexService?.indexes() ?? [] }
                 var apply = FleetSnapshotApply(.init(id: id, repo: repo, base: space.worktreeBase, branch: branch, header: snapshot.header, manifest: manifest,
-                                                     blobs: self.blobs, spares: self.spares, indexes: indexes, began: snapshot.began))
+                                                     blobs: self.blobs, spares: self.spares, indexes: indexes, began: snapshot.began, prelude: snapshot.events))
                 switch apply.run() {
                 case .failure(let failure):
                     self.queue.async { self.failInbound(id, failure.code, failure.detail) }

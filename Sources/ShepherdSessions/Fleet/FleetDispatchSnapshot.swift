@@ -1,4 +1,5 @@
 import Foundation
+import os
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
@@ -94,6 +95,7 @@ extension FleetDispatch {
             return done(.failure(.init(code: FleetDispatchCode.invalid, message: "The dispatch ended.")))
         }
         snapshots[id] = built
+        senderLog[id] = (built.phases, built.git)
         outbound[id]?.snapshotBytes = built.header.bytes
         outbound[id]?.snapshotProgress = 0
         outbound[id]?.snapshotFiles = built.header.files + built.header.directories
@@ -183,6 +185,9 @@ extension FleetDispatch {
         }
     }
 
+    /// Small contents in flight at once.
+    static let pushWindow = 8
+
     static func push(_ built: FleetSnapshotSender.Built, over link: SnapshotLink, wire: (@Sendable (FleetBlobChunk) async throws -> FleetBlobChunk)?,
                      live: @escaping @Sendable () async -> Bool, progress: @escaping @Sendable (UInt64) -> Void) async throws {
         var ack = try await link.part(FleetSnapshotPart(index: -1))
@@ -193,24 +198,45 @@ extension FleetDispatch {
             next = max(next + 1, ack.parts)
         }
         let links = Set(built.plan.manifest.files.filter { $0.kind == .symlink }.map(\.hash))
-        var sent: UInt64 = 0
+        var sizes: [FleetHash: UInt64] = [:]
+        for file in built.plan.manifest.files { sizes[file.hash] = file.size }
+        let sent = OSAllocatedUnfairLock<UInt64>(initialState: 0)
+        // One content: read in chunks (checked against its hash as they go) and pushed in order.
+        @Sendable func push(_ hash: FleetHash) async throws {
+            let path: String
+            if let bundle = built.bundle, bundle.ref.hash == hash { path = bundle.url.path }
+            else if let source = built.plan.sources[hash] { path = built.root + "/" + source }
+            else { throw RemoteHostClientError.rejected(code: FleetDispatchCode.snapshotFailed, message: "The target asked for a content this checkout doesn't have.") }
+            try await FleetSnapshotReader.chunks(path: path, hash: hash, link: links.contains(hash)) { chunk in
+                var chunk = chunk
+                if let wire { chunk = try await wire(chunk) }
+                _ = try await link.blob(chunk)
+                progress(sent.withLock { $0 += UInt64(chunk.data.count); return $0 })
+            }
+        }
         for _ in 0..<8 {
             ack = try await link.part(FleetSnapshotPart(index: -1, wantsNeeds: true))
             if ack.needsCount == 0 { return }
-            for hash in ack.needs {
-                guard await live() else { return }
-                let path: String
-                if let bundle = built.bundle, bundle.ref.hash == hash { path = bundle.url.path }
-                else if let source = built.plan.sources[hash] { path = built.root + "/" + source }
-                else { throw RemoteHostClientError.rejected(code: FleetDispatchCode.snapshotFailed, message: "The target asked for a content this checkout doesn't have.") }
-                try await FleetSnapshotReader.chunks(path: path, hash: hash, link: links.contains(hash)) { chunk in
-                    var chunk = chunk
-                    if let wire { chunk = try await wire(chunk) }
-                    _ = try await link.blob(chunk)
-                    sent += UInt64(chunk.data.count)
-                    progress(sent)
+            // Contents that fit one chunk (most of them) go a few at a time, so a handful of edited files costs one round trip, not one each;
+            // a bigger one goes on its own, its chunks in order.
+            var ended = false
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                var inFlight = 0
+                for hash in ack.needs {
+                    guard await live() else { ended = true; break }
+                    if let size = sizes[hash], size <= UInt64(FleetSnapshotTransfer.chunkBytes), built.bundle?.ref.hash != hash {
+                        if inFlight >= Self.pushWindow { try await group.next(); inFlight -= 1 }
+                        group.addTask { try await push(hash) }
+                        inFlight += 1
+                    } else {
+                        try await group.waitForAll()
+                        inFlight = 0
+                        try await push(hash)
+                    }
                 }
+                try await group.waitForAll()
             }
+            if ended { return }
         }
         throw RemoteHostClientError.rejected(code: FleetDispatchCode.snapshotFailed, message: "The target kept asking for contents.")
     }
@@ -324,6 +350,7 @@ extension FleetDispatch {
         }
         guard snap.held == snap.header.parts else { return reply(.success(ack(snap, id: id))) }
         // The manifest is whole: what this Mac lacks of it.
+        if !snap.events.contains(where: { $0.hasPrefix("parts") }) { snap.mark("parts") }
         refreshNeeds(id, snap) { [weak self] result in
             guard let self else { return }
             switch result {
@@ -347,6 +374,7 @@ extension FleetDispatch {
                     self.failInbound(id, failure.code, failure.detail)
                     done(.failure(Self.refusal(failure.code, failure.detail)))
                 case .success(let (manifest, needs)):
+                    snap.mark("needs")
                     snap.manifest = manifest
                     snap.needOrder = needs
                     snap.needs = Set(needs)
@@ -448,6 +476,7 @@ extension FleetDispatch {
             return
         }
         snap.building = true
+        snap.mark("arrived")
         prepare(id, space: space, requestedBranch: snap.requestedBranch)
     }
 
