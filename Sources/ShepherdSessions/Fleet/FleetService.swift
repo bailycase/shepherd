@@ -61,6 +61,8 @@ final class FleetService: @unchecked Sendable {
     private var peers: FleetPeers
     /// Pressure samples and readiness reports: this Mac's and each peer's (`FleetPressure`).
     let pressure: FleetPressure
+    /// Work sent to other Macs and work taken from them (`fleet.dispatch.v1`).
+    let dispatch: FleetDispatch
     private var devices: FleetDevices
     private var join: (window: FleetJoinWindow, owner: Int32)?
     /// The code window of Add a device: the same kind of window as `join`, shown on the Mac that takes the device.
@@ -104,12 +106,25 @@ final class FleetService: @unchecked Sendable {
         peers = try FleetPeers.load(from: directory)
         devices = try FleetDevices.load(from: directory)
         discovery = advertises ? FleetDiscovery() : nil
-        self.pressure = pressure ?? FleetPressure(queue: queue, clock: clock)
+        let pressure = pressure ?? FleetPressure(queue: queue, clock: clock)
+        self.pressure = pressure
+        dispatch = FleetDispatch(queue: queue, directory: directory, hostID: identity.hostID, pressure: pressure, clock: clock)
         syncEngine = try FleetSync(queue: queue, directory: directory.appendingPathComponent("store", isDirectory: true),
                              mac: identity.hostID, name: { name }, clock: clock)
         syncEngine.onChange = { [weak self] in self?.changed() }
         self.pressure.linkConnected = { [weak self] in self?.links.values.contains { $0.phase == .connected } == true }
         self.pressure.pushTargets = { [weak self] in self?.links.values.compactMap { $0.phase == .connected ? $0.client : nil } ?? [] }
+        dispatch.membership = { [weak self] in self?.membership ?? false }
+        dispatch.hostName = { [weak self] in self?.name ?? "" }
+        dispatch.peers = { [weak self] in
+            guard let self else { return [] }
+            return self.peers.members.map { ($0.hostID, $0.name, self.links[$0.hostID]?.phase == .connected) }
+        }
+        dispatch.client = { [weak self] in
+            guard let link = self?.links[$0], link.phase == .connected, link.client?.capabilities.contains(RemoteProtocol.fleetDispatchCapability) == true else { return nil }
+            return link.client
+        }
+        dispatch.onChange = { [weak self] in self?.changed() }
     }
 
     var hostID: UUID { identity.hostID }
@@ -122,6 +137,7 @@ final class FleetService: @unchecked Sendable {
     func start() {
         if membership {
             syncEngine.start()
+            dispatch.start()
             for record in peers.members where record.isLinkable { startLink(record.hostID) }
         }
         advertise()
@@ -135,8 +151,10 @@ final class FleetService: @unchecked Sendable {
         membership = on
         if on {
             syncEngine.start()
+            dispatch.start()
             for record in peers.members where record.isLinkable { startLink(record.hostID) }
         } else {
+            dispatch.stop()
             join = nil
             for id in Array(links.keys) { stopLink(id) }
             // No peer to sample for, and no Fleet page to show.
@@ -154,6 +172,7 @@ final class FleetService: @unchecked Sendable {
         for id in Array(links.keys) { stopLink(id) }
         pressure.stop()
         syncEngine.stop()
+        dispatch.stop()
         discovery?.stop()
     }
 
@@ -251,7 +270,8 @@ final class FleetService: @unchecked Sendable {
         // Pairing Macs, removing them and joining are a member's: with Fleet off they are refused, as they always were.
         switch request {
         case .fleetPair(let id, _, _), .fleetEstablish(let id, _), .fleetIntroduce(let id, _), .fleetRevoke(let id, _, _), .fleetSync(let id, _),
-             .fleetPressure(let id, _), .fleetReadiness(let id, _), .fleetPressureNow(let id):
+             .fleetPressure(let id, _), .fleetReadiness(let id, _), .fleetPressureNow(let id),
+             .fleetDispatchCreate(let id, _), .fleetDispatchControl(let id, _, _), .fleetDispatchChanged(let id, _), .fleetDispatchResult(let id, _, _, _):
             guard membership else { return reply(Self.off(id)) }
         case .fleetAction(let id, let action) where !action.isDeviceAction:
             guard membership else { return reply(Self.off(id)) }
@@ -287,6 +307,36 @@ final class FleetService: @unchecked Sendable {
                 let (sample, readiness) = await pressure.sampleNow()
                 reply(.fleetPressureSample(id: id, sample: sample, readiness: readiness))
             }
+        case .fleetDispatchCreate(let id, let create):
+            guard caller.access == .member, let from = caller.peerHostID else {
+                return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet sends work."))
+            }
+            dispatch.receiveCreate(create, from: from) { result in
+                switch result {
+                case .success(let record): reply(.fleetDispatchAccepted(id: id, record: record))
+                case .failure(let refusal): reply(Self.refusal(id, refusal.code, refusal.message))
+                }
+            }
+        case .fleetDispatchControl(let id, let dispatchID, let control):
+            guard caller.access == .member, let from = caller.peerHostID else {
+                return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet controls a dispatch."))
+            }
+            dispatch.control(dispatchID, control, from: from) { result in
+                switch result {
+                case .success(let record): reply(.fleetDispatchState(id: id, record: record))
+                case .failure(let refusal): reply(Self.refusal(id, refusal.code, refusal.message))
+                }
+            }
+        case .fleetDispatchChanged(let id, let record):
+            guard caller.access == .member, let from = caller.peerHostID else {
+                return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet reports a dispatch."))
+            }
+            reply(dispatch.changed(record, from: from) ? .ok(id: id) : Self.refusal(id, FleetDispatchProtocol.Code.unknownDispatch, "No such dispatch."))
+        case .fleetDispatchResult(let id, let dispatchID, let text, let facts):
+            guard caller.access == .member, let from = caller.peerHostID else {
+                return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet reports a dispatch."))
+            }
+            reply(dispatch.result(dispatchID, text: text, facts: facts, from: from) ? .ok(id: id) : Self.refusal(id, FleetDispatchProtocol.Code.unknownDispatch, "No such dispatch."))
         case .fleetSync(let id, let request):
             // Members only: a client device or the shared token never reads or writes the fleet's store.
             guard caller.access == .member, let from = caller.peerHostID else {
@@ -824,7 +874,8 @@ final class FleetService: @unchecked Sendable {
         return FleetSnapshot(enabled: membership, hostID: identity.hostID, name: name, build: build, addresses: FleetAddresses.local(),
                              port: listenerPort, advertising: discovery?.isAdvertising ?? false, peers: statuses, join: window,
                              sync: membership ? syncStatus : nil, devices: FleetDevicesSnapshot(devices: clients, code: code, sharedToken: sharedToken),
-                             macs: membership ? pressure.macs(thisMac: identity.hostID, peerIDs: statuses.map(\.hostID)) : [])
+                             macs: membership ? pressure.macs(thisMac: identity.hostID, peerIDs: statuses.map(\.hostID)) : [],
+                             dispatches: membership ? dispatch.log() : [])
     }
 
     private func status(of record: FleetPeerRecord) -> FleetPeerStatus {
@@ -942,6 +993,7 @@ final class FleetService: @unchecked Sendable {
         pushDevices(only: link.hostID)
         changed()
         brokerPending()
+        dispatch.linkChanged()
         return true
     }
 
@@ -953,6 +1005,7 @@ final class FleetService: @unchecked Sendable {
         link.lastSeen = nowMilliseconds
         pressure.refresh()
         changed()
+        dispatch.linkChanged()
     }
 
     /// A Mac that was offline when someone was removed hears of it as its link comes up.

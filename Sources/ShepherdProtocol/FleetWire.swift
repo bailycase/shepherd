@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import ShepherdCore
 
 /// Fleet: Macs that pair once with a code and then hold links between their hosts (`fleet.v1`).
 /// The payloads of `RemoteRequest.fleet*` and `RemoteReply.fleet*`. Nothing here carries a usable

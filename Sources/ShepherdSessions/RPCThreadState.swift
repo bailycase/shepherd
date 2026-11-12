@@ -154,6 +154,8 @@ final class RPCThreadState {
     /// Installed by SessionServer: called once, on the session queue, when the thread first
     /// serves (pi has answered `get_state` and `get_messages`).
     var onServable: (() -> Void)?
+    /// Stop was pressed (or sent): the host cancels what the thread dispatched to other Macs.
+    var onStopRequested: (() -> Void)?
     var onDiagnosticDuration: ((String, Double) -> Void)?
     var onDiagnosticActivity: ((String) -> Void)?
     var onDiagnosticActivityDetails: ((String, DiagnosticFailureDetails) -> Void)?
