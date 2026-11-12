@@ -34,7 +34,15 @@ final class FleetFSEvents {
     private let handler: ([Event]) -> Void
     private var stream: FSEventStreamRef?
     /// Tests: events are received and thrown away, the way a dropped one is, so a test can make an index drift.
-    var isDropping = false
+    var isDropping: Bool {
+        get { lock.withLock { dropping } }
+        set { lock.withLock { dropping = newValue } }
+    }
+    /// Tests: events received and thrown away while `isDropping`.
+    var droppedEvents: Int { lock.withLock { dropped } }
+    private let lock = NSLock()
+    private var dropping = false
+    private var dropped = 0
 
     init(root: String, queue: DispatchQueue, latency: TimeInterval = 0.05, handler: @escaping ([Event]) -> Void) {
         self.root = FleetContentIndex.realPath(root)
@@ -81,7 +89,9 @@ final class FleetFSEvents {
     }
 
     private func deliver(_ events: [Event]) {
-        guard !isDropping, !events.isEmpty else { return }
+        guard !events.isEmpty else { return }
+        let drop = lock.withLock { () -> Bool in if dropping { dropped += events.count }; return dropping }
+        if drop { return }
         handler(events)
     }
 

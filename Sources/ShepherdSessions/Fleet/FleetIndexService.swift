@@ -57,7 +57,8 @@ final class FleetIndexService: @unchecked Sendable {
     private let directory: URL
     private let clock: @Sendable () -> Date
     private let persistQueue = DispatchQueue(label: "shepherd.fleet.index.persist", qos: .utility)
-    var host: Host?
+    /// Set once by the host; indexing that was waiting for it starts.
+    var host: Host? { didSet { reconcile() } }
     /// Server queue: what the app draws of the index changed.
     var onChange: (() -> Void)?
     /// Tests: how each index classifies files, how often it checks itself, and how long changes wait to be sent.
@@ -103,7 +104,12 @@ final class FleetIndexService: @unchecked Sendable {
         } else {
             timer?.cancel()
             timer = nil
-            for root in roots.values { root.index.queue.async { [index = root.index] in index.stop() } }
+            // Each index saves where it got to before this returns (a scan in progress ends at its next directory), so what
+            // the next start replays from is on disk.
+            for root in roots.values {
+                root.index.requestStop()
+                root.index.queue.sync { [index = root.index] in index.stop() }
+            }
             roots = [:]
             manifests = [:]
         }

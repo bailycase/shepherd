@@ -87,7 +87,17 @@ final class FleetContentIndex: @unchecked Sendable {
     private var pendingRemoved: [FleetHash] = []
     /// Counts every entry written or dropped, so a repair can tell whether it found anything.
     private var mutations = 0
-    private var stopped = false
+    /// Stop was asked for: a scan in progress ends at its next directory.
+    private let stopFlag = NSLock()
+    private var _stopped = false
+    private var stopped: Bool {
+        get { stopFlag.withLock { _stopped } }
+        set { stopFlag.withLock { _stopped = newValue } }
+    }
+    /// Full walks made (the first scan included): what a test reads to tell a rescan from an event.
+    private(set) var rescans = 0
+    /// The index came from disk at start, not from a scan.
+    private(set) var loadedFromDisk = false
 
     /// Queue: hashes that came into the index and hashes that left it, together (the content hashes of files and the Merkle
     /// hashes of directories). The first call after a scan carries everything.
@@ -141,6 +151,9 @@ final class FleetContentIndex: @unchecked Sendable {
         }
     }
 
+    /// Asks a scan in progress to end. Safe from any thread; `stop()` then runs on the queue.
+    func requestStop() { stopped = true }
+
     /// Stops following and saves where it got to.
     func stop() {
         stopped = true
@@ -187,6 +200,7 @@ final class FleetContentIndex: @unchecked Sendable {
         entries = saved.entries
         for (path, entry) in entries { tree.set(path, kind: entry.kind, hash: entry.hash) }
         journalLines = saved.journalLines
+        loadedFromDisk = true
         eventID = id
         volume = now
         finishBatch(classify: false, persistChanges: false)
@@ -202,7 +216,9 @@ final class FleetContentIndex: @unchecked Sendable {
         Self.scanSlots.wait()
         defer { Self.scanSlots.signal() }
         let before = mutations
+        rescans += 1
         let complete = scan("", deep: true)
+        guard !stopped else { return }
         guard complete else {
             clearAll()
             state = .tooLarge
@@ -289,6 +305,7 @@ final class FleetContentIndex: @unchecked Sendable {
     /// False when the index outgrew `maxFiles`.
     @discardableResult
     private func scan(_ path: String, deep: Bool) -> Bool {
+        if stopped { return false }
         let location = absolute(path)
         if !path.isEmpty {
             let (parent, _) = Self.split(path)
