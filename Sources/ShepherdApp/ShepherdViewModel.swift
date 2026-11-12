@@ -17,7 +17,15 @@ typealias Tab = ShepherdCore.Tab
 @MainActor
 @Observable
 final class ShepherdViewModel {
-    var state: ShepherdState
+    var state: ShepherdState {
+        didSet { syncWorkspaceStructure() }
+    }
+    /// `state` with each agent's live fields cleared (`ShepherdState.withoutLiveAgentFields`), written
+    /// only when the rest of it changes. What decides which layouts exist and what each shows reads this
+    /// and not `state`, so a status report, a send or a question reruns none of the workspace around the
+    /// thread. Read it for structure alone: an agent's status, `lastActiveAt`, `waitingOn`,
+    /// `waitingReason`, `completedAt` and `seenCompletedAt` are idle or nil here.
+    private(set) var workspaceStructure = ShepherdState()
     /// Issues & PRs, read through this Mac's host (`SessionServer.forge`).
     @ObservationIgnored lazy var forgeStore = ForgeStore(transport: { [weak self] in
         await self?.forge($0) ?? .failure(ForgeError(.unreachable, "Shepherd is closing."))
@@ -62,18 +70,19 @@ final class ShepherdViewModel {
     @ObservationIgnored var sidebarPreparingOpeningTurns: Set<AgentID> = []
     /// The run on screen that Run Now is replacing: its going is no reason to show another thread.
     @ObservationIgnored var replacingRun: AgentID?
-    /// Last ten measured tool-completion rates per agent, not a decorative waveform. Each agent's
-    /// box is observed by its own row alone, so one agent's tool call redraws no other row.
-    @ObservationIgnored var sidebarActivityBoxes: [AgentID: SidebarActivityBox] = [:]
+    /// Each agent's status and its last ten measured tool-completion rates, not a decorative waveform.
+    /// A box is observed by what shows its agent alone, so one agent's tool call redraws no other row.
+    @ObservationIgnored var agentLives: [AgentID: AgentLive] = [:]
     var sidebarActivitySamples: [AgentID: [Double]] {
-        sidebarActivityBoxes.compactMapValues { $0.samples.isEmpty ? nil : $0.samples }
+        agentLives.compactMapValues { $0.samples.isEmpty ? nil : $0.samples }
     }
-    /// The agent's box, made on first ask so the row observing it sees the samples arrive.
-    func sidebarActivityBox(_ id: AgentID) -> SidebarActivityBox {
-        if let box = sidebarActivityBoxes[id] { return box }
-        let box = SidebarActivityBox()
-        sidebarActivityBoxes[id] = box
-        return box
+    /// The agent's box, made on first ask (from the newest push, read without observing it, so asking from
+    /// a body adds no dependency on `state`) for the row or line observing it to see the changes arrive.
+    func agentLive(_ id: AgentID) -> AgentLive {
+        if let live = agentLives[id] { return live }
+        let live = AgentLive(status: adoption.latest(_state).agents.first { $0.id == id }?.status ?? .idle)
+        agentLives[id] = live
+        return live
     }
     @ObservationIgnored var sidebarActivityLast: [AgentID: Date] = [:]
     var sidebarSeenCompletions: [SidebarRowID: Int] = [:]
@@ -1029,6 +1038,12 @@ final class ShepherdViewModel {
         }
     }
 
+    /// Brings `workspaceStructure` to `state`'s structure, writing it (and so redrawing what reads it) only when that changed.
+    private func syncWorkspaceStructure() {
+        let structure = state.withoutLiveAgentFields
+        if structure != workspaceStructure { workspaceStructure = structure }
+    }
+
     /// The thread stores follow the owner's state on every adoption, equal snapshot or not: a store is
     /// cheap to check and "held off" also reads session liveness, which no snapshot carries.
     private func reconcileThreadStores() {
@@ -1072,6 +1087,8 @@ final class ShepherdViewModel {
         // its card is asked to read again when the count moves. A hidden card reads when shown.
         let shown = selectedAgent.flatMap { $0.tabID == activeTabID ? ($0.id, $0.checkout) : nil }
         state = serverState
+        // A box follows each push (`applyAgentStatus`); an adoption outside the host's stream restates them all.
+        for agent in serverState.agents { agentLives[agent.id]?.report(agent.status) }
         if let (id, checkout) = shown, state.agents.first(where: { $0.id == id })?.checkout != checkout {
             branchCardStores[id]?.requestRefresh()
         }
@@ -1193,8 +1210,9 @@ final class ShepherdViewModel {
         // A bare remove notifies observers even when the id is absent.
         if status != .idle, sidebarOpeningTurns.contains(id) { sidebarOpeningTurns.remove(id) }
         statusSince[id] = Date()
+        agentLive(id).report(status)
         if old != .blocked, status == .working {
-            sidebarActivityBoxes[id]?.samples = []
+            agentLives[id]?.samples = []
             sidebarActivityLast[id] = Date()
         }
         // A turn ending reads the branch card again (commits, a push, the PR's checks).

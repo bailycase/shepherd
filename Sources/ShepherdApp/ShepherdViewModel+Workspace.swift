@@ -13,7 +13,7 @@ extension ShepherdViewModel {
     /// Which layouts the workspace mounts, and which one shows.
     private var workspaceSelection: WorkspaceSelection {
         WorkspaceSelection(
-            state: state,
+            state: workspaceStructure,
             selectedSpaceID: selectedSpaceID,
             selectedAgentID: selectedAgentID,
             remoteSelectionActive: selectedRemoteAgent != nil,
