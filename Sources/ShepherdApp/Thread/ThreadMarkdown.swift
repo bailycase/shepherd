@@ -308,6 +308,7 @@ struct HighlightedCodeBlock: View {
     }
 
     var body: some View {
+        let _ = SHRenderProbe.tick("code.highlighted")
         let key = key
         SHCodeBlock(key.code, language: language,
                     highlighted: CodeHighlightCache.colors(for: key, last: rendered, cached: CodeHighlightCache.cached(key)))

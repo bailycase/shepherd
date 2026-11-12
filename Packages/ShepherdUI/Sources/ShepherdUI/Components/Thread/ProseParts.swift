@@ -29,6 +29,7 @@ struct SHProseImageView: View {
     @State private var thumbnail: (url: URL, image: CGImage)?
 
     var body: some View {
+        let _ = SHRenderProbe.tick("prose.image")
         let source = SHProseImageSource(image.source, root: root)
         Group {
             if case .file(let url) = source,
