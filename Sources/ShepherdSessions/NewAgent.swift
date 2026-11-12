@@ -49,6 +49,8 @@ public struct NewAgentConfig {
     public var serviceTier: ServiceTier?
     /// A triggered automation's run thread (`Agent.automationOrigin`).
     public var automationOrigin: AutomationOrigin?
+    /// A thread Fleet started for another Mac's work (`Agent.dispatchedFrom`).
+    public var dispatchedFrom: DispatchedFrom?
 
     public init(spaceID: SpaceID, workingDirectory: String, reservedAgentID: AgentID? = nil, coordinatorFor: ProjectID? = nil,
                 model: String? = nil, thinking: ThinkingLevel, initialPrompt: String? = nil, initialImages: [NativeImage] = [],
@@ -124,6 +126,7 @@ public struct NewAgentConfig {
             serviceTier: serviceTier ?? defaultServiceTier
         )
         agent.automationOrigin = automationOrigin
+        agent.dispatchedFrom = dispatchedFrom
         return (agent, tab, primary)
     }
 }

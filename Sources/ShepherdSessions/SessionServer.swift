@@ -1103,7 +1103,7 @@ public final class SessionServer: @unchecked Sendable {
                 && ($0 != RemoteProtocol.missionsCapability || missionsServed && onRemoteMission != nil)
                 && (($0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetSyncCapability) || fleet?.membership == true)
                 && ($0 != RemoteProtocol.fleetDevicesCapability || fleet != nil)
-                && (($0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetViewCapability) || fleet?.membership == true)
+                && (($0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetViewCapability && $0 != RemoteProtocol.fleetDispatchCapability) || fleet?.membership == true)
                 && ($0 != RemoteProtocol.fleetSnapshotCapability || fleet?.membership == true)
         }
     }
@@ -1290,9 +1290,18 @@ public final class SessionServer: @unchecked Sendable {
     public func fleetHostSettingsChanged(_ settings: HostSettings) {
         queue.async { [self] in
             fleetHostSettings?.update(settings)
+            fleetSettings = settings
             fleet?.syncEngine.localChanged()
+            // A cap raised or work switched on frees what was held.
+            fleet?.dispatch.evaluate()
         }
     }
+
+    /// The host settings as the app last reported them: the fleet's policy (Threads can send work, the cap, the
+    /// weights) is read from here. Server queue.
+    private var fleetSettings: HostSettings?
+    /// Places promised to dispatches that haven't started (`FleetPressureSample.reserved`), for any thread.
+    private let fleetReserved = FleetCounter()
 
     /// Server queue: a skill was written by the fleet's sync. One push covers the files a pass wrote.
     private var skillsSyncPushPending = false
@@ -1342,9 +1351,12 @@ public final class SessionServer: @unchecked Sendable {
         { [weak self] in
             guard let self else { return FleetLocalFacts() }
             let state = self.store.committed
+            let spaces = state.spaces.filter { !$0.hidden }
             return FleetLocalFacts(activeAgents: state.agents.filter { $0.status == .working }.count,
-                                   spaces: state.spaces.filter { !$0.hidden }.map { (name: $0.name, path: $0.path) },
-                                   mcpConfig: self.pi.files.mcpConfig)
+                                   spaces: spaces.map { (name: $0.name, path: $0.path) },
+                                   mcpConfig: self.pi.files.mcpConfig,
+                                   repoKeys: Array(Set(spaces.filter { FleetDispatch.folderExists($0.path) }.compactMap(\.repoKey))).sorted(),
+                                   reserved: self.fleetReserved.value)
         }
     }
 
@@ -1393,6 +1405,7 @@ public final class SessionServer: @unchecked Sendable {
                     }
                 }
                 fleet = service
+                wireFleetDispatch(service)
                 // What syncs: the root instructions, pi's own preferences, and (once the app reports
                 // them) the host settings. Each is read and written through the code that owns it.
                 instructions.onChange = { [weak self] _ in self?.queue.async { self?.fleet?.syncEngine.localChanged() } }
@@ -1465,6 +1478,89 @@ public final class SessionServer: @unchecked Sendable {
 
     private var fleetSpacesSource: FleetSpacesSource?
 
+    /// Gives the dispatch engine what it needs of this server: the workspace and settings, the thread it
+    /// starts and stops and messages, and the parent's own queue for results. Server queue.
+    private func wireFleetDispatch(_ service: FleetService) {
+        service.dispatch.reservedSink = fleetReserved
+        service.dispatch.host = FleetDispatchHost(
+            state: { [weak self] in self?.store.state ?? ShepherdState() },
+            settings: { [weak self] in self?.fleetSettings },
+            wakeParent: { [weak self] agentID, text in await self?.pushMessage(toAgent: agentID, text: text, delivery: .task) ?? false },
+            createThread: { [weak self] request in
+                await withCheckedContinuation { continuation in
+                    self?.queue.async {
+                        guard let self, let handler = self.onRemoteCreateAgent else {
+                            return continuation.resume(returning: .failure(RemoteCreateAgentError("This Mac can't start threads right now.")))
+                        }
+                        self.hopToMain { handler(request) { continuation.resume(returning: $0) } }
+                    } ?? continuation.resume(returning: .failure(RemoteCreateAgentError("host is shutting down")))
+                }
+            },
+            stopThread: { [weak self] agentID in self?.rpcThread(forAgent: agentID)?.stop { _ in } },
+            messageThread: { [weak self] agentID, text, delivery in
+                await withCheckedContinuation { continuation in
+                    self?.queue.async {
+                        guard let self, let thread = self.rpcThread(forAgent: agentID), thread.isServable else {
+                            return continuation.resume(returning: false)
+                        }
+                        thread.send(id: UUID(), text: text, delivery: delivery, images: [], alone: true) { result in
+                            if case .accepted = result { continuation.resume(returning: true) } else { continuation.resume(returning: false) }
+                        }
+                    } ?? continuation.resume(returning: false)
+                }
+            },
+            threadFacts: { [weak self] agentID in
+                guard let self, let agent = self.store.state.agents.first(where: { $0.id == agentID }) else { return nil }
+                var lastText: String?
+                if let thread = self.rpcThread(forAgent: agentID) {
+                    let assistant = thread.live.last(where: { $0.value.role == "assistant" })?.value
+                        ?? thread.history.last(where: { $0.role == "assistant" })
+                    lastText = assistant?.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
+                }
+                return FleetThreadFacts(status: agent.status, waitingOn: agent.waitingOn, lastText: lastText, worktree: agent.worktreePath)
+            })
+    }
+
+    /// An agent's `fleet_*` tool. Refused unless Fleet is on and the thread may send work at all (`fleet_scope`:
+    /// a dispatched thread, a mission or project worker, a coordinator, a design's agent or an automation run
+    /// never does); the settings and the per-thread cap are the engine's. Server queue.
+    private func serveFleetTool(_ message: ExtensionMessage, from client: ExtensionConnection) {
+        let id: Int, agentID: AgentID
+        switch message {
+        case .fleetListHosts(let value, let agent), .fleetDispatch(let value, let agent, _, _, _, _, _, _), .fleetDispatchStatus(let value, let agent, _),
+             .fleetDispatchMessage(let value, let agent, _, _, _), .fleetDispatchCancel(let value, let agent, _):
+            (id, agentID) = (value, agent)
+        default: return
+        }
+        guard let fleet, fleet.membership else {
+            return reply(.error(id: id, code: FleetDispatchCode.fleetOff, message: "Fleet is off. Turn it on in Settings ▸ Experiments."), to: client)
+        }
+        if let refusal = FleetDispatch.scopeProblem(for: agentID, in: store.state, unattended: Self.unattendedAgentIDs(in: store.state)) {
+            return reply(.error(id: id, code: refusal.code, message: refusal.message), to: client)
+        }
+        // The engine answers on this queue, now or later.
+        let answer: (Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void = { [weak self, weak client] result in
+            guard let self, let client, self.clients[client.fd] === client else { return }
+            switch result {
+            case .success(let record): self.reply(.fleetDispatch(id: id, info: FleetDispatchInfo(record)), to: client)
+            case .failure(let refusal): self.reply(.error(id: id, code: refusal.code, message: refusal.message), to: client)
+            }
+        }
+        switch message {
+        case .fleetListHosts:
+            reply(.fleetHosts(id: id, hosts: fleet.dispatch.hosts(for: agentID)), to: client)
+        case .fleetDispatch(_, _, let key, let task, let title, let host, let model, let thinking):
+            fleet.dispatch.dispatch(from: agentID, key: key, task: task, title: title, host: host, model: model, thinking: thinking, reply: answer)
+        case .fleetDispatchStatus(_, _, let key):
+            fleet.dispatch.agentControl(from: agentID, key: key, .status, reply: answer)
+        case .fleetDispatchMessage(_, _, let key, let text, let delivery):
+            fleet.dispatch.agentControl(from: agentID, key: key, .message(text: text, delivery: delivery), reply: answer)
+        case .fleetDispatchCancel(_, _, let key):
+            fleet.dispatch.agentControl(from: agentID, key: key, .cancel, reply: answer)
+        default: break
+        }
+    }
+
     /// Tests, and a person locating a folder: this Mac's folder for a space the fleet synced.
     func bindFleetSpace(_ id: SpaceID, to path: String) {
         queue.sync { fleetSpacesSource?.bind(id, to: path) }
@@ -1516,6 +1612,8 @@ public final class SessionServer: @unchecked Sendable {
         case .fleetIdentify(let value), .fleetPair(let value, _, _), .fleetEstablish(let value, _), .fleetIntroduce(let value, _),
              .fleetRevoke(let value, _, _), .fleetRead(let value), .fleetAction(let value, _), .fleetSync(let value, _),
              .fleetPressure(let value, _), .fleetReadiness(let value, _), .fleetPressureNow(let value), .fleetRepoManifest(let value, _),
+             .fleetDispatchCreate(let value, _), .fleetDispatchControl(let value, _, _), .fleetDispatchChanged(let value, _),
+             .fleetDispatchResult(let value, _, _, _),
              .fleetPairDevice(let value, _, _), .fleetEnrollDevice(let value, _), .fleetSyncDevices(let value, _):
             id = value
         default: return
@@ -2868,6 +2966,7 @@ public final class SessionServer: @unchecked Sendable {
         switch request {
         case .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
              .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetRepoManifest,
+             .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult,
              .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
             serveFleet(request, from: client)
         case .pushRegistration(let id, let registration):
@@ -5167,6 +5266,14 @@ public final class SessionServer: @unchecked Sendable {
             refuse(message, on: client)
             return
         }
+        // The fleet tools answer for themselves, ahead of the scope lists below: a thread that may not send work
+        // is told `fleet_scope`, whichever kind of thread it is (the lists below refuse them too, as a second wall).
+        switch message {
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
+            serveFleetTool(message, from: client)
+            return
+        default: break
+        }
         let coordinatorPeer = store.state.agents.contains { agent in
             agent.coordinatorFor != nil && (agent.id == message.speaksFor || agent.id == client.agentID
                 || isPiProcess(client.peerPID, ofAgent: agent.id))
@@ -5186,6 +5293,7 @@ public final class SessionServer: @unchecked Sendable {
         if missionWorker {
             switch message {
             case .childScope, .spawnAgent, .moveAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation,
+                 .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel,
                  .openPane, .sendPaneInput, .focusPane:
                 if let id = message.replyID { reply(.error(id: id, code: "mission_scope", message: "Mission stations cannot delegate, spawn peers or create unattended work. Propose additional stations in the map instead."), to: client) }
                 return
@@ -5198,7 +5306,8 @@ public final class SessionServer: @unchecked Sendable {
         }
         if assignedWorker {
             switch message {
-            case .childScope, .spawnAgent, .moveAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation:
+            case .childScope, .spawnAgent, .moveAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation,
+                 .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
                 if let id = message.replyID { reply(.error(id: id, code: "project_scope", message: "Use Project threads through the coordinator; subagents and workflows are unavailable in Projects. Peer and automation admission is also unavailable."), to: client) }
                 return
             default: break
@@ -5344,6 +5453,8 @@ public final class SessionServer: @unchecked Sendable {
             hopToMain { [weak self] in self?.onNotify?(agentID, title, body) }
         case .helloAgent(let agentID):
             client.agentID = agentID
+            // Results held for this thread while its pi was away go now.
+            fleet?.dispatch.parentConnected(agentID)
         case .coordinateAgent(let id, let agentID, let targetAgentID, let request):
             coordinateAgent(id: id, agentID: agentID, targetAgentID: targetAgentID, request: request, client: client)
         case .agentResponse(let agentID, let token, let result):
@@ -5405,6 +5516,8 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             routeAgentPeerRequest(.move(agentID: agentID, targetAgentID: targetAgentID, spaceID: spaceID), requestID: id, client: client)
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
+            break // Served ahead of the scope lists above (`serveFleetTool`).
         case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "cwd and prompt are required"), to: client)
@@ -6522,6 +6635,7 @@ public final class SessionServer: @unchecked Sendable {
              .reviewResult(let id, _), .appResult(let id, _),
              .automations(let id, _),
              .agents(let id, _),
+             .fleetHosts(let id, _), .fleetDispatch(let id, _),
              .message(let id, _, _),
              .agentRequest(let id, _, _, _),
              .agentResult(let id, _),
@@ -6685,6 +6799,8 @@ public final class SessionServer: @unchecked Sendable {
         }
         let committedState = store.state
         broadcastRemoteState(committedState)
+        // A dispatched thread that settled has a result to send back.
+        fleet?.dispatch.agentStatusChanged(agentID, status)
         hopToMain { [weak self] in
             self?.onAgentStatus?(agentID, status, failure)
             self?.onStateChanged?(committedState)
@@ -7754,6 +7870,9 @@ public final class SessionServer: @unchecked Sendable {
             // persistence fails, the user's processes and workspace remain
             // untouched rather than becoming an unrecorded partial deletion.
             let doomedTabIDs = Set(doomedTabs.map(\.id))
+            // A thread that is closed sends nothing more: its dispatches end, and a dispatched thread's ends too.
+            self.fleet?.dispatch.cancelDispatches(ownedBy: agentID)
+            self.fleet?.dispatch.agentRemoved(agentID)
             try self.mutateState {
                 $0.agents.removeAll { $0.id == agentID }
                 $0.tabs.removeAll { doomedTabIDs.contains($0.id) }
@@ -9219,6 +9338,11 @@ public final class SessionServer: @unchecked Sendable {
             thread.compactionSettings = { model in PiConfig.compactionSettings(model: model, cwd: cwd, in: piDirectory) }
             // pi is idle and nothing continues (the run a done was held across has settled, or the
             // queue did not go after all): the agent is done even though its report was held.
+            // Stop on a thread cancels the work it sent to other Macs, and nothing wakes it back up.
+            thread.onStopRequested = { [weak serverWeak] in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                server.queue.async { server.fleet?.dispatch.cancelDispatches(ownedBy: agentID) }
+            }
             thread.onIdleAfterQueue = { [weak serverWeak] in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid),
                       server.store.state.agents.first(where: { $0.id == agentID })?.status == .working else { return }

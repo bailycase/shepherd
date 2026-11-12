@@ -9,11 +9,17 @@ struct FleetLocalFacts: Sendable {
     var spaces: [(name: String, path: String)]
     /// pi's MCP file on this Mac: the commands of the local servers in it are what a thread may run.
     var mcpConfig: URL?
+    /// The repositories those projects are (`Space.repoKey`), sorted: what dispatches are matched against.
+    var repoKeys: [String]
+    /// Dispatches this host promised a place to that haven't started (`FleetPressureSample.reserved`).
+    var reserved: Int
 
-    init(activeAgents: Int = 0, spaces: [(name: String, path: String)] = [], mcpConfig: URL? = nil) {
+    init(activeAgents: Int = 0, spaces: [(name: String, path: String)] = [], mcpConfig: URL? = nil, repoKeys: [String] = [], reserved: Int = 0) {
         self.activeAgents = activeAgents
         self.spaces = spaces
         self.mcpConfig = mcpConfig
+        self.repoKeys = repoKeys
+        self.reserved = reserved
     }
 }
 
@@ -41,8 +47,8 @@ enum FleetReadiness {
     /// What a recheck compares: the same key means the same report. Cheap to make (no disk read
     /// beyond the MCP file), since it is made every sample; whether a project needs Xcode is
     /// read only when a report is made, which a new project or a daily recheck brings about.
-    static func key(commands: [String], repos: [String]) -> String {
-        (commands + ["\u{2}"] + repos).joined(separator: "\u{1}")
+    static func key(commands: [String], repos: [String], repoKeys: [String] = []) -> String {
+        (commands + ["\u{2}"] + repos + ["\u{3}"] + repoKeys).joined(separator: "\u{1}")
     }
 
     /// The commands of the local (stdio) servers in `config`, each once, sorted: `npx`, `uvx`,
@@ -69,7 +75,7 @@ enum FleetReadiness {
     }
 
     /// The report for `facts`. `commands` are the ones to resolve (`mcpCommands`).
-    static func report(commands: [String], needsXcode: Bool, spaces: [(name: String, path: String)],
+    static func report(commands: [String], needsXcode: Bool, spaces: [(name: String, path: String)], repoKeys: [String] = [],
                        probe: Probe, hardware: Hardware) async -> FleetReadinessReport {
         // A command that is a path is checked on disk; a name goes to the shell.
         var missing: [FleetMissingTool] = []
@@ -90,7 +96,7 @@ enum FleetReadiness {
         if needsXcode, found.noXcode { missing.append(FleetMissingTool(kind: .xcode)) }
         let machine = hardware()
         return FleetReadinessReport(model: machine.model, chip: machine.chip, missing: missing,
-                                    repos: Array(Set(spaces.map(\.name).filter { !$0.isEmpty })).sorted())
+                                    repos: Array(Set(spaces.map(\.name).filter { !$0.isEmpty })).sorted(), repoKeys: repoKeys)
     }
 
     // MARK: The system's facts

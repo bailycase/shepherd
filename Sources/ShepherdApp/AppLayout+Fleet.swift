@@ -35,6 +35,11 @@ extension AppLayout {
     /// Room's gauge is 6pt tall, the CPU and memory gauges 4pt.
     static let fleetRoomBarHeight: CGFloat = 6
     static let fleetMetricBarHeight: CGFloat = 4
+    /// The Dispatches log's columns: the Mac's chip, why, the state pill and the age.
+    static let fleetDispatchHostWidth: CGFloat = 120
+    static let fleetDispatchReasonWidth: CGFloat = 300
+    static let fleetDispatchStateWidth: CGFloat = 96
+    static let fleetDispatchAgeWidth: CGFloat = 64
     /// The card's status pill.
     static let fleetPillHeight: CGFloat = 20
     /// Send work here: its four buttons are 24pt tall.

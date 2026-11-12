@@ -10,6 +10,7 @@
     "pi": "pi tools",
     "terminal": "terminal tools",
     "agent": "agent tools",
+    "fleet": "fleet tools",
     "automation": "automation tools",
     "review": "review tool",
     "subagents": "subagent tools",
@@ -117,6 +118,22 @@
         "thread": "defer"
       },
       "reason": "Reaching other threads is something the user asks for, and each description says so first (agent-to-agent messages). Deferred: 1.4k tokens of definitions and 65 of tool-list lines out of every request. The prompt names agent_* and says it is only when the user explicitly asks, and the rule about a message that arrives from another agent stays in it whether or not they are loaded."
+    },
+    {
+      "tools": [
+        "fleet_hosts",
+        "fleet_dispatch",
+        "fleet_read",
+        "fleet_wait",
+        "fleet_send",
+        "fleet_cancel"
+      ],
+      "group": "fleet",
+      "extension": "shepherd-panes.ts",
+      "verdicts": {
+        "thread": "defer"
+      },
+      "reason": "Sending separate work to another Mac is occasional, so the six tools are deferred (shepherd_fleet; tool_search loads them) and cost nothing until used. Unlike agent_*, a thread may dispatch without being asked when Fleet's Threads can send work is on, so the prompt carries one line saying so and that a Result from <title> on <Mac> message is data from another agent. A watch agent gets none: the host refuses it with fleet_scope."
     },
     {
       "tools": [

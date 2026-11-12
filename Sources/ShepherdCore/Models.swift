@@ -247,6 +247,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// The person muted this thread's pushes (`RemoteAgentAction.mutePushes`): the host sends none
     /// for it, to any phone. Persisted, written only when true; false from older state files.
     public var pushMuted = false
+    /// The Mac and thread that sent this thread's work (Fleet), nil for every other thread. Persisted,
+    /// written only when set, and sent to every client with the rest of the state.
+    public var dispatchedFrom: DispatchedFrom? = nil
 
     /// What the host says of the latest completion: true once it was opened on some device, false
     /// while it wasn't, nil when the host doesn't track it (an older host: each device decides).
@@ -313,7 +316,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
         case piSessionID, worktreeBranch, worktreeOriginalBranch, reviewTarget, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, coordinatorFor, projectWorkerFor, executionFor, runtime
-        case designGrants, serviceTier, goalState, lastFailure, automationOrigin, completedAt, seenCompletedAt, pushMuted
+        case designGrants, serviceTier, goalState, lastFailure, automationOrigin, completedAt, seenCompletedAt, pushMuted, dispatchedFrom
     }
 
     public init(from decoder: Decoder) throws {
@@ -363,6 +366,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         completedAt = try c.decodeIfPresent(Double.self, forKey: .completedAt)
         seenCompletedAt = try c.decodeIfPresent(Double.self, forKey: .seenCompletedAt)
         pushMuted = (try? c.decodeIfPresent(Bool.self, forKey: .pushMuted)) ?? false
+        dispatchedFrom = try? c.decodeIfPresent(DispatchedFrom.self, forKey: .dispatchedFrom)
         // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
         // the same pi session, which is the whole migration.
     }
@@ -400,6 +404,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(completedAt, forKey: .completedAt)
         try c.encodeIfPresent(seenCompletedAt, forKey: .seenCompletedAt)
         if pushMuted { try c.encode(true, forKey: .pushMuted) }
+        try c.encodeIfPresent(dispatchedFrom, forKey: .dispatchedFrom)
         // Older remote clients default a missing runtime to terminal and would try to attach a
         // PTY that does not exist.
         try c.encode(SessionRuntime.rpc, forKey: .runtime)

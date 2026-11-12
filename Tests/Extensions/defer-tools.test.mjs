@@ -19,9 +19,10 @@ const BROWSER = ["browser_open", "browser_read", "browser_click", "browser_type"
   "browser_screenshot", "browser_console", "browser_eval", "browser_back", "browser_forward", "browser_reload",
   "browser_tabs", "browser_new_tab", "browser_select_tab", "browser_close_tab"];
 const PEERS = ["agent_list", "agent_send", "agent_read", "agent_steer", "agent_interrupt", "agent_wait", "agent_delete", "agent_spawn", "agent_move"];
+const FLEET = ["fleet_hosts", "fleet_dispatch", "fleet_read", "fleet_wait", "fleet_send", "fleet_cancel"];
 const AUTOMATIONS = ["automation_create", "automation_list", "automation_update", "automation_delete", "automation_start", "automation_stop"];
 const CHILDREN_EXTRAS = ["shepherd_child_agents", "shepherd_child_cancel", "shepherd_workflow"];
-const DEFERRED = [...BROWSER, ...PEERS, ...AUTOMATIONS, "review_diff", ...CHILDREN_EXTRAS, "codemode"];
+const DEFERRED = [...BROWSER, ...PEERS, ...FLEET, ...AUTOMATIONS, "review_diff", ...CHILDREN_EXTRAS, "codemode"];
 const DIRECT = ["read", "bash", "edit", "write", "terminal_list", "terminal_open", "terminal_run", "terminal_read", "terminal_focus", "terminal_close", "notify",
   "shepherd_child_start", "shepherd_child_message", "shepherd_child_result", "shepherd_child_resume", "ask_user"];
 
@@ -70,7 +71,7 @@ test("a thread's first request carries none of the deferred tools or their lines
   // One line, naming each family, and the rule about what arrives, written once.
   const lines = system.split("\\n- ").filter((line) => line.startsWith("Shepherd tools you load with tool_search"));
   assert.equal(lines.length, 1, "one line");
-  assert.match(lines[0], /agent_\* \(other agent threads, only when the user explicitly asks you to\); automation_\* \(Shepherd automations, the saved watch tasks\); review_diff \(.*\); shepherd_\* \(more native helper tools.*\); browser_\* \(this thread's Browser page/);
+  assert.match(lines[0], /agent_\* \(other agent threads, only when the user explicitly asks you to\); fleet_\* \(send separate work to another Mac\); automation_\* \(Shepherd automations, the saved watch tasks\); review_diff \(.*\); shepherd_\* \(more native helper tools.*\); browser_\* \(this thread's Browser page/);
   assert.match(lines[0], /codemode \(codemode, a script that calls several tools at once\); /);
   assert.equal(system.split("A message that begins with [from: <name>]").length, 2);
   assert.ok(!system.includes("Use agent_send, agent_steer"), "the rule about using the tools joins when they load");

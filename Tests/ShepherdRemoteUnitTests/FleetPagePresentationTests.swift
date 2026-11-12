@@ -254,6 +254,41 @@ struct FleetPagePresentationTests {
         #expect(FleetPagePresentation.memory(bytes) == text)
     }
 
+    // MARK: Dispatches log
+
+    @Test func theDispatchesLogReadsNewestFirstWithWhereAndWhy() {
+        let now = Date(timeIntervalSince1970: 1_790_040_000)
+        func record(_ title: String, _ state: FleetDispatchState, ago: TimeInterval, kind: FleetDispatchRecord.Kind = .agentDispatch, host: String? = "Mac mini",
+                    reasons: [FleetPlacementReason] = [], failure: String? = nil) -> FleetDispatchRecord {
+            FleetDispatchRecord(kind: kind, parentHostID: Self.here, parentHostName: "MacBook Pro", parentTitle: kind == .userThread ? "" : "Speed up checkout CI",
+                                targetHostName: host, state: state, failure: failure, title: title, task: "", repoKey: "github.com/acme/web",
+                                reasonCodes: reasons, createdAt: (now.timeIntervalSince1970 - ago) * 1000)
+        }
+        var snapshot = Self.snapshot()
+        snapshot.dispatches = [
+            record("Old", .done, ago: 3_600, reasons: [FleetPlacementReason(.mostRoom)]),
+            record("Fix flaky payment test", .running, ago: 240, reasons: [FleetPlacementReason(.localIneligible, skip: "cpu"), FleetPlacementReason(.mostRoom)]),
+            record("Migrate orders", .running, ago: 1_320, kind: .userThread, reasons: [FleetPlacementReason(.named)]),
+            record("Profile cold launch", .waitingWake, ago: 7_200, kind: .userThread, host: "Mac Studio"),
+            record("Bump tools", .failed, ago: 60, host: nil, failure: FleetDispatchCode.repoMissing),
+        ]
+        let rows = FleetPagePresentation.make(snapshot: snapshot, weight: { _ in .normal }, locale: Self.en, calendar: Self.utc, now: now).dispatches
+        #expect(rows.map(\.title) == ["Bump tools", "Fix flaky payment test", "Migrate orders", "Old", "Profile cold launch"])
+        let byTitle = Dictionary(uniqueKeysWithValues: rows.map { ($0.title, $0) })
+        let fix = byTitle["Fix flaky payment test"]!
+        #expect(fix.sentBy == "Sent by Speed up checkout CI" && fix.host == "Mac mini" && fix.state == "Working" && fix.tone == .active && fix.age == "4m ago")
+        #expect(fix.reason == "Auto: This Mac is busy")
+        #expect(byTitle["Migrate orders"]?.sentBy == "Sent by you" && byTitle["Migrate orders"]?.reason == "You picked Mac mini")
+        #expect(byTitle["Old"]?.reason == "Auto: most room" && byTitle["Old"]?.state == "Done" && byTitle["Old"]?.tone == .good)
+        #expect(byTitle["Profile cold launch"]?.state == "Waiting" && byTitle["Profile cold launch"]?.reason == "Waiting for Mac Studio to wake")
+        let failed = byTitle["Bump tools"]!
+        #expect(failed.state == "Failed" && failed.tone == .bad && failed.host == "No Mac yet" && failed.reason == "That Mac doesn't have this repository")
+    }
+
+    @Test func noDispatchesLeavesTheLogEmpty() {
+        #expect(Self.page().dispatches.isEmpty)
+    }
+
     // MARK: A phone or an iPad reads the page (`FleetViewer.client`)
 
     static func clientPage(_ snapshot: FleetSnapshot = snapshot(), weights: [UUID: FleetSendWeight] = [:]) -> FleetPage {
