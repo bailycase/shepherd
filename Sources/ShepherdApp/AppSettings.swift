@@ -128,6 +128,7 @@ final class AppSettings {
         static let goalsEnabled = "shepherd.experiments.goals"
         static let projectsEnabled = "shepherd.experiments.projects"
         static let designToolEnabled = "shepherd.experiments.designTool"
+        static let fleetEnabled = "shepherd.experiments.fleet"
         static let missionsEnabled = "shepherd.experiments.missions"
         static let implementOpensThread = "shepherd.designs.implementOpensThread"
 
@@ -143,7 +144,7 @@ final class AppSettings {
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeGeneratePRDescription, worktreeDeleteAction, worktreeCloseOnMerge, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
             mcpProjectConfig, mcpSameEverywhere,
-            goalsEnabled, projectsEnabled, designToolEnabled, missionsEnabled, implementOpensThread,
+            goalsEnabled, projectsEnabled, designToolEnabled, fleetEnabled, missionsEnabled, implementOpensThread,
             filesWordWrap, filesMarkdownPreview,
         ]
 
@@ -532,6 +533,16 @@ final class AppSettings {
     }
     @ObservationIgnored var onProjectsChange: ((Bool) -> Void)?
 
+    /// Settings ▸ Experiments ▸ Fleet: this Mac's host pairs with other Macs and holds links to
+    /// them (Settings ▸ Fleet). Off by default; off ends the links and leaves what was paired saved.
+    var fleetEnabled: Bool {
+        didSet {
+            store.set(fleetEnabled, forKey: Key.fleetEnabled)
+            if fleetEnabled != oldValue { onFleetChange?(fleetEnabled) }
+        }
+    }
+    @ObservationIgnored var onFleetChange: ((Bool) -> Void)?
+
     /// Settings ▸ Experiments ▸ Missions: the Missions destination and its sidebar section. Off by
     /// default, as every experiment. Off hides them only: missions, their worktrees and receipts are
     /// kept, and their threads stay out of the thread lists.
@@ -574,6 +585,7 @@ final class AppSettings {
             .flatMap(ServiceTier.init(rawValue:)) ?? Defaults.serviceTier
         goalsEnabled = store.object(forKey: Key.goalsEnabled) as? Bool ?? false
         projectsEnabled = store.object(forKey: Key.projectsEnabled) as? Bool ?? false
+        fleetEnabled = store.object(forKey: Key.fleetEnabled) as? Bool ?? false
         // Naming is always on now; only its model is a setting.
         store.removeObject(forKey: "shepherd.agent.autoName")
         // The session naming model became the text generation model: move its stored choice to
@@ -700,6 +712,7 @@ final class AppSettings {
         defaultServiceTier = Defaults.serviceTier
         goalsEnabled = false
         projectsEnabled = false
+        fleetEnabled = false
         shareDiagnostics = false
         textGenerationModel = ""
         visionModel = ""
@@ -839,7 +852,7 @@ final class AppSettings {
     /// Every setting `Key.resettable` stores, as `resetToDefaults` lists them, and Serve this Mac's switch.
     private static let followed: [(AppSettings, AppSettings) -> Void] = [
         take(\.terminalFontFamily), take(\.terminalFontSize), take(\.defaultModel), take(\.defaultThinking),
-        take(\.defaultServiceTier), take(\.goalsEnabled), take(\.projectsEnabled), take(\.shareDiagnostics),
+        take(\.defaultServiceTier), take(\.goalsEnabled), take(\.projectsEnabled), take(\.fleetEnabled), take(\.shareDiagnostics),
         take(\.textGenerationModel), take(\.visionModel), take(\.skillsInSlashMenu), take(\.hiddenSlashCommands), take(\.mcpProjectConfig),
         take(\.mcpSameEverywhere), take(\.queueDelivery), take(\.trimToolOutput), take(\.notifyOnTurnFinished),
         take(\.deferTools), take(\.codemode), take(\.compactAtPercent), take(\.uiDensity), take(\.uiTextScale),

@@ -342,6 +342,8 @@ final class ShepherdViewModel {
     let hooks: HooksModel
     /// Settings › Apps, and the apps running now.
     let apps: AppsModel
+    /// Settings ▸ Fleet: this Mac's fleet as its host reports it.
+    let fleet = FleetSettingsModel()
     /// The thread whose Browser waits for each app's address.
     @ObservationIgnored var appPageWaits: [AppKey: AgentID] = [:]
     /// Each remote host's hooks, made when first shown (`hooks(for:)`).
@@ -829,6 +831,12 @@ final class ShepherdViewModel {
         installMissingSpaceWatch()
         installProjectRuntime()
         self.hooks.spacePaths = { [weak self] in self?.state.spaces.filter { !$0.hidden }.map(\.path) ?? [] }
+        self.fleet.host = { [weak self] in try self?.remoteHosts.thisMacHost() }
+        self.fleet.browse = { update in
+            let browser = FleetBrowser()
+            browser.start(update)
+            return { browser.stop() }
+        }
         self.apps.spaces = { [weak self] in self?.state.spaces.filter { !$0.hidden } ?? [] }
         self.apps.currentSpace = { [weak self] in self?.selectedRemoteAgent == nil ? self?.selectedAgent?.spaceID : nil }
         installApps()

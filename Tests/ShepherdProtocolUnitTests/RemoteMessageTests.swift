@@ -12,6 +12,18 @@ enum RemoteSamples {
     static let tab = TabID(rawValue: "tab")
     static let split = PaneNode.split(axis: .vertical, ratio: 0.5, first: .leaf(LeafPane(cwd: "/a")), second: .leaf(LeafPane(cwd: "/b")))
 
+    static let fleetHost = UUID(uuidString: "00000000-0000-0000-0000-0000000000F1")!
+    static let fleetHash = String(repeating: "ab", count: 32)
+    static let fleetIntroduction = FleetIntroduction(hostID: fleetHost, name: "MacBook Pro", myTokenHash: fleetHash, port: 7434)
+    static let fleetMember = FleetMember(hostID: fleetHost, name: "Mac mini", host: "192.168.1.40", port: 7434)
+    static let fleetSnapshot = FleetSnapshot(
+        enabled: true, hostID: fleetHost, name: "MacBook Pro", build: "412", addresses: ["192.168.1.20"], port: 7434, advertising: true,
+        peers: [FleetPeerStatus(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F2")!, name: "Mac mini", host: "192.168.1.40", port: 7434,
+                                pairedAt: 1_790_000_000_000, link: .connected),
+                FleetPeerStatus(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F3")!, name: "Mac Studio", pairedAt: 1_790_000_001_000,
+                                link: .offline, lastSeen: 1_790_000_002_000)],
+        join: FleetJoinStatus(expiresAt: 1_790_000_300_000, attemptsLeft: 4))
+
     static let commitFile = RemoteCommitFile(path: "App/iOS/FleetView.swift", status: "M", added: 9, removed: 7, fingerprint: "f1")
     static let renamedFile = RemoteCommitFile(path: "new name.swift", oldPath: "old.swift", status: "R", added: 0, removed: 0, fingerprint: "f2")
     static let commitInfo = RemoteCommitInfo(
@@ -239,7 +251,7 @@ enum RemoteSamples {
     static let hostSettings = HostSettings(
         shepherdVersion: "0.4.2", piVersion: "0.87.1", defaultModel: "anthropic/claude-opus", defaultThinking: .high,
         defaultServiceTier: .fast, textGenerationModel: "anthropic/claude-haiku", visionModel: "google/gemini-flash", compactAtPercent: 80,
-        queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true, projectsEnabled: true,
+        queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true, projectsEnabled: true, fleetEnabled: true,
         worktreeBase: .head, fetchBeforeCreating: false, mergePRAutomatically: true, mergeMethod: .rebase, closeOnMerge: true,
         backgroundService: true, designToolEnabled: true, missionsEnabled: true, missionsActive: true,
         subagentDefaults: HostSettings.SubagentDefaults(concurrency: 6, model: "openai/gpt-5-mini", thinking: .low, context: .fork),
@@ -269,7 +281,7 @@ enum RemoteSamples {
     static let hostSettingChanges: [HostSettingChange] = [
         .defaultModel("openai/gpt-5"), .defaultModel(nil), .defaultThinking(.low), .queueDelivery(.all),
         .defaultServiceTier(.fast), .textGenerationModel("openai/gpt-5-mini"), .textGenerationModel(nil), .namingModel("openai/gpt-5-mini"), .compactAtPercent(70), .compactAtPercent(nil),
-        .goalCrossProviderEvaluation(true), .goalCrossProviderEvaluation(false), .goalsEnabled(true), .goalsEnabled(false), .projectsEnabled(true), .projectsEnabled(false),
+        .goalCrossProviderEvaluation(true), .goalCrossProviderEvaluation(false), .goalsEnabled(true), .goalsEnabled(false), .projectsEnabled(true), .projectsEnabled(false), .fleetEnabled(true), .fleetEnabled(false),
         .worktreeBase(.fresh), .fetchBeforeCreating(true), .commitRemainingWork(false), .generatePRDescriptions(false),
         .deleteLocalBranch(false), .mergePRAutomatically(false), .mergeMethod(.squash),
         .bundledExtension(id: "review", on: true), .updatePiDaily(false), .updateExtensionsDaily(true),
@@ -404,11 +416,12 @@ struct RemoteRequestTests {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .projectRequest, .startThread, .focusThread, .projectExecutors, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
-             .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps:
+             .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps,
+             .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 54
+    static let caseCount = 61
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -419,6 +432,18 @@ struct RemoteRequestTests {
         .pushRegistration(id: 94, registration: RemotePushRegistration(id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64),
             preferences: RemotePushPreferences(topics: [.questions, .failures], awayOnly: false, missions: ["m1": .onlyBlocked]))),
         .pushUnregister(id: 94, registrationID: "11111111-2222-3333-4444-555555555555"),
+        .fleetIdentify(id: 70),
+        .fleetPair(id: 71, code: "482913", from: RemoteSamples.fleetIntroduction),
+        .fleetEstablish(id: 72, from: RemoteSamples.fleetIntroduction),
+        .fleetIntroduce(id: 73, introduction: FleetIntroduce(member: RemoteSamples.fleetMember, theirTokenHash: nil)),
+        .fleetIntroduce(id: 74, introduction: FleetIntroduce(member: RemoteSamples.fleetMember, theirTokenHash: RemoteSamples.fleetHash)),
+        .fleetRevoke(id: 75, hostID: RemoteSamples.fleetHost, at: 1_790_000_000_123),
+        .fleetRead(id: 76),
+        .fleetAction(id: 77, action: .startJoin),
+        .fleetAction(id: 78, action: .stopJoin),
+        .fleetAction(id: 79, action: .pair(host: "192.168.1.40", port: 7434, code: "482913")),
+        .fleetAction(id: 80, action: .remove(hostID: RemoteSamples.fleetHost)),
+        .fleetAction(id: 81, action: .adopt([FleetLegacyHost(id: RemoteSamples.fleetHost, name: "Mac mini", host: "192.168.1.40", port: 7434, token: "shared")])),
         .hostUpdate(id: 90, request: .status),
         .hostUpdate(id: 91, request: .check),
         .hostUpdate(id: 92, request: .install(offerID: S.op, authorized: true)),
@@ -719,11 +744,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged, .pullRequestLinks:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .fleetIdentity, .fleetPaired, .fleetResult, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged, .pullRequestLinks:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 59
+    static let caseCount = 62
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -739,6 +764,17 @@ struct RemoteReplyTests {
                                                                 model: "host/model", thinking: .high, serviceTier: .fast)),
         .helloOk(id: 1, protocolVersion: RemoteProtocol.version, capabilities: RemoteProtocol.capabilities),
         .helloOk(id: 2, protocolVersion: RemoteProtocol.version, capabilities: [RemoteProtocol.localCapability], hostBuild: "2611071"),
+        .helloOk(id: 3, protocolVersion: RemoteProtocol.version, capabilities: [RemoteProtocol.fleetCapability], hostBuild: "2611071", hostID: S.fleetHost),
+        .fleetIdentity(id: 4, hostID: S.fleetHost, name: "Mac mini", build: "412", fleetEnabled: true),
+        .fleetIdentity(id: 5, hostID: S.fleetHost, name: "Mac mini", build: nil, fleetEnabled: false),
+        .fleetPaired(id: 6, hostID: S.fleetHost, name: "Mac mini", myTokenHash: S.fleetHash),
+        .fleetResult(id: 7, result: FleetResult(snapshot: S.fleetSnapshot)),
+        .fleetResult(id: 8, result: FleetResult(snapshot: S.fleetSnapshot, join: .init(code: "482913", expiresAt: 1_790_000_300_000))),
+        .fleetResult(id: 9, result: FleetResult(snapshot: S.fleetSnapshot, paired: S.fleetSnapshot.peers[0])),
+        .fleetResult(id: 10, result: FleetResult(snapshot: S.fleetSnapshot, adopted: [
+            FleetAdoption(id: S.fleetHost, outcome: .established(hostID: S.fleetHost, name: "Mac mini")),
+            FleetAdoption(id: S.fleetHost, outcome: .notFleet), FleetAdoption(id: S.fleetHost, outcome: .unreachable),
+            FleetAdoption(id: S.fleetHost, outcome: .refused(code: "unauthorized"))])),
         .agentResult(id: 60, result: .ok),
         .ok(id: 12),
         .paneOpened(id: 14, paneID: S.pane),
@@ -1029,6 +1065,29 @@ struct RemoteReplyTests {
         #expect(settings == HostSettings())
     }
 
+    @Test func anOlderHostsSettingsLeaveFleetOff() throws {
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(RemoteSamples.hostSettings)) as? [String: Any])
+        json.removeValue(forKey: "fleetEnabled")
+        var expected = RemoteSamples.hostSettings
+        expected.fleetEnabled = false
+        #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
+        json["fleetEnabled"] = NSNull()
+        #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
+        var settings = HostSettings()
+        #expect(!settings.fleetEnabled)
+        settings.apply(.fleetEnabled(true))
+        #expect(settings.fleetEnabled)
+        #expect(HostSettingChange.fleetEnabled(true).capability == RemoteProtocol.fleetExperimentCapability)
+    }
+
+    /// A host from before Fleet says no id in `helloOk`; its client reads that as a Mac without a fleet identity.
+    @Test func aHelloOkWithoutAHostIDIsAnOlderHost() throws {
+        #expect(try Wire.decode(RemoteReply.self, #"{"type":"helloOk","id":1,"protocolVersion":1,"capabilities":[]}"#)
+            == .helloOk(id: 1, protocolVersion: 1, capabilities: [], hostBuild: nil, hostID: nil))
+        let object = try Wire.object(RemoteReply.helloOk(id: 1, protocolVersion: 1, capabilities: []))
+        #expect(object["hostID"] == nil)
+    }
+
     /// A change applies to the one setting it names; a bundled extension the host doesn't have
     /// changes nothing.
     @Test func aHostSettingChangeAppliesToItsSettingAlone() {
@@ -1239,6 +1298,9 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.appsV2Capability, RemoteProtocol.agentRestartCapability, RemoteProtocol.completionSeenCapability,
             RemoteProtocol.pushMuteCapability, RemoteProtocol.missionsRetryLaneCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
+            RemoteProtocol.fleetExperimentCapability,
+            // Offered only while the host's Fleet experiment is on (SessionServer.setFleetEnabled).
+            RemoteProtocol.fleetCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
             RemoteProtocol.designAgentCapability, RemoteProtocol.designLifecycleCapability, RemoteProtocol.designSystemsCapability,
@@ -1257,6 +1319,8 @@ struct RemoteProtocolConstantTests {
     @Test func capabilityStringsAreStable() {
         #expect(RemoteProtocol.nativeThreadRevisionsCapability == "native.revisions.v1")
         #expect(RemoteProtocol.nativeFleetDigestCapability == "native.fleetDigest.v1")
+        #expect(RemoteProtocol.fleetCapability == "fleet.v1")
+        #expect(RemoteProtocol.fleetExperimentCapability == "experiments.fleet.v1")
         #expect(RemoteProtocol.logicalProjectsCapability == "logicalProjects.v1")
         #expect(RemoteProtocol.projectMessageImagesCapability == "logicalProjectRuntime.images.v1")
         #expect(RemoteProtocol.projectConversationThinkingCapability == "logicalProjects.conversationThinking.v1")

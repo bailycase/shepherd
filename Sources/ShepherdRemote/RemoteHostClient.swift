@@ -117,6 +117,12 @@ public final class RemoteHostClient: @unchecked Sendable {
         set { capabilityLock.lock(); storedHostBuild = newValue; capabilityLock.unlock() }
     }
     private var storedHostBuild: String?
+    /// The host's fleet identity, as its `helloOk` said (nil from an older host, or with Fleet off). Behind the same lock.
+    public private(set) var hostID: UUID? {
+        get { capabilityLock.lock(); defer { capabilityLock.unlock() }; return storedHostID }
+        set { capabilityLock.lock(); storedHostID = newValue; capabilityLock.unlock() }
+    }
+    private var storedHostID: UUID?
 
     private let queue = DispatchQueue(label: "shepherd.remote.client")
     // Written on the client queue; main checks it before invoking a captured delivery batch.
@@ -290,12 +296,19 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// Resolve, connect, authenticate, and fetch the host's current state. `capabilities` is
     /// what this client tells the host it reads (`RemoteProtocol.clientCapabilities`); a client
     /// that reads many idle threads at once adds `nativeThreadPreviewCapability`.
+    ///
+    /// A fleet link (`FleetService`) passes `expectingHostID`: the host is asked who it is before
+    /// the token is sent, and one that answers as another host never receives it
+    /// (`RemoteHostClientError.rejected(code: FleetProtocol.Code.wrongHost)`). It passes
+    /// `fetchesState: false` too, having no use for the host's workspace.
     public func connect(
         host: String,
         port: UInt16,
         token: String,
         clientName: String,
-        capabilities: [String] = RemoteProtocol.clientCapabilities
+        capabilities: [String] = RemoteProtocol.clientCapabilities,
+        expectingHostID: UUID? = nil,
+        fetchesState: Bool = true
     ) async throws -> ShepherdState {
         let opening = RemoteSocketOpen()
         let attempt = try queue.sync {
@@ -337,15 +350,27 @@ public final class RemoteHostClient: @unchecked Sendable {
                 // A loaded Mac can take a while to answer even its own app; only a remote host that
                 // says nothing for the usual timeout is taken for unreachable.
                 let handshake = isLocal ? Self.localHandshakeTimeout : Self.requestTimeout
+                if let expectingHostID {
+                    let identity = try await request(timeout: handshake, connectionGeneration: attempt) { id in .fleetIdentify(id: id) }
+                    guard case .fleetIdentity(_, let answered, _, _, _) = identity else {
+                        throw RemoteHostClientError.rejected(code: FleetProtocol.Code.wrongHost, message: "The host did not say who it is.")
+                    }
+                    guard answered == expectingHostID else {
+                        throw RemoteHostClientError.rejected(code: FleetProtocol.Code.wrongHost, message: "Another Mac answers at this address.")
+                    }
+                }
                 let helloReply = try await request(timeout: handshake, connectionGeneration: attempt) { id in
                     .hello(id: id, token: token, clientName: clientName, protocolVersion: RemoteProtocol.version,
                            capabilities: capabilities)
                 }
-                guard case .helloOk(_, _, let capabilities, let build) = helloReply else {
+                guard case .helloOk(_, _, let capabilities, let build, let answeredHostID) = helloReply else {
                     if case .error(_, let code, let message) = helloReply {
                         throw RemoteHostClientError.rejected(code: code, message: message)
                     }
                     throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected hello reply")
+                }
+                if let expectingHostID, answeredHostID != expectingHostID {
+                    throw RemoteHostClientError.rejected(code: FleetProtocol.Code.wrongHost, message: "Another Mac answers at this address.")
                 }
                 try queue.sync {
                     guard connectionGeneration == attempt else {
@@ -353,7 +378,10 @@ public final class RemoteHostClient: @unchecked Sendable {
                     }
                     self.capabilities = Set(capabilities)
                     self.hostBuild = build
+                    self.hostID = answeredHostID
+                    if !fetchesState { established = true }
                 }
+                guard fetchesState else { return ShepherdState() }
                 let stateReply = try await request(timeout: handshake, connectionGeneration: attempt) { id in .stateFetch(id: id) }
                 guard case .state(_, let state) = stateReply else {
                     throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected state reply")
@@ -369,6 +397,52 @@ public final class RemoteHostClient: @unchecked Sendable {
                     if connectionGeneration == attempt { teardown(reason: "connection failed") }
                 }
                 throw error
+            }
+        } onCancel: {
+            self.queue.sync {
+                if self.connectionGeneration == attempt { self.teardown(reason: "cancelled") }
+            }
+        }
+    }
+
+    /// Opens a connection that never says `hello`, for the two fleet requests a host answers before
+    /// one (`fleetIdentify`, `fleetPair`): a Mac pairing with another by code. Nothing is sent
+    /// but those, so no token ever goes to an address that has not said who it is. Close it with
+    /// `disconnect()`.
+    func openUnauthenticated(host: String, port: UInt16) async throws {
+        let opening = RemoteSocketOpen()
+        let attempt = try queue.sync {
+            guard self.fd < 0 else {
+                throw RemoteHostClientError.system(call: "connect", errno: EISCONN)
+            }
+            pendingOpen?.cancel()
+            pendingOpen = opening
+            connectionGeneration = UUID()
+            return connectionGeneration
+        }
+        try await withTaskCancellationHandler {
+            let fd: Int32
+            do {
+                fd = try await opening.open(host: host, port: port, override: socketOpen)
+            } catch {
+                queue.sync { if connectionGeneration == attempt { pendingOpen = nil } }
+                throw error
+            }
+            try queue.sync {
+                guard !Task.isCancelled, connectionGeneration == attempt else {
+                    close(fd)
+                    throw CancellationError()
+                }
+                pendingOpen = nil
+                self.fd = fd
+                disconnectNotified = false
+                established = false
+                lineBuffer = LineBuffer(maxPayloadBytes: NDJSON.maxPayloadBytes)
+                let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+                source.setEventHandler { [weak self] in self?.handleReadable() }
+                source.setCancelHandler { close(fd) }
+                self.readSource = source
+                source.activate()
             }
         } onCancel: {
             self.queue.sync {
@@ -1102,6 +1176,7 @@ public final class RemoteHostClient: @unchecked Sendable {
             let what = switch change {
             case .goalsEnabled: "toggle the Goals experiment"
             case .projectsEnabled: "toggle the Projects experiment"
+            case .fleetEnabled: "toggle the Fleet experiment"
             case .designToolEnabled: "toggle the Design tool experiment"
             case .missionsEnabled: "toggle the Missions experiment"
             case .subagentDefaults, .worktreeDeleteAction, .skillsInSlashMenu, .mcpProjectConfig, .slashCommand, .closeOnMerge: "change this setting"
@@ -1619,7 +1694,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
         func push(_ event: PushedEvent) { self.push(event, bytes: line.count) }
         switch reply {
-        case .fleetDigest(let id, _), .nativeThread(let id, _), .uploadResult(let id, _), .creationOptions(let id, _), .agentResult(let id, _), .helloOk(let id, _, _, _), .ok(let id), .paneOpened(let id, _),
+        case .fleetDigest(let id, _), .nativeThread(let id, _), .uploadResult(let id, _), .creationOptions(let id, _), .agentResult(let id, _), .helloOk(let id, _, _, _, _),
+             .fleetIdentity(let id, _, _, _, _), .fleetPaired(let id, _, _, _), .fleetResult(let id, _), .ok(let id), .paneOpened(let id, _),
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .forgeResult(let id, _), .instructions(let id, _),
