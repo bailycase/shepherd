@@ -7,6 +7,7 @@ import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+import ShepherdSessions
 
 /// Settings ▸ MCP servers, pressed the way VoiceOver presses (`ControlPress`): every control the
 /// page and its sheets draw, in the states they appear in, runs what it should. Each scenario

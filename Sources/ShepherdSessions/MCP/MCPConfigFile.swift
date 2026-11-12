@@ -2,20 +2,20 @@ import Foundation
 import ShepherdProtocol
 
 // Settings ▸ MCP servers' file: ~/.config/mcp/mcp.json (or $SHEPHERD_MCP_CONFIG), in the common
-// `{"mcpServers": {name: entry}}` shape. Only the app writes it: atomically, keeping every key
+// `{"mcpServers": {name: entry}}` shape. The app and, in a fleet, the host's sync write it: atomically, keeping every key
 // it doesn't know, other tools' entries and their plaintext values, and never over a file that
 // doesn't parse. Shepherd's own fields sit under each entry's `shepherd` key.
 
 /// How a server's entry talks to it: stdio, or the Streamable HTTP (and legacy SSE, which pi's MCP
 /// doesn't run) the entry's URL names.
-enum MCPTransportKind: String, Sendable {
+public enum MCPTransportKind: String, Sendable {
     case stdio, streamableHTTP, sse
 }
 
 /// How the agent reaches a server's tools (`shepherd.exposure`): pi's `deferred` or `direct`.
 /// The stored word for Search stays `proxy`, which files written before pi's MCP
 /// hold.
-enum MCPExposure: String, Sendable {
+public enum MCPExposure: String, Sendable {
     /// Searched with `tool_search` when the agent needs one: nothing of the tools is in a prompt.
     case proxy
     /// Every tool declared in every prompt, named `mcp__<server>__<tool>`.
@@ -23,43 +23,51 @@ enum MCPExposure: String, Sendable {
 }
 
 /// `shepherd.oauth`: set from the Add sheet's Advanced section.
-struct MCPOAuthSettings: Equatable, Sendable {
-    var clientID: String?
-    var clientSecret: String?
-    var scopes: [String] = []
+public struct MCPOAuthSettings: Equatable, Sendable {
+    public var clientID: String?
+    public var clientSecret: String?
+    public var scopes: [String] = []
 
-    var isEmpty: Bool { clientID == nil && clientSecret == nil && scopes.isEmpty }
+    public init(clientID: String? = nil, clientSecret: String? = nil, scopes: [String] = []) {
+        self.clientID = clientID
+        self.clientSecret = clientSecret
+        self.scopes = scopes
+    }
+
+    public var isEmpty: Bool { clientID == nil && clientSecret == nil && scopes.isEmpty }
 }
 
 /// Shepherd's own fields for one server. Each default applies when its key is missing.
-struct MCPShepherdSettings: Equatable, Sendable {
+public struct MCPShepherdSettings: Equatable, Sendable {
     /// pi's own default request timeout, in seconds.
-    static let defaultTimeoutSeconds = 60
+    public static let defaultTimeoutSeconds = 60
 
-    var enabled = true
-    var exposure: MCPExposure = .proxy
+    public var enabled = true
+    public var exposure: MCPExposure = .proxy
     /// "Choose which tools…": nil means all.
-    var tools: [String]?
-    var timeoutSeconds = defaultTimeoutSeconds
-    var oauth = MCPOAuthSettings()
+    public var tools: [String]?
+    public var timeoutSeconds = defaultTimeoutSeconds
+    public var oauth = MCPOAuthSettings()
+
+    public init() {}
 }
 
 /// One server's entry, kept whole so unknown keys survive an edit.
-struct MCPServerEntry: Equatable, Sendable, Identifiable {
-    enum Kind: Equatable, Sendable { case local, remote }
+public struct MCPServerEntry: Equatable, Sendable, Identifiable {
+    public enum Kind: Equatable, Sendable { case local, remote }
 
-    var name: String
-    var json: [String: JSONValue]
+    public var name: String
+    public var json: [String: JSONValue]
 
-    var id: String { name }
+    public var id: String { name }
 
-    init(name: String, json: [String: JSONValue]) {
+    public init(name: String, json: [String: JSONValue]) {
         self.name = name
         self.json = json
     }
 
     /// A new local server: `command`, `args`, `env`, and no `type`.
-    static func local(_ name: String, command: String, args: [String] = [], env: [String: String] = [:]) -> MCPServerEntry {
+    public static func local(_ name: String, command: String, args: [String] = [], env: [String: String] = [:]) -> MCPServerEntry {
         var entry = MCPServerEntry(name: name, json: [:])
         entry.command = command
         entry.args = args
@@ -68,68 +76,68 @@ struct MCPServerEntry: Equatable, Sendable, Identifiable {
     }
 
     /// A new remote server: `"type": "http"` and its URL.
-    static func remote(_ name: String, url: String, headers: [String: String] = [:]) -> MCPServerEntry {
+    public static func remote(_ name: String, url: String, headers: [String: String] = [:]) -> MCPServerEntry {
         var entry = MCPServerEntry(name: name, json: ["type": .string("http")])
         entry.url = url
         entry.headers = headers
         return entry
     }
 
-    var type: String? { json["type"]?.stringValue }
+    public var type: String? { json["type"]?.stringValue }
 
-    var kind: Kind {
+    public var kind: Kind {
         if command != nil || type == "stdio" { return .local }
         return url != nil ? .remote : .local
     }
 
     /// The transport the entry asks for: `sse` alone means legacy HTTP+SSE only; any other URL
     /// is Streamable HTTP, falling back to SSE.
-    var transport: MCPTransportKind {
+    public var transport: MCPTransportKind {
         if kind == .local { return .stdio }
         return type == "sse" ? .sse : .streamableHTTP
     }
 
-    var command: String? {
+    public var command: String? {
         get { json["command"]?.stringValue }
         set { json["command"] = newValue.map(JSONValue.string) }
     }
 
-    var args: [String] {
+    public var args: [String] {
         get { json["args"]?.arrayValue?.compactMap(\.stringValue) ?? [] }
         set { json["args"] = newValue.isEmpty && json["args"] == nil ? nil : .array(newValue.map(JSONValue.string)) }
     }
 
-    var env: [String: String] {
+    public var env: [String: String] {
         get { Self.strings(json["env"]) }
         set { json["env"] = newValue.isEmpty && json["env"] == nil ? nil : .object(newValue.mapValues(JSONValue.string)) }
     }
 
-    var url: String? {
+    public var url: String? {
         get { json["url"]?.stringValue }
         set { json["url"] = newValue.map(JSONValue.string) }
     }
 
-    var headers: [String: String] {
+    public var headers: [String: String] {
         get { Self.strings(json["headers"]) }
         set { json["headers"] = newValue.isEmpty && json["headers"] == nil ? nil : .object(newValue.mapValues(JSONValue.string)) }
     }
 
     /// The command line as the row shows it: `uvx postgres-mcp --access-mode=restricted`.
-    var commandLine: String {
+    public var commandLine: String {
         ([command ?? ""] + args).filter { !$0.isEmpty }.joined(separator: " ")
     }
 
     /// The row's second line: the URL, or the command line.
-    var endpoint: String { kind == .remote ? (url ?? "") : commandLine }
+    public var endpoint: String { kind == .remote ? (url ?? "") : commandLine }
 
     /// The entry as other tools see it: without `shepherd`. The tools cache keys on it.
-    var withoutShepherd: [String: JSONValue] {
+    public var withoutShepherd: [String: JSONValue] {
         var copy = json
         copy["shepherd"] = nil
         return copy
     }
 
-    var settings: MCPShepherdSettings {
+    public var settings: MCPShepherdSettings {
         get {
             let s = json["shepherd"]
             var settings = MCPShepherdSettings()
@@ -189,23 +197,23 @@ struct MCPServerEntry: Equatable, Sendable, Identifiable {
 }
 
 /// The whole file: its root kept as parsed, and the servers read from it.
-struct MCPConfigDocument: Equatable, Sendable {
-    static let serversKey = "mcpServers"
+public struct MCPConfigDocument: Equatable, Sendable {
+    public static let serversKey = "mcpServers"
     /// VS Code's key, read but never written by Shepherd.
-    static let vscodeServersKey = "servers"
+    public static let vscodeServersKey = "servers"
 
-    var root: [String: JSONValue]
+    public var root: [String: JSONValue]
     /// The servers' names in the file's order, which the page keeps; a new server goes last.
-    var order: [String]
+    public var order: [String]
 
-    init(root: [String: JSONValue] = [:], order: [String] = []) {
+    public init(root: [String: JSONValue] = [:], order: [String] = []) {
         self.root = root
         self.order = order
     }
 
     /// Every server, `mcpServers` first, then VS Code's `servers` not already listed, in the
     /// file's order (any the order doesn't know go last, by name).
-    var servers: [MCPServerEntry] {
+    public var servers: [MCPServerEntry] {
         var seen = Set<String>()
         var out: [MCPServerEntry] = []
         for key in [Self.serversKey, Self.vscodeServersKey] {
@@ -227,7 +235,7 @@ struct MCPConfigDocument: Equatable, Sendable {
         }
     }
 
-    func server(_ name: String) -> MCPServerEntry? {
+    public func server(_ name: String) -> MCPServerEntry? {
         servers.first { $0.name == name }
     }
 
@@ -239,7 +247,7 @@ struct MCPConfigDocument: Equatable, Sendable {
     }
 
     /// Adds or replaces an entry where it lives; a new one goes in `mcpServers`.
-    mutating func upsert(_ entry: MCPServerEntry) {
+    public mutating func upsert(_ entry: MCPServerEntry) {
         let key = key(for: entry.name)
         var map: [String: JSONValue] = {
             if case .object(let o) = root[key] { return o }
@@ -250,7 +258,7 @@ struct MCPConfigDocument: Equatable, Sendable {
         if !order.contains(entry.name) { order.append(entry.name) }
     }
 
-    mutating func remove(_ name: String) {
+    public mutating func remove(_ name: String) {
         for key in [Self.serversKey, Self.vscodeServersKey] {
             guard case .object(var map) = root[key], map[name] != nil else { continue }
             map[name] = nil
@@ -260,7 +268,7 @@ struct MCPConfigDocument: Equatable, Sendable {
     }
 
     /// Renames an entry in place, keeping everything else about it.
-    mutating func rename(_ name: String, to newName: String) {
+    public mutating func rename(_ name: String, to newName: String) {
         guard name != newName, var entry = server(name) else { return }
         let place = order.firstIndex(of: name)
         remove(name)
@@ -273,19 +281,19 @@ struct MCPConfigDocument: Equatable, Sendable {
     }
 
     /// The file's text: its servers in their order, everything else with sorted keys.
-    var text: String {
+    public var text: String {
         MCPJSON.write(.object(root), order: [Self.serversKey: order, Self.vscodeServersKey: order])
     }
 }
 
-enum MCPConfigError: Error, Equatable, CustomStringConvertible {
+public enum MCPConfigError: Error, Equatable, CustomStringConvertible {
     /// The file doesn't parse: nothing is written until it does.
     case invalid(line: Int)
     case writeFailed(String)
     /// Someone else kept changing the file while Shepherd wrote it.
     case busy
 
-    var description: String {
+    public var description: String {
         switch self {
         case .invalid(let line): "mcp.json isn’t valid JSON (line \(line))"
         case .writeFailed(let reason): "Couldn’t save mcp.json: \(reason)"
@@ -295,21 +303,23 @@ enum MCPConfigError: Error, Equatable, CustomStringConvertible {
 }
 
 /// Reads and writes one mcp.json. Takes its URL; never reads the environment itself.
-struct MCPConfigFile: Sendable {
-    let url: URL
+public struct MCPConfigFile: Sendable {
+    public let url: URL
 
-    enum Contents: Equatable, Sendable {
+    public init(url: URL) { self.url = url }
+
+    public enum Contents: Equatable, Sendable {
         case document(MCPConfigDocument)
         case invalid(line: Int)
     }
 
     /// A missing or empty file is an empty document.
-    func read() -> Contents {
+    public func read() -> Contents {
         let data = (try? Data(contentsOf: url)) ?? Data()
         return Self.parse(data)
     }
 
-    static func parse(_ data: Data) -> Contents {
+    public static func parse(_ data: Data) -> Contents {
         guard !data.allSatisfy({ [0x20, 0x0A, 0x0D, 0x09].contains($0) }) else { return .document(MCPConfigDocument()) }
         switch MCPJSON.parse(data) {
         case .success(.object(let root)):
@@ -326,7 +336,7 @@ struct MCPConfigFile: Sendable {
     /// Reads the file, applies `edit`, and writes it back in one step. When the file changes on
     /// disk meanwhile, it is read again and the edit applied again.
     @discardableResult
-    func update(_ edit: (inout MCPConfigDocument) throws -> Void) throws -> MCPConfigDocument {
+    public func update(_ edit: (inout MCPConfigDocument) throws -> Void) throws -> MCPConfigDocument {
         for _ in 0..<5 {
             let before = try? Data(contentsOf: url)
             var document: MCPConfigDocument
@@ -371,12 +381,12 @@ struct MCPConfigFile: Sendable {
 
 /// JSON as mcp.json holds it: parsed tolerantly with the failing line, and written with sorted
 /// keys, 2-space indents and unescaped slashes, so a hand-edited file stays readable.
-enum MCPJSON {
-    struct ParseError: Error, Equatable {
+public enum MCPJSON {
+    public struct ParseError: Error, Equatable {
         let line: Int
     }
 
-    static func parse(_ data: Data) -> Result<JSONValue, ParseError> {
+    public static func parse(_ data: Data) -> Result<JSONValue, ParseError> {
         do {
             let object = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
             return .success(value(object))
@@ -387,7 +397,7 @@ enum MCPJSON {
         }
     }
 
-    static func parse(_ text: String) -> Result<JSONValue, ParseError> {
+    public static func parse(_ text: String) -> Result<JSONValue, ParseError> {
         parse(Data(text.utf8))
     }
 
@@ -405,7 +415,7 @@ enum MCPJSON {
 
     /// The keys of each object directly under the root's `keys`, in the order the text has them.
     /// Only called on text that parsed.
-    static func keyOrder(in data: Data, under keys: Set<String>) -> [String: [String]] {
+    public static func keyOrder(in data: Data, under keys: Set<String>) -> [String: [String]] {
         let bytes = [UInt8](data)
         var i = 0
         func skipSpace() {
@@ -468,7 +478,7 @@ enum MCPJSON {
 
     /// `order` names the key order of the objects directly under the root's keys; other keys
     /// follow, sorted.
-    static func write(_ value: JSONValue, indent: Int = 0, order: [String: [String]] = [:], key parent: String? = nil) -> String {
+    public static func write(_ value: JSONValue, indent: Int = 0, order: [String: [String]] = [:], key parent: String? = nil) -> String {
         let pad = String(repeating: "  ", count: indent)
         let inner = String(repeating: "  ", count: indent + 1)
         switch value {
@@ -492,7 +502,7 @@ enum MCPJSON {
         }
     }
 
-    static func quote(_ string: String) -> String {
+    public static func quote(_ string: String) -> String {
         var out = "\""
         for scalar in string.unicodeScalars {
             switch scalar {
@@ -510,13 +520,13 @@ enum MCPJSON {
 }
 
 /// `${keychain:<server>/<NAME>}`: a value that lives in Shepherd's Keychain, never in the file.
-enum MCPSecretReference {
-    static func reference(server: String, name: String) -> String { "${keychain:\(server)/\(name)}" }
-    static func account(server: String, name: String) -> String { "secret/\(server)/\(name)" }
-    static func oauthAccount(server: String) -> String { "oauth/\(server)" }
+public enum MCPSecretReference {
+    public static func reference(server: String, name: String) -> String { "${keychain:\(server)/\(name)}" }
+    public static func account(server: String, name: String) -> String { "secret/\(server)/\(name)" }
+    public static func oauthAccount(server: String) -> String { "oauth/\(server)" }
 
     /// Every `(server, name)` a value refers to.
-    static func references(in value: String) -> [(server: String, name: String)] {
+    public static func references(in value: String) -> [(server: String, name: String)] {
         var out: [(String, String)] = []
         var rest = Substring(value)
         while let open = rest.range(of: "${keychain:") {
@@ -532,7 +542,7 @@ enum MCPSecretReference {
     }
 
     /// The first `${VAR}` a value names (not a keychain one): the Sign-in column's `$GITHUB_TOKEN`.
-    static func variable(in value: String) -> String? {
+    public static func variable(in value: String) -> String? {
         guard let open = value.range(of: "${"), !value[open.upperBound...].hasPrefix("keychain:"),
               let close = value[open.upperBound...].firstIndex(of: "}") else { return nil }
         let body = value[open.upperBound..<close]
@@ -541,7 +551,7 @@ enum MCPSecretReference {
 
     /// Whether a key names a secret, so a typed or imported value goes to the Keychain.
     /// `PAT` counts only as its own word, so `PATH` stays plaintext.
-    static func looksSecret(key: String) -> Bool {
+    public static func looksSecret(key: String) -> Bool {
         let upper = key.uppercased()
         if upper == "AUTHORIZATION" { return true }
         if ["TOKEN", "KEY", "SECRET", "PASSWORD", "DATABASE_URI", "DSN"].contains(where: upper.contains) { return true }
@@ -549,7 +559,7 @@ enum MCPSecretReference {
     }
 
     /// Whether a value is only references and plain text other tools expand (`Bearer ${TOKEN}`).
-    static func isReference(_ value: String) -> Bool {
+    public static func isReference(_ value: String) -> Bool {
         value.contains("${")
     }
 }

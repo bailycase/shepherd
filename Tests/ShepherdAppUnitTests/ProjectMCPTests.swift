@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import ShepherdProtocol
 @testable import ShepherdApp
+import ShepherdSessions
 
 @Suite("Project MCP configuration", .mainActorExclusive)
 @MainActor

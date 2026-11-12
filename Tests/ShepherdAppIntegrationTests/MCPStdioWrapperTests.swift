@@ -3,6 +3,7 @@ import ShepherdProtocol
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
+import ShepherdSessions
 
 /// The `zsh` command `MCPPiConfig` writes for a stdio server, run for real: pi hands a server its
 /// whole environment, so the wrapper must leave a server the secrets its own `env` named (pi expands
