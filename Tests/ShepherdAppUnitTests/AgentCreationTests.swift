@@ -630,7 +630,7 @@ struct AgentLaunchCommandTests {
         #expect(base.excluding(off) == base)
     }
 
-    @Test func ownedWorktreesShareOnlyTheirRegisteredSpacesMCPWithoutApprovingTheCheckout() throws {
+    @Test func ownedWorktreesShareOnlyTheirRegisteredSpacesMCP() throws {
         let space = Space(name: "Owner", path: "/code/owner")
         let state = ShepherdState(spaces: [space])
         var agent = Agent(name: "Worker", spaceID: space.id, tabID: TabID(), worktreeBranch: "fix/task")
@@ -645,7 +645,8 @@ struct AgentLaunchCommandTests {
             piSessionID: agent.effectivePiSessionID, socketPath: "/s", extensionPath: "/e",
             panesExtensionPath: nil, reviewExtensionPath: nil, subagentsExtensionPath: nil,
             mcp: launch, model: nil, thinking: nil)
-        #expect(!command.argv.joined().contains("--approve"), "MCP inheritance grants no project trust")
+        // Every agent launches with --approve now (aad6764ea); only the home folder and the coordinator opt out.
+        #expect(command.argv.joined().contains(" --approve "))
         agent.spaceID = SpaceID()
         #expect(base.sharingProject(nil, agent: agent, cwd: cwd, state: state, install: install) == base)
         agent.spaceID = space.id
@@ -682,7 +683,7 @@ struct AgentLaunchCommandTests {
         )
         let sessions = Self.home.sessionDirectory(forCwd: "/tmp/project").path
         #expect(launch.argv[3] == #"cd -- '/tmp/project' && exec '/tmp/support/pi/bin/pi' --mode rpc --session-dir '"# + sessions
-            + #"' --session-id 'it'"'"'s' -e '/tmp/a b.ts' -e '/tmp/support/pi/shepherd-service-tier.ts' -e '/tmp/support/pi/shepherd-goal.ts' -e '/tmp/support/pi/shepherd-ask.ts' -e '/tmp/support/pi/shepherd-hooks.ts'"#)
+            + #"' --session-id 'it'"'"'s' --approve -e '/tmp/a b.ts' -e '/tmp/support/pi/shepherd-service-tier.ts' -e '/tmp/support/pi/shepherd-goal.ts' -e '/tmp/support/pi/shepherd-ask.ts' -e '/tmp/support/pi/shepherd-hooks.ts'"#)
     }
 
     /// `/new` and `/resume` move pi to another session; relaunch follows the agent there.

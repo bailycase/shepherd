@@ -138,6 +138,14 @@ flag `get_messages` is unchanged. A long design session's renders had made its h
 over the host's 256 MiB limit, so the agent never became ready. `history-images.test.mjs` covers
 png, gif, jpeg and webp headers, a mislabelled image and an unknown hash.
 
+The patch also bounds a model request that goes quiet (`stream-idle.js`, wrapped around the provider stream in
+`sdk.js` for the modular runtime and its bundle twin). pi's `httpIdleTimeoutMs` (default 5 minutes) counts bytes, so a
+provider that holds a stalled response open with keep-alives (Anthropic's `ping` events) never tripped it and the turn
+stayed working for hours. The wrapper counts pi's own stream events, and after `retry.provider.timeoutMs` (by default
+`httpIdleTimeoutMs`) without one it aborts the request and ends it with a "timed out" error, which pi's automatic retry
+and the thread's failed-turn state already handle. `disabled` turns it off; Stop still ends as aborted.
+`stream-idle.test.mjs` covers both entrypoints, API key and subscription streams.
+
 The patch supplies `refresh_skills`, native file observation and the `skills_changed` /
 `skills_watch_error` RPC events, covering prompt templates as well as skills. The host coalesces dirty state and refreshes immediately at an
 idle boundary, without periodic requests. It does not

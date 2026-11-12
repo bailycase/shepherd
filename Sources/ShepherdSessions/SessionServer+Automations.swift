@@ -83,6 +83,8 @@ extension SessionServer {
             throw AgentStartFailure(message: "\(config.workingDirectory) is missing")
         }
         let id = config.reservedAgentID ?? AgentID()
+        creatingAgents.insert(id)
+        defer { creatingAgents.remove(id) }
         let (agent, tab, pane) = config.thread(id: id, in: state, defaultServiceTier: defaultServiceTier)
         try await addAgent(agent, withTab: tab)
         var spawn = AgentSpawn(agent: agent, cwd: AgentLaunch.resolvedCwd(pane.cwd), settings: launch)
