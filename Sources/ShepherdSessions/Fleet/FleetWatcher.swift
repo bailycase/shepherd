@@ -108,7 +108,12 @@ final class FleetWatcher {
         let work = DispatchWorkItem { [weak self] in
             guard let self, !self.stopped else { return }
             self.arm()
-            self.onChange()
+            // A source registers with the kernel after this block ends: scanning from the next block means a
+            // write made after the scan is one the new sources see, not one that falls between the two.
+            self.queue.async { [weak self] in
+                guard let self, !self.stopped else { return }
+                self.onChange()
+            }
         }
         pendingFire = work
         queue.asyncAfter(deadline: .now() + Self.debounce, execute: work)
