@@ -415,7 +415,9 @@ public final class RemoteHostClient: @unchecked Sendable {
                 throw error
             }
         } onCancel: {
-            self.queue.sync {
+            // Never `sync`: cancel holds the task's status lock, and the queue may be resuming this task's reply,
+            // which waits for that lock. A teardown that runs late is harmless (the generation check).
+            self.queue.async {
                 if self.connectionGeneration == attempt { self.teardown(reason: "cancelled") }
             }
         }
@@ -461,7 +463,9 @@ public final class RemoteHostClient: @unchecked Sendable {
                 source.activate()
             }
         } onCancel: {
-            self.queue.sync {
+            // Never `sync`: cancel holds the task's status lock, and the queue may be resuming this task's reply,
+            // which waits for that lock. A teardown that runs late is harmless (the generation check).
+            self.queue.async {
                 if self.connectionGeneration == attempt { self.teardown(reason: "cancelled") }
             }
         }
