@@ -72,32 +72,6 @@ public enum SkillsPresentation {
         return (SkillsText.shortCommit(update.commit), [update.committedAt.map(date), files].compactMap { $0 }.joined(separator: " · "))
     }
 
-    /// Where one host is with a skill, in the detail's Hosts.
-    public static func copy(_ state: SkillCopy.State) -> String {
-        switch state {
-        case .installed: "installed"
-        case .updating: "updating"
-        case .checking: "checking"
-        case .missing: "not installed"
-        case .owed: "offline · updates later"
-        case .offline: "offline"
-        case .unsupported: "needs a newer Shepherd"
-        }
-    }
-
-    /// A host in the side rail: "up to date", "2 updates", "offline".
-    public static func host(_ state: HostSkills, owed: Bool) -> String {
-        switch state {
-        case .offline: return owed ? "offline · catches up" : "offline"
-        case .unsupported: return "needs a newer Shepherd"
-        case .loading: return "checking"
-        case .failed: return "couldn't read"
-        case .loaded(let snapshot):
-            let updates = snapshot.skills.filter { $0.update != nil }.count
-            return updates == 0 ? "up to date" : "\(updates) \(updates == 1 ? "update" : "updates")"
-        }
-    }
-
     /// The In every prompt card's note: "6 automatic skills. Full files load only when used."
     public static func automaticCount(_ skills: [InstalledSkill]) -> String {
         automaticCount(skills.filter { $0.isOn && $0.invocation == .automatic }.count)
@@ -189,16 +163,6 @@ public enum SkillsPresentation {
         skill.invocation == .slashOnly ? "/skill only · \(skill.summary)" : skill.summary
     }
 
-    /// Under the phone's list, while hosts are away: "horizon is offline. It gets changes when
-    /// it’s back.", or for several "horizon, build-02 are offline. They get changes when they’re
-    /// back."; nil with every host online.
-    public static func offlineNote(_ hosts: [SkillsHost]) -> String? {
-        let away = hosts.filter { !$0.isConnected }.map(\.name)
-        guard let first = away.first else { return nil }
-        return away.count == 1 ? "\(first) is offline. It gets changes when it’s back."
-            : "\(list(away)) are offline. They get changes when they’re back."
-    }
-
     /// A search's line over its results: "12 skills for “pdf”".
     public static func results(_ count: Int, for query: String) -> String {
         "\(count) \(count == 1 ? "skill" : "skills") for “\(query.trimmingCharacters(in: .whitespaces))”"
@@ -209,36 +173,13 @@ public enum SkillsPresentation {
         "\(skill.source) · \(DirectoryPresentation.meta(skill))"
     }
 
-    /// An install's headline: "Installing · 1 of 3 hosts", "Installed on 3 hosts", "Installed ·
-    /// horizon when it's back".
+    /// An install's headline: "Installing", "Installed", or why it failed.
     public static func installLine(_ install: SkillInstall) -> String {
-        let total = install.steps.count
-        if install.isRunning { return "Installing · \(install.installed) of \(total) \(total == 1 ? "host" : "hosts")" }
-        if let failure = install.failure, install.installed == 0 { return failure }
-        let waiting = install.steps.filter { $0.state == .owed }.map(\.name)
-        if !waiting.isEmpty { return "Installed · \(list(waiting)) when \(waiting.count == 1 ? "it's" : "they're") back" }
-        return total == 1 ? "Installed" : "Installed on \(install.installed) of \(total) hosts"
-    }
-
-    /// One host's step in an install.
-    public static func step(_ state: SkillInstall.Step.State) -> String {
-        switch state {
-        case .waiting: "waiting"
-        case .copying: "copying files"
-        case .installed: "installed · ready in new threads"
-        case .owed: "offline · installs when it's back"
+        switch install.state {
+        case .installing: "Installing"
+        case .installed: "Installed"
         case .failed(let reason): reason
         }
-    }
-
-    /// Where an install goes, beside its button: "This Mac, build-01 now · horizon when it's back".
-    public static func destinations(_ hosts: [SkillsHost]) -> String {
-        let now = hosts.filter(\.isConnected).map(\.name)
-        let later = hosts.filter { !$0.isConnected }.map(\.name)
-        var parts: [String] = []
-        if !now.isEmpty { parts.append("\(list(now)) now") }
-        if !later.isEmpty { parts.append("\(list(later)) when \(later.count == 1 ? "it's" : "they're") back") }
-        return parts.joined(separator: " · ")
     }
 
     /// A looked-up repository: "16 skills · main @ 8c04e1d".
@@ -282,16 +223,12 @@ public enum SkillsPresentation {
         entry.isDirectory ? entry.name + "/" : entry.name
     }
 
-    /// The Remove toast: "Removed pdf from every host".
+    /// The Remove toast: "Removed pdf".
     public static func removed(_ removal: ClientSkills.Removal) -> String {
-        removal.hosts.count > 1 ? "Removed \(removal.name) from every host" : "Removed \(removal.name)"
+        "Removed \(removal.name)"
     }
 
     // MARK: Private
-
-    private static func list(_ names: [String]) -> String {
-        names.joined(separator: ", ")
-    }
 
     private static func language(of names: [String]) -> String? {
         let languages = ["py": "Python", "sh": "shell", "js": "JavaScript", "mjs": "JavaScript", "ts": "TypeScript", "rb": "Ruby",
