@@ -25,7 +25,12 @@ final class FakeFleetClient: FakeSettingsClient, FleetViewClient, @unchecked Sen
         }
     }
 
-    func fleetWatching(_ on: Bool) async throws { state.withLock { calls.append("watching(\(on))") } }
+    func fleetWatching(_ on: Bool) async throws -> FleetResult {
+        try state.withLock {
+            calls.append("watching(\(on))")
+            return FleetResult(snapshot: try answer.get())
+        }
+    }
 }
 
 @MainActor
@@ -143,13 +148,14 @@ struct ClientFleetTests {
         #expect(fleet.page.cards[1].room.text == "Not counted" && fleet.page.cards[1].cpu == nil)
     }
 
-    @Test func watchingIsSentToTheMacTheFleetIsReadFrom() async {
+    @Test func aPageOnScreenReadsThroughTheRequestThatAsksTheMacToSampleAndLeavingStopsIt() async {
         let client = FakeFleetClient(Page.snapshot())
         let hosts = [Self.host("MacBook Pro", client)]
         let fleet = Self.fleet()
         await fleet.refresh(hosts)
-        await fleet.watching(true, hosts)
-        await fleet.watching(false, hosts)
+        await fleet.refresh(hosts, watching: true)
+        #expect(fleet.phase == .loaded && fleet.page.cards.count == 3, "the answer to watching is the page")
+        await fleet.stopWatching(hosts)
         #expect(client.fleetCalls == ["read", "watching(true)", "watching(false)"])
     }
 

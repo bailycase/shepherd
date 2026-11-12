@@ -61,6 +61,8 @@ private struct SettingsList: View {
                 }
                 SettingsSection("Machines") {
                     SHListCard {
+                        // While a Mac serves the fleet (its Fleet experiment on): the Macs' room and the Dispatches log.
+                        if store.showsFleet { row(.fleet, trailing: store.fleetValue) }
                         row(.hosts, trailing: model.offlineCount > 0 ? .alert("\(model.offlineCount) offline")
                             : .value(model.hosts.isEmpty ? "None" : String(model.hosts.count)))
                         row(.spaces, trailing: SHListRow.Trailing.none)
@@ -110,7 +112,7 @@ private struct SettingsSplit: View {
         PadListDetail(listWidth: MobileLayout.settingsListWidth) {
             ScrollView {
                 VStack(alignment: .leading, spacing: MobileLayout.settingsListRowSpacing) {
-                    ForEach(SettingsPage.allCases.filter { $0 != .hooks || store.showsHooks }, id: \.self) { page in
+                    ForEach(SettingsPage.allCases.filter { ($0 != .hooks || store.showsHooks) && ($0 != .fleet || store.showsFleet) }, id: \.self) { page in
                         SettingsListItem(page: page, selected: selection.page == page) { selection.page = page }
                     }
                 }
@@ -180,6 +182,7 @@ struct SettingsPageView: View {
         case .instructions: InstructionsScreen()
         case .skills: SkillsScreen()
         case .hooks: HooksScreen()
+        case .fleet: FleetScreen()
         case .hosts: HostsScreen()
         case .spaces: SpacesScreen()
         case .notifications: NotificationsScreen()

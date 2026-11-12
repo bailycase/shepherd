@@ -12,13 +12,13 @@ import ShepherdProtocol
 /// serves `fleet.view.v1` answers `fleetRead` with the cut down view (`FleetSnapshot.clientView`).
 public protocol FleetViewClient: SettingsClient {
     func fleetRead() async throws -> FleetResult
-    /// Tells the host the Fleet page is on screen (true) or isn't (false): it samples while it is.
-    func fleetWatching(_ on: Bool) async throws
+    /// Tells the host the Fleet page is on screen (true) or isn't (false): it samples while it is. Answers the view too.
+    func fleetWatching(_ on: Bool) async throws -> FleetResult
 }
 
 extension RemoteHostClient: FleetViewClient {
-    public func fleetWatching(_ on: Bool) async throws {
-        _ = try await fleetAction(.watching(on))
+    public func fleetWatching(_ on: Bool) async throws -> FleetResult {
+        try await fleetAction(.watching(on))
     }
 }
 
@@ -67,9 +67,10 @@ public final class ClientFleet {
         return all.first { $0.id == sourceID } ?? all.first
     }
 
-    /// Reads the fleet again from the Mac in use, and the weights now and then. A read that fails keeps the page and
-    /// moves on to the next Mac that serves the view.
-    public func refresh(_ hosts: [SettingsHost]) async {
+    /// Reads the fleet again from the Mac in use, and the weights now and then. `watching`: the Fleet page is on
+    /// screen, so the same request that reads it asks the Mac to sample (and does so again after a reconnect). A read
+    /// that fails keeps the page and moves on to the next Mac that serves the view.
+    public func refresh(_ hosts: [SettingsHost], watching: Bool = false) async {
         guard let host = source(in: hosts), let client = host.client as? any FleetViewClient else {
             // No Mac to ask: the entries hide; what was drawn stays until one is back.
             sourceID = nil
@@ -79,7 +80,7 @@ public final class ClientFleet {
         let held = reads
         reads += 1
         do {
-            let read = try await client.fleetRead().snapshot
+            let read = try await (watching ? client.fleetWatching(true) : client.fleetRead()).snapshot
             if held % Self.settingsEvery == 0 || hostSettings.settings(of: host) == nil { await hostSettings.refresh(host) }
             guard sourceID == host.id else { return }
             sourceName = host.name
@@ -114,11 +115,11 @@ public final class ClientFleet {
         if next != page { page = next }
     }
 
-    /// The Fleet page is on screen (true) or isn't: the Mac samples while it is. Best effort; a connection that
-    /// closes ends it on the host either way.
-    public func watching(_ on: Bool, _ hosts: [SettingsHost]) async {
+    /// The Fleet page left the screen: the Mac stops sampling for it (when nothing else asks). Best effort; a
+    /// connection that closes ends it on the host either way.
+    public func stopWatching(_ hosts: [SettingsHost]) async {
         guard let client = source(in: hosts)?.client as? any FleetViewClient else { return }
-        try? await client.fleetWatching(on)
+        _ = try? await client.fleetWatching(false)
     }
 
     /// Send work here: shows `choice` for the Mac `hostID` at once and writes it to the Mac in use as its own host setting,

@@ -4,6 +4,7 @@ import UIKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdUI
 
 /// Settings over every host (home track): each host's settings, the root instructions, the
 /// suggested ones and the agent skills, held by ShepherdRemote's models (`ClientHostSettings`,
@@ -13,7 +14,10 @@ import ShepherdRemote
 @MainActor
 @Observable
 final class SettingsStore {
-    let hostSettings = ClientHostSettings()
+    let hostSettings: ClientHostSettings
+    /// Fleet's page (Settings ▸ Fleet, the iPad sidebar's Fleet row): read from a Mac that serves it, never written to but
+    /// for the weights, which are host settings.
+    let fleet: ClientFleet
     let instructions: ClientInstructions
     let suggestions = ClientSuggestions()
     let skills: ClientSkills
@@ -52,6 +56,9 @@ final class SettingsStore {
 
     private init(hosts: MobileHosts) {
         mobileHosts = hosts
+        let settings = ClientHostSettings()
+        hostSettings = settings
+        fleet = ClientFleet(hostSettings: settings)
         // Kept beside the hosts; "Synced from iPhone" in a host's history.
         instructions = ClientInstructions(origin: UIDevice.current.model)
         skills = ClientSkills(defaults: hosts.defaults)
@@ -140,6 +147,17 @@ final class SettingsStore {
         ClientHooks.host(chosen: chosenHost, in: hosts).flatMap { hooks.state(of: $0).page }.map { String($0.hookCount) }
     }
 
+    /// Some connected Mac serves the fleet (`fleet.view.v1`, its Fleet experiment on): Settings and the sidebar draw Fleet.
+    var showsFleet: Bool { ClientFleet.isAvailable(hosts) }
+
+    /// Fleet's value on the list: "1 asleep" when a Mac is, else how many Macs, once read.
+    var fleetValue: SHListRow.Trailing {
+        let page = fleet.page
+        guard !page.cards.isEmpty else { return .none }
+        let asleep = page.footer.asleepCount
+        return asleep > 0 ? .alert("\(asleep) asleep") : .value("\(page.cards.count) \(page.cards.count == 1 ? "Mac" : "Macs")")
+    }
+
     /// About's agent: "agent 0.87.1", from the settings host.
     var agentVersion: String? { agentVersion(chosenHost: nil) }
     func agentVersion(chosenHost: UUID?) -> String? { HostSettingsPresentation.agentVersion(settings(chosenHost: chosenHost)) }
@@ -164,6 +182,7 @@ final class SettingsStore {
         await skills.refresh(hosts.map(SkillsHost.init))
         // Hooks' value on the list: the first host that serves them (the page reads its own host).
         if let host = ClientHooks.hosts(hosts).first { await hooks.refresh(host) }
+        if showsFleet { await fleet.refresh(hosts) }
     }
 
     /// While a Settings screen shows: reads every host now, and a host again when it connects.

@@ -8,6 +8,8 @@ import ShepherdRemote
 enum SettingsRoute: Hashable, Codable {
     case root
     case hosts
+    /// The Macs in the fleet, their room and the Dispatches log (`fleet.view.v1`).
+    case fleet
     /// A host's form; nil adds one.
     case host(UUID?)
     case appearance
@@ -58,6 +60,7 @@ struct SettingsDestination: View {
         switch route {
         case .root: SettingsScreen()
         case .hosts: HostsScreen()
+        case .fleet: FleetScreen()
         case .host(let id): HostEditorScreen(hostID: id)
         case .appearance: AppearanceScreen()
         case .defaults: DefaultsScreen()
@@ -89,7 +92,7 @@ struct SettingsDestination: View {
 /// (iPadSettingsInstructions). The iPad's list names two of them as the Mac does ("Agents",
 /// "Pi"); the phone's rows say what they hold ("Defaults", "Extensions").
 enum SettingsPage: String, CaseIterable, Hashable, Codable {
-    case appearance, defaults, worktrees, pi, mcp, subagents, signIn, instructions, skills, hooks, hosts, spaces, notifications, experiments, diagnostics
+    case appearance, defaults, worktrees, pi, mcp, subagents, signIn, instructions, skills, hooks, fleet, hosts, spaces, notifications, experiments, diagnostics
 
     var title: String {
         switch self {
@@ -103,6 +106,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .instructions: "Instructions"
         case .skills: "Skills"
         case .hooks: "Hooks"
+        case .fleet: "Fleet"
         case .hosts: "Hosts"
         case .spaces: "Spaces"
         case .notifications: "Notifications"
@@ -133,6 +137,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .instructions: "doc.text"
         case .skills: "graduationcap"
         case .hooks: SHGlyph.hook.symbolName
+        case .fleet: "macbook.and.iphone"
         case .hosts: "desktopcomputer"
         case .notifications: "bell"
         case .experiments: "flask"
@@ -154,6 +159,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .instructions: .instructions
         case .skills: .skills
         case .hooks: .hooks
+        case .fleet: .fleet
         case .hosts: .hosts
         case .notifications: .notifications
         case .experiments: .experiments
