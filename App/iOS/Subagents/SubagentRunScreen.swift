@@ -176,12 +176,13 @@ struct SubagentRunView: View {
         return result
     }
 
-    /// What the pin calls once the layout pass that asked is over: a live run lands on its tail
-    /// while the reader still follows it and has not taken hold of it.
+    /// What the pin calls once the layout pass that asked is over: the run lands on its tail while
+    /// the reader still follows it and has not taken hold of it. It does not ask whether the run is
+    /// live: automatic landings are only asked for while it is, and the jump pill asks on a run that
+    /// finished while the reader was above its tail.
     private func lander(_ proxy: ScrollViewProxy) -> ThreadTailPin.Land {
         { resized in
-            guard follower.sticky, !follower.userScrolling,
-                  store.subagents.first(where: { $0.runID == runID })?.isTerminal == false else { return }
+            guard follower.sticky, !follower.userScrolling else { return }
             SHRenderProbe.tick(resized ? "subagent.tailLandingResized" : "subagent.tailLanding")
             var transaction = Transaction()
             transaction.disablesAnimations = true
