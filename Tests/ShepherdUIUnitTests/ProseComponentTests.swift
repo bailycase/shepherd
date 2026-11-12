@@ -224,6 +224,39 @@ struct ProseComponentTests {
         #expect(destination?.absoluteString == expected)
     }
 
+    /// The router resolves a link as above and hands the result to the opener it was given; with no folder a relative path
+    /// opens nothing, and with no opener nothing opens. Its action is made once and follows the folder and opener it is
+    /// given later, which is how a prose view that redraws keeps one action.
+    @Test func theLinkRouterResolvesThenHandsToTheOpener() throws {
+        let relative = try #require(URL(string: "temporal/PLAN.md"))
+        let web = try #require(URL(string: "https://example.com/plan"))
+        let router = SHProseLinkRouter()
+        let action = router.action
+        var first: [URL] = []
+        var second: [URL] = []
+
+        router.root = URL(fileURLWithPath: "/work", isDirectory: true)
+        action(relative)
+        #expect(first.isEmpty, "no opener yet")
+
+        router.outer = OpenURLAction { first.append($0); return .handled }
+        action(relative)
+        router.open(web)
+        #expect(first.map(\.absoluteString) == ["file:///work/temporal/PLAN.md", "https://example.com/plan"])
+
+        router.outer = OpenURLAction { second.append($0); return .handled }
+        router.root = URL(fileURLWithPath: "/other", isDirectory: true)
+        action(relative)
+        #expect(second.map(\.absoluteString) == ["file:///other/temporal/PLAN.md"])
+
+        router.root = nil
+        action(relative)
+        action(web)
+        #expect(second.map(\.absoluteString) == ["file:///other/temporal/PLAN.md", "https://example.com/plan"],
+                "a remote agent's path opens no same-named file here")
+        #expect(first.count == 2)
+    }
+
     // MARK: Images
 
     @Test(arguments: [
@@ -264,6 +297,106 @@ struct ProseComponentTests {
     }
 
     @Test func bulletsChangeWithDepth() {
-        #expect((0..<4).map { SHProseBlocks<EmptyView>.bullet(depth: $0) } == ["•", "◦", "▪\u{FE0E}", "•"])
+        #expect((0..<4).map { SHProseWords.bullet(depth: $0) } == ["•", "◦", "▪\u{FE0E}", "•"])
+    }
+
+    // MARK: Block views
+
+    /// The open fence is the last one of the chunk, wherever it sits. The chunk names the part that holds it, and the path
+    /// below that part's own block: empty for a top-level fence, else an index per level (a quote's or a disclosure's block,
+    /// a list's item and then its block), so a block view needs nothing of the levels above it.
+    @Test(arguments: [
+        ("a top-level fence", [proseTestPart(0, .paragraph("Intro")), proseTestPart(1, proseTestFence("open"))], 1, []),
+        ("a fence after the quote that holds one", [proseTestPart(0, .quote([proseTestFence("closed")])), proseTestPart(1, proseTestFence("open"))], 1, []),
+        ("a fence in a quote", [proseTestPart(0, .paragraph("Intro")), proseTestPart(1, .quote([.paragraph("Said"), proseTestFence("open")]))], 1, [1]),
+        ("a fence in a list item", [proseTestPart(0, .list(ordered: false, start: 1, items: [
+            SHProseListItem(text: "one"), SHProseListItem(text: "two", children: [.paragraph("Under"), proseTestFence("open")]),
+        ]))], 0, [1, 1]),
+        ("a fence in a disclosure", [proseTestPart(0, .details(summary: "More", blocks: [proseTestFence("open")])), proseTestPart(1, .paragraph("After"))], 0, [0]),
+        ("a fence in a list in a quote", [proseTestPart(0, .quote([.list(ordered: true, start: 1, items: [
+            SHProseListItem(text: "", children: [proseTestFence("open")]),
+        ])]))], 0, [0, 0, 0]),
+    ] as [(String, [SHProsePart], Int, [Int])])
+    func theOpenFenceNamesItsPartAndTheWayDownInsideIt(_: String, parts: [SHProsePart], holder: Int, path: [Int]) {
+        let chunk = SHProseChunk<SHCodeBlock>(parts, writingFence: true)
+        #expect(chunk.writing?.part == parts[holder].id)
+        #expect(chunk.writing?.path == path)
+        for (index, part) in parts.enumerated() {
+            #expect(chunk.writing(in: part) == (index == holder ? path : nil), "part \(index)")
+        }
+        #expect(SHProseChunk<SHCodeBlock>(parts, writingFence: false).writing == nil, "a finished reply writes none")
+    }
+
+    @Test func aChunkWithoutFencesWritesNone() {
+        let parts = [proseTestPart(0, .paragraph("Intro")), proseTestPart(1, .quote([.paragraph("Said")]))]
+        #expect(SHProseChunk<SHCodeBlock>(parts, writingFence: true).writing == nil)
+    }
+
+    /// Below the part, each block gets only what is left of the path: the block whose index leads it, with that index taken off,
+    /// and the fence itself sees an empty path.
+    @Test func theWritingPathIsHandedDownOneLevelAtATime() {
+        typealias Blocks = SHProseBlocks<SHCodeBlock>
+        let path = [1, 0, 2]
+        #expect(Blocks.writing(path, under: 0) == nil)
+        #expect(Blocks.writing(path, under: 1) == [0, 2])
+        #expect(Blocks.writing(path, under: 2) == nil)
+        #expect(Blocks.writing([0, 2], under: 0) == [2])
+        #expect(Blocks.writing([2], under: 2) == [])
+        #expect(Blocks.writing(nil, under: 0) == nil)
+    }
+
+    @Test func aChunkIsEqualWhenItsPartsAndItsOpenFenceAre() {
+        let parts = [proseTestPart(0, .paragraph("Intro")), proseTestPart(1, proseTestFence("open"))]
+        let chunk = SHProseChunk<SHCodeBlock>(parts, writingFence: true)
+        #expect(chunk == SHProseChunk<SHCodeBlock>(parts, writingFence: true))
+        #expect(chunk != SHProseChunk<SHCodeBlock>(parts, writingFence: false), "the fence is finished")
+        #expect(chunk != SHProseChunk<SHCodeBlock>(parts, writing: (parts[0].id, [])), "another part holds the fence")
+        #expect(chunk != SHProseChunk<SHCodeBlock>(parts, writing: (parts[1].id, [0])), "another path inside it")
+        #expect(chunk != SHProseChunk<SHCodeBlock>([parts[0], proseTestPart(1, proseTestFence("opened"))], writingFence: true))
+        #expect(chunk != SHProseChunk<SHCodeBlock>([parts[0], proseTestPart(2, proseTestFence("open"))], writingFence: true), "another id")
+    }
+
+    /// A block's view is drawn again when anything it draws differs: its words and their styles, the fence it writes, whether it
+    /// sits nested, how deep in lists, and in which voice. A pull that leaves all of them as they were draws nothing.
+    @Test func aBlockViewIsEqualOnlyWhenEverythingItDrawsIs() {
+        typealias BlockView = SHProseBlockView<SHCodeBlock>
+        let bold = AttributeContainer().inlinePresentationIntent(.stronglyEmphasized)
+        let base = BlockView(block: .paragraph(AttributedString("Same words")))
+        #expect(base == BlockView(block: .paragraph(AttributedString("Same words"))))
+        #expect(base != BlockView(block: .paragraph(AttributedString("Same words, longer"))), "its words")
+        #expect(base != BlockView(block: .paragraph(AttributedString("Same words", attributes: bold))), "their styles")
+        #expect(base != BlockView(block: .heading(level: 2, text: AttributedString("Same words"))), "its kind")
+        #expect(base != BlockView(block: base.block, writing: []), "a fence being written")
+        #expect(base != BlockView(block: base.block, nested: true))
+        #expect(base != BlockView(block: base.block, depth: 1))
+        #expect(base != BlockView(block: base.block, voice: .quoted))
+        #expect(base != BlockView(block: base.block, voice: .thinking))
+
+        let fence = BlockView(block: proseTestFence("let a = 1"), writing: [])
+        #expect(fence == BlockView(block: proseTestFence("let a = 1"), writing: []))
+        #expect(fence != BlockView(block: proseTestFence("let a = 1"), writing: nil))
+        #expect(fence != BlockView(block: proseTestFence("let a = 12"), writing: []))
+        #expect(fence != BlockView(block: .code("let a = 1", language: "go"), writing: []))
+        #expect(BlockView(block: .rule) == BlockView(block: .rule))
+    }
+
+    @Test func aListItemViewIsEqualOnlyWhenEverythingItDrawsIs() {
+        typealias Item = SHProseListItemView<SHCodeBlock>
+        let item = SHProseListItem(text: "one", task: .open, children: [.paragraph("Under")])
+        let base = Item(item: item, ordered: true, number: 1)
+        #expect(base == Item(item: item, ordered: true, number: 1))
+        #expect(base != Item(item: SHProseListItem(text: "one", task: .done, children: [.paragraph("Under")]), ordered: true, number: 1))
+        #expect(base != Item(item: SHProseListItem(text: "one", task: .open, children: [.paragraph("Under it")]), ordered: true, number: 1))
+        #expect(base != Item(item: item, ordered: false, number: 1))
+        #expect(base != Item(item: item, ordered: true, number: 2), "its number")
+        #expect(base != Item(item: item, ordered: true, number: 1, writing: [0]))
+        #expect(base != Item(item: item, ordered: true, number: 1, depth: 1))
+        #expect(base != Item(item: item, ordered: true, number: 1, voice: .thinking))
     }
 }
+
+private func proseTestPart(_ block: Int, _ value: SHProseBlock, stretch: Int = 0) -> SHProsePart {
+    SHProsePart(id: .init(block: block, stretch: stretch), block: value)
+}
+
+private func proseTestFence(_ code: String) -> SHProseBlock { .code(code, language: "swift") }

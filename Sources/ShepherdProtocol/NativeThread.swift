@@ -634,7 +634,8 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     /// True when this is what pi's saved session file holds for an agent whose pi is not running
     /// (`RemoteProtocol.nativeThreadPreviewCapability`): read-only, with no actions and a
     /// `generation` no request can name. Any request but a snapshot starts pi, whose own snapshot
-    /// then replaces it. Absent (false) on pi's own snapshots and from older hosts.
+    /// then replaces it. With `startProblem`, pi stopped and nothing starts it but Retry. Absent
+    /// (false) on pi's own snapshots and from older hosts.
     public var preview: Bool?
 
     public var isRPC: Bool { runtime == "rpc" }

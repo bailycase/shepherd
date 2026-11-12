@@ -184,7 +184,7 @@ Worktree add (`GitWorktree.swift`), Delete Worktree Agent (confirmed), per-file 
 Commit from review (`ReviewCommit.swift`: only the ticked files, refuses a dirty HEAD state, never
 force-pushes), a shared design's own repository under `<designs>/.git/<id>/`, the Changes engine's
 snapshots (its own index file; the user's index, tree, HEAD, refs and stash are never written),
-Undo and Redo of a turn (the turn's own files only: what changed while it ran, less what Shepherd wrote for the person; while another agent's turn ran in the same working tree or another agent's edit or write landed in it, only the files its own edit and write calls named and no other call named; refused when any changed since), Save in the Files
+Undo and Redo of a turn (the turn's own files only: what changed while it ran, less what Shepherd wrote for the person; while another agent's turn ran in the same working tree, another agent's edit, write or subagent landed in it, or the person ran a branch action or a commit in it, only the files its own edit and write calls (and its own subagents) named and no other call or subagent named; refused when any changed since), Save in the Files
 tab (`FileTreeModel.save`: the person's Save, Save chord or Overwrite; one existing local text file inside
 the thread's folder, written in place only while it still holds the version the editor expected; a paired
 device's Save reaches the host's server as `fileWrite`, `ThreadFileSystem.save`, under the same rule), Add child project

@@ -220,7 +220,10 @@ struct ComposerMenuPerformanceTests {
     /// Typing rebuilds the field, never the chips: past the first character (which lights Send),
     /// a keystroke draws no chip row, so `ViewThatFits` keeps its measurements of them; and the
     /// window's minimum-size pass, which each keystroke sets off, is answered for the row without
-    /// measuring it (`ComposerControlsMinimum`).
+    /// measuring it (`ComposerControlsMinimum`). The composer's own body reads no part of the draft
+    /// that a prose key changes (the store derives it once per edit), so only the field's host
+    /// reruns (`composer.field`); a letter set from outside takes the replace path, so the
+    /// minimum-size pass still runs.
     @Test func typingRedrawsTheFieldAndNoChipRow() async throws {
         let thread = ComposerThread(animated: false)
         defer { thread.close() }
@@ -229,12 +232,75 @@ struct ComposerMenuPerformanceTests {
 
         for letter in ["e", "l", "l", "o"] {
             let counts = try await counting(thread) { thread.store.draft += letter }
-            #expect(counts["composer.body", default: 0] >= 1, "'\(letter)': the field redrew: \(counts)")
+            #expect(counts["composer.body", default: 0] == 0, "'\(letter)': the composer's body stayed: \(counts)")
+            #expect(counts["composer.field", default: 0] >= 1, "'\(letter)': the field redrew: \(counts)")
             #expect(counts["composer.chips", default: 0] == 0, "'\(letter)': \(counts)")
             #expect(counts["composer.contextMeter", default: 0] == 0, "'\(letter)': the ring beside Send: \(counts)")
             #expect(counts["thread.view", default: 0] == 0, "'\(letter)': \(counts)")
             #expect(counts["layout.composerControlsMinimum", default: 0] >= 1, "'\(letter)': the minimum-size pass was answered: \(counts)")
         }
+    }
+
+    /// A composer whose field has the keyboard, for typing as the input system inserts text.
+    private func typingThread(designReferences: DesignReferenceChips? = nil, slashLogin: Bool = false) async throws -> ComposerThread {
+        let thread = ComposerThread(focused: true, animated: false, designReferences: designReferences, slashLogin: slashLogin)
+        try await thread.waitUntilReady()
+        try await eventuallyOnMain("the field to take the keyboard") { thread.focusedEditor?.isFieldEditor == true }
+        return thread
+    }
+
+    /// Each of `letters` typed into the focused field, with what that key redrew counted.
+    private func typing(_ letters: some Sequence<Character>, in thread: ComposerThread) async throws -> [(letter: Character, counts: [String: Int])] {
+        var all: [(letter: Character, counts: [String: Int])] = []
+        for letter in letters { all.append((letter, try await counting(thread) { thread.type(String(letter)) })) }
+        return all
+    }
+
+    /// A prose key changes the field's words and nothing the composer draws around them: past the
+    /// first character, which lights Send, the composer's body does not run and the field's host does.
+    @Test func typingProseRedrawsOnlyTheField() async throws {
+        let thread = try await typingThread()
+        defer { thread.close() }
+        _ = try await counting(thread) { thread.type("h") }
+
+        for (letter, counts) in try await typing("ello", in: thread) {
+            #expect(counts["composer.body", default: 0] == 0, "'\(letter)': the composer's body ran: \(counts)")
+            #expect(counts["composer.field", default: 0] >= 1, "'\(letter)': the field redrew: \(counts)")
+            #expect(counts["composer.chips", default: 0] == 0, "'\(letter)': \(counts)")
+            #expect(counts["thread.view", default: 0] == 0, "'\(letter)': \(counts)")
+        }
+        #expect(thread.store.draft == "hello")
+    }
+
+    /// A draft that starts with a skill leaves no key to the composer's body either: only a /login
+    /// being typed reads the whole draft (`draftLeadingCommand` names the first word once it ends).
+    @Test func typingAfterALeadingSkillRedrawsOnlyTheField() async throws {
+        let thread = try await typingThread(slashLogin: true)
+        defer { thread.close() }
+        _ = try await counting(thread) { thread.store.draft = "/skill:debug " }
+
+        for (letter, counts) in try await typing("fix the bug", in: thread) {
+            #expect(counts["composer.body", default: 0] == 0, "'\(letter)': the composer's body ran: \(counts)")
+            #expect(counts["composer.field", default: 0] >= 1, "'\(letter)': the field redrew: \(counts)")
+        }
+        #expect(thread.store.draft == "/skill:debug fix the bug")
+    }
+
+    /// On a thread that takes design references, prose neither writes the picker's state nor
+    /// reads the catalog: the composer's body stays and the picker never opens.
+    @Test func typingProseOnADesignThreadRedrawsOnlyTheField() async throws {
+        let reads = MentionPickerLoadingFlowTests.CatalogReads()
+        let thread = try await typingThread(designReferences: MentionPickerLoadingFlowTests.chips(reads))
+        defer { thread.close() }
+        _ = try await counting(thread) { thread.type("h") }
+
+        for (letter, counts) in try await typing("ello wor", in: thread) {
+            #expect(counts["composer.body", default: 0] == 0, "'\(letter)': the composer's body ran: \(counts)")
+            #expect(counts["composer.field", default: 0] >= 1, "'\(letter)': the field redrew: \(counts)")
+            #expect(counts["menu.rows", default: 0] == 0, "'\(letter)': \(counts)")
+        }
+        #expect(thread.store.draft == "hello wor")
+        #expect(reads.count == 0, "no catalog was asked for: the picker stayed closed")
     }
 
     /// "/" derives the slash menu's matches once, and each keystroke after it once more (never

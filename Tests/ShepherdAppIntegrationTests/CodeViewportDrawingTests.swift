@@ -194,6 +194,136 @@ struct CodeViewportDrawingTests {
         if lines >= 500 { #expect(costs[1] < costs[0] / 2, "viewport drawing must not scale with the full block: \(costs)") }
     }
 
+    /// NSTextField gives no intrinsic size to a side past 40,000 pt, which left such a fence a 1 pt field.
+    /// The bottom of the tall fence is compared with the bottom of a short one that ends in the same
+    /// lines (a whole number of line heights apart, so both lay their last line at the same offset).
+    /// Non-ASCII text is drawn by the native cell, ASCII by the retained renderer: both must draw.
+    @Test(arguments: [false, true], [2_100, 3_000])
+    func aFenceTallerThanTheTextFieldsLimitDrawsItsTopAndBottom(dark: Bool, lines: Int) throws {
+        for unicode in [false, true] {
+            // The tail holds the widest line, so both fields are as wide and clip alike.
+            let tail = (0..<30).map { "return finish\($0)(sheep) // the end of the fence\(unicode ? " 🐑" : "")" }
+            func fence(_ count: Int) -> String {
+                ((0..<(count - tail.count)).map { "let item\($0) = 1" } + tail).joined(separator: "\n")
+            }
+            var tops: [Data] = [], bottoms: [Data] = []
+            var heights: [CGFloat] = []
+            for count in [60, lines] {
+                let window = OffscreenWindow(size: CGSize(width: 520, height: 320), dark: dark)
+                defer { window.close() }
+                let field = SHNativeCodeText.Field(labelWithString: "")
+                let scroll = mount(field, in: window)
+                let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+                field.font = font
+                field.setCode(SHNativeCodeText.attributedCode(fence(count), highlighted: nil, font: font, lineSpacing: 4.6))
+                size(field, in: scroll)
+                heights.append(field.frame.height)
+                tops.append(try render(field, scroll: scroll, fraction: 0))
+                bottoms.append(try render(field, scroll: scroll, fraction: 1))
+            }
+            #expect(heights[1] > CGFloat(lines) * 15, "\(lines) lines are \(heights[1]) pt tall (non-ASCII: \(unicode))")
+            #expect(tops[0] == tops[1], "the top of the fence draws its first lines (non-ASCII: \(unicode))")
+            #expect(bottoms[0] == bottoms[1], "the bottom of the fence draws its last lines (non-ASCII: \(unicode))")
+            #expect(tops[1] != bottoms[1])
+        }
+    }
+
+    @Test func aFenceTallerThanTheTextFieldsLimitStaysSelectable() throws {
+        let window = OffscreenWindow(size: CGSize(width: 520, height: 320), dark: false)
+        defer { window.close() }
+        let field = SHNativeCodeText.Field(labelWithString: "")
+        let scroll = mount(field, in: window)
+        let code = (0..<3_000).map { "let item\($0) = \($0)" }.joined(separator: "\n")
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        field.font = font
+        field.setCode(SHNativeCodeText.attributedCode(code, highlighted: nil, font: font, lineSpacing: 4.6))
+        size(field, in: scroll)
+        let drawn = try render(field, scroll: scroll, fraction: 1)
+        let editor = try #require(window.window.fieldEditor(true, for: field) as? NSTextView)
+        let last = (code as NSString).range(of: "item2999")
+        field.cell?.select(withFrame: field.bounds, in: field, editor: editor, delegate: field, start: last.location, length: last.length)
+        #expect(window.window.makeFirstResponder(editor))
+        #expect(editor.string == code)
+        #expect((editor.string as NSString).substring(with: editor.selectedRange()) == "item2999")
+        #expect(window.window.makeFirstResponder(nil))
+        #expect(try render(field, scroll: scroll, fraction: 1) == drawn, "ending the selection returns to the same drawing")
+    }
+
+    // MARK: Renderers a field lets go of
+
+    @Test func aRendererGivenBackHoldsNoTextAndServesTheNextField() throws {
+        let pool = SHNativeCodeText.RendererPool(limit: 2)
+        let first = pool.take(frame: NSRect(x: 0, y: 0, width: 400, height: 300), inset: NSSize(width: 4, height: 2))
+        first.textStorage?.setAttributedString(NSAttributedString(string: (0..<200).map { "let item\($0) = \($0)" }.joined(separator: "\n")))
+        let container = try #require(first.textContainer)
+        first.layoutManager?.ensureLayout(for: container)
+        #expect(try #require(first.layoutManager).numberOfGlyphs > 0)
+
+        pool.give(first)
+
+        #expect(pool.idleCount == 1)
+        #expect(first.textStorage?.length == 0)
+        #expect(first.layoutManager?.numberOfGlyphs == 0, "the layout of the fence it drew is gone")
+        let next = pool.take(frame: NSRect(x: 0, y: 0, width: 100, height: 50), inset: NSSize(width: 8, height: 3))
+        #expect(next === first && pool.idleCount == 0)
+        #expect(next.frame.size == CGSize(width: 100, height: 50) && next.textContainerInset == NSSize(width: 8, height: 3))
+    }
+
+    @Test func aFullPoolLetsGoOfTheTextSystemItCannotKeep() async throws {
+        let pool = SHNativeCodeText.RendererPool(limit: 1)
+        weak var keptLayout: NSLayoutManager?
+        weak var droppedLayout: NSLayoutManager?
+        autoreleasepool {
+            let kept = pool.take(frame: .zero, inset: .zero)
+            let dropped = pool.take(frame: .zero, inset: .zero)
+            for text in [kept, dropped] {
+                text.textStorage?.setAttributedString(NSAttributedString(string: "let item = 1\nlet other = 2"))
+                if let container = text.textContainer { text.layoutManager?.ensureLayout(for: container) }
+            }
+            keptLayout = kept.layoutManager
+            droppedLayout = dropped.layoutManager
+            pool.give(kept)
+            pool.give(dropped)
+        }
+        #expect(pool.idleCount == 1)
+        try await eventuallyOnMain("the layout manager the pool could not keep to go") { droppedLayout == nil }
+        #expect(keptLayout != nil, "the one it keeps stays, emptied, for the next field")
+    }
+
+    /// The pool serves renderers that drew other code in another font, appearance and size.
+    @Test(arguments: [false, true])
+    func aRecycledRendererDrawsLikeANativeField(dark: Bool) throws {
+        SHFonts.register()
+        let earlier = OffscreenWindow(size: CGSize(width: 520, height: 320), dark: !dark)
+        let earlierField = SHNativeCodeText.Field(labelWithString: "")
+        let earlierScroll = mount(earlierField, in: earlier)
+        let big = (0..<500).map { "func earlier\($0)() { return \($0) }" }.joined(separator: "\n")
+        let bigFont = NSFont.monospacedSystemFont(ofSize: 18, weight: .regular)
+        earlierField.setCode(SHNativeCodeText.attributedCode(big, highlighted: nil, font: bigFont, lineSpacing: 6))
+        size(earlierField, in: earlierScroll)
+        _ = try render(earlierField, scroll: earlierScroll, fraction: 0.5)
+        earlier.close()
+        #expect(SHNativeCodeText.RendererPool.shared.idleCount >= 1, "the field that left its window handed its renderer back")
+
+        let code = (0..<100).map { "let sheep\($0) = \"flock\" // a comment" }.joined(separator: "\n")
+        var images: [[Data]] = []
+        for recycled in [false, true] {
+            let field: NSTextField = recycled ? SHNativeCodeText.Field(labelWithString: "") : NSTextField(labelWithString: "")
+            let window = OffscreenWindow(size: CGSize(width: 520, height: 320), dark: dark)
+            defer { window.close() }
+            let scroll = mount(field, in: window)
+            let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+            field.font = font
+            var highlighted = AttributedString(code)
+            highlighted.foregroundColor = Color.sh.synKeyword
+            let value = SHNativeCodeText.attributedCode(code, highlighted: highlighted, font: font, lineSpacing: 4)
+            if let field = field as? SHNativeCodeText.Field { field.setCode(value) } else { field.attributedStringValue = value }
+            size(field, in: scroll)
+            images.append(try [0.0, 0.5, 1.0].map { try render(field, scroll: scroll, fraction: $0) })
+        }
+        #expect(images[0] == images[1], "a renderer that drew other code draws this code as a native field does")
+    }
+
     private func mount(_ field: NSTextField, in window: OffscreenWindow) -> NSScrollView {
         field.appearance = window.window.effectiveAppearance
         field.isEditable = false

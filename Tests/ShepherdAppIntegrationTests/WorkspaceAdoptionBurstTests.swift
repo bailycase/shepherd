@@ -5,8 +5,9 @@ import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
-/// A burst of changed workspace snapshots (a fleet's status reports): every one is adopted in
-/// order, and the membership prunes run only when agents, tabs, spaces or designs change.
+/// A burst of changed workspace snapshots (a fleet's status reports) adopted directly: each is adopted
+/// in order, and the membership prunes run only when agents, tabs, spaces or designs change. The host's
+/// own pushes skip the ones a newer push waits behind (`StatusAdoptionBurstTests`).
 @Suite("Workspace adoption burst", .mainActorExclusive)
 @MainActor
 struct WorkspaceAdoptionBurstTests {

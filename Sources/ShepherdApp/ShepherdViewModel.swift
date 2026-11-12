@@ -17,7 +17,15 @@ typealias Tab = ShepherdCore.Tab
 @MainActor
 @Observable
 final class ShepherdViewModel {
-    var state: ShepherdState
+    var state: ShepherdState {
+        didSet { syncWorkspaceStructure() }
+    }
+    /// `state` with each agent's live fields cleared (`ShepherdState.withoutLiveAgentFields`), written
+    /// only when the rest of it changes. What decides which layouts exist and what each shows reads this
+    /// and not `state`, so a status report, a send or a question reruns none of the workspace around the
+    /// thread. Read it for structure alone: an agent's status, `lastActiveAt`, `waitingOn`,
+    /// `waitingReason`, `completedAt` and `seenCompletedAt` are idle or nil here.
+    private(set) var workspaceStructure = ShepherdState()
     /// Issues & PRs, read through this Mac's host (`SessionServer.forge`).
     @ObservationIgnored lazy var forgeStore = ForgeStore(transport: { [weak self] in
         await self?.forge($0) ?? .failure(ForgeError(.unreachable, "Shepherd is closing."))
@@ -57,18 +65,19 @@ final class ShepherdViewModel {
     @ObservationIgnored var sidebarPreparingOpeningTurns: Set<AgentID> = []
     /// The run on screen that Run Now is replacing: its going is no reason to show another thread.
     @ObservationIgnored var replacingRun: AgentID?
-    /// Last ten measured tool-completion rates per agent, not a decorative waveform. Each agent's
-    /// box is observed by its own row alone, so one agent's tool call redraws no other row.
-    @ObservationIgnored var sidebarActivityBoxes: [AgentID: SidebarActivityBox] = [:]
+    /// Each agent's status and its last ten measured tool-completion rates, not a decorative waveform.
+    /// A box is observed by what shows its agent alone, so one agent's tool call redraws no other row.
+    @ObservationIgnored var agentLives: [AgentID: AgentLive] = [:]
     var sidebarActivitySamples: [AgentID: [Double]] {
-        sidebarActivityBoxes.compactMapValues { $0.samples.isEmpty ? nil : $0.samples }
+        agentLives.compactMapValues { $0.samples.isEmpty ? nil : $0.samples }
     }
-    /// The agent's box, made on first ask so the row observing it sees the samples arrive.
-    func sidebarActivityBox(_ id: AgentID) -> SidebarActivityBox {
-        if let box = sidebarActivityBoxes[id] { return box }
-        let box = SidebarActivityBox()
-        sidebarActivityBoxes[id] = box
-        return box
+    /// The agent's box, made on first ask (from the newest push, read without observing it, so asking from
+    /// a body adds no dependency on `state`) for the row or line observing it to see the changes arrive.
+    func agentLive(_ id: AgentID) -> AgentLive {
+        if let live = agentLives[id] { return live }
+        let live = AgentLive(status: adoption.latest(_state).agents.first { $0.id == id }?.status ?? .idle)
+        agentLives[id] = live
+        return live
     }
     @ObservationIgnored var sidebarActivityLast: [AgentID: Date] = [:]
     var sidebarSeenCompletions: [SidebarRowID: Int] = [:]
@@ -363,6 +372,15 @@ final class ShepherdViewModel {
     /// Adoptions of a changed snapshot, and the membership prunes they ran (tests).
     @ObservationIgnored private(set) var changedAdoptions = 0
     @ObservationIgnored private(set) var membershipPrunes = 0
+    /// Pushes of the host's workspace left unadopted because a newer one was queued behind them, and the
+    /// status changes whose effects ran (tests).
+    @ObservationIgnored private(set) var skippedAdoptions = 0
+    @ObservationIgnored private(set) var statusEdges = 0
+    /// Which pushes of the host's workspace are adopted, and the one that waits for a newer push.
+    @ObservationIgnored private var adoption = StateAdoption()
+    /// The newest workspace the host pushed, adopted or not. For callbacks that name agents of the
+    /// newest push (`onLocalAgentNotify`, banners); a view reads `state`.
+    var latestState: ShepherdState { adoption.latest(state) }
     /// The server Settings ▸ MCP servers opens with its row open (a search hit named it).
     @ObservationIgnored var mcpOpenServer: String?
     /// Where the open space-directory browser creates its space: this Mac
@@ -591,7 +609,7 @@ final class ShepherdViewModel {
     /// When local threads' turns and questions post (`ThreadBanners`): through `notifications`,
     /// quiet while you watch.
     @ObservationIgnored lazy var threadBanners = ThreadBanners(
-        state: { [unowned self] in self.state },
+        state: { [unowned self] in self.latestState },
         sink: .init(post: { [unowned self] in self.notifications.post($0) },
                     remove: { [unowned self] in self.notifications.remove($0) },
                     isWatching: { [unowned self] in self.isWatching($0) },
@@ -1015,6 +1033,12 @@ final class ShepherdViewModel {
         }
     }
 
+    /// Brings `workspaceStructure` to `state`'s structure, writing it (and so redrawing what reads it) only when that changed.
+    private func syncWorkspaceStructure() {
+        let structure = state.withoutLiveAgentFields
+        if structure != workspaceStructure { workspaceStructure = structure }
+    }
+
     /// The thread stores follow the owner's state on every adoption, equal snapshot or not: a store is
     /// cheap to check and "held off" also reads session liveness, which no snapshot carries.
     private func reconcileThreadStores() {
@@ -1028,8 +1052,12 @@ final class ShepherdViewModel {
         }
     }
 
-    /// Adopt a server snapshot wholesale, keeping selection when IDs persist.
-    func adopt(_ serverState: ShepherdState) {
+    /// Adopt a server snapshot wholesale, keeping selection when IDs persist. `edgesApplied`: the push
+    /// it came in already ran its agents' status changes (`receiveLocalHostState`); any other adoption
+    /// runs those it finds against the newest push received, which a skipped push may have held back.
+    func adopt(_ serverState: ShepherdState, edgesApplied: Bool = false) {
+        let newest = latestState
+        adoption.adoptedDirectly()
         // The host's run log is read on its `automationsChanged` (`loadLocalAutomationRuns`).
         // A status report and a checkout read each broadcast the whole workspace, equal or not.
         // Assigning `state` invalidates every view that read any part of it, so an equal snapshot
@@ -1044,14 +1072,7 @@ final class ShepherdViewModel {
             if Self.persistedTurnFailed(agent) { failedTurns.insert(agent.id) } else { failedTurns.remove(agent.id) }
         }
         let shownBefore = shownDesign?.id
-        // As the background host's client, a status arrives in the workspace, not as a session's
-        // report: each change runs what the report would (notifications, failed rows, cards).
-        if localHost != nil {
-            for agent in serverState.agents {
-                guard let old = state.agents.first(where: { $0.id == agent.id })?.status, old != agent.status else { continue }
-                applyAgentStatus(agent.id, agent.status, failure: agent.status == .done ? agent.lastFailure.map { TurnFailure(message: $0) } : nil)
-            }
-        }
+        if localHost != nil, !edgesApplied { applyStatusEdges(StatusEdge.between(newest, and: serverState)) }
         if !sidebarOpeningTurns.isEmpty {
             let removed = Set(state.agents.map(\.id)).subtracting(serverState.agents.map(\.id))
             sidebarOpeningTurns.subtract(removed)
@@ -1061,6 +1082,8 @@ final class ShepherdViewModel {
         // its card is asked to read again when the count moves. A hidden card reads when shown.
         let shown = selectedAgent.flatMap { $0.tabID == activeTabID ? ($0.id, $0.checkout) : nil }
         state = serverState
+        // A box follows each push (`applyAgentStatus`); an adoption outside the host's stream restates them all.
+        for agent in serverState.agents { agentLives[agent.id]?.report(agent.status) }
         if let (id, checkout) = shown, state.agents.first(where: { $0.id == id })?.checkout != checkout {
             branchCardStores[id]?.requestRefresh()
         }
@@ -1088,6 +1111,7 @@ final class ShepherdViewModel {
         }
         didAdopt = true
         changedAdoptions += 1
+        AppSignposts.workspace.emitEvent("adopt")
         pruneMembership()
         // First adoption of the restored workspace: stand the enabled
         // automation watches back up (their agents died with the last run), once the first
@@ -1132,8 +1156,9 @@ final class ShepherdViewModel {
 
     /// What only follows which agents, tabs, spaces and designs exist (reviews, designs' screens and reference chips, file
     /// trees, pins, focus memory) runs when those change, never for a snapshot that changed only statuses or checkouts (a
-    /// fleet's reports, one adoption each). Every snapshot is still adopted in order; what depends on each transition
-    /// (completions, questions, selection, focus, restoration) runs per snapshot in `adopt`.
+    /// fleet's reports, one adoption each). What depends on each adopted snapshot (completions, questions, selection,
+    /// focus, restoration) runs per adoption in `adopt`; a push with a newer one queued behind it is not adopted
+    /// (`StateAdoption`), but its status changes still run their effects.
     private func pruneMembership() {
         var key = Hasher()
         for agent in state.agents { key.combine(agent.id); key.combine(agent.tabID); key.combine(agent.spaceID) }
@@ -1165,29 +1190,56 @@ final class ShepherdViewModel {
         if stopped, let problem, problem.kind == .extensionFailed { switchOffFailedExtensions(agentID, problem: problem) }
     }
 
-    private func applyAgentStatus(_ id: AgentID, _ status: AgentStatus, failure: TurnFailure?) {
-        if let index = state.agents.firstIndex(where: { $0.id == id }) {
-            let old = state.agents[index].status
-            // A repeated report must not invalidate every view that reads the workspace.
-            if old != status { state.agents[index].status = status }
-            if status != .idle { sidebarOpeningTurns.remove(id) }
-            if old != status || statusSince[id] == nil { statusSince[id] = Date() }
-            if old != status, old != .blocked, status == .working {
-                sidebarActivityBoxes[id]?.samples = []
-                sidebarActivityLast[id] = Date()
-            }
-            // A turn ending reads the branch card again (commits, a push, the PR's checks).
-            if old == .working, status != .working { branchCardStores[id]?.requestRefresh() }
-            // A session (re)start reports idle; the server still remembers the failure until a
-            // turn starts, so the row keeps reading failed.
-            let failed = status == .done ? failure != nil : status == .idle && Self.persistedTurnFailed(state.agents[index])
-            // pi said a subscription's refresh failed: Sign-in says it expired.
-            if let message = failure?.message { piAuth.noteTurnError(message, provider: provider(of: id)) }
-            if failed != failedTurns.contains(id) {
-                if failed { failedTurns.insert(id) } else { failedTurns.remove(id) }
-            }
-            notifyStatus(state.agents[index], from: old, failure: failure)
+    /// As the background host's client, a status arrives in the workspace, not as a session's report: each
+    /// change runs what the report would (notifications, failed rows, cards).
+    private func applyStatusEdges(_ edges: [StatusEdge]) {
+        for edge in edges { applyAgentStatus(edge) }
+    }
+
+    /// One status change. The agent is the newer snapshot's, so it carries the new status that the banners
+    /// read; `state` is not written (the adoption does that, once).
+    private func applyAgentStatus(_ edge: StatusEdge) {
+        let agent = edge.agent, id = agent.id, status = agent.status, old = edge.old
+        let failure = status == .done ? agent.lastFailure.map { TurnFailure(message: $0) } : nil
+        statusEdges += 1
+        // A bare remove notifies observers even when the id is absent.
+        if status != .idle, sidebarOpeningTurns.contains(id) { sidebarOpeningTurns.remove(id) }
+        statusSince[id] = Date()
+        agentLive(id).report(status)
+        if old != .blocked, status == .working {
+            agentLives[id]?.samples = []
+            sidebarActivityLast[id] = Date()
         }
+        // A turn ending reads the branch card again (commits, a push, the PR's checks).
+        if old == .working, status != .working { branchCardStores[id]?.requestRefresh() }
+        // A session (re)start reports idle; the server still remembers the failure until a turn starts, so the row keeps reading failed.
+        let failed = status == .done ? failure != nil : status == .idle && Self.persistedTurnFailed(agent)
+        // pi said a subscription's refresh failed: Sign-in says it expired.
+        if let message = failure?.message { piAuth.noteTurnError(message, provider: provider(of: id)) }
+        if failed != failedTurns.contains(id) {
+            if failed { failedTurns.insert(id) } else { failedTurns.remove(id) }
+        }
+        notifyStatus(agent, from: old, failure: failure)
+    }
+
+    /// Whether the next push of the host's workspace is left unadopted when a newer one is queued behind it
+    /// (`receiveLocalHostState`). The connection asks before it holds the push, and a push it leaves is not
+    /// projected (`RemoteHostStore.Connection.skip`). The first adoption is never skipped.
+    var leavesQueuedHostState: Bool { didAdopt && adoption.leavesQueued }
+
+    /// A push of the host's workspace (`RemoteHostStore.onLocalHostState`). Its status changes run their
+    /// effects now, against the newest snapshot received before it, so none is merged away; the snapshot is
+    /// adopted unless a newer one is already queued behind it (`StateAdoption`).
+    func receiveLocalHostState(_ serverState: ShepherdState, newerQueued: Bool) {
+        // The first adoption is never skipped: the connect's state is no push (`RemoteHostStore.connect`).
+        guard didAdopt else { adopt(serverState); return }
+        if localHost != nil { applyStatusEdges(StatusEdge.between(latestState, and: serverState)) }
+        guard let next = adoption.received(serverState, newerQueued: newerQueued) else {
+            skippedAdoptions += 1
+            AppSignposts.workspace.emitEvent("adopt skipped")
+            return
+        }
+        adopt(next, edgesApplied: true)
     }
 
     /// Whether the server kept the agent's last turn (or start problem) as failed across a

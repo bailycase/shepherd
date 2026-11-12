@@ -5,12 +5,13 @@ import ShepherdProtocol
 // Last turn (ChangesLastTurn) and the "Edited N files" card: when pi starts a run the host
 // snapshots the agent's working tree, when the run settles it snapshots it again, and the
 // turn's changes are the diff between the two trees, less what Shepherd wrote for the person.
-// Where another agent's turn, or its edit or write, shared the working tree during the run,
-// the changes are cut to the files the turn's own edit and write calls named and no other
-// call named (TurnAttribution, WriterLog): the cut becomes the turn's `endTree`, so the card,
-// Last turn, the counts, Undo and Redo all agree. Undo writes the start tree's version of
-// exactly those files back into the working tree (Redo the end tree's), refusing when any of
-// them changed since, or when a late writer turns out to have shared one.
+// Where another agent's turn, its edit or write, or its subagent, shared the working tree during
+// the run, the changes are cut to the files the turn's own edit and write calls (and its own
+// subagents) named and no other call or subagent named (TurnAttribution, WriterLog): the cut
+// becomes the turn's `endTree`, so the card, Last turn, the counts, Undo and Redo all agree.
+// Undo writes the start tree's version of exactly those files back into the working tree (Redo
+// the end tree's), refusing when any of them changed since, or when a late writer turns out to
+// have shared one.
 
 /// One recorded turn: its public face and the trees it runs between.
 struct TurnRecord: Codable, Hashable, Sendable {
@@ -88,6 +89,18 @@ final class TurnStore: @unchecked Sendable {
         return result
     }
 
+    /// Drops a deleted agent's records, and saves only when it had any.
+    func remove(_ agentID: AgentID) {
+        lock.lock()
+        var all = loaded()
+        let had = all.removeValue(forKey: agentID.rawValue) != nil
+        records = all
+        let schedule = had && !writeScheduled
+        if had { writeScheduled = true }
+        lock.unlock()
+        if schedule { io.async { self.save() } }
+    }
+
     /// Forgets every agent not in `agents` (deleted while Shepherd was not running).
     func prune(keeping agents: Set<AgentID>) {
         let keep = Set(agents.map(\.rawValue))
@@ -162,6 +175,24 @@ extension ChangesService {
             let queue = DispatchQueue(label: "shepherd.changes.turn", qos: .userInitiated)
             queues[agentID] = queue
             return queue
+        }
+    }
+
+    /// How many agents hold a capture queue (tests).
+    var captureQueueCount: Int { captureQueues.withValue { $0.count } }
+
+    /// Drops what the engine holds for agents that were deleted: their turn records, prepared
+    /// baseline and capture queue. Each goes on the agent's own capture queue, behind any capture
+    /// still running for it, and the queue is the last thing to go.
+    public func forget(_ agents: Set<AgentID>) {
+        for agent in agents {
+            captureQueue(agent).async { [self] in
+                turnStore.remove(agent)
+                preparedTurns.withValue { $0[agent] = nil }
+                // Nothing is left to re-cut, and a re-cut would queue work for an agent that is gone.
+                writers.withValue { $0.forget(agent) }
+                captureQueues.withValue { $0[agent] = nil }
+            }
         }
     }
 

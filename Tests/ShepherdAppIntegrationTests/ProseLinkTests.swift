@@ -23,9 +23,7 @@ struct ProseLinkTests {
             var opened: [URL] = []
             // Exercise the actual prose environment without launching an app or taking focus.
             let window = OffscreenWindow(size: CGSize(width: 400, height: 200), dark: dark,
-                SHAgentProse([.paragraph(markdown), .code("", language: nil)]) { _, _ in
-                    LinkProbe(urls: [link, web, task])
-                }
+                SHAgentProse<LinkProbe>([.paragraph(markdown), .code(LinkProbe.code(for: [link, web, task]), language: nil)])
                 .environment(\.shProseFileRoot, root)
                 .environment(\.openURL, OpenURLAction { url in
                     opened.append(url)
@@ -37,11 +35,113 @@ struct ProseLinkTests {
             #expect(try String(contentsOf: opened[0], encoding: .utf8) == "# Plan")
         }
     }
+
+    /// A remote image is a chip, and pressing it hands its address to the opener the prose inherits, through the router.
+    @Test func aRemoteImageChipPressesThroughTheLinkRouter() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.pressedImageChip() }
+        }
+        expectScenarioCompleted(result)
+    }
+
+    @MainActor private static func pressedImageChip() async throws {
+        AccessibilityNode.enable()
+        var opened: [URL] = []
+        let window = OffscreenWindow(size: CGSize(width: 400, height: 200), dark: false,
+            SHAgentProse([.image(SHProseImage(alt: "Build status", source: "https://ci.example.com/badge.png"))])
+                .environment(\.openURL, OpenURLAction { url in
+                    opened.append(url)
+                    return .handled
+                }))
+        defer { window.close() }
+        try window.press("Image, Build status")
+        try await eventuallyOnMain("the chip to reach the opener") { opened.count == 1 }
+        #expect(opened.map(\.absoluteString) == ["https://ci.example.com/badge.png"])
+    }
+
+    /// A new opener above a prose view does not redraw what reads the action prose gives its links: the action is made once
+    /// per prose view and the opener is only handed to it, so a streaming reply under a conversation that rebuilds its
+    /// opener on every body redraws no link, image chip or task chip once the window has caught up. Run in its own process:
+    /// SwiftUI's comparison of the environment is what is measured.
+    @Test func aNewOpenerAboveProseRedrawsNothingThatReadsItsLinkAction() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.readerBesideChangingOpeners() }
+        }
+        expectScenarioCompleted(result)
+    }
+
+    @MainActor private static func readerBesideChangingOpeners() async throws {
+        let ticks = OpenerTicks()
+        SHRenderProbe.start()
+        let window = OffscreenWindow(size: CGSize(width: 400, height: 200), dark: false, OpenerHost(ticks: ticks))
+        defer {
+            window.close()
+            SHRenderProbe.stop()
+        }
+        ListPerf.settle(window)
+        var drawn = SHRenderProbe.count("prose.linkReader")
+        #expect(drawn >= 1, "the reader was drawn")
+        // A new window draws a reader again for a while, until the run loop has caught up with it, and how long depends on how
+        // busy the machine is; a reader of an action that is stable then draws nothing, one of a new action draws on every pull.
+        var quiet = 0
+        try await eventuallyOnMain("the reader to stop being drawn on every pull") {
+            ticks.count += 1
+            ListPerf.settle(window)
+            let now = SHRenderProbe.count("prose.linkReader")
+            quiet = now == drawn ? quiet + 1 : 0
+            drawn = now
+            return quiet == 5
+        }
+    }
 }
 
-private struct LinkProbe: View {
+/// A host that hands prose a new opener on every body, as a Project conversation does, and prose that draws
+/// the same blocks each time.
+@MainActor @Observable
+private final class OpenerTicks {
+    var count = 0
+}
+
+private struct OpenerHost: View {
+    let ticks: OpenerTicks
+
+    var body: some View {
+        let count = ticks.count
+        SHAgentProse<LinkReader>([.paragraph(AttributedString("A link to follow.")), .code("", language: nil)])
+        .environment(\.openURL, OpenURLAction { _ in
+            _ = count
+            return .handled
+        })
+    }
+}
+
+/// Reads the action prose gives its links, and counts how often it is drawn. Stands in for a fence.
+private struct LinkReader: SHProseCode {
+    @Environment(\.openURL) private var openURL
+
+    init(code: String, language: String?, writing: Bool) {}
+
+    nonisolated static func == (lhs: LinkReader, rhs: LinkReader) -> Bool { true }
+
+    var body: some View {
+        let _ = SHRenderProbe.tick("prose.linkReader")
+        let _ = openURL
+        Color.clear.frame(width: 4, height: 4)
+    }
+}
+
+/// Stands in for a fence: its code is the links to open, one per line, and it opens them through the opener it inherits when it appears.
+private struct LinkProbe: SHProseCode {
     let urls: [URL]
     @Environment(\.openURL) private var openURL
+
+    init(code: String, language: String?, writing: Bool) {
+        urls = code.split(separator: "\n").compactMap { URL(string: String($0)) }
+    }
+
+    static func code(for urls: [URL]) -> String { urls.map(\.absoluteString).joined(separator: "\n") }
+
+    nonisolated static func == (lhs: LinkProbe, rhs: LinkProbe) -> Bool { lhs.urls == rhs.urls }
 
     var body: some View {
         Color.clear.onAppear { for url in urls { openURL(url) } }

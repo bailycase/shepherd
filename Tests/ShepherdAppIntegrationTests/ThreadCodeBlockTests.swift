@@ -3,6 +3,7 @@ import SwiftUI
 import ShepherdUI
 import ShepherdTestSupport
 import Testing
+@testable import ShepherdApp
 
 @Suite("Thread code blocks", .mainActorExclusive)
 @MainActor
@@ -290,6 +291,185 @@ struct ThreadCodeBlockTests {
         }
     }
 
+    // MARK: What a fence keeps once it is out of sight
+
+    /// ASCII code draws through the field's retained TextKit renderer (non-ASCII draws natively, with none).
+    private static let asciiCode = (0..<40).map { "let sheep\($0) = \($0) // flock" }.joined(separator: "\n")
+
+    @Test func aHiddenCodeBlockLetsGoOfItsRenderer() throws {
+        let code = Self.asciiCode
+        SHRenderProbe.start()
+        defer { _ = SHRenderProbe.stop() }
+        var highlighted = AttributedString(code)
+        highlighted.foregroundColor = Color.sh.synKeyword
+        let window = OffscreenWindow(size: CGSize(width: 480, height: 800), dark: false,
+                                     SHCodeBlock(code, language: "swift", highlighted: highlighted))
+        defer { window.close() }
+        ListPerf.settle(window)
+        let field = try #require(codeField(in: window.host, code: code))
+        let created = SHRenderProbe.count("code.rendererCreated")
+        #expect(created >= 1, "ASCII code draws through a retained renderer")
+        #expect(SHRenderProbe.count("code.rendererReleased") == 0)
+        let shown = try drawn(field)
+
+        window.host.isHidden = true
+        ListPerf.settle(window)
+        #expect(SHRenderProbe.count("code.rendererReleased") == created, "a hidden thread keeps no renderer for its fences")
+
+        window.host.isHidden = false
+        ListPerf.settle(window)
+        let again = try drawn(field)
+        let recreated = SHRenderProbe.count("code.rendererCreated")
+        #expect(recreated > created, "a draw takes a renderer again, lazily")
+        #expect(recreated - SHRenderProbe.count("code.rendererReleased") == 1, "one renderer is in use again")
+        #expect(again == shown, "a fence shown again draws as it did, colors included")
+    }
+
+    @Test func aCodeBlockLeavingItsWindowLetsGoOfItsRenderer() throws {
+        let code = Self.asciiCode
+        SHRenderProbe.start()
+        defer { _ = SHRenderProbe.stop() }
+        let window = OffscreenWindow(size: CGSize(width: 480, height: 800), dark: true, SHCodeBlock(code, language: "swift"))
+        defer { window.close() }
+        ListPerf.settle(window)
+        let field = try #require(codeField(in: window.host, code: code))
+        let created = SHRenderProbe.count("code.rendererCreated")
+        #expect(created >= 1)
+        let shown = try drawn(field)
+
+        let parent = try #require(field.superview)
+        field.removeFromSuperview()
+        #expect(field.window == nil)
+        #expect(SHRenderProbe.count("code.rendererReleased") == created, "a fence out of its window keeps no renderer")
+
+        parent.addSubview(field)
+        ListPerf.settle(window)
+        #expect(try drawn(field) == shown)
+        #expect(SHRenderProbe.count("code.rendererCreated") - SHRenderProbe.count("code.rendererReleased") == 1)
+    }
+
+    @Test func aCodeBlockHiddenAndShownAgainAndAgainReusesOneRenderer() throws {
+        let code = Self.asciiCode
+        SHRenderProbe.start()
+        defer { _ = SHRenderProbe.stop() }
+        let window = OffscreenWindow(size: CGSize(width: 480, height: 800), SHCodeBlock(code, language: "swift"))
+        defer { window.close() }
+        ListPerf.settle(window)
+        let field = try #require(codeField(in: window.host, code: code))
+        for _ in 0..<10 {
+            window.host.isHidden = true
+            ListPerf.settle(window)
+            window.host.isHidden = false
+            ListPerf.settle(window)
+            _ = try drawn(field)
+        }
+        let released = SHRenderProbe.count("code.rendererReleased")
+        #expect(released >= 10, "every hiding hands the renderer back")
+        #expect(SHRenderProbe.count("code.rendererCreated") - released == 1, "and one is in use now")
+        #expect(SHRenderProbe.count("code.rendererAllocated") <= 1,
+                "AppKit keeps every NSTextView it makes, so a field that draws again takes the one it gave back")
+    }
+
+    @Test func aCodeBlockRemovedFromItsThreadHandsBackItsRenderer() throws {
+        let code = Self.asciiCode
+        SHRenderProbe.start()
+        defer { _ = SHRenderProbe.stop() }
+        let window = OffscreenWindow(size: CGSize(width: 480, height: 800), SHCodeBlock(code, language: "swift"))
+        defer { window.close() }
+        ListPerf.settle(window)
+        let created = SHRenderProbe.count("code.rendererCreated")
+        #expect(created >= 1)
+
+        window.show(EmptyView())
+        ListPerf.settle(window)
+
+        #expect(SHRenderProbe.count("code.rendererReleased") == created)
+    }
+
+    @Test func aFenceShownAgainStillSelectsAndCopies() throws {
+        let code = Self.asciiCode
+        let window = OffscreenWindow(size: CGSize(width: 480, height: 800), dark: false, SHCodeBlock(code, language: "swift"))
+        defer { window.close() }
+        ListPerf.settle(window)
+        let field = try #require(codeField(in: window.host, code: code))
+        window.host.isHidden = true
+        ListPerf.settle(window)
+        window.host.isHidden = false
+        ListPerf.settle(window)
+        _ = try drawn(field)
+
+        let editor = try #require(window.window.fieldEditor(true, for: field) as? NSTextView)
+        let selection = NSRange(location: 4, length: 6)
+        field.cell?.select(withFrame: field.bounds, in: field, editor: editor, delegate: field,
+                           start: selection.location, length: selection.length)
+        #expect(window.window.makeFirstResponder(editor))
+        #expect(field.currentEditor() === editor)
+        let pasteboard = NSPasteboard(name: .init("shepherd-code-shown-again-\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        let types = editor.writablePasteboardTypes
+        pasteboard.declareTypes(types, owner: nil)
+        #expect(editor.writeSelection(to: pasteboard, types: types))
+        #expect(pasteboard.string(forType: .string) == (code as NSString).substring(with: selection))
+    }
+
+    @Test func aGrowingFenceKeepsOnlyItsNewestColors() async throws {
+        func lines(_ count: Int) -> String { (0..<count).map { "var sheep\($0) = \($0)" }.joined(separator: "\n") }
+        /// The key a block being written colors: its code up to its last complete line.
+        func rendered(_ code: String) -> CodeHighlightCache.Key {
+            let key = CodeHighlightCache.Key(fence: code, language: "go")
+            return key.prefix(lines: code.utf8.count { $0 == UInt8(ascii: "\n") })
+        }
+        let first = lines(8), second = lines(16), full = CodeHighlightCache.Key(fence: lines(17), language: "go")
+        #expect(rendered(first) != rendered(second))
+        let window = OffscreenWindow(size: CGSize(width: 480, height: 800),
+                                     HighlightedCodeBlock(code: first, language: "go", writing: true))
+        defer { window.close() }
+        try await eventuallyOnMain("the first lines to be colored") {
+            ListPerf.settle(window)
+            return CodeHighlightCache.cached(rendered(first)) != nil
+        }
+        window.show(HighlightedCodeBlock(code: second, language: "go", writing: true))
+        try await eventuallyOnMain("the next render to be colored") {
+            ListPerf.settle(window)
+            return CodeHighlightCache.cached(rendered(second)) != nil
+        }
+        #expect(CodeHighlightCache.cached(rendered(first)) == nil, "the older render of the same fence is gone")
+
+        window.show(HighlightedCodeBlock(code: lines(17), language: "go", writing: false))
+        try await eventuallyOnMain("the finished fence to be colored") {
+            ListPerf.settle(window)
+            return CodeHighlightCache.cached(full) != nil
+        }
+        #expect(CodeHighlightCache.cached(rendered(second)) == nil, "a closed fence leaves only its full render")
+    }
+
+    @Test func aFenceScrolledBackIntoViewIsColoredOnItsFirstFrame() async throws {
+        let code = "var sheep = 1\nfunc flock() int { return 2 }"
+        let key = CodeHighlightCache.Key(fence: code, language: "go")
+        let window = OffscreenWindow(size: CGSize(width: 480, height: 400), HighlightedCodeBlock(code: code, language: "go"))
+        defer { window.close() }
+        try await eventuallyOnMain("the fence to be colored") {
+            ListPerf.settle(window)
+            return CodeHighlightCache.cached(key) != nil
+        }
+        window.show(EmptyView())
+        ListPerf.settle(window)
+        #expect(codeField(in: window.host, code: key.code) == nil)
+
+        let counts = ListPerf.counting {
+            window.show(HighlightedCodeBlock(code: code, language: "go"))
+            ListPerf.settle(window)
+        }
+
+        let field = try #require(codeField(in: window.host, code: key.code))
+        var colors: Set<NSColor> = []
+        field.attributedStringValue.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: field.attributedStringValue.length)) { value, _, _ in
+            if let color = value as? NSColor { colors.insert(color) }
+        }
+        #expect(colors.count > 1, "the colors come from the cache, not from a render that has yet to land")
+        #expect(counts["highlight.render", default: 0] == 0)
+    }
+
     private func codeField(in view: NSView, code: String) -> NSTextField? {
         codeFields(in: view, code: code).first
     }
@@ -297,5 +477,23 @@ struct ThreadCodeBlockTests {
     private func codeFields(in view: NSView, code: String) -> [NSTextField] {
         let own = (view as? NSTextField).flatMap { $0.stringValue == code ? [$0] : nil } ?? []
         return own + view.subviews.flatMap { codeFields(in: $0, code: code) }
+    }
+
+    /// The field's pixels, drawn the way AppKit draws it when it is shown or scrolled, with ink.
+    private func drawn(_ field: NSTextField) throws -> Data {
+        let rect = field.bounds
+        let bitmap = try #require(field.bitmapImageRepForCachingDisplay(in: rect))
+        bitmap.bitmapData?.initialize(repeating: 0, count: bitmap.bytesPerRow * bitmap.pixelsHigh)
+        let context = try #require(NSGraphicsContext(bitmapImageRep: bitmap))
+        context.cgContext.scaleBy(x: CGFloat(bitmap.pixelsWide) / rect.width, y: CGFloat(bitmap.pixelsHigh) / rect.height)
+        context.cgContext.translateBy(x: -rect.minX, y: rect.maxY)
+        context.cgContext.scaleBy(x: 1, y: -1)
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context.cgContext, flipped: true)
+        field.effectiveAppearance.performAsCurrentDrawingAppearance { field.draw(rect) }
+        #expect(bitmap.bitmapData.map { data in (0..<(bitmap.bytesPerRow * bitmap.pixelsHigh)).contains { data[$0] != 0 } } == true,
+                "the fence draws ink")
+        return try #require(bitmap.representation(using: .png, properties: [:]))
     }
 }

@@ -42,10 +42,15 @@ struct MainWindowReader: NSViewRepresentable {
 /// it from the Dock works even if it is closed before the workspace is ready.
 struct MainWindowRoutes: ViewModifier {
     @Environment(\.openWindow) private var openWindow
+    /// Whether the window can be seen. Written only on a change, so what reads it
+    /// (`mainWindowVisible`) reruns only when the window shows or hides.
+    @State private var windowVisible = true
 
     func body(content: Content) -> some View {
         content
             .background { MainWindowReader() }
+            .background { WindowOcclusionReader { visible in if windowVisible != visible { windowVisible = visible } } }
+            .environment(\.mainWindowVisible, windowVisible)
             .onAppear { MainWindow.open = { [openWindow] in openWindow(id: MainWindow.id) } }
     }
 }
