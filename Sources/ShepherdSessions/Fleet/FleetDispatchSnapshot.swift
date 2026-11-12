@@ -46,9 +46,8 @@ extension FleetDispatch {
                 index = source.index
                 // A checkout still on its first scan: wait for it, as long as a scan takes.
                 let deadline = ContinuousClock.now + .seconds(300)
-                while index.queue.sync(execute: { index.state }) != .ready, ContinuousClock.now < deadline {
-                    let state = index.queue.sync { index.state }
-                    if state == .tooLarge || state == .notGit { break }
+                while index.stateNow != .ready, ContinuousClock.now < deadline {
+                    if index.stateNow == .tooLarge || index.stateNow == .notGit { break }
                     try? await Task.sleep(for: .milliseconds(50))
                 }
             } else {
@@ -329,7 +328,7 @@ extension FleetDispatch {
         let wantedFiles = Set(manifest.files.map(\.hash))
         let wantedDirectories = Set(manifest.directories.map(\.hash))
         var files: [FleetHash: FleetContentIndex.Located] = [:], directories: [FleetHash: FleetContentIndex.Located] = [:]
-        for index in indexes {
+        for index in indexes where index.stateNow == .ready {
             let found = index.queue.sync {
                 index.locate(files: wantedFiles.filter { files[$0] == nil && !blobs.has($0) }, directories: wantedDirectories.filter { directories[$0] == nil }, gitIDs: [])
             }

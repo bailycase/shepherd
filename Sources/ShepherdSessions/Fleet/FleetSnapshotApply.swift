@@ -302,7 +302,7 @@ struct FleetSnapshotApply {
         let hashes = Set(manifest.files.map(\.hash))
         let wantedDirectories = Set(manifest.directories.map(\.hash))
         var files: [FleetHash: FleetContentIndex.Located] = [:], directories: [FleetHash: FleetContentIndex.Located] = [:]
-        for index in input.indexes {
+        for index in input.indexes where index.stateNow == .ready {
             let found = index.queue.sync { index.locate(files: hashes.filter { files[$0] == nil }, directories: wantedDirectories.filter { directories[$0] == nil }, gitIDs: []) }
             files.merge(found.files) { first, _ in first }
             directories.merge(found.directories) { first, _ in first }
@@ -424,7 +424,7 @@ struct FleetSnapshotApply {
         let replaced = Set(manifest.files.map(\.path) + manifest.deletions)
         let ids = Set(tree.filter { !$0.value.isSubmodule && !replaced.contains($0.key) }.map(\.value.gitID))
         var known: [FleetGitBlobID: FleetHash] = [:]
-        for index in input.indexes {
+        for index in input.indexes where index.stateNow == .ready {
             let found = index.queue.sync { index.locate(files: [], directories: [], gitIDs: ids.filter { known[$0] == nil }) }
             known.merge(found.hashes) { first, _ in first }
         }

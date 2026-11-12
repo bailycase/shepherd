@@ -69,7 +69,13 @@ final class FleetContentIndex: @unchecked Sendable {
     private let latency: TimeInterval
     private let buffer = UnsafeMutableRawPointer.allocate(byteCount: 1 << 20, alignment: 16)
 
-    private(set) var state: State = .loading
+    private(set) var state: State = .loading {
+        didSet { stateLock.withLock { latestState = state } }
+    }
+    private let stateLock = NSLock()
+    private var latestState: State = .loading
+    /// `state`, readable from any thread without waiting for the index's queue (which a scan holds for as long as it runs).
+    var stateNow: State { stateLock.withLock { latestState } }
     private(set) var entries: [String: FleetIndexEntry] = [:]
     private(set) var exclusions: FleetExclusions
     private var tree = FleetMerkleTree()

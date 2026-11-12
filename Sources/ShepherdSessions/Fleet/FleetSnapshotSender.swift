@@ -44,10 +44,11 @@ struct FleetSnapshotSender {
     func build(id: UUID, unpushed: Bool) throws -> Built {
         // Whatever the system already has for this root reaches the index first, so a file written a moment ago is in it; then a
         // spot check of a sample of what the index holds against the disk (the plan's R13).
+        guard index.stateNow == .ready else { throw Failure.notIndexed(index.stateNow.rawValue) }
         index.settle()
         index.queue.sync { _ = index.verify(sample: 64) }
         guard let view = index.queue.sync(execute: { index.snapshotView() }) else {
-            throw Failure.notIndexed(index.queue.sync { index.state.rawValue })
+            throw Failure.notIndexed(index.stateNow.rawValue)
         }
         guard let tree = FleetDispatchGit.run(["ls-tree", "-r", "-z", commit], in: root, timeout: 60), tree.status == 0 else { throw Failure.git("ls-tree") }
         let tracked = Self.parse(tree: tree.output)
