@@ -20,6 +20,14 @@ public final class InstructionsStore: @unchecked Sendable {
 
     public let directory: URL
     private let lock = NSLock()
+    private let observerLock = NSLock()
+    private var observer: (@Sendable (InstructionFile) -> Void)?
+
+    /// Told, from whichever thread saved, after a file's text changed (Fleet's sync reads it then).
+    public var onChange: (@Sendable (InstructionFile) -> Void)? {
+        get { observerLock.withLock { observer } }
+        set { observerLock.withLock { observer = newValue } }
+    }
 
     public init(directory: URL) {
         self.directory = directory
@@ -37,6 +45,11 @@ public final class InstructionsStore: @unchecked Sendable {
         }
     }
 
+    /// One file's text as it is now (empty while it has none).
+    public func content(_ file: InstructionFile) -> String {
+        lock.withLock { read(file) }
+    }
+
     /// The files as they are now, where they live, and their history (newest first).
     public func snapshot() -> InstructionsSnapshot {
         lock.withLock { unlockedSnapshot() }
@@ -48,27 +61,31 @@ public final class InstructionsStore: @unchecked Sendable {
     @discardableResult
     public func save(_ file: InstructionFile, content: String, origin: String? = nil, sync: Bool = false,
                      now: Date = Date()) throws -> InstructionsSnapshot {
-        try lock.withLock {
+        let snapshot = try lock.withLock { () -> (InstructionsSnapshot, Bool) in
             let old = read(file)
-            guard old != content else { return unlockedSnapshot() }
+            guard old != content else { return (unlockedSnapshot(), false) }
             let summary = sync ? "Synced from \(origin ?? "another host")" : InstructionsText.summary(from: old, to: content)
             try write(file, content: content, summary: summary, origin: origin, now: now)
-            return unlockedSnapshot()
+            return (unlockedSnapshot(), true)
         }
+        if snapshot.1 { onChange?(file) }
+        return snapshot.0
     }
 
     /// Puts a saved version back, as a new save ("Restored the Sep 19 version").
     @discardableResult
     public func restore(revisionID: UUID, origin: String? = nil, now: Date = Date()) throws -> InstructionsSnapshot {
-        try lock.withLock {
+        let result = try lock.withLock { () -> (InstructionsSnapshot, InstructionFile?) in
             guard let revision = loadHistory().revisions.first(where: { $0.id == revisionID }) else {
                 throw StoreError.noSuchRevision
             }
-            guard read(revision.file) != revision.content else { return unlockedSnapshot() }
+            guard read(revision.file) != revision.content else { return (unlockedSnapshot(), nil) }
             let day = Date(timeIntervalSince1970: revision.savedAt).formatted(.dateTime.month(.abbreviated).day())
             try write(revision.file, content: revision.content, summary: "Restored the \(day) version", origin: origin, now: now)
-            return unlockedSnapshot()
+            return (unlockedSnapshot(), revision.file)
         }
+        if let file = result.1 { onChange?(file) }
+        return result.0
     }
 
     // MARK: Locked

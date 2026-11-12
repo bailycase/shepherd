@@ -53,7 +53,7 @@ final class SettingsStore {
     private init(hosts: MobileHosts) {
         mobileHosts = hosts
         // Kept beside the hosts; "Synced from iPhone" in a host's history.
-        instructions = ClientInstructions(defaults: hosts.defaults, origin: UIDevice.current.model)
+        instructions = ClientInstructions(origin: UIDevice.current.model)
         skills = ClientSkills(defaults: hosts.defaults)
         track()
     }
@@ -97,7 +97,7 @@ final class SettingsStore {
 
     /// Instructions' value: the files that hold anything ("AGENTS.md, APPEND").
     var instructionsValue: String? {
-        instructions.reference(in: hosts).flatMap { instructions.files(of: $0).snapshot }.map(HostSettingsPresentation.instructionsValue)
+        instructions.edited(in: hosts).flatMap { instructions.files(of: $0).snapshot }.map(HostSettingsPresentation.instructionsValue)
     }
 
     /// The capabilities of the experiments a client switches per host.

@@ -62,8 +62,6 @@ extension AppLayout {
     // Settings ▸ Instructions: the editor beside a 330pt side column, 28pt apart.
     static let instructionsSideWidth: CGFloat = 330
     static let instructionsColumnSpacing: CGFloat = 28
-    /// Between the side column's blocks.
-    static let instructionsSideSpacing: CGFloat = 22
     /// A host chip: at least 34pt, a 13pt glyph, the name in mono 12.5, a 7pt dot, the state in
     /// Geist 11.
     static let instructionsChipHeight: CGFloat = 34
@@ -81,7 +79,6 @@ extension AppLayout {
     /// The card's header: the path in mono 12 (the comparison in Geist 12.5), "● edited" in
     /// Geist 11.5, Save's ⌘S in mono 10.5 at 60%.
     static let instructionsPathSize: CGFloat = 12
-    static let instructionsCompareSize: CGFloat = 12.5
     static let instructionsEditedSize: CGFloat = 11.5
     static let instructionsShortcutSize: CGFloat = 10.5
     static let instructionsShortcutOpacity: CGFloat = 0.6
@@ -93,10 +90,6 @@ extension AppLayout {
     static let instructionsGutterWidth: CGFloat = 34
     static let instructionsNumberSize: CGFloat = 10.5
     static let instructionsGutterGap: CGFloat = SH.Space.l
-    /// The comparison's diff: mono 12 on 22pt lines, the 34pt gutter 8pt before a 14pt sign.
-    static let instructionsDiffTextSize: CGFloat = 12
-    static let instructionsDiffLineHeight: CGFloat = 22
-    static let instructionsDiffSignWidth: CGFloat = 14
     /// How the agent reads them: small cards joined by a 10pt connector, 1.5pt wide and 17pt in; the
     /// number in a 16pt column, the title in mono 11.5 over a Geist 11 note.
     static let instructionsStepConnectorHeight: CGFloat = 10
@@ -105,16 +98,6 @@ extension AppLayout {
     static let instructionsStepNumberWidth: CGFloat = 16
     static let instructionsStepTitleSize: CGFloat = 11.5
     static let instructionsStepNoteSize: CGFloat = 11
-    /// Files on each host: rows at least 48pt, a 14pt glyph, the name in mono 12.5 over the
-    /// directory in mono 10.5; trailing, the detail in Geist 11.5 over an 11 note.
-    static let instructionsHostRowMinHeight: CGFloat = 48
-    static let instructionsHostGlyphSize: CGFloat = 14
-    static let instructionsHostNameSize: CGFloat = 12.5
-    static let instructionsHostDirectorySize: CGFloat = 10.5
-    static let instructionsHostDetailSize: CGFloat = 11.5
-    static let instructionsHostNoteSize: CGFloat = 11
-    /// The other file's line: Geist 12.5/1.5.
-    static let instructionsOtherFileSize: CGFloat = 12.5
     /// History: rows at least 30pt, the date in a 60pt mono column, Geist 12; the History
     /// popover's width and the most it grows before it scrolls.
     static let instructionsHistoryRowMinHeight: CGFloat = 30

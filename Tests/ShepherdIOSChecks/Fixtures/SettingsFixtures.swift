@@ -45,12 +45,12 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings-worktrees-lower", routes: [.settings(.worktrees)], tab: .settings,
                           prepare: { _ in await TriggerFlowCheck.scrollDown(holding: nil) }),
             FixtureScreen(name: "settings-pi", routes: [.settings(.piExtensions)], tab: .settings),
-            // Root instructions on every host (instructions.v1).
+            // Root instructions, the fleet's (instructions.v1): one copy, no host to pick.
             FixtureScreen(name: "settings-instructions", routes: [.settings(.instructions)], tab: .settings),
             FixtureScreen(name: "settings-instructions-edit", routes: [.settings(.instructions), .settings(.instructionsFile(.agents))],
                           tab: .settings, prepare: { app in await FixtureData.draft(app, .agents, adding: "- Always run `sqlc vet` after a query change.") }),
-            FixtureScreen(name: "settings-instructions-differ", hosts: FixtureData.differingBuildBox(), routes: [.settings(.instructions)],
-                          tab: .settings),
+            // No Mac to read them from: "Add a Mac in Settings ▸ Fleet to start."
+            FixtureScreen(name: "settings-instructions-empty", hosts: [], routes: [.settings(.instructions)], tab: .settings),
             // Agent skills on every host (skills.v1): the list, pdf's detail with its update,
             // and a repository's skills to pick from.
             FixtureScreen(name: "settings-skills", routes: [.settings(.skills)], tab: .settings),
@@ -172,18 +172,6 @@ extension FixtureData {
         Keep replies short. Lead with what changed.
 
         """
-
-    /// The usual hosts, with build-01's AGENTS.md two lines apart.
-    static func differingBuildBox() -> [FixtureHostData] {
-        hosts().map { host in
-            var host = host
-            if host.id == buildBox {
-                host.instructions = instructions(agents: agentsFile.replacingOccurrences(of: "- Migrations are reversible.\n", with: "")
-                    + "- Use docker compose for local services.\n")
-            }
-            return host
-        }
-    }
 
     /// The suggestion the detail screen opens.
     static let joinKeys = UUID(uuidString: "5A660000-0000-4000-8000-000000000001")!

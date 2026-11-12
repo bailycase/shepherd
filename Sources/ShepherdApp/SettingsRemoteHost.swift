@@ -38,15 +38,10 @@ extension ShepherdViewModel {
         }
     }
 
-    /// Settings' one host choice reaches the pages that keep their own chooser: Instructions
-    /// (per host; Same on every host keeps editing every host), and Spaces (its filter, which
-    /// can still show All hosts). `entering` is a page opening: Spaces keeps its filter then.
+    /// Settings' one host choice reaches the pages that keep their own chooser: Spaces (its filter,
+    /// which can still show All hosts). `entering` is a page opening: Spaces keeps its filter then.
     func followSettingsHost(on section: SettingsSection, entering: Bool) {
         switch section {
-        case .instructions:
-            guard !instructions.sameEverywhere else { return }
-            let machine: InstructionsModel.Machine = settingsHostID.map { .remote($0) } ?? .local
-            if instructions.machine != machine { instructions.machine = machine }
         case .projects where !entering:
             let id = settingsHostID?.uuidString ?? "local"
             if projects.host != id, id == "local" || projects.hostOptions.contains(where: { $0.0 == id }) { projects.host = id }
