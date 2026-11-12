@@ -383,7 +383,7 @@ public struct MCPConfigFile: Sendable {
 /// keys, 2-space indents and unescaped slashes, so a hand-edited file stays readable.
 public enum MCPJSON {
     public struct ParseError: Error, Equatable {
-        let line: Int
+        public let line: Int
     }
 
     public static func parse(_ data: Data) -> Result<JSONValue, ParseError> {

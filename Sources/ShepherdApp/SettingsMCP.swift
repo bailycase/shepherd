@@ -1,3 +1,4 @@
+import ShepherdSessions
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers

@@ -14,22 +14,22 @@ public enum MCPPiConfig {
 
     /// A Keychain item a server's entry refers to, and the variable it reaches pi in.
     public struct Secret: Equatable, Sendable {
-        var variable: String
-        var server: String
-        var name: String
+        public var variable: String
+        public var server: String
+        public var name: String
 
-        var account: String { MCPSecretReference.account(server: server, name: name) }
+        public var account: String { MCPSecretReference.account(server: server, name: name) }
     }
 
     public struct Derived: Equatable, Sendable {
         /// The file's text.
-        var json: Data
+        public var json: Data
         /// The Keychain values the file refers to, each in its own variable.
-        var secrets: [Secret]
+        public var secrets: [Secret]
         /// Why a server is not in the file, by name.
-        var problems: [String: String]
+        public var problems: [String: String]
         /// The servers in the file, in the user's order.
-        var servers: [String]
+        public var servers: [String]
     }
 
     /// The file for `document`. `home` is the user's home folder, which `~/` in a command or an
