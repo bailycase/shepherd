@@ -469,6 +469,7 @@ enum CodeHighlightCache {
     static func render(_ key: Key, style: CodeHighlight.Style,
                        isCancelled: @Sendable () -> Bool = { Task.isCancelled }) -> AttributedString? {
         guard let path = CodeHighlight.path(forFenceLanguage: key.language), !isCancelled() else { return nil }
+        SHRenderProbe.add("highlight.units", key.code.utf16.count)
         let lines = key.code.components(separatedBy: "\n")
         let colored = CodeHighlight.highlightLines(lines, path: path, style: style, isCancelled: isCancelled)
         guard colored.count == lines.count, !isCancelled() else { return nil }

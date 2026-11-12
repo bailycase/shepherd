@@ -130,7 +130,10 @@ struct SHNativeCodeText: NSViewRepresentable {
                     stop.pointee = true
                 }
             }
-            renderer?.textStorage?.setAttributedString(value)
+            if let storage = renderer?.textStorage {
+                SHRenderProbe.add("code.laidOutUnits", value.length)
+                storage.setAttributedString(value)
+            }
             needsDisplay = true
         }
 
@@ -158,6 +161,7 @@ struct SHNativeCodeText: NSViewRepresentable {
             if let renderer { text = renderer }
             else {
                 text = RendererPool.shared.take(frame: bounds, inset: NSSize(width: alignmentRectInsets.left, height: alignmentRectInsets.top))
+                SHRenderProbe.add("code.laidOutUnits", attributedStringValue.length)
                 text.textStorage?.setAttributedString(attributedStringValue)
                 SHRenderProbe.tick("code.rendererCreated")
                 renderer = text
@@ -246,6 +250,7 @@ struct SHNativeCodeText: NSViewRepresentable {
     static func attributedCode(_ code: String, highlighted: AttributedString?, font: NSFont,
                                lineSpacing: CGFloat) -> NSAttributedString {
         SHRenderProbe.tick("thread.codeAttributes")
+        SHRenderProbe.add("code.styledUnits", code.utf16.count)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = lineSpacing
         paragraph.lineBreakMode = .byClipping
