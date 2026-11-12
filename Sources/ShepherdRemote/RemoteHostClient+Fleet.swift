@@ -69,18 +69,16 @@ extension RemoteHostClient {
 
     /// Pairs this device with the Mac at `host`:`port` using the code its Add a device screen shows. Like
     /// `fleetPair`, it asks who answers first and goes on only when that is `expecting` (when given) and
-    /// the Mac has Fleet on. The answer lists the Macs in its fleet. Closes when done.
+    /// (Fleet is not required). The answer lists the Macs in its fleet, none with Fleet off. Closes when done.
     public static func fleetPairDevice(host: String, port: UInt16, code: String, device: FleetDeviceIntroduction,
                                        expecting: UUID? = nil) async throws -> (result: FleetDevicesResult, identity: FleetPeerIdentity) {
         let client = RemoteHostClient()
         defer { client.disconnect() }
         try await client.openUnauthenticated(host: host, port: port)
         let identity = try await client.fleetIdentify()
+        // Fleet need not be on: a device pairs with a Mac that serves, whether or not it is in a fleet.
         if let expecting, identity.hostID != expecting {
             throw RemoteHostClientError.rejected(code: FleetProtocol.Code.wrongHost, message: "Another Mac answers at this address.")
-        }
-        guard identity.fleetEnabled else {
-            throw RemoteHostClientError.rejected(code: FleetProtocol.Code.off, message: "Fleet is off on that Mac.")
         }
         let reply = try await client.request { .fleetPairDevice(id: $0, code: code, device: device) }
         return (try Self.devices(from: reply), identity)

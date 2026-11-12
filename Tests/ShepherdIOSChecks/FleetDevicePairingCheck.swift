@@ -53,7 +53,7 @@ struct FleetDevicePairingCheck {
         // Connected, a device is offered no fleet capability (and so is never offered a token again).
         hosts.setForeground(true)
         try await waitUntil("both Macs connected") { hosts.hosts.allSatisfy { $0.phase == .connected } }
-        check(hosts.hosts.allSatisfy { !$0.supports(RemoteProtocol.fleetCapability) }, "no fleet capability for a device")
+        check(hosts.hosts.allSatisfy { !$0.supports(RemoteProtocol.fleetCapability) && !$0.supports(RemoteProtocol.fleetDevicesCapability) }, "no fleet capability for a device")
         check(fleet.enrollments == 0, "a device on its own token is not offered one")
 
         // Pairing again with the same Mac updates it: no duplicate.
@@ -79,7 +79,7 @@ struct FleetDevicePairingCheck {
         legacy.setForeground(true)
         let old = legacy.host(legacyID)!
         try await waitUntil("the old pairing connected on the shared token") { old.phase == .connected }
-        check(old.supports(RemoteProtocol.fleetCapability), "a Mac offers fleet to a client on the shared token")
+        check(old.supports(RemoteProtocol.fleetDevicesCapability), "a Mac offers devices to a client on the shared token")
         let own = try legacy.deviceIdentity()
         try await waitUntil("the own token saved") { (try? legacyTokens.read(legacyID)) == own.token }
         check(fleet.enrollments == 1 && fleet.accepted.contains(FleetProtocol.hash(own.token)), "the Mac was given the hash of the new token")
@@ -251,7 +251,7 @@ final class FakeMac: @unchecked Sendable {
                 }
                 shared = token == fleet.sharedToken
                 write(client, .helloOk(id: id, protocolVersion: RemoteProtocol.version,
-                                       capabilities: [RemoteProtocol.nativeThreadCapability] + (shared ? [RemoteProtocol.fleetCapability] : []), hostID: fleet.hostID))
+                                       capabilities: [RemoteProtocol.nativeThreadCapability] + (shared ? [RemoteProtocol.fleetDevicesCapability] : []), hostID: fleet.hostID))
             case .stateFetch(let id):
                 write(client, .state(id: id, state: ShepherdState()))
             default:

@@ -32,6 +32,11 @@ struct FleetCaller: Sendable {
 /// it, and nothing waits on it (docs/rules.md, Server concurrency).
 ///
 /// Slice 1 holds links and pairs Macs; nothing syncs or dispatches over them yet.
+///
+/// The service exists whenever the host runs, but **membership** (links, pairing Macs, Join a fleet,
+/// the peer tokens) is on only while Fleet is. Client devices don't need membership: with it off the
+/// service still advertises while the listener is open, takes devices by code, keeps `devices.json`
+/// and answers the app's device actions, so a phone pairs with a Fleet-off Mac the same way.
 final class FleetService: @unchecked Sendable {
     /// The server queue.
     private let queue: DispatchQueue
@@ -62,6 +67,8 @@ final class FleetService: @unchecked Sendable {
     private var links: [UUID: Link] = [:]
     private var brokering = false
     private var stopped = false
+    /// Settings ▸ Experiments ▸ Fleet is on: this host holds links and pairs Macs.
+    private(set) var membership: Bool
 
     /// A link answers a quiet peer this often, so a connection that died silently (a sleeping
     /// Mac, a dropped Wi-Fi) is noticed and made again.
@@ -81,9 +88,10 @@ final class FleetService: @unchecked Sendable {
         init(hostID: UUID) { self.hostID = hostID }
     }
 
-    init(queue: DispatchQueue, directory: URL, name: String, build: String?, advertises: Bool = true,
+    init(queue: DispatchQueue, directory: URL, name: String, build: String?, advertises: Bool = true, membership: Bool = true,
          clock: @escaping @Sendable () -> Date = Date.init) throws {
         self.queue = queue
+        self.membership = membership
         self.directory = directory
         self.name = name
         self.build = build
@@ -102,8 +110,22 @@ final class FleetService: @unchecked Sendable {
 
     /// Opens a link to every Mac this host is paired with.
     func start() {
-        for record in peers.members where record.isLinkable { startLink(record.hostID) }
+        if membership { for record in peers.members where record.isLinkable { startLink(record.hostID) } }
         advertise()
+        changed()
+    }
+
+    /// Fleet was switched on or off. Off ends the links and the Join window and keeps the pairings and
+    /// the devices; on opens the links again. Advertising and devices go on either way.
+    func setMembership(_ on: Bool) {
+        guard on != membership else { return }
+        membership = on
+        if on {
+            for record in peers.members where record.isLinkable { startLink(record.hostID) }
+        } else {
+            join = nil
+            for id in Array(links.keys) { stopLink(id) }
+        }
         changed()
     }
 
@@ -162,7 +184,7 @@ final class FleetService: @unchecked Sendable {
     // MARK: - Authentication (server queue)
 
     /// The Mac whose peer token this is.
-    func authenticate(token: String) -> UUID? { peers.authenticate(token: token) }
+    func authenticate(token: String) -> UUID? { membership ? peers.authenticate(token: token) : nil }
 
     /// The device whose own token this is.
     func authenticateDevice(token: String) -> UUID? { devices.authenticate(token: token) }
@@ -206,9 +228,17 @@ final class FleetService: @unchecked Sendable {
 
     /// Serves one fleet request. `reply` may be called now or later, from any thread.
     func serve(_ request: RemoteRequest, from caller: FleetCaller, reply: @escaping @Sendable (RemoteReply) -> Void) {
+        // Pairing Macs, removing them and joining are a member's: with Fleet off they are refused, as they always were.
+        switch request {
+        case .fleetPair(let id, _, _), .fleetEstablish(let id, _), .fleetIntroduce(let id, _), .fleetRevoke(let id, _, _):
+            guard membership else { return reply(Self.off(id)) }
+        case .fleetAction(let id, let action) where !action.isDeviceAction:
+            guard membership else { return reply(Self.off(id)) }
+        default: break
+        }
         switch request {
         case .fleetIdentify(let id):
-            reply(.fleetIdentity(id: id, hostID: identity.hostID, name: name, build: build, fleetEnabled: true))
+            reply(.fleetIdentity(id: id, hostID: identity.hostID, name: name, build: build, fleetEnabled: membership))
         case .fleetPair(let id, let code, let from):
             guard !caller.authenticated else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Pair before saying hello.")) }
             reply(pair(id: id, code: code, from: from, caller: caller))
@@ -249,6 +279,10 @@ final class FleetService: @unchecked Sendable {
         default:
             break
         }
+    }
+
+    static func off(_ id: Int) -> RemoteReply {
+        refusal(id, FleetProtocol.Code.off, "Enable Fleet in Settings ▸ Experiments.")
     }
 
     static func refusal(_ id: Int, _ code: String, _ message: String) -> RemoteReply {
@@ -364,7 +398,7 @@ final class FleetService: @unchecked Sendable {
     /// (`FleetPeerRecord.introduce`), over the links this host holds. What can't go now goes when
     /// a link comes up.
     private func brokerPending() {
-        guard !brokering, !stopped else { return }
+        guard !brokering, !stopped, membership else { return }
         let waiting = peers.members.filter { !$0.introduce.isEmpty }
         guard !waiting.isEmpty else { return }
         brokering = true
@@ -438,7 +472,7 @@ final class FleetService: @unchecked Sendable {
             devices = updated
             changed()
         }
-        let members = peers.members.compactMap { record in
+        let members = (membership ? peers.members : []).compactMap { record in
             record.addresses.first.map { FleetMember(hostID: record.hostID, name: record.name, host: $0.host, port: $0.port) }
         }
         let answer = RemoteReply.fleetDevices(id: id, result: FleetDevicesResult(hostID: identity.hostID, name: self.name, members: members))
@@ -716,8 +750,8 @@ final class FleetService: @unchecked Sendable {
     // MARK: - Snapshot (server queue)
 
     func snapshot() -> FleetSnapshot {
-        let statuses = peers.members.map(status(of:)).sorted { ($0.pairedAt, $0.name) < ($1.pairedAt, $1.name) }
-        let window = join.map {
+        let statuses = (membership ? peers.members : []).map(status(of:)).sorted { ($0.pairedAt, $0.name) < ($1.pairedAt, $1.name) }
+        let window = (membership ? join : nil).map {
             FleetJoinStatus(expiresAt: (($0.window.expiresAt).timeIntervalSince1970 * 1000).rounded(), attemptsLeft: $0.window.attemptsLeft)
         }
         let now = nowMilliseconds
@@ -730,7 +764,7 @@ final class FleetService: @unchecked Sendable {
         }
         let sharedToken = FleetSharedTokenStatus(retired: devices.sharedTokenRetired, waiting: devices.waiting(now: now).map(\.client),
                                                  switched: clients.count)
-        return FleetSnapshot(enabled: true, hostID: identity.hostID, name: name, build: build, addresses: FleetAddresses.local(),
+        return FleetSnapshot(enabled: membership, hostID: identity.hostID, name: name, build: build, addresses: FleetAddresses.local(),
                              port: listenerPort, advertising: discovery?.isAdvertising ?? false, peers: statuses, join: window,
                              devices: FleetDevicesSnapshot(devices: clients, code: code, sharedToken: sharedToken))
     }
@@ -758,7 +792,7 @@ final class FleetService: @unchecked Sendable {
     /// Starts (again) the link to `hostID`: connects with the token this host presents and holds
     /// the connection, reconnecting with backoff, until the Mac is removed or Fleet is turned off.
     private func startLink(_ hostID: UUID) {
-        guard !stopped, peers.record(hostID)?.isLinkable == true else { return }
+        guard !stopped, membership, peers.record(hostID)?.isLinkable == true else { return }
         stopLink(hostID)
         let link = Link(hostID: hostID)
         links[hostID] = link
@@ -822,7 +856,7 @@ final class FleetService: @unchecked Sendable {
     }
 
     private func record(for link: Link) -> FleetPeerRecord? {
-        guard !stopped, links[link.hostID] === link, let record = peers.record(link.hostID), record.isLinkable else { return nil }
+        guard !stopped, membership, links[link.hostID] === link, let record = peers.record(link.hostID), record.isLinkable else { return nil }
         return record
     }
 

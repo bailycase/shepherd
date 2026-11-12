@@ -246,6 +246,14 @@ public enum FleetAction: Codable, Hashable, Sendable {
     /// This Mac's app asks for a token of its own for its direct connections to the Macs of the fleet
     /// (a device of kind `macApp`); answered with it (`FleetResult.appDevice`).
     case enrollApp(name: String)
+
+    /// The actions about client devices, which work with Fleet off; the others are a member's.
+    public var isDeviceAction: Bool {
+        switch self {
+        case .startDeviceCode, .stopDeviceCode, .revokeDevice, .forgetLegacyClient, .retireSharedToken, .enrollApp: true
+        case .startJoin, .stopJoin, .pair, .remove, .adopt: false
+        }
+    }
 }
 
 /// The answer to `fleetRead` and `fleetAction`: the snapshot after it, plus what the action made.

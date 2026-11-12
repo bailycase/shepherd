@@ -1097,7 +1097,8 @@ public final class SessionServer: @unchecked Sendable {
                 && (designsServed && designs || !RemoteProtocol.designCapabilities.contains($0))
                 && (tunnelsServed || ($0 != RemoteProtocol.browserTunnelCapability && $0 != RemoteProtocol.browserDriveCapability))
                 && ($0 != RemoteProtocol.missionsCapability || missionsServed && onRemoteMission != nil)
-                && ($0 != RemoteProtocol.fleetCapability || fleet != nil)
+                && ($0 != RemoteProtocol.fleetCapability || fleet?.membership == true)
+                && ($0 != RemoteProtocol.fleetDevicesCapability || fleet != nil)
         }
     }
 
@@ -1274,18 +1275,21 @@ public final class SessionServer: @unchecked Sendable {
     /// `name` is what other Macs call this one (the Mac's own name unless a test names it).
     public func setFleetEnabled(_ enabled: Bool) {
         queue.async { [self] in
-            guard enabled != (fleet != nil) else { return }
-            guard enabled else {
-                fleet?.stop()
-                fleet = nil
-                for client in Array(clients.values) where client.fleetPeerID != nil || client.fleetDeviceID != nil { disconnect(client, reason: "fleet turned off") }
+            // The service lives as long as the host (client devices pair with it whether or not Fleet is on);
+            // membership is what Fleet switches.
+            if let service = fleet {
+                guard service.membership != enabled else { return }
+                service.setMembership(enabled)
+                if !enabled {
+                    for client in Array(clients.values) where client.fleetPeerID != nil { disconnect(client, reason: "fleet turned off") }
+                }
                 pushSettingsChanged(.fleet)
                 return
             }
             do {
                 let service = try FleetService(queue: queue, directory: supportDirectory.appendingPathComponent("fleet", isDirectory: true),
                                                name: fleetOptions.name ?? Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
-                                               build: hostBuild, advertises: fleetOptions.advertises)
+                                               build: hostBuild, advertises: fleetOptions.advertises, membership: enabled)
                 service.onChange = { [weak self] in self?.pushSettingsChanged(.fleet) }
                 service.onPeerRemoved = { [weak self] hostID in
                     guard let self else { return }
@@ -2639,7 +2643,7 @@ public final class SessionServer: @unchecked Sendable {
                 protocolVersion: RemoteProtocol.version,
                 capabilities: offeredCapabilities(to: client),
                 hostBuild: hostBuild,
-                hostID: fleet?.hostID
+                hostID: fleet?.membership == true ? fleet?.hostID : nil
             ), to: client)
             sendStartProblems(to: client)
             sendAppProcesses(to: client)

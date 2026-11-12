@@ -278,7 +278,7 @@ final class MobileHosts {
     /// uses it. The shared token stays in the Keychain until the new one is saved, so a failure on the way
     /// leaves the host working and the offer is made again at the next connection.
     private func offerOwnToken(_ host: MobileHost, over client: RemoteHostClient) {
-        guard client.capabilities.contains(RemoteProtocol.fleetCapability), !ownTokens.contains(host.id), offering.insert(host.id).inserted else { return }
+        guard client.capabilities.contains(RemoteProtocol.fleetDevicesCapability), !ownTokens.contains(host.id), offering.insert(host.id).inserted else { return }
         let id = host.id
         Task { [weak self, weak client] in
             guard let self, let client else { return }
