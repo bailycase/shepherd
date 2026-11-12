@@ -218,9 +218,9 @@ extension ShepherdViewModel {
         }
     }
 
-    /// Add host: the host form lives in Settings ▸ Remote.
+    /// Add host: Macs are added with a code in Settings ▸ Fleet.
     func showAddHost() {
-        settingsSection = .remote
+        settingsSection = .fleet
         showSettings = true
     }
 }

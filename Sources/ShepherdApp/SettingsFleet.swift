@@ -9,17 +9,46 @@ struct FleetSettings: View {
     /// Agents keep running (and Fleet keeps its links) with Shepherd quit: the background service
     /// runs the host. False or unknown: the host is the app's own child, and Fleet stops at Quit.
     var serviceKeepsRunning: Bool?
+    /// Settings ▸ Experiments ▸ Fleet is on. Off: the page only serves this Mac to the devices already paired
+    /// with it (`serve`), and says where to turn Fleet on.
+    var enabled = true
+    var serve: FleetServe?
 
     @State private var adding = false
     @State private var joining = false
+    @State private var addingDevice = false
     @State private var removing: FleetMacRow?
+    @State private var revoking: FleetDeviceRow?
+    @State private var retiring = false
 
     static let explanation = "Your Macs work as one. Settings, instructions, skills, extensions, MCP servers and sign-ins are the same on every Mac, and any Mac can take a thread. Changes sync on their own, including each save in a linked extension folder."
     /// FleetSettings' footer, reworded: Shepherd adds no TLS, so the fleet runs over the person's own network.
     static let footnote = "Macs pair once, on the same local network, with a code shown on the other Mac. Shepherd doesn't encrypt fleet traffic, so keep the fleet on a network you trust."
+    static let offExplanation = "Fleet pairs your Macs, iPhones and iPads with a code and keeps the Macs working as one. It is off: turn it on in Settings ▸ Experiments. Devices already paired with this Mac keep connecting while it is served."
+    static let devicesFootnote = "iPhones, iPads and Mac apps connect to every Mac in the fleet with a token of their own. They hold no sign-ins and can't pair or remove Macs. Any Mac can revoke one."
     static let stopsAtQuit = "The background service is off, so Fleet stops when you quit Shepherd. Turn it on in System Settings ▸ General ▸ Login Items."
 
     var body: some View {
+        if enabled { fleet } else { off }
+    }
+
+    /// Fleet is off: the listener's switch, which phones and iPads already paired with the shared token need.
+    private var off: some View {
+        SettingsPage(title: "Fleet", explanation: Self.offExplanation) {
+            if let serve {
+                SettingsGroup(title: "Serve this Mac",
+                              footnote: "Sessions run on this Mac. Your own network is the transport, and the token that opened this Mac to a device stays good until you turn Fleet on and retire it.") {
+                    SettingsRow(title: "Listener", subtitle: serve.status, problem: serve.problem, problemHelp: serve.problemDetail) {
+                        SettingsSwitch(label: "Listener", isOn: serve.isOn)
+                    }
+                }
+            }
+        }
+        .shAnimation(.disclosure, value: serve?.problem)
+        .shAnimation(.content, value: serve?.status)
+    }
+
+    private var fleet: some View {
         SettingsPage(title: "Fleet", explanation: Self.explanation) {
             SettingsGroup(title: "Macs", footnote: serviceKeepsRunning == true ? Self.footnote : Self.footnote + " " + Self.stopsAtQuit) {
                 ForEach(model.rows) { row in
@@ -30,7 +59,7 @@ struct FleetSettings: View {
                     SettingsActionRow(leading: { SHInlineProblem(problem) }, actions: { EmptyView() })
                         .shTransition(.disclosure)
                 } else if model.loaded, model.snapshot.port == nil {
-                    SettingsActionRow(leading: { SHInlineProblem("This Mac isn't serving, so no other Mac can reach it. Check Settings ▸ Remote.") },
+                    SettingsActionRow(leading: { SHInlineProblem(serve?.problem ?? "This Mac isn't serving, so no other Mac or device can reach it.", help: serve?.problemDetail) },
                                       actions: { EmptyView() })
                         .shTransition(.disclosure)
                 }
@@ -43,15 +72,46 @@ struct FleetSettings: View {
                         .disabled(!model.loaded || model.snapshot.port == nil)
                 }
             }
+            devices
         }
         .shAnimation(.list, value: model.rows.map(\.id))
+        .shAnimation(.list, value: model.deviceRows.map(\.id))
         .shAnimation(.disclosure, value: model.problem)
+        .shAnimation(.disclosure, value: model.deviceProblem)
+        .shAnimation(.disclosure, value: model.snapshot.devices?.sharedToken)
         .task { await model.refresh() }
         .sheet(isPresented: $adding) {
             FleetPairSheet(model: model) { adding = false }
         }
         .sheet(isPresented: $joining) {
             FleetJoinView(model: model) { joining = false }
+        }
+        .sheet(isPresented: $addingDevice) {
+            FleetDeviceSheet(model: model) { addingDevice = false }
+        }
+        .sheet(item: $revoking) { row in
+            DialogSheet(
+                title: "Revoke \(row.title)?",
+                subtitle: "Every Mac in the fleet refuses it and ends its connection now. Pair it again with a code to bring it back.",
+                actions: [
+                    DialogAction("Cancel", kind: .cancel) { revoking = nil },
+                    DialogAction("Revoke", kind: .destructive) {
+                        revoking = nil
+                        Task { await model.revokeDevice(row.id) }
+                    },
+                ])
+        }
+        .sheet(isPresented: $retiring) {
+            DialogSheet(
+                title: "Stop accepting the shared token?",
+                subtitle: "Only devices and Macs with a token of their own connect after this. Anything still using the shared token, like an older iPhone, needs to be paired again with a code.",
+                actions: [
+                    DialogAction("Cancel", kind: .cancel) { retiring = false },
+                    DialogAction("Stop accepting it", kind: .destructive) {
+                        retiring = false
+                        Task { await model.retireSharedToken() }
+                    },
+                ])
         }
         .sheet(item: $removing) { row in
             DialogSheet(
@@ -64,6 +124,99 @@ struct FleetSettings: View {
                         if let hostID = row.hostID { Task { await model.remove(hostID) } }
                     },
                 ])
+        }
+    }
+}
+
+extension FleetSettings {
+    /// The Devices group: phones, iPads and Mac apps paired as clients, and where the shared token stands.
+    @ViewBuilder fileprivate var devices: some View {
+        SettingsGroup(title: "Devices", footnote: Self.devicesFootnote) {
+            if model.deviceRows.isEmpty {
+                SettingsRow(title: "No devices", subtitle: "Add an iPhone or iPad below. It reads and sends on every Mac in the fleet.") { EmptyView() }
+                    .shTransition(.list)
+            }
+            ForEach(model.deviceRows) { row in
+                FleetDeviceRowView(row: row) { revoking = row }
+                    .shTransition(.list)
+            }
+            if let shared = model.snapshot.devices?.sharedToken { sharedToken(shared) }
+            if let problem = model.deviceProblem {
+                SettingsActionRow(leading: { SHInlineProblem(problem) }, actions: { EmptyView() })
+                    .shTransition(.disclosure)
+            }
+            SettingsActionRow {
+                Button("Add a device…") { addingDevice = true }
+                    .buttonStyle(.sh(.secondary))
+                    .disabled(!model.loaded || model.snapshot.port == nil)
+            }
+        }
+    }
+
+    /// The shared token: still accepted, who is still on it, or retired.
+    @ViewBuilder private func sharedToken(_ shared: FleetSharedTokenStatus) -> some View {
+        if shared.retired {
+            SettingsRow(title: "Shared token retired", subtitle: "Only devices and Macs with a token of their own connect to this Mac.") { EmptyView() }
+                .shTransition(.disclosure)
+        } else {
+            SettingsRow(title: "Shared token",
+                        subtitle: shared.waiting.isEmpty
+                            ? "Every device has its own token. This Mac still accepts the one it used to share, which anyone on your network who has it can use."
+                            : "This Mac still accepts the token it used to share, so older devices keep working. Each switches to its own the next time Shepherd opens on it.") {
+                Button("Stop accepting it") { retiring = true }
+                    .buttonStyle(.sh(.secondary))
+                    .disabled(!model.loaded || !shared.waiting.isEmpty)
+            }
+            .shTransition(.disclosure)
+            ForEach(shared.waiting) { client in
+                SettingsRow(title: "Waiting for \(client.name)", subtitle: "Connected with the shared token and hasn't switched yet.") {
+                    Button("Forget") { Task { await model.forgetWaiting(client.id) } }
+                        .buttonStyle(.sh(.secondary))
+                        .accessibilityLabel("Forget \(client.name)")
+                }
+                .shTransition(.list)
+            }
+        }
+    }
+}
+
+/// What Settings ▸ Fleet says about the listener while Fleet is off (it is the page's only control then).
+struct FleetServe {
+    var isOn: Binding<Bool>
+    var status: String
+    var problem: String?
+    var problemDetail: String?
+}
+
+/// One device of the list: its dot, its name over what it is, and Revoke.
+struct FleetDeviceRowView: View {
+    let row: FleetDeviceRow
+    let revoke: () -> Void
+
+    var body: some View {
+        SettingsActionRow {
+            HStack(spacing: SH.Space.l) {
+                if row.connected {
+                    SHStatusDot(.done, size: AppLayout.fleetDotSize)
+                } else {
+                    SHStatusDot(.idle, size: AppLayout.fleetDotSize)
+                }
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                    Text(row.title)
+                        .font(.sh(.body, weight: .medium))
+                        .foregroundStyle(Color.sh.textPrimary)
+                    Text(row.detail)
+                        .font(.sh(.ui))
+                        .foregroundStyle(Color.sh.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .accessibilityElement(children: .combine)
+        } actions: {
+            Button("Revoke", action: revoke)
+                .buttonStyle(.sh(.secondary))
+                .accessibilityLabel("Revoke \(row.title)")
         }
     }
 }
@@ -127,7 +280,7 @@ struct FleetExperimentCard: View {
                 Text("Fleet")
                     .font(.shSans(AppLayout.experimentNameSize, .semibold))
                     .foregroundStyle(sh.textPrimary)
-                Text("Pair your Macs with a code and keep their background services linked. Adds Fleet to Settings. "
+                Text("Pair your Macs, iPhones and iPads with a code and keep the Macs' background services linked. Replaces Remote in Settings. "
                      + "Turning this off ends the links and keeps the Macs you paired.")
                     .shText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
                     .foregroundStyle(sh.textSecondary)

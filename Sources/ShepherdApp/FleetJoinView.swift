@@ -63,6 +63,8 @@ struct FleetJoinView: View {
 /// The code in two groups of three, and how long it has left.
 struct FleetJoinCode: View {
     let join: FleetSettingsModel.Join
+    /// What follows how long the code has left.
+    var note = "this Mac's settings are replaced by the fleet's"
 
     /// "482 913".
     static func grouped(_ code: String) -> String {
@@ -86,7 +88,7 @@ struct FleetJoinCode: View {
                 .textSelection(.enabled)
                 .accessibilityLabel("Pairing code \(join.code.map(String.init).joined(separator: " "))")
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text("Expires in \(Self.remaining(until: join.expiresAt, now: context.date)) · this Mac's settings are replaced by the fleet's")
+                Text("Expires in \(Self.remaining(until: join.expiresAt, now: context.date)) · \(note)")
                     .font(.sh(.caption))
                     .foregroundStyle(sh.textTertiary)
             }
