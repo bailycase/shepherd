@@ -51,24 +51,19 @@ struct FleetSnapshotSender {
         var phases: [String] = []
         var git: [String] = []
         func mark(_ name: String) { phases.append("\(name) \(Int((ContinuousClock.now - began) / .milliseconds(1)))") }
-        // The commit's tree: a commit never changes, so one listed before is kept (and the listing of a new one runs while the index is
-        // brought up to date below, not after).
-        let key = root + "\0" + commit
-        let known = FleetTrackedTrees.shared.tree(for: key)
-        let listing = OSAllocatedUnfairLock<FleetTrackedTrees.Tree?>(initialState: known)
+        // The commit's tree: a commit never changes, so one listed before is kept, and one being listed (the dispatch asked for it when it
+        // pinned the commit) is waited for. A listing this build has to make runs while the index is brought up to date below, not after.
+        let listing = OSAllocatedUnfairLock<FleetTrackedTrees.Tree?>(initialState: nil)
+        let ranGit = OSAllocatedUnfairLock(initialState: false)
         let listed = DispatchGroup()
-        if known == nil {
-            git.append("ls-tree")
-            let (root, commit) = (root, commit)
-            listed.enter()
-            DispatchQueue.global(qos: .userInitiated).async {
-                if let tree = FleetDispatchGit.run(["ls-tree", "-r", "-z", commit], in: root, timeout: 60), tree.status == 0 {
-                    let parsed = FleetTrackedTrees.Tree(Self.parse(tree: tree.output))
-                    FleetTrackedTrees.shared.keep(parsed, for: key)
-                    listing.withLock { $0 = parsed }
-                }
-                listed.leave()
+        listed.enter()
+        let (listedRoot, listedCommit) = (root, commit)
+        DispatchQueue.global(qos: .userInitiated).async {
+            if let loaded = FleetTrackedTrees.shared.load(root: listedRoot, commit: listedCommit) {
+                listing.withLock { $0 = loaded.tree }
+                ranGit.withLock { $0 = loaded.ranGit }
             }
+            listed.leave()
         }
         // Whatever the system already has for this root reaches the index first, so a file written a moment ago is in it; then a
         // spot check of a sample of what the index holds against the disk (the plan's R13). The check that the directory hashes still
@@ -94,6 +89,7 @@ struct FleetSnapshotSender {
             }
         }
         listed.wait()
+        if ranGit.withLock({ $0 }) { git.append("ls-tree") }
         mark("ls-tree")
         guard let tracked = listing.withLock({ $0 }) else { agreed.wait(); throw Failure.git("ls-tree") }
         let root = self.root
@@ -238,21 +234,47 @@ final class FleetTrackedTrees: @unchecked Sendable {
     private static let limit = 4
     private let lock = NSLock()
     private var kept: [(key: String, tree: Tree)] = []
+    private var listing: [String: DispatchGroup] = [:]
 
-    func tree(for key: String) -> Tree? {
-        lock.withLock {
-            guard let position = kept.firstIndex(where: { $0.key == key }) else { return nil }
-            let found = kept.remove(at: position)
-            kept.append(found)
-            return found.tree
-        }
+    private func cached(_ key: String) -> Tree? {
+        guard let position = kept.firstIndex(where: { $0.key == key }) else { return nil }
+        let found = kept.remove(at: position)
+        kept.append(found)
+        return found.tree
     }
 
-    func keep(_ tree: Tree, for key: String) {
-        lock.withLock {
-            kept.removeAll { $0.key == key }
-            kept.append((key, tree))
-            if kept.count > Self.limit { kept.removeFirst(kept.count - Self.limit) }
+    /// The tree of `commit` in `root`: kept, being listed by someone else (waited for), or listed here (`ranGit`). Blocking. Nil when git can't list it.
+    func load(root: String, commit: String) -> (tree: Tree, ranGit: Bool)? {
+        let key = root + "\0" + commit
+        lock.lock()
+        if let hit = cached(key) { lock.unlock(); return (hit, false) }
+        if let running = listing[key] {
+            lock.unlock()
+            running.wait()
+            return lock.withLock { cached(key) }.map { ($0, false) }
         }
+        let group = DispatchGroup()
+        group.enter()
+        listing[key] = group
+        lock.unlock()
+        var parsed: Tree?
+        if let out = FleetDispatchGit.run(["ls-tree", "-r", "-z", commit], in: root, timeout: 60), out.status == 0 {
+            parsed = Tree(FleetSnapshotSender.parse(tree: out.output))
+        }
+        lock.withLock {
+            if let parsed {
+                kept.removeAll { $0.key == key }
+                kept.append((key, parsed))
+                if kept.count > Self.limit { kept.removeFirst(kept.count - Self.limit) }
+            }
+            listing[key] = nil
+        }
+        group.leave()
+        return parsed.map { ($0, true) }
+    }
+
+    /// Starts listing `commit` beside whatever comes next (a dispatch that has pinned a commit is about to ask for it).
+    func prefetch(root: String, commit: String) {
+        DispatchQueue.global(qos: .userInitiated).async { _ = self.load(root: root, commit: commit) }
     }
 }

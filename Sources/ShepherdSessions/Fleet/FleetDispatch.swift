@@ -411,6 +411,10 @@ final class FleetDispatch: @unchecked Sendable {
                     answer(.failure(.init(code: FleetDispatchCode.repoMissing, message: "This thread's folder isn't a git checkout.")))
                 case .success(let pin):
                     self.pins[id] = pin
+                    // The snapshot will need the commit's tree: it starts being listed now, while the dispatch is placed.
+                    if self.indexService != nil, (self.host.settings()?.fleetUncommitted ?? .sendThem) == .sendThem {
+                        FleetTrackedTrees.shared.prefetch(root: pin.root, commit: pin.sha)
+                    }
                     var record = FleetDispatchRecord(
                         id: id, parentAgentID: agentID, parentHostID: self.hostID, parentHostName: self.hostName(), parentTitle: agent.name,
                         requestedHost: FleetPlacement.isAuto(named) ? nil : named?.trimmingCharacters(in: .whitespacesAndNewlines),
