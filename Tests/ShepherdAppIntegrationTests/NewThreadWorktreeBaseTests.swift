@@ -236,11 +236,17 @@ extension NewThreadWorktreeBaseTests {
         #expect(row.frame.height >= 24 && row.frame.width > 200, "a row, not just its words: \(row)")
         if keyboard {
             // Local dispatch reaches SwiftUI's key handlers through this window's responder chain; no events are posted.
+            // The menu's Search spaces field takes the keyboard: its field editor, not the composer's text view.
             try await eventuallyOnMain("the workplace menu to own keyboard focus") {
                 window.layout()
-                return window.window.firstResponder != nil && !(window.window.firstResponder is NSTextView)
+                return (window.window.firstResponder as? NSTextView)?.isFieldEditor == true
             }
-            for (characters, code) in [("\u{F701}", UInt16(125)), ("\r", UInt16(36))] {
+            var downs = 0
+            // SwiftUI routes keys to the field's handlers one main-queue turn after AppKit makes it first responder.
+            await Task.yield()
+            window.layout()
+            // The rows after the space are Branch, then Base: two arrows reach Base.
+            for (characters, code) in [("\u{F701}", UInt16(125)), ("\u{F701}", UInt16(125)), ("\r", UInt16(36))] {
                 let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
                                                         windowNumber: window.window.windowNumber, context: nil,
                                                         characters: characters, charactersIgnoringModifiers: characters,
@@ -249,9 +255,11 @@ extension NewThreadWorktreeBaseTests {
                 window.window.sendEvent(event)
                 #expect(!window.window.isKeyWindow, "local key dispatch never takes the user's focus")
                 if code == 125 {
-                    try await eventuallyOnMain("the arrow key to highlight Base") {
+                    downs += 1
+                    let row = downs == 1 ? "Branch: " : "Base branch: Default"
+                    try await eventuallyOnMain("the arrow key to highlight \(downs == 1 ? "Branch" : "Base")") {
                         window.layout()
-                        return window.controls().contains { $0.label == "Base branch: Default" && $0.isSelected }
+                        return window.controls().contains { $0.label?.hasPrefix(row) == true && $0.isSelected }
                     }
                 }
             }
