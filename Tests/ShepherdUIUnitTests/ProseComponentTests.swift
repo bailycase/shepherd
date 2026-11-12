@@ -297,6 +297,6 @@ struct ProseComponentTests {
     }
 
     @Test func bulletsChangeWithDepth() {
-        #expect((0..<4).map { SHProseBlocks<EmptyView>.bullet(depth: $0) } == ["•", "◦", "▪\u{FE0E}", "•"])
+        #expect((0..<4).map { SHProseWords.bullet(depth: $0) } == ["•", "◦", "▪\u{FE0E}", "•"])
     }
 }

@@ -57,21 +57,6 @@ struct Prose: View, Equatable {
         .frame(maxWidth: maxWidth, alignment: .leading)
     }
 
-    /// The last fenced block's code, in document order: an open fence runs to the end.
-    static func lastCode(_ blocks: [NativeMarkdownBlock]) -> String? {
-        for block in blocks.reversed() {
-            switch block {
-            case .code(let text, _): return text
-            case .list(_, _, let items):
-                if let code = items.reversed().lazy.compactMap({ lastCode($0.children) }).first { return code }
-            case .quote(let inner), .details(_, let inner):
-                if let code = lastCode(inner) { return code }
-            default: break
-            }
-        }
-        return nil
-    }
-
     /// Every inline text `proseBlocks` styles, in document order.
     static func inlineTexts(_ blocks: [NativeMarkdownBlock]) -> [String] {
         var texts: [String] = []
@@ -134,7 +119,7 @@ struct Prose: View, Equatable {
     }
 }
 
-/// One chunk of a reply's prose: the blocks `SHAgentProse` draws, their inline runs gated off the
+/// One chunk of a reply's prose: the blocks `SHProseChunk` draws, their inline runs gated off the
 /// main actor when a large text lands (`ProseInlineGate`). Equatable, so a chunk that did not
 /// change is not drawn again.
 struct ProseChunk: View, Equatable {
@@ -153,9 +138,20 @@ struct ProseChunk: View, Equatable {
         let _ = SHRenderProbe.tick("prose.chunk")
         let _ = landed
         let shown = gate.blocks(for: chunk.blocks) { [$landed] in $landed.wrappedValue &+= 1 }
-        let writing = writingFence ? Prose.lastCode(shown.blocks) : nil
-        SHAgentProse(Prose.proseBlocks(shown.blocks, inline: shown.attributed), maxWidth: maxWidth, writingFence: writingFence) { code, language in
-            HighlightedCodeBlock(code: code, language: language, writing: code == writing).equatable()
+        SHProseChunk<HighlightedCodeBlock>(Self.parts(of: chunk, drawing: Prose.proseBlocks(shown.blocks, inline: shown.attributed)),
+                                           writingFence: writingFence)
+            .frame(maxWidth: maxWidth, alignment: .leading)
+    }
+
+    /// `blocks` under the chunk's part ids, by position, so each block keeps its view while the reply grows at its end. Blocks past
+    /// the chunk's last part (a longer text an inline parse still pending keeps drawn) take the ordinals after it.
+    static func parts(of chunk: NativeProseChunk, drawing blocks: [SHProseBlock]) -> [SHProsePart] {
+        let ids = chunk.parts.map(\.id)
+        return blocks.enumerated().map { offset, block in
+            let id = ids.indices.contains(offset)
+                ? SHProsePart.ID(block: ids[offset].block, stretch: ids[offset].stretch)
+                : SHProsePart.ID(block: (ids.last?.block ?? -1) + offset - ids.count + 1, stretch: 0)
+            return SHProsePart(id: id, block: block)
         }
     }
 }
@@ -289,7 +285,7 @@ struct ThinkingRow: View, Equatable {
 /// 250 ms and only up to its last complete line (`CodeHighlightThrottle`): between renders it
 /// keeps its last colors with the new text plain after them, and a render a newer chunk
 /// supersedes is dropped. A finished block is colored once, in full.
-struct HighlightedCodeBlock: View, Equatable {
+struct HighlightedCodeBlock: SHProseCode {
     let code: String
     let language: String?
     var writing = false

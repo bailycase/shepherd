@@ -283,6 +283,13 @@ public struct SHCodeBlock: View, Equatable {
     }
 }
 
+extension SHCodeBlock: SHProseCode {
+    /// `writing` is not drawn: this block shows the code as it stands, with no colors.
+    public init(code: String, language: String?, writing: Bool) {
+        self.init(code, language: language)
+    }
+}
+
 /// What a source fence's header says (including the source beneath a rendered Mermaid chart).
 /// Diagram and math source headers name the source after a glyph: "mermaid ·
 /// diagram source", "latex · math source".
@@ -431,7 +438,7 @@ public struct SHThinking: View {
             .shAnimation(.content, value: live)
             if isExpanded, kind.opens {
                 VStack(alignment: .leading, spacing: SH.Space.m) {
-                    SHProseBlocks(blocks: blocks, voice: .thinking) { SHCodeBlock($0, language: $1).equatable() }
+                    SHProseBlocks<SHCodeBlock>(blocks: blocks, voice: .thinking)
                     if kind == .liveDisclosure {
                         Text(Self.summarySource).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
