@@ -381,7 +381,8 @@ public final class RemoteHostClient: @unchecked Sendable {
                 throw error
             }
         } onCancel: {
-            self.queue.sync {
+            // Never `sync`: this runs under the task's lock, which the queue needs to resume its replies.
+            self.queue.async {
                 if self.connectionGeneration == attempt { self.teardown(reason: "cancelled") }
             }
         }
