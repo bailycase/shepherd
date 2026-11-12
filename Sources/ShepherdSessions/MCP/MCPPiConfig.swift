@@ -7,34 +7,34 @@ import ShepherdProtocol
 /// the model, and where each secret comes from. The user's file is read, never written; no secret
 /// value is in the result: a `${keychain:…}` reference becomes `${SHEPHERD_MCP_SECRET_…}`, a
 /// variable of pi's own environment, which the app fills from the Keychain at each launch.
-enum MCPPiConfig {
+public enum MCPPiConfig {
     /// The prefix of the variables Keychain values travel in. `restore-env.sh` unsets them for an
     /// agent's shell commands, and a stdio server's wrapper unsets them before it runs.
-    static let secretPrefix = "SHEPHERD_MCP_SECRET_"
+    public static let secretPrefix = "SHEPHERD_MCP_SECRET_"
 
     /// A Keychain item a server's entry refers to, and the variable it reaches pi in.
-    struct Secret: Equatable, Sendable {
-        var variable: String
-        var server: String
-        var name: String
+    public struct Secret: Equatable, Sendable {
+        public var variable: String
+        public var server: String
+        public var name: String
 
-        var account: String { MCPSecretReference.account(server: server, name: name) }
+        public var account: String { MCPSecretReference.account(server: server, name: name) }
     }
 
-    struct Derived: Equatable, Sendable {
+    public struct Derived: Equatable, Sendable {
         /// The file's text.
-        var json: Data
+        public var json: Data
         /// The Keychain values the file refers to, each in its own variable.
-        var secrets: [Secret]
+        public var secrets: [Secret]
         /// Why a server is not in the file, by name.
-        var problems: [String: String]
+        public var problems: [String: String]
         /// The servers in the file, in the user's order.
-        var servers: [String]
+        public var servers: [String]
     }
 
     /// The file for `document`. `home` is the user's home folder, which `~/` in a command or an
     /// argument means when a shell has to start the server.
-    static func derive(_ document: MCPConfigDocument, home: String) -> Derived {
+    public static func derive(_ document: MCPConfigDocument, home: String) -> Derived {
         var table = SecretTable()
         var written: [(name: String, entry: [String: JSONValue])] = []
         var problems: [String: String] = [:]
@@ -71,7 +71,7 @@ enum MCPPiConfig {
     }
 
     /// pi's rule for a server name.
-    static func isPiName(_ name: String) -> Bool {
+    public static func isPiName(_ name: String) -> Bool {
         !name.isEmpty && name.unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_") }
     }
 
@@ -300,7 +300,7 @@ enum MCPPiConfig {
     /// they are zsh words that expand it first (`a=('uvx' 'tool' '--token='"${X}")`), and only
     /// then are the variables unset. What the server's own `env` asked for was expanded by pi into
     /// other variables, so it keeps those.
-    static func shellWrapper(words: [String], home: String, expands: Bool) -> [String] {
+    public static func shellWrapper(words: [String], home: String, expands: Bool) -> [String] {
         let unset = "unset -m '\(secretPrefix)*'"
         guard expands else {
             return ["-f", "-c", unset + "; exec \"$@\"", "shepherd-mcp"] + words.map { expandingHome($0, home: home) }

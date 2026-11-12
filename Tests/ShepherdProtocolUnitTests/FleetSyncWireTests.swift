@@ -96,6 +96,8 @@ struct FleetSyncWireTests {
         #expect(FleetUnit.instruction(.agents) == "instruction:AGENTS.md")
         #expect(FleetUnit.kind(of: "setting:pi.theme") == "setting" && FleetUnit.name(of: "setting:pi.theme") == "pi.theme")
         #expect(FleetUnit.isValid("skill:foo/SKILL.md"), "later slices' kinds travel through an older build untouched")
+        #expect(FleetUnit.isValid("mcpServer:postgres") && FleetUnit.isValid("hook:" + String(repeating: "a", count: 64)) && FleetUnit.isValid("subagent:team/api-review.md"))
+        #expect(!FleetUnit.isValid("mcpServer1:x") && !FleetUnit.isValid("mcp_server:x"))
         #expect(!FleetUnit.isValid("nokind") && !FleetUnit.isValid(":name") && !FleetUnit.isValid("Setting:x") && !FleetUnit.isValid("setting:"))
     }
 

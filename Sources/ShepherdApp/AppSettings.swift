@@ -86,7 +86,6 @@ final class AppSettings {
         static let skillsInSlashMenu = "shepherd.skills.slashMenu"
         static let hiddenSlashCommands = "shepherd.pi.slashCommands.hidden"
         static let mcpProjectConfig = "shepherd.mcp.projectConfig"
-        static let mcpSameEverywhere = "shepherd.mcp.sameEverywhere"
         static let queueDelivery = "shepherd.agent.queueDelivery"
         static let trimToolOutput = "shepherd.agent.trimToolOutput"
         static let notifyOnTurnFinished = "shepherd.agent.notifyOnTurnFinished"
@@ -142,7 +141,7 @@ final class AppSettings {
             shareDiagnostics, remoteListenerEnabled, remoteListenerPort,
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeGeneratePRDescription, worktreeDeleteAction, worktreeCloseOnMerge, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
-            mcpProjectConfig, mcpSameEverywhere,
+            mcpProjectConfig,
             goalsEnabled, projectsEnabled, designToolEnabled, fleetEnabled, fleetWeights, missionsEnabled, implementOpensThread,
             filesWordWrap, filesMarkdownPreview,
         ]
@@ -230,12 +229,6 @@ final class AppSettings {
     /// agents get only the servers on that page. Agents launched after a change follow it.
     var mcpProjectConfig: Bool {
         didSet { store.set(mcpProjectConfig, forKey: Key.mcpProjectConfig) }
-    }
-
-    /// Settings ▸ MCP servers ▸ Same servers on every host. Stored for stage 2; stage 1 has
-    /// only This Mac.
-    var mcpSameEverywhere: Bool {
-        didSet { store.set(mcpSameEverywhere, forKey: Key.mcpSameEverywhere) }
     }
 
     /// How a queue goes when pi settles, as this Mac's default for its agents (an agent's own
@@ -617,7 +610,6 @@ final class AppSettings {
         // pi reports nothing an agent could open a sign-in page from: Settings ▸ MCP servers shows what needs you.
         store.removeObject(forKey: "shepherd.mcp.openSignInPages")
         mcpProjectConfig = store.object(forKey: Key.mcpProjectConfig) as? Bool ?? false
-        mcpSameEverywhere = store.object(forKey: Key.mcpSameEverywhere) as? Bool ?? true
         queueDelivery = store.string(forKey: Key.queueDelivery)
             .flatMap(NativeQueueMode.init(rawValue:)) ?? Defaults.queueDelivery
         trimToolOutput = store.object(forKey: Key.trimToolOutput) as? Bool ?? true
@@ -731,7 +723,6 @@ final class AppSettings {
         skillsInSlashMenu = Defaults.skillsInSlashMenu
         hiddenSlashCommands = []
         mcpProjectConfig = false
-        mcpSameEverywhere = true
         queueDelivery = Defaults.queueDelivery
         trimToolOutput = true
         notifyOnTurnFinished = true
@@ -883,7 +874,7 @@ final class AppSettings {
         take(\.terminalFontFamily), take(\.terminalFontSize), take(\.defaultModel), take(\.defaultThinking),
         take(\.defaultServiceTier), take(\.goalsEnabled), take(\.projectsEnabled), take(\.fleetEnabled), take(\.shareDiagnostics),
         take(\.textGenerationModel), take(\.visionModel), take(\.skillsInSlashMenu), take(\.hiddenSlashCommands), take(\.mcpProjectConfig),
-        take(\.mcpSameEverywhere), take(\.queueDelivery), take(\.trimToolOutput), take(\.notifyOnTurnFinished),
+        take(\.queueDelivery), take(\.trimToolOutput), take(\.notifyOnTurnFinished),
         take(\.deferTools), take(\.codemode), take(\.compactAtPercent), take(\.uiDensity), take(\.uiTextScale),
         take(\.sidebarWidth), take(\.sidebarRowDensity), take(\.sidebarStyle),
         take(\.sidebarKeepIdleDays), take(\.piPanesExtension), take(\.piReviewExtension), take(\.subagentDisplay),

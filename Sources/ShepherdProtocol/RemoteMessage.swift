@@ -1450,6 +1450,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
 /// (`RemoteReply.settingsChanged`).
 public enum RemoteSettingsPage: String, Codable, Hashable, Sendable, CaseIterable {
     case instructions, suggestions, skills, hooks, slashCommands
+    /// A fleet's sync wrote MCP servers or subagent profiles: the page reads them again.
+    case mcp, subagents
     /// Settings ▸ Fleet's Serve this Mac (with Fleet off): the listener opened, closed or failed.
     case remote
     /// The Fleet page: a sample or readiness report arrived, or this Mac took one (pushed every

@@ -4,9 +4,9 @@ import ShepherdProtocol
 import ShepherdRemote
 
 // Settings › Hooks on iPhone and iPad (MobileHooks, MobileHookEdit, MobileHookSources,
-// iPadHooks): one host's hooks at a time, over `hooks.v1`. Hooks run on the host where the
-// agent runs, so every read, change and test goes to that host. `ClientHooks` keeps the rules
-// and derives the rows; these views only draw them.
+// iPadHooks): the fleet's hooks, over `hooks.v1` through the one Mac the app reads (a fleet keeps
+// them the same on every Mac). `ClientHooks` keeps the rules and derives the rows; these views only
+// draw them.
 
 /// Settings › Hooks: the host's hooks by event, each with its switch, and its Sources. Beside the
 /// iPad's list it carries Hooks | Sources itself (iPadHooks); Edit and Add open the form as a sheet.
@@ -17,8 +17,8 @@ struct HooksScreen: View {
     var body: some View {
         let store = SettingsStore.of(hosts)
         let model = store.hooks
-        let host = ClientHooks.host(chosen: navigator.settingsSelection.hooksHost, in: store.hosts)
-        let state = host.map(model.state(of:))
+        let host = model.host
+        let state = host.map { _ in model.state }
         @Bindable var selection = navigator.settingsSelection
         @Bindable var editing = store
         ScrollView {
@@ -28,25 +28,22 @@ struct HooksScreen: View {
                         HookSegments(selection: $selection.hooksSources, options: [(false, "Hooks"), (true, "Sources")], label: "Show", pad: true)
                             .fixedSize()
                         Spacer(minLength: 0)
-                        if let host { HookHostMenu(store: store, host: host, pad: true, count: nil) }
                     }
                 }
-                Text(inColumn ? "Hooks on \(host?.name ?? "this host"). They run where the agent runs; every hook runs unless you turn it off."
-                              : "Commands that run at set points in a thread, on the host where the agent runs. Every hook runs unless you turn it off.")
+                Text("Commands that run at set points in a thread, on the Mac running the agent. Every hook runs unless you turn it off.")
                     .shText(.caption)
                     .foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, SH.Space.xs)
-                if !inColumn, let host { HookHostMenu(store: store, host: host, pad: false, count: state?.page?.hookCount) }
-                if let host, let problem = model.problem(of: host) {
+                if let problem = model.problem {
                     SHBanner(.failed, title: problem) {
-                        Button("OK") { model.dismissProblem(of: host) }.buttonStyle(.sh(.secondary))
+                        Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
                     }
                 }
                 if let host, let state {
                     content(state, host: host, model: model)
                 } else {
-                    SettingsFootnote("Add a host in Settings ▸ Fleet to manage its hooks.")
+                    SettingsFootnote("Add a Mac in Settings ▸ Fleet to manage the fleet's hooks.")
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
@@ -55,7 +52,7 @@ struct HooksScreen: View {
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
         }
-        .refreshable { if let host { await model.refresh(host) } }
+        .refreshable { await model.refresh() }
         .background(Color.sh.bgWindow)
         .shAnimation(.content, value: state)
         .navigationTitle(SettingsPage.hooks.title)
@@ -73,7 +70,7 @@ struct HooksScreen: View {
                 NavigationStack { HookEditScreen(editor: editor, host: host, hooks: model) { store.hookEditor = nil } }
             }
         }
-        .task(id: "\(host?.id.uuidString ?? "")/\(host?.isConnected == true)") { if let host { await model.refresh(host) } }
+        .task(id: "\(host?.id.uuidString ?? "")/\(host?.isConnected == true)") { await model.refresh() }
     }
 
     @ViewBuilder
@@ -89,17 +86,17 @@ struct HooksScreen: View {
             SettingsFootnote(reason, tone: .failed)
         case .loaded(let page):
             if inColumn && navigator.settingsSelection.hooksSources {
-                HookReaders(readers: page.readers) { format, on in Task { await model.setReader(format, on, host: host) } }
+                HookReaders(readers: page.readers) { format, on in Task { await model.setReader(format, on) } }
                 HookPadFiles(sections: page.sections)
             } else {
                 if page.groups.isEmpty {
-                    SettingsFootnote("No hooks on \(host.name) yet. Add one, or ask an agent to propose one; Shepherd also reads the hooks in Claude Code's and Codex's files.")
+                    SettingsFootnote("No hooks yet. Add one, or ask an agent to propose one; Shepherd also reads the hooks in Claude Code's and Codex's files.")
                 }
                 ForEach(page.groups) { group in
                     HookGroupSection(group: group, pad: inColumn) { row in
                         if let entry = page.entry(slot: row.id) { SettingsStore.of(hosts).hookEditor = ClientHookEditor(editing: entry, in: page.snapshot) }
                     } setOn: { row, on in
-                        Task { await model.setOn(row, on, host: host) }
+                        Task { await model.setOn(row, on) }
                     }
                 }
                 if !inColumn {
@@ -112,50 +109,6 @@ struct HooksScreen: View {
                 }
             }
         }
-    }
-}
-
-/// The host whose hooks the page shows, among the hosts that serve them: the phone's full-width
-/// row with its hook count, or the iPad's bordered button.
-private struct HookHostMenu: View {
-    let store: SettingsStore
-    let host: SettingsHost
-    let pad: Bool
-    /// The phone's count beside the name, once read.
-    let count: Int?
-    @Environment(MobileNavigator.self) private var navigator
-
-    var body: some View {
-        let sh = Color.sh
-        Menu {
-            ForEach(ClientHooks.hosts(store.hosts)) { other in
-                Button { navigator.settingsSelection.hooksHost = other.id } label: {
-                    if other.id == host.id { Label(other.name, systemImage: "checkmark") } else { Text(other.name) }
-                }
-            }
-        } label: {
-            HStack(spacing: SH.Space.m) {
-                if !pad {
-                    Image(systemName: SettingsPage.fleet.symbol).font(.sh(.ui)).foregroundStyle(sh.textSecondary).accessibilityHidden(true)
-                }
-                Text(host.name).font(.sh(.ui)).foregroundStyle(sh.textPrimary).lineLimit(1)
-                if !pad {
-                    Spacer(minLength: SH.Space.m)
-                }
-                if !pad, let count {
-                    Text(HooksPresentation.hooks(count)).font(.shSans(MobileLayout.hookCountSize)).foregroundStyle(sh.textTertiary)
-                }
-                Image(systemName: "chevron.down").font(.sh(.caption, weight: .semibold)).foregroundStyle(sh.textTertiary).accessibilityHidden(true)
-            }
-            .padding(.horizontal, SH.Space.l)
-            .frame(maxWidth: pad ? nil : .infinity, minHeight: SH.Height.touch)
-            .background(pad ? sh.bgRaised : sh.bgSunken, in: RoundedRectangle(cornerRadius: pad ? SH.Radius.m : SH.Radius.l))
-            .shBorder(pad ? sh.lineStrong : sh.lineSubtle, radius: pad ? SH.Radius.m : SH.Radius.l)
-            .contentShape(Rectangle())
-        }
-        .disabled(ClientHooks.hosts(store.hosts).count < 2)
-        .accessibilityLabel("Host: \(host.name)")
-        .accessibilityValue(count.map(HooksPresentation.hooks) ?? "")
     }
 }
 
@@ -312,20 +265,20 @@ struct HookSourcesScreen: View {
     var body: some View {
         let store = SettingsStore.of(hosts)
         let model = store.hooks
-        let host = ClientHooks.host(chosen: navigator.settingsSelection.hooksHost, in: store.hosts)
-        let page = host.flatMap { model.state(of: $0).page }
+        let host = model.host
+        let page = model.state.page
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                Text("Files \(host?.name ?? "the host") reads hooks from. Hooks from every file run together.")
+                Text("Files a Mac reads hooks from. Hooks from every file run together.")
                     .shText(.caption)
                     .foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, SH.Space.xs)
-                if let host, let problem = model.problem(of: host) {
+                if let problem = model.problem {
                     SettingsFootnote(problem, tone: .failed)
                 }
-                if let host, let page {
-                    HookReaders(readers: page.readers) { format, on in Task { await model.setReader(format, on, host: host) } }
+                if let page {
+                    HookReaders(readers: page.readers) { format, on in Task { await model.setReader(format, on) } }
                     ForEach(page.sections) { section in
                         VStack(alignment: .leading, spacing: SH.Space.s) {
                             HStack(alignment: .firstTextBaseline, spacing: SH.Space.s) {
@@ -342,7 +295,7 @@ struct HookSourcesScreen: View {
                         }
                     }
                 } else {
-                    SettingsFootnote(host.map { "\($0.name)'s files show here once its hooks are read." } ?? "Add a host in Settings ▸ Fleet to manage its hooks.")
+                    SettingsFootnote(host == nil ? "Add a Mac in Settings ▸ Fleet to manage the fleet's hooks." : "The files show here once the hooks are read.")
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
@@ -351,11 +304,11 @@ struct HookSourcesScreen: View {
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
         }
-        .refreshable { if let host { await model.refresh(host) } }
+        .refreshable { await model.refresh() }
         .background(Color.sh.bgWindow)
         .navigationTitle("Sources")
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: "\(host?.id.uuidString ?? "")/\(host?.isConnected == true)") { if let host { await model.refresh(host) } }
+        .task(id: "\(host?.id.uuidString ?? "")/\(host?.isConnected == true)") { await model.refresh() }
     }
 }
 
@@ -517,7 +470,7 @@ struct HookEditScreen: View {
             }
             if !editor.readOnly {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { Task { if await editor.save(with: hooks, host: host) { close() } } }
+                    Button("Save") { Task { if await editor.save(with: hooks) { close() } } }
                         .fontWeight(.semibold)
                         .tint(Color.sh.lanternText)
                         .disabled(editor.saving)
@@ -525,7 +478,7 @@ struct HookEditScreen: View {
             }
         }
         .confirmationDialog("Delete this hook?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Delete hook", role: .destructive) { Task { if await editor.delete(with: hooks, host: host) { close() } } }
+            Button("Delete hook", role: .destructive) { Task { if await editor.delete(with: hooks) { close() } } }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("It's removed from \(editor.targetFile) on \(host.name).")
@@ -590,7 +543,7 @@ struct HookEditScreen: View {
             }
         }
         VStack(alignment: .leading, spacing: SH.Space.s) {
-            Button { Task { await editor.test(with: hooks, host: host) } } label: {
+            Button { Task { await editor.test(with: hooks) } } label: {
                 HStack(spacing: SH.Space.m) {
                     if editor.testing { ProgressView().progressViewStyle(SHSpinnerStyle()) }
                     Text(editor.testing ? "Running on \(host.name)…" : "Test with a sample event")

@@ -14,6 +14,7 @@ final class FleetWatcher {
     private let queue: DispatchQueue
     private let onChange: () -> Void
     private var paths: [URL] = []
+    private var fileOnly: [URL] = []
     private var sources: [DispatchSourceFileSystemObject] = []
     private var trees: [URL] = []
     private var stream: FSEventStreamRef?
@@ -25,10 +26,16 @@ final class FleetWatcher {
         self.onChange = onChange
     }
 
-    /// Watches `file` and its folder, which is created if it isn't there.
-    func watch(file: URL) {
-        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        paths.append(file)
+    /// Watches `file` and its folder, which is created if it isn't there. `folder: false` watches the file
+    /// alone (one that exists and is replaced by rename, like a git config: the old file's end is the
+    /// event), for a folder too busy to be worth an event per write.
+    func watch(file: URL, folder: Bool = true) {
+        if folder {
+            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            paths.append(file)
+        } else {
+            fileOnly.append(file)
+        }
         arm()
     }
 
@@ -83,6 +90,7 @@ final class FleetWatcher {
             let folder = path.deletingLastPathComponent()
             for url in [folder, path] where !targets.contains(url) { targets.append(url) }
         }
+        for url in fileOnly where !targets.contains(url) { targets.append(url) }
         for url in targets {
             let fd = open(url.path, O_EVTONLY)
             guard fd >= 0 else { continue }

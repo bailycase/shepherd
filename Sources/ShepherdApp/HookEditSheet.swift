@@ -206,7 +206,7 @@ struct HookEditSheet: View {
     private var form: some View {
         VStack(alignment: .leading, spacing: SH.Space.xl) {
             if editor.readOnly {
-                HookReadOnlyNote(label: editor.sourceLabel, open: model.isRemote ? nil : { model.open(editor.target) })
+                HookReadOnlyNote(label: editor.sourceLabel, open: { model.open(editor.target) })
             }
             HStack(alignment: .top, spacing: SH.Space.l) {
                 HookField("When", help: editor.event.effect) {
@@ -218,7 +218,7 @@ struct HookEditSheet: View {
                     .labelsHidden()
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                HookField("Saved in", help: editor.targetRoot == nil ? "Hooks on \(model.hostName) run in every space."
+                HookField("Saved in", help: editor.targetRoot == nil ? "Hooks on this Mac run in every space."
                                                     : "Space hooks travel with the repo and run in its threads.") {
                     Picker("Saved in", selection: $editor.target) {
                         ForEach(editor.targets, id: \.path) { Text($0.label).tag($0.path) }
@@ -287,17 +287,16 @@ struct HookEditSheet: View {
                 Text("Test").font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
                 Spacer(minLength: 0)
                 Button { editor.test(with: model) } label: {
-                    Label(editor.testing ? (model.isRemote ? "Running on \(model.hostName)…" : "Running…")
-                                         : (model.isRemote ? "Run on \(model.hostName)" : "Run with a sample event"), systemImage: "play.fill")
+                    Label(editor.testing ? "Running…" : "Run with a sample event", systemImage: "play.fill")
                 }
                 .buttonStyle(.sh(.secondary, size: .s))
                 .disabled(editor.testable == nil || editor.testing)
                 .help(editor.testable == nil ? "Enter a command to test it"
-                      : "Runs the command once on \(model.hostName) against a sample \(editor.event.rawValue) event")
+                      : "Runs the command once on this Mac against a sample \(editor.event.rawValue) event")
             }
             if let result = editor.testResult {
                 HookTestResultCard(outcome: result.outcome,
-                                   meta: HookEditorModel.testMeta(result, event: editor.event, matcher: editor.matcher, host: model.isRemote ? model.hostName : nil),
+                                   meta: HookEditorModel.testMeta(result, event: editor.event, matcher: editor.matcher, host: nil),
                                    output: HookTestOutput(result), outputOpen: $editor.outputOpen)
             }
         }
@@ -348,7 +347,7 @@ struct HookEditSheet: View {
                 .buttonStyle(.sh(.secondary, size: .m))
                 .keyboardShortcut(.cancelAction)
             if editor.readOnly {
-                if !model.isRemote { Button("Open file") { model.open(editor.target) }.buttonStyle(.sh(.primary, size: .m)) }
+                Button("Open file") { model.open(editor.target) }.buttonStyle(.sh(.primary, size: .m))
             } else {
                 Button("Save") { Task { if await editor.save(with: model) { close() } } }
                     .buttonStyle(.sh(.primary, size: .m))

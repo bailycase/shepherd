@@ -27,6 +27,10 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
     /// thread here starts with its worktree switch on. Decodes nil from older files, and is
     /// written only when set.
     public var worktreeBase: String?
+    /// The space's repository as a fleet knows it ("github.com/acme/web", `CanonicalRepoKey`): the same
+    /// on every Mac whatever the remote's spelling. The host computes it from the checkout's origin and
+    /// refreshes it when that changes. Decodes nil from older files, and is written only when set.
+    public var repoKey: String?
 
     public init(
         id: SpaceID = SpaceID(),
@@ -39,7 +43,8 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         sidebarHidden: Bool = false,
         parentID: SpaceID? = nil,
         parentIsExplicit: Bool = false,
-        worktreeBase: String? = nil
+        worktreeBase: String? = nil,
+        repoKey: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -52,6 +57,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         self.parentID = parentID
         self.parentIsExplicit = parentIsExplicit
         self.worktreeBase = worktreeBase
+        self.repoKey = repoKey
     }
 
     /// The reserved space for design agents: hidden, never a project.
@@ -66,7 +72,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
     public var holdsAutomations: Bool { hidden && !holdsDesigns && !holdsProjects && !holdsThreads }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, path, hidden, holdsDesigns, holdsProjects, holdsThreads, sidebarHidden, parentID, parentIsExplicit, worktreeBase
+        case id, name, path, hidden, holdsDesigns, holdsProjects, holdsThreads, sidebarHidden, parentID, parentIsExplicit, worktreeBase, repoKey
     }
 
     public init(from decoder: Decoder) throws {
@@ -83,6 +89,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         parentID = try c.decodeIfPresent(SpaceID.self, forKey: .parentID)
         parentIsExplicit = try c.decodeIfPresent(Bool.self, forKey: .parentIsExplicit) ?? false
         worktreeBase = try c.decodeIfPresent(String.self, forKey: .worktreeBase)
+        repoKey = try c.decodeIfPresent(String.self, forKey: .repoKey)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -100,6 +107,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(parentID, forKey: .parentID)
         if parentIsExplicit { try c.encode(parentIsExplicit, forKey: .parentIsExplicit) }
         try c.encodeIfPresent(worktreeBase, forKey: .worktreeBase)
+        try c.encodeIfPresent(repoKey, forKey: .repoKey)
     }
 }
 

@@ -611,7 +611,12 @@
   carried: a file that starts with `#!` is written runnable. The store holds no machine path: each Mac loads an
   extension from its own `your-extensions/` by its own absolute path in `settings.json`, and an extension someone works on
   in a folder on one Mac (a copy whose source is a folder there) is linked: the folder is watched and each save is
-  mirrored into the copy and so becomes ops. A kind this build doesn't know is stored, relayed and never applied. The later write wins by (hlc, then the larger Mac id); the loser is kept in `history/<unit>/` (100
+  mirrored into the copy and so becomes ops. Slice 2b-ii adds `mcpServer:<name>` (inline JSON: one server's entry in the
+  per Mac `~/.config/mcp/mcp.json`; keys the materializer doesn't own are kept and a hand edit is imported as ops),
+  `hook:<id>` (inline JSON, the id derived from what the hook does) with `setting:hooks.readers`, `subagent:<file>` (a
+  profile's Markdown) and `space:<id>` (inline JSON `{name, repoKey?, worktreeBase?, …}` with no path: each Mac binds the
+  space to a folder of its own with the same `repoKey`, and a space with no folder here stays unbound). None of these is
+  multi file, so each applies as it arrives. A kind this build doesn't know is stored, relayed and never applied. The later write wins by (hlc, then the larger Mac id); the loser is kept in `history/<unit>/` (100
   versions or 30 days). An op a person didn't write, copied from what a Mac held when its sync first ran, is a `seed`: any
   other op beats it and among seeds the earliest wins, so the Mac where Fleet was first switched on is the reference.
   Only while Fleet is on (`fleet_off` otherwise, and the sync engine stops with it), and only to a `member` connection (`FleetAccess`: never a client device, never the shared token, never this Mac's own app; refused `forbidden`), after `hello` with a peer's token, one request, `fleetSync`, with

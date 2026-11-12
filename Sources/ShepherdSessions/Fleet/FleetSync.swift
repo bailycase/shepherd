@@ -33,6 +33,9 @@ final class FleetSync: @unchecked Sendable {
 
     /// Server queue: sync status changed (what Settings ▸ Fleet's line draws).
     var onChange: (() -> Void)?
+    /// Server queue: a pass is about to read this Mac's state (the host brings derived facts, like a space's
+    /// repo, up to date first).
+    var beforeScan: (() -> Void)?
 
     private final class Session: @unchecked Sendable {
         let peer: UUID
@@ -72,6 +75,7 @@ final class FleetSync: @unchecked Sendable {
     func add(_ source: FleetUnitSource) {
         materializer.add(source)
         for file in source.watchedFiles { watcher?.watch(file: file) }
+        for file in source.watchedFilesOnly { watcher?.watch(file: file, folder: false) }
         watcher?.watch(trees: materializer.watchedTrees)
         if started { localChanged() }
     }
@@ -84,6 +88,7 @@ final class FleetSync: @unchecked Sendable {
         let watcher = FleetWatcher(queue: queue) { [weak self] in self?.localChanged() }
         self.watcher = watcher
         for file in materializer.watchedFiles { watcher.watch(file: file) }
+        for file in materializer.watchedFilesOnly { watcher.watch(file: file, folder: false) }
         watcher.watch(trees: materializer.watchedTrees)
         localChanged()
     }
@@ -103,6 +108,7 @@ final class FleetSync: @unchecked Sendable {
     /// ops, apply what the store holds, and tell the peers.
     func localChanged() {
         guard started, !stopped else { return }
+        beforeScan?()
         let emitted = materializer.scan(name: name())
         // A folder that came into being with this pass (a dev folder just linked) is watched from now.
         watcher?.watch(trees: materializer.watchedTrees)
@@ -142,6 +148,10 @@ final class FleetSync: @unchecked Sendable {
     private static func label(_ unit: String) -> String {
         switch FleetUnit.kind(of: unit) {
         case "instruction": FleetUnit.name(of: unit) ?? unit
+        case "mcpServer": "the \(FleetUnit.name(of: unit) ?? unit) MCP server"
+        case "hook": "a hook"
+        case "subagent": FleetUnit.name(of: unit) ?? unit
+        case "space": "a space"
         case "skill", "skillstate": "the \(FleetUnit.skillParts(of: unit)?.name ?? unit) skill"
         case "extension", "extmeta": "the \(FleetUnit.name(of: unit)?.split(separator: "/").first.map(String.init) ?? unit) extension"
         default: "the \(FleetUnit.name(of: unit) ?? unit) setting"

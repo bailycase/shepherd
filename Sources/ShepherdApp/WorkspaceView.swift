@@ -1187,7 +1187,7 @@ struct RemoteAgentThreadPane: View {
         // References to the host's own designs, where it takes them.
         .environment(\.designReferences, designReferences)
         // Its hook rows, proposals and glyph open and count the host's hooks.
-        .environment(\.hookPresenter, HookPresenter(model: vm, host: ref.hostID))
+        .environment(\.hookPresenter, HookPresenter(model: vm))
     }
 }
 

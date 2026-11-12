@@ -171,9 +171,10 @@ public struct FleetOp: Codable, Hashable, Sendable {
     }
 }
 
-/// Unit names: `<kind>:<name>`. Slice 2a carries `setting` (`host.<key>` and `pi.<key>` and the
-/// `fleet.<key>` policy) and `instruction` (`AGENTS.md`, `APPEND_SYSTEM.md`). Skills and
-/// extensions follow: `skill:<name>/<path>` is each file in a skill and `skillstate:<name>` the
+/// Unit names: `<kind>:<name>`. `setting` (`host.<key>` and `pi.<key>` and the `fleet.<key>` policy,
+/// `hooks.readers`), `instruction` (`AGENTS.md`, `APPEND_SYSTEM.md`), `mcpServer` (a server's name),
+/// `hook` (an id from what the hook does), `subagent` (the profile's file) and `space` (a space's id).
+/// Skills and extensions follow: `skill:<name>/<path>` is each file in a skill and `skillstate:<name>` the
 /// skill's state (on or off, where it came from, a digest of its files); `extension:<path>` is a
 /// file under `your-extensions/` and `extmeta:<id>` says what one extension is (its name, the files
 /// pi loads, whether it is on, a digest of its files). A state or meta unit sorts after the files
@@ -209,11 +210,12 @@ public enum FleetUnit {
         return kind.isEmpty || name.isEmpty ? nil : (kind, name)
     }
 
-    /// A unit name from a peer: a lowercase kind and a short printable name with no `..`, so a
+    /// A unit name from a peer: a camelCase kind (`setting`, `mcpServer`) and a short printable name with no `..`, so a
     /// name never reaches a path or a key it shouldn't.
     public static func isValid(_ unit: String) -> Bool {
         guard unit.utf8.count <= 200, let (kind, name) = split(unit),
-              kind.utf8.allSatisfy({ ($0 >= 97 && $0 <= 122) }), kind.utf8.count <= 20 else { return false }
+              kind.utf8.first.map({ $0 >= 97 && $0 <= 122 }) == true,
+              kind.utf8.allSatisfy({ ($0 >= 97 && $0 <= 122) || ($0 >= 65 && $0 <= 90) }), kind.utf8.count <= 20 else { return false }
         return !name.contains("..") && name.unicodeScalars.allSatisfy { $0.value >= 0x20 && $0.value != 0x7F }
     }
 }
