@@ -147,6 +147,7 @@ struct SHNativeCodeText: NSViewRepresentable {
     }
 
     func updateNSView(_ field: Field, context: Context) {
+        SHRenderProbe.tick("code.nativeUpdated")
         let points = SHTextStyle.code.size * scale
         let font = NSFont(name: SHFonts.postScriptName(mono: true, weight: .regular), size: points)
             ?? .monospacedSystemFont(ofSize: points, weight: .regular)
