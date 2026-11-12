@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-/// Host-owned catalog/git commands and mission checks, not sessions. One deadline covers input, both output pipes
+/// Host-owned catalog/git commands, not sessions. One deadline covers input, both output pipes
 /// and exit. The leader stays unreaped until its group is killed, so its PID cannot be reused.
 public enum BoundedCommand {
     public struct Result: Sendable {

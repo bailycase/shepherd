@@ -6,9 +6,9 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Settings ▸ Notifications (NotifSettings): what to send, to which device, per mission, and
-/// which hosts send at all. The choices live on the phone and go to every host it registered
-/// with, which applies them before sending (`RemotePushPreferences`).
+/// Settings ▸ Notifications (NotifSettings): what to send, to which device, and which hosts
+/// send at all. The choices live on the phone and go to every host it registered with, which
+/// applies them before sending (`RemotePushPreferences`).
 struct NotificationsScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(PushManager.self) private var push
@@ -19,18 +19,15 @@ struct NotificationsScreen: View {
     @State private var liveActivities = ActivityAuthorizationInfo().areActivitiesEnabled
 
     private typealias Topic = RemotePushPreferences.Topic
-    private typealias Level = RemotePushPreferences.MissionLevel
 
     var body: some View {
         let preferences = push.preferences
-        let missions = Self.missions(hosts.hosts)
         let muted = Self.mutedThreads(hosts.hosts)
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 SettingsSection("Send me") {
                     SHListCard {
-                        topic(.questions, "Questions and approvals", note: "Planner, subagent and automation questions, plans, reviews")
-                        topic(.blocked, "Blocked work", note: "Stuck lanes and empty budgets")
+                        topic(.questions, "Questions and approvals", note: "Subagent and automation questions, plans, reviews")
                         topic(.failures, "Failures", note: "Failed turns and threads that stopped")
                         topic(.finished, "Finished work", note: "Quietly, and in your Scheduled Summary")
                     }
@@ -55,22 +52,6 @@ struct NotificationsScreen: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                    }
-                }
-                if !missions.isEmpty {
-                    SettingsSection("Per mission") {
-                        SHListCard {
-                            ForEach(missions) { mission in
-                                SettingsControlRow(mission.title) {
-                                    SettingsPicker(mission.title, selection: preferences.missions[mission.id] ?? .everything,
-                                                   options: Level.allCases, title: Self.title) { level in
-                                        var next = preferences
-                                        next.missions[mission.id] = level == .everything ? nil : level
-                                        save(next)
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
                 if !muted.isEmpty {
@@ -132,15 +113,6 @@ struct NotificationsScreen: View {
         Task { await push.setPreferences(next, hosts: hosts.hosts) }
     }
 
-    private static func title(_ level: Level) -> String {
-        switch level {
-        case .everything: "Everything"
-        case .onlyBlocked: "Only blocked"
-        case .onlyFailures: "Only failures"
-        case .nothing: "Nothing"
-        }
-    }
-
     struct MutedRow: Identifiable, Equatable {
         let id: AgentRef
         let title: String
@@ -155,19 +127,6 @@ struct NotificationsScreen: View {
         }
     }
 
-    struct MissionRow: Identifiable, Equatable {
-        let id: String
-        let title: String
-    }
-
-    /// The missions still going on every host that has them, in each host's order.
-    static func missions(_ hosts: [MobileHost]) -> [MissionRow] {
-        hosts.flatMap { host in
-            host.missions.records
-                .filter { ![.done, .stopped].contains($0.run?.phase) }
-                .map { MissionRow(id: $0.id.rawValue, title: $0.draft.title) }
-        }
-    }
 }
 
 /// One host's push toggle row with error/retry state.

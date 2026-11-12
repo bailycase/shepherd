@@ -14,8 +14,7 @@ extension ShepherdState {
 
 @MainActor
 extension AppHarness {
-    /// The host's Missions and Project runtime.
-    var missions: MissionController { host!.runtime!.missions }
+    /// The host's Project runtime.
     var coordinator: ProjectCoordinatorController { host!.runtime!.coordinator }
 }
 

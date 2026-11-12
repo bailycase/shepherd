@@ -133,7 +133,6 @@ final class AppSettings {
         static let fleetSnapshotExcludes = "shepherd.fleet.snapshotExcludes"
         static let fleetAutoDispatch = "shepherd.fleet.autoDispatch"
         static let fleetBatteryCountsHalf = "shepherd.fleet.batteryCountsHalf"
-        static let missionsEnabled = "shepherd.experiments.missions"
         static let implementOpensThread = "shepherd.designs.implementOpensThread"
 
         static let all = [
@@ -148,7 +147,7 @@ final class AppSettings {
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeGeneratePRDescription, worktreeDeleteAction, worktreeCloseOnMerge, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
             mcpProjectConfig,
-            goalsEnabled, projectsEnabled, designToolEnabled, fleetEnabled, fleetWeights, fleetThreadsCanSend, fleetThreadCap, fleetAutoDispatch, fleetBatteryCountsHalf, fleetUncommitted, fleetSnapshotExcludes, missionsEnabled, implementOpensThread,
+            goalsEnabled, projectsEnabled, designToolEnabled, fleetEnabled, fleetWeights, fleetThreadsCanSend, fleetThreadCap, fleetAutoDispatch, fleetBatteryCountsHalf, fleetUncommitted, fleetSnapshotExcludes, implementOpensThread,
             filesWordWrap, filesMarkdownPreview,
         ]
 
@@ -610,13 +609,6 @@ final class AppSettings {
         fleetWeights[FleetSendWeight.settingKey(hostID: hostID)] = weight
     }
 
-    /// Settings ▸ Experiments ▸ Missions: the Missions destination and its sidebar section. Off by
-    /// default, as every experiment. Off hides them only: missions, their worktrees and receipts are
-    /// kept, and their threads stay out of the thread lists.
-    var missionsEnabled: Bool {
-        didSet { store.set(missionsEnabled, forKey: Key.missionsEnabled) }
-    }
-
     /// Settings ▸ Experiments ▸ Design tool: the Designs destination, design rows in Recents,
     /// and New thread's "Start a design". Off by default; designs made while it was on keep
     /// their files and agents while it is off.
@@ -728,7 +720,6 @@ final class AppSettings {
         skippedConfirmations = (store.dictionary(forKey: Key.skippedConfirmations) as? [String: String] ?? [:])
             .filter { known.contains($0.key) }
         designToolEnabled = store.bool(forKey: Key.designToolEnabled)
-        missionsEnabled = store.bool(forKey: Key.missionsEnabled)
         implementOpensThread = store.object(forKey: Key.implementOpensThread) as? Bool ?? true
     }
 
@@ -830,7 +821,6 @@ final class AppSettings {
         worktreeDeleteAction = .ask
         skippedConfirmations = [:]
         designToolEnabled = false
-        missionsEnabled = false
         implementOpensThread = true
         // Then clear the store, so an unset preference reads as "never
         // configured" and follows a future change of default.
@@ -957,7 +947,7 @@ final class AppSettings {
         take(\.childConcurrency), take(\.childModel), take(\.childThinking), take(\.childContext), take(\.shellPath),
         take(\.editor), take(\.filesWordWrap), take(\.filesMarkdownPreview), take(\.worktreeBaseMode),
         take(\.worktreeFetchBeforeCreate), take(\.worktreeGeneratePRDescription), take(\.worktreeCloseOnMerge),
-        take(\.worktreeDeleteAction), take(\.skippedConfirmations), take(\.designToolEnabled), take(\.missionsEnabled),
+        take(\.worktreeDeleteAction), take(\.skippedConfirmations), take(\.designToolEnabled),
         take(\.implementOpensThread), take(\.remoteListenerEnabled),
     ]
 }

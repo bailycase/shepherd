@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// An inline banner inside the pane it concerns (Status board): a question, a failure, a
-/// reconnecting host, a finished mission. Never a modal alert for an agent event.
+/// reconnecting host, a finished run. Never a modal alert for an agent event.
 public struct SHBanner<Actions: View>: View {
     let state: AgentState
     let title: String

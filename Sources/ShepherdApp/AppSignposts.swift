@@ -14,6 +14,8 @@ enum AppSignposts {
     static let thread = OSSignposter(subsystem: subsystem, category: "Thread")
     /// Input prepared off the main actor: attachments, inline Markdown, the Instructions tint.
     static let input = OSSignposter(subsystem: subsystem, category: "Input")
+    /// The host's workspace pushes: "adopt" for one the view model took, "adopt skipped" for one left to a newer push.
+    static let workspace = OSSignposter(subsystem: subsystem, category: "Workspace")
 }
 
 /// One thread view's "shown → first caught-up render" interval: begun by the first body

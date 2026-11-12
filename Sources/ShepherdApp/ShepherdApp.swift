@@ -42,10 +42,15 @@ struct MainWindowReader: NSViewRepresentable {
 /// it from the Dock works even if it is closed before the workspace is ready.
 struct MainWindowRoutes: ViewModifier {
     @Environment(\.openWindow) private var openWindow
+    /// Whether the window can be seen. Written only on a change, so what reads it
+    /// (`mainWindowVisible`) reruns only when the window shows or hides.
+    @State private var windowVisible = true
 
     func body(content: Content) -> some View {
         content
             .background { MainWindowReader() }
+            .background { WindowOcclusionReader { visible in if windowVisible != visible { windowVisible = visible } } }
+            .environment(\.mainWindowVisible, windowVisible)
             .onAppear { MainWindow.open = { [openWindow] in openWindow(id: MainWindow.id) } }
     }
 }
@@ -359,7 +364,7 @@ public enum ShepherdHost {
     }
 
     /// Everything the host serves on its server beside the server's own: Settings, its stores,
-    /// threads, worktrees, automations, Missions and Projects, pull request links and banners,
+    /// threads, worktrees, automations and Projects, pull request links and banners,
     /// each with the app's settings. `main` runs it; app tests serve their in-process host with it.
     @MainActor final class Services {
         let settings: AppSettings
@@ -369,8 +374,8 @@ public enum ShepherdHost {
         let mcp: AgentSpawn.MCP
         /// The shell a client's terminal starts.
         var shell: () -> SessionCommand
-        /// Missions and the Project runtime, served for the life of the host.
-        private(set) var runtime: (missions: MissionController, coordinator: ProjectCoordinatorController,
+        /// The Project runtime, served for the life of the host.
+        private(set) var runtime: (coordinator: ProjectCoordinatorController,
                                    execution: ProjectExecutionController)?
         /// Worktree requests and commits from review, served for the life of the host.
         private(set) var worktrees: WorktreeQueries?
@@ -421,7 +426,7 @@ public enum ShepherdHost {
                 let worktrees = server.serveAgentQueries(WorktreeHosting(defaults: { settings.worktreeHostingDefaults },
                                                                          deleteAgent: { id, _ in try await server.deleteAgent(id) }))
                 self.worktrees = worktrees
-                // Missions and Projects run here, where their agents run: they keep acting with the app quit.
+                // Projects run here, where their agents run: they keep acting with the app quit.
                 runtime = RuntimeHosting.headless(server: server, settings: settings, worktrees: worktrees, mcp: mcp) { [notifications] in
                     notifications.post(AgentBanners.automation(title: $0, body: $1))
                 }.serve()

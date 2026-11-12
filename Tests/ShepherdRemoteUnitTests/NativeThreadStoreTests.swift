@@ -438,6 +438,34 @@ struct NativeThreadStoreTests {
         #expect(store.pollInterval == .seconds(2))
     }
 
+    /// A fresh store (a remote viewer opening a stopped thread) is given the conversation the host
+    /// read from pi's session file, with the problem: it shows both, and asks nothing of the host
+    /// (pi is not woken: it stopped). A store that drew pi's live history keeps that instead.
+    @Test func aStoppedThreadsPreviewShowsItsHistoryUnderTheProblemWithoutWakingPi() async {
+        let fromFile = F.assistant("from the file", id: "a")
+        var stopped = F.snapshot(generation: "preview", actions: [], messages: [fromFile])
+        stopped.preview = true
+        stopped.startProblem = NativeStartProblem(kind: .stopped, signal: 9)
+        let host = FakeHost(stopped)
+        let store = manualStore()
+        let task = await start(store, host)
+        defer { task.cancel() }
+        #expect(store.startProblem == stopped.startProblem && store.previewing)
+        #expect(store.messages == [fromFile] && store.rows.count == 1)
+        #expect(!store.ready && !store.starting && store.loadError == nil && !store.awaitingPi && !store.acceptsSend)
+        #expect(store.wakes == 0 && host.actions.isEmpty, "a stopped pi is not woken")
+        await store.refresh()
+        #expect(store.wakes == 0 && host.actions.isEmpty && store.messages == [fromFile] && store.startProblem != nil)
+
+        let (live, liveHost, liveTask) = await started()
+        defer { liveTask.cancel() }
+        liveHost.snapshot = stopped
+        await live.refresh()
+        #expect(live.startProblem == stopped.startProblem && !live.ready && !live.previewing)
+        #expect(live.messages == [hi], "the history pi served stays")
+        #expect(live.wakes == 0 && liveHost.actions.isEmpty)
+    }
+
     /// A pi that stopped mid-turn leaves the last live snapshot under the banner: its running call
     /// and half-written reply read stopped, and nothing reads as working.
     @Test func aThreadWhosePiStoppedMidTurnDrawsItsLiveRowsStopped() async throws {
@@ -1641,6 +1669,192 @@ struct NativeThreadStoreTests {
         #expect(host.requests.count == 2, "shown again, it pulls once and waits")
     }
 
+    // MARK: Resting
+
+    /// Starts the store's run loop for `owner` and returns once the first answer has been applied.
+    private func startOwned(_ store: NativeThreadStore, _ host: FakeHost, owner: UUID) async -> Task<Void, Never> {
+        var task: Task<Void, Never>?
+        await withCheckedContinuation { (served: CheckedContinuation<Void, Never>) in
+            host.onServed = { served.resume() }
+            task = Task { await store.run(request: { try host.handle($0) }, owner: owner) }
+        }
+        return task!
+    }
+
+    /// A resting loop pulls nothing for the revisions pushed meanwhile; seen again, it pulls once, however many came.
+    @Test func aRestingStorePullsNothingForPushesAndOnceWhenItWakes() async {
+        let pauses = Pauses()
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = pushedStore(pauses)
+        let owner = UUID()
+        let task = await startOwned(store, host, owner: owner)
+        defer { task.cancel() }
+        await until { pauses.count == 1 }
+
+        store.rest(true, owner: owner)
+        for revision in 2...6 {
+            host.snapshot = F.snapshot(revision: UInt64(revision), messages: [hi])
+            store.revisionAvailable()
+        }
+        #expect(host.requests.count == 1)
+
+        store.rest(false, owner: owner)
+        await until { pauses.count == 2 }
+        #expect(host.requests.count == 2, "the five pushes and the wake made one pull")
+        #expect(store.snapshot?.revision == 6)
+    }
+
+    /// An interval that ends while the loop rests pulls nothing.
+    @Test func aPauseThatEndsWhileRestingPullsNothing() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let pauses = Pauses()
+        let (ends, interval) = AsyncStream<Void>.makeStream()
+        let store = NativeThreadStore { duration in
+            guard duration > NativeThreadStore.pushedPullSpacing else { return }
+            await pauses.began()
+            for await _ in ends { return }
+            throw CancellationError()
+        }
+        let owner = UUID()
+        let task = await startOwned(store, host, owner: owner)
+        defer { task.cancel() }
+        await until { pauses.count == 1 }
+
+        store.rest(true, owner: owner)
+        interval.yield()
+        for _ in 0..<20 { await Task.yield() }
+        #expect(host.requests.count == 1 && pauses.count == 1, "the interval ended while the loop rested")
+
+        host.snapshot = F.snapshot(revision: 2, messages: [hi])
+        store.rest(false, owner: owner)
+        await until { store.snapshot?.revision == 2 }
+        #expect(host.requests.count == 2)
+    }
+
+    /// `onLiveChange` says whether the thread wants revisions: not while it rests. `isLive` says the loop runs.
+    @Test func aRestingStoreAsksForNoRevisions() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = pushedStore(Pauses())
+        var changes: [Bool] = []
+        store.onLiveChange = { changes.append($0) }
+        let owner = UUID()
+        let task = await startOwned(store, host, owner: owner)
+        defer { task.cancel() }
+        #expect(changes == [true] && store.wantsRevisions)
+
+        store.rest(true, owner: owner)
+        store.rest(true, owner: owner)
+        #expect(changes == [true, false] && !store.wantsRevisions && store.isLive, "asked twice, said once; the loop stays")
+
+        store.rest(false, owner: owner)
+        store.rest(false, owner: owner)
+        #expect(changes == [true, false, true] && store.wantsRevisions && store.isLive)
+    }
+
+    /// A send waiting for pi to start is not dropped by a rest, and keeps the loop pulling until pi answers.
+    @Test func aSendWaitingForPiKeepsARestingStorePulling() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        host.starting = true
+        host.acceptAll()
+        let store = pushedStore(Pauses())
+        let owner = UUID()
+        store.rest(true, owner: owner)
+        let task = await startOwned(store, host, owner: owner)
+        defer { task.cancel() }
+        store.draft = "hello"
+        let sending = Task { await store.send() }
+        await until { store.busy }
+
+        host.starting = false
+        host.snapshot = F.snapshot(messages: [hi])
+        store.revisionAvailable()
+        await sending.value
+
+        let texts = host.actions.compactMap { action -> String? in
+            if case .send(_, _, _, let text, _, _, _, _, _) = action { return text } else { return nil }
+        }
+        #expect(texts == ["hello"] && store.notice == nil)
+        #expect(!store.wantsRevisions && store.isLive, "it rests again once the send is gone")
+    }
+
+    /// The view whose loop runs is the one that rests it.
+    @Test func onlyTheLoopsOwnerRestsIt() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = pushedStore(Pauses())
+        let owner = UUID(), other = UUID()
+        let task = await startOwned(store, host, owner: owner)
+        defer { task.cancel() }
+
+        store.rest(true, owner: other)
+        #expect(store.wantsRevisions)
+        store.rest(true, owner: owner)
+        #expect(!store.wantsRevisions)
+        store.rest(false, owner: other)
+        #expect(!store.wantsRevisions, "another view being seen wakes nothing")
+        store.rest(false, owner: owner)
+        #expect(store.wantsRevisions)
+    }
+
+    /// A rest asked for before the loop starts (its view's tasks start together) holds once the loop runs: it makes its
+    /// first pull, as every loop does, and then rests.
+    @Test func aRestWishedBeforeTheLoopStartsAppliesAfterItsFirstPull() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let pauses = Pauses()
+        let store = pushedStore(pauses)
+        var changes: [Bool] = []
+        store.onLiveChange = { changes.append($0) }
+        let owner = UUID()
+        store.rest(true, owner: owner)
+        #expect(!store.isLive && !store.wantsRevisions)
+
+        let task = await startOwned(store, host, owner: owner)
+        defer { task.cancel() }
+        #expect(host.requests.count == 1 && store.ready)
+        #expect(store.isLive && !store.wantsRevisions && changes.isEmpty, "it never asked for revisions")
+        store.revisionAvailable()
+
+        store.rest(false, owner: owner)
+        await until { pauses.count == 1 }
+        #expect(host.requests.count == 2 && changes == [true] && store.wantsRevisions)
+    }
+
+    /// The first pull after a rest lands as a catch-up, as the first one after switching back does.
+    @Test func aStoreThatWakesCatchesUpAtOnce() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let pauses = Pauses()
+        let store = pushedStore(pauses)
+        let owner = UUID()
+        let task = await startOwned(store, host, owner: owner)
+        defer { task.cancel() }
+        await until { pauses.count == 1 }
+        let first = store.catchUp
+        #expect(first != nil)
+
+        store.rest(true, owner: owner)
+        #expect(store.catchUp == first, "what it shows stays as it was")
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.user("more", id: "u")])
+        store.rest(false, owner: owner)
+        #expect(store.catchUp == nil)
+
+        await until { pauses.count == 2 }
+        #expect(store.catchUp?.thread == store.threadVersion, "the pull that woke it is the catch-up")
+    }
+
+    @Test func aStoppedStoreForgetsItsRest() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = pushedStore(Pauses())
+        let owner = UUID()
+        let task = await startOwned(store, host, owner: owner)
+        store.rest(true, owner: owner)
+        store.stop()
+        task.cancel()
+        await task.value
+
+        let again = await startOwned(store, host, owner: owner)
+        defer { again.cancel() }
+        #expect(store.wantsRevisions)
+    }
+
     @Test func thereIsNoOlderPageWithoutACursor() async {
         let (store, host, task) = await started()
         defer { task.cancel() }
@@ -2070,6 +2284,118 @@ struct NativeThreadStoreTests {
         #expect(!invalidated.value)
     }
 
+    /// Send's enabled state, the toolbar and the failed-send restore read `hasDraft` as keys land:
+    /// more words after the first change what it answers for none of them.
+    @Test func typingMoreProseNotifiesNoReaderOfHasDraft() {
+        let store = manualStore()
+        store.draft = "hello"
+        let fired = Flag()
+        withObservationTracking { _ = store.hasDraft } onChange: { fired.set() }
+        store.draft += " world"
+        #expect(!fired.value)
+        #expect(store.hasDraft)
+    }
+
+    /// What the composer reads of the draft, each property written only when it differs.
+    private static let draftProperties: [(String, @MainActor (NativeThreadStore) -> Void)] = [
+        ("draftHasText", { _ = $0.draftHasText }), ("draftCommand", { _ = $0.draftCommand }),
+        ("draftLeadingCommand", { _ = $0.draftLeadingCommand }),
+    ]
+
+    /// Which of those announced a change while the draft went from `before` to `after`.
+    private func draftPropertiesChanged(from before: String, to after: String) -> Set<String> {
+        let store = manualStore()
+        store.draft = before
+        let fired = Names()
+        for (name, read) in Self.draftProperties {
+            withObservationTracking { read(store) } onChange: { fired.insert(name) }
+        }
+        store.draft = after
+        return fired.value
+    }
+
+    @Test(arguments: [
+        ("hello", "hello world"), ("a", "ab"), ("fix /rev now", "fix /rev now and more"), ("/skill:debug fix", "/skill:debug fix the bug"),
+        ("/login ant", "/login anth"), ("/rev now", "/rev now please"), ("  indented", "  indented words"),
+    ])
+    func typingMoreProseChangesNoDraftProperty(_ before: String, _ after: String) {
+        #expect(draftPropertiesChanged(from: before, to: after).isEmpty)
+    }
+
+    /// The same reads do hear of a change in what they read.
+    @Test(arguments: [
+        ("", "a", ["draftHasText"]), ("hello", "", ["draftHasText"]), ("hello", "hello /rev", ["draftCommand"]),
+        ("/rev", "/revi", ["draftCommand"]), ("/rev", "/rev ", ["draftCommand", "draftLeadingCommand"]),
+        ("/skill", "/skill ", ["draftCommand", "draftLeadingCommand"]), ("/login ant", "/logout ant", ["draftLeadingCommand"]),
+    ] as [(String, String, Set<String>)])
+    func aChangeInAWordNotifiesTheReadersOfIt(_ before: String, _ after: String, _ names: Set<String>) {
+        #expect(draftPropertiesChanged(from: before, to: after) == names)
+    }
+
+    /// The command word is a token without its prefix, so one command is one value however long
+    /// the words before it are.
+    @Test(arguments: [
+        ("", false, nil, nil),
+        ("  \n", false, nil, nil),
+        ("\u{00A0}", false, nil, nil),
+        ("\u{200B}", false, nil, nil),
+        ("\u{200B}x\u{200B}", true, nil, nil),
+        ("hello", true, nil, nil),
+        ("/rev", true, ComposerCommandWord(sigil: "/", text: "rev", startsDraft: true), nil),
+        ("fix /rev", true, ComposerCommandWord(sigil: "/", text: "rev", startsDraft: false), nil),
+        ("fix /rev now", true, nil, nil),
+        ("$de", true, ComposerCommandWord(sigil: "$", text: "de", startsDraft: true), nil),
+        ("  /x", true, ComposerCommandWord(sigil: "/", text: "x", startsDraft: false), nil),
+        ("/skill:debug fix", true, nil, "skill:debug"),
+        ("/skill:debug fix /rev", true, ComposerCommandWord(sigil: "/", text: "rev", startsDraft: false), "skill:debug"),
+        ("/login ant", true, nil, "login"),
+        ("/LOGIN x", true, nil, "login"),
+        ("/login\nx", true, nil, nil),
+        ("/login", true, ComposerCommandWord(sigil: "/", text: "login", startsDraft: true), nil),
+        ("/" + String(repeating: "a", count: 65) + " x", true, nil, nil),
+        ("/" + String(repeating: "a", count: 64) + " x", true, nil, String(repeating: "a", count: 64)),
+    ] as [(String, Bool, ComposerCommandWord?, String?)])
+    func theDraftStateFollowsTheWords(_ draft: String, _ hasText: Bool, _ command: ComposerCommandWord?, _ leading: String?) {
+        let store = manualStore()
+        store.draft = draft
+        #expect(store.draftHasText == hasText)
+        #expect(hasText == !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "the table agrees with a trim")
+        #expect(store.draftCommand == command)
+        #expect(store.draftLeadingCommand == leading)
+        // Writing the words again, or other words, leaves nothing of the first draft behind.
+        store.draft = "other words"
+        store.draft = draft
+        #expect(store.draftHasText == hasText && store.draftCommand == command && store.draftLeadingCommand == leading)
+    }
+
+    /// `hasDraft` and the properties it reads equal what a trim and a walk over the whole draft say.
+    @Test func hasDraftMatchesTrimmingAndTheStatesMatchTheirScansOverEveryDraft() {
+        let store = manualStore()
+        var differing: [String] = []
+        for draft in ComposerCommandTokenTests.corpus {
+            store.draft = draft
+            let token = ComposerCommandToken.token(in: draft)
+            let word = token.map { ComposerCommandWord(sigil: $0.sigil, text: $0.text, startsDraft: $0.before.isEmpty) }
+            let trimmed = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if store.hasDraft != trimmed || store.draftCommand != word || store.draftLeadingCommand != ComposerLeadingCommand.of(draft) {
+                differing.append(draft)
+            }
+        }
+        #expect(differing.isEmpty, "differs for \(differing.count), first \(differing.prefix(5).map { String(reflecting: $0) })")
+    }
+
+    /// Files, references and page elements alone still make a message, whatever the words.
+    @Test func attachmentsMakeADraftWhateverTheWordsAre() {
+        let store = manualStore()
+        #expect(!store.hasDraft)
+        store.draft = " \n"
+        #expect(!store.hasDraft)
+        store.attach(files: [NativeAttachedFile(name: "A.html", path: "/drops/d1/A.html")])
+        #expect(store.hasDraft && !store.draftHasText)
+        store.draft = "words"
+        #expect(store.hasDraft && store.draftHasText)
+    }
+
     // MARK: What the chrome reads
 
     /// The chrome's properties (see `NativeThreadStore.session`) and how to read each.
@@ -2079,7 +2405,7 @@ struct NativeThreadStoreTests {
         ("thinking", { _ = $0.thinking }), ("stats", { _ = $0.stats }), ("supportedActions", { _ = $0.supportedActions }),
         ("clipNotice", { _ = $0.clipNotice }), ("running", { _ = $0.running }), ("hostRunning", { _ = $0.hostRunning }),
         ("showsThinking", { _ = $0.showsThinking }), ("userTurnCount", { _ = $0.userTurnCount }),
-        ("hasSubagents", { _ = $0.hasSubagents }),
+        ("hasSubagents", { _ = $0.hasSubagents }), ("hasLiveSubagents", { _ = $0.hasLiveSubagents }), ("hasTray", { _ = $0.hasTray }),
     ]
 
     /// Which chrome properties announced a change while `change` ran.
@@ -2121,7 +2447,10 @@ struct NativeThreadStoreTests {
             (["widgets"], { $0.widgets = [NativeThreadWidget(namespace: "x", key: "k", kind: .status, text: "on")] }),
             (["commands"], { $0.commands = [NativeCommand(name: "review")] }),
             (["clipNotice"], { $0.clips = NativeThreadClips(history: true); $0.clipped = true }),
-            (["hasSubagents"], { $0.subagents = [F.run("r")] }),
+            (["hasSubagents", "hasLiveSubagents", "hasTray"], { $0.subagents = [F.run("r")] }),
+            // A child's tool call moves its run; whether any run lives and whether the tray shows stay.
+            ([], { $0.subagents = [Self.working(F.run("r"), calls: 3)] }),
+            (["hasLiveSubagents", "hasTray"], { $0.subagents = [F.run("r", state: "complete")] }),
             (["userTurnCount"], { $0.messages += [F.assistant("Done.", id: "a"), F.user("next", id: "u2")] }),
             (["dialogs", "showsThinking"], { $0.dialogs = [NativeThreadDialog(id: "d", kind: .confirm, title: "Go?")] }),
             (["session"], { $0.generation = "g2" }),
@@ -2130,6 +2459,45 @@ struct NativeThreadStoreTests {
             let fired = await serve(edit)
             #expect(fired == expected, "step \(index)")
         }
+    }
+
+    private static func working(_ run: ChildRun, calls: Int) -> ChildRun {
+        var run = run
+        run.toolCalls = calls
+        run.lastActivity = ChildActivity(tool: "read", preview: "Sources/Step\(calls).swift", at: 1_000 + Double(calls))
+        return run
+    }
+
+    /// The composer docks the tray on `hasTray` and words Stop on `hasLiveSubagents`, so a child's
+    /// tool call (which moves the tray's rows and the runs) wakes neither; the tray's own reads do
+    /// hear of it. A run ending, the last one, does move `hasLiveSubagents`.
+    @Test func aChildsToolCallMovesTheTrayRowsAndNotWhetherTheTrayShows() async {
+        var opening = F.user("go", id: "u1")
+        opening.timestamp = 100
+        let start = F.run("worker", startedAt: 110)
+        let (store, host, task) = await started(F.snapshot(messages: [opening], subagents: [start]))
+        defer { task.cancel() }
+        #expect(store.hasTray && store.hasLiveSubagents)
+
+        let composer = Flag(), tray = Flag()
+        withObservationTracking { _ = store.hasTray; _ = store.hasLiveSubagents } onChange: { composer.set() }
+        withObservationTracking { _ = store.tray; _ = store.subagents } onChange: { tray.set() }
+        host.snapshot = F.snapshot(revision: 2, messages: [opening], subagents: [Self.working(start, calls: 5)])
+        await store.refresh()
+
+        #expect(store.tray?.rows.first?.line == .working(verb: "Read", subject: "Step5.swift", live: false))
+        #expect(tray.value, "the tray's rows hear of the call")
+        #expect(!composer.value, "the composer's reads do not")
+
+        withObservationTracking { _ = store.hasTray; _ = store.hasLiveSubagents } onChange: { composer.set() }
+        var done = Self.working(start, calls: 6)
+        done.state = "complete"
+        done.endedAt = 400
+        host.snapshot = F.snapshot(revision: 3, messages: [opening], subagents: [done])
+        await store.refresh()
+
+        #expect(!store.hasLiveSubagents && store.hasTray, "a finished run keeps the tray until the next message")
+        #expect(composer.value, "the last run ending changes what Stop says")
     }
 
     /// A thread far from the screen lets its history go and keeps the draft; shown again, it

@@ -46,22 +46,9 @@ final class MobileHost: Identifiable {
     @ObservationIgnored var onDesignChanged: ((DesignID, UInt64?, UInt64?) -> Void)?
     /// The host's design systems changed (`design.systems.v1`). Set by `HostDesignLibraries`.
     @ObservationIgnored var onDesignSystemsChanged: (() -> Void)?
-    /// The host's missions (`missions.v1`, while its Missions experiment is on): read on connect,
-    /// pulled again on each pushed hint.
-    let missions: RemoteMissions
-
     init(record: RemoteHostRecord) {
         id = record.id
         self.record = record
-        missions = RemoteMissions(hostID: record.id)
-    }
-
-    /// Points the missions at the connection (nil: none) and reads them while the host offers them.
-    fileprivate func connectMissions() {
-        let client = connectedClient
-        let available = client != nil && supports(RemoteProtocol.missionsCapability)
-        missions.connect(client.map { client in { try await client.mission($0) } }, available: available)
-        if available { Task { await missions.refresh() } }
     }
 
     var name: String { record.name }
@@ -85,15 +72,12 @@ final class MobileHost: Identifiable {
     }
 }
 
-// Lives beside the host (not with the missions' presentation) so the portable checks that
-// compile this file without ShepherdUI have it too.
+// Lives beside the host so the portable checks that compile this file without ShepherdUI
+// have it too.
 extension MobileHost {
-    /// The host offers missions now (`missions.v1`, its experiment on).
-    var servesMissions: Bool { missions.available }
-
-    /// The host's state as thread lists read it: without the agents its missions own (their threads
-    /// are the mission's). Home, the sidebar, Search, New thread and the widgets all list from this.
-    var threadState: ShepherdState { state.withoutAgents(missions.agentIDs) }
+    /// The host's state as thread lists read it. Home, the sidebar, Search, New thread and the
+    /// widgets all list from this.
+    var threadState: ShepherdState { state }
 }
 
 /// Every host the phone knows, each with its own `RemoteHostClient`, connected while the app is
@@ -416,7 +400,6 @@ final class MobileHosts {
         host.client = nil
         client?.disconnect()
         if host.session != nil { host.session = nil }
-        host.missions.connect(nil, available: false)
         // A connection ending (it dropped, or the app went to the background) is when the host
         // was last seen.
         if host.phase == .connected {
@@ -460,7 +443,6 @@ final class MobileHosts {
             MainActor.assumeIsolated {
                 guard let host, host.attempt == attempt, host.phase == .connected, host.capabilities != capabilities else { return }
                 host.capabilities = capabilities
-                host.connectMissions()
             }
         }
         client.onNativeThreadChanged = { [weak self, weak host] agentID in
@@ -479,18 +461,6 @@ final class MobileHosts {
             MainActor.assumeIsolated {
                 guard let host, host.attempt == attempt else { return }
                 host.onDesignSystemsChanged?()
-            }
-        }
-        client.onMissionChanged = { [weak host] mission, revision in
-            MainActor.assumeIsolated {
-                guard let host, host.attempt == attempt else { return }
-                host.missions.changed(mission, revision: revision)
-            }
-        }
-        client.onMissionLive = { [weak host] mission, live in
-            MainActor.assumeIsolated {
-                guard let host, host.attempt == attempt else { return }
-                host.missions.liveChanged(mission, live)
             }
         }
         client.onDisconnected = { [weak self, weak host] reason in
@@ -516,7 +486,6 @@ final class MobileHosts {
                     self?.persistFleetIDs()
                 }
                 host.set(.connected)
-                host.connectMissions()
                 host.backoff.reset()
                 if let self { self.offerOwnToken(host, over: client) }
                 self?.onHostConnected?(host)

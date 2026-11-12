@@ -1,12 +1,11 @@
 import Foundation
-import LocalAuthentication
 import UserNotifications
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// What a push's buttons do: Reply… and an option answer the question, Approve publishes the
-/// reviewed mission. The buttons themselves are `PushButtons`, shared with the content extension.
+/// What a push's buttons do: Reply… and an option answer the question. The buttons themselves
+/// are `PushButtons`, shared with the content extension.
 enum PushActions {
     /// What Reply…'s words answer: the option they name, else the words where the question takes
     /// words. Nil when this question can't be answered from a notification.
@@ -22,9 +21,7 @@ enum PushActions {
 
     /// Runs `action` on `payload`'s host. Throws `GlanceFailure` with the words to show.
     @MainActor
-    static func perform(_ action: String, text: String?, payload: PushPayload, hosts: MobileHosts,
-                        retryTarget: (mission: String, attempts: Int)? = nil,
-                        authenticate: () async throws -> Void = faceID) async throws {
+    static func perform(_ action: String, text: String?, payload: PushPayload, hosts: MobileHosts) async throws {
         guard let ref = payload.agentRef else { return }
         switch action {
         case PushButtons.reply:
@@ -37,39 +34,8 @@ enum PushActions {
                     dialogID: dialog.id, answer: answer))
                 if case .failure(_, let message) = result { throw GlanceFailure(message) }
             }
-        case PushButtons.approve:
-            guard let mission = payload.mission else { return }
-            try await authenticate()
-            try await hosts.withClient(ref.host) { client in
-                _ = try await client.mission(.action(missionID: MissionID(rawValue: mission.id), revision: mission.revision,
-                                                     action: .publish(fingerprint: mission.fingerprint)))
-            }
-        case PushButtons.retry:
-            guard let target = retryTarget else { throw GlanceFailure("Open the mission to retry this lane.") }
-            let hint = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !hint.isEmpty else { throw GlanceFailure("Type a hint to retry with.") }
-            try await hosts.withClient(ref.host) { client in
-                guard client.capabilities.contains(RemoteProtocol.missionsRetryLaneCapability) else {
-                    throw GlanceFailure("Update Shepherd on this Mac to retry from a notification.")
-                }
-                let id = MissionID(rawValue: target.mission)
-                // The revision is the mission's now; the stuck count the push showed is what the host checks.
-                guard case .mission(let mission, _) = try await client.mission(.get(missionID: id)) else { return }
-                _ = try await client.mission(.action(missionID: id, revision: mission.revision,
-                                                     action: .retryLane(attempts: target.attempts, hint: hint)))
-            }
         default:
             return
-        }
-    }
-
-    /// Face ID (or the passcode where there is none), asked even on an unlocked device.
-    static func faceID() async throws {
-        let context = LAContext()
-        do {
-            _ = try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Approve and start the merge train")
-        } catch {
-            throw GlanceFailure("Not approved: Face ID didn’t confirm it was you.")
         }
     }
 }

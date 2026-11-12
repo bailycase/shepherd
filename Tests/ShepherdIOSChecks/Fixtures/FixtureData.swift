@@ -61,8 +61,6 @@ struct FixtureHostData {
     /// Takes a change a tap-through check makes on purpose and answers it (recorded in `FixtureHost.accepted`);
     /// nil for any other request, which is refused as a mutation as always. nil: the host changes nothing.
     var accepts: (@Sendable (RemoteRequest) -> RemoteReply?)? = nil
-    /// The missions the host serves (`missions.v1`, its experiment on); nil: the experiment is off.
-    var missions: FixtureMissions? = nil
     /// Answers Issues & PRs' reads (`issuesAndPRs.v1`); nil: the host doesn't offer them. A read it
     /// answers nil for is refused as unsupported.
     var forge: (@Sendable (RemoteForgeRequest) -> RemoteForgeResult?)? = nil
@@ -74,11 +72,11 @@ struct FixtureHostData {
     /// The id this Mac says it has in a fleet (`helloOk.hostID`, offered while its Fleet is on).
     var fleetID: UUID? = nil
 
-    /// Everything this build knows, `designs.v1` only while the host has designs to serve,
-    /// `missions.v1` only while it has missions, and `issuesAndPRs.v1` only while it answers them.
+    /// Everything this build knows, `designs.v1` only while the host has designs to serve, and
+    /// `issuesAndPRs.v1` only while it answers them.
     var defaultCapabilities: [String] {
         RemoteProtocol.capabilities.filter {
-            (designs != nil || !RemoteProtocol.designCapabilities.contains($0)) && (missions != nil || $0 != RemoteProtocol.missionsCapability)
+            (designs != nil || !RemoteProtocol.designCapabilities.contains($0))
                 && (forge != nil || ($0 != RemoteProtocol.forgeCapability && $0 != RemoteProtocol.forgeBrowseCapability))
                 && (fleet != nil || $0 != RemoteProtocol.fleetViewCapability)
         }
@@ -213,7 +211,7 @@ enum FixtureData {
 @MainActor enum FixtureCatalog {
     static var all: [FixtureScreen] {
         home + thread + context + newThread + subagents + review + changes + commit + search + settings + hooks + automations + automationFlow + windows + terminal + clientState + duo + fleetScreens
-            + designs + designPad + designPadMarkup + designPages + browser + files + missions + ProjectFixtures.screens + hostConfig + freshness + forge + tailFrames
+            + designs + designPad + designPadMarkup + designPages + browser + files + ProjectFixtures.screens + hostConfig + freshness + forge + tailFrames
     }
 
     static func screen(named name: String) -> FixtureScreen? {

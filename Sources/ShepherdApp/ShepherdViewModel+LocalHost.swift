@@ -40,17 +40,18 @@ extension ShepherdViewModel {
         remoteHosts.onLocalDesignGitChanged = { [weak self] id in
             if self?.designGitStates[id] != nil { self?.refreshDesignGit(id) }
         }
-        remoteHosts.onLocalHostState = { [weak self] state in
+        remoteHosts.leavesQueuedLocalHostState = { [weak self] in self?.leavesQueuedHostState ?? false }
+        remoteHosts.onLocalHostState = { [weak self] state, newerQueued in
             guard let self else { return }
             let automations = self.state.automations.map(\.id)
-            self.adopt(state)
+            self.receiveLocalHostState(state, newerQueued: newerQueued)
             // The host's `automationsChanged` arrives before the state that moved it: an automation
             // that came or went reads the runs again against the state that has it.
             if self.state.automations.map(\.id) != automations { self.refreshAutomationTriggers() }
         }
         // An agent's notify: a click opens the thread here.
         remoteHosts.onLocalAgentNotify = { [weak self] agentID, title, body in
-            guard let self, let agent = self.state.agents.first(where: { $0.id == agentID }) else { return }
+            guard let self, let agent = self.latestState.agents.first(where: { $0.id == agentID }) else { return }
             self.notifications.post(AgentBanners.agentNotify(agent, title: title, body: body))
         }
         // A finished tool and the thread's rotation notice.
