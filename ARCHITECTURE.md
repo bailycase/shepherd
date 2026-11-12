@@ -123,7 +123,9 @@ decodes on a concurrent queue while its session holds its later records in order
 It never starts a server (`BackgroundHostClient`): it takes its host's workspace as its own over
 `host.sock` (`ShepherdViewModel+LocalHost`); every terminal is the host's (`HostTerminalLeaf`). A
 persistence task tail keeps user mutations ordered. If the host rejects a mutation, the view
-model adopts the host's state again.
+model adopts the host's state again. It adopts the newest of the host's pushes: one with a newer
+push already queued behind it (`RemoteHostClient.newerStateQueued`) is skipped, though its status
+changes still run their effects, and at least every 32nd push is adopted (`StateAdoption`).
 
 **Observation.** The view model and the app's stores (`NativeThreadStore`, `AppSettings`,
 `KeybindingsStore`, `ThemeManager`, `RemoteHostStore`, `AppUpdater`, the

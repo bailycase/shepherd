@@ -329,9 +329,9 @@ struct RemoteHost {
         return client
     }
 
-    func typed() async throws -> RemoteHostClient {
+    func typed(capabilities: [String] = RemoteProtocol.clientCapabilities) async throws -> RemoteHostClient {
         let client = RemoteHostClient()
-        _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "typed")
+        _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "typed", capabilities: capabilities)
         return client
     }
 }

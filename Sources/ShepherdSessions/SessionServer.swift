@@ -1986,7 +1986,13 @@ public final class SessionServer: @unchecked Sendable {
         if let sessionID = leaf.sessionID, let kept = keptStarts[sessionID], sessions[sessionID]?.isAlive != true {
             if !kept.retrying, let problem = kept.problem {
                 if case .snapshot = request {
-                    completion(.result(.snapshot(value: Self.startProblemSnapshot(problem, piSessionID: agent.effectivePiSessionID))))
+                    if previews {
+                        // A viewer that reads session files gets the conversation under the problem, so a
+                        // fresh store does not draw an empty thread.
+                        servePreviewSnapshot(agent: agent, cwd: leaf.cwd, startProblem: problem, completion: completion)
+                    } else {
+                        completion(.result(.snapshot(value: Self.startProblemSnapshot(problem, piSessionID: agent.effectivePiSessionID))))
+                    }
                 } else {
                     unavailable(problem.kind == .stopped ? "The agent stopped. Retry to start it again." : "pi stopped before it started.")
                 }
@@ -2119,12 +2125,12 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// What a kept start answers a snapshot with: the problem alone, with no history and no
-    /// actions, so an older client (which ignores the problem) shows a thread it cannot send to.
     /// Server queue: answers a snapshot for an agent whose pi is not running from pi's session file
     /// (`PiSessionPreview`), read off the queue; an agent with no file yet gets an empty thread.
     /// Marked `preview` with no actions: nothing a client can do with it reaches pi (`RemoteProtocol.nativeThreadPreviewCapability`).
-    private func servePreviewSnapshot(agent: Agent, cwd: String, completion: @escaping (NativeOutcome) -> Void) {
+    /// `startProblem`: why pi is not running, for an agent whose pi stopped (`keptStarts`); the client shows it under the history.
+    private func servePreviewSnapshot(agent: Agent, cwd: String, startProblem: NativeStartProblem? = nil,
+                                      completion: @escaping (NativeOutcome) -> Void) {
         let sessionID = agent.effectivePiSessionID
         let root = pi.sessionsRoot
         let origins = originStore.directory
@@ -2135,10 +2141,14 @@ public final class SessionServer: @unchecked Sendable {
                 ?? PiSessionPreview.empty(sessionID: sessionID, model: model, thinking: thinking)
             snapshot.preview = true
             snapshot.supportedActions = []
+            snapshot.startProblem = startProblem
             self?.queue.async { completion(.result(.snapshot(value: snapshot))) }
         }
     }
 
+    /// What a kept start answers a snapshot with for a client that does not read previews: the
+    /// problem alone, with no history and no actions, so an older client (which ignores the
+    /// problem) shows a thread it cannot send to.
     static func startProblemSnapshot(_ problem: NativeStartProblem, piSessionID: String) -> NativeThreadSnapshot {
         NativeThreadSnapshot(piSessionID: piSessionID, generation: startProblemGeneration, revision: 0, running: false,
                              supportedActions: [], dialogsSupported: false, dialogs: [], messages: [], provisional: [],

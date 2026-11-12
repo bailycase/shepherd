@@ -1618,6 +1618,10 @@ public final class NativeThreadStore {
             defer { Self.signposter.endInterval("Thread refresh", applying) }
             switch result {
             case .snapshot(let value) where value.startProblem != nil:
+                // A host that reads pi's session file for a stopped thread (`nativeThreadPreviewCapability`)
+                // sends its history with the problem. Nothing is woken: pi stopped, and Retry starts it. A
+                // store that drew pi's own history keeps it (`preview`).
+                if value.isPreview { preview(value) }
                 noteStartProblem(value.startProblem!)
             case .snapshot(let value) where value.isPreview:
                 // pi's session file, served without starting pi (`nativeThreadPreviewCapability`):
