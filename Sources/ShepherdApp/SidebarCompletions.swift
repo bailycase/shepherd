@@ -84,5 +84,6 @@ extension ShepherdViewModel {
             agentLives = agentLives.filter { live.contains($0.key) }
         }
         sidebarActivityLast = sidebarActivityLast.filter { live.contains($0.key) }
+        for id in sidebarActivityTail.keys where !live.contains(id) { forgetSidebarActivity(id) }
     }
 }
