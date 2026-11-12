@@ -77,6 +77,9 @@ public enum FleetDispatchCode {
     public static let snapshotTooLarge = "snapshot_too_large"
     public static let snapshotMismatch = "snapshot_mismatch"
     public static let snapshotFailed = "snapshot_failed"
+    /// The Mac that was to run the work couldn't clone the repository from its origin. The sender answers by sending the repository
+    /// itself (a bundle); only when that isn't possible, or fails too, does the dispatch end `repo_missing` with git's own error.
+    public static let cloneFailed = "clone_failed"
     /// The target refused with a code this build doesn't know (`failureDetail` holds it).
     public static let refused = "refused"
     public static let peerGone = "peer_gone"
@@ -97,6 +100,8 @@ public struct FleetPlacementReason: Codable, Hashable, Sendable {
         case localIneligible
         /// A peer scored higher but not by the margin, so the work stayed here.
         case keptLocal
+        /// The Mac it went to doesn't have the repository: it clones it first (`FleetPlacement.cloneMargin`).
+        case willClone
     }
 
     public var code: Code
@@ -109,6 +114,49 @@ public struct FleetPlacementReason: Codable, Hashable, Sendable {
         self.code = code
         self.skip = skip
         self.ratio = ratio
+    }
+}
+
+/// A repository being cloned onto the Mac that runs a dispatch, as that Mac reports it while the dispatch is `preparing`: the card
+/// "Cloning acme-web on Mac mini" (FleetStates) and the repo chip of that Mac's card on the Fleet page are drawn from it.
+public struct FleetCloneProgress: Codable, Hashable, Sendable {
+    /// The folder's name: "acme-web".
+    public var name: String
+    /// Where it comes from: the repo's key ("github.com/acme/acme-web"), or the Mac that sent it when origin couldn't be reached.
+    public var source: String
+    /// What git says it is doing, in its own words, lowercased: "receiving objects", "resolving deltas".
+    public var phase: String?
+    /// 0...1 through that phase; nil before git has said.
+    public var fraction: Double?
+    /// The clone is of a bundle the sending Mac made, because origin couldn't be reached from here.
+    public var viaBundle: Bool
+
+    public init(name: String, source: String, phase: String? = nil, fraction: Double? = nil, viaBundle: Bool = false) {
+        self.name = name
+        self.source = source
+        self.phase = phase
+        self.fraction = fraction
+        self.viaBundle = viaBundle
+    }
+
+    private enum CodingKeys: String, CodingKey { case name, source, phase, fraction, viaBundle }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        source = try c.decodeIfPresent(String.self, forKey: .source) ?? ""
+        phase = try c.decodeIfPresent(String.self, forKey: .phase)
+        fraction = try c.decodeIfPresent(Double.self, forKey: .fraction)
+        viaBundle = try c.decodeIfPresent(Bool.self, forKey: .viaBundle) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(name, forKey: .name)
+        try c.encode(source, forKey: .source)
+        try c.encodeIfPresent(phase, forKey: .phase)
+        try c.encodeIfPresent(fraction, forKey: .fraction)
+        if viaBundle { try c.encode(viaBundle, forKey: .viaBundle) }
     }
 }
 
@@ -142,6 +190,48 @@ public struct FleetBranchFacts: Codable, Hashable, Sendable {
 /// one: the sender's is what the Dispatches log and `fleet_read` show, the receiver's is the
 /// idempotency index (`id` to its thread), so a retried create returns the thread it already
 /// started. Decodes with defaults, so a file from an older build still loads.
+/// Where a thread the person started in New thread begins, as the form chose it: the same choice a local New thread makes, carried to the Mac
+/// that runs it so the thread starts exactly where it would have started here.
+public struct FleetThreadStart: Codable, Hashable, Sendable {
+    public enum Place: String, Codable, Sendable {
+        /// A new worktree from a base ref (the usual case). The thread doesn't see this Mac's uncommitted edits, as a local one wouldn't.
+        case newWorktree
+        /// A new worktree on a branch that exists: the branch's commit as this Mac has it.
+        case existingBranch
+        /// The space's own checkout, no worktree: it sees the checkout's edits, so they go with it as a snapshot.
+        case checkout
+    }
+
+    public var place: Place
+    /// `newWorktree`: the base ref the form picked or Settings ▸ Worktrees and the project's base resolved ("origin/main"); nil starts at the
+    /// checkout's HEAD.
+    public var base: String?
+    /// `existingBranch`: the branch ("feat/x" or "origin/x"). `newWorktree`: the name of the new branch when the form named one.
+    public var branch: String?
+
+    public init(place: Place = .newWorktree, base: String? = nil, branch: String? = nil) {
+        self.place = place
+        self.base = base
+        self.branch = branch
+    }
+
+    private enum CodingKeys: String, CodingKey { case place, base, branch }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        place = (try? c.decodeIfPresent(Place.self, forKey: .place)) ?? .newWorktree
+        base = try c.decodeIfPresent(String.self, forKey: .base)
+        branch = try c.decodeIfPresent(String.self, forKey: .branch)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(place, forKey: .place)
+        try c.encodeIfPresent(base, forKey: .base)
+        try c.encodeIfPresent(branch, forKey: .branch)
+    }
+}
+
 public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
     public enum Kind: String, Codable, Hashable, Sendable {
         /// A thread sent it.
@@ -191,6 +281,15 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
     public var snapshotFiles: Int?
     public var sendWarning: Bool
     public var fileMillis: Int?
+    /// The sending Mac's space the work belongs to, and its repository's origin (credentials removed): what a Mac that has no checkout
+    /// of the repo clones it from (slice 4f). Nil for a record from an older build.
+    public var spaceID: SpaceID?
+    public var origin: String?
+    /// While the Mac that runs it is cloning the repository for it (`preparing`): where that stands.
+    public var clone: FleetCloneProgress?
+    /// Where a thread the person started begins (the New thread form's workplace choice). Nil for a thread's dispatch, which starts at its commit
+    /// with the snapshot, and for a record from an older build.
+    public var start: FleetThreadStart?
     /// Epoch milliseconds.
     public var createdAt: Double
     public var updatedAt: Double
@@ -201,7 +300,9 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
                 repoKey: String, commitSHA: String? = nil, subdir: String? = nil, branch: String? = nil, model: String? = nil,
                 thinking: String? = nil, reasonCodes: [FleetPlacementReason] = [], remoteAgentID: AgentID? = nil, activity: String? = nil,
                 resultText: String? = nil, resultBranchFacts: FleetBranchFacts? = nil, snapshotBytes: UInt64? = nil, snapshotProgress: UInt64? = nil,
-                snapshotFiles: Int? = nil, sendWarning: Bool = false, fileMillis: Int? = nil, createdAt: Double, updatedAt: Double? = nil) {
+                snapshotFiles: Int? = nil, sendWarning: Bool = false, fileMillis: Int? = nil, spaceID: SpaceID? = nil, origin: String? = nil,
+                clone: FleetCloneProgress? = nil, start: FleetThreadStart? = nil, createdAt: Double, updatedAt: Double? = nil) {
+        self.start = start
         self.id = id
         self.kind = kind
         self.parentAgentID = parentAgentID
@@ -232,6 +333,9 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         self.snapshotFiles = snapshotFiles
         self.sendWarning = sendWarning
         self.fileMillis = fileMillis
+        self.spaceID = spaceID
+        self.origin = origin
+        self.clone = clone
         self.createdAt = createdAt
         self.updatedAt = updatedAt ?? createdAt
     }
@@ -241,6 +345,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         case failure, failureDetail, title, task, repoKey, commitSHA, subdir, branch, model, thinking, reasonCodes, remoteAgentID
         case activity, resultText, resultBranchFacts, createdAt, updatedAt
         case snapshotBytes, snapshotProgress, snapshotFiles, sendWarning, fileMillis
+        case spaceID, origin, clone, start
     }
 
     public init(from decoder: Decoder) throws {
@@ -276,6 +381,10 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         snapshotFiles = try c.decodeIfPresent(Int.self, forKey: .snapshotFiles)
         sendWarning = try c.decodeIfPresent(Bool.self, forKey: .sendWarning) ?? false
         fileMillis = try c.decodeIfPresent(Int.self, forKey: .fileMillis)
+        spaceID = try c.decodeIfPresent(SpaceID.self, forKey: .spaceID)
+        origin = try c.decodeIfPresent(String.self, forKey: .origin)
+        clone = try c.decodeIfPresent(FleetCloneProgress.self, forKey: .clone)
+        start = try c.decodeIfPresent(FleetThreadStart.self, forKey: .start)
         createdAt = try c.decodeIfPresent(Double.self, forKey: .createdAt) ?? 0
         updatedAt = try c.decodeIfPresent(Double.self, forKey: .updatedAt) ?? createdAt
     }
@@ -312,6 +421,10 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(snapshotFiles, forKey: .snapshotFiles)
         if sendWarning { try c.encode(sendWarning, forKey: .sendWarning) }
         try c.encodeIfPresent(fileMillis, forKey: .fileMillis)
+        try c.encodeIfPresent(spaceID, forKey: .spaceID)
+        try c.encodeIfPresent(origin, forKey: .origin)
+        try c.encodeIfPresent(clone, forKey: .clone)
+        try c.encodeIfPresent(start, forKey: .start)
         try c.encode(createdAt, forKey: .createdAt)
         try c.encode(updatedAt, forKey: .updatedAt)
     }

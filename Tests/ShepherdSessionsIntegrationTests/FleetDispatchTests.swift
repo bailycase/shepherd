@@ -58,17 +58,22 @@ struct FleetDispatchTests {
         let meter: FleetPressureIntegrationTests.Meter
         let clock = FleetPressureIntegrationTests.TestClock()
         let folder: URL
+        /// Where this Mac's clones go first (it isn't there until a test makes it).
+        let developer: URL
         let token: String
         let settings: Locked<HostSettings>
         var server: SessionServer { host.server }
         var peersFile: URL { host.dir.appendingPathComponent("fleet/peers.json") }
 
         /// `dir` and `port` restart a Mac over its own files. `repoKey: nil` is a Mac whose checkout isn't known by any key.
+        /// `checkout: false` is a Mac with no checkout of the repository and no space for it. A clone on a Mac goes under its own scratch
+        /// `Developer` folder (made by a test that wants it there), never the real one.
         init(_ name: String, origin: Origin, busy: UInt64 = 20, repoKey: String? = FleetDispatchTests.repoKey, dir: URL? = nil, port: UInt16 = 0,
-             sendWork: Bool = true, cap: Int = HostSettings.fleetThreadCapDefault) async throws {
+             sendWork: Bool = true, cap: Int = HostSettings.fleetThreadCapDefault, checkout: Bool = true,
+             uncommitted: FleetUncommittedChanges = .sendThem) async throws {
             self.name = name
             meter = FleetPressureIntegrationTests.Meter(busy: busy)
-            settings = Locked(HostSettings(fleetThreadsCanSend: sendWork, fleetThreadCap: cap))
+            settings = Locked(HostSettings(fleetThreadsCanSend: sendWork, fleetThreadCap: cap, fleetUncommitted: uncommitted))
             let scratch = try dir ?? makeScratchDirectory("dispatch")
             let host = try ScratchServer(dir: scratch)
             let server = host.server
@@ -80,7 +85,9 @@ struct FleetDispatchTests {
             })
             let folder = scratch.appendingPathComponent("web", isDirectory: true)
             self.folder = folder
-            if !FileManager.default.fileExists(atPath: folder.path) {
+            developer = scratch.appendingPathComponent("Developer", isDirectory: true)
+            server.configureFleetClones(developerFolder: developer)
+            if checkout, !FileManager.default.fileExists(atPath: folder.path) {
                 try git(["clone", "-q", origin.url.path, folder.path], in: scratch)
                 try git(["config", "user.name", "Shepherd Tests"], in: folder)
                 try git(["config", "user.email", "tests@example.com"], in: folder)
@@ -219,11 +226,12 @@ struct FleetDispatchTests {
     /// Two paired Macs sharing an origin, each holding what the other reported (the repo, its load).
     static func pair(busyA: UInt64 = 20, busyB: UInt64 = 20, sendWork: Bool = true, cap: Int = HostSettings.fleetThreadCapDefault,
                      originExtra: [String: String] = [:], repoKeyB: String? = repoKey,
-                     originOfB: ((Origin) throws -> Origin)? = nil) async throws -> (a: Mac, b: Mac, origin: Origin) {
+                     originOfB: ((Origin) throws -> Origin)? = nil, checkoutB: Bool = true,
+                     uncommittedA: FleetUncommittedChanges = .sendThem) async throws -> (a: Mac, b: Mac, origin: Origin) {
         try StubPi.installAsEngine()
         let origin = try makeOrigin(extra: originExtra)
-        let a = try await Mac("MacBook Pro", origin: origin, busy: busyA, sendWork: sendWork, cap: cap)
-        let b = try await Mac("Mac mini", origin: try originOfB?(origin) ?? origin, busy: busyB, repoKey: repoKeyB, sendWork: sendWork)
+        let a = try await Mac("MacBook Pro", origin: origin, busy: busyA, sendWork: sendWork, cap: cap, uncommitted: uncommittedA)
+        let b = try await Mac("Mac mini", origin: try originOfB?(origin) ?? origin, busy: busyB, repoKey: repoKeyB, sendWork: sendWork, checkout: checkoutB)
         try await a.pair(with: b)
         try await waitForReports(a, b)
         return (a, b, origin)
@@ -492,13 +500,17 @@ struct FleetDispatchTests {
 
     // MARK: Refusals with codes
 
-    @Test func aMacWithoutTheRepoIsRefusedWhenNamedAndNeverRerouted() async throws {
+    @Test func aNamedMacWithoutTheRepoIsNeverRefusedForItAndNeverReroutedItClonesIt() async throws {
+        // Mac mini holds another repository's checkout under this space; it has none of acme/web, so it clones it (slice 4f).
         let (a, b, _) = try await Self.pair(repoKeyB: "github.com/acme/other")
         defer { a.stop(); b.stop() }
         let parent = try await a.parent()
         try parent.hello()
-        guard case .error(_, FleetDispatchCode.repoMissing, _) = try await parent.dispatch(key: "named", host: "Mac mini") else { Issue.record("named Mac without the repo accepted"); return }
-        #expect(a.sent().first?.state == .failed && a.sent().first?.failure == FleetDispatchCode.repoMissing && b.dispatched.isEmpty)
+        let info = try parent.info(try await parent.dispatch(key: "named", host: "Mac mini"))
+        #expect(info.host == "Mac mini")
+        try await Self.wait("Mac mini to run the dispatched thread") { !b.dispatched.isEmpty }
+        #expect(a.sent().first?.failure == nil)
+        #expect(b.server.state.spaces.contains { $0.repoKey == Self.repoKey } && b.server.state.spaces.contains { $0.repoKey == "github.com/acme/other" })
     }
 
     @Test func aReceiverThatLacksTheRepoOrHasItTwiceRefusesWithTheCode() async throws {

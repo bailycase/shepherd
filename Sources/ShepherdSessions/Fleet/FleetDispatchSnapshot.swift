@@ -17,15 +17,22 @@ extension FleetDispatch {
 
     // MARK: Sender
 
-    /// Whether this dispatch carries a snapshot: one a thread sent from a checkout, with the setting on.
+    /// Whether this dispatch carries a snapshot: one sent from a checkout (a thread's, or the space's for a thread the person started), with the
+    /// setting on.
     func wantsSnapshot(_ record: FleetDispatchRecord) -> Bool {
-        record.kind == .agentDispatch && record.commitSHA != nil && pins[record.id] != nil && indexService != nil
+        // A thread the person started carries the checkout's edits only when it starts in the checkout; on a base or a branch it starts clean.
+        (record.kind == .agentDispatch || record.start?.place == .checkout) && record.commitSHA != nil && pins[record.id] != nil && indexService != nil
             && (host.settings()?.fleetUncommitted ?? .sendThem) == .sendThem
     }
 
     /// Works out `id`'s snapshot off the queue (from the warm index when this host has one for the checkout, else from a scan of
     /// it) and keeps it for the transfer and for a resend. `done` runs on the queue.
     func buildSnapshot(_ id: UUID, done: @escaping (Result<Void, FleetDispatchRefusal>) -> Void) {
+        // The target has no checkout and couldn't clone one, and this dispatch carries no edits (the setting leaves them behind): the
+        // repository is the whole transfer.
+        if let record = outbound[id], repoBundles.contains(id), !wantsSnapshot(record), let pin = pins[id], let commit = record.commitSHA {
+            return buildRepositoryOnly(id, root: pin.root, commit: commit, rev: incrementalBundles.contains(id) ? pin.rev : nil, done: done)
+        }
         guard let record = outbound[id], let pin = pins[id], let service = indexService, let target = record.targetHostID, let commit = record.commitSHA else {
             return done(.failure(.init(code: FleetDispatchCode.snapshotFailed, message: "There is no checkout to send.", detail: "no checkout")))
         }
@@ -34,12 +41,14 @@ extension FleetDispatch {
         let source = service.snapshotSource(folder: pin.root)
         let held = target == hostID ? service.localManifest(repo: record.repoKey) : service.manifest(of: target, repo: record.repoKey)
         let state = host.state()
-        let spaceID = record.parentAgentID.flatMap { agent in state.agents.first { $0.id == agent }?.spaceID }
+        let spaceID = record.spaceID ?? record.parentAgentID.flatMap { agent in state.agents.first { $0.id == agent }?.spaceID }
         let excludes = spaceID.flatMap { host.settings()?.fleetSnapshotExcludes[FleetSnapshotExcludes.settingKey(spaceID: $0.rawValue)] } ?? FleetSnapshotExcludes()
         let outgoing = directory.appendingPathComponent("outgoing", isDirectory: true)
         let classifier = service.classifier
         let caps = self.caps
         let began = ContinuousClock.now
+        // The target couldn't clone the repository: this snapshot carries the repository itself.
+        let wholeRepository = repoBundles.contains(id)
         Task.detached { [weak self] in
             var temporary: FleetContentIndex?
             let index: FleetContentIndex
@@ -63,7 +72,7 @@ extension FleetDispatch {
             defer { if let temporary { temporary.requestStop(); temporary.queue.sync { temporary.erase() } } }
             do {
                 let sender = FleetSnapshotSender(index: index, root: pin.root, commit: commit, target: held, directory: outgoing, warnAbove: caps.warn, refuseAbove: caps.refuse)
-                let built = try sender.build(id: id, unpushed: pin.unpushed)
+                let built = try sender.build(id: id, unpushed: pin.unpushed, wholeRepository: wholeRepository)
                 let millis = Int((ContinuousClock.now - began) / .milliseconds(1))
                 self?.queue.async { self?.timings[id] = (millis, 0); self?.snapshotBuilt(id, built, done: done) }
             } catch let failure as FleetSnapshotSender.Failure {
@@ -121,6 +130,44 @@ extension FleetDispatch {
         if let built = snapshots.removeValue(forKey: id), let bundle = built.bundle { try? FileManager.default.removeItem(at: bundle.url) }
         pins[id] = nil
         transferring.remove(id)
+        repoBundles.remove(id)
+        incrementalBundles.remove(id)
+        awaitingRepository.remove(id)
+    }
+
+    /// Whether the target can be sent the repository itself: this Mac still holds the checkout the dispatch was pinned at, and it hasn't
+    /// been tried already. Whatever the dispatch carries (edits or nothing), the repository goes as a transfer of its own.
+    func canSendRepository(_ record: FleetDispatchRecord) -> Bool {
+        !repoBundles.contains(record.id) && record.commitSHA != nil && pins[record.id] != nil
+    }
+
+    /// Makes the transfer that is only the repository (`FleetSnapshotSender.repositoryOnly`), off the queue.
+    private func buildRepositoryOnly(_ id: UUID, root: String, commit: String, rev: String?, done: @escaping (Result<Void, FleetDispatchRefusal>) -> Void) {
+        let outgoing = directory.appendingPathComponent("outgoing", isDirectory: true)
+        let caps = self.caps
+        Task.detached { [weak self] in
+            do {
+                let built = try FleetSnapshotSender.repositoryOnly(id: id, root: root, commit: commit, rev: rev, directory: outgoing, warnAbove: caps.warn, refuseAbove: caps.refuse)
+                self?.queue.async { self?.snapshotBuilt(id, built, done: done) }
+            } catch let FleetSnapshotSender.Failure.tooLarge(bytes, biggest) {
+                let refusal = FleetDispatchRefusal(code: FleetDispatchCode.snapshotTooLarge,
+                                                   message: "This repository is \(FleetSnapshotSizes.text(bytes)) to send, over the \(FleetSnapshotSizes.text(FleetSnapshotCap.refuseAbove)) limit.",
+                                                   detail: ([String(bytes)] + biggest).joined(separator: ";"))
+                self?.queue.async { done(.failure(refusal)) }
+            } catch {
+                self?.queue.async { done(.failure(.init(code: FleetDispatchCode.repoMissing, message: "Couldn't bundle the repository to send it.", detail: String(describing: error).prefix(160).description))) }
+            }
+        }
+    }
+
+    /// The target couldn't clone the repository from origin: its create is sent again carrying a bundle of every ref, which it clones from.
+    /// A new snapshot is made (the old one's bundle held only the unpushed commits), and the target replaces its failed attempt with it.
+    func sendRepository(_ id: UUID, incremental: Bool = false) {
+        guard outbound[id]?.state == .preparing, !sending.contains(id), repoBundles.insert(id).inserted else { return }
+        if incremental { incrementalBundles.insert(id) }
+        if let old = snapshots.removeValue(forKey: id), let bundle = old.bundle { try? FileManager.default.removeItem(at: bundle.url) }
+        transferring.remove(id)
+        send(id, completion: nil)
     }
 
     private func snapshotLink(id: UUID, target: UUID) -> SnapshotLink? {
@@ -229,6 +276,29 @@ extension FleetDispatch {
         if now - progressSavedAt > 500 { progressSavedAt = now; save() } else { onChange?() }
     }
 
+    /// Reads the target's record of `id` and takes what it says (`merge`); a target that can't be asked leaves the dispatch as it is for
+    /// `reconcile` to settle.
+    private func askTarget(_ id: UUID, _ target: UUID) {
+        let take: @Sendable (Result<FleetDispatchRecord, Error>) -> Void = { [weak self] result in
+            self?.queue.async {
+                guard let self, var record = self.outbound[id], record.state == .preparing, case .success(let theirs) = result else { return }
+                self.merge(theirs, into: &record)
+                self.outbound[id] = record
+                self.save()
+            }
+        }
+        if target == hostID {
+            control(id, .status, from: hostID) { result in
+                switch result {
+                case .success(let theirs): take(.success(theirs))
+                case .failure(let refusal): take(.failure(RemoteHostClientError.rejected(code: refusal.code, message: refusal.message)))
+                }
+            }
+        } else if let link = client(target) {
+            Task { do { take(.success(try await link.fleetDispatchControl(id, .status))) } catch { take(.failure(error)) } }
+        }
+    }
+
     private func transferFailed(_ id: UUID, _ error: Error) {
         transferring.remove(id)
         guard var record = outbound[id], record.state == .preparing else { return }
@@ -242,6 +312,11 @@ extension FleetDispatch {
                 outbound[id] = record
                 save()
                 return scheduleEvaluation()
+            }
+            // The target stopped waiting for the snapshot because it ended the dispatch itself (a clone that failed, a worktree that
+            // didn't check out): its own record says how, and that is what this one takes, never a guess from the refusal.
+            if rejected == FleetDispatchProtocol.Code.unknownDispatch, let target = record.targetHostID {
+                return askTarget(id, target)
             }
             code = [FleetDispatchCode.snapshotMismatch, FleetDispatchCode.commitUnreachable, FleetDispatchCode.repoMissing, FleetDispatchCode.repoAmbiguous,
                     FleetDispatchCode.snapshotFailed, FleetDispatchCode.snapshotTooLarge].contains(rejected) ? rejected : FleetDispatchCode.snapshotFailed
@@ -345,6 +420,12 @@ extension FleetDispatch {
         func bad(_ detail: String) -> Result<(FleetSnapshotManifest, [FleetHash]), FleetSnapshotApply.Failure> {
             .failure(.init(code: FleetDispatchCode.snapshotMismatch, detail: detail))
         }
+        // Only the repository comes: no manifest to check, and the bundle is the one content it lacks.
+        if header.repoOnly {
+            var needs: [FleetHash] = []
+            if let bundle = header.bundle { if blobs.has(bundle.hash) { blobs.touch(bundle.hash) } else { needs.append(bundle.hash) } }
+            return .success((FleetSnapshotManifest(commit: header.commit, rootHash: header.rootHash), needs))
+        }
         let ordered = parts.keys.sorted().compactMap { parts[$0] }
         let manifest = FleetSnapshotManifest(commit: header.commit, files: ordered.flatMap(\.files), directories: ordered.flatMap(\.directories),
                                              deletions: ordered.flatMap(\.deletions), rootHash: header.rootHash)
@@ -416,12 +497,22 @@ extension FleetDispatch {
         }
     }
 
-    /// Everything is in: build the worktree (once).
+    /// Everything is in: build the worktree (once). With no checkout of the repository yet it waits for one: a clone that is running
+    /// finishes it (`acquired`), and when the repository came in the snapshot (a bundle) the clone is made now.
     func startBuild(_ id: UUID) {
         guard let snap = snapshotsIn[id], !snap.building, inbound[id]?.record.state == .preparing else { return }
+        guard let space = snap.space else {
+            if snap.lookedUp, snap.header.repoBundle, let bundle = snap.header.bundle {
+                snap.building = true
+                cloneBundle(id, snap, bundle)
+            } else {
+                snap.pendingBuild = true
+            }
+            return
+        }
         snap.building = true
         snap.mark("arrived")
-        prepare(id, space: snap.space, requestedBranch: snap.requestedBranch)
+        prepare(id, space: space, requestedBranch: snap.requestedBranch)
     }
 
     /// Fleet is on and the spaces may have changed: each repository's spare is brought to its base tip in the background.

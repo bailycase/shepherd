@@ -72,7 +72,7 @@ struct FleetDispatchPresentationTests {
     }
 
     @Test(arguments: [
-        (FleetDispatchCode.repoMissing, "The mini doesn't have payments-api. Clone it there, or run this here."),
+        (FleetDispatchCode.repoMissing, "The mini doesn't have payments-api and couldn't clone it. Run this here, or try again once it can."),
         (FleetDispatchCode.noSuchHost, "No Mac named that is in the fleet."),
         (FleetDispatchCode.peerGone, "The mini stopped answering and doesn't know this dispatch. Run it again, or run it here."),
         ("a_newer_code", "It wasn't sent."),
@@ -186,9 +186,9 @@ struct FleetDispatchPresentationTests {
     }
 
     static func picker(_ pick: FleetPlacePick? = nil, snapshot: FleetSnapshot = FleetDispatchPresentationTests.withOrders(), auto: Bool = true,
-                       repoKey: String? = FleetDispatchPresentationTests.orders) -> FleetWherePicker {
+                       repoKey: String? = FleetDispatchPresentationTests.orders, base: String? = "origin/main", checkout: Bool = false) -> FleetWherePicker {
         FleetWherePicker.make(snapshot: snapshot, pick: pick, repoKey: repoKey, repoName: "orders-svc", autoDispatch: auto, weight: { _ in .normal },
-                              locale: P.en, calendar: P.utc)
+                              baseBranch: base, startsInCheckout: checkout, locale: P.en, calendar: P.utc)
     }
 
     @Test func autoNamesTheMacWithTheMostRoomAndTheRepoLine() {
@@ -197,8 +197,12 @@ struct FleetDispatchPresentationTests {
         #expect(picker.options.map(\.name) == ["Auto", "Mac mini", "This Mac", "Mac Studio"], "ranked by room, Auto first")
         #expect(picker.options.first?.chosen == true)
         #expect(picker.options.first { $0.name == "Mac Studio" }?.roomWord == "asleep")
-        #expect(picker.note?.hasPrefix("Runs on Mac mini in a new worktree") == true)
-        #expect(picker.footnote == "orders-svc is checked out on This Mac and Mac mini. Mac Studio doesn't have it.")
+        #expect(picker.note == "Runs on Mac mini in a new worktree from origin/main. It shows in your sidebar like any thread.")
+        // A project that starts in its own checkout says so; one with no base of its own says "its base branch".
+        #expect(Self.picker(checkout: true).note?.hasPrefix("Runs on Mac mini in a new worktree from this Mac's checkout.") == true)
+        #expect(Self.picker(base: nil).note?.hasPrefix("Runs on Mac mini in a new worktree from its base branch.") == true)
+        #expect(Self.picker(base: "feat/orders-import").note?.hasPrefix("Runs on Mac mini in a new worktree from feat/orders-import.") == true)
+        #expect(picker.footnote == "orders-svc is checked out on This Mac and Mac mini. Mac Studio would clone it first.")
     }
 
     @Test func autoOffStartsOnThisMacAndASleepingMacWaits() {
@@ -214,6 +218,6 @@ struct FleetDispatchPresentationTests {
         var alone = P.snapshot()
         alone.peers = []
         #expect(Self.picker(snapshot: alone).options.isEmpty && !Self.picker(snapshot: alone).dispatches)
-        #expect(Self.picker(repoKey: nil).footnote == "orders-svc has no origin remote, so no other Mac can find it.")
+        #expect(Self.picker(repoKey: nil).footnote == "orders-svc isn't a git repository with commits, so no other Mac can find it.")
     }
 }

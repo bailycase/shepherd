@@ -69,6 +69,8 @@ public struct FleetMacCard: Identifiable, Equatable, Sendable {
     public var note: String?
     public var weight: FleetSendWeight
     public var repos: [String]
+    /// Repositories this Mac is cloning right now for work sent to it (slice 4f), by folder name: chips beside `repos`.
+    public var cloning: [String] = []
     /// Retry: try the link again now.
     public var canRetry: Bool
     /// What a compact row says of the power: "battery 41%", "plugged in", with "warm" or "hot" after it
@@ -261,6 +263,11 @@ public enum FleetPagePresentation {
                               batteryCountsHalf: batteryCountsHalf, locale: locale, calendar: calendar))
         }
 
+        for index in cards.indices {
+            let id = cards[index].id
+            cards[index].cloning = Array(Set(snapshot.dispatches.filter { $0.state == .preparing && $0.targetHostID == id }.compactMap { $0.clone?.name })).sorted()
+        }
+
         let winner = FleetRoom.nextGoesTo(zip(entries, scores).map { FleetRoom.Candidate(id: $0.0.id, score: $0.1) }, local: thisID)
         let working = entries.compactMap { $0.sample?.activeAgents }.reduce(0, +)
         let asleep = cards.filter { $0.status == .asleep }
@@ -291,7 +298,7 @@ public enum FleetPagePresentation {
         case .placing: ("Placing", .tertiary)
         case .waitingRoom, .waitingWake: ("Waiting", .tertiary)
         case .heldLimit, .heldRestart: ("Held", .warn)
-        case .preparing: ("Preparing", .active)
+        case .preparing: (record.clone == nil ? "Preparing" : "Cloning", .active)
         case .running: ("Working", .active)
         case .delivering: ("Delivering", .active)
         case .done: ("Done", .good)
@@ -338,7 +345,8 @@ public enum FleetPagePresentation {
     private static func failureWords(_ code: String?, detail: String?) -> String {
         let words: String
         switch code {
-        case FleetDispatchCode.repoMissing: words = "That Mac doesn't have this repository"
+        case FleetDispatchCode.repoMissing: words = "That Mac doesn't have this repository and couldn't clone it"
+        case FleetDispatchCode.cloneFailed: words = "That Mac couldn't clone this repository"
         case FleetDispatchCode.repoAmbiguous: words = "That Mac has this repository more than once"
         case FleetDispatchCode.commitUnreachable: words = "That Mac can't fetch this commit from origin"
         case FleetDispatchCode.hostNotReady: words = "That Mac lacks something the thread needs"

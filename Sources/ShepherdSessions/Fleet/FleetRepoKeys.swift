@@ -34,7 +34,7 @@ final class FleetRepoKeys: @unchecked Sendable {
         return gitDir.appendingPathComponent("config")
     }
 
-    private static func stamp(of config: URL?) -> String {
+    static func stamp(of config: URL?) -> String {
         guard let config, let attributes = try? FileManager.default.attributesOfItem(atPath: config.path),
               let modified = attributes[.modificationDate] as? Date, let size = attributes[.size] as? NSNumber else { return "none" }
         return "\(Int64(modified.timeIntervalSince1970 * 1000)):\(size)"
@@ -49,6 +49,16 @@ final class FleetRepoKeys: @unchecked Sendable {
         return CanonicalRepoKey(remote: String(decoding: result.output, as: UTF8.self))?.value
     }
 
+    /// A checkout with no origin, by its first commit (`CanonicalRepoKey.local`); nil when there is none to name it (no commits yet).
+    static func localKey(folder: String) -> String? {
+        guard let result = try? BoundedCommand.run(["/usr/bin/git", "-C", folder, "rev-list", "--max-parents=0", "HEAD"],
+                                                   environment: ProcessInfo.processInfo.environment.merging(["GIT_TERMINAL_PROMPT": "0"]) { $1 }, timeout: 15),
+              result.status == 0 else { return nil }
+        // A repository can have several root commits: the smallest names it, the same on every Mac.
+        let roots = String(decoding: result.output, as: UTF8.self).split(separator: "\n").map(String.init).sorted()
+        return roots.first.flatMap { CanonicalRepoKey.local(rootCommit: $0) }
+    }
+
     /// What changed: each space whose checkout's config is not as it was when last looked at, with
     /// its key now (nil: none). A space never looked at that already has a key (one a fleet gave it)
     /// keeps it. Blocks on git for the spaces that changed: call it off the server queue.
@@ -60,10 +70,14 @@ final class FleetRepoKeys: @unchecked Sendable {
             let stamp = Self.stamp(of: Self.configFile(folder: path))
             let before = lock.withLock { stamps[space.id.rawValue] }
             guard before != stamp else { continue }
-            let key = stamp == "none" ? nil : Self.key(folder: path)
+            // A checkout with no origin (or one that is a path on a disk) is named by its first commit, so it is still a repository the fleet can
+            // find and send.
+            let key = stamp == "none" ? nil : Self.key(folder: path) ?? Self.localKey(folder: path)
             lock.withLock { stamps[space.id.rawValue] = stamp }
             saved = true
             if before == nil, space.key != nil { continue }
+            // A space a dispatch made from a repository with no origin keeps the key that names it.
+            if key == nil, let kept = space.key, CanonicalRepoKey.isLocal(kept) { continue }
             if key != space.key { changes[space.id] = key }
         }
         if saved { save() }

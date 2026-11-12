@@ -28,25 +28,71 @@ extension FleetDispatch {
         if let requested, requested.lowercased() == hostName().lowercased() || requested.lowercased() == hostID.uuidString.lowercased() {
             return reply(.success(nil))
         }
-        guard let space = host.state().spaces.first(where: { $0.id == thread.spaceID }), let repoKey = space.repoKey else {
-            // A folder with no origin has no key another Mac could find it by: Auto keeps it here, a named Mac is refused.
-            return requested == nil ? reply(.success(nil))
-                : reply(.failure(.init(code: FleetDispatchCode.repoMissing, message: "This space has no origin remote, so no other Mac can find its repository.")))
+        // A space that isn't one of this Mac's, or whose folder is no repository another Mac could find, stays here when Auto chose it and is
+        // refused when a Mac was named.
+        func unsendable(_ message: String) {
+            if requested == nil { reply(.success(nil)) } else { reply(.failure(.init(code: FleetDispatchCode.repoMissing, message: message))) }
         }
+        guard let space = host.state().spaces.first(where: { $0.id == thread.spaceID }) else {
+            return unsendable("This space is gone.")
+        }
+        // Where it begins is what the same form would have done here: a new worktree from a base (the project's, when the form says nothing), a
+        // new worktree on a branch that exists, or the space's own checkout.
+        let start = thread.start ?? FleetThreadStart(place: .newWorktree, base: space.worktreeBase?.fleetNonEmpty)
         var record = FleetDispatchRecord(
             id: id, kind: .userThread, parentHostID: hostID, parentHostName: hostName(), requestedHost: requested, state: .placing,
-            title: Self.title(thread.title, task: task), task: task, repoKey: repoKey, model: thread.model?.fleetNonEmpty,
-            thinking: thread.thinking?.fleetNonEmpty, createdAt: now)
+            title: Self.title(thread.title, task: task), task: task, repoKey: space.repoKey ?? "", model: thread.model?.fleetNonEmpty,
+            thinking: thread.thinking?.fleetNonEmpty, spaceID: space.id, start: start, createdAt: now)
         record.updatedAt = record.createdAt
         outbound[id] = record
         firstPlacements.insert(id)
         save()
-        place(id) { [weak self] result in
-            self?.firstPlacements.remove(id)
-            switch result {
-            case .success(let record): reply(.success(record.summary))
-            case .failure(let refusal) where refusal.code == Self.keptHere: reply(.success(nil))
-            case .failure(let refusal): reply(.failure(refusal))
+        // The commit it starts at is pinned: the base's, the branch's, or the checkout's HEAD; only the last carries the checkout's edits,
+        // unpushed commits and ignored files as a snapshot (a local thread there would see them; one on a base or a branch would not). The pin,
+        // the origin and the key are read off the queue (git runs).
+        let folder = (space.path as NSString).expandingTildeInPath
+        let known = space.repoKey
+        let prefetching = start.place == .checkout && indexService != nil && (host.settings()?.fleetUncommitted ?? .sendThem) == .sendThem
+        Task.detached { [weak self] in
+            var rev = "HEAD"
+            switch start.place {
+            case .checkout: break
+            case .newWorktree: rev = start.base?.fleetNonEmpty ?? "HEAD"
+            case .existingBranch:
+                let name = start.branch?.fleetNonEmpty ?? ""
+                let remote = name.hasPrefix("origin/")
+                let candidates = remote ? ["refs/remotes/" + name] : ["refs/heads/" + name, "refs/remotes/origin/" + name]
+                rev = candidates.first { FleetDispatchGit.run(["show-ref", "--verify", "--quiet", $0], in: folder)?.status == 0 } ?? name
+            }
+            let pinned = FleetDispatchGit.pin(cwd: folder, rev: rev, prefetchingTree: prefetching)
+            let origin = FleetDispatchGit.origin(cwd: folder)
+            // A repository with no origin is named by its first commit: another Mac can't clone it, so it is sent the repository itself.
+            let key = known ?? FleetRepoKeys.localKey(folder: folder)
+            self?.queue.async {
+                guard let self, self.outbound[id] != nil else { return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "No such dispatch."))) }
+                guard let key, case .success(let pin) = pinned else {
+                    self.outbound[id] = nil
+                    self.firstPlacements.remove(id)
+                    self.save()
+                    if case .failure(.unknownRevision) = pinned {
+                        return unsendable("\(start.place == .existingBranch ? start.branch ?? "That branch" : start.base ?? "That base") isn't in this Mac's checkout.")
+                    }
+                    return unsendable("This space's folder isn't a git repository with commits, so no other Mac can find it.")
+                }
+                self.pins[id] = pin
+                self.outbound[id]?.repoKey = key
+                self.outbound[id]?.commitSHA = pin.sha
+                if start.place == .checkout { self.outbound[id]?.subdir = pin.subdir }
+                self.outbound[id]?.origin = origin
+                self.save()
+                self.place(id) { [weak self] result in
+                    self?.firstPlacements.remove(id)
+                    switch result {
+                    case .success(let record): reply(.success(record.summary))
+                    case .failure(let refusal) where refusal.code == Self.keptHere: reply(.success(nil))
+                    case .failure(let refusal): reply(.failure(refusal))
+                    }
+                }
             }
         }
     }

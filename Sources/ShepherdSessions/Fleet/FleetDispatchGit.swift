@@ -23,27 +23,33 @@ enum FleetDispatchGit {
         var subdir: String?
         var root: String
         var unpushed: Bool
+        /// What was pinned: "HEAD", or the base or branch a thread the person started begins at (a bundle of its unpushed commits names it).
+        var rev: String = "HEAD"
     }
 
     enum PinFailure: Error, Equatable {
         case notARepository
+        /// The base or branch asked for isn't in this checkout.
+        case unknownRevision
     }
 
     /// The commit `cwd`'s checkout is at. Edits, untracked and ignored files and unpushed commits don't hold it back: they go in the
     /// snapshot (`FleetSnapshotSender`). The checkout's top and HEAD come from one git call, and the unpushed check runs beside it;
     /// `prefetchingTree` starts listing the commit's tree the moment it is known, so the snapshot finds it when it is built.
-    static func pin(cwd: String, prefetchingTree: Bool = false) -> Result<Pin, PinFailure> {
+    static func pin(cwd: String, rev: String = "HEAD", prefetchingTree: Bool = false) -> Result<Pin, PinFailure> {
         let unpushedGroup = DispatchGroup()
         let unpushedResult = OSAllocatedUnfairLock<(status: Int32, output: String)?>(initialState: nil)
         unpushedGroup.enter()
         DispatchQueue.global(qos: .userInitiated).async {
-            let found = run(["rev-list", "-n", "1", "HEAD", "--not", "--remotes"], in: cwd)
+            let found = run(["rev-list", "-n", "1", rev, "--not", "--remotes"], in: cwd)
             unpushedResult.withLock { $0 = found }
             unpushedGroup.leave()
         }
         // `rev-parse --show-toplevel HEAD`: the top on the lines before the last, the commit on the last.
-        guard let both = run(["rev-parse", "--show-toplevel", "HEAD"], in: cwd), both.status == 0, let newline = both.output.lastIndex(of: "\n") else {
+        guard let both = run(["rev-parse", "--show-toplevel", "\(rev)^{commit}"], in: cwd), both.status == 0, let newline = both.output.lastIndex(of: "\n") else {
             unpushedGroup.wait()
+            // The folder is a repository, and the revision isn't in it: two different answers.
+            if rev != "HEAD", run(["rev-parse", "--show-toplevel"], in: cwd)?.status == 0 { return .failure(.unknownRevision) }
             return .failure(.notARepository)
         }
         let top = String(both.output[..<newline]), sha = String(both.output[both.output.index(after: newline)...])
@@ -56,7 +62,14 @@ enum FleetDispatchGit {
         let here = URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath).resolvingSymlinksInPath().path
         var subdir: String?
         if here != root, here.hasPrefix(root + "/") { subdir = String(here.dropFirst(root.count + 1)) }
-        return .success(Pin(sha: sha, subdir: subdir, root: root, unpushed: !unpushed.output.isEmpty))
+        return .success(Pin(sha: sha, subdir: subdir, root: root, unpushed: !unpushed.output.isEmpty, rev: rev))
+    }
+
+    /// The origin of the checkout at `cwd`, as another Mac may clone it: its fetch URL, with any password removed
+    /// (`FleetRepoSource.sanitized`). Nil when there is no origin.
+    static func origin(cwd: String) -> String? {
+        guard let result = run(["remote", "get-url", "origin"], in: cwd), result.status == 0 else { return nil }
+        return FleetRepoSource.sanitized(origin: result.output)
     }
 
     /// A full commit id: 40 (SHA-1) or 64 (SHA-256) hex digits.
@@ -82,9 +95,11 @@ enum FleetDispatchGit {
 
     /// `fleet/<slug of the title>`, with a short suffix of `dispatchID` only when that branch or its
     /// folder already exists or another dispatch in flight has claimed it, so retries and repeat tasks never collide.
-    static func branchName(title: String, requested: String?, dispatchID: UUID, repo: String, claimed: Set<String> = []) -> String {
+    /// `exact` takes a requested name as it is (a thread the person started on a branch, or with a name for its new one); otherwise only a
+    /// name under `fleet/` is taken.
+    static func branchName(title: String, requested: String?, dispatchID: UUID, repo: String, claimed: Set<String> = [], exact: Bool = false) -> String {
         // A name made from a title is always a valid ref (`slug` is lowercase letters, digits and single hyphens), so only a requested one is asked of git.
-        let base = requested.flatMap { $0.hasPrefix("fleet/") && isValidBranch($0, repo: repo) ? $0 : nil } ?? "fleet/" + slug(title)
+        let base = requested.flatMap { (exact || $0.hasPrefix("fleet/")) && isValidBranch($0, repo: repo) ? $0 : nil } ?? "fleet/" + slug(title)
         func taken(_ name: String) -> Bool {
             claimed.contains(name) || run(["show-ref", "--verify", "--quiet", "refs/heads/\(name)"], in: repo)?.status == 0
                 || FileManager.default.fileExists(atPath: GitWorktree.destination(repo: repo, branch: name))
