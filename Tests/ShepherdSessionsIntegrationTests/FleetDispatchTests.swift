@@ -19,7 +19,7 @@ struct FleetDispatchTests {
     // MARK: Fixtures
 
     /// Waits for `condition`, which may read from a client.
-    static func wait(_ what: String, timeout: Duration = defaultWaitTimeout, _ condition: @MainActor () async throws -> Bool) async throws {
+    static func wait(_ what: String, timeout: Duration = .seconds(30), _ condition: @MainActor () async throws -> Bool) async throws {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {
             if try await condition() { return }
