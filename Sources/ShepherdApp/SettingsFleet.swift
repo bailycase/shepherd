@@ -38,7 +38,7 @@ struct FleetSettings: View {
                     Button("Join a fleet…") { joining = true }
                         .buttonStyle(.sh(.secondary))
                         .disabled(!model.loaded || model.snapshot.port == nil)
-                    Button("Add a Mac…") { adding = true }
+                    Button("Add a Mac…") { model.openPairing(); adding = true }
                         .buttonStyle(.sh(.secondary))
                         .disabled(!model.loaded || model.snapshot.port == nil)
                 }

@@ -136,6 +136,7 @@ final class FleetSettingsModel {
 
     /// Opens a code window on the host and shows its code.
     func startJoin() async {
+        join = nil
         joinEnd = nil
         do {
             guard let client = try host() else { return }
@@ -152,15 +153,13 @@ final class FleetSettingsModel {
 
     /// The Join screen closed: so does the window, and its code stops working.
     func stopJoin() async {
-        join = nil
-        joinEnd = nil
         guard let client = try? host() else { return }
         if let result = try? await client.fleetAction(.stopJoin) { apply(result) }
     }
 
     // MARK: Adding: another Mac's code is entered here
 
-    /// Starts finding Macs while the Add a Mac sheet is open.
+    /// Starts finding Macs while the Add a Mac sheet is open. Opening the sheet clears the last try's failure (`openPairing`).
     func startFinding() {
         stopBrowsing?()
         stopBrowsing = browse { [weak self] macs in
@@ -171,12 +170,13 @@ final class FleetSettingsModel {
         }
     }
 
+    func openPairing() { pairing = .idle }
+
     func stopFinding() {
         stopBrowsing?()
         stopBrowsing = nil
         everyFound = []
         found = []
-        pairing = .idle
     }
 
     private func filterFound() {
