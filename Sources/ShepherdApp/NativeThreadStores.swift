@@ -2,17 +2,26 @@ import Foundation
 import SystemConfiguration
 import ShepherdCore
 import ShepherdRemote
+import ShepherdUI
 
 /// One `NativeThreadStore` per agent (local `AgentID` or remote `RemoteAgentRef`), kept for
 /// the agent's lifetime so drafts, history pages, and scroll state survive switching.
 ///
-/// Loaded history is bounded across threads off screen: past the `retainedHistories` most
-/// recently shown, or past `historyBudget` bytes in all, the threads shown longest ago let
-/// their history go (`NativeThreadStore.release`) and reload when shown again. The store, its
-/// draft, attachments and deck identity stay. A thread is never released while on screen,
-/// selected (`protected`), pinned by a view showing it or scrolled into its history (`ThreadReaderPins`), or
-/// while the store says it holds unsettled work (`canReleaseHistory`); protected threads may
-/// keep the total over budget.
+/// Threads off screen are bounded across threads in two tiers, each by recency of showing.
+///
+/// Loaded history: past the `retainedHistories` most recently shown, or past `historyBudget` bytes in all, the threads
+/// shown longest ago let their history go (`NativeThreadStore.release`) and reload when shown again. The store, its
+/// draft, attachments and deck identity stay. A thread is never released while on screen, selected (`protected`),
+/// pinned by a view showing it or scrolled into its history (`ThreadReaderPins`), or while the store says it holds
+/// unsettled work (`canReleaseHistory`); protected threads may keep the total over budget.
+///
+/// Row views: a hidden layout stays mounted and its thread keeps the views of its last rows, which are most of what the
+/// app holds (`NativeThreadStore.mountedCost` estimates them). Past `mountedBudget` bytes of them in all, the least
+/// recently shown hidden threads let their rows go (`NativeThreadStore.releaseTranscript`), one thread a pass, unpinned
+/// ones first, then readers left scrolled up beyond the `keepPinned` most recently shown. The newest hidden thread, the
+/// ones on screen and the selected one are never taken. Only the thread view's rows go: the host, the page, the history, the
+/// caches and the draft stay, so showing a thread draws its rows from them in the update that shows it, never blank. A
+/// reader taken this way comes back at the tail of its thread, not at its place (`ThreadView`).
 @MainActor
 final class NativeThreadStores<Key: Hashable> {
     private var stores: [Key: NativeThreadStore] = [:]
@@ -27,6 +36,26 @@ final class NativeThreadStores<Key: Hashable> {
     var protected: (() -> Set<Key>)?
     /// Keys in the order their threads were last shown, oldest first.
     private(set) var recent: [Key] = []
+
+    /// Estimated bytes (`NativeThreadStore.mountedCost`) the row views of the hidden threads may hold in all before the
+    /// least recently shown let their rows go. Setting it runs a pass.
+    var mountedBudget = NativeThreadStores.defaultMountedBudget(physicalMemory: ProcessInfo.processInfo.physicalMemory) {
+        didSet { if mountedBudget != oldValue { enforceMountedBudget() } }
+    }
+    /// The keys whose threads have a view mounted, hidden or not; nil where no hidden thread has a view to hold rows (a set
+    /// of stores nothing mounts), so nothing is released.
+    var mounted: (() -> Set<Key>)?
+    /// How many rows at the end of a thread its view builds (`NativeThreadStore.mountedCost`).
+    var eagerRows = ThreadView.eagerRows
+    /// Readers left scrolled up, most recently shown first, that a pass leaves alone: older ones lose their place once the
+    /// budget is over and come back at their tail.
+    var keepPinned = 2
+    /// How long after the last show the first pass runs, and between the passes that follow while the budget is over.
+    var releaseDelay: Duration = .seconds(2)
+    var releaseSpacing: Duration = .milliseconds(250)
+    /// Waits out a pass's delay (a test replaces it, and the timer with it).
+    var pause: @MainActor @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
+    private var mountedPass: Task<Void, Never>?
 
     /// Image drafts belong to the agent, not to a mounted SwiftUI view.
     func input(for key: Key) -> ThreadInput {
@@ -113,11 +142,13 @@ final class NativeThreadStores<Key: Hashable> {
     }
 
     /// `key`'s thread came on screen: the least recent threads past the bounds let their history go,
-    /// after the pass that showed it (views ask for stores as they draw).
+    /// after the pass that showed it (views ask for stores as they draw), and the hidden threads' rows are
+    /// looked at once the show has settled (`releaseDelay` after the last one).
     func noteShown(_ key: Key) {
         recent.removeAll { $0 == key }
         recent.append(key)
         Task { @MainActor [weak self] in self?.enforceHistoryBounds() }
+        scheduleMountedPass(after: releaseDelay)
     }
 
     /// Releases what `Self.evictions` picks. Costs are read here, once per thread shown, never in a view body.
@@ -153,6 +184,89 @@ final class NativeThreadStores<Key: Hashable> {
             released.append(oldest.key)
         }
         return released
+    }
+
+    // MARK: Hidden threads' row views
+
+    /// One thread whose hidden view holds rows, for `viewReleases`.
+    struct MountedEntry<K> {
+        let key: K
+        /// What its row views hold (`NativeThreadStore.mountedCost`); above zero.
+        let cost: Int
+        /// A reader is left scrolled up in it (`ThreadReaderPins`): letting its rows go brings it back at its tail.
+        let pinned: Bool
+    }
+
+    /// The default `mountedBudget`: an eighth of the memory, and at most 2 GiB. The aborts this bounds look like a limit of
+    /// the process (SwiftUI's attribute graph, at 4.9 to 5.9 GB of footprint on a 48 GB Mac), so the cap follows the process
+    /// and not the machine. 2 GiB is what eight code-heavy hidden threads hold, so a Mac of 16 GB or more releases nothing
+    /// that today's bounds keep; an 8 GB Mac gets 1 GiB.
+    static func defaultMountedBudget(physicalMemory: UInt64) -> Int {
+        Int(min(2 << 30, physicalMemory / 8))
+    }
+
+    /// The keys whose rows to let go, in the order to take them, from `entries` (oldest first, the hidden threads that hold
+    /// rows): while their costs add up to more than `budget`, the oldest unpinned ones, then the readers (pinned) older than
+    /// the `keepPinned` most recent. The `keep` newest are never taken, whatever they are.
+    static func viewReleases(_ entries: [MountedEntry<Key>], keep: Int, keepPinned: Int, budget: Int) -> [Key] {
+        var total = entries.reduce(0) { $0 + $1.cost }
+        guard total > budget else { return [] }
+        let newest = Set(entries.suffix(max(0, keep)).map(\.key))
+        let readers = Set(entries.filter(\.pinned).suffix(max(0, keepPinned)).map(\.key))
+        let order = entries.filter { !$0.pinned && !newest.contains($0.key) }
+            + entries.filter { $0.pinned && !readers.contains($0.key) && !newest.contains($0.key) }
+        var released: [Key] = []
+        for entry in order {
+            guard total > budget else { break }
+            total -= entry.cost
+            released.append(entry.key)
+        }
+        return released
+    }
+
+    /// Lets the rows of the hidden threads go while their estimated views (`mountedCost`) add up to more than the budget:
+    /// at most `limit` threads, then the next pass `releaseSpacing` later while it is still over, so that no one
+    /// pass tears down much. Threads on screen, selected, released already or holding nothing are not asked. Costs are read
+    /// here, in a pass, never in a view body. Returns what it took.
+    @discardableResult
+    func enforceMountedBudget(budget: Int? = nil, keep: Int = 1, keepPinned: Int? = nil, limit: Int = 1) -> (threads: Int, bytes: Int) {
+        guard let mounted = mounted?() else { return (0, 0) }
+        recent.removeAll { stores[$0] == nil }
+        let onScreen = (protected?() ?? []).union(live)
+        // Threads never shown (a hidden view built from a preview) count as the oldest.
+        let shown = recent.filter(mounted.contains)
+        var costs: [Key: Int] = [:]
+        let entries = (Array(mounted.subtracting(shown)) + shown).compactMap { key -> MountedEntry<Key>? in
+            guard !onScreen.contains(key), let store = stores[key] else { return nil }
+            let cost = store.mountedCost(eagerRows: eagerRows)
+            guard cost > 0 else { return nil }
+            costs[key] = cost
+            return MountedEntry(key: key, cost: cost, pinned: pins?.isPinned(store) == true)
+        }
+        let releases = Self.viewReleases(entries, keep: keep, keepPinned: keepPinned ?? self.keepPinned, budget: budget ?? mountedBudget)
+        var bytes = 0
+        for key in releases.prefix(limit) {
+            stores[key]?.releaseTranscript()
+            bytes += costs[key] ?? 0
+            SHRenderProbe.tick("thread.rowsReleased")
+            AppSignposts.thread.emitEvent("thread rows released")
+        }
+        if releases.count > limit { scheduleMountedPass(after: releaseSpacing) }
+        return (min(limit, releases.count), bytes)
+    }
+
+    /// The next pass, `delay` from now in place of any waiting.
+    private func scheduleMountedPass(after delay: Duration) {
+        mountedPass?.cancel()
+        mountedPass = nil
+        guard mounted != nil else { return }
+        let pause = pause
+        mountedPass = Task { @MainActor [weak self] in
+            await pause(delay)
+            guard !Task.isCancelled, let self else { return }
+            mountedPass = nil
+            enforceMountedBudget()
+        }
     }
 
     /// The agent's store if its thread has been shown, without making one: a pushed revision

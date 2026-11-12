@@ -1347,6 +1347,7 @@ public final class NativeThreadStore {
     /// changed token always bootstraps fresh, while visibility-only resumes may reuse a revision.
     public func run(request: @escaping Request, preview: Preview? = nil, owner: UUID? = nil, connection: AnyHashable? = nil) async {
         guard !Task.isCancelled else { return }
+        if transcriptReleased { transcriptReleased = false }
         let warm = connection != nil && connection == self.connection && ready && !previewing && loadError == nil
         suspend()
         self.connection = connection
@@ -1554,6 +1555,7 @@ public final class NativeThreadStore {
     public func release() {
         guard canReleaseHistory else { return }
         stop()
+        if transcriptReleased { transcriptReleased = false }
         images.releaseHeld()
         if snapshot != nil { snapshot = nil }
         replaceHistory([])
@@ -1597,18 +1599,32 @@ public final class NativeThreadStore {
     /// Whether `release` has anything to let go.
     public var holdsHistory: Bool { snapshot != nil || !messages.isEmpty || images.heldBytes > 0 }
 
+    /// The thread's hidden view was told to draw no rows (`releaseTranscript`), to keep what hidden threads' views hold
+    /// within a budget. Observed, written only on change, and read by a view only while it is hidden, so the thread on
+    /// screen is never redrawn by it. `run` and `release` clear it; `mountedCost` is 0 while it is set.
+    public private(set) var transcriptReleased = false
+
+    /// Has the thread's hidden view let its rows go: they are not drawn until the thread is shown again, and nothing but
+    /// that draws less. The history, the rows, every cache, the draft and the store itself stay, so showing the thread
+    /// draws its rows from them in the update that shows it, with nothing to load or parse.
+    public func releaseTranscript() {
+        if !transcriptReleased { transcriptReleased = true }
+    }
+
     /// An estimate of what the views of this thread hold while it is mounted, in bytes (`NativeMountedCost`): the last
     /// `eagerRows` rows the thread's view draws, which it lays out for real whether or not it is on screen, and for the
     /// last reply the chunk its lazy stack builds first beyond its eager tail (a giant reply's). `hidden` names the rows
     /// the view leaves out (a Project's user turns made only of the runtime's wake-ups, `ThreadView`), so the walk
     /// reaches back as far as the view's own last `eagerRows`. It sums costs kept with the rows and reads only the rows
-    /// it passes, never the rest of the history; read it from the owner, never from a view body.
+    /// it passes, never the rest of the history; read it from the owner, never from a view body. A thread whose hidden view
+    /// let its rows go (`transcriptReleased`) holds nothing.
     public func mountedCost(eagerRows: Int, skipping hidden: (NativeThreadRow) -> Bool = { _ in false }) -> Int {
         mountedCostWalk(eagerRows: eagerRows, skipping: hidden).cost
     }
 
     /// `mountedCost` and how many rows it passed to reach it (a test pins that it stays at the tail).
     func mountedCostWalk(eagerRows: Int, skipping hidden: (NativeThreadRow) -> Bool) -> (cost: Int, visited: Int) {
+        guard !transcriptReleased else { return (0, 0) }
         var cost = 0, drawn = 0, visited = 0
         var index = min(rows.count, rowCosts.count)
         var edgeTaken = false

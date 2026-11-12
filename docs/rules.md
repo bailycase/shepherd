@@ -170,6 +170,14 @@ layouts keep their frozen size. The deliberate unmounts are cold parking, only f
 a terminal (`WorkspaceSelection.coldParkCandidates`), and a Project's threads, which its Project
 page draws: its coordinator never mounts here, and a worker only while it is the one open.
 
+A hidden thread keeps its host, page, history and draft, but its rows are bounded: past
+`NativeThreadStores.mountedBudget` (an eighth of the memory, at most 2 GiB, counted by
+`NativeThreadStore.mountedCost`) the least recently shown hidden threads let their rows go
+(`releaseTranscript`), one thread a pass, unpinned ones first, then readers left scrolled up beyond
+the two most recently shown; the thread shown before the current one, and the one on screen, never.
+Showing one draws its rows from the store in the update that shows it, and a reader taken this way
+comes back at its tail. The pass loads, sends and resumes nothing.
+
 A remote agent's thread (a paired Mac's, or this Mac's own while the app is the background
 service's client) is a page of its own deck (`RemoteLayoutDeck`), keyed by `RemoteAgentRef`. A page
 mounts the first time it is shown in that deck and stays while its host has the agent; nothing
