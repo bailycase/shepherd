@@ -158,6 +158,29 @@ struct FleetSyncStoreTests {
         #expect(store.missingBlobs().isEmpty)
     }
 
+    @Test func aLoserWhoseTextNeverCameIsStillAskedForSoItsHistoryIsWhole() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try Self.store(dir, mac: Self.macA)
+        let unit = "instruction:AGENTS.md"
+        let winnerText = Data("winner".utf8), loserText = Data("loser".utf8)
+        var winner = Self.op(Self.macB, 1, wall: 9_000, unit: unit)
+        winner.change = .blob(hash: FleetSyncProtocol.hash(winnerText), size: winnerText.count)
+        var loser = Self.op(Self.macB, 2, wall: 1_000, unit: unit)
+        loser.change = .blob(hash: FleetSyncProtocol.hash(loserText), size: loserText.count)
+        _ = store.receive(winner)
+        _ = store.receive(loser)
+        #expect(Set(store.missingBlobs().map(\.hash)) == [FleetSyncProtocol.hash(winnerText), FleetSyncProtocol.hash(loserText)])
+        _ = store.putBlob(winnerText, named: FleetSyncProtocol.hash(winnerText))
+        _ = store.putBlob(loserText, named: FleetSyncProtocol.hash(loserText))
+        #expect(store.missingBlobs().isEmpty)
+        // Wanted across a restart too, when it hadn't arrived before.
+        let other = try Self.store(dir.appendingPathComponent("other"), mac: Self.macA)
+        _ = other.receive(winner)
+        _ = other.receive(loser)
+        #expect(try Self.store(dir.appendingPathComponent("other"), mac: Self.macA).missingBlobs().count == 2)
+    }
+
     // MARK: History and files
 
     @Test func historyKeepsTheNewestHundredVersionsAndDropsTheBlobOfOneItLetsGo() throws {

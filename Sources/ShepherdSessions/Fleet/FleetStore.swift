@@ -170,14 +170,17 @@ final class FleetStore {
         FleetSyncProtocol.hash(data) == hash && putBlob(data) == hash
     }
 
-    /// The blobs the winners need and this Mac doesn't hold: what to fetch from a peer.
+    /// The blobs this Mac needs and doesn't hold, to fetch from a peer: the winners' (to write them)
+    /// and the history's (a version set aside is only kept if its text is).
     func missingBlobs() -> [(hash: String, size: Int)] {
-        winners.values.compactMap { op in
-            guard case .blob(let hash, let size) = op.change, !hasBlob(hash) else { return nil }
-            return (hash, size)
-        }
-        .sorted { $0.hash < $1.hash }
+        var wanted: [String: Int] = [:]
+        for op in winners.values { if case .blob(let hash, let size) = op.change { wanted[hash] = size } }
+        for (hash, size) in keptBlobs { wanted[hash] = size }
+        return wanted.filter { !hasBlob($0.key) }.map { ($0.key, $0.value) }.sorted { $0.hash < $1.hash }
     }
+
+    /// Blobs named by history entries made here (a loser that arrived without its text), until held or pruned.
+    private var keptBlobs: [String: Int] = [:]
 
     private func blobURL(_ hash: String) -> URL { blobsDirectory.appendingPathComponent(hash) }
 
@@ -213,6 +216,7 @@ final class FleetStore {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         guard let data = try? encoder.encode(entry), Self.write(data, to: folder.appendingPathComponent(name)) else { return }
+        if case .blob(let hash, let size) = op.change { keptBlobs[hash] = size }
         prune(folder)
     }
 
@@ -227,7 +231,10 @@ final class FleetStore {
             let entry = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(FleetHistoryEntry.self, from: $0) }
             guard index >= Self.historyLimit || (entry.map { $0.recordedAt < cutoff } ?? false) else { continue }
             try? manager.removeItem(at: url)
-            if case .blob(let hash, _)? = entry?.change, !isReferenced(hash) { try? manager.removeItem(at: blobURL(hash)) }
+            if case .blob(let hash, _)? = entry?.change, !isReferenced(hash) {
+                try? manager.removeItem(at: blobURL(hash))
+                keptBlobs[hash] = nil
+            }
         }
     }
 
@@ -290,6 +297,16 @@ final class FleetStore {
         }
         for log in logs.values {
             for op in log where winners[op.unit].map({ op.supersedes($0) }) ?? true { winners[op.unit] = op }
+        }
+        // History entries whose text never arrived are still wanted.
+        let manager = FileManager.default
+        for unit in (try? manager.contentsOfDirectory(atPath: historyDirectory.path)) ?? [] {
+            let folder = historyDirectory.appendingPathComponent(unit, isDirectory: true)
+            for name in (try? manager.contentsOfDirectory(atPath: folder.path)) ?? [] {
+                guard let entry = (try? Data(contentsOf: folder.appendingPathComponent(name))).flatMap({ try? JSONDecoder().decode(FleetHistoryEntry.self, from: $0) }),
+                      case .blob(let hash, let size) = entry.change, !hasBlob(hash) else { continue }
+                keptBlobs[hash] = size
+            }
         }
     }
 

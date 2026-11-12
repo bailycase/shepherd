@@ -1278,6 +1278,11 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Tests: the saved versions of a unit in this host's fleet store, newest first, and what decides it now.
+    func fleetSyncHistory(_ unit: String) -> [FleetHistoryEntry] { queue.sync { fleet?.syncEngine.store.history(of: unit) ?? [] } }
+    func fleetSyncWinner(_ unit: String) -> FleetOp? { queue.sync { fleet?.syncEngine.store.winner(of: unit) } }
+    var fleetStoreDirectory: URL? { queue.sync { fleet?.syncEngine.store.directory } }
+
     /// Sets `fleetOptions` for the next `setFleetEnabled(true)`.
     public func configureFleet(name: String?, advertises: Bool) {
         queue.sync { fleetOptions = (name, advertises) }
@@ -1837,6 +1842,10 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func stopOnQueue() {
+        // A stopped host holds no links and watches no files: its fleet ends with it.
+        fleet?.stop()
+        fleet = nil
+        instructions.onChange = nil
         if isStarted, store.state.missions.contains(where: { $0.run?.train?.status == .running }) {
             try? mutateState { state in
                 for i in state.missions.indices where state.missions[i].run?.train?.status == .running {
