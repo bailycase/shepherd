@@ -38,7 +38,7 @@ extension FixtureCatalog {
             FixtureScreen(name: "fleet-off", hosts: FleetFixtureData.hosts(snapshot: nil), routes: [.settings(.fleet)], tab: .settings),
             // Forget this Mac, as a swipe on its row (or its context menu) leads to it.
             FixtureScreen(name: "fleet-forget", hosts: FleetFixtureData.hosts(), routes: [.settings(.fleet)], tab: .settings,
-                          setup: { FleetScreen.preview = .forgetting("Mac Studio") }, prepare: { app in await FleetFixtureData.settle(app) }),
+                          prepare: { app in await FleetFixtureData.settle(app) }, setup: { FleetScreen.preview = .forgetting("Mac Studio") }),
             FixtureScreen(name: "fleet-busy", hosts: FleetFixtureData.hosts(snapshot: FleetFixtureData.busy()), routes: [.settings(.fleet)],
                           tab: .settings, prepare: { app in await FleetFixtureData.settle(app) }),
         ]
