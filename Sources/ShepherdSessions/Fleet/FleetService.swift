@@ -315,7 +315,9 @@ final class FleetService: @unchecked Sendable {
     /// `hostID` was removed from the fleet at `at`, as `from` says.
     private func revoked(_ hostID: UUID, at: Double, heardFrom from: UUID?) {
         if hostID == identity.hostID {
-            // This Mac was removed: it leaves, keeping what it already synced.
+            // This Mac was removed: it leaves, keeping what it already synced. News older than a
+            // pairing made since (a stale tombstone another Mac still holds) changes nothing.
+            guard peers.members.allSatisfy({ $0.pairedAt <= at }) else { return }
             for member in peers.members { drop(member.hostID, at: at, flood: false, heardFrom: from) }
             return
         }
@@ -335,9 +337,10 @@ final class FleetService: @unchecked Sendable {
                 for client in notified { try? await client.fleetRevoke(hostID: hostID, at: at) }
                 // The Mac that was removed is told too, when it is reachable: it leaves.
                 try? await leaving?.fleetRevoke(hostID: hostID, at: at)
+                leaving?.disconnect()
             }
         }
-        stopLink(hostID)
+        stopLink(hostID, closing: !flood)
         onPeerRemoved?(hostID)
         changed()
         return true
@@ -503,10 +506,12 @@ final class FleetService: @unchecked Sendable {
         link.task = Task { [weak self] in await self?.run(link) }
     }
 
-    private func stopLink(_ hostID: UUID) {
+    /// Ends the link to `hostID`. `closing: false` leaves its connection open for the caller to
+    /// close once it has said what it has to.
+    private func stopLink(_ hostID: UUID, closing: Bool = true) {
         guard let link = links.removeValue(forKey: hostID) else { return }
         link.task?.cancel()
-        link.client?.disconnect()
+        if closing { link.client?.disconnect() }
         link.client = nil
     }
 

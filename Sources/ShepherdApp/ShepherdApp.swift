@@ -271,6 +271,9 @@ extension ShepherdHost {
         }
         compact(settings.compactAtPercent)
         settings.onCompactAtChange = { compact($0) }
+        // Fleet: the host's links and pairing (`FleetService`) run only while the experiment is on, and
+        // they need the host's listener, which Fleet opens even with Settings ▸ Remote's switch off.
+        server.setFleetEnabled(settings.fleetEnabled)
         let listen = { [weak server, settings] (on: Bool) -> UInt16? in
             guard let server, on else {
                 listener?(nil, nil)
@@ -287,13 +290,28 @@ extension ShepherdHost {
                 return nil
             }
         }
-        settings.onRemoteListenerChange = { [weak server] on in
+        let listening = Listening(open: false)
+        let relisten = { [weak server, settings] in
             server?.stopRemoteListener()
-            _ = listen(on)
+            listening.open = listen(settings.remoteListenerEnabled || settings.fleetEnabled) != nil
             server?.settingsChanged(.remote)
         }
-        return listen(settings.remoteListenerEnabled)
+        settings.onRemoteListenerChange = { _ in relisten() }
+        settings.onFleetChange = { [weak server, settings] on in
+            server?.setFleetEnabled(on)
+            // A Mac already serving keeps its clients when Fleet is switched; only a change opens or closes the listener.
+            if (settings.remoteListenerEnabled || on) != listening.open { relisten() }
+        }
+        let port = listen(settings.remoteListenerEnabled || settings.fleetEnabled)
+        listening.open = port != nil
+        return port
     }
+}
+
+/// Whether the host's listener is open, for the closures `serveSettings` hands the settings.
+private final class Listening: @unchecked Sendable {
+    var open: Bool
+    init(open: Bool) { self.open = open }
 }
 
 /// The headless host entry (`Shepherd --host`), for the launcher shim: the session server with

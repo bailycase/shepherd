@@ -232,8 +232,11 @@ struct RemoteHostRow: View {
             .shAnimation(.disclosure, value: connection.phase.failure?.kind)
             .accessibilityElement(children: .combine)
         } actions: {
-            Button("Edit", action: edit).buttonStyle(.sh(.secondary, size: .s))
-                .accessibilityLabel("Edit \(config.name)")
+            // A Mac the fleet holds keeps the address and token the fleet gave it.
+            if !config.fleetManaged {
+                Button("Edit", action: edit).buttonStyle(.sh(.secondary, size: .s))
+                    .accessibilityLabel("Edit \(config.name)")
+            }
             Button("Reconnect", action: reconnect).buttonStyle(.sh(.secondary, size: .s))
                 .accessibilityLabel("Reconnect \(config.name)")
             Button("Remove", action: remove).buttonStyle(.sh(.danger, size: .s))

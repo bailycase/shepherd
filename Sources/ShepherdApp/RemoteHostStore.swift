@@ -30,10 +30,15 @@ final class RemoteHostStore {
         /// The background host on this Mac (`host.sock`), in place of `host` and `port`. Never
         /// persisted: each launch finds it again.
         var localSocket: String?
+        /// This Mac's host holds this one as a fleet peer (`FleetService`): its address and
+        /// token are the fleet's now, not hand editable. The app keeps this direct connection for
+        /// drawing the Mac's threads; `bindingID` stays, so Project executor references survive.
+        var fleetManaged: Bool
 
         init(id: UUID = UUID(), name: String, host: String, port: UInt16, token: String,
-             bindingID: UUID = UUID(), localSocket: String? = nil) {
+             bindingID: UUID = UUID(), localSocket: String? = nil, fleetManaged: Bool = false) {
             self.localSocket = localSocket
+            self.fleetManaged = fleetManaged
             self.id = id
             self.bindingID = bindingID
             self.name = name
@@ -42,7 +47,7 @@ final class RemoteHostStore {
             self.token = token
         }
 
-        private enum CodingKeys: String, CodingKey { case id, bindingID, name, host, port, token }
+        private enum CodingKeys: String, CodingKey { case id, bindingID, name, host, port, token, fleetManaged }
 
         init(from decoder: Decoder) throws {
             let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -53,6 +58,7 @@ final class RemoteHostStore {
             host = try values.decode(String.self, forKey: .host)
             port = try values.decode(UInt16.self, forKey: .port)
             token = try values.decode(String.self, forKey: .token)
+            fleetManaged = try values.decodeIfPresent(Bool.self, forKey: .fleetManaged) ?? false
         }
     }
 
@@ -419,6 +425,13 @@ final class RemoteHostStore {
         connection.config = config
         persist()
         reconnect(id: id)
+    }
+
+    /// This host became a fleet peer: its configuration stops being hand editable.
+    func markFleetManaged(id: UUID) {
+        guard let connection = allConnections.first(where: { $0.id == id }), !connection.config.fleetManaged else { return }
+        connection.config.fleetManaged = true
+        persist()
     }
 
     func removeHost(id: UUID) {

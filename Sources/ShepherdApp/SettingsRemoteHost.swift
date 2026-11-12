@@ -313,6 +313,7 @@ private struct RemoteSettingsSectionPage: View {
                     experimentRow("Goals", RemoteProtocol.goalExperimentCapability, s.goalsEnabled) { .goalsEnabled($0) }
                     experimentRow("Projects", RemoteProtocol.projectsExperimentCapability, s.projectsEnabled) { .projectsEnabled($0) }
                     experimentRow("Design tool", RemoteProtocol.designToolExperimentCapability, s.designToolEnabled) { .designToolEnabled($0) }
+                    experimentRow("Fleet", RemoteProtocol.fleetExperimentCapability, s.fleetEnabled) { .fleetEnabled($0) }
                     let locked = s.missionsEnabled && s.missionsActive
                     SettingsRow(title: "Missions", subtitle: locked ? "Pause or stop running missions on \(host.name) before turning this off." : nil) {
                         SettingsSwitch(label: "Missions", isOn: bind(s.missionsEnabled) { .missionsEnabled($0) })
@@ -320,7 +321,8 @@ private struct RemoteSettingsSectionPage: View {
                     }
                 }
                 if ![RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
-                     RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability].allSatisfy(host.serves) {
+                     RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability,
+                     RemoteProtocol.fleetExperimentCapability].allSatisfy(host.serves) {
                     NeedsNewer(host: host)
                 }
                 RemoteSuggestions(host: host, model: suggestions)

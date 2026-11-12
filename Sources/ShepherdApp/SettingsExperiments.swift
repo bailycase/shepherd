@@ -31,6 +31,7 @@ struct ExperimentsSettings: View {
                             DesignToolCard(settings: settings)
                             GoalExperimentCard(settings: settings)
                             ProjectsExperimentCard(settings: settings)
+                            FleetExperimentCard(settings: settings)
                             MissionsExperimentCard(settings: settings, active: missionsActive)
                             if model.settings.enabled || !model.snapshot.waiting.isEmpty {
                                 WaitingSuggestions(model: model, instructions: instructions, now: context.date)

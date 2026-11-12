@@ -1176,6 +1176,7 @@ public final class RemoteHostClient: @unchecked Sendable {
             let what = switch change {
             case .goalsEnabled: "toggle the Goals experiment"
             case .projectsEnabled: "toggle the Projects experiment"
+            case .fleetEnabled: "toggle the Fleet experiment"
             case .designToolEnabled: "toggle the Design tool experiment"
             case .missionsEnabled: "toggle the Missions experiment"
             case .subagentDefaults, .worktreeDeleteAction, .skillsInSlashMenu, .mcpProjectConfig, .slashCommand, .closeOnMerge: "change this setting"

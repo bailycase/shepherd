@@ -68,7 +68,10 @@ extension ShepherdViewModel {
         let connected = remoteHosts.onHostConnected
         remoteHosts.onHostConnected = { [weak self] hostID in
             connected?(hostID)
-            guard let self, hostID == self.localHost?.id else { return }
+            guard let self else { return }
+            // A paired Mac that answers again may have turned Fleet on since: ask it again.
+            if hostID != self.localHost?.id { Task { await self.adoptLegacyFleetHosts(only: hostID) } }
+            guard hostID == self.localHost?.id else { return }
             Task { for page in RemoteSettingsPage.allCases { await self.localHostSettingsChanged(page) } }
             self.refreshAutomationTriggers()
             // A host that started again knows no focus: tell it.
@@ -87,6 +90,20 @@ extension ShepherdViewModel {
         }
     }
 
+    /// Fleet: the paired Macs this app reached with the shared token (`RemoteHostStore`) become fleet peers
+    /// of its host, which pairs with each over the same token and no code. Each one that does is
+    /// marked fleet managed here; one that doesn't speak Fleet is left exactly as it was. `only` is one
+    /// host that just connected, asked again even if it said before that it isn't a fleet Mac.
+    func adoptLegacyFleetHosts(only: UUID? = nil) async {
+        guard settings.fleetEnabled else { return }
+        let hosts = remoteHosts.pairedConnections
+            .filter { !$0.config.fleetManaged && (only == nil || $0.id == only) }
+            .map { FleetLegacyHost(id: $0.config.id, name: $0.config.name, host: $0.config.host, port: $0.config.port, token: $0.config.token) }
+        for adoption in await fleet.adopt(hosts, retrying: only != nil) {
+            if case .established = adoption.outcome { remoteHosts.markFleetManaged(id: adoption.id) }
+        }
+    }
+
     /// A Settings page's data changed on the host: the page reads it again.
     func localHostSettingsChanged(_ page: RemoteSettingsPage) async {
         switch page {
@@ -100,6 +117,10 @@ extension ShepherdViewModel {
             guard let host = try? remoteHosts.thisMacHost(), let settings = try? await host.hostSettings() else { return }
             slashCommands.catalog = settings.slashCommands
         case .remote: await refreshRemoteListener()
+        case .fleet:
+            await fleet.refresh()
+            // Fleet came up, or its listener did: a host this Mac already reached becomes a peer.
+            await adoptLegacyFleetHosts()
         }
     }
 

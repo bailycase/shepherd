@@ -1252,12 +1252,21 @@ public final class SessionServer: @unchecked Sendable {
 
     // MARK: - Fleet (server queue)
 
+    /// What this host calls itself in a fleet (nil: the Mac's own name) and whether it advertises
+    /// over Bonjour. Tests name their hosts and keep them off the network. Server queue.
+    private var fleetOptions: (name: String?, advertises: Bool) = (nil, true)
+
+    /// Sets `fleetOptions` for the next `setFleetEnabled(true)`.
+    public func configureFleet(name: String?, advertises: Bool) {
+        queue.sync { fleetOptions = (name, advertises) }
+    }
+
     /// Takes part in a fleet while `enabled` (Settings ▸ Experiments ▸ Fleet): this host's
     /// identity, its links to the Macs it is paired with, its Bonjour advertisement and the fleet
     /// requests (`FleetService`). Off ends the links and refuses every fleet message with "Enable
     /// Fleet in Settings ▸ Experiments"; saved pairings stay and come back when it is turned on.
     /// `name` is what other Macs call this one (the Mac's own name unless a test names it).
-    public func setFleetEnabled(_ enabled: Bool, name: String? = nil, advertises: Bool = true) {
+    public func setFleetEnabled(_ enabled: Bool) {
         queue.async { [self] in
             guard enabled != (fleet != nil) else { return }
             guard enabled else {
@@ -1269,8 +1278,8 @@ public final class SessionServer: @unchecked Sendable {
             }
             do {
                 let service = try FleetService(queue: queue, directory: supportDirectory.appendingPathComponent("fleet", isDirectory: true),
-                                               name: name ?? Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
-                                               build: hostBuild, advertises: advertises)
+                                               name: fleetOptions.name ?? Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
+                                               build: hostBuild, advertises: fleetOptions.advertises)
                 service.onChange = { [weak self] in self?.pushSettingsChanged(.fleet) }
                 service.onPeerRemoved = { [weak self] hostID in
                     guard let self else { return }
