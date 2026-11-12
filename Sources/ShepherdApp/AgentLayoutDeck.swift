@@ -113,6 +113,10 @@ struct AgentLayoutDeck: View, Equatable {
                         if entry.host.frame != container.bounds { entry.host.frame = container.bounds }
                         entry.host.needsLayout = true
                         entry.host.isHidden = false
+                        // Laid out in this pass, not a later one: a thread whose rows were let go (`NativeThreadStores`)
+                        // builds them now, so no frame is shown with the layout and not its rows.
+                        entry.host.layoutSubtreeIfNeeded()
+                        SHRenderProbe.tick("deck.flipLayout")
                         container.needsLayout = true
                     } else if !model.isVisible, !entry.host.isHidden {
                         hiding.append(entry.host)
