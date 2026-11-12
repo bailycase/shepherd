@@ -1328,6 +1328,8 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.fleetExperimentCapability,
             // Offered only while the host's Fleet experiment is on (SessionServer.setFleetEnabled).
             RemoteProtocol.fleetCapability,
+            // Offered whenever the host runs, Fleet on or off, and never to a client device (FleetAccess).
+            RemoteProtocol.fleetDevicesCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
             RemoteProtocol.designAgentCapability, RemoteProtocol.designLifecycleCapability, RemoteProtocol.designSystemsCapability,
@@ -1347,6 +1349,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.nativeThreadRevisionsCapability == "native.revisions.v1")
         #expect(RemoteProtocol.nativeFleetDigestCapability == "native.fleetDigest.v1")
         #expect(RemoteProtocol.fleetCapability == "fleet.v1")
+        #expect(RemoteProtocol.fleetDevicesCapability == "fleet.devices.v1")
         #expect(RemoteProtocol.fleetExperimentCapability == "experiments.fleet.v1")
         #expect(RemoteProtocol.logicalProjectsCapability == "logicalProjects.v1")
         #expect(RemoteProtocol.projectMessageImagesCapability == "logicalProjectRuntime.images.v1")
