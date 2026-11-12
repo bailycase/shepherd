@@ -851,6 +851,8 @@ public struct NativeTailRepin: Equatable, Sendable {
     /// Landings this pin has made for the thread it shows, in a pass or after one: a rest does not clear
     /// them, and only a new thread refills them (`takeInPass`, `newThread(refillingPass:)`).
     public private(set) var landings = 0
+    /// The tail guard is walking the view (`hold()`): nothing is asked, landed or counted until `release()`.
+    public private(set) var held = false
 
     private var run = 0
     /// The last reading's distance from the tail, and whether one came since the last landing.
@@ -877,6 +879,7 @@ public struct NativeTailRepin: Equatable, Sendable {
     /// `distance(of:belowMarker:)`; a raw probe distance reads short of 0 for good on a view that
     /// landed, which never rests, and a stall never clears.
     public mutating func reading(distance: Double, wants: Bool, resized: Bool) {
+        guard !held else { return }
         let gap = abs(distance)
         self.gap = gap
         asking = wants
@@ -900,6 +903,7 @@ public struct NativeTailRepin: Equatable, Sendable {
     /// Output reached the tail: this turn's landing is never a miss, the run starts over, and a
     /// stalled tail gets this turn's try.
     public mutating func outputArrived() {
+        guard !held else { return }
         turnOutput = true
         run = 0
     }
@@ -907,6 +911,7 @@ public struct NativeTailRepin: Equatable, Sendable {
     /// The reader asked for the tail (a send, their turn arriving, the jump pill): land on the next
     /// turn, whatever the gap, with a fresh budget, unless a finger is down (`reader(scrolling:touching:)`).
     public mutating func asked() {
+        guard !held else { return }
         turnAsked = true
     }
 
@@ -939,7 +944,7 @@ public struct NativeTailRepin: Equatable, Sendable {
     /// (ios-duo-1) lands inside them at most `inPassLimit` times per thread the pin shows, whatever it
     /// does. A pass that gets the tail no nearer can stall the pin here, as a turn's landing can.
     public mutating func takeInPass() -> Bool {
-        guard landings < Self.inPassLimit, asking, !scrolling else { return false }
+        guard !held, landings < Self.inPassLimit, asking, !scrolling else { return false }
         asking = false
         if pending { return take() }
         landings += 1
@@ -958,13 +963,36 @@ public struct NativeTailRepin: Equatable, Sendable {
         var next = NativeTailRepin()
         next.scrolling = scrolling
         next.touching = touching
+        next.held = held
         next.landings = refillingPass ? 0 : landings
         self = next
     }
 
+    /// The tail guard starts walking the view to get it out of a stranded offset: whatever it lands on meanwhile is dropped,
+    /// so a landing the pin asked for would count as made (against `inPassLimit`, as a miss as the view moves under the walk)
+    /// and stall a pin that has done nothing. Held, the pin forgets what it wanted and ignores readings, output and asks; the
+    /// guard lands the tail itself when the walk ends, and the next reading starts the pin over. Its budget, its stall and
+    /// the reader's scroll are as they were.
+    public mutating func hold() {
+        held = true
+        pending = false
+        asking = false
+        fresh = false
+        setOut = nil
+        turnResized = false
+        turnOutput = false
+        turnAsked = false
+        turnQuiet = false
+    }
+
+    /// The walk is over: the pin takes readings again.
+    public mutating func release() {
+        held = false
+    }
+
     /// A stalled tail saw no reading for `quietWait`: it gets one try, and the wait doubles.
     public mutating func quietPassed() {
-        guard stalled, quietTries < Self.maxQuietTries else { return }
+        guard !held, stalled, quietTries < Self.maxQuietTries else { return }
         quietTries += 1
         quietWait *= 2
         turnQuiet = true
@@ -973,6 +1001,7 @@ public struct NativeTailRepin: Equatable, Sendable {
     /// Whether to land now. Call it once per run-loop turn, after the turn's events. A pass that
     /// asked for a landing (`takeInPass`) calls it too, for the events it finds waiting.
     public mutating func take() -> Bool {
+        guard !held else { return false }
         if scrolling, !(turnAsked && !touching) { return false }
         let resized = turnResized, output = turnOutput, asked = turnAsked, quiet = turnQuiet
         let measured = fresh
