@@ -34,9 +34,14 @@ public struct FleetHost: Equatable, Sendable {
     /// It serves its designs (`designs.v1`, its Design tool on): a design is its Recents row, and
     /// the agent drawing it has none of its own.
     public var designs: Bool
+    /// The Mac's last load reading and readiness report (`fleet.view.v1`), as the Fleet screens hold them. Home's
+    /// derivations (`FleetModel`) never read them, and Home's feeds leave them nil: a reading every few seconds
+    /// would otherwise derive Home again.
+    public var pressure: FleetPressureSample?
+    public var readiness: FleetReadinessReport?
 
     public init(id: UUID, name: String, address: String, port: UInt16, phase: RemoteHostPhase, state: ShepherdState,
-                lastSeen: Date? = nil, designs: Bool = false) {
+                lastSeen: Date? = nil, designs: Bool = false, pressure: FleetPressureSample? = nil, readiness: FleetReadinessReport? = nil) {
         self.id = id
         self.name = name
         self.address = address
@@ -45,6 +50,8 @@ public struct FleetHost: Equatable, Sendable {
         self.state = state
         self.lastSeen = lastSeen
         self.designs = designs
+        self.pressure = pressure
+        self.readiness = readiness
     }
 }
 

@@ -64,7 +64,7 @@ struct SpacesScreen: View {
                         }
                     }
                 } else {
-                    SettingsFootnote("Add a host in Settings ▸ Hosts to see its spaces.")
+                    SettingsFootnote("Add a host in Settings ▸ Fleet to see its spaces.")
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)

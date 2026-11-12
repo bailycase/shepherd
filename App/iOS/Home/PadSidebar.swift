@@ -14,6 +14,8 @@ struct PadSidebar: View {
     @Environment(MobileNavigator.self) private var navigator
     @Environment(MobileProjects.self) private var projects
 
+    private var settings: SettingsStore { SettingsStore.of(hosts) }
+
     private var projectsTrailing: SHListRow.Trailing {
         let needsYou = projects.rows.reduce(0) { $0 + $1.needsYou }
         if needsYou > 0 { return .alert("\(needsYou) needs you") }
@@ -28,6 +30,7 @@ struct PadSidebar: View {
         let groups = SidebarThreads.of(hosts).groups(model, unread: automations.unreadRuns, paused: automations.pausedTriggers)
         let recents = designs.recents(groups.recents)
         let selected = navigator.selectedThread
+        let fleetRows = settings.fleetRows
         let pushed = navigator.padPath.last
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -145,9 +148,17 @@ struct PadSidebar: View {
         }
         .background(Color.sh.bgBase)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            SidebarFooter(count: model.hosts.count, offline: model.offlineCount, names: model.hostNames)
+            SidebarFooter(fleet: fleetRows.isEmpty ? nil : FleetDeviceList.footer(fleetRows))
         }
         .task { await feed.watch() }
+        // The Fleet row's "1 asleep", read every so often while a Mac serves the fleet (the Fleet screen reads faster).
+        .task(id: settings.showsFleet) {
+            guard settings.showsFleet else { return }
+            while !Task.isCancelled {
+                await settings.fleet.refresh(settings.hosts)
+                try? await Task.sleep(for: .seconds(MobileLayout.fleetFooterPoll))
+            }
+        }
         // Run groups roll up their runs' unread dots and their triggers' pauses, read while they show.
         .task(id: groups.runs.isEmpty) { if !groups.runs.isEmpty { await automations.watch() } }
         // The board's bar has no title: Search and the split view's Hide sidebar.
@@ -234,17 +245,13 @@ private struct SidebarHeader: View {
     }
 }
 
-/// The sidebar's foot (DuoOpenThread): Settings, as on the Mac; while a host is offline, "1 of 2 offline" beside it opens Settings ▸
-/// Hosts.
+/// The sidebar's foot (DuoOpenThread): Settings, as on the Mac, and "Fleet · 1 asleep" beside it, which opens Fleet (iPadFleet).
+/// Fleet is where the Macs this device is paired with live; there is no Hosts entry.
 private struct SidebarFooter: View, Equatable {
-    let count: Int
-    let offline: Int
-    let names: String
+    let fleet: FleetFooter?
     @Environment(MobileNavigator.self) private var navigator
 
-    static func == (a: SidebarFooter, b: SidebarFooter) -> Bool {
-        a.count == b.count && a.offline == b.offline && a.names == b.names
-    }
+    static func == (a: SidebarFooter, b: SidebarFooter) -> Bool { a.fleet == b.fleet }
 
     var body: some View {
         let sh = Color.sh
@@ -264,19 +271,17 @@ private struct SidebarFooter: View, Equatable {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                if offline > 0 {
-                    Button { navigator.open(.settings(.hosts)) } label: {
-                        Label("\(offline) of \(count) offline", systemImage: "desktopcomputer")
+                if let fleet {
+                    Button { navigator.open(.settings(.fleet)) } label: {
+                        Label("Fleet · \(fleet.detail)", systemImage: "desktopcomputer")
                             .font(.sh(.caption, weight: .medium))
-                            .foregroundStyle(sh.failed)
+                            .foregroundStyle(sh.textSecondary)
                             .lineLimit(1)
                             .frame(minHeight: SH.Height.touch)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Hosts")
-                    .accessibilityValue("\(offline) offline")
-                    .accessibilityHint(names)
+                    .accessibilityLabel(fleet.label)
                 }
             }
             .padding(.horizontal, SH.Space.l)

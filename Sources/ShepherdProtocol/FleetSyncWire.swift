@@ -180,6 +180,9 @@ public struct FleetOp: Codable, Hashable, Sendable {
 /// pi loads, whether it is on, a digest of its files). A state or meta unit sorts after the files
 /// it describes, so its op follows theirs in its origin's log: a Mac that holds it holds every file
 /// op the digest covers, and applies the unit only once the files on disk match the digest.
+/// Credentials, for Macs only (`FleetAccess`): `credential:<provider>` is one provider's entry in pi's
+/// `auth.json` (a sign-in or a key) and `mcpAuth:<key>` one MCP server's sign-in in `mcp-auth.json`,
+/// each inline JSON as pi stores it. Each op of one is a new generation of that sign-in.
 public enum FleetUnit {
     public static func setting(_ key: String) -> String { "setting:" + key }
     public static func instruction(_ file: InstructionFile) -> String { "instruction:" + file.fileName }
@@ -187,6 +190,13 @@ public enum FleetUnit {
     public static func skillFile(_ name: String, _ path: String) -> String { "skill:\(name)/\(path)" }
     public static func extensionFile(_ path: String) -> String { "extension:" + path }
     public static func extensionMeta(_ id: String) -> String { "extmeta:" + id }
+    public static func credential(_ provider: String) -> String { credentialKind + provider }
+    public static func mcpAuth(_ key: String) -> String { mcpAuthKind + key }
+    public static let credentialKind = "credential:"
+    public static let mcpAuthKind = "mcpAuth:"
+
+    /// Whether a unit is a sign-in. Nothing that isn't a Mac in the fleet is ever sent one.
+    public static func isCredential(_ unit: String) -> Bool { unit.hasPrefix(credentialKind) || unit.hasPrefix(mcpAuthKind) }
 
     /// A skill unit's skill and, for a file, its path inside the skill ("pdf", "scripts/fill.py");
     /// nil path is the skill's state.
@@ -251,8 +261,10 @@ public struct FleetVersionVector: Codable, Hashable, Sendable {
 /// What one Mac's host asks another's over their fleet link, after `hello` with a peer's token
 /// (`RemoteRequest.fleetSync`). Answered with a `FleetSyncReply`.
 public enum FleetSyncRequest: Codable, Hashable, Sendable {
-    /// A link came up: the sender's vector. Answered `.state` with the receiver's.
-    case hello(vector: FleetVersionVector)
+    /// A link came up: the sender's vector. Answered `.state` with the receiver's. `fresh`: the sender is
+    /// about to start pi and asks the receiver to read its sign-ins first, so a refresh it just made is in
+    /// the answer and on its way (the credential fence).
+    case hello(vector: FleetVersionVector, fresh: Bool = false)
     /// Ops the receiver lacks, in order per origin. Answered `.state`.
     case ops([FleetOp])
     /// One op, live. Answered `.state`.
@@ -260,13 +272,13 @@ public enum FleetSyncRequest: Codable, Hashable, Sendable {
     /// A blob (or a chunk of one) by hash. Answered `.blob`.
     case blob(hash: String, offset: Int)
 
-    private enum CodingKeys: String, CodingKey { case kind, vector, ops, op, hash, offset }
+    private enum CodingKeys: String, CodingKey { case kind, vector, fresh, ops, op, hash, offset }
     private enum Kind: String, Codable { case hello, ops, op, blob }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(Kind.self, forKey: .kind) {
-        case .hello: self = .hello(vector: try c.decode(FleetVersionVector.self, forKey: .vector))
+        case .hello: self = .hello(vector: try c.decode(FleetVersionVector.self, forKey: .vector), fresh: try c.decodeIfPresent(Bool.self, forKey: .fresh) ?? false)
         case .ops: self = .ops(try c.decode([FleetOp].self, forKey: .ops))
         case .op: self = .op(try c.decode(FleetOp.self, forKey: .op))
         case .blob: self = .blob(hash: try c.decode(String.self, forKey: .hash), offset: try c.decodeIfPresent(Int.self, forKey: .offset) ?? 0)
@@ -276,9 +288,10 @@ public enum FleetSyncRequest: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .hello(let vector):
+        case .hello(let vector, let fresh):
             try c.encode(Kind.hello, forKey: .kind)
             try c.encode(vector, forKey: .vector)
+            if fresh { try c.encode(true, forKey: .fresh) }
         case .ops(let ops):
             try c.encode(Kind.ops, forKey: .kind)
             try c.encode(ops, forKey: .ops)

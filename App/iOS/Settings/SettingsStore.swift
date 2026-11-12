@@ -4,6 +4,7 @@ import UIKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdUI
 
 /// Settings over every host (home track): each host's settings, the root instructions, the
 /// suggested ones and the agent skills, held by ShepherdRemote's models (`ClientHostSettings`,
@@ -13,7 +14,10 @@ import ShepherdRemote
 @MainActor
 @Observable
 final class SettingsStore {
-    let hostSettings = ClientHostSettings()
+    let hostSettings: ClientHostSettings
+    /// Fleet's page (Settings ▸ Fleet, the iPad sidebar's Fleet row): read from a Mac that serves it, never written to but
+    /// for the weights, which are host settings.
+    let fleet: ClientFleet
     let instructions: ClientInstructions
     let suggestions = ClientSuggestions()
     let skills: ClientSkills
@@ -31,6 +35,7 @@ final class SettingsStore {
     @ObservationIgnored private let mobileHosts: MobileHosts
     @ObservationIgnored private var inputs: [Input] = []
     @ObservationIgnored private var watchers = 0
+    @ObservationIgnored private var fleetRowsCache: (page: FleetPage, held: [FleetHeldMac], rows: [FleetListRow])?
 
     /// What decides the hosts: a new connection (`session`) is read again.
     private struct Input: Equatable {
@@ -52,6 +57,9 @@ final class SettingsStore {
 
     private init(hosts: MobileHosts) {
         mobileHosts = hosts
+        let settings = ClientHostSettings()
+        hostSettings = settings
+        fleet = ClientFleet(hostSettings: settings)
         // Kept beside the hosts; "Synced from iPhone" in a host's history.
         instructions = ClientInstructions(origin: UIDevice.current.model)
         skills = ClientSkills()
@@ -131,6 +139,28 @@ final class SettingsStore {
     /// Hooks' value: how many there are, once read ("8").
     var hooksValue: String? { hooks.state.page.map { String($0.hookCount) } }
 
+    /// Some connected Mac serves the fleet (`fleet.view.v1`, its Fleet experiment on): Fleet reads it and draws its room.
+    var showsFleet: Bool { ClientFleet.isAvailable(hosts) }
+
+    /// The Macs Fleet lists: the fleet's own, each joined to the pairing this device holds with it, then the Macs it holds
+    /// that the fleet doesn't show (asleep, or not read yet). Derived again only when the page or a pairing changes.
+    var fleetRows: [FleetListRow] {
+        let held = mobileHosts.hosts.map { host in
+            FleetHeldMac(configID: host.id, fleetID: host.fleetID, name: host.name,
+                         link: host.phase.isConnected ? .connected : host.phase == .connecting ? .connecting : .offline, lastSeen: host.lastSeen)
+        }
+        let page = fleet.page
+        if let cached = fleetRowsCache, cached.page == page, cached.held == held { return cached.rows }
+        let rows = FleetDeviceList.rows(page: page, held: held)
+        fleetRowsCache = (page, held, rows)
+        return rows
+    }
+
+    /// Fleet's value on the list: "3 Macs · 1 asleep", in the quiet value tone (a sleeping Mac isn't an alarm).
+    var fleetValue: SHListRow.Trailing {
+        FleetDeviceList.trail(fleetRows).map(SHListRow.Trailing.value) ?? .none
+    }
+
     /// About's agent: "agent 0.87.1", from the settings host.
     var agentVersion: String? { HostSettingsPresentation.agentVersion(settings) }
 
@@ -154,6 +184,7 @@ final class SettingsStore {
         await skills.refresh(hosts.map(SkillsHost.init))
         // Hooks' value on the list: through the host the page reads.
         await hooks.refresh()
+        if showsFleet { await fleet.refresh(hosts) }
     }
 
     /// While a Settings screen shows: reads every host now, and a host again when it connects.

@@ -11,8 +11,6 @@ extension MobileLayout {
     static let overviewColumnMinWidth: CGFloat = 256
     /// The iPad inbox's list beside the chosen item.
     static let inboxListWidth: CGFloat = 360
-    /// Host cards on a wide screen, each at least this wide.
-    static let hostCardMinWidth: CGFloat = 320
     /// A readable measure for Home's lists on iPad.
     static let homeMaxWidth: CGFloat = 640
 }

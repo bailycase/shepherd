@@ -1099,7 +1099,8 @@ public final class SessionServer: @unchecked Sendable {
                 && ($0 != RemoteProtocol.missionsCapability || missionsServed && onRemoteMission != nil)
                 && (($0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetSyncCapability) || fleet?.membership == true)
                 && ($0 != RemoteProtocol.fleetDevicesCapability || fleet != nil)
-                && (($0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetDispatchCapability) || fleet?.membership == true)
+                && (($0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetViewCapability && $0 != RemoteProtocol.fleetDispatchCapability) || fleet?.membership == true)
+                && ($0 != RemoteProtocol.fleetSnapshotCapability || fleet?.membership == true)
         }
     }
 
@@ -1309,6 +1310,16 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Before an agent's pi starts: reads this Mac's sign-ins and the newest of every Mac it is connected to, so
+    /// pi never starts with an OAuth token another Mac has already rotated away (`FleetSync.catchUpCredentials`).
+    /// Returns at once with Fleet off or no peer connected, and after a few seconds at most. Any actor.
+    func fleetCredentialFence() async {
+        let engine = await withCheckedContinuation { (continuation: CheckedContinuation<FleetSync?, Never>) in
+            queue.async { [self] in continuation.resume(returning: fleet?.membership == true ? fleet?.syncEngine : nil) }
+        }
+        await engine?.catchUpCredentials()
+    }
+
     /// Tests: the saved versions of a unit in this host's fleet store, newest first, and what decides it now.
     func fleetSyncHistory(_ unit: String) -> [FleetHistoryEntry] { queue.sync { fleet?.syncEngine.store.history(of: unit) ?? [] } }
     func fleetSyncWinner(_ unit: String) -> FleetOp? { queue.sync { fleet?.syncEngine.store.winner(of: unit) } }
@@ -1361,6 +1372,7 @@ public final class SessionServer: @unchecked Sendable {
                     for client in Array(clients.values) where client.fleetPeerID != nil { disconnect(client, reason: "fleet turned off") }
                 }
                 pushSettingsChanged(.fleet)
+                announceFleetCapabilities()
                 return
             }
             do {
@@ -1403,8 +1415,16 @@ public final class SessionServer: @unchecked Sendable {
                 // Skills and extensions: content, a file at a time, through the stores that own them.
                 service.syncEngine.add(FleetSkillsSource(skills) { [weak self] in self?.skillsSyncWrote() })
                 service.syncEngine.add(FleetExtensionsSource(pi.importedState()))
+                // Sign-ins: pi's `auth.json` and `mcp-auth.json`, a provider or a server at a time, under pi's lock.
+                let kept = supportDirectory.appendingPathComponent("fleet/credentials-excluded.json")
+                for (file, kind) in [("auth.json", FleetCredentialsSource.Kind.providers), ("mcp-auth.json", .mcpServers)] {
+                    service.syncEngine.add(FleetCredentialsSource(file: pi.files.directory.appendingPathComponent(file), kind: kind, exclusions: kept))
+                }
                 service.listenerChanged(remoteListenPort)
+                // Which checkouts the content index reads: the spaces' (`fleet.snapshot.v1`).
+                service.index.host = FleetIndexService.Host(spaces: { [weak self] in self?.store.state.spaces ?? [] })
                 service.start()
+                if enabled { announceFleetCapabilities() }
             } catch {
                 ShepherdLog.error("fleet could not start: \(error)")
             }
@@ -1547,6 +1567,7 @@ public final class SessionServer: @unchecked Sendable {
     func fleetSpacesChanged() {
         guard let fleet, fleet.membership else { return }
         refreshRepoKeys()
+        fleet.index.reconcile()
         fleet.syncEngine.localChanged()
     }
 
@@ -1572,13 +1593,21 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Fleet went on or off: remote clients (a phone drawing or hiding its Fleet screen) are told what the host offers now.
+    private func announceFleetCapabilities() {
+        for client in clients.values where client.isRemote && !client.isLocal && client.authenticated && client.fleetPeerID == nil {
+            guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: offeredCapabilities(to: client))) else { continue }
+            enqueuePayload(payload, to: client)
+        }
+    }
+
     /// Hands a fleet request to `FleetService`, or refuses it while Fleet is off.
     private func serveFleet(_ request: RemoteRequest, from client: ExtensionConnection) {
         let id: Int
         switch request {
         case .fleetIdentify(let value), .fleetPair(let value, _, _), .fleetEstablish(let value, _), .fleetIntroduce(let value, _),
              .fleetRevoke(let value, _, _), .fleetRead(let value), .fleetAction(let value, _), .fleetSync(let value, _),
-             .fleetPressure(let value, _), .fleetReadiness(let value, _), .fleetPressureNow(let value),
+             .fleetPressure(let value, _), .fleetReadiness(let value, _), .fleetPressureNow(let value), .fleetRepoManifest(let value, _),
              .fleetDispatchCreate(let value, _), .fleetDispatchControl(let value, _, _), .fleetDispatchChanged(let value, _),
              .fleetDispatchResult(let value, _, _, _),
              .fleetPairDevice(let value, _, _), .fleetEnrollDevice(let value, _), .fleetSyncDevices(let value, _):
@@ -2919,7 +2948,7 @@ public final class SessionServer: @unchecked Sendable {
 
         switch request {
         case .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
-             .fleetPressure, .fleetReadiness, .fleetPressureNow,
+             .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetRepoManifest,
              .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult,
              .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
             serveFleet(request, from: client)
