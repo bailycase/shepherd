@@ -224,6 +224,39 @@ struct ProseComponentTests {
         #expect(destination?.absoluteString == expected)
     }
 
+    /// The router resolves a link as above and hands the result to the opener it was given; with no folder a relative path
+    /// opens nothing, and with no opener nothing opens. Its action is made once and follows the folder and opener it is
+    /// given later, which is how a prose view that redraws keeps one action.
+    @Test func theLinkRouterResolvesThenHandsToTheOpener() throws {
+        let relative = try #require(URL(string: "temporal/PLAN.md"))
+        let web = try #require(URL(string: "https://example.com/plan"))
+        let router = SHProseLinkRouter()
+        let action = router.action
+        var first: [URL] = []
+        var second: [URL] = []
+
+        router.root = URL(fileURLWithPath: "/work", isDirectory: true)
+        action(relative)
+        #expect(first.isEmpty, "no opener yet")
+
+        router.outer = OpenURLAction { first.append($0); return .handled }
+        action(relative)
+        router.open(web)
+        #expect(first.map(\.absoluteString) == ["file:///work/temporal/PLAN.md", "https://example.com/plan"])
+
+        router.outer = OpenURLAction { second.append($0); return .handled }
+        router.root = URL(fileURLWithPath: "/other", isDirectory: true)
+        action(relative)
+        #expect(second.map(\.absoluteString) == ["file:///other/temporal/PLAN.md"])
+
+        router.root = nil
+        action(relative)
+        action(web)
+        #expect(second.map(\.absoluteString) == ["file:///other/temporal/PLAN.md", "https://example.com/plan"],
+                "a remote agent's path opens no same-named file here")
+        #expect(first.count == 2)
+    }
+
     // MARK: Images
 
     @Test(arguments: [

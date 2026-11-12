@@ -131,6 +131,44 @@ public enum NativeQueueStack {
 
 // MARK: Slash commands
 
+/// A `ComposerCommandToken` without the words before it: all the slash menu draws from, and cheap
+/// to compare, so the store can keep it and a view can read it without the draft.
+public struct ComposerCommandWord: Equatable, Sendable {
+    public var sigil: Character
+    /// What follows the sigil.
+    public var text: String
+    /// The sigil starts the draft: nothing came before it.
+    public var startsDraft: Bool
+
+    /// A whole skill ("/skill:debug", an inline chip) rather than a command still being typed.
+    public func isSkill(in commands: [NativeCommand]) -> Bool {
+        sigil == "/" && commands.contains { $0.source == "skill" && $0.name == text }
+    }
+}
+
+/// The word a draft opens with once a space ends it: "review" for "/review fix the bug", lowercased.
+/// pi runs only a command that starts the message, so this is what makes a draft one (`/login`,
+/// `/skill:debug`), and it costs the word, never the draft.
+public enum ComposerLeadingCommand {
+    /// A longer word names no command.
+    public static let maxLength = 64
+
+    /// nil unless the draft starts with "/" and a space follows a word of at most `maxLength`
+    /// Characters with no line break in it. It reads one Character past the longest word.
+    public static func of(_ draft: String) -> String? {
+        guard draft.hasPrefix("/") else { return nil }
+        let word = draft.dropFirst()
+        var length = 0
+        for index in word.indices {
+            let character = word[index]
+            if character == " " { return word[..<index].lowercased() }
+            if character.isNewline || length == maxLength { return nil }
+            length += 1
+        }
+        return nil
+    }
+}
+
 /// A "/" (pi's commands and prompts) or "$" (its skills) at the start of the draft or after
 /// whitespace, with no whitespace after it: the menu's trigger anywhere in a draft.
 public struct ComposerCommandToken: Equatable, Sendable {
@@ -164,10 +202,11 @@ public struct ComposerCommandToken: Equatable, Sendable {
         return nil
     }
 
+    /// The token without the words before it.
+    public var word: ComposerCommandWord { ComposerCommandWord(sigil: sigil, text: text, startsDraft: startsDraft) }
+
     /// A whole skill ("/skill:debug", an inline chip) rather than a command still being typed.
-    public func isSkill(in commands: [NativeCommand]) -> Bool {
-        sigil == "/" && commands.contains { $0.source == "skill" && $0.name == text }
-    }
+    public func isSkill(in commands: [NativeCommand]) -> Bool { word.isSkill(in: commands) }
 
     /// The draft running `name`: pi only runs a command that starts the message, so the command
     /// moves to the front and the words typed before it become its arguments.

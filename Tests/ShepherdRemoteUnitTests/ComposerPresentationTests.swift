@@ -328,7 +328,7 @@ struct ComposerCommandTokenTests {
     }
 
     /// Every string of up to four of these, some of them joining into one Character ("e" + U+0301).
-    private static let corpus: [String] = {
+    static let corpus: [String] = {
         let symbols = ["a", "/", "$", " ", "\n", "é", "e\u{301}", "\r\n", "\u{00A0}", "🚀"]
         var all = [""], level = [""]
         for _ in 1...4 {
@@ -350,5 +350,30 @@ struct ComposerCommandTokenTests {
         }
         #expect(Self.corpus.count == 11_111)
         #expect(differing.isEmpty, "differs for \(differing.count), first \(differing.prefix(5).map { String(reflecting: $0) })")
+    }
+
+    @Test func aTokensWordIsTheTokenWithoutItsPrefix() throws {
+        let token = try #require(ComposerCommandToken.token(in: "fix /skill:debug"))
+        #expect(token.word == ComposerCommandWord(sigil: "/", text: "skill:debug", startsDraft: false))
+        #expect(try #require(ComposerCommandToken.token(in: "$de")).word == ComposerCommandWord(sigil: "$", text: "de", startsDraft: true))
+        let commands = [NativeCommand(name: "skill:debug", description: nil, source: "skill")]
+        #expect(token.isSkill(in: commands) && token.word.isSkill(in: commands))
+        #expect(!ComposerCommandWord(sigil: "$", text: "skill:debug", startsDraft: true).isSkill(in: commands), "only a / names a whole skill")
+        #expect(!ComposerCommandWord(sigil: "/", text: "skill:deb", startsDraft: true).isSkill(in: commands))
+    }
+
+    @Test(arguments: [
+        ("", nil), ("hello world", nil), (" /review x", nil), ("/", nil), ("/rev", nil), ("/review", nil),
+        ("/review ", "review"), ("/review fix the login bug", "review"), ("/REVIEW x", "review"), ("/Skill:Debug fix", "skill:debug"),
+        ("/login ant", "login"), ("/ x", ""), ("/a b\nc", "a"), ("/login\tant x", "login\tant"),
+        ("/a\nb c", nil), ("/a\r\nb c", nil), ("/ab\u{2028}c d", nil), ("/\nab c", nil),
+        ("/" + String(repeating: "a", count: ComposerLeadingCommand.maxLength) + " x", String(repeating: "a", count: ComposerLeadingCommand.maxLength)),
+        ("/" + String(repeating: "a", count: ComposerLeadingCommand.maxLength + 1) + " x", nil),
+        ("/" + String(repeating: "a", count: 100_000) + " x", nil),
+        ("/" + String(repeating: "a", count: ComposerLeadingCommand.maxLength), nil),
+        ("//x y", "/x"),
+    ] as [(String, String?)])
+    func theLeadingCommandIsTheFirstWordOnceASpaceFollows(_ draft: String, _ word: String?) {
+        #expect(ComposerLeadingCommand.of(draft) == word)
     }
 }
