@@ -22,10 +22,9 @@ extension ShepherdViewModel {
 
     // MARK: Values
 
-    /// Group by host and Keep idle threads, as the tree reads them.
+    /// Keep idle threads, as the tree reads them.
     var sidebarTreeOptions: SidebarTreeOptions {
-        SidebarTreeOptions(groupByHost: settings.sidebarGroupByHost,
-                           idleCutoff: SidebarTreeOptions.idleCutoff(days: settings.sidebarKeepIdleDays, now: Date()),
+        SidebarTreeOptions(idleCutoff: SidebarTreeOptions.idleCutoff(days: settings.sidebarKeepIdleDays, now: Date()),
                            pinnedSpaces: spacePins.spaces)
     }
 

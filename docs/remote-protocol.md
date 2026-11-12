@@ -600,8 +600,18 @@
   ops from 1 with no gaps, `hlc` is a hybrid logical clock (wall ms, counter), `change` is an inline value (a setting's
   JSON, at most 64 KiB), a blob by SHA-256 (instruction files) or a deletion. A unit is `<kind>:<name>`: slice 2a carries
   `setting:host.<key>` (the host settings in `FleetHostSetting`), `setting:pi.<key>` (an allowlist of pi's `settings.json`
-  keys) and `instruction:AGENTS.md` / `instruction:APPEND_SYSTEM.md`; a kind this build doesn't know is stored, relayed and
-  never applied. The later write wins by (hlc, then the larger Mac id); the loser is kept in `history/<unit>/` (100
+  keys) and `instruction:AGENTS.md` / `instruction:APPEND_SYSTEM.md`; slice 2b-i adds `skill:<name>/<path>` (each file in a skill, a blob; a skill over 2,000 files or 32 MiB stays on its Mac), `skillstate:<name>` (inline JSON `{on, source?, digest?}`: on or off, the repository it came from, a digest of its files), `setting:skills.autoUpdate`, `extension:<path>` (a file under the
+  home's `your-extensions/`, a blob; an extension over 10,000 files or 128 MiB stays on its Mac) and `extmeta:<id>`
+  (inline JSON `{name, entries?, on, digest?}`: what one extension is, whether it is switched on, a digest of its files).
+  A state or meta unit sorts after its files, so its op follows theirs in its origin's log. A skill or extension arrives
+  whole: a new skill's files are written where pi does not read (the folder of skills that are off) and the state moves
+  the folder in once the files hash to its digest; an extension is listed in `settings.json` only once its files hash to
+  the meta's digest, and one that is on is taken out of `settings.json` while a sync rewrites its files and put back when
+  they are whole. A unit's mode is not
+  carried: a file that starts with `#!` is written runnable. The store holds no machine path: each Mac loads an
+  extension from its own `your-extensions/` by its own absolute path in `settings.json`, and an extension someone works on
+  in a folder on one Mac (a copy whose source is a folder there) is linked: the folder is watched and each save is
+  mirrored into the copy and so becomes ops. A kind this build doesn't know is stored, relayed and never applied. The later write wins by (hlc, then the larger Mac id); the loser is kept in `history/<unit>/` (100
   versions or 30 days). An op a person didn't write, copied from what a Mac held when its sync first ran, is a `seed`: any
   other op beats it and among seeds the earliest wins, so the Mac where Fleet was first switched on is the reference.
   Only while Fleet is on (`fleet_off` otherwise, and the sync engine stops with it), and only to a `member` connection (`FleetAccess`: never a client device, never the shared token, never this Mac's own app; refused `forbidden`), after `hello` with a peer's token, one request, `fleetSync`, with
@@ -614,7 +624,7 @@
   each unit (`InstructionsStore.save`, per key under pi's lock for `settings.json`, the app's own setting setters), keeps
   a hash of what it wrote so its own writes never return as ops, and never writes a blob it doesn't hold. `FleetSnapshot.sync`
   (`FleetSyncStatus`: each peer in sync, catching up or offline, and a one line notice of what the first sync replaced)
-  rides `fleetRead` for Settings ▸ Fleet. Credentials, skills, extensions, MCP, hooks, subagents and spaces are not units yet.
+  rides `fleetRead` for Settings ▸ Fleet. Credentials, MCP, hooks, subagents and spaces are not units yet.
 - **Fleet pressure and readiness** (`fleet.pressure.v1`, offered with `fleet.v1`): each Mac pushes `fleetPressure` (a
   `FleetPressureSample`: CPU share, core count, total and available memory, thermal state, power, threads working,
   reserved places) every 5 s to the Macs it holds a link to, `fleetReadiness` (a `FleetReadinessReport`: model, chip, the

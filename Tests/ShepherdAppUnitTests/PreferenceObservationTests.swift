@@ -39,16 +39,16 @@ struct PreferenceObservationTests {
         #expect(notified.fired)
     }
 
-    /// Organize by, Group by host and Keep idle threads reach the sidebar and View's menu.
+    /// Organize by and Keep idle threads reach the sidebar and View's menu.
     @Test func theSidebarsOrganizeSettingsReachTheirReaders() {
         let settings = AppSettings(store: Fixture.defaults())
         let changes: [(AppSettings) -> Void] = [
-            { $0.sidebarStyle = .projects }, { $0.sidebarGroupByHost = true }, { $0.sidebarKeepIdleDays = 30 },
+            { $0.sidebarStyle = .projects }, { $0.sidebarKeepIdleDays = 30 },
         ]
         for change in changes {
             let notified = Notified()
             withObservationTracking {
-                _ = (settings.sidebarStyle, settings.sidebarGroupByHost, settings.sidebarKeepIdleDays)
+                _ = (settings.sidebarStyle, settings.sidebarKeepIdleDays)
             } onChange: { notified.fired = true }
             change(settings)
             #expect(notified.fired)

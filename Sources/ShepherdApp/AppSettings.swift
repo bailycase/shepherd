@@ -20,7 +20,7 @@ enum WorktreeDeleteAction: String, CaseIterable {
 /// agent or another process makes is confirmed whatever is stored here.
 enum SkippableConfirmation: String, CaseIterable {
     case removeSpace, deleteAgent, deleteDesign, deleteDesignSystem, revertFile, stopAll, quit, removeHost,
-         removeMCPServer, removeSpaceMCPServer, deleteProject, updateHost, forgetSkillReceipt,
+         removeMCPServer, removeSpaceMCPServer, deleteProject, updateHost,
          discardSubagentEdits, restoreSubagents, deleteSubagent
 
     /// Its name in Settings ▸ Advanced ▸ Confirmations.
@@ -38,7 +38,6 @@ enum SkippableConfirmation: String, CaseIterable {
         case .removeSpaceMCPServer: "Remove a space's MCP server"
         case .deleteProject: "Delete project"
         case .updateHost: "Update and restart host"
-        case .forgetSkillReceipt: "Stop waiting for a skill change"
         case .discardSubagentEdits: "Discard subagent edits"
         case .restoreSubagents: "Restore default subagents"
         case .deleteSubagent: "Delete subagent"
@@ -113,7 +112,6 @@ final class AppSettings {
         static let sidebarWidth = "shepherd.ui.sidebarWidth"
         static let sidebarRowDensity = "shepherd.sidebarRowDensity"
         static let sidebarStyle = "shepherd.sidebar.style"
-        static let sidebarGroupByHost = "shepherd.sidebar.groupByHost"
         static let sidebarKeepIdleDays = "shepherd.sidebar.keepIdleDays"
         static let shareDiagnostics = "shepherd.diagnostics.enabled"
         static let remoteListenerEnabled = "shepherd.remote.listener"
@@ -139,7 +137,7 @@ final class AppSettings {
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
-            sidebarStyle, sidebarGroupByHost, sidebarKeepIdleDays,
+            sidebarStyle, sidebarKeepIdleDays,
             shareDiagnostics, remoteListenerEnabled, remoteListenerPort,
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeGeneratePRDescription, worktreeDeleteAction, worktreeCloseOnMerge, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
@@ -419,12 +417,6 @@ final class AppSettings {
         didSet { store.set(sidebarStyle.rawValue, forKey: Key.sidebarStyle) }
     }
 
-    /// Group by host, for the project tree: a section per host with its projects inside. Off,
-    /// every host's threads sit in their project with the host as a tag on the row.
-    var sidebarGroupByHost: Bool {
-        didSet { store.set(sidebarGroupByHost, forKey: Key.sidebarGroupByHost) }
-    }
-
     /// Keep idle threads, for the project tree: an idle or finished thread leaves its project
     /// after this many days without activity (it stays in the palette). Running threads and
     /// anything waiting on you stay. 0 keeps them all.
@@ -650,7 +642,6 @@ final class AppSettings {
         sidebarWidth = Self.clampSidebarWidth(width == 0 ? Self.defaultSidebarWidth : width)
         sidebarRowDensity = store.string(forKey: Key.sidebarRowDensity).flatMap(SHDensity.init(rawValue:)) ?? .standard
         sidebarStyle = store.string(forKey: Key.sidebarStyle).flatMap(SHSidebarStyle.init(rawValue:)) ?? Defaults.sidebarStyle
-        sidebarGroupByHost = store.bool(forKey: Key.sidebarGroupByHost)
         let keep = store.object(forKey: Key.sidebarKeepIdleDays) as? Int
         sidebarKeepIdleDays = keep.flatMap { Self.sidebarKeepIdleChoices.contains($0) ? $0 : nil } ?? Defaults.sidebarKeepIdleDays
         shareDiagnostics = store.bool(forKey: Key.shareDiagnostics)
@@ -743,7 +734,6 @@ final class AppSettings {
         sidebarWidth = Self.defaultSidebarWidth
         sidebarRowDensity = .standard
         sidebarStyle = Defaults.sidebarStyle
-        sidebarGroupByHost = false
         sidebarKeepIdleDays = Defaults.sidebarKeepIdleDays
         piPanesExtension = true
         piReviewExtension = true
@@ -886,7 +876,7 @@ final class AppSettings {
         take(\.textGenerationModel), take(\.visionModel), take(\.skillsInSlashMenu), take(\.hiddenSlashCommands), take(\.mcpProjectConfig),
         take(\.queueDelivery), take(\.trimToolOutput), take(\.notifyOnTurnFinished),
         take(\.deferTools), take(\.codemode), take(\.compactAtPercent), take(\.uiDensity), take(\.uiTextScale),
-        take(\.sidebarWidth), take(\.sidebarRowDensity), take(\.sidebarStyle), take(\.sidebarGroupByHost),
+        take(\.sidebarWidth), take(\.sidebarRowDensity), take(\.sidebarStyle),
         take(\.sidebarKeepIdleDays), take(\.piPanesExtension), take(\.piReviewExtension), take(\.subagentDisplay),
         take(\.piNativeSubagents), take(\.piMCPExtension), take(\.piBrowserExtension), take(\.piDesignReferences),
         take(\.childConcurrency), take(\.childModel), take(\.childThinking), take(\.childContext), take(\.shellPath),

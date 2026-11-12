@@ -76,6 +76,7 @@ final class FleetSync: @unchecked Sendable {
         materializer.add(source)
         for file in source.watchedFiles { watcher?.watch(file: file) }
         for file in source.watchedFilesOnly { watcher?.watch(file: file, folder: false) }
+        watcher?.watch(trees: materializer.watchedTrees)
         if started { localChanged() }
     }
 
@@ -88,6 +89,7 @@ final class FleetSync: @unchecked Sendable {
         self.watcher = watcher
         for file in materializer.watchedFiles { watcher.watch(file: file) }
         for file in materializer.watchedFilesOnly { watcher.watch(file: file, folder: false) }
+        watcher.watch(trees: materializer.watchedTrees)
         localChanged()
     }
 
@@ -108,6 +110,8 @@ final class FleetSync: @unchecked Sendable {
         guard started, !stopped else { return }
         beforeScan?()
         let emitted = materializer.scan(name: name())
+        // A folder that came into being with this pass (a dev folder just linked) is watched from now.
+        watcher?.watch(trees: materializer.watchedTrees)
         applyStore()
         if !emitted.isEmpty { pumpAll() }
         fetchMissing()
@@ -148,6 +152,8 @@ final class FleetSync: @unchecked Sendable {
         case "hook": "a hook"
         case "subagent": FleetUnit.name(of: unit) ?? unit
         case "space": "a space"
+        case "skill", "skillstate": "the \(FleetUnit.skillParts(of: unit)?.name ?? unit) skill"
+        case "extension", "extmeta": "the \(FleetUnit.name(of: unit)?.split(separator: "/").first.map(String.init) ?? unit) extension"
         default: "the \(FleetUnit.name(of: unit) ?? unit) setting"
         }
     }

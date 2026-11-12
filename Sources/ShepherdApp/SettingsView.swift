@@ -178,17 +178,9 @@ struct SettingsView: View {
         app + (agent.map { " · \(section == .pi ? "pi" : "agent") \($0)" } ?? "")
     }
 
-    /// The page. Skills still has a host picker until it too is the fleet's one copy (slice 2b-i).
+    /// The page: every Settings page is this host's own; Fleet shares the content that crosses hosts.
     @ViewBuilder private var page: some View {
-        if vm.settingsSection == .skills, !vm.skills.sameEverywhere, !vm.remoteHosts.connections.isEmpty {
-            // Per host, Skills shows and changes the host the picker chose.
-            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
-                SettingsHostPicker(vm: vm)
-                localPage
-            }
-        } else {
-            localPage
-        }
+        localPage
     }
 
     @ViewBuilder private var localPage: some View {
@@ -325,7 +317,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     /// Row titles on the page, as the search lists them under the section.
     var items: [String] {
         switch self {
-        case .appearance: ["Theme", "Mode", "Organize by", "Group by host", "Keep idle threads", "Sidebar rows", "Density", "Text size",
+        case .appearance: ["Theme", "Mode", "Organize by", "Keep idle threads", "Sidebar rows", "Density", "Text size",
                            "Sidebar width"]
         case .terminal: ["Font family", "Font size", "Shell"]
         case .agents: ["Default model", "Default thinking level", "Speed for new threads", "Text generation model", "Image reading model",
@@ -344,7 +336,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .hooks: ["Add hook", "Sources", "Read hooks from Claude Code", "Read hooks from Codex"]
         case .instructions: ["AGENTS.md", "APPEND_SYSTEM.md", "History"]
         case .skills: ["Installed skills", "Browse skills.sh", "Add from repo",
-                       "Skills in the / menu", "Same skills on every host", "Update automatically"]
+                       "Skills in the / menu", "Update automatically"]
         case .mcp: ["Servers", "Add server", "Import…", "How the agent uses them",
                     "Also use a repo’s .mcp.json", "Where they live"]
         case .fleet: ["Macs", "Add a Mac", "Join a fleet", "Remove", "Devices", "Add a device", "Revoke", "Listener"]
@@ -360,7 +352,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .appearance: ["Mode": ["dark", "light", "color", "shepherd design", "theme"], "Text size": ["font", "zoom", "scale"], "Sidebar rows": ["row height", "comfortable"], "Density": ["compact", "spacing"],
                            "Organize by": ["spaces", "activity", "folders", "sidebar style", "tree"],
-                           "Group by host": ["hosts", "machines"], "Keep idle threads": ["archive", "idle"]]
+                           "Keep idle threads": ["archive", "idle"]]
         case .terminal: ["Font family": ["ghostty", "monospace"], "Shell": ["zsh", "bash", "fish"]]
         case .agents: ["Default model": ["claude", "gpt", "provider"], "Text generation model": ["name", "title", "rename", "haiku", "naming", "session naming", "generate"], "Image reading model": ["vision", "images", "screenshots", "pictures", "describe", "multimodal"], "Default thinking level": ["reasoning", "effort"],
                        "Speed for new threads": ["fast", "fast mode", "priority", "service tier", "codex", "openai", "standard"],
@@ -405,7 +397,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills", "from your pi", "copied", ".pi", ".shepherd"],
                        "Browse skills.sh": ["directory", "search", "install"],
                        "Add from repo": ["github", "git", "folder"], "Skills in the / menu": ["slash", "command", "composer"],
-                       "Same skills on every host": ["sync", "hosts"], "Update automatically": ["update", "upgrade"]]
+                       "Update automatically": ["update", "upgrade"]]
         case .mcp: ["Servers": ["mcp", "model context protocol", "tools", "connectors", "mcp.json"],
                     "Add server": ["remote", "local", "url", "command", "stdio", "http", "sse"],
                     "Import…": ["claude desktop", "cursor", "vs code", "paste json", "mcpServers"],

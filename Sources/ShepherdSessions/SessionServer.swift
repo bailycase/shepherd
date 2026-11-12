@@ -1289,6 +1289,17 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Server queue: a skill was written by the fleet's sync. One push covers the files a pass wrote.
+    private var skillsSyncPushPending = false
+    private func skillsSyncWrote() {
+        guard !skillsSyncPushPending else { return }
+        skillsSyncPushPending = true
+        queue.async { [self] in
+            skillsSyncPushPending = false
+            pushSettingsChanged(.skills)
+        }
+    }
+
     /// Tests: the saved versions of a unit in this host's fleet store, newest first, and what decides it now.
     func fleetSyncHistory(_ unit: String) -> [FleetHistoryEntry] { queue.sync { fleet?.syncEngine.store.history(of: unit) ?? [] } }
     func fleetSyncWinner(_ unit: String) -> FleetOp? { queue.sync { fleet?.syncEngine.store.winner(of: unit) } }
@@ -1376,6 +1387,9 @@ public final class SessionServer: @unchecked Sendable {
                 service.syncEngine.add(FleetPiSettingsSource(settings: pi.files.settings))
                 if let source = fleetHostSettings { service.syncEngine.add(source) }
                 addFleetContentSources(to: service)
+                // Skills and extensions: content, a file at a time, through the stores that own them.
+                service.syncEngine.add(FleetSkillsSource(skills) { [weak self] in self?.skillsSyncWrote() })
+                service.syncEngine.add(FleetExtensionsSource(pi.importedState()))
                 service.listenerChanged(remoteListenPort)
                 service.start()
             } catch {
@@ -4259,6 +4273,7 @@ public final class SessionServer: @unchecked Sendable {
             self.queue.async {
                 if request.changesSkills, case .success(.skills(let snapshot)) = result {
                     self.pushSettingsChanged(.skills)
+                    self.fleet?.syncEngine.localChanged()
                     if let handler = self.onSkillsChanged { self.hopToMain { handler(snapshot) } }
                 }
                 guard self.clients[client.fd] === client else { return }

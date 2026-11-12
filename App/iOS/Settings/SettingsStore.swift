@@ -54,7 +54,7 @@ final class SettingsStore {
         mobileHosts = hosts
         // Kept beside the hosts; "Synced from iPhone" in a host's history.
         instructions = ClientInstructions(origin: UIDevice.current.model)
-        skills = ClientSkills(defaults: hosts.defaults)
+        skills = ClientSkills()
         track()
     }
 
