@@ -282,6 +282,12 @@ struct FleetSnapshotTransferTests {
     // MARK: The budget
 
     /// A file of `megabytes`, made of one block that differs from every other file's in its first bytes (so each has its own hash).
+    /// The one minute load average, for the measurement lines.
+    static func load() -> String {
+        var loads = [Double](repeating: 0, count: 3)
+        return getloadavg(&loads, 3) > 0 ? String(format: "%.0f", loads[0]) : "?"
+    }
+
     static func writeLarge(_ megabytes: Int, to path: String, in folder: URL, seed: Int) throws {
         let url = folder.appendingPathComponent(path)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -303,7 +309,7 @@ struct FleetSnapshotTransferTests {
         var nodeModulesBytes: UInt64
     }
 
-    static func warm(nodeModulesMegabytes: Int = 0, tracked: Int = 2_000) async throws -> Warm {
+    static func warm(nodeModulesMegabytes: Int = 0, tracked: Int = 2_000, edits: Int = 5) async throws -> Warm {
         var extra: [String: String] = [:]
         for index in 0..<tracked { extra["src/gen/f\(index).ts"] = "export const v\(index) = \(index)\n" }
         let (a, b, _) = try await Self.pair(extra: extra)
@@ -338,7 +344,8 @@ struct FleetSnapshotTransferTests {
         }
         try await Task.sleep(for: .seconds(3))
         var sizes: UInt64 = 0
-        let edited = ["src/gen/f1.ts", "src/gen/f2.ts", "README.md", "NOTES.md", "docs/plan.md"]
+        // Five by default: three tracked edits and two new files; more are further tracked edits.
+        let edited = ["src/gen/f1.ts", "src/gen/f2.ts", "README.md", "NOTES.md", "docs/plan.md"] + (5..<max(edits, 5)).map { "src/gen/f\($0 + 10).ts" }
         for (index, path) in edited.enumerated() {
             let text = "changed \(index) in the working tree, with enough text to make it its own content\n"
             try Self.write(text, to: path, in: a.folder)
@@ -366,18 +373,31 @@ struct FleetSnapshotTransferTests {
         #expect(sent.count == fixture.edited.count && sent.reduce(UInt64(0)) { $0 + UInt64($1.data.count) } == fixture.editedBytes)
         // The target cloned every unchanged file and directory (the spare, node_modules, the five), wrote no other content, and ran no checkout.
         let id = try #require(a.sent().first?.id)
+        // The sender listed the commit's tree once (it had never seen the commit) and ran no other git.
+        #expect(try #require(Self.engine(a) { $0.senderLog[id] } ?? nil).git == ["ls-tree"])
         let stats = try #require(Self.engine(b) { $0.applyStats[id] } ?? nil)
         #expect(stats.usedSpare && stats.copies == 0 && stats.filesWritten == 0 && stats.bytesWritten == 0)
         #expect(stats.clones == 2 + fixture.edited.count, "clones: \(stats.clones)")
         #expect(stats.heldLocally == 1 && stats.receivedFiles == fixture.edited.count)
-        #expect(!stats.git.contains("checkout") && !stats.git.contains("read-tree") && !stats.git.contains("update-index"), "git ran: \(stats.git)")
+        // The receiver's whole git work is one listing of the commit's tree: the worktree is written directly (no `worktree add`), the
+        // files are cloned (no checkout, no `read-tree`), the index is written (no `update-index`), the spare is at the commit (no diff or
+        // `cat-file`), and nothing is read from a held directory.
+        #expect(stats.git == ["ls-tree"], "git ran: \(stats.git)")
         // And the result is the checkout.
         let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
         #expect(try Self.tree(of: worktree) == Self.tree(of: a.folder))
         #expect(try Self.porcelain(worktree) == Self.porcelain(a.folder))
+        // A second dispatch from the same commit lists nothing: the commit's tree is kept.
+        let parent = try await a.parent()
+        try parent.hello()
+        _ = try await parent.dispatch("Again.", key: "again", host: "Mac mini")
+        try await FleetDispatchTests.wait("the second thread on the Mac mini") { b.dispatched.count == 2 }
+        let again = try #require(a.sent().first { $0.id != id }?.id)
+        #expect(try #require(Self.engine(a) { $0.senderLog[again] } ?? nil).git.isEmpty)
         let timing = try #require(Self.engine(a) { $0.timings[id] } ?? nil)
-        let millis = try #require(b.taken().first?.fileMillis)
-        print("FLEET-MEASURE warm: sender \(timing.build) ms, transfer \(timing.transfer) ms, receiver \(millis) ms")
+        let millis = try #require(b.taken().first { $0.id == id }?.fileMillis)
+        let senderPhases = (Self.engine(a) { $0.senderLog[id]?.phases } ?? nil)
+        print("FLEET-MEASURE warm: sender \(timing.build) ms \(String(describing: senderPhases)), transfer \(timing.transfer) ms, receiver \(millis) ms \(stats.phases) load \(Self.load())")
     }
 
     /// Set from the spike's measurements: the file part (create received to a worktree that passed its digest) of a warm dispatch with a 200 MB
@@ -393,7 +413,8 @@ struct FleetSnapshotTransferTests {
         try await FleetDispatchTests.wait("the receiver's record to move past preparing") { b.taken().first?.state != .preparing }
         let millis = try #require(b.taken().first?.fileMillis)
         let id = try #require(a.sent().first?.id)
-        print("FLEET-MEASURE warm 200 MB node_modules: receiver \(millis) ms; \(String(describing: Self.engine(b) { $0.applyStats[id]?.phases } ?? nil))")
+        let timing = Self.engine(a) { $0.timings[id] } ?? nil
+        print("FLEET-MEASURE warm 200 MB node_modules: sender \(timing?.build ?? -1) ms \(String(describing: Self.engine(a) { $0.senderLog[id]?.phases } ?? nil)), transfer \(timing?.transfer ?? -1) ms, receiver \(millis) ms; \(String(describing: Self.engine(b) { $0.applyStats[id]?.phases } ?? nil)) load \(Self.load())")
         #expect(millis < Self.fileMillisBudget, "the file part took \(millis) ms")
     }
 }

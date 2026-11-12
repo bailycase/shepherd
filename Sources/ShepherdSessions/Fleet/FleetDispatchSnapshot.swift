@@ -92,6 +92,7 @@ extension FleetDispatch {
             return done(.failure(.init(code: FleetDispatchCode.invalid, message: "The dispatch ended.")))
         }
         snapshots[id] = built
+        senderLog[id] = (built.phases, built.git)
         outbound[id]?.snapshotBytes = built.header.bytes
         outbound[id]?.snapshotProgress = 0
         outbound[id]?.snapshotFiles = built.header.files + built.header.directories
@@ -278,6 +279,7 @@ extension FleetDispatch {
         }
         guard snap.held == snap.header.parts else { return reply(.success(ack(snap, id: id))) }
         // The manifest is whole: what this Mac lacks of it.
+        if !snap.events.contains(where: { $0.hasPrefix("parts") }) { snap.mark("parts") }
         refreshNeeds(id, snap) { [weak self] result in
             guard let self else { return }
             switch result {
@@ -301,6 +303,7 @@ extension FleetDispatch {
                     self.failInbound(id, failure.code, failure.detail)
                     done(.failure(Self.refusal(failure.code, failure.detail)))
                 case .success(let (manifest, needs)):
+                    snap.mark("needs")
                     snap.manifest = manifest
                     snap.needOrder = needs
                     snap.needs = Set(needs)
@@ -392,6 +395,7 @@ extension FleetDispatch {
     func startBuild(_ id: UUID) {
         guard let snap = snapshotsIn[id], !snap.building, inbound[id]?.record.state == .preparing else { return }
         snap.building = true
+        snap.mark("arrived")
         prepare(id, space: snap.space, requestedBranch: snap.requestedBranch)
     }
 

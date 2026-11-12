@@ -145,4 +145,75 @@ struct FleetSnapshotFilesTests {
         #expect((attributes[.modificationDate] as? Date)?.timeIntervalSince1970 == past.timeIntervalSince1970, "the clone keeps the file's time, so a cloned index needs no refresh")
         #expect(try String(contentsOfFile: target + "/sub/file.txt", encoding: .utf8) == "content\n")
     }
+
+    // MARK: The worktree written without git
+
+    /// A scratch repository (one commit) and the folder a worktree would go in.
+    private func worktreeFixture() throws -> (repo: URL, commit: String, destination: String) {
+        let repo = try makeScratchRepo(files: ["README.md": "# acme\n", "src/app.ts": "app\n"])
+        let commit = try git(["rev-parse", "HEAD"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (repo, commit, try makeScratchDirectory("worktrees").appendingPathComponent("acme-web-fleet-fix-test").path)
+    }
+
+    @Test func aWorktreeWrittenDirectlyIsOneGitListsUsesAndRemovesLikeItsOwn() throws {
+        let (repo, commit, destination) = try worktreeFixture()
+        #expect(FleetFastWorktree.add(repo: repo.path, branch: "fleet/fix-test", commit: commit, destination: destination))
+        let folder = URL(fileURLWithPath: destination)
+        // Git lists it, on its branch, at the commit; the branch exists; nothing is wrong with the repository.
+        let listing = try git(["worktree", "list", "--porcelain"], in: repo)
+        #expect(listing.contains("branch refs/heads/fleet/fix-test") && listing.contains(folder.resolvingSymlinksInPath().path) && listing.contains(commit))
+        #expect(try git(["rev-parse", "HEAD"], in: folder).trimmingCharacters(in: .whitespacesAndNewlines) == commit)
+        #expect(try git(["rev-parse", "--abbrev-ref", "HEAD"], in: folder).trimmingCharacters(in: .whitespacesAndNewlines) == "fleet/fix-test")
+        #expect(try git(["branch", "--list", "fleet/*"], in: repo).contains("fleet/fix-test"))
+        _ = try git(["fsck", "--no-dangling"], in: repo)
+        // It is what `--no-checkout` leaves: no files, no index; the checkout git makes next fills it and reads clean.
+        #expect(try FileManager.default.contentsOfDirectory(atPath: destination) == [".git"])
+        try git(["read-tree", "--reset", "-u", "HEAD"], in: folder)
+        #expect(try git(["status", "--porcelain"], in: folder).isEmpty && FileManager.default.fileExists(atPath: destination + "/src/app.ts"))
+        // A commit made there lands on its branch, and the repository's own checkout is untouched.
+        try "more\n".write(to: folder.appendingPathComponent("src/more.ts"), atomically: true, encoding: .utf8)
+        try git(["add", "."], in: folder)
+        try git(["commit", "-qm", "more"], in: folder)
+        #expect(try git(["rev-parse", "main"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines) == commit)
+        // Git takes it away as it would any worktree: the folder, its entry, then the branch.
+        try git(["worktree", "remove", "--force", destination], in: repo)
+        try git(["branch", "-D", "fleet/fix-test"], in: repo)
+        #expect(!FileManager.default.fileExists(atPath: destination))
+        #expect(try git(["worktree", "list", "--porcelain"], in: repo).components(separatedBy: "worktree ").count == 2)
+        #expect(!FileManager.default.fileExists(atPath: repo.appendingPathComponent(".git/worktrees/acme-web-fleet-fix-test").path))
+    }
+
+    @Test func aRepositoryThatKeepsMoreThanThePlainLayoutIsLeftToGitAndNothingIsWritten() throws {
+        func nothingWritten(_ repo: URL, _ destination: String) -> Bool {
+            !FileManager.default.fileExists(atPath: repo.appendingPathComponent(".git/worktrees").path) && !FileManager.default.fileExists(atPath: destination)
+        }
+        // A branch of that name already exists, and so does a folder where the worktree would go.
+        var (repo, commit, destination) = try worktreeFixture()
+        try git(["branch", "fleet/fix-test"], in: repo)
+        #expect(!FleetFastWorktree.add(repo: repo.path, branch: "fleet/fix-test", commit: commit, destination: destination) && nothingWritten(repo, destination))
+        (repo, commit, destination) = try worktreeFixture()
+        try FileManager.default.createDirectory(atPath: destination, withIntermediateDirectories: true)
+        #expect(!FleetFastWorktree.add(repo: repo.path, branch: "fleet/fix-test", commit: commit, destination: destination))
+        // Config git reads for more than the plain layout: an extension, a hooks path, a worktree config.
+        for setting in [["extensions.worktreeConfig", "true"], ["core.hooksPath", "/nonexistent"], ["extensions.refStorage", "files"]] {
+            (repo, commit, destination) = try worktreeFixture()
+            try git(["config", setting[0], setting[1]], in: repo)
+            #expect(!FleetFastWorktree.add(repo: repo.path, branch: "fleet/fix-test", commit: commit, destination: destination) && nothingWritten(repo, destination), "\(setting[0])")
+        }
+        // A reference-transaction hook would have run.
+        (repo, commit, destination) = try worktreeFixture()
+        let hooks = repo.appendingPathComponent(".git/hooks")
+        try FileManager.default.createDirectory(at: hooks, withIntermediateDirectories: true)
+        try "#!/bin/sh\n".write(to: hooks.appendingPathComponent("reference-transaction"), atomically: true, encoding: .utf8)
+        #expect(!FleetFastWorktree.add(repo: repo.path, branch: "fleet/fix-test", commit: commit, destination: destination) && nothingWritten(repo, destination))
+        // A branch name git would refuse, a commit that isn't a SHA-1, and a checkout that is itself a worktree.
+        (repo, commit, destination) = try worktreeFixture()
+        for branch in ["fleet/../x", "fleet/x.lock", "fleet/a b", "-x", "fleet//x", "fleet/x~1", "fleet/.hidden"] {
+            #expect(!FleetFastWorktree.add(repo: repo.path, branch: branch, commit: commit, destination: destination), "\(branch)")
+        }
+        #expect(!FleetFastWorktree.add(repo: repo.path, branch: "fleet/fix-test", commit: String(repeating: "a", count: 64), destination: destination))
+        let linked = try makeScratchDirectory("linked").appendingPathComponent("w")
+        try git(["worktree", "add", "-q", "-b", "other", linked.path], in: repo)
+        #expect(!FleetFastWorktree.add(repo: linked.path, branch: "fleet/fix-test", commit: commit, destination: destination + "2"))
+    }
 }

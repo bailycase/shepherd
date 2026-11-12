@@ -68,9 +68,8 @@ enum FleetDispatchGit {
     /// `fleet/<slug of the title>`, with a short suffix of `dispatchID` only when that branch or its
     /// folder already exists or another dispatch in flight has claimed it, so retries and repeat tasks never collide.
     static func branchName(title: String, requested: String?, dispatchID: UUID, repo: String, claimed: Set<String> = []) -> String {
-        var base = requested.flatMap { $0.hasPrefix("fleet/") && isValidBranch($0, repo: repo) ? $0 : nil }
-            ?? "fleet/" + slug(title)
-        if !isValidBranch(base, repo: repo) { base = "fleet/dispatch" }
+        // A name made from a title is always a valid ref (`slug` is lowercase letters, digits and single hyphens), so only a requested one is asked of git.
+        let base = requested.flatMap { $0.hasPrefix("fleet/") && isValidBranch($0, repo: repo) ? $0 : nil } ?? "fleet/" + slug(title)
         func taken(_ name: String) -> Bool {
             claimed.contains(name) || run(["show-ref", "--verify", "--quiet", "refs/heads/\(name)"], in: repo)?.status == 0
                 || FileManager.default.fileExists(atPath: GitWorktree.destination(repo: repo, branch: name))

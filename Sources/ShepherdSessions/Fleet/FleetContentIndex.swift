@@ -157,7 +157,7 @@ final class FleetContentIndex: @unchecked Sendable {
         }
         guard state == .ready else { return }
         persist(force: true)
-        let stream = FleetFSEvents(root: root, queue: queue, latency: latency) { [weak self] in self?.ingest($0) }
+        let stream = FleetFSEvents(root: root, queue: queue, latency: latency) { [weak self] in self?.ingest($0, classifyingInBackground: true) }
         events = stream
         if !stream.start(since: eventID) {
             // Without events the index would drift unseen: the periodic check rescans instead.
@@ -460,23 +460,63 @@ final class FleetContentIndex: @unchecked Sendable {
     // MARK: Finishing a batch
 
     /// Settles what a pass changed: directory hashes, git classes of new files, the delta for the manifest, the disk.
-    private func finishBatch(classify: Bool = true, persistChanges: Bool = true) {
+    ///
+    /// `classifyingInBackground`: the git classes of new files are asked of git beside the index, not in the middle of the batch. A
+    /// file's class says whether it is tracked, untracked or ignored; no hash, tree or manifest depends on it, so a dispatch that
+    /// follows an edit doesn't wait for two git processes to tell it what a new file is.
+    private func finishBatch(classify: Bool = true, persistChanges: Bool = true, classifyingInBackground: Bool = false) {
         for change in tree.commit() {
             if let old = change.old { pendingRemoved.append(old) }
             if let new = change.new { pendingAdded.append(new) }
         }
         if classify, !newPaths.isEmpty {
-            let paths = Array(newPaths)
-            if let lookup = paths.count > 400 ? classifier.lookup(root, nil) : classifier.lookup(root, paths) {
-                for path in paths where entries[path] != nil {
-                    let state: FleetGitClass = lookup.tracked.contains(path) ? .tracked : lookup.untracked.contains(path) ? .untracked : .ignored
-                    if entries[path]?.state != state { entries[path]?.state = state; dirtyPaths.insert(path) }
-                }
+            if classifyingInBackground {
+                unclassified.formUnion(newPaths)
+                if !classifying { classifyNext() }
+            } else {
+                apply(classes: newPaths)
             }
         }
         newPaths = []
         flushDelta()
         if persistChanges { persist() }
+    }
+
+    /// Files whose class is being (or is about to be) asked of git, and whether a lookup is out.
+    private var unclassified = Set<String>()
+    private var classifying = false
+
+    private func apply(classes paths: Set<String>) {
+        let paths = Array(paths)
+        guard let lookup = paths.count > 400 ? classifier.lookup(root, nil) : classifier.lookup(root, paths) else { return }
+        applyClasses(of: paths, lookup)
+    }
+
+    private func applyClasses(of paths: [String], _ lookup: FleetGitClassifier.Lookup) {
+        for path in paths where entries[path] != nil {
+            let state: FleetGitClass = lookup.tracked.contains(path) ? .tracked : lookup.untracked.contains(path) ? .untracked : .ignored
+            if entries[path]?.state != state { entries[path]?.state = state; dirtyPaths.insert(path) }
+        }
+    }
+
+    /// Asks git for the classes of what is waiting, off the queue, and puts the answer in on it; goes on while more has come.
+    private func classifyNext() {
+        guard !unclassified.isEmpty, !stopped else { classifying = false; return }
+        classifying = true
+        let paths = Array(unclassified)
+        unclassified = []
+        let (root, classifier) = (self.root, self.classifier)
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let lookup = paths.count > 400 ? classifier.lookup(root, nil) : classifier.lookup(root, paths)
+            self?.queue.async {
+                guard let self else { return }
+                if let lookup, !self.stopped {
+                    self.applyClasses(of: paths, lookup)
+                    self.persist()
+                }
+                self.classifyNext()
+            }
+        }
     }
 
     private func flushDelta() {
@@ -490,7 +530,7 @@ final class FleetContentIndex: @unchecked Sendable {
     // MARK: Events (queue)
 
     /// Turns a batch of events into the smallest amount of reading that brings the index current.
-    func ingest(_ batch: [FleetFSEvents.Event]) {
+    func ingest(_ batch: [FleetFSEvents.Event], classifyingInBackground: Bool = false) {
         guard state == .ready, !stopped else { return }
         var rescanAll = false
         var deep = Set<String>(), directories = Set<String>(), files = Set<String>()
@@ -520,7 +560,7 @@ final class FleetContentIndex: @unchecked Sendable {
             for path in directories.sorted() { scanAfterEvent(path, deep: false) }
             for path in files.sorted() { refreshFile(path) }
             if gitChanged { reclassify() }
-            finishBatch()
+            finishBatch(classifyingInBackground: classifyingInBackground)
         }
         if let latest = batch.map(\.id).max() { eventID = max(eventID ?? 0, latest) }
         persist()
@@ -583,7 +623,14 @@ final class FleetContentIndex: @unchecked Sendable {
     // MARK: Snapshots (slice 4c)
 
     /// What a dispatch reads: the entries and the Merkle tree as they are now (value copies, so reading them costs nothing). Queue.
-    func snapshotView() -> (entries: [String: FleetIndexEntry], tree: FleetMerkleTree)? { state == .ready ? (entries, tree) : nil }
+    func snapshotView() -> (entries: [String: FleetIndexEntry], tree: FleetMerkleTree, mutations: Int, treeChecked: Bool)? {
+        state == .ready ? (entries, tree, mutations, treeCheckedAt == mutations) : nil
+    }
+
+    /// The tree was found to agree with the entries as they were at `mutations` (a dispatch that finds nothing changed since doesn't look again). Queue.
+    func treeAgreed(at version: Int) { treeCheckedAt = version }
+
+    private var treeCheckedAt = -1
 
     /// Lets the events the system already holds for this root reach the index, so a file written a moment ago is in it. Not from
     /// the index's own queue.
@@ -637,16 +684,23 @@ final class FleetContentIndex: @unchecked Sendable {
 
     // MARK: Checking
 
-    /// Compares a sample of what the index holds with the disk, and the Merkle tree with one built again from the entries.
-    /// Drift found is repaired by a rescan of the root. True when there was any.
-    @discardableResult
-    func verify(sample: Int = 64, reclassifying: Bool = false) -> Bool {
-        guard state == .ready, !stopped else { return false }
-        var drift: String?
+    /// Whether a Merkle tree built again from `entries` has the root `tree` has (reads nothing from disk; nothing of the index's state).
+    static func treeAgrees(entries: [String: FleetIndexEntry], tree: FleetMerkleTree) -> Bool {
         var rebuilt = FleetMerkleTree()
         for (path, entry) in entries { rebuilt.set(path, kind: entry.kind, hash: entry.hash) }
         rebuilt.commit()
-        if rebuilt.root != tree.root { drift = "directory hashes disagree with the entries" }
+        return rebuilt.root == tree.root
+    }
+
+    /// Compares a sample of what the index holds with the disk, and the Merkle tree with one built again from the entries.
+    /// Drift found is repaired by a rescan of the root. True when there was any.
+    @discardableResult
+    func verify(sample: Int = 64, reclassifying: Bool = false, checkingTree: Bool = true) -> Bool {
+        guard state == .ready, !stopped else { return false }
+        var drift: String?
+        if checkingTree {
+            if Self.treeAgrees(entries: entries, tree: tree) { treeCheckedAt = mutations } else { drift = "directory hashes disagree with the entries" }
+        }
         if drift == nil {
             // Everything when the sample covers it, else that many entries at random.
             let paths = sample >= entries.count ? Array(entries.keys) : (0..<sample).compactMap { _ in entries.randomElement()?.key }

@@ -1,6 +1,7 @@
 import CryptoKit
 import Darwin
 import Foundation
+import os
 import ShepherdCore
 import ShepherdProtocol
 
@@ -18,6 +19,10 @@ struct FleetSnapshotSender {
         var root: String
         var bundle: (ref: FleetBlobRef, url: URL)?
         var warning: Bool
+        /// Milliseconds since `build` began at the end of each step, in order (the budget test and the log).
+        var phases: [String] = []
+        /// The git commands the build ran (the first word of each): the listing of the commit's tree unless this Mac had it, the bundle.
+        var git: [String] = []
     }
 
     enum Failure: Error, Equatable {
@@ -42,24 +47,72 @@ struct FleetSnapshotSender {
 
     /// Works out the snapshot. `unpushed` says the checkout has commits no remote ref holds.
     func build(id: UUID, unpushed: Bool) throws -> Built {
+        let began = ContinuousClock.now
+        var phases: [String] = []
+        var git: [String] = []
+        func mark(_ name: String) { phases.append("\(name) \(Int((ContinuousClock.now - began) / .milliseconds(1)))") }
+        // The commit's tree: a commit never changes, so one listed before is kept (and the listing of a new one runs while the index is
+        // brought up to date below, not after).
+        let key = root + "\0" + commit
+        let known = FleetTrackedTrees.shared.tree(for: key)
+        let listing = OSAllocatedUnfairLock<FleetTrackedTrees.Tree?>(initialState: known)
+        let listed = DispatchGroup()
+        if known == nil {
+            git.append("ls-tree")
+            let (root, commit) = (root, commit)
+            listed.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                if let tree = FleetDispatchGit.run(["ls-tree", "-r", "-z", commit], in: root, timeout: 60), tree.status == 0 {
+                    let parsed = FleetTrackedTrees.Tree(Self.parse(tree: tree.output))
+                    FleetTrackedTrees.shared.keep(parsed, for: key)
+                    listing.withLock { $0 = parsed }
+                }
+                listed.leave()
+            }
+        }
         // Whatever the system already has for this root reaches the index first, so a file written a moment ago is in it; then a
-        // spot check of a sample of what the index holds against the disk (the plan's R13).
-        guard index.stateNow == .ready else { throw Failure.notIndexed(index.stateNow.rawValue) }
+        // spot check of a sample of what the index holds against the disk (the plan's R13). The check that the directory hashes still
+        // agree with the entries reads nothing and runs beside the rest, below.
+        guard index.stateNow == .ready else { listed.wait(); throw Failure.notIndexed(index.stateNow.rawValue) }
         index.settle()
-        index.queue.sync { _ = index.verify(sample: 64) }
+        mark("settle")
+        index.queue.sync { _ = index.verify(sample: 64, checkingTree: false) }
+        mark("verify")
         guard let view = index.queue.sync(execute: { index.snapshotView() }) else {
+            listed.wait()
             throw Failure.notIndexed(index.stateNow.rawValue)
         }
-        guard let tree = FleetDispatchGit.run(["ls-tree", "-r", "-z", commit], in: root, timeout: 60), tree.status == 0 else { throw Failure.git("ls-tree") }
-        let tracked = Self.parse(tree: tree.output)
+        let agree = OSAllocatedUnfairLock(initialState: true)
+        let agreed = DispatchGroup()
+        if !view.treeChecked {
+            agreed.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                let consistent = FleetContentIndex.treeAgrees(entries: view.entries, tree: view.tree)
+                agree.withLock { $0 = consistent }
+                if consistent { index.queue.async { index.treeAgreed(at: view.mutations) } }
+                agreed.leave()
+            }
+        }
+        listed.wait()
+        mark("ls-tree")
+        guard let tracked = listing.withLock({ $0 }) else { agreed.wait(); throw Failure.git("ls-tree") }
         let root = self.root
         let plan = FleetSnapshotPlan.make(
-            commit: commit, tracked: tracked, entries: view.entries, tree: view.tree, target: target,
+            commit: commit, tracked: tracked.entries, entries: view.entries, tree: view.tree, target: target,
             goneFromDisk: { var status = stat(); return lstat(root + "/" + $0, &status) != 0 },
-            unindexedHash: { path in FleetSnapshotBlobs.hash(of: URL(fileURLWithPath: root + "/" + path)) ?? FleetHash(a: 0, b: 0, c: 0, d: 0) })
+            unindexedHash: { path in FleetSnapshotBlobs.hash(of: URL(fileURLWithPath: root + "/" + path)) ?? FleetHash(a: 0, b: 0, c: 0, d: 0) },
+            trackedDirectories: tracked.directories)
+        mark("plan")
+        agreed.wait()
+        // A tree that disagrees with its entries is drift: the index looks again, and this dispatch doesn't go on what it held.
+        guard agree.withLock({ $0 }) else {
+            index.queue.sync { _ = index.verify(sample: 64) }
+            throw Failure.notIndexed(index.stateNow.rawValue)
+        }
+        mark("tree")
         if let problem = plan.manifest.problem { throw Failure.git("manifest: \(problem)") }
         var bundle: (FleetBlobRef, URL)?
-        if unpushed { bundle = try makeBundle(id: id) }
+        if unpushed { bundle = try makeBundle(id: id); git.append("bundle") }
         let total = plan.bytes + (bundle?.0.size ?? 0)
         let verdict = FleetSnapshotCap.verdict(bytes: total, warnAbove: warnAbove, refuseAbove: refuseAbove)
         if verdict == .refuse {
@@ -70,7 +123,8 @@ struct FleetSnapshotSender {
             commit: commit, rootHash: plan.manifest.rootHash, digest: plan.manifest.digest, files: plan.manifest.files.count,
             directories: plan.manifest.directories.count, deletions: plan.manifest.deletions.count, parts: parts.count,
             fileCount: plan.fileCount, bytes: total, bundle: bundle?.0)
-        return Built(id: id, plan: plan, header: header, parts: parts, root: root, bundle: bundle, warning: verdict == .warn)
+        mark("parts")
+        return Built(id: id, plan: plan, header: header, parts: parts, root: root, bundle: bundle, warning: verdict == .warn, phases: phases, git: git)
     }
 
     /// `git ls-tree -r -z`: `<mode> <type> <id>\t<path>\0`.
@@ -154,6 +208,51 @@ struct FleetSnapshotReader {
             guard let data = try? handle.read(upToCount: FleetSnapshotTransfer.chunkBytes), !data.isEmpty else { throw Failure.changed(path) }
             try await emit(FleetBlobChunk(hash: hash, size: size, offset: offset, data: data))
             offset += UInt64(data.count)
+        }
+    }
+}
+
+/// The trees of commits this Mac has listed lately, by checkout and commit: a commit never changes, so the second dispatch from one
+/// doesn't list it again. A few are kept (a tree of a large repository is tens of megabytes).
+final class FleetTrackedTrees: @unchecked Sendable {
+    /// A commit's files, and every directory above a file that isn't a submodule (what a dispatch needs to know a tracked directory).
+    struct Tree: Sendable {
+        var entries: [String: FleetTreeEntry]
+        var directories: Set<String>
+
+        init(_ entries: [String: FleetTreeEntry]) {
+            self.entries = entries
+            var directories = Set<String>()
+            for (path, entry) in entries where !entry.isSubmodule {
+                var end = path.startIndex
+                while let slash = path[end...].firstIndex(of: "/") {
+                    directories.insert(String(path[..<slash]))
+                    end = path.index(after: slash)
+                }
+            }
+            self.directories = directories
+        }
+    }
+
+    static let shared = FleetTrackedTrees()
+    private static let limit = 4
+    private let lock = NSLock()
+    private var kept: [(key: String, tree: Tree)] = []
+
+    func tree(for key: String) -> Tree? {
+        lock.withLock {
+            guard let position = kept.firstIndex(where: { $0.key == key }) else { return nil }
+            let found = kept.remove(at: position)
+            kept.append(found)
+            return found.tree
+        }
+    }
+
+    func keep(_ tree: Tree, for key: String) {
+        lock.withLock {
+            kept.removeAll { $0.key == key }
+            kept.append((key, tree))
+            if kept.count > Self.limit { kept.removeFirst(kept.count - Self.limit) }
         }
     }
 }

@@ -1,8 +1,11 @@
 import CryptoKit
 import Darwin
 import Foundation
+import os
 import ShepherdCore
 import ShepherdProtocol
+
+private typealias FileStatus = stat
 
 /// The receiving side of a dispatch's snapshot (slice 4c): the fresh worktree a thread will work in, built from contents the Mac
 /// already holds, and checked against the sender's status digest before anything starts in it.
@@ -31,6 +34,8 @@ struct FleetSnapshotApply {
         /// Every content index this Mac keeps, to find files and directories it already holds.
         var indexes: [FleetContentIndex]
         var began: ContinuousClock.Instant
+        /// What the arrival logged before the build began (milliseconds since the create), put first in `Stats.phases`.
+        var prelude: [String] = []
     }
 
     /// What the build did, for the budget test and the log: counts, never content.
@@ -66,7 +71,10 @@ struct FleetSnapshotApply {
     var input: Input
     private var stats = Stats()
 
-    init(_ input: Input) { self.input = input }
+    init(_ input: Input) {
+        self.input = input
+        stats.phases = input.prelude
+    }
 
     /// Builds and verifies the worktree. Blocking. On failure everything made is removed.
     mutating func run() -> Result<Applied, Failure> {
@@ -86,6 +94,8 @@ struct FleetSnapshotApply {
 
     private struct Created {
         var worktree: String?
+        /// The folder the files are laid out in while git makes the worktree; gone once it has taken the worktree's place.
+        var staging: String?
         var ref: Bool = false
     }
 
@@ -95,6 +105,7 @@ struct FleetSnapshotApply {
     }
 
     private func cleanup(_ created: Created) {
+        if let staging = created.staging { try? FileManager.default.removeItem(atPath: staging) }
         Self.discard(repo: input.repo, worktree: created.worktree, branch: input.branch, ref: created.ref ? input.id : nil)
     }
 
@@ -115,59 +126,121 @@ struct FleetSnapshotApply {
         stats.phases.append("\(name) \(Int((ContinuousClock.now - input.began) / .milliseconds(1)))")
     }
 
+    /// What the git side of a build gives back: the commit's tree listed and (with a spare) what differs from the spare's commit.
+    private struct GitSide: Sendable {
+        var listing: (status: Int32, output: String)?
+        var difference: (status: Int32, output: String)?
+    }
+
     private mutating func build(_ created: inout Created) throws -> String {
         let commit = input.manifest.commit
         mark("start")
         let destination = GitWorktree.destination(repo: input.repo, branch: input.branch)
-        // The worktree is added and the commit's tree listed at once (two git processes that don't need each other). A commit this
-        // repository lacks fails both, and is made present (origin, then the bundle) before they are tried again.
-        let (repo, branch) = (input.repo, input.branch)
-        func attempt() -> (added: Bool, listing: (status: Int32, output: String)?, failure: String?) {
+        let spare = input.spares.refresh(ifBuilt: PiHome.canonical(input.repo))
+        // With a spare the files are laid out in a sibling folder, and the folder takes the worktree's place at the end (so a worktree
+        // that fails its digest never held the files).
+        let work = spare == nil ? destination : destination + ".fleet-stage"
+        let repo = input.repo
+        // The commit's tree is listed and (with a spare) the difference from the spare's commit taken at once, with the spare's files
+        // cloned beside them: git processes and a clone that don't need each other. A commit this repository lacks fails the git
+        // calls, and is made present (origin, then the bundle) before they are tried again.
+        func gitSide() -> GitSide {
             let group = DispatchGroup()
-            var listing: (status: Int32, output: String)?
+            let side = OSAllocatedUnfairLock(initialState: GitSide())
             group.enter()
             DispatchQueue.global(qos: .userInitiated).async {
-                listing = FleetDispatchGit.run(["ls-tree", "-r", "-z", commit], in: repo, timeout: 60)
+                let listing = FleetDispatchGit.run(["ls-tree", "-r", "-z", "\(commit)^{commit}"], in: repo, timeout: 60)
+                side.withLock { $0.listing = listing }
                 group.leave()
             }
-            var failure: String?
-            var added = false
-            do { _ = try GitWorktree.add(repo: repo, branch: branch, from: commit, checkout: false); added = true } catch { failure = String(String(describing: error).prefix(160)) }
+            if let spare, spare.commit != commit {
+                group.enter()
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let difference = FleetDispatchGit.run(["diff-tree", "-r", "-z", "--no-renames", "--raw", spare.commit, commit], in: repo, timeout: 60)
+                    side.withLock { $0.difference = difference }
+                    group.leave()
+                }
+            }
             group.wait()
-            return (added, listing, failure)
+            return side.withLock { $0 }
         }
-        stats.git += ["worktree", "ls-tree"]
-        var result = attempt()
-        if !result.added {
+        // The spare's files, cloned in one call while git works.
+        let cloned = OSAllocatedUnfairLock<Result<Bool?, Error>?>(initialState: nil)
+        let cloneGroup = DispatchGroup()
+        if spare != nil {
+            created.staging = work
+            // The folder the worktree goes in may not exist yet.
+            try? FileManager.default.createDirectory(atPath: (work as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+            cloneGroup.enter()
+            let (spares, canonical) = (input.spares, PiHome.canonical(input.repo))
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = Result { try spares.withTree(repo: canonical) { ready in try FleetClone.item(ready.tree, to: work) } }
+                cloned.withLock { $0 = result }
+                cloneGroup.leave()
+            }
+        }
+        func complete(_ side: GitSide) -> Bool { side.listing?.status == 0 && (spare == nil || spare?.commit == commit || side.difference?.status == 0) }
+        stats.git += ["ls-tree"] + (spare.map { $0.commit != commit ? ["diff-tree"] : [] } ?? [])
+        var side = gitSide()
+        if !complete(side) {
             try makeCommitPresent(commit, created: &created)
             mark("commit")
-            result = attempt()
-            stats.git += ["worktree", "ls-tree"]
+            stats.git += ["ls-tree"] + (spare.map { $0.commit != commit ? ["diff-tree"] : [] } ?? [])
+            side = gitSide()
         }
-        guard result.added else { throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "worktree: \(result.failure ?? "")") }
+        guard let listing = side.listing, listing.status == 0 else { throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "ls-tree") }
+        // The worktree: written directly where this repository allows it (git's own `worktree add` is the slowest step of a warm
+        // dispatch), by git otherwise. Only once the commit is known to be here, so no branch ever points at a missing object.
+        if !FleetFastWorktree.add(repo: repo, branch: input.branch, commit: commit, destination: destination) {
+            stats.git.append("worktree")
+            do { _ = try GitWorktree.add(repo: repo, branch: input.branch, from: commit, checkout: false) } catch {
+                throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "worktree: " + String(String(describing: error).prefix(160)))
+            }
+        }
         created.worktree = destination
         mark("worktree")
-        guard let listing = result.listing, listing.status == 0 else { throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "ls-tree") }
         let ordered = FleetSnapshotSender.parseOrdered(tree: listing.output)
         let tree = Dictionary(ordered) { first, _ in first }
         mark("ls-tree")
         var touched = Set<String>()
         // The files of the commit's tree.
-        if let spare = input.spares.refresh(ifBuilt: PiHome.canonical(input.repo)) {
-            try cloneSpare(spare, into: destination, tree: tree, commit: commit, touched: &touched)
+        if let spare {
+            cloneGroup.wait()
+            let outcome = cloned.withLock { $0 }
+            guard case .success(let wasCloned?)? = outcome else {
+                if case .failure(let error)? = outcome { throw Failure(code: FleetDispatchCode.snapshotFailed, detail: String(String(describing: error).prefix(160))) }
+                throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "the spare went away")
+            }
+            if wasCloned { stats.clones += 1 } else { stats.copies += 1 }
+            stats.usedSpare = true
+            if spare.commit != commit {
+                guard let difference = side.difference, difference.status == 0 else { throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "diff-tree") }
+                try writeDifference(difference.output, into: work, tree: tree, touched: &touched)
+            }
         } else {
             guard let out = git(["read-tree", "--reset", "-u", commit], in: destination, timeout: 600), out.status == 0 else {
                 throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "checkout")
             }
         }
         mark("tree")
-        try applySnapshot(into: destination, touched: &touched)
+        try applySnapshot(into: work, touched: &touched)
         mark("snapshot")
-        if stats.usedSpare { try writeIndex(into: destination, ordered: ordered, touched: touched) }
+        if stats.usedSpare { try writeIndex(of: work, worktree: destination, ordered: ordered, touched: touched) }
         mark("index")
-        try verify(destination: destination, tree: tree)
+        try verify(destination: work, tree: tree)
         mark("verify")
+        if work != destination { try swapIn(work, for: destination) }
+        mark("swap")
+        created.staging = nil
         return destination
+    }
+
+    /// The laid out folder takes the worktree's place: the `.git` file moves into it, the empty folder git made goes, the folder is renamed.
+    private func swapIn(_ work: String, for destination: String) throws {
+        let manager = FileManager.default
+        try manager.moveItem(atPath: destination + "/.git", toPath: work + "/.git")
+        try manager.removeItem(atPath: destination)
+        try manager.moveItem(atPath: work, toPath: destination)
     }
 
     /// The pinned commit is here, from origin or from the sender's bundle; the bundle's objects land under the one ref.
@@ -187,27 +260,10 @@ struct FleetSnapshotApply {
 
     // MARK: The commit's tree
 
-    /// One `clonefile` of the spare's tree becomes the worktree's folder (the `.git` file steps aside and comes back); then the paths
-    /// that differ between the spare's commit and the pinned one are written from the repository's own objects.
-    private mutating func cloneSpare(_ spare: FleetSpares.Ready, into destination: String, tree: [String: FleetTreeEntry], commit: String, touched: inout Set<String>) throws {
+    /// The paths that differ between the spare's commit and the pinned one (`diff-tree`'s output) are written from the repository's own objects.
+    private mutating func writeDifference(_ raw: String, into destination: String, tree: [String: FleetTreeEntry], touched: inout Set<String>) throws {
         let manager = FileManager.default
-        let gitFile = destination + ".fleet-gitfile"
-        let cloned: Bool? = try input.spares.withTree(repo: PiHome.canonical(input.repo)) { ready -> Bool in
-            try manager.moveItem(atPath: destination + "/.git", toPath: gitFile)
-            try manager.removeItem(atPath: destination)
-            let result = try FleetClone.item(ready.tree, to: destination)
-            try manager.moveItem(atPath: gitFile, toPath: destination + "/.git")
-            return result
-        }
-        guard let cloned else { throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "the spare went away") }
-        if cloned { stats.clones += 1 } else { stats.copies += 1 }
-        stats.usedSpare = true
-        guard spare.commit != commit else { return }
-        // Where the commit differs from the spare: `diff-tree` names the paths and `cat-file --batch` gives their contents.
-        guard let diff = git(["diff-tree", "-r", "-z", "--no-renames", "--raw", spare.commit, commit], timeout: 60), diff.status == 0 else {
-            throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "diff-tree")
-        }
-        let fields = diff.output.split(separator: "\0", omittingEmptySubsequences: true).map(String.init)
+        let fields = raw.split(separator: "\0", omittingEmptySubsequences: true).map(String.init)
         var changes: [(path: String, deleted: Bool)] = []
         var index = 0
         while index + 1 < fields.count {
@@ -375,18 +431,29 @@ struct FleetSnapshotApply {
 
     // MARK: The index file
 
-    private mutating func writeIndex(into destination: String, ordered: [(String, FleetTreeEntry)], touched: Set<String>) throws {
-        guard let gitDirectory = Self.gitDirectory(of: destination) else { throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "gitdir") }
+    /// The index file of the worktree whose files are laid out in `folder` (the worktree's own folder, or the one that is about to take
+    /// its place: a rename keeps every file's stat data).
+    private mutating func writeIndex(of folder: String, worktree: String, ordered: [(String, FleetTreeEntry)], touched: Set<String>) throws {
+        guard let gitDirectory = Self.gitDirectory(of: worktree) else { throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "gitdir") }
+        // Every clone's stat data, read across the cores (a tree of tens of thousands of files is that many `lstat` calls).
+        var statuses = [FileStatus?](repeating: nil, count: ordered.count)
+        statuses.withUnsafeMutableBufferPointer { out in
+            let results = out
+            let chunk = max(256, ordered.count / 16 + 1)
+            DispatchQueue.concurrentPerform(iterations: (ordered.count + chunk - 1) / chunk) { part in
+                for position in (part * chunk)..<min(ordered.count, (part + 1) * chunk) {
+                    let (path, entry) = ordered[position]
+                    guard !touched.contains(path), !entry.isSubmodule else { continue }
+                    var read = stat()
+                    if lstat(folder + "/" + path, &read) == 0 { results[position] = read }
+                }
+            }
+        }
         var entries: [FleetGitIndexFile.Entry] = []
         entries.reserveCapacity(ordered.count)
-        for (path, entry) in ordered {
+        for (position, (path, entry)) in ordered.enumerated() {
             let mode: UInt32 = entry.isSubmodule ? 0o160000 : entry.kind == .executable ? 0o100755 : entry.kind == .symlink ? 0o120000 : 0o100644
-            var status: stat?
-            if !touched.contains(path) && !entry.isSubmodule {
-                var read = stat()
-                if lstat(destination + "/" + path, &read) == 0 { status = read }
-            }
-            entries.append(FleetGitIndexFile.Entry(path: path, mode: mode, id: entry.gitID, status: status))
+            entries.append(FleetGitIndexFile.Entry(path: path, mode: mode, id: entry.gitID, status: statuses[position]))
         }
         let data = FleetGitIndexFile.data(entries, ordered: true)
         guard FileManager.default.createFile(atPath: gitDirectory + "/index", contents: data, attributes: [.posixPermissions: 0o644]) else {
@@ -455,4 +522,64 @@ extension FileManager {
 extension FleetSpares {
     /// The spare as it stands, without building one (a dispatch never waits for a build).
     func refresh(ifBuilt repo: String) -> Ready? { current(repo: repo) }
+}
+
+/// The worktree `git worktree add --no-checkout --no-track -b <branch> <destination> <commit>` makes, written directly: the branch's ref, the
+/// worktree's entry under `.git/worktrees`, and the `.git` file in the new folder. It is the slowest step of a warm dispatch (a git
+/// process that does a few file writes), and a repository that keeps anything more than the plain layout (a config section for
+/// extensions, a worktree config, a hooks path, a packed or taken branch name, a worktree of that name) is left to git.
+enum FleetFastWorktree {
+    /// True when the worktree was made here; false when nothing was written and git should make it.
+    static func add(repo: String, branch: String, commit: String, destination: String) -> Bool {
+        let manager = FileManager.default
+        guard FleetDispatchGit.isCommit(commit), commit.count == 40, !branch.hasPrefix("-"), !branch.contains(".."), !branch.contains("\0"), !branch.hasSuffix("/"), !branch.hasSuffix(".lock"),
+              !branch.contains("//"), !branch.contains("@{"), !branch.contains("\\"), !branch.unicodeScalars.contains(where: { $0.value < 33 || $0.value == 127 || "~^:?*[".unicodeScalars.contains($0) }),
+              !branch.split(separator: "/").contains(where: { $0.hasPrefix(".") || $0.hasSuffix(".lock") }),
+              let top = realPath(repo) else { return false }
+        let git = top + "/.git"
+        var isDirectory: ObjCBool = false
+        guard manager.fileExists(atPath: git, isDirectory: &isDirectory), isDirectory.boolValue,
+              let raw = try? String(contentsOfFile: git + "/config", encoding: .utf8), case let config = raw.lowercased(),
+              !config.contains("[extensions"), !config.contains("worktree"), !config.contains("hookspath"), !config.contains("reftable"),
+              !manager.fileExists(atPath: git + "/hooks/reference-transaction"),
+              !manager.fileExists(atPath: git + "/refs/heads/" + branch), !manager.fileExists(atPath: destination),
+              !((try? String(contentsOfFile: git + "/packed-refs", encoding: .utf8))?.contains(" refs/heads/" + branch + "\n") ?? false) else { return false }
+        let name = (destination as NSString).lastPathComponent
+        let admin = git + "/worktrees/" + name
+        guard !name.isEmpty, !name.hasPrefix("."), !manager.fileExists(atPath: admin) else { return false }
+        let parent = (destination as NSString).deletingLastPathComponent
+        do { try manager.createDirectory(atPath: parent, withIntermediateDirectories: true) } catch { return false }
+        guard let folder = realPath(parent).map({ $0 + "/" + (destination as NSString).lastPathComponent }) else { return false }
+        var made: [String] = []
+        func write(_ text: String, to path: String) -> Bool {
+            let descriptor = open(path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
+            guard descriptor >= 0 else { return false }
+            defer { close(descriptor) }
+            let bytes = Array(text.utf8)
+            guard Darwin.write(descriptor, bytes, bytes.count) == bytes.count else { return false }
+            made.append(path)
+            return true
+        }
+        func undo() {
+            for path in made.reversed() { try? manager.removeItem(atPath: path) }
+        }
+        do {
+            try manager.createDirectory(atPath: admin, withIntermediateDirectories: true)
+            made.append(admin)
+            try manager.createDirectory(atPath: (git + "/refs/heads/" + branch as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+            try manager.createDirectory(atPath: folder, withIntermediateDirectories: false)
+            made.append(folder)
+        } catch { undo(); return false }
+        guard write(commit + "\n", to: git + "/refs/heads/" + branch),
+              write("ref: refs/heads/" + branch + "\n", to: admin + "/HEAD"),
+              write("../..\n", to: admin + "/commondir"),
+              write(folder + "/.git\n", to: admin + "/gitdir"),
+              write("gitdir: " + admin + "\n", to: folder + "/.git") else { undo(); return false }
+        return true
+    }
+
+    private static func realPath(_ path: String) -> String? {
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) + 1)
+        return realpath((path as NSString).expandingTildeInPath, &buffer) == nil ? nil : String(cString: buffer)
+    }
 }

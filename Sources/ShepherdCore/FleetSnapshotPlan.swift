@@ -226,27 +226,34 @@ public struct FleetSnapshotPlan: Sendable {
     /// - target: what the target holds of this repository (the 128 bit prefixes), nil when unknown.
     /// - goneFromDisk: whether a tracked path the index doesn't hold is really deleted (an excluded one is not).
     /// - unindexedHash: the content hash of a tracked path the index leaves out but the disk has.
+    /// - trackedDirectories: every directory above a tracked path, when the caller keeps them (they are worked out from `tracked` otherwise).
+    ///
+    /// The root is the index's own tree (already hashed, and a copy of it is cheap) with what the index doesn't say put right: the
+    /// tracked paths it leaves out (excluded ones) added, and the submodules' folders, which the receiver doesn't build, taken out. It
+    /// is the root `FleetSnapshotManifest.root` gives from the commit's tree and the manifest, without hashing the tree again.
     public static func make(commit: String, tracked: [String: FleetTreeEntry], entries: [String: FleetIndexEntry], tree: FleetMerkleTree,
-                            target: FleetManifest?, goneFromDisk: (String) -> Bool, unindexedHash: (String) -> FleetHash) -> FleetSnapshotPlan {
+                            target: FleetManifest?, goneFromDisk: (String) -> Bool, unindexedHash: (String) -> FleetHash,
+                            trackedDirectories known: Set<String>? = nil) -> FleetSnapshotPlan {
         let held = target ?? FleetManifest()
         let submodules = Set(tracked.filter { $0.value.isSubmodule }.keys)
         var files: [FleetSnapshotFile] = []
         var deletions: [String] = []
-        var base: [String: (kind: FleetEntryKind, hash: FleetHash)] = [:]
-        var trackedDirectories = Set<String>()
+        var unindexed: [(path: String, kind: FleetEntryKind, hash: FleetHash)] = []
+        var trackedDirectories = known ?? Set<String>()
+        let findDirectories = known == nil
         for (path, entry) in tracked where !entry.isSubmodule {
-            var end = path.startIndex
-            while let slash = path[end...].firstIndex(of: "/") {
-                trackedDirectories.insert(String(path[..<slash]))
-                end = path.index(after: slash)
+            if findDirectories {
+                var end = path.startIndex
+                while let slash = path[end...].firstIndex(of: "/") {
+                    trackedDirectories.insert(String(path[..<slash]))
+                    end = path.index(after: slash)
+                }
             }
             guard let have = entries[path] else {
-                if goneFromDisk(path) { deletions.append(path) } else { base[path] = (entry.kind, unindexedHash(path)) }
+                if goneFromDisk(path) { deletions.append(path) } else { unindexed.append((path, entry.kind, unindexedHash(path))) }
                 continue
             }
-            if have.gitID == entry.gitID, have.kind == entry.kind {
-                base[path] = (entry.kind, have.hash)
-            } else {
+            if have.gitID != entry.gitID || have.kind != entry.kind {
                 files.append(FleetSnapshotFile(path: path, kind: have.kind, hash: have.hash, size: have.size))
             }
         }
@@ -288,8 +295,11 @@ public struct FleetSnapshotPlan: Sendable {
         files.sort { order($0.path, $1.path) }
         directories.sort { order($0.path, $1.path) }
         deletions.sort(by: order)
-        let root = FleetSnapshotManifest.root(base: base, files: files, directories: directories, deletions: deletions)
-        let manifest = FleetSnapshotManifest(commit: commit, files: files, directories: directories, deletions: deletions, rootHash: root)
+        var whole = tree
+        for path in submodules { whole.remove(path) }
+        for path in unindexed { whole.set(path.path, kind: path.kind, hash: path.hash) }
+        whole.commit()
+        let manifest = FleetSnapshotManifest(commit: commit, files: files, directories: directories, deletions: deletions, rootHash: whole.root)
         let wanted = FleetManifestDiff.missing(files.map(\.hash), from: held)
         var sources: [FleetHash: String] = [:]
         var sizes: [FleetHash: UInt64] = [:]
