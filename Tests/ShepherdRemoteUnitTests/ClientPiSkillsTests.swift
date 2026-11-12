@@ -23,7 +23,7 @@ struct ClientPiSkillsTests {
     static func hosts(pi: PiSkills? = Self.pi) -> ([SkillsHost], ClientSkills) {
         let client = FakeSkillsClient([ClientSkillsTests.skill("docx", summary: "Word files."), ClientSkillsTests.skill("pdf", summary: "PDFs.")],
                                       pi: pi)
-        return ([ClientSkillsTests.host("This Mac", client)], ClientSkills(defaults: ScratchDefaults()))
+        return ([ClientSkillsTests.host("This Mac", client)], ClientSkills())
     }
 
     @Test func piSkillsAreGroupedBySetupThenPackages() async {

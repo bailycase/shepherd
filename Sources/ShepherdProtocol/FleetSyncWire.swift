@@ -172,10 +172,33 @@ public struct FleetOp: Codable, Hashable, Sendable {
 }
 
 /// Unit names: `<kind>:<name>`. Slice 2a carries `setting` (`host.<key>` and `pi.<key>` and the
-/// `fleet.<key>` policy) and `instruction` (`AGENTS.md`, `APPEND_SYSTEM.md`).
+/// `fleet.<key>` policy) and `instruction` (`AGENTS.md`, `APPEND_SYSTEM.md`). Skills and
+/// extensions follow: `skill:<name>/<path>` is each file in a skill and `skillstate:<name>` the
+/// skill's state (on or off, where it came from, a digest of its files); `extension:<path>` is a
+/// file under `your-extensions/` and `extmeta:<id>` says what one extension is (its name, the files
+/// pi loads, whether it is on, a digest of its files). A state or meta unit sorts after the files
+/// it describes, so its op follows theirs in its origin's log: a Mac that holds it holds every file
+/// op the digest covers, and applies the unit only once the files on disk match the digest.
 public enum FleetUnit {
     public static func setting(_ key: String) -> String { "setting:" + key }
     public static func instruction(_ file: InstructionFile) -> String { "instruction:" + file.fileName }
+    public static func skill(_ name: String) -> String { "skillstate:" + name }
+    public static func skillFile(_ name: String, _ path: String) -> String { "skill:\(name)/\(path)" }
+    public static func extensionFile(_ path: String) -> String { "extension:" + path }
+    public static func extensionMeta(_ id: String) -> String { "extmeta:" + id }
+
+    /// A skill unit's skill and, for a file, its path inside the skill ("pdf", "scripts/fill.py");
+    /// nil path is the skill's state.
+    public static func skillParts(of unit: String) -> (name: String, path: String?)? {
+        guard let name = name(of: unit) else { return nil }
+        switch kind(of: unit) {
+        case "skillstate": return (name, nil)
+        case "skill":
+            guard let slash = name.firstIndex(of: "/") else { return nil }
+            return (String(name[..<slash]), String(name[name.index(after: slash)...]))
+        default: return nil
+        }
+    }
 
     public static func kind(of unit: String) -> String? { split(unit)?.kind }
     public static func name(of unit: String) -> String? { split(unit)?.name }

@@ -144,6 +144,32 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// An open skill row (SkillsStates, Detail): how the agent uses it and its version, with no per host
+    /// section, and the files with Open SKILL.md, Show folder and Remove.
+    @Test func settingsSkillDetail() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let repo = try makeScratchRepo(files: [
+            "skills/pdf/SKILL.md": "---\nname: pdf\ndescription: Read, fill, merge and split PDFs.\n---\n# PDF\n",
+            "skills/pdf/reference.md": "# Reference\n",
+            "skills/pdf/scripts/fill.py": "print('fill')\n",
+        ])
+        let store = workspace.server.skills
+        try store.install(repo: "file://" + repo.path, paths: ["skills/pdf"], commit: nil, invocation: nil)
+        try "---\nname: pdf\ndescription: Read, fill, merge and split PDFs.\n---\n# PDF\n\nFill forms first.\n"
+            .write(to: repo.appendingPathComponent("skills/pdf/SKILL.md"), atomically: true, encoding: .utf8)
+        try git(["commit", "-qam", "Fill forms first"], in: repo)
+        try store.checkUpdates()
+        try await workspace.seed(ShepherdState())
+        let vm = workspace.vm
+        try await Preview.render("settings-skill-detail", size: CGSize(width: 1180, height: 560),
+                                 ready: { vm.skills.row("pdf", in: vm.skillsHosts)?.skill.update != nil }) {
+            SkillsSettings(vm: vm, model: vm.skills, open: "pdf")
+                .padding(SH.Space.xxl)
+                .background(Color.sh.bgWindow)
+        }
+    }
+
     /// Skills beside the ones pi loads from elsewhere, read-only: pi's own folder and settings
     /// (one shadowing an installed skill), then pi packages (one a same-named installed skill
     /// shadows). pi's answer is a fixture, never this machine's pi.

@@ -83,19 +83,17 @@ extension PreviewTests {
         }
     }
 
-    /// A connected host's threads: not grouped, in their project with the host as a tag; grouped
-    /// by host, a section per host (This Mac first), an unreachable one saying so in red.
-    @Test(arguments: [false, true])
-    func sidebarProjectsWithHosts(grouped: Bool) async throws {
+    /// A connected host's threads: in their project with the host as a tag, an unreachable host's
+    /// dimmed.
+    @Test func sidebarProjectsWithHosts() async throws {
         let workspace = try await projectsWorkspace()
         let host = try await AutomationHostFixture()
         defer { workspace.stop(); host.server.stop() }
         let vm = workspace.vm
         _ = try await host.connect(workspace)
         vm.remoteHosts.addHost(name: "horizon", host: "127.0.0.1", port: 1, token: "x")
-        vm.settings.sidebarGroupByHost = grouped
         vm.collapsedProjects.insert(SidebarProjectID.local(try #require(vm.state.spaces.first?.id)).key)
-        try await Preview.render(grouped ? "sidebar-projects-by-host" : "sidebar-projects-remote",
+        try await Preview.render("sidebar-projects-remote",
                                  size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 640),
                                  ready: { vm.offlineHostCount == 1 }) {
             SidebarView(vm: vm)

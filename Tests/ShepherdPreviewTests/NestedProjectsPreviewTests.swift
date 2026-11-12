@@ -10,7 +10,7 @@ import ShepherdTestSupport
 @MainActor
 struct NestedProjectsPreviewTests {
     @Test(arguments: ["open", "parent-closed", "child-closed", "empty", "long", "attention", "explicit-parent",
-                      "pinned", "pinned-empty", "pinned-long", "pinned-closed", "pinned-hosts"])
+                      "pinned", "pinned-empty", "pinned-long", "pinned-closed"])
     func sidebar(state: String) async throws {
         let world = try PreviewWorkspace()
         defer { world.stop() }
@@ -36,7 +36,6 @@ struct NestedProjectsPreviewTests {
             vm.togglePinSpace(hub.id)
             vm.setProject(.local(parent.id), expanded: false)
             if state == "pinned-closed" { vm.setProject(.local(hub.id), expanded: false) }
-            vm.settings.sidebarGroupByHost = state == "pinned-hosts"
         }
         if state == "explicit-parent" {
             _ = try await vm.handleProjectRequest(.edit(projectID: hub.id, request: .init(parentProjectID: infra.id.rawValue)))
