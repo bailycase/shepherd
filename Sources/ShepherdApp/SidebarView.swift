@@ -31,8 +31,15 @@ struct SidebarView: View {
                 }
             }
         } footer: {
-            let footer = vm.sidebarFooterIdentity ?? SidebarDerivation.footer
-            SHSidebarFooter(name: footer.name, detail: footer.detail, settingsShortcut: "⌘,") { vm.showSettings = true }
+            if vm.settings.fleetEnabled, !vm.fleetPage.page.cards.isEmpty {
+                // FleetSidebar: with Fleet on, the footer is the Fleet row and Settings.
+                SidebarFleetFooter(footer: vm.fleetPage.page.footer, selected: vm.shownDestination == .fleet,
+                                   open: { vm.openDestination(.fleet) }, settings: { vm.showSettings = true })
+                    .equatable()
+            } else {
+                let footer = vm.sidebarFooterIdentity ?? SidebarDerivation.footer
+                SHSidebarFooter(name: footer.name, detail: footer.detail, settingsShortcut: "⌘,") { vm.showSettings = true }
+            }
         }
     }
 }

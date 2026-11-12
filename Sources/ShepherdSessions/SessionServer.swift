@@ -1099,6 +1099,7 @@ public final class SessionServer: @unchecked Sendable {
                 && ($0 != RemoteProtocol.missionsCapability || missionsServed && onRemoteMission != nil)
                 && (($0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetSyncCapability) || fleet?.membership == true)
                 && ($0 != RemoteProtocol.fleetDevicesCapability || fleet != nil)
+                && ($0 != RemoteProtocol.fleetPressureCapability || fleet?.membership == true)
         }
     }
 
@@ -1262,6 +1263,9 @@ public final class SessionServer: @unchecked Sendable {
     /// What this host calls itself in a fleet (nil: the Mac's own name) and whether it advertises
     /// over Bonjour. Tests name their hosts and keep them off the network. Server queue.
     private var fleetOptions: (name: String?, advertises: Bool) = (nil, true)
+    /// Tests: how the next fleet takes its samples and reads the time (nil: the system's).
+    private var fleetPressureMaker: (@Sendable (DispatchQueue, @escaping @Sendable () -> FleetLocalFacts) -> FleetPressure)?
+    private var fleetClock: (@Sendable () -> Date)?
 
     /// The app's settings as a fleet syncs them (`FleetHostSettingsSource`); nil until the app says how to apply one.
     private var fleetHostSettings: FleetHostSettingsSource?
@@ -1306,6 +1310,28 @@ public final class SessionServer: @unchecked Sendable {
         queue.sync { fleetOptions = (name, advertises) }
     }
 
+    /// Tests: sets the clock and how the next fleet's pressure is made (`FleetPressure`'s
+    /// providers get this host's facts), for `setFleetEnabled(true)`.
+    func configureFleet(clock: (@Sendable () -> Date)?,
+                        pressure: (@Sendable (DispatchQueue, @escaping @Sendable () -> FleetLocalFacts) -> FleetPressure)?) {
+        queue.sync {
+            fleetClock = clock
+            fleetPressureMaker = pressure
+        }
+    }
+
+    /// What this host tells a fleet about itself: threads working, the projects it has folders
+    /// for and pi's MCP file (readiness). Any thread.
+    private var fleetLocalFacts: @Sendable () -> FleetLocalFacts {
+        { [weak self] in
+            guard let self else { return FleetLocalFacts() }
+            let state = self.store.committed
+            return FleetLocalFacts(activeAgents: state.agents.filter { $0.status == .working }.count,
+                                   spaces: state.spaces.filter { !$0.hidden }.map { (name: $0.name, path: $0.path) },
+                                   mcpConfig: self.pi.files.mcpConfig)
+        }
+    }
+
     /// Takes part in a fleet while `enabled` (Settings ▸ Experiments ▸ Fleet): this host's
     /// identity, its links to the Macs it is paired with, its Bonjour advertisement and the fleet
     /// requests (`FleetService`). Off ends the links and refuses every fleet message with "Enable
@@ -1325,10 +1351,14 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             do {
+                let clock = fleetClock ?? Date.init
+                let facts = fleetLocalFacts
+                let pressure = fleetPressureMaker?(queue, facts) ?? FleetPressure(queue: queue, clock: clock, localFacts: facts)
                 let service = try FleetService(queue: queue, directory: supportDirectory.appendingPathComponent("fleet", isDirectory: true),
                                                name: fleetOptions.name ?? Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
-                                               build: hostBuild, advertises: fleetOptions.advertises, membership: enabled)
+                                               build: hostBuild, advertises: fleetOptions.advertises, membership: enabled, clock: clock, pressure: pressure)
                 service.onChange = { [weak self] in self?.pushSettingsChanged(.fleet) }
+                pressure.onChange = { [weak self] in self?.pushSettingsChanged(.fleetPressure) }
                 service.onPeerRemoved = { [weak self] hostID in
                     guard let self else { return }
                     for client in Array(self.clients.values) where client.fleetPeerID == hostID { self.disconnect(client, reason: "removed from the fleet") }
@@ -1372,6 +1402,7 @@ public final class SessionServer: @unchecked Sendable {
         switch request {
         case .fleetIdentify(let value), .fleetPair(let value, _, _), .fleetEstablish(let value, _), .fleetIntroduce(let value, _),
              .fleetRevoke(let value, _, _), .fleetRead(let value), .fleetAction(let value, _), .fleetSync(let value, _),
+             .fleetPressure(let value, _), .fleetReadiness(let value, _), .fleetPressureNow(let value),
              .fleetPairDevice(let value, _, _), .fleetEnrollDevice(let value, _), .fleetSyncDevices(let value, _):
             id = value
         default: return
@@ -2710,6 +2741,7 @@ public final class SessionServer: @unchecked Sendable {
 
         switch request {
         case .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
+             .fleetPressure, .fleetReadiness, .fleetPressureNow,
              .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
             serveFleet(request, from: client)
         case .pushRegistration(let id, let registration):

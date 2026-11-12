@@ -615,6 +615,20 @@
   a hash of what it wrote so its own writes never return as ops, and never writes a blob it doesn't hold. `FleetSnapshot.sync`
   (`FleetSyncStatus`: each peer in sync, catching up or offline, and a one line notice of what the first sync replaced)
   rides `fleetRead` for Settings ▸ Fleet. Credentials, skills, extensions, MCP, hooks, subagents and spaces are not units yet.
+- **Fleet pressure and readiness** (`fleet.pressure.v1`, offered with `fleet.v1`): each Mac pushes `fleetPressure` (a
+  `FleetPressureSample`: CPU share, core count, total and available memory, thermal state, power, threads working,
+  reserved places) every 5 s to the Macs it holds a link to, `fleetReadiness` (a `FleetReadinessReport`: model, chip, the
+  programs it lacks, the projects it has folders for) when that changes and daily, and answers `fleetPressureNow` with
+  `fleetPressureSample` when a peer needs a fresh reading. Only a connection that authenticated with a peer's token (`FleetAccess.member`; never a device or the shared token) may
+  send them, and a sample is filed under that peer, never one it names; the receiver clamps what it keeps and stamps the
+  arrival with its own clock, so a sample carries no time and a sender's clock never matters. A host samples (no
+  subprocess: `host_statistics`, `host_statistics64`, `ProcessInfo.thermalState`, IOPowerSources) only while Fleet is on and a link to a
+  peer is up or its app said `FleetAction.watching(true)` (the Fleet page is on screen; it ends with that connection),
+  and pushes `RemoteSettingsPage.fleetPressure` to its app, coalesced, only while one watches. `FleetSnapshot.macs`
+  carries this Mac's and each peer's last sample (with its age on the host's clock) and report to the app; a sample older
+  than 15 s is stale and counts for nothing. `FleetAction.reconnect(hostID:)` is the Fleet page's Retry. The Send work
+  here choice is the host setting `fleet.weight.<hostID>` (`HostSettings.fleetWeights`, `HostSettingChange.fleetWeight`),
+  Prefer 1.5, Normal 1, Less often 0.5, Manual only (never picked by Auto). The weights sync like a host setting: one unit `setting:fleet.weight.<hostID>` per Mac (`FleetWeightSetting`, value the weight's name as JSON), applied through the app's own setter, so a choice on one Mac holds on every member.
 - **Protocol changes** touch the request and reply enums with every Codable arm, `RemoteProtocol`
   capabilities where relevant, server handling, `RemoteHostClient` (Mac and iOS), and the
   round-trip and listener tests.

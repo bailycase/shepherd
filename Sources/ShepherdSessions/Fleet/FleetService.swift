@@ -59,6 +59,8 @@ final class FleetService: @unchecked Sendable {
     var onSharedTokenRetired: (() -> Void)?
 
     private var peers: FleetPeers
+    /// Pressure samples and readiness reports: this Mac's and each peer's (`FleetPressure`).
+    let pressure: FleetPressure
     private var devices: FleetDevices
     private var join: (window: FleetJoinWindow, owner: Int32)?
     /// The code window of Add a device: the same kind of window as `join`, shown on the Mac that takes the device.
@@ -91,7 +93,7 @@ final class FleetService: @unchecked Sendable {
     }
 
     init(queue: DispatchQueue, directory: URL, name: String, build: String?, advertises: Bool = true, membership: Bool = true,
-         clock: @escaping @Sendable () -> Date = Date.init) throws {
+         clock: @escaping @Sendable () -> Date = Date.init, pressure: FleetPressure? = nil) throws {
         self.queue = queue
         self.membership = membership
         self.directory = directory
@@ -102,9 +104,12 @@ final class FleetService: @unchecked Sendable {
         peers = try FleetPeers.load(from: directory)
         devices = try FleetDevices.load(from: directory)
         discovery = advertises ? FleetDiscovery() : nil
+        self.pressure = pressure ?? FleetPressure(queue: queue, clock: clock)
         syncEngine = try FleetSync(queue: queue, directory: directory.appendingPathComponent("store", isDirectory: true),
                              mac: identity.hostID, name: { name }, clock: clock)
         syncEngine.onChange = { [weak self] in self?.changed() }
+        self.pressure.linkConnected = { [weak self] in self?.links.values.contains { $0.phase == .connected } == true }
+        self.pressure.pushTargets = { [weak self] in self?.links.values.compactMap { $0.phase == .connected ? $0.client : nil } ?? [] }
     }
 
     var hostID: UUID { identity.hostID }
@@ -134,6 +139,8 @@ final class FleetService: @unchecked Sendable {
         } else {
             join = nil
             for id in Array(links.keys) { stopLink(id) }
+            // No peer to sample for, and no Fleet page to show.
+            pressure.reset()
             syncEngine.stop()
         }
         changed()
@@ -145,6 +152,7 @@ final class FleetService: @unchecked Sendable {
         join = nil
         deviceCode = nil
         for id in Array(links.keys) { stopLink(id) }
+        pressure.stop()
         syncEngine.stop()
         discovery?.stop()
     }
@@ -170,6 +178,7 @@ final class FleetService: @unchecked Sendable {
 
     /// A connection of the server closed.
     func connectionClosed(_ connection: Int32) {
+        pressure.connectionClosed(connection)
         if join?.owner == connection {
             join = nil
             changed()
@@ -241,7 +250,8 @@ final class FleetService: @unchecked Sendable {
     func serve(_ request: RemoteRequest, from caller: FleetCaller, reply: @escaping @Sendable (RemoteReply) -> Void) {
         // Pairing Macs, removing them and joining are a member's: with Fleet off they are refused, as they always were.
         switch request {
-        case .fleetPair(let id, _, _), .fleetEstablish(let id, _), .fleetIntroduce(let id, _), .fleetRevoke(let id, _, _), .fleetSync(let id, _):
+        case .fleetPair(let id, _, _), .fleetEstablish(let id, _), .fleetIntroduce(let id, _), .fleetRevoke(let id, _, _), .fleetSync(let id, _),
+             .fleetPressure(let id, _), .fleetReadiness(let id, _), .fleetPressureNow(let id):
             guard membership else { return reply(Self.off(id)) }
         case .fleetAction(let id, let action) where !action.isDeviceAction:
             guard membership else { return reply(Self.off(id)) }
@@ -263,6 +273,20 @@ final class FleetService: @unchecked Sendable {
             guard let from = caller.peerHostID else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet removes another.")) }
             revoked(hostID, at: at, heardFrom: from)
             reply(.ok(id: id))
+        case .fleetPressure(let id, let sample):
+            guard caller.access == .member, let from = caller.peerHostID else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet reports its load.")) }
+            pressure.received(sample, from: from)
+            reply(.ok(id: id))
+        case .fleetReadiness(let id, let report):
+            guard caller.access == .member, let from = caller.peerHostID else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet reports its readiness.")) }
+            pressure.received(report, from: from)
+            reply(.ok(id: id))
+        case .fleetPressureNow(let id):
+            guard caller.access == .member else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet asks for a sample.")) }
+            Task { [pressure] in
+                let (sample, readiness) = await pressure.sampleNow()
+                reply(.fleetPressureSample(id: id, sample: sample, readiness: readiness))
+            }
         case .fleetSync(let id, let request):
             // Members only: a client device or the shared token never reads or writes the fleet's store.
             guard caller.access == .member, let from = caller.peerHostID else {
@@ -582,6 +606,8 @@ final class FleetService: @unchecked Sendable {
             }
         }
         stopLink(hostID, closing: !flood)
+        pressure.forget(hostID)
+        pressure.refresh()
         onPeerRemoved?(hostID)
         changed()
         return true
@@ -623,6 +649,16 @@ final class FleetService: @unchecked Sendable {
                     reply(Self.failure(id, error))
                 }
             }
+        case .watching(let on):
+            pressure.watch(on, connection: caller.connection)
+            reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot())))
+        case .reconnect(let hostID):
+            guard peers.record(hostID).map({ !$0.revoked }) == true else {
+                return reply(Self.refusal(id, FleetProtocol.Code.invalid, "That Mac isn't in the fleet."))
+            }
+            // A link that is up is left alone; one waiting out its backoff starts over now.
+            if links[hostID]?.phase != .connected { startLink(hostID) }
+            reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot())))
         case .startDeviceCode:
             let opened = FleetJoinWindow.open(now: clock())
             deviceCode = (opened.window, caller.connection)
@@ -787,7 +823,8 @@ final class FleetService: @unchecked Sendable {
                                                  switched: clients.count)
         return FleetSnapshot(enabled: membership, hostID: identity.hostID, name: name, build: build, addresses: FleetAddresses.local(),
                              port: listenerPort, advertising: discovery?.isAdvertising ?? false, peers: statuses, join: window,
-                             sync: membership ? syncStatus : nil, devices: FleetDevicesSnapshot(devices: clients, code: code, sharedToken: sharedToken))
+                             sync: membership ? syncStatus : nil, devices: FleetDevicesSnapshot(devices: clients, code: code, sharedToken: sharedToken),
+                             macs: membership ? pressure.macs(thisMac: identity.hostID, peerIDs: statuses.map(\.hostID)) : [])
     }
 
     private func status(of record: FleetPeerRecord) -> FleetPeerStatus {
@@ -899,6 +936,8 @@ final class FleetService: @unchecked Sendable {
             try? save(record)
         }
         announceRemovals(over: client, to: link.hostID)
+        pressure.refresh()
+        pressure.greet(client)
         syncEngine.linkUp(peer: link.hostID, client: client)
         pushDevices(only: link.hostID)
         changed()
@@ -912,6 +951,7 @@ final class FleetService: @unchecked Sendable {
         link.client = nil
         link.phase = .offline
         link.lastSeen = nowMilliseconds
+        pressure.refresh()
         changed()
     }
 
