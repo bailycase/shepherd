@@ -22,7 +22,14 @@ enum RemoteSamples {
                                 pairedAt: 1_790_000_000_000, link: .connected),
                 FleetPeerStatus(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F3")!, name: "Mac Studio", pairedAt: 1_790_000_001_000,
                                 link: .offline, lastSeen: 1_790_000_002_000)],
-        join: FleetJoinStatus(expiresAt: 1_790_000_300_000, attemptsLeft: 4))
+        join: FleetJoinStatus(expiresAt: 1_790_000_300_000, attemptsLeft: 4),
+        macs: [FleetMacState(hostID: fleetHost, sample: fleetSample, sampleAge: 2.5, readiness: fleetReadiness),
+               FleetMacState(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F2")!)])
+    static let fleetSample = FleetPressureSample(cpuUtilization: 0.72, cpuCount: 12, totalMemoryBytes: 38_654_705_664, availableMemoryBytes: 10_093_173_145,
+                                                 thermal: .fair, onBattery: true, batteryPercent: 41, activeAgents: 3, reserved: 1)
+    static let fleetReadiness = FleetReadinessReport(model: "MacBook Pro", chip: "M4 Pro",
+                                                     missing: [FleetMissingTool(kind: .binary, name: "muse"), FleetMissingTool(kind: .xcode)],
+                                                     repos: ["acme-web", "payments-api"])
 
     static let commitFile = RemoteCommitFile(path: "App/iOS/FleetView.swift", status: "M", added: 9, removed: 7, fingerprint: "f1")
     static let renamedFile = RemoteCommitFile(path: "new name.swift", oldPath: "old.swift", status: "R", added: 0, removed: 0, fingerprint: "f2")
@@ -417,11 +424,12 @@ struct RemoteRequestTests {
              .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .projectRequest, .startThread, .focusThread, .projectExecutors, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps,
-             .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction:
+             .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction,
+             .fleetPressure, .fleetReadiness, .fleetPressureNow:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 61
+    static let caseCount = 64
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -444,6 +452,12 @@ struct RemoteRequestTests {
         .fleetAction(id: 79, action: .pair(host: "192.168.1.40", port: 7434, code: "482913")),
         .fleetAction(id: 80, action: .remove(hostID: RemoteSamples.fleetHost)),
         .fleetAction(id: 81, action: .adopt([FleetLegacyHost(id: RemoteSamples.fleetHost, name: "Mac mini", host: "192.168.1.40", port: 7434, token: "shared")])),
+        .fleetAction(id: 82, action: .watching(true)),
+        .fleetAction(id: 83, action: .watching(false)),
+        .fleetAction(id: 84, action: .reconnect(hostID: RemoteSamples.fleetHost)),
+        .fleetPressure(id: 85, sample: RemoteSamples.fleetSample),
+        .fleetReadiness(id: 86, report: RemoteSamples.fleetReadiness),
+        .fleetPressureNow(id: 87),
         .hostUpdate(id: 90, request: .status),
         .hostUpdate(id: 91, request: .check),
         .hostUpdate(id: 92, request: .install(offerID: S.op, authorized: true)),
@@ -744,11 +758,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .fleetIdentity, .fleetPaired, .fleetResult, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged, .pullRequestLinks:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .fleetIdentity, .fleetPaired, .fleetResult, .fleetPressureSample, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged, .pullRequestLinks:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 62
+    static let caseCount = 63
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -771,6 +785,8 @@ struct RemoteReplyTests {
         .fleetResult(id: 7, result: FleetResult(snapshot: S.fleetSnapshot)),
         .fleetResult(id: 8, result: FleetResult(snapshot: S.fleetSnapshot, join: .init(code: "482913", expiresAt: 1_790_000_300_000))),
         .fleetResult(id: 9, result: FleetResult(snapshot: S.fleetSnapshot, paired: S.fleetSnapshot.peers[0])),
+        .fleetPressureSample(id: 11, sample: S.fleetSample, readiness: S.fleetReadiness),
+        .fleetPressureSample(id: 13, sample: S.fleetSample, readiness: nil),
         .fleetResult(id: 10, result: FleetResult(snapshot: S.fleetSnapshot, adopted: [
             FleetAdoption(id: S.fleetHost, outcome: .established(hostID: S.fleetHost, name: "Mac mini")),
             FleetAdoption(id: S.fleetHost, outcome: .notFleet), FleetAdoption(id: S.fleetHost, outcome: .unreachable),
@@ -852,6 +868,7 @@ struct RemoteReplyTests {
         .designRelay(token: 3, jobFile: "/tmp/acme/design-relay/3.json"),
         .settingsChanged(page: .instructions),
         .settingsChanged(page: .slashCommands),
+        .settingsChanged(page: .fleetPressure),
         .toolFinished(agentID: AgentID(rawValue: "a"), tool: "edit"),
         .designNotesChanged(designID: DesignID(rawValue: "d1")),
         .designGitChanged(designID: DesignID(rawValue: "d1")),
