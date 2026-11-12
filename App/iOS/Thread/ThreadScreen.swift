@@ -259,6 +259,8 @@ struct ThreadTranscript: View {
     @State private var historyPaging = NativeHistoryPaging()
     /// Lands the transcript on its tail after layout; only a mount's first few landings run inside it (ThreadTailPin).
     @State private var tailPin = ThreadTailPin()
+    /// Gets a following transcript out of a stranded scroll position, where no row is realized (ThreadTailGuard).
+    @State private var tailGuard = ThreadTailGuard()
 
     private static let bottomID = "thread-bottom"
 
@@ -303,11 +305,13 @@ struct ThreadTranscript: View {
                         }
                         .turnTransfer(row, thread: ref)
                         .id(row.id)
+                        .background { TailRowMarker(guardian: tailGuard) }
                     }
                     if thinking, liveRow == nil { LiveWaitLine(wait: store.liveWait) }
                     Color.clear.frame(height: 1).id(Self.bottomID)
                 }
                 .scrollTargetLayout()
+                .background { TailScrollFinder(guardian: tailGuard) }
                 .overlay(alignment: .top) {
                     Color.clear.frame(height: MobileLayout.turnSpacing)
                         .onScrollVisibilityChange { visible in
@@ -347,6 +351,10 @@ struct ThreadTranscript: View {
                 let wants = follow { $0.observe(from: old.probe, to: new.probe, gesture: $0.userScrolling, nativeAnchor: nativeTail) }
                 tailPin.reading(distance: NativeTailRepin.distance(of: new.probe, belowMarker: tailGap), wants: wants,
                                 resized: new.resized(from: old), land: lander(proxy))
+                tailGuard.suspect(standAside: { [tailPin] in tailPin.standAside($0) }, status: { [store] in
+                    .init(following: presentation.scrollFollower.sticky && !presentation.scrollFollower.userScrolling, hasRows: !store.rows.isEmpty,
+                          tailGap: tailGap)
+                }, land: { lander(proxy)(true) })
             }
             .onScrollPhaseChange { old, phase, context in
                 if phase == .interacting { historyPaging.beginScroll() }
@@ -398,7 +406,10 @@ struct ThreadTranscript: View {
                 } : nil)
             }
             .scrollDismissesKeyboard(.interactively)
-            .onDisappear { tailPin.stop() }
+            .onDisappear {
+                tailPin.stop()
+                tailGuard.stop()
+            }
         }
     }
 
