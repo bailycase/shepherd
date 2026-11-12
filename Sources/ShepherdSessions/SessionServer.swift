@@ -7662,12 +7662,12 @@ public final class SessionServer: @unchecked Sendable {
         var batch = try await designs.editBoards(designID, request: request)
         try await enqueue { try self.commitDesignWrite(designID, batch.result) }
         guard runtimeLint else { return batch }
-        let end = Date().addingTimeInterval(60)
+        let end = Date().addingTimeInterval(designBatchLintBudget)
         for slot in batch.boards.indices where batch.boards[slot].status == .edited {
             guard let path = DesignPath(batch.boards[slot].path) else { continue }
             let lint = Date() < end
                 ? await lintDesignBoard(designID, path: path, revision: batch.result.revision, deadline: min(10, end.timeIntervalSinceNow))
-                : ["Runtime lint skipped: this batch reached its 60-second lint budget. Run board_render for this board."]
+                : ["Runtime lint skipped: this batch reached its \(Int(designBatchLintBudget))-second lint budget. Run board_render for this board."]
             batch.boards[slot].report?.runtimeLint = lint
         }
         return batch
@@ -7696,11 +7696,11 @@ public final class SessionServer: @unchecked Sendable {
         var extracted = try await designs.extract(designID, request: request)
         try await enqueue { try self.commitDesignWrite(designID, extracted.result) }
         if runtimeLint && extracted.result.changed {
-            let end = Date().addingTimeInterval(60)
+            let end = Date().addingTimeInterval(designBatchLintBudget)
             let paths = [request.path, extracted.piece] + extracted.boards.map(\.path)
             for raw in Set(paths).sorted() {
                 guard Date() < end, extracted.warnings.count < 64 else {
-                    extracted.warnings.append("Runtime lint truncated at its 60-second or 64-message budget. Run board_render for remaining boards.")
+                    extracted.warnings.append("Runtime lint truncated at its \(Int(designBatchLintBudget))-second or 64-message budget. Run board_render for remaining boards.")
                     break
                 }
                 guard let path = DesignPath(raw) else { continue }
@@ -7738,6 +7738,10 @@ public final class SessionServer: @unchecked Sendable {
     /// How long `board_render` waits for the app to draw a board before it answers `timeout`.
     public static let defaultDesignRenderDeadline: TimeInterval = 60
     var designRenderDeadline: TimeInterval = SessionServer.defaultDesignRenderDeadline
+    /// What a write that touches many boards (`boards_edit`, `board_extract`) spends linting after it
+    /// has written. The design extension waits 60 seconds for the whole reply (`BATCH_TIMEOUT_MS`),
+    /// so this stays well inside it: the reply carries the revision that was written.
+    var designBatchLintBudget: TimeInterval = 15
 
     /// `board_render`: the app draws the board off screen from the files the design store reads
     /// for it, and the picture comes back for the agent (`onDesignRender`). Never a live canvas
