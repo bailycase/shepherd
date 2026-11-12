@@ -31,34 +31,47 @@ public enum SHDuration {
 
 /// Ticks exactly when an elapsed figure's text changes, anchored to the moment it counts from:
 /// every second for the first minute, then on each whole minute (or hour) since `start`.
-public struct SHElapsedSchedule: TimelineSchedule, Sendable {
+///
+/// `aligned` moves each tick to the next whole second of the clock, so figures counting from
+/// different moments tick together and one update redraws them all; a figure then changes up to a
+/// second late. `paused` gives the moment the timeline starts (the figure is current) and nothing
+/// after, for a clock nobody can see; the timeline starts over when it is false again.
+public struct SHElapsedSchedule: TimelineSchedule, Sendable, Equatable {
     public let start: Date
     public let style: SHDuration.Style
+    public let aligned: Bool
+    public let paused: Bool
 
-    public init(start: Date, style: SHDuration.Style = .short) {
+    public init(start: Date, style: SHDuration.Style = .short, aligned: Bool = false, paused: Bool = false) {
         self.start = start
         self.style = style
+        self.aligned = aligned
+        self.paused = paused
     }
 
     public func entries(from startDate: Date, mode: TimelineScheduleMode) -> Entries {
-        Entries(start: start, style: style, upcoming: startDate)
+        Entries(schedule: self, upcoming: startDate)
     }
 
-    /// The first moment after `date` at which the text changes.
+    /// The first moment after `date` at which the text changes (aligned: the whole second at or
+    /// after it).
     public func boundary(after date: Date) -> Date {
         let elapsed = max(0, date.timeIntervalSince(start))
         let step = SHDuration.step(at: elapsed, style)
-        return start.addingTimeInterval((floor(elapsed / step) + 1) * step)
+        let next = start.addingTimeInterval((floor(elapsed / step) + 1) * step)
+        guard aligned else { return next }
+        return Date(timeIntervalSinceReferenceDate: next.timeIntervalSinceReferenceDate.rounded(.up))
     }
 
     public struct Entries: Sequence, IteratorProtocol, Sendable {
-        let start: Date
-        let style: SHDuration.Style
+        let schedule: SHElapsedSchedule
         var upcoming: Date
+        var exhausted = false
 
         public mutating func next() -> Date? {
+            guard !exhausted else { return nil }
             let current = upcoming
-            upcoming = SHElapsedSchedule(start: start, style: style).boundary(after: current)
+            if schedule.paused { exhausted = true } else { upcoming = schedule.boundary(after: current) }
             return current
         }
     }

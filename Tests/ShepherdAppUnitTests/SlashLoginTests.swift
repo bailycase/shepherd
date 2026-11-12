@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
 import Testing
@@ -71,9 +72,9 @@ struct SlashLoginTests {
         }
     }
 
-    @Test func argumentQueryMatchesTheWholeDraftScan() {
-        // Random drafts almost never spell a verb, so the words that matter are also set out: every
-        // verb, near miss and case, each with every joiner and tail.
+    /// Random drafts almost never spell a verb, so the words that matter are also set out: every
+    /// verb, near miss and case, each with every joiner and tail.
+    private static let corpus: [String] = {
         let alphabet = ["/", "l", "L", "o", "g", "i", "n", "u", "t", "a", "A", " ", "\n", "\r\n", "\t"]
         var generator = SplitMix64(state: 0x5EED)
         var drafts = (0..<20_000).map { _ in
@@ -89,13 +90,36 @@ struct SlashLoginTests {
                 }
             }
         }
+        return drafts
+    }()
+
+    @Test func argumentQueryMatchesTheWholeDraftScan() {
         var differing: [String] = []
         var opened = 0
-        for draft in drafts {
+        for draft in Self.corpus {
             let found = SlashLogin.argumentQuery(draft)
             let scanned = Self.wholeDraftQuery(draft)
             if found?.verb != scanned?.verb || found?.partial != scanned?.partial { differing.append(draft) }
             if scanned != nil { opened += 1 }
+        }
+        #expect(opened > 25, "the corpus reaches the provider list")
+        #expect(differing.isEmpty, "differs for \(differing.count), first \(differing.prefix(5).map { String(reflecting: $0) })")
+    }
+
+    /// The composer asks for the argument only when the store's leading command names a verb
+    /// (`ComposerLeadingCommand`, derived once per edit): that gate changes no answer.
+    @Test func theLeadingCommandDecidesEveryLoginQuery() {
+        var differing: [String] = []
+        var opened = 0
+        for draft in Self.corpus {
+            let leading = ComposerLeadingCommand.of(draft)
+            let gated = leading.flatMap(SlashLogin.Verb.init(rawValue:)) == nil ? nil : SlashLogin.argumentQuery(draft)
+            let query = SlashLogin.argumentQuery(draft)
+            if gated?.verb != query?.verb || gated?.partial != query?.partial { differing.append(draft) }
+            if let query {
+                opened += 1
+                if leading != query.verb.rawValue { differing.append(draft) }
+            }
         }
         #expect(opened > 25, "the corpus reaches the provider list")
         #expect(differing.isEmpty, "differs for \(differing.count), first \(differing.prefix(5).map { String(reflecting: $0) })")
