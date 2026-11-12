@@ -94,7 +94,8 @@ extension ShepherdViewModel {
     var mountedTabs: [Tab] { resolvedMountedTabs }
 
     /// The agents whose thread a mounted layout draws, the visible one and the hidden: the threads holding row views
-    /// (`NativeThreadStores.mounted`). A layout cold parking or a Project took out, or nobody has shown, holds none.
+    /// (`NativeThreadStores.mounted`). A layout cold parking or a Project took out, or nobody has shown, holds none. A tab's
+    /// thread is the one the deck draws (`AgentLayoutModel.Resolver`): its first agent's, when that agent owns a pane of it.
     func mountedThreadAgents() -> Set<AgentID> {
         var agentsByTab: [TabID: Agent] = [:]
         for agent in state.agents where agentsByTab[agent.tabID] == nil { agentsByTab[agent.tabID] = agent }
