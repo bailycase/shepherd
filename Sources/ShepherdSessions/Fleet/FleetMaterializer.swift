@@ -43,6 +43,10 @@ protocol FleetUnitSource: AnyObject {
     /// What the fleet holds for a unit now (nil: unset or its content isn't here yet), for a write
     /// that depends on another unit (where a skill's file goes depends on the skill's state).
     func attach(fleetValue: @escaping (String) -> Data?)
+    /// The units whose name starts with a prefix that the fleet holds, each with the hash its winner
+    /// leaves ("-" for a deletion), so a source can tell a tree is mid sync (some file's winner is not
+    /// what is on disk yet) and keep a unit that describes the tree from being read as a local edit.
+    func attach(fleetWinners: @escaping (String) -> [String: String])
 }
 
 /// A source can't take a value (one this build doesn't understand): it keeps what it has and the
@@ -67,6 +71,7 @@ extension FleetUnitSource {
     func value(of unit: String) -> Data? { read()[unit] }
     func prepare() {}
     func attach(fleetValue: @escaping (String) -> Data?) {}
+    func attach(fleetWinners: @escaping (String) -> [String: String]) {}
 }
 
 /// Keeps this Mac's real state and the store the same, in both directions (docs: Sync engine).
@@ -110,6 +115,13 @@ final class FleetMaterializer {
             case .blob(let hash, _)?: store.blob(hash)
             default: nil
             }
+        }
+        source.attach { prefix in
+            var winners: [String: String] = [:]
+            for unit in store.units where unit.hasPrefix(prefix) {
+                if let winner = store.winner(of: unit) { winners[unit] = Self.hash(of: winner.change) }
+            }
+            return winners
         }
     }
 

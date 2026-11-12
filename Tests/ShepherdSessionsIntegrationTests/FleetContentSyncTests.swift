@@ -226,12 +226,21 @@ struct FleetContentSyncTests {
         #expect(destination == "your-extensions/paths/acme-tool")
 
         let copied = Self.extensionFile(b, "paths/acme-tool/index.ts")
-        try await eventually("B to hold the extension's files") { Self.text(copied) == "export default function acme() {}\n" }
-        #expect(Self.text(Self.extensionFile(b, "paths/acme-tool/lib/helper.ts")) == "export const helper = 1\n")
+        let entry = copied.standardizedFileURL.path
+        let wholeFiles = ["index.ts": "export default function acme() {}\n", "lib/helper.ts": "export const helper = 1\n"]
+        // Files arrive in any order, but pi is only ever told about the extension once they are all there.
+        try await eventually("B's settings.json to list the extension") {
+            let listed = ((try b.piJSON())["extensions"] as? [String])?.contains(entry) == true
+            if listed {
+                for (path, text) in wholeFiles {
+                    #expect(Self.text(Self.extensionFile(b, "paths/acme-tool/" + path)) == text, "listed with \(path) missing or partial")
+                }
+            }
+            return listed
+        }
+        for (path, text) in wholeFiles { #expect(Self.text(Self.extensionFile(b, "paths/acme-tool/" + path)) == text) }
 
         // B loads it by its own absolute path, not A's or the folder on A.
-        let entry = copied.standardizedFileURL.path
-        try await eventually("B's settings.json to list the extension") { ((try b.piJSON())["extensions"] as? [String])?.contains(entry) == true }
         let listed = (try b.piJSON()["extensions"] as? [String]) ?? []
         #expect(!listed.contains { $0.contains(theirs.dev.path) || $0.contains(a.server.pi.home.path) }, "the store holds no machine path")
         // The state is saved just after the settings it wrote.

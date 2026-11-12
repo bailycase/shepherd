@@ -142,7 +142,7 @@ final class FleetSync: @unchecked Sendable {
     private static func label(_ unit: String) -> String {
         switch FleetUnit.kind(of: unit) {
         case "instruction": FleetUnit.name(of: unit) ?? unit
-        case "skill": "the \(FleetUnit.skillParts(of: unit)?.name ?? unit) skill"
+        case "skill", "skillstate": "the \(FleetUnit.skillParts(of: unit)?.name ?? unit) skill"
         case "extension", "extmeta": "the \(FleetUnit.name(of: unit)?.split(separator: "/").first.map(String.init) ?? unit) extension"
         default: "the \(FleetUnit.name(of: unit) ?? unit) setting"
         }

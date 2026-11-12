@@ -459,6 +459,16 @@ public final class SkillsStore: @unchecked Sendable {
         lock.withLock { locate(name)?.folder }
     }
 
+    /// One file of a skill that is here, on or off, even before its SKILL.md has arrived (a skill whose
+    /// files a sync is still writing); nil when it isn't.
+    func syncedFile(_ name: String, _ path: String) -> URL? {
+        guard (try? Self.check(name)) != nil, Self.isSafe(path) else { return nil }
+        return lock.withLock {
+            [directory, offDirectory].map { $0.appendingPathComponent(name, isDirectory: true).appendingPathComponent(path) }
+                .first { var info = stat(); return lstat($0.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG }
+        }
+    }
+
     /// Where a skill's files are watched: the folder pi reads and the one holding the skills that are off.
     var syncedFolders: [URL] { [directory, offDirectory] }
 

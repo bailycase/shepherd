@@ -151,18 +151,36 @@ final class FleetHostSettingsSource: FleetUnitSource {
     }
 }
 
-/// `skill:<name>` (a skill's state: on or off, and the repository it came from) and
-/// `skill:<name>/<path>` (each file in it), for every skill Shepherd keeps, on or off; and
-/// `setting:skills.autoUpdate`. Read and written through `SkillsStore`, so a synced skill lands
-/// where an installed one does (`<pi home>/skills`, or `<support>/skills/off` while it is off) and
-/// a removal keeps its Undo. The skills pi loads from elsewhere are the user's own and never travel.
+/// What a tree of files is, as one hash: the sorted `path:hash` lines. A unit that describes a tree
+/// (a skill's state, an extension's meta) carries it, and a Mac applies the unit only once its own
+/// files hash to the same thing.
+enum FleetTreeDigest {
+    static func of(_ hashes: [String: String]) -> String {
+        FleetSyncProtocol.hash(Data(hashes.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: "\n").utf8))
+    }
+
+    /// Whether any file of the tree has a winner in the fleet that isn't what is on disk yet: a sync is
+    /// still writing it. `winners` is unit to hash ("-" a deletion), `local` the same for this Mac's files.
+    static func isMidSync(winners: [String: String], local: [String: String]) -> Bool {
+        winners.contains { (local[$0.key] ?? "-") != $0.value }
+    }
+}
+
+/// `skill:<name>/<path>` (each file in a skill, a blob) and `skillstate:<name>` (a skill's state:
+/// on or off, the repository it came from, a digest of its files), for every skill Shepherd keeps,
+/// on or off; and `setting:skills.autoUpdate`. Read and written through `SkillsStore`, so a synced
+/// skill lands where an installed one does (`<pi home>/skills`, or `<support>/skills/off` while it is
+/// off) and a removal keeps its Undo. The skills pi loads from elsewhere are the user's own and never travel.
 ///
-/// A skill's folder is the unit's content, so editing a file inside it is one small op and an
-/// install of a new version is the files that changed.
+/// A skill arrives whole: its files are written into the folder of skills that are off, which pi never
+/// reads, and the state moves the folder into place only once the files on disk hash to the state's
+/// digest. The state sorts after the files, so it reaches a Mac after them. A skill that is already
+/// there is updated in place, file by file; its files are read when it is used, not when pi starts.
 final class FleetSkillsSource: FleetUnitSource {
     private let store: SkillsStore
     private let hasher = FleetFileHasher()
     private var fleetValue: (String) -> Data? = { _ in nil }
+    private var fleetWinners: (String) -> [String: String] = { _ in [:] }
     /// Told after a synced write, so Settings and the clients showing the skills follow.
     private let written: () -> Void
     /// Skills too big to sync, named once in the log.
@@ -176,8 +194,9 @@ final class FleetSkillsSource: FleetUnitSource {
         self.written = written
     }
 
-    func owns(_ unit: String) -> Bool { unit == Self.autoUpdate || FleetUnit.kind(of: unit) == "skill" }
+    func owns(_ unit: String) -> Bool { unit == Self.autoUpdate || FleetUnit.skillParts(of: unit) != nil }
     func attach(fleetValue: @escaping (String) -> Data?) { self.fleetValue = fleetValue }
+    func attach(fleetWinners: @escaping (String) -> [String: String]) { self.fleetWinners = fleetWinners }
 
     /// A skill's state is a few words, so it travels inline; its files by hash.
     func storesBlob(_ unit: String) -> Bool { FleetUnit.skillParts(of: unit)?.path != nil }
@@ -187,6 +206,8 @@ final class FleetSkillsSource: FleetUnitSource {
     struct State: Codable, Equatable {
         var on: Bool
         var source: SkillSource?
+        /// Of the skill's files (`FleetTreeDigest`); nil from a Mac that doesn't send one.
+        var digest: String?
     }
 
     static func json(_ state: State) -> Data {
@@ -195,28 +216,51 @@ final class FleetSkillsSource: FleetUnitSource {
         return (try? encoder.encode(state)) ?? Data()
     }
 
+    /// A skill's files on disk: path to hash. nil when it is over the limits.
+    private func files(of skill: SkillsStore.Synced) -> [String: String]? {
+        guard let files = FleetFileTree.files(under: skill.folder.resolvingSymlinksInPath().path,
+                                               skipping: { FleetFileTree.isNoise($0) || $0 == "node_modules" },
+                                               limits: FleetFileTree.skillLimits) else { return nil }
+        var hashes: [String: String] = [:]
+        for file in files {
+            let unit = FleetUnit.skillFile(skill.name, file.relative)
+            guard FleetUnit.isValid(unit), file.size <= FleetSyncProtocol.maxBlobBytes, let hash = hasher.hash(file) else { continue }
+            hashes[file.relative] = hash
+        }
+        return hashes
+    }
+
     func fingerprints() -> [String: String] {
         var result: [String: String] = [:]
-        var paths: Set<String> = []
         for skill in store.syncedSkills() {
-            guard let files = FleetFileTree.files(under: skill.folder.resolvingSymlinksInPath().path,
-                                                   skipping: { FleetFileTree.isNoise($0) || $0 == "node_modules" },
-                                                   limits: FleetFileTree.skillLimits) else {
+            guard let hashes = files(of: skill) else {
                 if oversized.insert(skill.name).inserted {
                     ShepherdLog.info("fleet: the skill \(skill.name) is too big to sync, so it stays on this Mac")
                 }
                 continue
             }
             oversized.remove(skill.name)
-            for file in files {
-                let unit = FleetUnit.skillFile(skill.name, file.relative)
-                guard FleetUnit.isValid(unit), file.size <= FleetSyncProtocol.maxBlobBytes, let hash = hasher.hash(file) else { continue }
+            var local: [String: String] = [:]
+            for (path, hash) in hashes {
+                let unit = FleetUnit.skillFile(skill.name, path)
                 result[unit] = hash
-                paths.insert(file.path)
+                local[unit] = hash
             }
-            result[FleetUnit.skill(skill.name)] = FleetSyncProtocol.hash(Self.json(State(on: skill.isOn, source: skill.source)))
+            let state = FleetUnit.skill(skill.name)
+            // Files the fleet has decided but this Mac hasn't written yet: the state is the fleet's, not an edit.
+            if FleetTreeDigest.isMidSync(winners: fleetWinners("skill:\(skill.name)/"), local: local),
+               let theirs = fleetValue(state) {
+                result[state] = FleetSyncProtocol.hash(theirs)
+            } else {
+                result[state] = FleetSyncProtocol.hash(Self.json(State(on: skill.isOn, source: skill.source, digest: FleetTreeDigest.of(hashes))))
+            }
         }
-        hasher.keep(paths)
+        // Files of a skill whose SKILL.md hasn't arrived yet are still files here: not reading them would look like deleting them.
+        for (unit, winner) in fleetWinners("skill:") where result[unit] == nil && winner != "-" {
+            guard let parts = FleetUnit.skillParts(of: unit), let path = parts.path, let url = store.syncedFile(parts.name, path),
+                  let file = FleetFileTree.files(under: url.path, limits: FleetFileTree.skillLimits)?.first, let hash = hasher.hash(file) else { continue }
+            result[unit] = hash
+        }
         result[Self.autoUpdate] = FleetSyncProtocol.hash(Self.autoUpdateJSON(store.snapshot().autoUpdate))
         return result
     }
@@ -231,10 +275,11 @@ final class FleetSkillsSource: FleetUnitSource {
         if unit == Self.autoUpdate { return Self.autoUpdateJSON(store.snapshot().autoUpdate) }
         guard let (name, path) = FleetUnit.skillParts(of: unit) else { return nil }
         guard let path else {
-            return store.syncedSkills().first { $0.name == name }.map { Self.json(State(on: $0.isOn, source: $0.source)) }
+            guard let skill = store.syncedSkills().first(where: { $0.name == name }), let hashes = files(of: skill) else { return nil }
+            return Self.json(State(on: skill.isOn, source: skill.source, digest: FleetTreeDigest.of(hashes)))
         }
-        guard let folder = store.syncedFolder(name), FleetFileTree.isSafe(path) else { return nil }
-        return try? Data(contentsOf: folder.appendingPathComponent(path))
+        guard let url = store.syncedFile(name, path) else { return nil }
+        return try? Data(contentsOf: url)
     }
 
     private static func autoUpdateJSON(_ on: Bool) -> Data { Data((on ? "true" : "false").utf8) }
@@ -252,11 +297,14 @@ final class FleetSkillsSource: FleetUnitSource {
         }
         guard let (name, path) = FleetUnit.skillParts(of: unit) else { return }
         if let path {
-            let state = fleetValue(FleetUnit.skill(name)).flatMap { try? JSONDecoder().decode(State.self, from: $0) }
-            try store.writeSynced(name, path: path, data: value, on: state?.on ?? true)
-            // The state is applied the moment there is a skill to apply it to, so no scan sees a skill the
-            // fleet has an opinion about as if it were this Mac's own.
-            if value != nil, let state { _ = try store.applySynced(name, on: state.on, source: state.source) }
+            // The fleet removing the skill moves the whole folder to Removed (where Undo is) when its state
+            // is applied: its files are not taken one by one.
+            if value == nil, fleetWinners(FleetUnit.skill(name))[FleetUnit.skill(name)] == "-" { return }
+            // A skill that isn't here yet is written where pi doesn't read, and moved into place whole.
+            try store.writeSynced(name, path: path, data: value, on: false)
+            if value != nil, let state = fleetValue(FleetUnit.skill(name)).flatMap({ try? JSONDecoder().decode(State.self, from: $0) }) {
+                _ = try settle(name, state)
+            }
             return
         }
         guard let value else {
@@ -267,18 +315,31 @@ final class FleetSkillsSource: FleetUnitSource {
         guard let state = try? JSONDecoder().decode(State.self, from: value) else {
             throw FleetUnitRefused(description: "\(unit) holds a state this version doesn't know")
         }
-        // Its files make it, and then this is applied: a skill that isn't here yet waits for them.
-        guard try store.applySynced(name, on: state.on, source: state.source) else {
-            throw FleetUnitWaiting(description: "\(name) isn't here yet")
+        // Its files make it, and then this is applied: a skill that isn't whole yet waits for them.
+        guard try settle(name, state) else { throw FleetUnitWaiting(description: "\(name)'s files aren't all here yet") }
+    }
+
+    /// Puts a skill as its state says (on or off, from where) once its files are all here. False while they aren't.
+    private func settle(_ name: String, _ state: State) throws -> Bool {
+        if let digest = state.digest, let skill = store.syncedSkills().first(where: { $0.name == name }) {
+            let hashes = files(of: skill)
+            // Off and wanted on: it moves in only when whole. One already on is updated where it is.
+            if !skill.isOn, state.on, hashes.map(FleetTreeDigest.of) != digest { return false }
         }
+        return try store.applySynced(name, on: state.on, source: state.source)
     }
 }
 
 /// `extension:<path>` (a file under the home's `your-extensions/`) and `extmeta:<id>` (what one
-/// extension is: its name, the files pi loads, whether it is switched on). Every Mac holds the
-/// extensions as content in its own `your-extensions/` and loads them from there, by that Mac's
-/// absolute path in settings.json: the store never holds a machine path, and an extension
+/// extension is: its name, the files pi loads, whether it is switched on, a digest of its files).
+/// Every Mac holds the extensions as content in its own `your-extensions/` and loads them from there,
+/// by that Mac's absolute path in settings.json: the store holds no machine path, and an extension
 /// copied from a path on another Mac loads on this one from its copy.
+///
+/// An extension arrives whole or not at all: it is listed in settings.json (and so loaded by pi) only
+/// once the files on disk hash to the meta's digest, and an extension that is already on is taken out
+/// of settings.json while a sync rewrites its files and put back when they are whole. The meta sorts
+/// after the files, so it reaches a Mac after them.
 ///
 /// An extension someone is working on (a copy whose source is a folder on this Mac, as "your pi"
 /// listed it) is linked: the folder is watched, each save is mirrored into the copy, and the copy's
@@ -290,6 +351,7 @@ final class FleetExtensionsSource: FleetUnitSource {
     private let root: URL
     private let hasher = FleetFileHasher()
     private var fleetValue: (String) -> Data? = { _ in nil }
+    private var fleetWinners: (String) -> [String: String] = { _ in [:] }
     private let written: () -> Void
     /// A copy's signature (its files' paths, sizes and times) as last mirrored from its folder.
     private var mirrored: [String: String] = [:]
@@ -304,6 +366,7 @@ final class FleetExtensionsSource: FleetUnitSource {
 
     func owns(_ unit: String) -> Bool { ["extension", "extmeta"].contains(FleetUnit.kind(of: unit) ?? "") }
     func attach(fleetValue: @escaping (String) -> Data?) { self.fleetValue = fleetValue }
+    func attach(fleetWinners: @escaping (String) -> [String: String]) { self.fleetWinners = fleetWinners }
     func storesBlob(_ unit: String) -> Bool { FleetUnit.kind(of: unit) == "extension" }
 
     var watchedFiles: [URL] { [imports.stateURL] }
@@ -313,6 +376,8 @@ final class FleetExtensionsSource: FleetUnitSource {
         var name: String
         var entries: [String]?
         var on: Bool
+        /// Of the extension's files (`FleetTreeDigest`); nil from a Mac that doesn't send one.
+        var digest: String?
     }
 
     static func json(_ meta: Meta) -> Data {
@@ -330,6 +395,11 @@ final class FleetExtensionsSource: FleetUnitSource {
         return FleetFileTree.isSafe(id) ? id : nil
     }
 
+    /// The unit of a file of extension `group`: the group itself for a lone file, else the path inside it.
+    private static func unit(_ group: String, _ relative: String) -> String {
+        FleetUnit.extensionFile(relative.isEmpty ? group : group + "/" + relative)
+    }
+
     // MARK: Linked folders
 
     /// The copies whose source is a folder or file on this Mac that isn't in the home: what a person works on.
@@ -344,6 +414,7 @@ final class FleetExtensionsSource: FleetUnitSource {
 
     /// Makes each copy match its folder when the folder changed: files that are new or newer are
     /// copied, files the folder no longer has are removed. One that is over the limits stays as it was copied.
+    /// Then puts back an extension a sync held out once its files are whole.
     func prepare() {
         for link in links() {
             guard let files = FleetFileTree.files(under: link.source.path, followingFileLinks: true, limits: FleetFileTree.extensionLimits) else { continue }
@@ -352,6 +423,7 @@ final class FleetExtensionsSource: FleetUnitSource {
             mirrored[link.id] = signature
             mirror(files, of: link.source, into: root.appendingPathComponent(link.id))
         }
+        for destination in imports.heldExtensions() { releaseIfWhole(destination) }
     }
 
     private func mirror(_ files: [FleetFileTree.File], of source: URL, into copy: URL) {
@@ -372,6 +444,25 @@ final class FleetExtensionsSource: FleetUnitSource {
 
     // MARK: Reading
 
+    /// An extension's files on disk: path to hash ("" for a lone file). nil when it is over the limits.
+    private func files(ofGroup group: String) -> [String: String]? {
+        guard let files = FleetFileTree.files(under: root.appendingPathComponent(group).path, limits: FleetFileTree.extensionLimits) else { return nil }
+        var hashes: [String: String] = [:]
+        for file in files {
+            guard FleetUnit.isValid(Self.unit(group, file.relative)), file.size <= FleetSyncProtocol.maxBlobBytes,
+                  let hash = hasher.hash(file) else { continue }
+            hashes[file.relative] = hash
+        }
+        return hashes
+    }
+
+    /// The fleet's winners for an extension's files, for `FleetTreeDigest.isMidSync`.
+    private func winners(ofGroup group: String) -> [String: String] {
+        var result = fleetWinners(FleetUnit.extensionFile(group + "/"))
+        if let lone = fleetWinners(FleetUnit.extensionFile(group))[FleetUnit.extensionFile(group)] { result[FleetUnit.extensionFile(group)] = lone }
+        return result
+    }
+
     func fingerprints() -> [String: String] {
         var result: [String: String] = [:]
         var paths: Set<String> = []
@@ -380,8 +471,10 @@ final class FleetExtensionsSource: FleetUnitSource {
         // The packages an npm extension needs, hoisted beside it.
         if FileManager.default.fileExists(atPath: root.appendingPathComponent("npm").path) { groups.append("npm") }
         var skipped: Set<String> = []
+        var digests: [String: String] = [:]
+        var midSync: Set<String> = []
         for group in Set(groups).sorted() {
-            guard let files = FleetFileTree.files(under: root.appendingPathComponent(group).path, limits: FleetFileTree.extensionLimits) else {
+            guard let hashes = files(ofGroup: group) else {
                 if oversized.insert(group).inserted {
                     ShepherdLog.info("fleet: the extension \(group) is too big to sync, so it stays on this Mac")
                 }
@@ -389,21 +482,36 @@ final class FleetExtensionsSource: FleetUnitSource {
                 continue
             }
             oversized.remove(group)
-            for file in files {
-                let unit = FleetUnit.extensionFile(file.relative.isEmpty ? group : group + "/" + file.relative)
-                guard FleetUnit.isValid(unit), file.size <= FleetSyncProtocol.maxBlobBytes, let hash = hasher.hash(file) else { continue }
+            var local: [String: String] = [:]
+            for (relative, hash) in hashes {
+                let unit = Self.unit(group, relative)
                 result[unit] = hash
-                paths.insert(file.path)
+                local[unit] = hash
             }
+            digests[group] = FleetTreeDigest.of(hashes)
+            if FleetTreeDigest.isMidSync(winners: winners(ofGroup: group), local: local) { midSync.insert(group) }
         }
-        hasher.keep(paths)
+        // Files of an extension that isn't a copy here yet (its meta comes last) are still files here: not reading them would look like deleting them.
+        for (unit, winner) in fleetWinners(FleetUnit.extensionFile("")) where result[unit] == nil && winner != "-" {
+            guard let name = FleetUnit.name(of: unit), FleetFileTree.isSafe(name),
+                  let file = FleetFileTree.files(under: root.appendingPathComponent(name).path, limits: FleetFileTree.extensionLimits)?.first,
+                  file.relative.isEmpty, let hash = hasher.hash(file) else { continue }
+            result[unit] = hash
+        }
+        let held = imports.heldExtensions()
         for (id, entry) in copies where !skipped.contains(id) {
-            result[FleetUnit.extensionMeta(id)] = FleetSyncProtocol.hash(Self.json(Self.meta(entry.copy, on: entry.on)))
+            let meta = FleetUnit.extensionMeta(id)
+            // Files the fleet has decided but this Mac hasn't finished writing: the meta is the fleet's, not an edit.
+            if midSync.contains(id) || held.contains(entry.copy.destination), let theirs = fleetValue(meta) {
+                result[meta] = FleetSyncProtocol.hash(theirs)
+            } else {
+                result[meta] = FleetSyncProtocol.hash(Self.json(Self.meta(entry.copy, on: entry.on, digest: digests[id])))
+            }
         }
         return result
     }
 
-    private static func meta(_ copy: YourPiCopy, on: Bool) -> Meta { Meta(name: copy.name, entries: copy.entries, on: on) }
+    private static func meta(_ copy: YourPiCopy, on: Bool, digest: String?) -> Meta { Meta(name: copy.name, entries: copy.entries, on: on, digest: digest) }
 
     func read() -> [String: Data] {
         var values: [String: Data] = [:]
@@ -414,7 +522,8 @@ final class FleetExtensionsSource: FleetUnitSource {
     func value(of unit: String) -> Data? {
         guard let name = FleetUnit.name(of: unit) else { return nil }
         if FleetUnit.kind(of: unit) == "extmeta" {
-            return imports.syncedExtensions().first { Self.id(of: $0.copy) == name }.map { Self.json(Self.meta($0.copy, on: $0.on)) }
+            guard let entry = imports.syncedExtensions().first(where: { Self.id(of: $0.copy) == name }), let hashes = files(ofGroup: name) else { return nil }
+            return Self.json(Self.meta(entry.copy, on: entry.on, digest: FleetTreeDigest.of(hashes)))
         }
         guard FleetFileTree.isSafe(name) else { return nil }
         return try? Data(contentsOf: root.appendingPathComponent(name))
@@ -424,11 +533,19 @@ final class FleetExtensionsSource: FleetUnitSource {
 
     // MARK: Writing
 
+    /// The extension a file belongs to, by its copy's place.
+    private func destination(ofFile path: String) -> String? {
+        imports.syncedExtensions().compactMap { Self.id(of: $0.copy) }.first { path == $0 || path.hasPrefix($0 + "/") }.map { Self.prefix + $0 }
+    }
+
     func write(_ unit: String, _ value: Data?, origin: String) throws {
         defer { written() }
         guard let name = FleetUnit.name(of: unit) else { return }
         if FleetUnit.kind(of: unit) == "extension" {
+            // One that is on stops being loaded until its files are whole again.
+            if let destination = destination(ofFile: name) { try imports.holdSyncedExtension(destination: destination) }
             if let value { try FleetFileTree.write(value, to: name, under: root) } else { try FleetFileTree.remove(name, under: root) }
+            if let destination = destination(ofFile: name) { releaseIfWhole(destination) }
             return
         }
         guard FleetFileTree.isSafe(name) else { throw FleetUnitRefused(description: "\(unit) isn't a place under your-extensions") }
@@ -440,13 +557,34 @@ final class FleetExtensionsSource: FleetUnitSource {
         guard let meta = try? JSONDecoder().decode(Meta.self, from: value) else {
             throw FleetUnitRefused(description: "\(unit) holds an extension this version doesn't know")
         }
-        // The files it loads come with it: until they are here it waits.
-        let folder = root.appendingPathComponent(name)
+        // The files it loads come with it: until they are all here, and match, it waits and is not listed.
+        guard isWhole(group: name, meta: meta) else { throw FleetUnitWaiting(description: "\(name)'s files aren't all here yet") }
+        try imports.applySyncedExtension(destination: destination, name: meta.name, entries: meta.entries, on: meta.on)
+    }
+
+    /// Every file the fleet has decided for the extension is here, and the files hash to the meta's digest.
+    private func isWhole(group: String, meta: Meta) -> Bool {
+        guard let hashes = files(ofGroup: group) else { return false }
+        var local: [String: String] = [:]
+        for (relative, hash) in hashes { local[Self.unit(group, relative)] = hash }
+        if FleetTreeDigest.isMidSync(winners: winners(ofGroup: group), local: local) { return false }
         let loaded = (meta.entries ?? [""]).allSatisfy { entry in
             FleetFileTree.isSafe(entry.isEmpty ? "x" : entry)
-                && FileManager.default.fileExists(atPath: (entry.isEmpty ? folder : folder.appendingPathComponent(entry)).path)
+                && FileManager.default.fileExists(atPath: (entry.isEmpty ? root.appendingPathComponent(group) : root.appendingPathComponent(group).appendingPathComponent(entry)).path)
         }
-        guard loaded else { throw FleetUnitWaiting(description: "\(name)'s files aren't here yet") }
-        try imports.applySyncedExtension(destination: destination, name: meta.name, entries: meta.entries, on: meta.on)
+        return loaded && meta.digest.map { $0 == FleetTreeDigest.of(hashes) } != false
+    }
+
+    /// Lists a held extension again once its files are whole, as the fleet's meta for it says.
+    private func releaseIfWhole(_ destination: String) {
+        guard imports.heldExtensions().contains(destination), destination.hasPrefix(Self.prefix) else { return }
+        let group = String(destination.dropFirst(Self.prefix.count))
+        guard let theirs = fleetValue(FleetUnit.extensionMeta(group)), let meta = try? JSONDecoder().decode(Meta.self, from: theirs),
+              isWhole(group: group, meta: meta) else { return }
+        do {
+            try imports.applySyncedExtension(destination: destination, name: meta.name, entries: meta.entries, on: meta.on)
+        } catch {
+            ShepherdLog.warning("fleet: couldn't list \(group) again: \(error)")
+        }
     }
 }
