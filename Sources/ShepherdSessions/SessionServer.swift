@@ -1292,6 +1292,7 @@ public final class SessionServer: @unchecked Sendable {
     /// Tests: the saved versions of a unit in this host's fleet store, newest first, and what decides it now.
     func fleetSyncHistory(_ unit: String) -> [FleetHistoryEntry] { queue.sync { fleet?.syncEngine.store.history(of: unit) ?? [] } }
     func fleetSyncWinner(_ unit: String) -> FleetOp? { queue.sync { fleet?.syncEngine.store.winner(of: unit) } }
+    func fleetSyncUnits() -> [String] { queue.sync { fleet?.syncEngine.store.units ?? [] } }
     var fleetStoreDirectory: URL? { queue.sync { fleet?.syncEngine.store.directory } }
 
     /// Sets `fleetOptions` for the next `setFleetEnabled(true)`.
@@ -1385,6 +1386,8 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Where this Mac's shared MCP servers are (`~/.config/mcp/mcp.json`). Tests point it at a scratch file.
     public var mcpConfigFile = MCPConfigFile(url: ShepherdPaths.mcpConfigURL())
+    /// Tests: the subagent definitions a fleet writes through, where pi's engine is not the app's.
+    var fleetSubagentStore: SubagentDefinitionsStore?
     private var fleetRepoKeys: FleetRepoKeys?
     private var repoKeysRefreshing = false
 
@@ -1394,7 +1397,7 @@ public final class SessionServer: @unchecked Sendable {
     private func addFleetContentSources(to service: FleetService) {
         let directory = supportDirectory.appendingPathComponent("fleet", isDirectory: true)
         let sync = service.syncEngine
-        sync.add(FleetMCPSource(file: mcpConfigFile) { [weak self] in self?.queue.async { self?.pushSettingsChanged(.mcp) } })
+        sync.add(FleetMCPSource(file: { [weak self] in self?.mcpConfigFile ?? MCPConfigFile(url: ShepherdPaths.mcpConfigURL()) }) { [weak self] in self?.queue.async { self?.pushSettingsChanged(.mcp) } })
         sync.add(FleetHooksSource(catalog: { [weak self] in self?.hooks ?? HookCatalog(support: directory) }) { [weak self] in
             self?.queue.async {
                 guard let self else { return }
@@ -1402,8 +1405,12 @@ public final class SessionServer: @unchecked Sendable {
                 if let handler = self.onHooksChanged { self.hopToMain { handler() } }
             }
         })
-        sync.add(FleetSubagentsSource(store: SubagentDefinitionsStore(pi: pi, parserSource: ChildrenExtension.configSource)) { [weak self] in
-            self?.queue.async { self?.pushSettingsChanged(.subagents) }
+        let subagents = SubagentDefinitionsStore(pi: pi, parserSource: ChildrenExtension.configSource)
+        sync.add(FleetSubagentsSource(store: { [weak self] in self?.fleetSubagentStore ?? subagents }) { [weak self] in
+            self?.queue.async {
+                self?.pushSettingsChanged(.subagents)
+                self?.fleet?.syncEngine.localChanged()
+            }
         })
         let keys = FleetRepoKeys(directory: directory)
         fleetRepoKeys = keys

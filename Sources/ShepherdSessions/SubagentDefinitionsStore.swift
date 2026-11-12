@@ -64,13 +64,13 @@ public final class SubagentDefinitionsStore: @unchecked Sendable {
     }
 
     /// Every readable subagent file as it is, not parsed and without seeding the defaults: what a
-    /// fleet syncs. A file that can't be read is left out.
+    /// fleet syncs. A file that can't be read is left out. It doesn't take the store's lock, which a
+    /// save holds while pi's parser runs (seconds): every write replaces a file whole, so a read sees
+    /// a file as it was or as it is, and the server's queue never waits on a save.
     public func files() throws -> [File] {
-        try lock.withLock {
-            try scanFiles().files.compactMap { row in
-                guard row["error"] == nil, let file = row["file"], let text = row["text"], let fingerprint = row["fingerprint"] else { return nil }
-                return File(file: file, text: text, fingerprint: fingerprint)
-            }
+        try scanFiles().files.compactMap { row in
+            guard row["error"] == nil, let file = row["file"], let text = row["text"], let fingerprint = row["fingerprint"] else { return nil }
+            return File(file: file, text: text, fingerprint: fingerprint)
         }
     }
 

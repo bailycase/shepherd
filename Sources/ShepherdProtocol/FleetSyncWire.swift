@@ -171,8 +171,9 @@ public struct FleetOp: Codable, Hashable, Sendable {
     }
 }
 
-/// Unit names: `<kind>:<name>`. Slice 2a carries `setting` (`host.<key>` and `pi.<key>` and the
-/// `fleet.<key>` policy) and `instruction` (`AGENTS.md`, `APPEND_SYSTEM.md`).
+/// Unit names: `<kind>:<name>`. `setting` (`host.<key>` and `pi.<key>` and the `fleet.<key>` policy,
+/// `hooks.readers`), `instruction` (`AGENTS.md`, `APPEND_SYSTEM.md`), `mcpServer` (a server's name),
+/// `hook` (an id from what the hook does), `subagent` (the profile's file) and `space` (a space's id).
 public enum FleetUnit {
     public static func setting(_ key: String) -> String { "setting:" + key }
     public static func instruction(_ file: InstructionFile) -> String { "instruction:" + file.fileName }
@@ -186,11 +187,12 @@ public enum FleetUnit {
         return kind.isEmpty || name.isEmpty ? nil : (kind, name)
     }
 
-    /// A unit name from a peer: a lowercase kind and a short printable name with no `..`, so a
+    /// A unit name from a peer: a camelCase kind (`setting`, `mcpServer`) and a short printable name with no `..`, so a
     /// name never reaches a path or a key it shouldn't.
     public static func isValid(_ unit: String) -> Bool {
         guard unit.utf8.count <= 200, let (kind, name) = split(unit),
-              kind.utf8.allSatisfy({ ($0 >= 97 && $0 <= 122) }), kind.utf8.count <= 20 else { return false }
+              kind.utf8.first.map({ $0 >= 97 && $0 <= 122 }) == true,
+              kind.utf8.allSatisfy({ ($0 >= 97 && $0 <= 122) || ($0 >= 65 && $0 <= 90) }), kind.utf8.count <= 20 else { return false }
         return !name.contains("..") && name.unicodeScalars.allSatisfy { $0.value >= 0x20 && $0.value != 0x7F }
     }
 }

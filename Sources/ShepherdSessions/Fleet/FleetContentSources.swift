@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 // MARK: Slice 2b-ii: MCP servers, hooks, subagents and spaces
 
@@ -12,13 +13,14 @@ import ShepherdProtocol
 /// a `${keychain:…}` reference travels as a reference, and the credentials are slice 2c's. pi's own
 /// `mcp.json` is derived from this file when an agent launches (`MCPPiConfig`), as it always was.
 final class FleetMCPSource: FleetUnitSource {
-    private let file: MCPConfigFile
+    private let current: () -> MCPConfigFile
+    private var file: MCPConfigFile { current() }
     private let written: () -> Void
     private var present: [String] = []
 
     /// `written`: told after a synced server is written, so Settings follows.
-    init(file: MCPConfigFile, written: @escaping () -> Void = {}) {
-        self.file = file
+    init(file: @escaping () -> MCPConfigFile, written: @escaping () -> Void = {}) {
+        current = file
         self.written = written
     }
 
@@ -175,15 +177,16 @@ final class FleetHooksSource: FleetUnitSource {
 /// Written through `SubagentDefinitionsStore.save`, which checks the profile loads (and has a name no
 /// other profile has) before it touches the folder; a profile this Mac's pi refuses stays as it was.
 final class FleetSubagentsSource: FleetUnitSource {
-    private let store: SubagentDefinitionsStore
+    private let current: () -> SubagentDefinitionsStore
+    private var store: SubagentDefinitionsStore { current() }
     private let written: () -> Void
     private var present: [String] = []
     private var listed: [SubagentDefinitionsStore.File]?
 
     static let kind = "subagent:"
 
-    init(store: SubagentDefinitionsStore, written: @escaping () -> Void = {}) {
-        self.store = store
+    init(store: @escaping () -> SubagentDefinitionsStore, written: @escaping () -> Void = {}) {
+        current = store
         self.written = written
     }
 
@@ -214,22 +217,42 @@ final class FleetSubagentsSource: FleetUnitSource {
 
     func isSeedable(_ unit: String, _ value: Data) -> Bool { !value.isEmpty }
 
+    /// The store checks a profile by running pi's own parser (a Node process), which is too slow to wait for on
+    /// the server queue: a write runs beside it and the next scan finds the file there.
+    var writesAsynchronously: Bool { true }
+
+    private let lock = NSLock()
+    private var inFlight: Set<String> = []
+    /// What this Mac's pi refused to load, by unit and the value's hash: not tried again until the value changes.
+    private var refused: [String: String] = [:]
+
     func write(_ unit: String, _ value: Data?, origin: String) throws {
         guard unit.hasPrefix(Self.kind) else { return }
         let file = String(unit.dropFirst(Self.kind.count))
         guard SubagentDefinitionsStore.acceptsFilename(file) else { throw FleetUnitRefused(description: "\(unit) isn't a subagent file name") }
-        let existing = FileManager.default.fileExists(atPath: store.directory.path) ? try store.files().first { $0.file == file } : nil
-        do {
-            if let value {
-                guard let text = String(data: value, encoding: .utf8) else { throw FleetUnitRefused(description: "\(unit) isn't text") }
-                try store.save(file, text: text, expected: existing?.fingerprint)
-            } else if let existing {
-                try store.delete(file, expected: existing.fingerprint)
+        let hash = FleetMaterializer.fingerprint(value)
+        let store = self.store
+        let alreadyRefused = lock.withLock { refused[unit] == hash }
+        if alreadyRefused { throw FleetUnitRefused(description: "this Mac's pi doesn't load \(file)", quiet: true) }
+        guard lock.withLock({ inFlight.insert(unit).inserted }) else { return }
+        let written = self.written
+        DispatchQueue.global(qos: .utility).async { [self] in
+            do {
+                let existing = FileManager.default.fileExists(atPath: store.directory.path) ? try store.files().first { $0.file == file } : nil
+                if let value {
+                    guard let text = String(data: value, encoding: .utf8) else { throw SubagentDefinitionsStore.Failure("\(file) isn't text. The file was not saved.") }
+                    try store.save(file, text: text, expected: existing?.fingerprint)
+                } else if let existing {
+                    try store.delete(file, expected: existing.fingerprint)
+                }
+            } catch {
+                ShepherdLog.warning("fleet: couldn't write \(unit): \(error)")
+                // A profile that fails its checks stays out; a race with a save elsewhere is tried again at the next change.
+                if "\(error)".contains("was not saved") { lock.withLock { refused[unit] = hash } }
             }
-        } catch let failure as SubagentDefinitionsStore.Failure {
-            throw FleetUnitRefused(description: failure.description)
+            lock.withLock { _ = inFlight.remove(unit) }
+            written()
         }
-        written()
     }
 }
 
