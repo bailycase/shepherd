@@ -37,6 +37,7 @@ struct SidebarView: View {
             SHSidebarFooter(name: footer.name, detail: footer.detail, settingsShortcut: "⌘,") { vm.showSettings = true }
         }
         .environment(\.shMotionPaused, !windowVisible)
+        .transaction { if !windowVisible { $0.disablesAnimations = true } }
     }
 }
 
