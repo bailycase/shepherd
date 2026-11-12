@@ -769,6 +769,18 @@ struct ThreadScrollingTests {
         #expect(abs(after - before) < 2, "prepending moved the visible turn from \(before) to \(after)")
     }
 
+    @Test func scrollingTheTopWithNoPageLoadingMovesNoHistoryAnchor() async throws {
+        let thread = ThreadHarness(messages: 24, paragraphs: 4)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await thread.reachTheFirstRow()
+
+        let counts = ListPerf.counting { _ = ListPerf.scroll(thread.window, thread.scrollView, step: 20, steps: 5) }
+
+        // The boundary row is realized the whole way; only an engaged anchor hears the scroll.
+        #expect(counts["thread.historyMove", default: 0] <= 1, "idle scrolling moved the history anchor: \(counts)")
+    }
+
     @Test func whileAPageLoadsScrollReadingsStillMoveTheAnchor() async throws {
         let thread = ThreadHarness(messages: 24, paragraphs: 4)
         defer { thread.close() }

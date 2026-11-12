@@ -7,6 +7,8 @@ import SwiftUI
 @MainActor @Observable
 final class ThreadHistoryAnchor {
     private(set) var rowID: String?
+    /// A page is loading or being restored. Read it from actions and AppKit callbacks only: in a body it would observe `rowID`.
+    var isEngaged: Bool { rowID != nil }
     @ObservationIgnored var animating = false
     // Keep the target through lazy row replacement; a one-shot proxy request can be dropped.
     var position = ScrollPosition(idType: String.self)
@@ -106,6 +108,7 @@ final class ThreadHistoryAnchor {
 
     /// Keep correcting only this anchor through lazy remeasurement, until the reader moves,
     /// sends, switches session or hides the thread. Geometry bookkeeping never invalidates rows.
+    /// `ThreadView` calls it from its scroll observer while engaged.
     func moved() {
         SHRenderProbe.tick("thread.historyMove")
         // Lazy row replacement can temporarily detach the marker. Keep the last real offset.
@@ -133,7 +136,7 @@ final class ThreadHistoryAnchor {
             self.anchor = anchor
             self.rowID = rowID
             anchor.markers.setObject(self, forKey: rowID as NSString)
-            anchor.moved()
+            if anchor.isEngaged { anchor.moved() }
         }
 
         override var isFlipped: Bool { true }
@@ -147,7 +150,7 @@ final class ThreadHistoryAnchor {
 
         override func layout() {
             super.layout()
-            anchor?.moved()
+            if let anchor, anchor.isEngaged { anchor.moved() }
         }
     }
 }
