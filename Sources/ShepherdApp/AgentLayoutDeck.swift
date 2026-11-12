@@ -114,7 +114,8 @@ struct AgentLayoutDeck: View, Equatable {
                         entry.host.needsLayout = true
                         entry.host.isHidden = false
                         // Laid out in this pass, not a later one: a thread whose rows were let go (`NativeThreadStores`)
-                        // builds them now, so no frame is shown with the layout and not its rows.
+                        // builds them now. Left to a later pass, the running app committed a frame with the layout and an
+                        // empty transcript for as long as the rows took to build.
                         entry.host.layoutSubtreeIfNeeded()
                         SHRenderProbe.tick("deck.flipLayout")
                         container.needsLayout = true
