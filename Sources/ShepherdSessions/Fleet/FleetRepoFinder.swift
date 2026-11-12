@@ -1,6 +1,16 @@
 import Foundation
 import ShepherdCore
 
+/// A reference to the running finder that any thread may read.
+final class FleetRepoFinderBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: FleetRepoFinder?
+    var value: FleetRepoFinder? {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
+}
+
 /// Finds a checkout of a repository this Mac already has (slice 4f), so a space the fleet synced binds to it with no "locate folder"
 /// step and a dispatch needs no clone. It looks only at places Shepherd already knows: the folders of this Mac's spaces, the main
 /// checkout of each thread's worktree, the checkouts the fleet's content index reads and where earlier spaces were bound. It never
@@ -104,6 +114,12 @@ final class FleetRepoFinder: @unchecked Sendable {
     /// What a refresh is compared by: each key's checkouts, with their dates left out (they move on every commit).
     private static func shape(_ table: [String: [Candidate]]) -> [String: [String]] {
         table.mapValues { $0.map { "\($0.path)|\($0.isSpace)" }.sorted() }
+    }
+
+    /// Every repository this Mac has a checkout of that the last refresh saw, whether a space uses it or not: what readiness says it can
+    /// serve. Reads memory only.
+    func knownKeys() -> [String] {
+        lock.withLock { byKey.filter { $0.value.contains { FleetDispatch.folderExists($0.path) } }.map(\.key) }.sorted()
     }
 
     /// The checkout of `key` this Mac should use, from what the last refresh saw; nil when there is none. Reads memory only.

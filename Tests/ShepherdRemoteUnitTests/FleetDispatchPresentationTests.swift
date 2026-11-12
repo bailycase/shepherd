@@ -197,7 +197,7 @@ struct FleetDispatchPresentationTests {
         #expect(picker.options.map(\.name) == ["Auto", "Mac mini", "This Mac", "Mac Studio"], "ranked by room, Auto first")
         #expect(picker.options.first?.chosen == true)
         #expect(picker.options.first { $0.name == "Mac Studio" }?.roomWord == "asleep")
-        #expect(picker.note?.hasPrefix("Runs on Mac mini in a new worktree") == true)
+        #expect(picker.note?.hasPrefix("Runs on Mac mini in a new worktree from this Mac's checkout") == true)
         #expect(picker.footnote == "orders-svc is checked out on This Mac and Mac mini. Mac Studio would clone it first.")
     }
 
@@ -214,6 +214,6 @@ struct FleetDispatchPresentationTests {
         var alone = P.snapshot()
         alone.peers = []
         #expect(Self.picker(snapshot: alone).options.isEmpty && !Self.picker(snapshot: alone).dispatches)
-        #expect(Self.picker(repoKey: nil).footnote == "orders-svc has no origin remote, so no other Mac can find it.")
+        #expect(Self.picker(repoKey: nil).footnote == "orders-svc isn't a git repository with commits, so no other Mac can find it.")
     }
 }

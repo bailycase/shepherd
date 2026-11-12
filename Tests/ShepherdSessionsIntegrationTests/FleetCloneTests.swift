@@ -38,22 +38,61 @@ struct FleetCloneTests {
 
     // MARK: Auto-binding
 
-    @Test func aMacWithACheckoutUnderAnotherSpaceBindsToItAndRunsTheDispatchWithNoClone() async throws {
-        // Mac mini's folder is a checkout of the repository, but nothing has given its space a key yet.
-        let (a, b, _) = try await D.pair(repoKeyB: nil)
+    /// A checkout of the repository on `mac` that no space of its own uses: a thread's worktree was made from it. Returns the main checkout and the
+    /// worktree. (The space the thread lives in is another repository's.)
+    static func hiddenCheckout(on mac: Mac, origin: D.Origin) async throws -> (main: URL, worktree: URL) {
+        let main = mac.host.dir.appendingPathComponent("code/web", isDirectory: true)
+        try FileManager.default.createDirectory(at: main.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try git(["clone", "-q", origin.url.path, main.path], in: mac.host.dir)
+        // The checkout's origin is a path on this disk; its push URL is what names the repository.
+        try git(["config", "remote.origin.pushurl", "https://github.com/acme/web.git"], in: main)
+        try git(["config", "user.name", "Tests"], in: main)
+        try git(["config", "user.email", "tests@example.com"], in: main)
+        let worktree = mac.host.dir.appendingPathComponent("worktrees/web-fix", isDirectory: true)
+        try FileManager.default.createDirectory(at: worktree.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try git(["worktree", "add", "-q", "-b", "fix", worktree.path], in: main)
+        let elsewhere = Space(name: "scratch", path: mac.host.dir.appendingPathComponent("scratch").path, repoKey: "github.com/acme/scratch")
+        try FileManager.default.createDirectory(atPath: elsewhere.path, withIntermediateDirectories: true)
+        try await mac.server.addSpace(elsewhere)
+        var (agent, tab) = Fixture.agent(in: elsewhere, name: "Fix")
+        agent.worktreePath = worktree.path
+        try await mac.server.addAgent(agent, withTab: tab)
+        return (main, worktree)
+    }
+
+    @Test func aMacWithAnUnboundButFindableCheckoutRanksAsHavingTheRepoAndBindsToItWithoutCloning() async throws {
+        try StubPi.installAsEngine()
+        let origin = try D.makeOrigin(extra: [".gitignore": FleetSnapshotTransferTests.ignores])
+        let a = try await Mac("MacBook Pro", origin: origin, busy: 90)
+        let b = try await Mac("Mac mini", origin: origin, busy: 10, checkout: false)
         defer { a.stop(); b.stop() }
-        try git(["config", "remote.origin.pushurl", "https://github.com/acme/web.git"], in: b.folder)
-        #expect(b.server.state.spaces.first?.repoKey == nil)
+        let (main, _) = try await Self.hiddenCheckout(on: b, origin: origin)
+        // The repository's key isn't one of Mac mini's spaces', but its finder knows the checkout, and that is what its readiness says.
+        let key = D.repoKey
+        try await D.wait("Mac mini's finder to know the checkout") { b.server.queue.sync { b.server.fleet?.dispatch.finder.knownKeys().contains(key) == true } }
+        #expect(b.server.state.spaces.contains { $0.repoKey == key } == false, "no space of its own uses it")
+        #expect(b.server.fleetLocalFacts().repoKeys.contains(key), "readiness lists what the finder can bind, not only the spaces")
+
+        try await a.pair(with: b)
+        try await D.waitForReports(a, b)
+        let id = try await b.hostID()
+        let held = try await a.local.fleetRead().snapshot.macs.first { $0.hostID == id }
+        #expect(held?.readiness?.repoKeys.contains(key) == true, "the other Mac sees it as having the repository")
+
+        // Auto: the Mac mini has the room, and nothing charges it for a clone.
         let parent = try await a.parent()
         try parent.hello()
-        _ = try await Self.send(parent, host: "Mac mini")
-        try await D.wait("Mac mini to run the dispatched thread") { !b.dispatched.isEmpty }
-
-        #expect(Self.cloneCount(b) == 0, "it had the repository: nothing was cloned")
-        #expect(b.server.state.spaces.count == 1 && b.server.state.spaces[0].path == b.folder.path, "no second row for one folder")
-        #expect(b.server.state.spaces[0].repoKey == D.repoKey, "its space is that repository now")
+        let info = try parent.info(try await parent.dispatch("Profile the orders import.", key: "findable", title: "Profile the orders import"))
+        #expect(info.host == "Mac mini")
+        try await D.wait("Mac mini to run the dispatched thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        let record = try #require(a.sent().first)
+        #expect(!record.reasonCodes.contains(FleetPlacementReason(.willClone)), "no clone cost: \(record.reasonCodes)")
+        #expect(Self.cloneCount(b) == 0 && b.taken().first?.clone == nil)
+        // It bound to the checkout it had (its space is that folder), and the worktree is that repository's.
+        let space = try #require(Self.space(b))
+        #expect(space.path == PiHome.canonical(main.path) && space.id == a.space.id)
         let worktree = try #require(b.dispatched.first?.worktreePath)
-        #expect(try git(["worktree", "list", "--porcelain"], in: b.folder).contains(URL(fileURLWithPath: worktree).lastPathComponent))
+        #expect(try git(["worktree", "list", "--porcelain"], in: main).contains(URL(fileURLWithPath: worktree).lastPathComponent))
         #expect(!Self.exists(b.developer.path))
     }
 
@@ -201,9 +240,18 @@ struct FleetCloneTests {
 
     // MARK: When origin can't be reached
 
-    /// Points the sender's origin somewhere that doesn't exist, as an origin this Mac can't authenticate to is for the Mac that clones.
+    /// Points the sender's origin somewhere that doesn't exist, as an origin the Mac that clones can't authenticate to is for it. The push URL still
+    /// names the repository, so the repository's key stays what it was.
     static func breakOrigin(of mac: Mac) throws {
+        try git(["config", "remote.origin.pushurl", "https://github.com/acme/web.git"], in: mac.folder)
         try git(["remote", "set-url", "origin", "/no/such/place/acme-web.git"], in: mac.folder)
+    }
+
+    /// Takes the sender's origin away (a repository that never had a remote) and waits for the host to name it by its first commit.
+    static func removeOrigin(of mac: Mac) async throws -> String {
+        try git(["remote", "remove", "origin"], in: mac.folder)
+        try await D.wait("the repository to be named by its first commit") { mac.server.state.spaces.first?.repoKey.map(CanonicalRepoKey.isLocal) == true }
+        return try #require(mac.server.state.spaces.first?.repoKey)
     }
 
     @Test func whenOriginCantBeReachedTheSenderSendsTheRepositoryItselfAndTheTargetClonesFromThat() async throws {
@@ -242,7 +290,7 @@ struct FleetCloneTests {
         let a = try await Mac("MacBook Pro", origin: origin, repoKey: nil)
         let b = try await Mac("Mac mini", origin: origin, checkout: false)
         defer { a.stop(); b.stop() }
-        try git(["remote", "remove", "origin"], in: a.folder)
+        _ = try await Self.removeOrigin(of: a)
         try await a.pair(with: b)
         try await D.waitForReports(a, b)
         try FleetSnapshotTransferTests.write("# acme-web\nedited, not committed\n", to: "README.md", in: a.folder)
@@ -268,21 +316,26 @@ struct FleetCloneTests {
     }
 
     @Test func whenBothTheCloneAndTheBundleFailTheDispatchIsRefusedWithGitsOwnError() async throws {
-        // No snapshot to carry a bundle (the setting leaves edits behind), so origin was the only way and it failed.
-        let (a, b, _) = try await Self.pair(uncommittedA: .leaveBehind)
+        let (a, b, _) = try await Self.pair()
         defer { a.stop(); b.stop() }
         try Self.breakOrigin(of: a)
+        // The Mac that clones has a git that can't clone at all (a broken install, say): from origin or from the bundle.
+        let broken = try makeScratchDirectory("broken-git").appendingPathComponent("git")
+        try "#!/bin/sh\necho 'fatal: this git can not clone' >&2\nexit 128\n".write(to: broken, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: broken.path)
+        FleetRepoClone.git = broken.path
+        defer { FleetRepoClone.git = "/usr/bin/git" }
         let parent = try await a.parent()
         try parent.hello()
-        let reply = try await parent.dispatch("Profile the orders import.", key: "both", title: "Profile the orders import", host: "Mac mini")
-        _ = reply
+        _ = try await parent.dispatch("Profile the orders import.", key: "both", title: "Profile the orders import", host: "Mac mini")
         try await D.wait("the dispatch to end", timeout: .seconds(60)) { a.sent().first?.state == .failed }
         let record = try #require(a.sent().first)
         #expect(record.failure == FleetDispatchCode.repoMissing)
-        #expect(record.failureDetail?.contains("fatal:") == true && record.failureDetail?.contains("acme-web.git") == true, "git's own words: \(record.failureDetail ?? "")")
+        #expect(record.failureDetail?.contains("fatal: this git can not clone") == true, "git's own words: \(record.failureDetail ?? "")")
+        #expect(Self.cloneCount(b) == 2, "origin, then the bundle")
         #expect(b.dispatched.isEmpty && Self.space(b) == nil && !Self.exists(b.developer.path))
         let repos = b.host.dir.appendingPathComponent("fleet/repos")
-        #expect((try? FileManager.default.contentsOfDirectory(atPath: repos.path)) ?? [] == [], "no half checkout is left")
+        #expect(((try? FileManager.default.contentsOfDirectory(atPath: repos.path)) ?? []).isEmpty, "no half checkout is left")
     }
 
     @Test func aSenderWithoutAnOriginNamedGetsTheCloneRefusedUnlessItCanSendTheRepository() async throws {
@@ -297,6 +350,111 @@ struct FleetCloneTests {
                                                                        from: FleetDispatchSender(hostID: aID, hostName: "MacBook Pro", agentTitle: "Ship")))
             Issue.record("a create with nothing to clone from was accepted")
         } catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetDispatchCode.repoMissing) }
+    }
+
+    // MARK: A thread started in New thread, and a dispatch that carries no edits
+
+    /// A thread the person starts in New thread on `host`: the record the host keeps for it.
+    static func userThread(from a: Mac, host: String = "Mac mini") async throws -> FleetDispatchRecord {
+        try #require(try await a.local.fleetAction(.sendThread(FleetUserThread(spaceID: a.space.id, task: "Profile the orders import.", host: host))).dispatch)
+    }
+
+    /// Edits, a new file and an ignored `.env` in the sender's checkout, and the tree they make.
+    static func dirty(_ mac: Mac) throws -> FleetSnapshotTransferTests.Tree {
+        try FleetSnapshotTransferTests.write("# acme-web\nedited, not committed\n", to: "README.md", in: mac.folder)
+        try FleetSnapshotTransferTests.write("take notes\n", to: "NOTES.md", in: mac.folder)
+        try FleetSnapshotTransferTests.write("API_KEY=made-up-value\n", to: ".env", in: mac.folder)
+        return try FleetSnapshotTransferTests.tree(of: mac.folder)
+    }
+
+    @Test func aThreadStartedOnAnotherMacStartsFromWhatThisMacHasLikeADispatch() async throws {
+        let (a, b, _) = try await D.pair(originExtra: [".gitignore": FleetSnapshotTransferTests.ignores])
+        defer { a.stop(); b.stop() }
+        // An unpushed commit, then edits, a new file and an ignored file on top of it.
+        try FleetSnapshotTransferTests.write("# The guide\n", to: "docs/guide.md", in: a.folder)
+        try git(["add", "docs/guide.md"], in: a.folder)
+        try git(["commit", "-qm", "guide"], in: a.folder)
+        let expected = try Self.dirty(a)
+
+        let record = try await Self.userThread(from: a)
+        let head = try D.head(a.folder)
+        #expect(record.kind == .userThread && record.commitSHA == head, "pinned at this Mac's commit, not origin's base")
+        try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        let thread = try #require(b.dispatched.first)
+        #expect(thread.dispatchedFrom?.agentID == nil, "sent by you")
+        let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
+        #expect(try FleetSnapshotTransferTests.tree(of: worktree) == expected, "the worktree is the checkout, uncommitted edit and ignored file included")
+        #expect(try D.head(worktree) == D.head(a.folder))
+        #expect(a.sent().first?.snapshotBytes != nil && Self.cloneCount(b) == 0)
+    }
+
+    @Test func newThreadToAMacForARepoWithNoRemoteArrivesAsABundleWithTheEdits() async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let key = try await Self.removeOrigin(of: a)
+        let expected = try Self.dirty(a)
+
+        let record = try await Self.userThread(from: a)
+        #expect(record.repoKey == key && record.origin == nil)
+        try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        let space = try #require(Self.space(b, repoKey: key))
+        #expect(space.id == a.space.id && Self.cloneCount(b) == 1, "cloned once, from the bundle: there was no origin to try")
+        #expect(try git(["remote"], in: URL(fileURLWithPath: space.path)).isEmpty, "the bundle file it came from is not its origin")
+        let worktree = URL(fileURLWithPath: try #require(b.dispatched.first?.worktreePath))
+        #expect(try FleetSnapshotTransferTests.tree(of: worktree) == expected && D.head(worktree) == D.head(a.folder))
+        try await D.wait("A to follow it as running") { a.sent().first?.state == .running && a.sent().first?.clone == nil }
+        #expect(a.sent().first?.failure == nil)
+    }
+
+    @Test func aThreadStartedInNewThreadWhoseOriginTheTargetCantReachFallsBackToTheBundle() async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        try Self.breakOrigin(of: a)
+        let expected = try Self.dirty(a)
+
+        _ = try await Self.userThread(from: a)
+        try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        #expect(Self.cloneCount(b) == 2, "origin was tried first, then the bundle")
+        let space = try #require(Self.space(b))
+        #expect(try git(["remote", "get-url", "origin"], in: URL(fileURLWithPath: space.path)).trimmingCharacters(in: .whitespacesAndNewlines) == "/no/such/place/acme-web.git")
+        let worktree = URL(fileURLWithPath: try #require(b.dispatched.first?.worktreePath))
+        #expect(try FleetSnapshotTransferTests.tree(of: worktree) == expected)
+        #expect(a.sent().first?.failure == nil)
+    }
+
+    @Test func withEditsLeftBehindAndNoRemoteTheRepositoryStillArrivesAsABundleOfItsOwn() async throws {
+        let (a, b, _) = try await Self.pair(uncommittedA: .leaveBehind)
+        defer { a.stop(); b.stop() }
+        let key = try await Self.removeOrigin(of: a)
+        // A commit no remote has, and an edit that stays home.
+        try FleetSnapshotTransferTests.write("# The guide\n", to: "docs/guide.md", in: a.folder)
+        try git(["add", "docs/guide.md"], in: a.folder)
+        try git(["commit", "-qm", "guide"], in: a.folder)
+        try FleetSnapshotTransferTests.write("# acme-web\nedited, not committed\n", to: "README.md", in: a.folder)
+
+        let parent = try await a.parent()
+        try parent.hello()
+        _ = try await Self.send(parent, key: "behind")
+        try await D.wait("Mac mini to run the dispatched thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        let sent = try #require(a.sent().first)
+        #expect(sent.repoKey == key && sent.snapshotFiles == 0 && (sent.snapshotBytes ?? 0) > 0, "no edits sent: the bundle is the whole transfer")
+        let worktree = URL(fileURLWithPath: try #require(b.dispatched.first?.worktreePath))
+        #expect(try D.head(worktree) == D.head(a.folder), "the commit no remote had arrived inside the bundle")
+        #expect(try String(contentsOf: worktree.appendingPathComponent("docs/guide.md"), encoding: .utf8) == "# The guide\n")
+        #expect(try String(contentsOf: worktree.appendingPathComponent("README.md"), encoding: .utf8) == "# acme-web\n", "the edit stayed home")
+        #expect(Self.cloneCount(b) == 1 && Self.space(b, repoKey: key)?.id == a.space.id)
+        try await D.wait("A to follow it as running") { a.sent().first?.state == .running && a.sent().first?.clone == nil }
+    }
+
+    @Test func aThreadStartedInNewThreadWithEditsLeftBehindAndAnUnreachableOriginAlsoFallsBackToTheBundle() async throws {
+        let (a, b, _) = try await Self.pair(uncommittedA: .leaveBehind)
+        defer { a.stop(); b.stop() }
+        try Self.breakOrigin(of: a)
+        _ = try await Self.userThread(from: a)
+        try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        #expect(Self.cloneCount(b) == 2 && a.sent().first?.failure == nil)
+        let worktree = URL(fileURLWithPath: try #require(b.dispatched.first?.worktreePath))
+        #expect(try D.head(worktree) == D.head(a.folder))
     }
 
     // MARK: Stop

@@ -166,8 +166,25 @@ struct FleetSnapshotSender {
         return parts
     }
 
-    /// `git bundle` of what no remote ref holds (or, for `wholeRepository`, of every ref), written under the fleet's own directory.
+    /// The repository and nothing else, for a dispatch that carries no edits (Settings ▸ Fleet ▸ Uncommitted changes leaves them behind) to a
+    /// Mac that has no checkout and couldn't clone one: a bundle of every ref, under the cap. It needs no index.
+    static func repositoryOnly(id: UUID, root: String, commit: String, directory: URL, warnAbove: UInt64 = FleetSnapshotCap.warnAbove,
+                               refuseAbove: UInt64 = FleetSnapshotCap.refuseAbove) throws -> Built {
+        let zero = FleetHash(a: 0, b: 0, c: 0, d: 0)
+        let bundle = try makeBundle(id: id, root: root, directory: directory, wholeRepository: true)
+        let verdict = FleetSnapshotCap.verdict(bytes: bundle.0.size, warnAbove: warnAbove, refuseAbove: refuseAbove)
+        if verdict == .refuse { throw Failure.tooLarge(bytes: bundle.0.size, biggest: ["the repository's history:\(bundle.0.size)"]) }
+        let header = FleetSnapshotHeader(commit: commit, rootHash: zero, digest: zero, files: 0, directories: 0, deletions: 0, parts: 0, fileCount: 0,
+                                         bytes: bundle.0.size, bundle: bundle.0, repoBundle: true, repoOnly: true)
+        return Built(id: id, plan: .empty(commit: commit), header: header, parts: [], root: root, bundle: bundle, warning: verdict == .warn, git: ["bundle"])
+    }
+
     private func makeBundle(id: UUID, wholeRepository: Bool = false) throws -> (FleetBlobRef, URL) {
+        try Self.makeBundle(id: id, root: root, directory: directory, wholeRepository: wholeRepository)
+    }
+
+    /// `git bundle` of what no remote ref holds (or, for `wholeRepository`, of every ref), written under the fleet's own directory.
+    private static func makeBundle(id: UUID, root: String, directory: URL, wholeRepository: Bool) throws -> (FleetBlobRef, URL) {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let url = directory.appendingPathComponent("\(id.uuidString.lowercased()).bundle")
         try? FileManager.default.removeItem(at: url)

@@ -17,15 +17,21 @@ extension FleetDispatch {
 
     // MARK: Sender
 
-    /// Whether this dispatch carries a snapshot: one a thread sent from a checkout, with the setting on.
+    /// Whether this dispatch carries a snapshot: one sent from a checkout (a thread's, or the space's for a thread the person started), with the
+    /// setting on.
     func wantsSnapshot(_ record: FleetDispatchRecord) -> Bool {
-        record.kind == .agentDispatch && record.commitSHA != nil && pins[record.id] != nil && indexService != nil
+        record.commitSHA != nil && pins[record.id] != nil && indexService != nil
             && (host.settings()?.fleetUncommitted ?? .sendThem) == .sendThem
     }
 
     /// Works out `id`'s snapshot off the queue (from the warm index when this host has one for the checkout, else from a scan of
     /// it) and keeps it for the transfer and for a resend. `done` runs on the queue.
     func buildSnapshot(_ id: UUID, done: @escaping (Result<Void, FleetDispatchRefusal>) -> Void) {
+        // The target has no checkout and couldn't clone one, and this dispatch carries no edits (the setting leaves them behind): the
+        // repository is the whole transfer.
+        if let record = outbound[id], repoBundles.contains(id), !wantsSnapshot(record), let pin = pins[id], let commit = record.commitSHA {
+            return buildRepositoryOnly(id, root: pin.root, commit: commit, done: done)
+        }
         guard let record = outbound[id], let pin = pins[id], let service = indexService, let target = record.targetHostID, let commit = record.commitSHA else {
             return done(.failure(.init(code: FleetDispatchCode.snapshotFailed, message: "There is no checkout to send.", detail: "no checkout")))
         }
@@ -34,7 +40,7 @@ extension FleetDispatch {
         let source = service.snapshotSource(folder: pin.root)
         let held = target == hostID ? service.localManifest(repo: record.repoKey) : service.manifest(of: target, repo: record.repoKey)
         let state = host.state()
-        let spaceID = record.parentAgentID.flatMap { agent in state.agents.first { $0.id == agent }?.spaceID }
+        let spaceID = record.spaceID ?? record.parentAgentID.flatMap { agent in state.agents.first { $0.id == agent }?.spaceID }
         let excludes = spaceID.flatMap { host.settings()?.fleetSnapshotExcludes[FleetSnapshotExcludes.settingKey(spaceID: $0.rawValue)] } ?? FleetSnapshotExcludes()
         let outgoing = directory.appendingPathComponent("outgoing", isDirectory: true)
         let classifier = service.classifier
@@ -126,10 +132,29 @@ extension FleetDispatch {
         repoBundles.remove(id)
     }
 
-    /// Whether the target can be sent the repository itself: this dispatch carries a snapshot (the transfer the bundle goes in), and it
-    /// hasn't been tried already.
+    /// Whether the target can be sent the repository itself: this Mac still holds the checkout the dispatch was pinned at, and it hasn't
+    /// been tried already. Whatever the dispatch carries (edits or nothing), the repository goes as a transfer of its own.
     func canSendRepository(_ record: FleetDispatchRecord) -> Bool {
-        !repoBundles.contains(record.id) && wantsSnapshot(record)
+        !repoBundles.contains(record.id) && record.commitSHA != nil && pins[record.id] != nil
+    }
+
+    /// Makes the transfer that is only the repository (`FleetSnapshotSender.repositoryOnly`), off the queue.
+    private func buildRepositoryOnly(_ id: UUID, root: String, commit: String, done: @escaping (Result<Void, FleetDispatchRefusal>) -> Void) {
+        let outgoing = directory.appendingPathComponent("outgoing", isDirectory: true)
+        let caps = self.caps
+        Task.detached { [weak self] in
+            do {
+                let built = try FleetSnapshotSender.repositoryOnly(id: id, root: root, commit: commit, directory: outgoing, warnAbove: caps.warn, refuseAbove: caps.refuse)
+                self?.queue.async { self?.snapshotBuilt(id, built, done: done) }
+            } catch let FleetSnapshotSender.Failure.tooLarge(bytes, biggest) {
+                let refusal = FleetDispatchRefusal(code: FleetDispatchCode.snapshotTooLarge,
+                                                   message: "This repository is \(FleetSnapshotSizes.text(bytes)) to send, over the \(FleetSnapshotSizes.text(FleetSnapshotCap.refuseAbove)) limit.",
+                                                   detail: ([String(bytes)] + biggest).joined(separator: ";"))
+                self?.queue.async { done(.failure(refusal)) }
+            } catch {
+                self?.queue.async { done(.failure(.init(code: FleetDispatchCode.repoMissing, message: "Couldn't bundle the repository to send it.", detail: String(describing: error).prefix(160).description))) }
+            }
+        }
     }
 
     /// The target couldn't clone the repository from origin: its create is sent again carrying a bundle of every ref, which it clones from.
@@ -390,6 +415,12 @@ extension FleetDispatch {
         -> Result<(FleetSnapshotManifest, [FleetHash]), FleetSnapshotApply.Failure> {
         func bad(_ detail: String) -> Result<(FleetSnapshotManifest, [FleetHash]), FleetSnapshotApply.Failure> {
             .failure(.init(code: FleetDispatchCode.snapshotMismatch, detail: detail))
+        }
+        // Only the repository comes: no manifest to check, and the bundle is the one content it lacks.
+        if header.repoOnly {
+            var needs: [FleetHash] = []
+            if let bundle = header.bundle { if blobs.has(bundle.hash) { blobs.touch(bundle.hash) } else { needs.append(bundle.hash) } }
+            return .success((FleetSnapshotManifest(commit: header.commit, rootHash: header.rootHash), needs))
         }
         let ordered = parts.keys.sorted().compactMap { parts[$0] }
         let manifest = FleetSnapshotManifest(commit: header.commit, files: ordered.flatMap(\.files), directories: ordered.flatMap(\.directories),

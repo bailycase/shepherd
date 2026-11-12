@@ -70,7 +70,9 @@ final class FleetRepoKeys: @unchecked Sendable {
             let stamp = Self.stamp(of: Self.configFile(folder: path))
             let before = lock.withLock { stamps[space.id.rawValue] }
             guard before != stamp else { continue }
-            let key = stamp == "none" ? nil : Self.key(folder: path)
+            // A checkout with no origin (or one that is a path on a disk) is named by its first commit, so it is still a repository the fleet can
+            // find and send.
+            let key = stamp == "none" ? nil : Self.key(folder: path) ?? Self.localKey(folder: path)
             lock.withLock { stamps[space.id.rawValue] = stamp }
             saved = true
             if before == nil, space.key != nil { continue }

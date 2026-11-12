@@ -253,8 +253,7 @@ final class NewThreadState {
         return FleetWherePicker.make(
             snapshot: snapshot, pick: wherePick, repoKey: space.repoKey, repoName: space.name,
             autoDispatch: vm.settings.autoDispatch(pairedMacs: snapshot.peers.count), weight: { vm.settings.fleetWeight(of: $0) },
-            batteryCountsHalf: vm.settings.fleetBatteryCountsHalf, snapshotAge: max(0, Date().timeIntervalSince(vm.fleetPage.snapshotAt)),
-            baseBranch: (worktreeBase ?? projectBase(vm)).map(BranchCardGitReader.baseName))
+            batteryCountsHalf: vm.settings.fleetBatteryCountsHalf, snapshotAge: max(0, Date().timeIntervalSince(vm.fleetPage.snapshotAt)))
     }
 
     /// A project from the chip's menu.

@@ -659,7 +659,7 @@ final class FleetDispatch: @unchecked Sendable {
         sending.insert(id)
         if outbound[id]?.state != .preparing { outbound[id]?.state = .preparing; outbound[id]?.updatedAt = now; save() }
         // A dispatch from a checkout carries a snapshot of it (slice 4c): worked out once, before the create.
-        if snapshots[id] == nil, wantsSnapshot(record) {
+        if snapshots[id] == nil, wantsSnapshot(record) || repoBundles.contains(id) {
             buildSnapshot(id) { [weak self] outcome in
                 guard let self else { return }
                 switch outcome {

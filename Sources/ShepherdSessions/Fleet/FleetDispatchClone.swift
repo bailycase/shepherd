@@ -47,9 +47,8 @@ extension FleetDispatch {
                 return
             }
             guard let origin = create.repo?.origin else {
-                // A repository with no origin: it can only come from the sender, when there is a snapshot to carry it.
-                let canAsk = create.snapshot != nil
-                self.queue.async { self.failInbound(id, canAsk ? FleetDispatchCode.cloneFailed : FleetDispatchCode.repoMissing, "this Mac has no checkout of it, and it has no origin to clone from") }
+                // A repository with no origin can only come from the sender, as a transfer of its own.
+                self.queue.async { self.failInbound(id, FleetDispatchCode.cloneFailed, "this Mac has no checkout of it, and it has no origin to clone from") }
                 return
             }
             await self.clone(id, create, source: origin, bundle: false)
@@ -115,8 +114,9 @@ extension FleetDispatch {
             save()
         case .failed(let why):
             if let folder { Self.discardClone(folder) }
-            // From origin, with a snapshot to carry it: ask the sender for the repository itself. Otherwise nothing more can be tried.
-            let canAsk = !bundle && create.snapshot != nil && create.snapshot?.repoBundle != true
+            // From origin: ask the sender for the repository itself (it answers `repo_missing` with this error if it can't). A clone from
+            // the bundle has nothing more to try.
+            let canAsk = !bundle && create.snapshot?.repoBundle != true
             failInbound(id, canAsk ? FleetDispatchCode.cloneFailed : FleetDispatchCode.repoMissing, why.isEmpty ? "git couldn't clone it" : why)
         }
     }

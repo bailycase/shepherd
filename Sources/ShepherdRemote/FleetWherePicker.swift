@@ -54,7 +54,7 @@ public struct FleetWherePicker: Equatable, Sendable {
     /// Mac, and Auto is still there to pick.
     public static func make(snapshot: FleetSnapshot, pick: FleetPlacePick?, repoKey: String?, repoName: String,
                             autoDispatch: Bool, weight: (UUID) -> FleetSendWeight, batteryCountsHalf: Bool = true, snapshotAge: TimeInterval = 0,
-                            baseBranch: String? = nil, locale: Locale = .current, calendar: Calendar = .current, now: Date = Date()) -> FleetWherePicker {
+                            locale: Locale = .current, calendar: Calendar = .current, now: Date = Date()) -> FleetWherePicker {
         guard snapshot.enabled, let thisID = snapshot.hostID, !snapshot.peers.isEmpty else { return .empty }
         let page = FleetPagePresentation.make(snapshot: snapshot, weight: weight, snapshotAge: snapshotAge, batteryCountsHalf: batteryCountsHalf,
                                               locale: locale, calendar: calendar, now: now)
@@ -140,7 +140,7 @@ public struct FleetWherePicker: Equatable, Sendable {
         }.map(\.name)
         var footnote: String?
         if repoKey == nil {
-            footnote = "\(repoName) has no origin remote, so no other Mac can find it."
+            footnote = "\(repoName) isn't a git repository with commits, so no other Mac can find it."
         } else if !with.isEmpty {
             footnote = "\(repoName) is checked out on \(FleetDispatchPresentation.joined(with))."
             if !without.isEmpty { footnote! += " \(FleetDispatchPresentation.joined(without)) would clone it first." }
@@ -151,7 +151,9 @@ public struct FleetWherePicker: Equatable, Sendable {
         var target: UUID?
         var note: String?
         var dispatches = false
-        let base = baseBranch.map { "from \($0)" } ?? "from its base branch"
+        // A thread started on another Mac begins where this Mac's checkout is, like a dispatch: its commit, edits, unpushed commits and ignored
+        // files, as Settings ▸ Fleet ▸ Code says (not from origin's base branch).
+        let base = "from this Mac's checkout"
         switch effective {
         case .auto:
             if let winnerID, let winnerName {

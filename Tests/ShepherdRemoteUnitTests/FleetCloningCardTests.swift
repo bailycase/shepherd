@@ -65,6 +65,21 @@ struct FleetCloningCardTests {
         #expect(FleetPagePresentation.dispatchRow(record, now: Date(timeIntervalSince1970: 100)).reason.hasPrefix("That Mac doesn't have this repository and couldn't clone it: fatal:"))
     }
 
+    @Test func aRepositoryWithNoRemoteIsOfferedLikeAnyOtherAndNamedByItsFirstCommit() throws {
+        let key = "local/4e1c9a2f0b7d"
+        var snapshot = FleetDispatchPresentationTests.withOrders()
+        for index in snapshot.macs.indices where snapshot.macs[index].hostID == P.mini { snapshot.macs[index].readiness?.repoKeys = [] }
+        let picker = FleetWherePicker.make(snapshot: snapshot, pick: .mac(P.mini), repoKey: key, repoName: "orders-svc", autoDispatch: true, weight: { _ in .normal },
+                                           locale: P.en, calendar: P.utc)
+        #expect(picker.dispatches && picker.target == P.mini && picker.options.first { $0.name == "Mac mini" }?.selectable == true)
+        #expect(picker.note == "Mac mini clones orders-svc first, then runs in a new worktree from this Mac's checkout.")
+        #expect(FleetDispatchPresentation.repoName(key) == "this repository", "nothing a person would call it")
+        var record = Self.record()
+        record.repoKey = key
+        record.clone = FleetCloneProgress(name: "orders-svc", source: "MacBook Pro", viaBundle: true)
+        #expect(FleetCloningCard.make(record)?.summary.hasPrefix("orders-svc has no origin, so MacBook Pro sent it the repository itself") == true)
+    }
+
     @Test func aMacWithoutTheRepoIsStillAPlaceInTheNewThreadPicker() throws {
         var snapshot = FleetDispatchPresentationTests.withOrders()
         let picker = FleetWherePicker.make(snapshot: snapshot, pick: .mac(P.studio), repoKey: FleetDispatchPresentationTests.orders, repoName: "orders-svc",
@@ -77,6 +92,6 @@ struct FleetCloningCardTests {
                                           autoDispatch: true, weight: { _ in .normal }, locale: P.en, calendar: P.utc)
         let mini = try #require(awake.options.first { $0.name == "Mac mini" })
         #expect(mini.selectable && mini.detail.hasSuffix("CPU · Will clone (first time)"))
-        #expect(awake.note == "Mac mini clones orders-svc first, then runs in a new worktree from its base branch.")
+        #expect(awake.note == "Mac mini clones orders-svc first, then runs in a new worktree from this Mac's checkout.")
     }
 }

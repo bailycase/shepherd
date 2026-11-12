@@ -28,25 +28,43 @@ extension FleetDispatch {
         if let requested, requested.lowercased() == hostName().lowercased() || requested.lowercased() == hostID.uuidString.lowercased() {
             return reply(.success(nil))
         }
-        guard let space = host.state().spaces.first(where: { $0.id == thread.spaceID }), let repoKey = space.repoKey else {
-            // A folder with no origin has no key another Mac could find it by: Auto keeps it here, a named Mac is refused.
-            return requested == nil ? reply(.success(nil))
-                : reply(.failure(.init(code: FleetDispatchCode.repoMissing, message: "This space has no origin remote, so no other Mac can find its repository.")))
+        // A space that isn't one of this Mac's, or whose folder is no repository another Mac could find, stays here when Auto chose it and is
+        // refused when a Mac was named.
+        func unsendable(_ message: String) {
+            if requested == nil { reply(.success(nil)) } else { reply(.failure(.init(code: FleetDispatchCode.repoMissing, message: message))) }
+        }
+        guard let space = host.state().spaces.first(where: { $0.id == thread.spaceID }) else {
+            return unsendable("This space is gone.")
         }
         var record = FleetDispatchRecord(
             id: id, kind: .userThread, parentHostID: hostID, parentHostName: hostName(), requestedHost: requested, state: .placing,
-            title: Self.title(thread.title, task: task), task: task, repoKey: repoKey, model: thread.model?.fleetNonEmpty,
+            title: Self.title(thread.title, task: task), task: task, repoKey: space.repoKey ?? "", model: thread.model?.fleetNonEmpty,
             thinking: thread.thinking?.fleetNonEmpty, spaceID: space.id, createdAt: now)
         record.updatedAt = record.createdAt
         outbound[id] = record
         firstPlacements.insert(id)
         save()
-        // The origin is what a Mac with no checkout clones from: read before the first placement (git runs off the queue).
+        // Like a thread's dispatch, it starts from what this Mac has: the space's checkout at its commit, with its edits, unpushed commits and
+        // ignored files as the snapshot carries them. The pin, the origin and the key are read off the queue (git runs).
         let folder = (space.path as NSString).expandingTildeInPath
+        let known = space.repoKey
+        let prefetching = indexService != nil && (host.settings()?.fleetUncommitted ?? .sendThem) == .sendThem
         Task.detached { [weak self] in
+            let pinned = FleetDispatchGit.pin(cwd: folder, prefetchingTree: prefetching)
             let origin = FleetDispatchGit.origin(cwd: folder)
+            // A repository with no origin is named by its first commit: another Mac can't clone it, so it is sent the repository itself.
+            let key = known ?? FleetRepoKeys.localKey(folder: folder)
             self?.queue.async {
                 guard let self, self.outbound[id] != nil else { return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "No such dispatch."))) }
+                guard let key, case .success(let pin) = pinned else {
+                    self.outbound[id] = nil
+                    self.firstPlacements.remove(id)
+                    self.save()
+                    return unsendable("This space's folder isn't a git repository with commits, so no other Mac can find it.")
+                }
+                self.pins[id] = pin
+                self.outbound[id]?.repoKey = key
+                self.outbound[id]?.commitSHA = pin.sha
                 self.outbound[id]?.origin = origin
                 self.save()
                 self.place(id) { [weak self] result in

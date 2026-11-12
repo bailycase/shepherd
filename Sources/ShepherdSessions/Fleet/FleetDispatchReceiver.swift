@@ -114,9 +114,11 @@ extension FleetDispatch {
         let record = entry.record
         let repo = space.path
         let snapshot = snapshotsIn[id]
+        // A transfer that was only the repository (it was cloned from) carries no edits: the worktree is made as for a dispatch with none.
+        let carried = snapshot?.header.repoOnly == true ? nil : snapshot
         Task.detached { [weak self] in
             // The commit has to be here: origin's, or already in the repo. (A snapshot's own steps make it present, from the bundle too.)
-            if snapshot == nil, let sha = record.commitSHA, !FleetDispatchGit.hasCommit(sha, in: repo) {
+            if carried == nil, let sha = record.commitSHA, !FleetDispatchGit.hasCommit(sha, in: repo) {
                 self?.queue.async { self?.failInbound(id, FleetDispatchCode.commitUnreachable, nil) }
                 return
             }
@@ -134,7 +136,7 @@ extension FleetDispatch {
             self.queue.async { self.named(id, branch: branch) }
             // The snapshot's worktree is built and checked against the sender's digest here; nothing starts in it before that.
             var built: FleetSnapshotApply.Applied?
-            if let snapshot, let manifest = snapshot.manifest {
+            if let snapshot = carried, let manifest = snapshot.manifest {
                 let indexes = await self.onQueue { self.indexService?.indexes() ?? [] }
                 var apply = FleetSnapshotApply(.init(id: id, repo: repo, base: space.worktreeBase, branch: branch, header: snapshot.header, manifest: manifest,
                                                      blobs: self.blobs, spares: self.spares, indexes: indexes, began: snapshot.began, prelude: snapshot.events))

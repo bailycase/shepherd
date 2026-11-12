@@ -1343,9 +1343,12 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// The finder the running fleet uses, readable from any thread (readiness is made off the queue).
+    private let fleetRepoFinder = FleetRepoFinderBox()
+
     /// What this host tells a fleet about itself: threads working, the projects it has folders
     /// for and pi's MCP file (readiness). Any thread.
-    private var fleetLocalFacts: @Sendable () -> FleetLocalFacts {
+    var fleetLocalFacts: @Sendable () -> FleetLocalFacts {
         { [weak self] in
             guard let self else { return FleetLocalFacts() }
             let state = self.store.committed
@@ -1353,7 +1356,10 @@ public final class SessionServer: @unchecked Sendable {
             return FleetLocalFacts(activeAgents: state.agents.filter { $0.status == .working }.count,
                                    spaces: spaces.map { (name: $0.name, path: $0.path) },
                                    mcpConfig: self.pi.files.mcpConfig,
-                                   repoKeys: Array(Set(spaces.filter { FleetDispatch.folderExists($0.path) }.compactMap(\.repoKey))).sorted(),
+                                   // The repositories this Mac can serve: its spaces', and every other checkout it already has that a
+                                   // dispatch would bind to (`FleetRepoFinder`, from what it last saw: no look at the disk here).
+                                   repoKeys: Array(Set(spaces.filter { FleetDispatch.folderExists($0.path) }.compactMap(\.repoKey))
+                                       .union(self.fleetRepoFinder.value?.knownKeys() ?? [])).sorted(),
                                    reserved: self.fleetReserved.value)
         }
     }
@@ -1403,6 +1409,7 @@ public final class SessionServer: @unchecked Sendable {
                     }
                 }
                 fleet = service
+                fleetRepoFinder.value = service.dispatch.finder
                 if fleetDeveloperFolderSet { service.dispatch.developerFolder = fleetDeveloperFolder }
                 wireFleetDispatch(service)
                 // What syncs: the root instructions, pi's own preferences, and (once the app reports
@@ -2203,6 +2210,7 @@ public final class SessionServer: @unchecked Sendable {
         // A stopped host holds no links and watches no files: its fleet ends with it.
         fleet?.stop()
         fleet = nil
+        fleetRepoFinder.value = nil
         instructions.onChange = nil
         if isStarted, store.state.missions.contains(where: { $0.run?.train?.status == .running }) {
             try? mutateState { state in

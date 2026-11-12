@@ -162,3 +162,15 @@ struct FleetPlacementTests {
         #expect(FleetPlacement.isAuto(nil) && FleetPlacement.isAuto("") && FleetPlacement.isAuto(" Auto ") && !FleetPlacement.isAuto("Mac mini"))
     }
 }
+
+/// A repository with no origin is named by its first commit, the same on every Mac that has a copy.
+@Suite("Local repo keys")
+struct LocalRepoKeyTests {
+    @Test func aFirstCommitNamesTheRepoAndAnythingElseDoesNot() {
+        let key = CanonicalRepoKey.local(rootCommit: "4E1C9A2F0B7D3A55B8C1E94D0A6F2B7733AA1C90\n")
+        #expect(key == "local/4e1c9a2f0b7d" && key.map(CanonicalRepoKey.isLocal) == true)
+        #expect(CanonicalRepoKey.local(rootCommit: "") == nil && CanonicalRepoKey.local(rootCommit: "not a commit") == nil && CanonicalRepoKey.local(rootCommit: "abc") == nil)
+        #expect(!CanonicalRepoKey.isLocal("github.com/acme/web"))
+        #expect(CanonicalRepoKey(remote: "/Users/dev/web") == nil, "a path is no origin another Mac can use")
+    }
+}

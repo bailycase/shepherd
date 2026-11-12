@@ -70,6 +70,10 @@ enum RemoteSamples {
     static let repoBundleHeader = FleetSnapshotHeader(commit: String(repeating: "a", count: 40), rootHash: snapshotHash, digest: FleetHash(of: Data("digest".utf8)),
                                                       files: 0, directories: 0, deletions: 0, parts: 0, fileCount: 0, bytes: 9_000_000,
                                                       bundle: FleetBlobRef(hash: FleetHash(of: Data("repo".utf8)), size: 9_000_000), repoBundle: true)
+    /// Only the repository (the dispatch carries no edits): no manifest, no digest.
+    static let repoOnlyHeader = FleetSnapshotHeader(commit: String(repeating: "a", count: 40), rootHash: FleetHash(a: 0, b: 0, c: 0, d: 0), digest: FleetHash(a: 0, b: 0, c: 0, d: 0),
+                                                    files: 0, directories: 0, deletions: 0, parts: 0, fileCount: 0, bytes: 9_000_000,
+                                                    bundle: FleetBlobRef(hash: FleetHash(of: Data("repo".utf8)), size: 9_000_000), repoBundle: true, repoOnly: true)
     static let dispatchCreateCloning = FleetDispatchCreate(
         dispatchID: dispatchID, task: "Profile the orders import.", title: "Profile the orders import", repoKey: "github.com/acme/orders-svc",
         commitSHA: String(repeating: "a", count: 40), from: FleetDispatchSender(hostID: fleetHost, hostName: "MacBook Pro", agentTitle: "Speed up checkout CI"),
@@ -553,6 +557,9 @@ struct RemoteRequestTests {
         .fleetDispatchCreate(id: 110, create: RemoteSamples.dispatchCreate),
         .fleetDispatchCreate(id: 118, create: RemoteSamples.dispatchCreateWithSnapshot),
         .fleetDispatchCreate(id: 122, create: RemoteSamples.dispatchCreateCloning),
+        .fleetDispatchCreate(id: 125, create: FleetDispatchCreate(dispatchID: RemoteSamples.dispatchID, kind: .userThread, task: "Look.", title: "", repoKey: "local/0123456789ab",
+                                                                  commitSHA: String(repeating: "a", count: 40), from: FleetDispatchSender(hostID: RemoteSamples.fleetHost, hostName: "MacBook Pro", agentTitle: ""),
+                                                                  snapshot: RemoteSamples.repoOnlyHeader, repo: FleetRepoSource(origin: nil, spaceID: SpaceID(rawValue: "S1"), name: "web"))),
         .fleetDispatchCreate(id: 123, create: FleetDispatchCreate(dispatchID: RemoteSamples.dispatchID, kind: .userThread, task: "Look.", title: "", repoKey: "github.com/acme/web",
                                                                   from: FleetDispatchSender(hostID: RemoteSamples.fleetHost, hostName: "MacBook Pro", agentTitle: ""),
                                                                   repo: FleetRepoSource(origin: nil))),

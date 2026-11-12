@@ -89,6 +89,20 @@ struct FleetCloneWireTests {
         #expect(try JSONDecoder().decode(FleetSnapshotHeader.self, from: JSONEncoder().encode(header(repoBundle: true, bundle: ref))).repoBundle)
     }
 
+    @Test func aHeaderThatIsOnlyTheRepositoryCarriesNothingElseAndOlderHeadersAreNot() throws {
+        let zero = FleetHash(a: 0, b: 0, c: 0, d: 0)
+        let ref = FleetBlobRef(hash: FleetHash(of: Data("x".utf8)), size: 10)
+        func header(files: Int = 0, parts: Int = 0, repoBundle: Bool = true, repoOnly: Bool = true, bundle: FleetBlobRef? = ref) -> FleetSnapshotHeader {
+            FleetSnapshotHeader(commit: String(repeating: "a", count: 40), rootHash: zero, digest: zero, files: files, directories: 0, deletions: 0, parts: parts, fileCount: 0,
+                                bytes: 10, bundle: bundle, repoBundle: repoBundle, repoOnly: repoOnly)
+        }
+        #expect(header().isValid)
+        #expect(!header(files: 1).isValid && !header(parts: 1).isValid, "no manifest to go with it")
+        #expect(!header(repoBundle: false).isValid && !header(bundle: nil).isValid, "it is the repository, so there is one")
+        #expect(!String(decoding: try JSONEncoder().encode(header(repoOnly: false)), as: UTF8.self).contains("repoOnly"))
+        #expect(try JSONDecoder().decode(FleetSnapshotHeader.self, from: JSONEncoder().encode(header())).repoOnly)
+    }
+
     @Test func aRecordFromAnOlderBuildHasNoCloneAndNothingIsWrittenForOne() throws {
         let record = FleetDispatchRecord(parentHostID: UUID(), parentHostName: "A", title: "t", task: "x", repoKey: "github.com/acme/web", createdAt: 1)
         let text = String(decoding: try JSONEncoder().encode(record), as: UTF8.self)
