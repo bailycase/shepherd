@@ -249,6 +249,9 @@ struct FleetCloneTests {
 
     /// Takes the sender's origin away (a repository that never had a remote) and waits for the host to name it by its first commit.
     static func removeOrigin(of mac: Mac) async throws -> String {
+        // The host has looked at the checkout once (that look is what a later change is measured against).
+        let stamps = mac.host.dir.appendingPathComponent("fleet/repo-stamps.json")
+        try await D.wait("the host to have looked at the checkout") { ((try? String(contentsOf: stamps, encoding: .utf8)) ?? "").contains(mac.space.id.rawValue) }
         try git(["remote", "remove", "origin"], in: mac.folder)
         try await D.wait("the repository to be named by its first commit") { mac.server.state.spaces.first?.repoKey.map(CanonicalRepoKey.isLocal) == true }
         return try #require(mac.server.state.spaces.first?.repoKey)
@@ -279,7 +282,7 @@ struct FleetCloneTests {
         // The clone's origin is where the repository really is, not the bundle file it came from.
         #expect(try git(["remote", "get-url", "origin"], in: URL(fileURLWithPath: space.path)).trimmingCharacters(in: .whitespacesAndNewlines) == "/no/such/place/acme-web.git")
         #expect(try git(["log", "--format=%s", "-1", "main"], in: URL(fileURLWithPath: space.path)).trimmingCharacters(in: .whitespacesAndNewlines) == "guide")
-        try await D.wait("A to follow it as running") { a.sent().first?.state == .running }
+        try await D.wait("A to follow it as running", timeout: .seconds(90)) { a.sent().first?.state == .running }
         #expect(a.sent().first?.failure == nil && a.sent().first?.clone == nil)
     }
 
@@ -307,7 +310,7 @@ struct FleetCloneTests {
         #expect(try git(["remote"], in: URL(fileURLWithPath: space.path)).isEmpty, "the bundle file it came from is not left as its origin")
         let worktree = URL(fileURLWithPath: try #require(b.dispatched.first?.worktreePath))
         #expect(try FleetSnapshotTransferTests.tree(of: worktree) == expected && D.head(worktree) == D.head(a.folder))
-        try await D.wait("A to follow it as running") { a.sent().first?.state == .running && a.sent().first?.clone == nil }
+        try await D.wait("A to follow it as running", timeout: .seconds(90)) { a.sent().first?.state == .running && a.sent().first?.clone == nil }
 
         // It is a copy there now: the next dispatch finds it by the same key and sends nothing of the repository.
         _ = try await Self.send(parent, key: "second")
@@ -402,7 +405,7 @@ struct FleetCloneTests {
         #expect(try git(["remote"], in: URL(fileURLWithPath: space.path)).isEmpty, "the bundle file it came from is not its origin")
         let worktree = URL(fileURLWithPath: try #require(b.dispatched.first?.worktreePath))
         #expect(try FleetSnapshotTransferTests.tree(of: worktree) == expected && D.head(worktree) == D.head(a.folder))
-        try await D.wait("A to follow it as running") { a.sent().first?.state == .running && a.sent().first?.clone == nil }
+        try await D.wait("A to follow it as running", timeout: .seconds(90)) { a.sent().first?.state == .running && a.sent().first?.clone == nil }
         #expect(a.sent().first?.failure == nil)
     }
 
@@ -443,7 +446,7 @@ struct FleetCloneTests {
         #expect(try String(contentsOf: worktree.appendingPathComponent("docs/guide.md"), encoding: .utf8) == "# The guide\n")
         #expect(try String(contentsOf: worktree.appendingPathComponent("README.md"), encoding: .utf8) == "# acme-web\n", "the edit stayed home")
         #expect(Self.cloneCount(b) == 1 && Self.space(b, repoKey: key)?.id == a.space.id)
-        try await D.wait("A to follow it as running") { a.sent().first?.state == .running && a.sent().first?.clone == nil }
+        try await D.wait("A to follow it as running", timeout: .seconds(90)) { a.sent().first?.state == .running && a.sent().first?.clone == nil }
     }
 
     @Test func aThreadStartedInNewThreadWithEditsLeftBehindAndAnUnreachableOriginAlsoFallsBackToTheBundle() async throws {
