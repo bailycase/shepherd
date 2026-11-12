@@ -4976,6 +4976,8 @@ public final class SessionServer: @unchecked Sendable {
             let active = { (rows: [ChildRun]) in rows.contains { !$0.isTerminal && $0.paused != true } }
             let before = rpcThread(forAgent: agentID)?.subagents ?? []
             let wasActive = active(before)
+            // Ahead of the rows: a run anyone can see is one the Changes engine has heard of.
+            changes.noteChildren(agentID: agentID, runs: children)
             rpcThread(forAgent: agentID)?.setSubagents(children)
             if wasActive, !active(children) { noteChildrenSettled(agentID) }
             let touchedFiles = CheckoutMonitor.childrenTouchedFiles(from: before, to: children)

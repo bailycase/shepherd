@@ -261,6 +261,150 @@ struct TurnAttributionTests {
         #expect(log.windows.count == 1)
     }
 
+    // MARK: Subagent runs
+
+    static func run(_ id: String, attempt: String? = nil, state: String = "running", from start: Double? = 1_100_000, to end: Double? = nil,
+                    cwd: String? = root, files: [String] = []) -> ChildRun {
+        ChildRun(runID: id, label: id, state: state, startedAt: start, endedAt: end,
+                 files: files.map { ChildFileChange(path: $0, added: 1, removed: 0) }, cwd: cwd, attempt: attempt)
+    }
+
+    @Test func anotherAgentsSubagentRunMakesATurnSharedAndItsFilesForeign() {
+        let (log, turn) = Self.log { log, _ in
+            log.noteRuns(Self.b, rows: [Self.run("helper", files: ["src/b.txt", "/work/app/c.txt", "~/outside.txt"])], parent: nil, at: 1_500_000)
+        }
+        let evidence = Self.evidence(turn, log)
+        #expect(evidence.shared && evidence.partner == Self.b)
+        #expect(evidence.foreign == ["src/b.txt": Self.b, "c.txt": Self.b])
+        let result = TurnAttribution.classify(changed: [Self.change("a.txt"), Self.change("src/b.txt")], evidence: evidence)
+        #expect(result.own.isEmpty && result.other == ["a.txt", "src/b.txt"], "the turn named nothing itself")
+    }
+
+    @Test func aSubagentRunOutsideTheWindowOrTheWorkingTreeLeavesTheTurnSolo() {
+        let (log, turn) = Self.log { log, _ in
+            log.noteRuns(Self.b, rows: [
+                Self.run("before", state: "complete", from: 500_000, to: 900_000, files: ["a.txt"]),
+                Self.run("after", from: 2_000_000, files: ["a.txt"]),
+                Self.run("elsewhere", cwd: "/work/other", files: ["a.txt"]),
+            ], parent: nil, at: 1_600_000)
+        }
+        #expect(!Self.evidence(turn, log).shared)
+        // The same run, naming a file by an absolute path into this tree, is a writer here.
+        let (reaching, reachingTurn) = Self.log { log, _ in
+            log.noteRuns(Self.b, rows: [Self.run("elsewhere", cwd: "/work/other", files: ["/work/app/a.txt"])], parent: nil, at: 1_600_000)
+        }
+        let evidence = Self.evidence(reachingTurn, reaching)
+        #expect(evidence.shared && evidence.foreign == ["a.txt": Self.b])
+    }
+
+    @Test func anOlderPublisherWithoutACwdRunsInItsParentsDirectory() {
+        let (log, turn) = Self.log { log, _ in
+            log.noteRuns(Self.b, rows: [Self.run("old", cwd: nil, files: ["b.txt"])], parent: Self.root, at: 1_500_000)
+            log.noteRuns(Self.b, rows: [Self.run("old", cwd: nil, files: ["b.txt"]), Self.run("orphan", cwd: nil)], parent: nil, at: 1_500_000)
+        }
+        let evidence = Self.evidence(turn, log)
+        #expect(evidence.foreign == ["b.txt": Self.b] && log.runs.count == 1, "a row with no directory at all, from an agent that is gone, says nothing")
+        #expect(log.runs[0].interval.end == nil, "and does not end the rows it left out")
+    }
+
+    @Test func aTurnsOwnSubagentRunsFilesAreNamedAndDoNotShareTheTurn() {
+        let (log, turn) = Self.log { log, _ in
+            log.noteRuns(Self.a, rows: [Self.run("mine", files: ["x.txt", "sub/../y.txt"])], parent: nil, at: 1_500_000)
+        }
+        let evidence = Self.evidence(turn, log)
+        #expect(!evidence.shared && evidence.named == ["x.txt", "y.txt"])
+
+        // Once someone else shares the tree, the helper's files are the only extra ones the turn owns.
+        let (shared, sharedTurn) = Self.log { log, _ in
+            log.noteRuns(Self.a, rows: [Self.run("mine", files: ["x.txt"])], parent: nil, at: 1_500_000)
+            _ = log.startCall(id: "mine-call", agent: Self.a, cwd: Self.root, path: "a.txt", receivedAt: 1_100_000)
+            log.endCall(id: "mine-call", agent: Self.a, ok: true, at: 1_100_050)
+            log.noteRuns(Self.b, rows: [Self.run("theirs", files: ["b.txt", "x.txt"])], parent: nil, at: 1_500_000)
+        }
+        let result = TurnAttribution.classify(changed: ["a.txt", "x.txt", "b.txt", "bash.txt"].map { Self.change($0) }, evidence: Self.evidence(sharedTurn, shared))
+        #expect(result.own == ["a.txt"], "x.txt is named by the helper of both agents")
+        let alone = TurnAttribution.classify(changed: ["a.txt", "x.txt", "b.txt"].map { Self.change($0) }, shared: true, named: ["a.txt", "x.txt"], foreign: ["b.txt"], saved: [])
+        #expect(alone.own == ["a.txt", "x.txt"])
+    }
+
+    @Test func aRunIsKeyedByIdAndAttemptAndReportsOnlyWhatReachesFurther() {
+        var log = WriterLog()
+        let first = log.noteRuns(Self.a, rows: [Self.run("r", files: ["a.txt"])], parent: Self.root, at: 2_000_000)
+        #expect(first.count == 1 && log.runs.count == 1 && log.runs[0].interval == Interval(start: 1_100_000, end: nil))
+        let sequence = log.sequence
+
+        // Tokens, tools and the like change nothing that matters.
+        var busy = Self.run("r", files: ["a.txt"])
+        busy.tokens = 900
+        busy.currentTool = "bash"
+        #expect(log.noteRuns(Self.a, rows: [busy], parent: Self.root, at: 2_100_000).isEmpty && log.sequence == sequence)
+        // More files, or the run ending with them, do.
+        #expect(log.noteRuns(Self.a, rows: [Self.run("r", files: ["a.txt", "b.txt"])], parent: Self.root, at: 2_200_000).count == 1)
+        #expect(log.runs[0].files == ["a.txt", "b.txt"] && log.sequence > sequence)
+        let ended = log.noteRuns(Self.a, rows: [Self.run("r", state: "complete", to: 2_300_000, files: ["a.txt", "b.txt"])], parent: Self.root, at: 2_400_000)
+        #expect(ended.isEmpty, "closing only shrinks what a run overlaps")
+        #expect(log.runs[0].interval == Interval(start: 1_100_000, end: 2_300_000))
+        // A resume is a fresh attempt: its own stretch, not a stretch from the first start to now.
+        #expect(log.noteRuns(Self.a, rows: [Self.run("r", attempt: "2", from: 3_000_000, files: ["a.txt"])], parent: Self.root, at: 3_100_000).count == 1)
+        #expect(log.runs.count == 2 && log.runs[0].interval.end == 2_300_000)
+        // The row came back running with the same attempt: the gap counts.
+        #expect(log.noteRuns(Self.a, rows: [Self.run("r", files: ["a.txt", "b.txt"])], parent: Self.root, at: 3_200_000).count == 1)
+        #expect(log.runs[0].interval.end == nil)
+    }
+
+    @Test func aRunWithNoStartIsTakenToHaveBegunALeadBeforeItWasFirstSeen() {
+        var log = WriterLog()
+        log.noteRuns(Self.a, rows: [Self.run("r", from: nil)], parent: Self.root, at: 2_000_000)
+        #expect(log.runs[0].interval.start == 2_000_000 - TurnAttribution.lead)
+        log.noteRuns(Self.a, rows: [Self.run("r", from: nil)], parent: Self.root, at: 2_500_000)
+        #expect(log.runs[0].interval.start == 2_000_000 - TurnAttribution.lead, "later publications keep the first answer")
+        log.noteRuns(Self.a, rows: [Self.run("r", state: "failed", from: nil, to: nil)], parent: Self.root, at: 2_600_000)
+        #expect(log.runs[0].interval.end == 2_600_000, "a finished row with no end ends when it was seen finished")
+        #expect(log.noteRuns(Self.a, rows: [Self.run("r", state: "failed", from: nil, to: nil)], parent: Self.root, at: 2_900_000).isEmpty)
+        #expect(log.runs[0].interval.end == 2_600_000)
+    }
+
+    @Test func aRunEndsWhenItsRowLeavesThePublicationOrItsAgentIsGone() {
+        var log = WriterLog()
+        log.noteRuns(Self.a, rows: [Self.run("gone"), Self.run("stays")], parent: Self.root, at: 2_000_000)
+        log.noteRuns(Self.b, rows: [Self.run("theirs")], parent: Self.root, at: 2_000_000)
+        log.noteRuns(Self.a, rows: [Self.run("stays")], parent: Self.root, at: 2_500_000)
+        #expect(log.runs.first { $0.key.hasPrefix("gone") }?.interval.end == 2_500_000, "kept in the log, closed")
+        #expect(log.runs.first { $0.key.hasPrefix("stays") }?.interval.end == nil)
+        log.agentEnded(Self.a, at: 2_800_000)
+        #expect(log.runs.filter { $0.agent == Self.a }.allSatisfy { $0.interval.end != nil })
+        #expect(log.runs.first { $0.agent == Self.b }?.interval.end == nil, "another agent's run is not ended with it")
+    }
+
+    @Test func aRunKeepsAtMostThirtyTwoFilesAndIsBoundedLikeTheRest() {
+        var log = WriterLog()
+        let many = (0..<50).map { "f\($0).txt" }
+        log.noteRuns(Self.a, rows: [Self.run("big", files: many)], parent: Self.root, at: 2_000_000)
+        #expect(log.runs[0].files == Array(many.prefix(WriterLog.runFiles)))
+
+        var crowded = WriterLog()
+        let turn = UUID()
+        _ = crowded.openWindow(agent: Self.a, turn: turn, cwd: Self.root, receivedAt: 1_000_000)
+        crowded.noteRuns(Self.b, rows: (0..<(WriterLog.runCap + 10)).map { Self.run("r\($0)", from: 1_100_000 + Double($0)) }, parent: nil, at: 1_900_000)
+        #expect(crowded.runs.count == WriterLog.runCap && !crowded.lost.isEmpty, "all overlapped the open turn: lost, not kept")
+        crowded.closeWindow(turn: turn, at: 2_000_000)
+        #expect(Self.evidence(turn, crowded).lossy)
+
+        crowded.prune(now: 2_000_000 + WriterLog.keep + 1)
+        #expect(crowded.runs.allSatisfy { $0.interval.end == nil }, "an open run is never pruned")
+    }
+
+    @Test func aRunThatArrivesLateNamesTheSettledTurnsItOverlaps() {
+        var log = WriterLog()
+        let turn = UUID()
+        _ = log.openWindow(agent: Self.a, turn: turn, cwd: Self.root, receivedAt: 10_000)
+        log.closeWindow(turn: turn, at: 12_000)
+        log.settle(turn: turn, .init(startTree: "s", realEnd: "e", own: ["b.txt"], sequence: log.sequence))
+        let arrived = log.noteRuns(Self.b, rows: [Self.run("late", from: 11_000, files: ["b.txt"])], parent: Self.root, at: 30_000)
+        #expect(arrived.flatMap { log.affectedAgents(by: $0, excluding: Self.b, now: 30_000) } == [Self.a])
+        #expect(arrived.flatMap { log.affectedAgents(by: $0, excluding: Self.a, now: 30_000) }.isEmpty, "a publisher never re-cuts its own agent's turn")
+    }
+
     // MARK: Paths
 
     @Test func pathsResolveAsPiResolvesThem() {
