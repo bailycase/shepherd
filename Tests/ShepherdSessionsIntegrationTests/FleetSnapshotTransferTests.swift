@@ -327,7 +327,15 @@ struct FleetSnapshotTransferTests {
         }
         let canonical = PiHome.canonical(b.folder.path)
         try await FleetDispatchTests.wait("the target's spare", timeout: .seconds(120)) { (Self.engine(b) { $0.spares.current(repo: canonical) } ?? nil) != nil }
-        // Let the sender's index settle, so what it hashes for the dispatch is only what changes now.
+        // Let the sender's index settle (on a loaded machine its first pass can still be hashing), so what it hashes for the dispatch is only what changes now.
+        let settling = try #require(a.server.queue.sync { a.server.fleet?.index.index(at: a.folder.path) })
+        var stableSince = ContinuousClock.now
+        var lastCount = settling.queue.sync { settling.filesHashed }
+        try await FleetDispatchTests.wait("the sender's index to stop hashing", timeout: .seconds(120)) {
+            let count = settling.queue.sync { settling.filesHashed }
+            if count != lastCount { (lastCount, stableSince) = (count, .now) }
+            return ContinuousClock.now - stableSince > .seconds(1)
+        }
         try await Task.sleep(for: .seconds(3))
         var sizes: UInt64 = 0
         let edited = ["src/gen/f1.ts", "src/gen/f2.ts", "README.md", "NOTES.md", "docs/plan.md"]
