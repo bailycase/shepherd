@@ -16,6 +16,8 @@
 #   -w               an app that supports multiple windows, as the shipped app does (the windows-* screens)
 #   --list           print the screen names and exit
 #
+# FIXTURE_WAIT_STEPS=<n> gives each screen n waits of 0.2 s to become ready (default 300, one minute); raise it on a loaded machine.
+#
 # Screens: any name in Tests/ShepherdIOSChecks/Fixtures (home, thread, question, newthread, …), or "all" (not tail-frames).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -163,7 +165,7 @@ for screen in "${screens[@]}"; do
             xcrun simctl launch --console --terminate-running-process "$device" com.shepherd.ios-fixture >"$log" 2>&1 &
         console=$!
         pose_requests=0
-        for _ in $(seq 1 300); do
+        for _ in $(seq 1 "${FIXTURE_WAIT_STEPS:-300}"); do
             # A real-scene regression waits at each hinge checkpoint, then verifies navigation
             # and fresh rendering after the system has moved the windows between displays.
             requests=$(grep -c '^FIXTURE POSE ' "$log" 2>/dev/null || true)
