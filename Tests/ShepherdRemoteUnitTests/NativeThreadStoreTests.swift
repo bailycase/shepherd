@@ -438,6 +438,34 @@ struct NativeThreadStoreTests {
         #expect(store.pollInterval == .seconds(2))
     }
 
+    /// A fresh store (a remote viewer opening a stopped thread) is given the conversation the host
+    /// read from pi's session file, with the problem: it shows both, and asks nothing of the host
+    /// (pi is not woken: it stopped). A store that drew pi's live history keeps that instead.
+    @Test func aStoppedThreadsPreviewShowsItsHistoryUnderTheProblemWithoutWakingPi() async {
+        let fromFile = F.assistant("from the file", id: "a")
+        var stopped = F.snapshot(generation: "preview", actions: [], messages: [fromFile])
+        stopped.preview = true
+        stopped.startProblem = NativeStartProblem(kind: .stopped, signal: 9)
+        let host = FakeHost(stopped)
+        let store = manualStore()
+        let task = await start(store, host)
+        defer { task.cancel() }
+        #expect(store.startProblem == stopped.startProblem && store.previewing)
+        #expect(store.messages == [fromFile] && store.rows.count == 1)
+        #expect(!store.ready && !store.starting && store.loadError == nil && !store.awaitingPi && !store.acceptsSend)
+        #expect(store.wakes == 0 && host.actions.isEmpty, "a stopped pi is not woken")
+        await store.refresh()
+        #expect(store.wakes == 0 && host.actions.isEmpty && store.messages == [fromFile] && store.startProblem != nil)
+
+        let (live, liveHost, liveTask) = await started()
+        defer { liveTask.cancel() }
+        liveHost.snapshot = stopped
+        await live.refresh()
+        #expect(live.startProblem == stopped.startProblem && !live.ready && !live.previewing)
+        #expect(live.messages == [hi], "the history pi served stays")
+        #expect(live.wakes == 0 && liveHost.actions.isEmpty)
+    }
+
     /// A pi that stopped mid-turn leaves the last live snapshot under the banner: its running call
     /// and half-written reply read stopped, and nothing reads as working.
     @Test func aThreadWhosePiStoppedMidTurnDrawsItsLiveRowsStopped() async throws {
