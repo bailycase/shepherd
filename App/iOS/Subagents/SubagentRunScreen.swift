@@ -130,6 +130,8 @@ struct SubagentRunView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar(run, summary: summary, commands: commands) }
             .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
                 if follower.observe(from: old, to: new, gesture: follower.userScrolling, nativeAnchor: false), run?.isTerminal == false {
+                    SHRenderProbe.tick("thread.tailLandingInPass")
+                    SHRenderProbe.tick("subagent.tailLanding")
                     proxy.scrollTo("run-bottom", anchor: .bottom)
                 }
             }
@@ -142,12 +144,14 @@ struct SubagentRunView: View {
             .onChange(of: transcript.turns.last) { _, _ in
                 follower.contentArrived()
                 if follower.sticky, !transcript.loadingOlder, run?.isTerminal == false {
+                    SHRenderProbe.tick("subagent.tailLanding")
                     proxy.scrollTo("run-bottom", anchor: .bottom)
                 }
             }
             .overlay(alignment: .bottom) {
                 SHJumpToLatest(action: follower.showsJump(running: run?.isTerminal == false) ? {
                     follower.jumpToLatest()
+                    SHRenderProbe.tick("subagent.tailLanding")
                     proxy.scrollTo("run-bottom", anchor: .bottom)
                 } : nil)
             }
