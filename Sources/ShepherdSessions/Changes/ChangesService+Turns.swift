@@ -88,6 +88,18 @@ final class TurnStore: @unchecked Sendable {
         return result
     }
 
+    /// Drops a deleted agent's records, and saves only when it had any.
+    func remove(_ agentID: AgentID) {
+        lock.lock()
+        var all = loaded()
+        let had = all.removeValue(forKey: agentID.rawValue) != nil
+        records = all
+        let schedule = had && !writeScheduled
+        if had { writeScheduled = true }
+        lock.unlock()
+        if schedule { io.async { self.save() } }
+    }
+
     /// Forgets every agent not in `agents` (deleted while Shepherd was not running).
     func prune(keeping agents: Set<AgentID>) {
         let keep = Set(agents.map(\.rawValue))
@@ -162,6 +174,24 @@ extension ChangesService {
             let queue = DispatchQueue(label: "shepherd.changes.turn", qos: .userInitiated)
             queues[agentID] = queue
             return queue
+        }
+    }
+
+    /// How many agents hold a capture queue (tests).
+    var captureQueueCount: Int { captureQueues.withValue { $0.count } }
+
+    /// Drops what the engine holds for agents that were deleted: their turn records, prepared
+    /// baseline and capture queue. Each goes on the agent's own capture queue, behind any capture
+    /// still running for it, and the queue is the last thing to go.
+    public func forget(_ agents: Set<AgentID>) {
+        for agent in agents {
+            captureQueue(agent).async { [self] in
+                turnStore.remove(agent)
+                preparedTurns.withValue { $0[agent] = nil }
+                // Nothing is left to re-cut, and a re-cut would queue work for an agent that is gone.
+                writers.withValue { $0.forget(agent) }
+                captureQueues.withValue { $0[agent] = nil }
+            }
         }
     }
 

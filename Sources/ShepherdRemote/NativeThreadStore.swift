@@ -191,7 +191,17 @@ public final class NativeThreadStore {
     /// `snapshot.running` held true for 400 ms after it drops, so tool boundaries never flicker
     /// the tail indicator or the Stop button.
     public private(set) var settledRunning = false
-    public var draft = ""
+    /// The words being written. A write derives `draftHasText`, `draftCommand` and
+    /// `draftLeadingCommand` (`deriveDraft`), so a reader of those hears of a change in them, not
+    /// of every key.
+    public var draft = "" { didSet { deriveDraft() } }
+    /// The draft holds more than whitespace: what `hasDraft` and Send read.
+    public private(set) var draftHasText = false
+    /// The "/" or "$" word at the end of the draft that opens the slash menu (`ComposerCommandToken`),
+    /// without the words before it.
+    public private(set) var draftCommand: ComposerCommandWord?
+    /// The word the draft starts with once a space ends it (`ComposerLeadingCommand`).
+    public private(set) var draftLeadingCommand: String?
     public private(set) var submissions: [NativeThreadSubmission] = [] {
         didSet { noteRecoveryChange(from: oldValue) }
     }
@@ -1940,8 +1950,21 @@ public final class NativeThreadStore {
     /// Whether the draft has something to send: words, attached files, design references, or
     /// page elements.
     public var hasDraft: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedFiles.isEmpty || !attachedReferences.isEmpty
-            || !attachedElements.isEmpty
+        draftHasText || !attachedFiles.isEmpty || !attachedReferences.isEmpty || !attachedElements.isEmpty
+    }
+
+    private static let blank = CharacterSet.whitespacesAndNewlines
+
+    /// Derives what the composer reads of the draft, once per write, each property written only
+    /// when it differs: typing prose past the first word changes none of them. Each costs the
+    /// first word or the word being typed, not the draft.
+    private func deriveDraft() {
+        let hasText = draft.unicodeScalars.contains { !Self.blank.contains($0) }
+        if draftHasText != hasText { draftHasText = hasText }
+        let command = ComposerCommandToken.token(in: draft)?.word
+        if draftCommand != command { draftCommand = command }
+        let leading = ComposerLeadingCommand.of(draft)
+        if draftLeadingCommand != leading { draftLeadingCommand = leading }
     }
 
     /// Adds an element picked in the Browser beside the draft, once per element on its page (a

@@ -28,12 +28,14 @@ final class ComposerThread {
     private var hosted: () -> AnyView = { AnyView(EmptyView()) }
 
     /// `focused` gives the thread the keyboard, so its field takes it as the app's does.
+    /// `slashLogin` gives it a Mac agent's /login and /logout, which read the draft's first word.
     /// `speed` puts the thread on a model that offers a service tier, so its popover has a Speed
     /// control. The host applies a speed, a level and a model as the real one does (`requests`).
     init(messages: Int = 40, size: CGSize = CGSize(width: 900, height: 600), models: [PiModelCatalog.Entry] = ModelCatalogFixture.entries,
          commands: [NativeCommand] = ModelCatalogFixture.commands, dialogs: [NativeThreadDialog] = [], dark: Bool = false,
          focused: Bool = false, animated: Bool = true, speed: Bool = false, fast: Bool = false, model: String = "anthropic/claude-opus-4-5",
-         thinkingLevels: [String]? = nil, designReferences: DesignReferenceChips? = nil, running: Bool = false, images: Bool = false) {
+         thinkingLevels: [String]? = nil, designReferences: DesignReferenceChips? = nil, running: Bool = false, images: Bool = false,
+         slashLogin: Bool = false) {
         self.size = size
         snapshot = Self.snapshot(messages: messages, commands: commands, dialogs: dialogs, model: speed ? "openai/gpt-6-luna" : model, speed: speed)
         if images { snapshot.supportedActions.append("sendImages") }
@@ -65,7 +67,8 @@ final class ComposerThread {
             }
         }
         hosted = { [store, input = self.input, commands = self.commands, modelDefaults] in
-            AnyView(ThreadView(store: store, active: true, isFocused: focused, request: request, commandKey: Self.key, listModels: { ModelCatalog(models) }, retainedInput: input)
+            AnyView(ThreadView(store: store, active: true, isFocused: focused, request: request, commandKey: Self.key, listModels: { ModelCatalog(models) },
+                            slashLogin: slashLogin ? SlashLoginActions(open: { _ in }, choices: { [] }) : nil, retainedInput: input)
                 .environment(\.threadCommands, commands)
                 .environment(\.composerModelDefaults, modelDefaults)
                 .environment(\.designReferences, designReferences)

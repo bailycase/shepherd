@@ -320,6 +320,9 @@ public final class SessionServer: @unchecked Sendable {
     /// An agent's pi finished a tool call (its name). The app reads the agent's checkout again
     /// after calls that may have changed files. Delivered on the main actor.
     public var onAgentToolFinished: ((AgentID, String) -> Void)?
+    /// An agent's subagents published rows that may have changed files in its checkout (one
+    /// wrote, or ended: `CheckoutMonitor.childrenTouchedFiles`). Delivered on the main actor.
+    public var onAgentChildrenTouchedFiles: ((AgentID) -> Void)?
     /// A model request failed: the agent, pi's provider id and its error message (each failed
     /// attempt, retries included), for account rotation. Delivered on the main actor.
     public var onAgentProviderError: ((AgentID, String, String) -> Void)?
@@ -4934,10 +4937,15 @@ public final class SessionServer: @unchecked Sendable {
         case .setAgentChildren(let agentID, let children):
             // Rows feed both the thread snapshot (cards) and the sidebar (onAgentChildren).
             let active = { (rows: [ChildRun]) in rows.contains { !$0.isTerminal && $0.paused != true } }
-            let wasActive = rpcThread(forAgent: agentID).map { active($0.subagents) } ?? false
+            let before = rpcThread(forAgent: agentID)?.subagents ?? []
+            let wasActive = active(before)
             rpcThread(forAgent: agentID)?.setSubagents(children)
             if wasActive, !active(children) { noteChildrenSettled(agentID) }
-            hopToMain { [weak self] in self?.onAgentChildren?(agentID, children) }
+            let touchedFiles = CheckoutMonitor.childrenTouchedFiles(from: before, to: children)
+            hopToMain { [weak self] in
+                self?.onAgentChildren?(agentID, children)
+                if touchedFiles { self?.onAgentChildrenTouchedFiles?(agentID) }
+            }
         case .childScope(let id, let agentID, let sessionID, let userTimestamp):
             guard client.childrenAgentID == agentID, client.projectChildScopes else {
                 reply(.error(id: id, code: "child_scope", message: "Scoped child controller is not registered for this agent."), to: client); return
@@ -6535,6 +6543,12 @@ public final class SessionServer: @unchecked Sendable {
         if before.agents.count != state.agents.count || before.agents.map(\.id) != state.agents.map(\.id) {
             let gone = Set(before.agents.map(\.id)).subtracting(state.agents.map(\.id))
             designReferencePayloads.removeAgents(gone)
+            if !gone.isEmpty {
+                // Their turn records go too, but a deleted design's agents wait out its undo window:
+                // Undo brings them back with their cards.
+                let held = Set(pendingDesignDeletions.values.flatMap { $0.agents.map(\.value.id) })
+                changes.forget(gone.subtracting(held))
+            }
             for agentID in gone {
                 do { try agentRecovery.save(nil, for: agentID) }
                 catch { ShepherdLog.warning("Could not remove agent recovery checkpoint") }
@@ -7520,7 +7534,7 @@ public final class SessionServer: @unchecked Sendable {
             throw error
         }
         if !undoable {
-            await enqueueValue { self.pendingDesignDeletions[designID] = nil }
+            await enqueueValue { self.releaseDesignDeletion(designID) }
             try? await designs.finishDeletion(designID)
         }
         return deletion
@@ -7595,9 +7609,15 @@ public final class SessionServer: @unchecked Sendable {
     /// Server queue: the undo window closed on a deletion still held: its folder goes.
     private func finishDesignDeletion(_ designID: DesignID, token: UUID) {
         guard pendingDesignDeletions[designID]?.token == token else { return }
-        pendingDesignDeletions[designID] = nil
+        releaseDesignDeletion(designID)
         let designs = self.designs
         Task { try? await designs.finishDeletion(designID) }
+    }
+
+    /// Server queue: a held deletion can no longer be undone, so its agents' turn records go.
+    private func releaseDesignDeletion(_ designID: DesignID) {
+        guard let pending = pendingDesignDeletions.removeValue(forKey: designID) else { return }
+        changes.forget(Set(pending.agents.map(\.value.id)))
     }
 
     /// Undo (DesignDeleted): a design deleted within the undo window comes back as it was, where

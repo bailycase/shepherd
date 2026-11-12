@@ -2070,6 +2070,118 @@ struct NativeThreadStoreTests {
         #expect(!invalidated.value)
     }
 
+    /// Send's enabled state, the toolbar and the failed-send restore read `hasDraft` as keys land:
+    /// more words after the first change what it answers for none of them.
+    @Test func typingMoreProseNotifiesNoReaderOfHasDraft() {
+        let store = manualStore()
+        store.draft = "hello"
+        let fired = Flag()
+        withObservationTracking { _ = store.hasDraft } onChange: { fired.set() }
+        store.draft += " world"
+        #expect(!fired.value)
+        #expect(store.hasDraft)
+    }
+
+    /// What the composer reads of the draft, each property written only when it differs.
+    private static let draftProperties: [(String, @MainActor (NativeThreadStore) -> Void)] = [
+        ("draftHasText", { _ = $0.draftHasText }), ("draftCommand", { _ = $0.draftCommand }),
+        ("draftLeadingCommand", { _ = $0.draftLeadingCommand }),
+    ]
+
+    /// Which of those announced a change while the draft went from `before` to `after`.
+    private func draftPropertiesChanged(from before: String, to after: String) -> Set<String> {
+        let store = manualStore()
+        store.draft = before
+        let fired = Names()
+        for (name, read) in Self.draftProperties {
+            withObservationTracking { read(store) } onChange: { fired.insert(name) }
+        }
+        store.draft = after
+        return fired.value
+    }
+
+    @Test(arguments: [
+        ("hello", "hello world"), ("a", "ab"), ("fix /rev now", "fix /rev now and more"), ("/skill:debug fix", "/skill:debug fix the bug"),
+        ("/login ant", "/login anth"), ("/rev now", "/rev now please"), ("  indented", "  indented words"),
+    ])
+    func typingMoreProseChangesNoDraftProperty(_ before: String, _ after: String) {
+        #expect(draftPropertiesChanged(from: before, to: after).isEmpty)
+    }
+
+    /// The same reads do hear of a change in what they read.
+    @Test(arguments: [
+        ("", "a", ["draftHasText"]), ("hello", "", ["draftHasText"]), ("hello", "hello /rev", ["draftCommand"]),
+        ("/rev", "/revi", ["draftCommand"]), ("/rev", "/rev ", ["draftCommand", "draftLeadingCommand"]),
+        ("/skill", "/skill ", ["draftCommand", "draftLeadingCommand"]), ("/login ant", "/logout ant", ["draftLeadingCommand"]),
+    ] as [(String, String, Set<String>)])
+    func aChangeInAWordNotifiesTheReadersOfIt(_ before: String, _ after: String, _ names: Set<String>) {
+        #expect(draftPropertiesChanged(from: before, to: after) == names)
+    }
+
+    /// The command word is a token without its prefix, so one command is one value however long
+    /// the words before it are.
+    @Test(arguments: [
+        ("", false, nil, nil),
+        ("  \n", false, nil, nil),
+        ("\u{00A0}", false, nil, nil),
+        ("\u{200B}", false, nil, nil),
+        ("\u{200B}x\u{200B}", true, nil, nil),
+        ("hello", true, nil, nil),
+        ("/rev", true, ComposerCommandWord(sigil: "/", text: "rev", startsDraft: true), nil),
+        ("fix /rev", true, ComposerCommandWord(sigil: "/", text: "rev", startsDraft: false), nil),
+        ("fix /rev now", true, nil, nil),
+        ("$de", true, ComposerCommandWord(sigil: "$", text: "de", startsDraft: true), nil),
+        ("  /x", true, ComposerCommandWord(sigil: "/", text: "x", startsDraft: false), nil),
+        ("/skill:debug fix", true, nil, "skill:debug"),
+        ("/skill:debug fix /rev", true, ComposerCommandWord(sigil: "/", text: "rev", startsDraft: false), "skill:debug"),
+        ("/login ant", true, nil, "login"),
+        ("/LOGIN x", true, nil, "login"),
+        ("/login\nx", true, nil, nil),
+        ("/login", true, ComposerCommandWord(sigil: "/", text: "login", startsDraft: true), nil),
+        ("/" + String(repeating: "a", count: 65) + " x", true, nil, nil),
+        ("/" + String(repeating: "a", count: 64) + " x", true, nil, String(repeating: "a", count: 64)),
+    ] as [(String, Bool, ComposerCommandWord?, String?)])
+    func theDraftStateFollowsTheWords(_ draft: String, _ hasText: Bool, _ command: ComposerCommandWord?, _ leading: String?) {
+        let store = manualStore()
+        store.draft = draft
+        #expect(store.draftHasText == hasText)
+        #expect(hasText == !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "the table agrees with a trim")
+        #expect(store.draftCommand == command)
+        #expect(store.draftLeadingCommand == leading)
+        // Writing the words again, or other words, leaves nothing of the first draft behind.
+        store.draft = "other words"
+        store.draft = draft
+        #expect(store.draftHasText == hasText && store.draftCommand == command && store.draftLeadingCommand == leading)
+    }
+
+    /// `hasDraft` and the properties it reads equal what a trim and a walk over the whole draft say.
+    @Test func hasDraftMatchesTrimmingAndTheStatesMatchTheirScansOverEveryDraft() {
+        let store = manualStore()
+        var differing: [String] = []
+        for draft in ComposerCommandTokenTests.corpus {
+            store.draft = draft
+            let token = ComposerCommandToken.token(in: draft)
+            let word = token.map { ComposerCommandWord(sigil: $0.sigil, text: $0.text, startsDraft: $0.before.isEmpty) }
+            let trimmed = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if store.hasDraft != trimmed || store.draftCommand != word || store.draftLeadingCommand != ComposerLeadingCommand.of(draft) {
+                differing.append(draft)
+            }
+        }
+        #expect(differing.isEmpty, "differs for \(differing.count), first \(differing.prefix(5).map { String(reflecting: $0) })")
+    }
+
+    /// Files, references and page elements alone still make a message, whatever the words.
+    @Test func attachmentsMakeADraftWhateverTheWordsAre() {
+        let store = manualStore()
+        #expect(!store.hasDraft)
+        store.draft = " \n"
+        #expect(!store.hasDraft)
+        store.attach(files: [NativeAttachedFile(name: "A.html", path: "/drops/d1/A.html")])
+        #expect(store.hasDraft && !store.draftHasText)
+        store.draft = "words"
+        #expect(store.hasDraft && store.draftHasText)
+    }
+
     // MARK: What the chrome reads
 
     /// The chrome's properties (see `NativeThreadStore.session`) and how to read each.
