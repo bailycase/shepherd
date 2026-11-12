@@ -349,7 +349,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     /// Row titles on the page, as the search lists them under the section.
     var items: [String] {
         switch self {
-        case .appearance: ["Theme", "Mode", "Organize by", "Group by host", "Keep idle threads", "Sidebar rows", "Density", "Text size",
+        case .appearance: ["Theme", "Mode", "Organize by", "Keep idle threads", "Sidebar rows", "Density", "Text size",
                            "Sidebar width"]
         case .terminal: ["Font family", "Font size", "Shell"]
         case .agents: ["Default model", "Default thinking level", "Speed for new threads", "Text generation model", "Image reading model",
@@ -384,7 +384,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .appearance: ["Mode": ["dark", "light", "color", "shepherd design", "theme"], "Text size": ["font", "zoom", "scale"], "Sidebar rows": ["row height", "comfortable"], "Density": ["compact", "spacing"],
                            "Organize by": ["spaces", "activity", "folders", "sidebar style", "tree"],
-                           "Group by host": ["hosts", "machines"], "Keep idle threads": ["archive", "idle"]]
+                           "Keep idle threads": ["archive", "idle"]]
         case .terminal: ["Font family": ["ghostty", "monospace"], "Shell": ["zsh", "bash", "fish"]]
         case .agents: ["Default model": ["claude", "gpt", "provider"], "Text generation model": ["name", "title", "rename", "haiku", "naming", "session naming", "generate"], "Image reading model": ["vision", "images", "screenshots", "pictures", "describe", "multimodal"], "Default thinking level": ["reasoning", "effort"],
                        "Speed for new threads": ["fast", "fast mode", "priority", "service tier", "codex", "openai", "standard"],
