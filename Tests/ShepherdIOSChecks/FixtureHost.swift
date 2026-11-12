@@ -386,7 +386,8 @@ final class FixtureHost: @unchecked Sendable {
             // Only the Mac app answers a background host's drawing; a phone never sends it.
             return []
         case .drain(let id), .fleetIdentify(let id), .fleetPair(let id, _, _), .fleetEstablish(let id, _), .fleetIntroduce(let id, _),
-             .fleetRevoke(let id, _, _), .fleetSync(let id, _), .fleetRead(let id), .fleetAction(let id, _):
+             .fleetRevoke(let id, _, _), .fleetSync(let id, _), .fleetRead(let id), .fleetAction(let id, _),
+             .fleetPressure(let id, _), .fleetReadiness(let id, _), .fleetPressureNow(let id):
             return [.error(id: id, code: "unsupported", message: refused)]
         case .pushRegistration(let id, _):
             note("pushRegistration")
@@ -396,7 +397,7 @@ final class FixtureHost: @unchecked Sendable {
             return [.ok(id: id)]
         case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .creationBranches, .agentQuery, .nativeThreadSubscribe, .fleetDigest,
              .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices,
-             .fleetRead, .fleetAction:
+             .fleetRead, .fleetAction, .fleetPressure, .fleetReadiness, .fleetPressureNow:
             return nil
         }
     }

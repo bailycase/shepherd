@@ -45,7 +45,7 @@ final class HookFixture {
         try write(web + "/.codex/hooks.json", "{\n  \"hooks\": {\n    \"Stop\": [\n      {\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"pnpm test\"\n          }\n        ]\n      }\n    ]\n  }\n\n\n\n  \"x\": 1\n}\n")
         try write(payments + "/.shepherd/hooks.json", spaceFile.replacingOccurrences(of: #""Stop":"#, with: #""PostToolUse":[{"matcher":"Edit|Write","hooks":[{"type":"command","command":"jq -r .tool_input.file_path | xargs npx prettier --write","statusMessage":"Formatting edited files"}]}],"Stop":"#))
         // One switched off in Settings.
-        let catalog = model.catalog!
+        let catalog = model.catalog
         if let lint = catalog.load(spaceRoots: [ledger]).entries.first(where: { $0.handler.command == "make lint" }) {
             try catalog.settingsStore.setOn(lint.hash, false)
         }

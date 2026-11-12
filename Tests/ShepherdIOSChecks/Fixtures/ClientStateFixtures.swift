@@ -251,20 +251,17 @@ enum ClientStateChecks {
     static func sceneOwnershipAndForget(_ app: MobileApp) {
         let a = MobileNavigator(), b = MobileNavigator()
         let ref = FixtureData.ref(FixtureData.preview)
-        a.settingsSelection.chosenHost = ref.host
         a.settingsSelection.page = .instructions
         a.composerPresentation.state(for: ref).choosingModel = true
         a.composerPresentation.state(for: ref).showingContext = true
         a.commitPopover = ref
-        check(b.settingsSelection.chosenHost == nil && b.settingsSelection.page == .appearance,
-              "Settings host and page belong to their window")
+        check(b.settingsSelection.page == .appearance, "Settings page belongs to its window")
         check(!b.composerPresentation.state(for: ref).choosingModel && !b.composerPresentation.state(for: ref).showingContext,
               "composer sheets open in one window only")
         b.commitPopover = nil
         check(a.commitPopover == ref, "closing another window's commit does not close this one")
         a.forget(host: ref.host)
-        check(a.settingsSelection.chosenHost == nil && a.commitPopover == nil
-              && !a.composerPresentation.state(for: ref).showingContext, "forget clears scene-local host state")
+        check(a.commitPopover == nil && !a.composerPresentation.state(for: ref).showingContext, "forget clears scene-local host state")
 
         let forgotten = AgentRef(host: UUID(), agent: AgentID(rawValue: "forgotten"))
         let kept = AgentRef(host: UUID(), agent: AgentID(rawValue: "kept"))
