@@ -25,6 +25,9 @@ final class MobileHost: Identifiable {
     fileprivate(set) var capabilities: Set<String> = []
     /// When this device's connection to it last ended (saved apart from the record).
     fileprivate(set) var lastSeen: Date?
+    /// The Mac's fleet host id, as its `helloOk` said, kept across launches (`MobileHosts.fleetIDKey`): how the Fleet screen
+    /// finds this pairing among the fleet's Macs while the Mac is away. nil until it has said.
+    fileprivate(set) var fleetID: UUID?
 
     @ObservationIgnored fileprivate(set) var client: RemoteHostClient? {
         didSet { tunnelSlot.hub = client?.tunnels }
@@ -110,6 +113,8 @@ final class MobileHosts {
     /// When each host's connection last ended, by id (seconds since 1970): "Last seen" for a host
     /// the phone cannot reach now. Apart from the records, which hold only what the user entered.
     static let lastSeenKey = "shepherd.ios.hosts.lastSeen"
+    /// Each host's fleet host id, by id.
+    static let fleetIDKey = "shepherd.ios.hosts.fleetID"
     /// The hosts (by id) whose saved token is this device's own, given by a pairing or by a Mac that
     /// offered it, and not the Mac's shared token (which a Mac can stop accepting).
     static let ownTokenKey = "shepherd.ios.hosts.ownToken"
@@ -178,6 +183,8 @@ final class MobileHosts {
         hosts = records.map(MobileHost.init)
         let seen = defaults.dictionary(forKey: Self.lastSeenKey) as? [String: Double] ?? [:]
         for host in hosts { host.lastSeen = seen[host.id.uuidString].map(Date.init(timeIntervalSince1970:)) }
+        let fleetIDs = defaults.dictionary(forKey: Self.fleetIDKey) as? [String: String] ?? [:]
+        for host in hosts { host.fleetID = fleetIDs[host.id.uuidString].flatMap(UUID.init(uuidString:)) }
         moveLegacyToken()
     }
 
@@ -349,6 +356,12 @@ final class MobileHosts {
         if ownTokens.remove(id) != nil { defaults.set(ownTokens.map(\.uuidString).sorted(), forKey: Self.ownTokenKey) }
         persist()
         persistLastSeen()
+        persistFleetIDs()
+    }
+
+    private func persistFleetIDs() {
+        defaults.set(Dictionary(uniqueKeysWithValues: hosts.compactMap { host in host.fleetID.map { (host.id.uuidString, $0.uuidString) } }),
+                     forKey: Self.fleetIDKey)
     }
 
     private func persist() {
@@ -498,6 +511,10 @@ final class MobileHosts {
                 if host.stateRevision == revision { host.adopt(state) }
                 if host.capabilities != client.capabilities { host.capabilities = client.capabilities }
                 host.session = UUID()
+                if let fleetID = client.hostID, host.fleetID != fleetID {
+                    host.fleetID = fleetID
+                    self?.persistFleetIDs()
+                }
                 host.set(.connected)
                 host.connectMissions()
                 host.backoff.reset()

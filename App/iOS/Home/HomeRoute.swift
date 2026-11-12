@@ -8,7 +8,7 @@ enum HomeRoute: Hashable, Codable {
     case needsYou
     /// Automations on every host (read-only in this release).
     case automations
-    /// Hosts: the iPad sidebar's (iPadHosts board); on iPhone, the Settings tab.
+    /// Fleet (what Hosts was): the Macs this device is paired with; on iPhone, the Settings tab.
     case more
     /// Every recent thread, past Home's first few.
     case recents
@@ -19,14 +19,12 @@ enum HomeRoute: Hashable, Codable {
 
 struct HomeDestination: View {
     let route: HomeRoute
-    @Environment(MobileNavigator.self) private var navigator
-
     var body: some View {
         switch route {
         case .needsYou: NeedsYouScreen()
         case .automations: AutomationsScreen()
-        // iPad's Hosts; the phone opens its Settings tab instead (`MobileNavigator.open`).
-        case .more: if navigator.layout == .pad { PadHostsScreen() } else { HostsScreen() }
+        // Hosts became Fleet: the Macs this device is paired with, as one fleet.
+        case .more: FleetScreen()
         case .recents: RecentsScreen(group: .recents)
         case .working: RecentsScreen(group: .working)
         case .done: RecentsScreen(group: .done)

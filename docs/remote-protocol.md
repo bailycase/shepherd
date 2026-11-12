@@ -644,6 +644,16 @@
   than 15 s is stale and counts for nothing. `FleetAction.reconnect(hostID:)` is the Fleet page's Retry. The Send work
   here choice is the host setting `fleet.weight.<hostID>` (`HostSettings.fleetWeights`, `HostSettingChange.fleetWeight`),
   Prefer 1.5, Normal 1, Less often 0.5, Manual only (never picked by Auto). The weights sync like a host setting: one unit `setting:fleet.weight.<hostID>` per Mac (`FleetWeightSetting`, value the weight's name as JSON), applied through the app's own setter, so a choice on one Mac holds on every member.
+- **Fleet view for clients** (`fleet.view.v1`, offered to every client while Fleet is on, a device included; not one of
+  `fleetMemberCapabilities`): a phone or an iPad reads the Macs, their load and readiness, and chooses where work is sent, and
+  does nothing else of the fleet. `fleetRead` from a `device` (or a client on the shared token) is answered with
+  `FleetSnapshot.clientView`: this Mac's id and name, each peer's name, link and last seen, and `macs` (samples and readiness
+  reports); never an address or port, a code window, the devices, the sync state or the build. `fleetAction(.watching(_))` is
+  served to it too (the host samples while the screen is open and stops when the connection closes); every other action, and
+  `fleetPressure`, `fleetReadiness`, `fleetPressureNow`, `fleetSync`, pairing, removing and introducing, stay refused with
+  `forbidden`. The weight is written with the existing `hostSettings` change `fleetWeight(hostID:weight:)` (capability
+  `fleet.view.v1` rather than `fleet.pressure.v1`, so a device can send it); the Mac applies it as its own Settings would and
+  the weights sync from there. With Fleet off, `fleetRead` is refused `fleet_off` and the capability isn't offered.
 - **Protocol changes** touch the request and reply enums with every Codable arm, `RemoteProtocol`
   capabilities where relevant, server handling, `RemoteHostClient` (Mac and iOS), and the
   round-trip and listener tests.

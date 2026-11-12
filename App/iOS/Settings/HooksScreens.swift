@@ -43,7 +43,7 @@ struct HooksScreen: View {
                 if let host, let state {
                     content(state, host: host, model: model)
                 } else {
-                    SettingsFootnote("Add a Mac in Settings ▸ Hosts to manage the fleet's hooks.")
+                    SettingsFootnote("Add a Mac in Settings ▸ Fleet to manage the fleet's hooks.")
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
@@ -295,7 +295,7 @@ struct HookSourcesScreen: View {
                         }
                     }
                 } else {
-                    SettingsFootnote(host == nil ? "Add a Mac in Settings ▸ Hosts to manage the fleet's hooks." : "The files show here once the hooks are read.")
+                    SettingsFootnote(host == nil ? "Add a Mac in Settings ▸ Fleet to manage the fleet's hooks." : "The files show here once the hooks are read.")
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)

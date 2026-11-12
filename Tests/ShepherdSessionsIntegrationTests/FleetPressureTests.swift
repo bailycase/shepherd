@@ -397,8 +397,8 @@ struct FleetPressureIntegrationTests {
 
     // MARK: Access
 
-    /// A phone is offered no pressure capability and can't push, ask for or watch a Mac's load: the
-    /// request is a member's (`FleetAccess`). What it may see of the fleet is a later slice's read.
+    /// A phone is offered no pressure capability and can't push or ask for a Mac's load: the
+    /// request is a member's (`FleetAccess`). What it may see of the fleet is `fleet.view.v1` (`FleetDeviceViewTests`).
     @Test func aDeviceIsOfferedNoPressureAndCannotSpeakForAMac() async throws {
         let host = try await FleetPairingTests.Mac("Mac mini")
         defer { host.stop() }
@@ -412,7 +412,6 @@ struct FleetPressureIntegrationTests {
             ("fleetPressure", { try await client.fleetPressure(sample) }),
             ("fleetReadiness", { try await client.fleetReadiness(FleetReadinessReport()) }),
             ("fleetPressureNow", { _ = try await client.fleetPressureNow() }),
-            ("watching", { _ = try await client.fleetAction(.watching(true)) }),
         ] as [(String, () async throws -> Void)] {
             do { try await attempt(); Issue.record("\(name): a device used a member's request") }
             catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetProtocol.Code.forbidden, "\(name)") }

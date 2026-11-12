@@ -103,12 +103,13 @@ extension RemoteHostClient {
         }
     }
 
-    /// The fleet of the host on this Mac, as its app draws it (local socket only).
+    /// The fleet of the host on this Mac, as its app draws it (local socket). A phone or an iPad on a device token
+    /// reads the same answer cut down to Macs, load and readiness (`fleet.view.v1`, `FleetSnapshot.clientView`).
     public func fleetRead() async throws -> FleetResult {
         try Self.fleetResult(from: try await request { .fleetRead(id: $0) })
     }
 
-    /// Asks the host on this Mac to act on its fleet (local socket only).
+    /// Asks the host on this Mac to act on its fleet (local socket only). A client may send `.watching` to any host with `fleet.view.v1`.
     public func fleetAction(_ action: FleetAction) async throws -> FleetResult {
         // A pairing includes a connection to another Mac and the introductions to every member.
         try Self.fleetResult(from: try await request(timeout: Self.fleetActionTimeout) { .fleetAction(id: $0, action: action) })

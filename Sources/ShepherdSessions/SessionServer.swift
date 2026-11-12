@@ -1099,7 +1099,7 @@ public final class SessionServer: @unchecked Sendable {
                 && ($0 != RemoteProtocol.missionsCapability || missionsServed && onRemoteMission != nil)
                 && (($0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetSyncCapability) || fleet?.membership == true)
                 && ($0 != RemoteProtocol.fleetDevicesCapability || fleet != nil)
-                && ($0 != RemoteProtocol.fleetPressureCapability || fleet?.membership == true)
+                && (($0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetViewCapability) || fleet?.membership == true)
         }
     }
 
@@ -1349,6 +1349,7 @@ public final class SessionServer: @unchecked Sendable {
                     for client in Array(clients.values) where client.fleetPeerID != nil { disconnect(client, reason: "fleet turned off") }
                 }
                 pushSettingsChanged(.fleet)
+                announceFleetCapabilities()
                 return
             }
             do {
@@ -1392,6 +1393,7 @@ public final class SessionServer: @unchecked Sendable {
                 service.syncEngine.add(FleetExtensionsSource(pi.importedState()))
                 service.listenerChanged(remoteListenPort)
                 service.start()
+                if enabled { announceFleetCapabilities() }
             } catch {
                 ShepherdLog.error("fleet could not start: \(error)")
             }
@@ -1473,6 +1475,14 @@ public final class SessionServer: @unchecked Sendable {
                     }
                 }
             }
+        }
+    }
+
+    /// Fleet went on or off: remote clients (a phone drawing or hiding its Fleet screen) are told what the host offers now.
+    private func announceFleetCapabilities() {
+        for client in clients.values where client.isRemote && !client.isLocal && client.authenticated && client.fleetPeerID == nil {
+            guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: offeredCapabilities(to: client))) else { continue }
+            enqueuePayload(payload, to: client)
         }
     }
 

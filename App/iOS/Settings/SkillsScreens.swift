@@ -156,7 +156,7 @@ private struct InstalledSkills: View {
             return nil
         }
         if hosts.isEmpty {
-            SettingsFootnote("Add a host in Settings ▸ Hosts to manage its skills here.")
+            SettingsFootnote("Add a host in Settings ▸ Fleet to manage its skills here.")
         } else if connected.isEmpty {
             SettingsFootnote("No host is online. Skills show here once one is back.")
         } else if connected.allSatisfy({ !$0.serves }) {

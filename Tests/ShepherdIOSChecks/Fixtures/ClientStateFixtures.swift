@@ -343,7 +343,7 @@ enum ClientStateChecks {
         typealias Tab = MobileNavigator.Tab
         let a = FixtureData.ref(FixtureData.preview)
         let landings: [(MobileRoute, Tab, Tab, String)] = [
-            (.settings(.hosts), .home, .settings, "a Settings page"),
+            (.settings(.fleet), .home, .settings, "a Settings page"),
             (.home(.more), .home, .settings, "More is Settings now"),
             (.home(.automations), .home, .automations, "Automations is its tab"),
             (.automations(.detail(host: a.host, automation: AutomationID(rawValue: "x"))), .home, .automations, "an automation"),

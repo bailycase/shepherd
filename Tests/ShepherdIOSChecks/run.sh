@@ -47,8 +47,13 @@ if [ "$mode" = --sidebar-only ]; then exit 0; fi
 
 xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -parse-as-library \
     App/iOS/Hosts/MobileHosts.swift App/iOS/Hosts/HostTokens.swift App/iOS/Hosts/MobilePairing.swift App/iOS/Support/AgentRef.swift \
-    Tests/ShepherdIOSChecks/FleetDevicePairingCheck.swift -o "$build/fleet-device-check"
+    Tests/ShepherdIOSChecks/FakeFleetMacs.swift Tests/ShepherdIOSChecks/FleetDevicePairingCheck.swift -o "$build/fleet-device-check"
 DYLD_LIBRARY_PATH="$build" "$build/fleet-device-check"
+
+xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -parse-as-library \
+    App/iOS/Hosts/MobileHosts.swift App/iOS/Hosts/HostTokens.swift App/iOS/Hosts/MobilePairing.swift App/iOS/Support/AgentRef.swift \
+    Tests/ShepherdIOSChecks/FakeFleetMacs.swift Tests/ShepherdIOSChecks/FleetViewCheck.swift -o "$build/fleet-view-check"
+DYLD_LIBRARY_PATH="$build" "$build/fleet-view-check"
 
 xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -parse-as-library \
     App/iOS/Hosts/MobileHosts.swift App/iOS/Hosts/HostTokens.swift App/iOS/Support/AgentRef.swift \
