@@ -36,17 +36,27 @@ extension FleetDispatch {
         var record = FleetDispatchRecord(
             id: id, kind: .userThread, parentHostID: hostID, parentHostName: hostName(), requestedHost: requested, state: .placing,
             title: Self.title(thread.title, task: task), task: task, repoKey: repoKey, model: thread.model?.fleetNonEmpty,
-            thinking: thread.thinking?.fleetNonEmpty, createdAt: now)
+            thinking: thread.thinking?.fleetNonEmpty, spaceID: space.id, createdAt: now)
         record.updatedAt = record.createdAt
         outbound[id] = record
         firstPlacements.insert(id)
         save()
-        place(id) { [weak self] result in
-            self?.firstPlacements.remove(id)
-            switch result {
-            case .success(let record): reply(.success(record.summary))
-            case .failure(let refusal) where refusal.code == Self.keptHere: reply(.success(nil))
-            case .failure(let refusal): reply(.failure(refusal))
+        // The origin is what a Mac with no checkout clones from: read before the first placement (git runs off the queue).
+        let folder = (space.path as NSString).expandingTildeInPath
+        Task.detached { [weak self] in
+            let origin = FleetDispatchGit.origin(cwd: folder)
+            self?.queue.async {
+                guard let self, self.outbound[id] != nil else { return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "No such dispatch."))) }
+                self.outbound[id]?.origin = origin
+                self.save()
+                self.place(id) { [weak self] result in
+                    self?.firstPlacements.remove(id)
+                    switch result {
+                    case .success(let record): reply(.success(record.summary))
+                    case .failure(let refusal) where refusal.code == Self.keptHere: reply(.success(nil))
+                    case .failure(let refusal): reply(.failure(refusal))
+                    }
+                }
             }
         }
     }

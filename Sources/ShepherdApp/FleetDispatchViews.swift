@@ -171,6 +171,21 @@ struct FleetDispatchCardView: View, Equatable {
         .accessibilityValue(sending.warning ?? "")
     }
 
+    /// "Cloning" (FleetStates, "Repo isn't on that Mac"): git's own progress under the words, in the sending card's own bar.
+    private func cloningProgress(_ cloning: FleetCloningCard) -> some View {
+        let sh = Color.sh
+        return HStack(spacing: SH.Space.m) {
+            FleetGauge(fraction: cloning.fraction ?? 0, color: sh.running, height: AppLayout.fleetSendBarHeight)
+            Text(cloning.progress)
+                .font(.sh(.mono))
+                .foregroundStyle(sh.textTertiary)
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(cloning.progress)
+    }
+
     /// FleetStates: the title with the Mac's tag and the state, what it waits for, and what the person can do.
     private var state: some View {
         let sh = Color.sh
@@ -188,6 +203,7 @@ struct FleetDispatchCardView: View, Equatable {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let sending = card.sending { sendingProgress(sending) }
+            if let cloning = card.cloning { cloningProgress(cloning) }
             if !card.actions.isEmpty { buttons(card.actions) }
         }
         .padding(.vertical, SH.Space.l)

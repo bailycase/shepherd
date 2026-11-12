@@ -83,11 +83,11 @@ public struct FleetWherePicker: Equatable, Sendable {
 
         func detail(_ id: UUID, asleep: Bool, hasRepo: Bool?, name: String) -> String {
             guard let card = cards[id] else { return "" }
-            if hasRepo == false { return "Doesn't have \(repoName)" }
             if asleep { return card.since.map { "Asleep since \($0) · the thread would wait" } ?? "Not answering · the thread would wait" }
             guard let cpu = card.cpu else { return "Waiting for a reading" }
             let power = card.powerFact.isEmpty ? nil : card.powerFact.replacingOccurrences(of: "battery", with: "on battery")
-            return ["\(cpu.text) CPU", card.memory?.text, power].compactMap { $0 }.joined(separator: " · ")
+            // A Mac without the repository is still a place to run: it clones it first, once.
+            return ["\(cpu.text) CPU", card.memory?.text, power, hasRepo == false ? "Will clone (first time)" : nil].compactMap { $0 }.joined(separator: " · ")
         }
         func word(_ card: FleetMacCard) -> String {
             if card.status == .asleep { return "asleep" }
@@ -121,7 +121,7 @@ public struct FleetWherePicker: Equatable, Sendable {
             options.append(FleetPlaceOption(
                 id: card.id.uuidString, pick: .mac(card.id), name: card.name, detail: detail(card.id, asleep: asleep, hasRepo: hasRepo, name: card.name),
                 room: asleep ? 0 : card.room.fraction, roomWord: word(card), tone: asleep || card.room.tone == .tertiary ? .tertiary : card.room.tone,
-                chosen: effective == .mac(card.id), selectable: card.isThisMac || (hasRepo != false && repoKey != nil)))
+                chosen: effective == .mac(card.id), selectable: card.isThisMac || (hasRepo != nil && repoKey != nil)))
         }
 
         // The footnote names Macs in the page's order (This Mac first), not the popover's ranking.
@@ -141,7 +141,7 @@ public struct FleetWherePicker: Equatable, Sendable {
             footnote = "\(repoName) has no origin remote, so no other Mac can find it."
         } else if !with.isEmpty {
             footnote = "\(repoName) is checked out on \(FleetDispatchPresentation.joined(with))."
-            if !without.isEmpty { footnote! += " \(FleetDispatchPresentation.joined(without)) \(without.count == 1 ? "doesn't" : "don't") have it." }
+            if !without.isEmpty { footnote! += " \(FleetDispatchPresentation.joined(without)) would clone it first." }
         }
 
         // The chosen place.
@@ -156,7 +156,10 @@ public struct FleetWherePicker: Equatable, Sendable {
                 chip = "Auto · \(winnerName)"
                 target = winnerID == thisID ? nil : winnerID
                 dispatches = winnerID != thisID
-                note = winnerID == thisID ? nil : "Runs on \(winnerName) in a new worktree \(base). It shows in your sidebar like any thread."
+                let clones = macs.first { $0.hostID == winnerID }?.hasRepo == false
+                note = winnerID == thisID ? nil
+                    : clones ? "\(winnerName) clones \(repoName) first, then runs in a new worktree \(base). It shows in your sidebar like any thread."
+                    : "Runs on \(winnerName) in a new worktree \(base). It shows in your sidebar like any thread."
             } else {
                 chip = "Auto"
                 note = "No Mac has room right now. The thread starts on This Mac."
@@ -168,7 +171,9 @@ public struct FleetWherePicker: Equatable, Sendable {
                 target = id
                 dispatches = true
                 let asleep = cards[id]?.status == .asleep
+                let clones = macs.first { $0.hostID == id }?.hasRepo == false
                 note = asleep ? "\(name) is asleep. The thread starts when it wakes; it never moves to another Mac."
+                    : clones ? "\(name) clones \(repoName) first, then runs in a new worktree \(base)."
                     : "Runs on \(name) in a new worktree \(base)."
             }
         }

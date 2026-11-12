@@ -282,7 +282,7 @@ struct FleetPagePresentationTests {
         #expect(byTitle["Old"]?.reason == "Auto: most room" && byTitle["Old"]?.state == "Done" && byTitle["Old"]?.tone == .good)
         #expect(byTitle["Profile cold launch"]?.state == "Waiting" && byTitle["Profile cold launch"]?.reason == "Waiting for Mac Studio to wake")
         let failed = byTitle["Bump tools"]!
-        #expect(failed.state == "Failed" && failed.tone == .bad && failed.host == "No Mac yet" && failed.reason == "That Mac doesn't have this repository")
+        #expect(failed.state == "Failed" && failed.tone == .bad && failed.host == "No Mac yet" && failed.reason == "That Mac doesn't have this repository and couldn't clone it")
     }
 
     @Test func noDispatchesLeavesTheLogEmpty() {

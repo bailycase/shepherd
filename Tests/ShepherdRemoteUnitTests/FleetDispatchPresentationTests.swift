@@ -72,7 +72,7 @@ struct FleetDispatchPresentationTests {
     }
 
     @Test(arguments: [
-        (FleetDispatchCode.repoMissing, "The mini doesn't have payments-api. Clone it there, or run this here."),
+        (FleetDispatchCode.repoMissing, "The mini doesn't have payments-api and couldn't clone it. Run this here, or try again once it can."),
         (FleetDispatchCode.noSuchHost, "No Mac named that is in the fleet."),
         (FleetDispatchCode.peerGone, "The mini stopped answering and doesn't know this dispatch. Run it again, or run it here."),
         ("a_newer_code", "It wasn't sent."),
@@ -198,7 +198,7 @@ struct FleetDispatchPresentationTests {
         #expect(picker.options.first?.chosen == true)
         #expect(picker.options.first { $0.name == "Mac Studio" }?.roomWord == "asleep")
         #expect(picker.note?.hasPrefix("Runs on Mac mini in a new worktree") == true)
-        #expect(picker.footnote == "orders-svc is checked out on This Mac and Mac mini. Mac Studio doesn't have it.")
+        #expect(picker.footnote == "orders-svc is checked out on This Mac and Mac mini. Mac Studio would clone it first.")
     }
 
     @Test func autoOffStartsOnThisMacAndASleepingMacWaits() {

@@ -66,6 +66,15 @@ enum RemoteSamples {
     static let snapshotHeader = FleetSnapshotHeader(commit: String(repeating: "a", count: 40), rootHash: snapshotHash, digest: FleetHash(of: Data("digest".utf8)),
                                                     files: 3, directories: 1, deletions: 1, parts: 1, fileCount: 6_020, bytes: 2_800_000,
                                                     bundle: FleetBlobRef(hash: FleetHash(of: Data("bundle".utf8)), size: 4_096))
+    /// The repository itself in a bundle, for a Mac that has no checkout and couldn't clone it from origin.
+    static let repoBundleHeader = FleetSnapshotHeader(commit: String(repeating: "a", count: 40), rootHash: snapshotHash, digest: FleetHash(of: Data("digest".utf8)),
+                                                      files: 0, directories: 0, deletions: 0, parts: 0, fileCount: 0, bytes: 9_000_000,
+                                                      bundle: FleetBlobRef(hash: FleetHash(of: Data("repo".utf8)), size: 9_000_000), repoBundle: true)
+    static let dispatchCreateCloning = FleetDispatchCreate(
+        dispatchID: dispatchID, task: "Profile the orders import.", title: "Profile the orders import", repoKey: "github.com/acme/orders-svc",
+        commitSHA: String(repeating: "a", count: 40), from: FleetDispatchSender(hostID: fleetHost, hostName: "MacBook Pro", agentTitle: "Speed up checkout CI"),
+        snapshot: repoBundleHeader,
+        repo: FleetRepoSource(origin: "https://github.com/acme/orders-svc.git", spaceID: SpaceID(rawValue: "S1"), name: "orders-svc", worktreeBase: "origin/main"))
     static let dispatchCreateWithSnapshot = FleetDispatchCreate(
         dispatchID: dispatchID, task: "Fix the flaky payment test.", title: "Fix flaky payment test", repoKey: "github.com/acme/payments-api",
         commitSHA: String(repeating: "a", count: 40), from: FleetDispatchSender(hostID: fleetHost, hostName: "MacBook Pro", agentTitle: "Ship checkout"),
@@ -80,6 +89,15 @@ enum RemoteSamples {
         task: "Fix the flaky payment test.", repoKey: "github.com/acme/payments-api", commitSHA: String(repeating: "a", count: 40),
         branch: "fleet/fix-flaky-payment-test", reasonCodes: [FleetPlacementReason(.mostRoom, ratio: 3.4)], remoteAgentID: AgentID(rawValue: "a9"),
         activity: "working", createdAt: 1_790_000_000_000, updatedAt: 1_790_000_001_000)
+    /// A dispatch whose Mac is cloning the repository for it, and where the sender's space and origin were kept for that.
+    static let dispatchRecordCloning = FleetDispatchRecord(
+        id: dispatchID, parentAgentID: AgentID(rawValue: "a1"), parentHostID: fleetHost, parentHostName: "MacBook Pro", parentTitle: "Speed up checkout CI",
+        targetHostID: UUID(uuidString: "0B8C1D52-3B5C-4F0A-8F56-1B7C6C9D5E22"), targetHostName: "Mac Studio", state: .preparing, title: "Profile the orders import",
+        task: "Profile the orders import.", repoKey: "github.com/acme/orders-svc", commitSHA: String(repeating: "a", count: 40),
+        reasonCodes: [FleetPlacementReason(.mostRoom, ratio: 3.4), FleetPlacementReason(.willClone)], activity: "cloning orders-svc: receiving objects",
+        spaceID: SpaceID(rawValue: "S1"), origin: "https://github.com/acme/orders-svc.git",
+        clone: FleetCloneProgress(name: "orders-svc", source: "github.com/acme/orders-svc", phase: "receiving objects", fraction: 0.37),
+        createdAt: 1_790_000_000_000, updatedAt: 1_790_000_001_000)
     static let branchFacts = FleetBranchFacts(branch: "fleet/fix-flaky-payment-test", head: String(repeating: "b", count: 40), ahead: 2, pushed: true,
                                               filesChanged: 3, insertions: 10, deletions: 2)
     static let fleetOp = FleetOp(mac: fleetHost, seq: 3, hlc: FleetHLC(wallMs: 1_790_000_000_123, counter: 2), unit: "instruction:AGENTS.md",
@@ -534,6 +552,10 @@ struct RemoteRequestTests {
         .fleetRepoManifest(id: 109, update: RemoteSamples.fleetManifestHead),
         .fleetDispatchCreate(id: 110, create: RemoteSamples.dispatchCreate),
         .fleetDispatchCreate(id: 118, create: RemoteSamples.dispatchCreateWithSnapshot),
+        .fleetDispatchCreate(id: 122, create: RemoteSamples.dispatchCreateCloning),
+        .fleetDispatchCreate(id: 123, create: FleetDispatchCreate(dispatchID: RemoteSamples.dispatchID, kind: .userThread, task: "Look.", title: "", repoKey: "github.com/acme/web",
+                                                                  from: FleetDispatchSender(hostID: RemoteSamples.fleetHost, hostName: "MacBook Pro", agentTitle: ""),
+                                                                  repo: FleetRepoSource(origin: nil))),
         .fleetSnapshotPart(id: 119, dispatchID: RemoteSamples.dispatchID, part: RemoteSamples.snapshotPart),
         .fleetSnapshotPart(id: 120, dispatchID: RemoteSamples.dispatchID, part: FleetSnapshotPart(index: -1, wantsNeeds: true)),
         .fleetBlobPush(id: 121, dispatchID: RemoteSamples.dispatchID, chunk: RemoteSamples.blobChunk),
@@ -543,6 +565,7 @@ struct RemoteRequestTests {
         .fleetDispatchControl(id: 113, dispatchID: RemoteSamples.dispatchID, control: .cancel),
         .fleetDispatchControl(id: 114, dispatchID: RemoteSamples.dispatchID, control: .message(text: "Also update the docs.", delivery: .steer)),
         .fleetDispatchChanged(id: 115, record: RemoteSamples.dispatchRecord),
+        .fleetDispatchChanged(id: 124, record: RemoteSamples.dispatchRecordCloning),
         .fleetDispatchResult(id: 116, dispatchID: RemoteSamples.dispatchID, text: "Fixed: the test raced the clock.", branchFacts: RemoteSamples.branchFacts),
         .fleetDispatchResult(id: 117, dispatchID: RemoteSamples.dispatchID, text: "Nothing to change.", branchFacts: nil),
         .fleetPairDevice(id: 82, code: "482913", device: RemoteSamples.fleetDevice),
@@ -887,6 +910,7 @@ struct RemoteReplyTests {
         .fleetPaired(id: 6, hostID: S.fleetHost, name: "Mac mini", myTokenHash: S.fleetHash),
         .fleetDispatchAccepted(id: 16, record: S.dispatchRecord),
         .fleetDispatchState(id: 17, record: S.dispatchRecord),
+        .fleetDispatchState(id: 25, record: S.dispatchRecordCloning),
         .fleetSyncReply(id: 11, reply: .state(vector: S.fleetVector)),
         .fleetSyncReply(id: 12, reply: .blob(hash: String(repeating: "cd", count: 32), offset: 0, total: 5, data: Data("hello".utf8))),
         .fleetResult(id: 7, result: FleetResult(snapshot: S.fleetSnapshot)),

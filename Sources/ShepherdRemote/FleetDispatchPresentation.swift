@@ -66,6 +66,8 @@ public struct FleetDispatchCard: Identifiable, Equatable, Sendable {
     /// While the work's snapshot is on its way (a `preparing` record with its sizes): the progress under the words, the "Sending with
     /// uncommitted changes" card of FleetStates.
     public var sending: FleetSendingCard?
+    /// While the Mac that runs it clones the repository first: where that stands, the "Cloning" card of FleetStates.
+    public var cloning: FleetCloningCard?
     public var actions: [FleetCardAction]
     /// The thread that sent it, and the thread that runs it, for the buttons.
     public var parentAgentID: AgentID?
@@ -143,6 +145,13 @@ public enum FleetDispatchPresentation {
             if let sending = FleetSendingCard.make(record) {
                 card.sending = sending
                 card.detail = sending.summary
+            }
+            // A Mac with no checkout clones it first: that is what the dispatch is doing, so that card replaces the sending one.
+            if let cloning = FleetCloningCard.make(record) {
+                card.sending = nil
+                card.cloning = cloning
+                card.pill = cloning.state
+                card.detail = cloning.summary
             }
             card.actions = [.cancel]
         case .running:
@@ -293,7 +302,10 @@ public enum FleetDispatchPresentation {
         case FleetDispatchCode.commitUnreachable:
             return "\(host) can't reach \(repo)'s origin" + (sha.map { ", and its commit \($0) was never pushed. Push the branch, or run it here." } ?? ". Push the branch, or run it here.")
         case FleetDispatchCode.repoMissing:
-            return "\(host) doesn't have \(repo). Clone it there, or run this here."
+            // Both the clone and the bundle failed (or there was no way to send one): git's own words, so it can be fixed.
+            return "\(host) doesn't have \(repo) and couldn't clone it" + (record.failureDetail.map { ": \($0)" } ?? "") + ". Run this here, or try again once it can."
+        case FleetDispatchCode.cloneFailed:
+            return "\(host) couldn't clone \(repo)" + (record.failureDetail.map { ": \($0)" } ?? "") + "."
         case FleetDispatchCode.repoAmbiguous:
             return "\(host) has \(repo) in more than one folder\(record.failureDetail.map { " (\($0))" } ?? ""), so it can't tell which to use."
         case FleetDispatchCode.hostNotReady:

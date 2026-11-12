@@ -58,3 +58,44 @@ struct FleetSnapshotWireTests {
         #expect(snapshot.clientView.index == nil)
     }
 }
+
+/// What a Mac without the repository is told (slice 4f): the origin and space to clone it as, and the repository itself in a bundle.
+@Suite("Fleet clone wire")
+struct FleetCloneWireTests {
+    @Test func aCreateFromAnOlderSenderCarriesNoRepoAndANewOneWritesOnlyWhatItHas() throws {
+        let old = Data("""
+        {"dispatchID":"5D4F1F6E-2B0C-4C86-9E43-7F5B7E0A9C11","kind":"agentDispatch","task":"x","title":"x","repoKey":"github.com/acme/web",
+         "from":{"hostID":"00000000-0000-0000-0000-0000000000F1","hostName":"MacBook Pro","agentTitle":"t"}}
+        """.utf8)
+        #expect(try JSONDecoder().decode(FleetDispatchCreate.self, from: old).repo == nil)
+        let plain = FleetDispatchCreate(dispatchID: UUID(), task: "x", title: "x", repoKey: "github.com/acme/web",
+                                        from: FleetDispatchSender(hostID: UUID(), hostName: "A", agentTitle: ""))
+        #expect(!String(decoding: try JSONEncoder().encode(plain), as: UTF8.self).contains("\"repo\""))
+        let source = FleetRepoSource(origin: "git@github.com:acme/web.git", name: "web")
+        let text = String(decoding: try JSONEncoder().encode(source), as: UTF8.self)
+        #expect(text.contains("origin") && text.contains("name") && !text.contains("spaceID") && !text.contains("worktreeBase"))
+    }
+
+    @Test func aSnapshotHeaderIsAWholeRepositoryOnlyWhenItSaysSoAndNamesTheBundle() throws {
+        let hash = FleetHash(of: Data("x".utf8))
+        func header(repoBundle: Bool, bundle: FleetBlobRef?) -> FleetSnapshotHeader {
+            FleetSnapshotHeader(commit: String(repeating: "a", count: 40), rootHash: hash, digest: hash, files: 0, directories: 0, deletions: 0, parts: 0, fileCount: 0,
+                                bytes: 10, bundle: bundle, repoBundle: repoBundle)
+        }
+        let ref = FleetBlobRef(hash: hash, size: 10)
+        #expect(header(repoBundle: true, bundle: ref).isValid && header(repoBundle: false, bundle: nil).isValid)
+        #expect(!header(repoBundle: true, bundle: nil).isValid, "a repository that isn't sent isn't one")
+        #expect(!String(decoding: try JSONEncoder().encode(header(repoBundle: false, bundle: ref)), as: UTF8.self).contains("repoBundle"))
+        #expect(try JSONDecoder().decode(FleetSnapshotHeader.self, from: JSONEncoder().encode(header(repoBundle: true, bundle: ref))).repoBundle)
+    }
+
+    @Test func aRecordFromAnOlderBuildHasNoCloneAndNothingIsWrittenForOne() throws {
+        let record = FleetDispatchRecord(parentHostID: UUID(), parentHostName: "A", title: "t", task: "x", repoKey: "github.com/acme/web", createdAt: 1)
+        let text = String(decoding: try JSONEncoder().encode(record), as: UTF8.self)
+        for absent in ["clone", "origin", "spaceID"] { #expect(!text.contains("\"\(absent)\""), "\(absent)") }
+        let decoded = try JSONDecoder().decode(FleetDispatchRecord.self, from: Data(text.utf8))
+        #expect(decoded.clone == nil && decoded.origin == nil && decoded.spaceID == nil)
+        let progress = try JSONDecoder().decode(FleetCloneProgress.self, from: Data(#"{"name":"web","source":"github.com/acme/web"}"#.utf8))
+        #expect(progress.phase == nil && progress.fraction == nil && !progress.viaBundle)
+    }
+}
