@@ -32,6 +32,8 @@ final class FakeThread {
         /// A Project conversation's typed references, as its thread is drawn: its turns draw no footer.
         let projectCards: ProjectActionCards?
         let input: ThreadInput
+        /// The thread opens subagents in an inspector, so the composer docks their tray.
+        let showsTray: Bool
 
         var body: some View {
             VStack(spacing: 0) {
@@ -41,7 +43,8 @@ final class FakeThread {
                                  togglePane: {}, showChanges: {}, rename: {})
                 }
                 ThreadView(store: store, active: visibility.active, isFocused: visibility.focused, request: request, commandKey: "fake",
-                           listModels: { .empty }, designChat: designCards != nil, retainedInput: input)
+                           inspectSubagent: showsTray ? { _ in } : nil, listModels: { .empty }, designChat: designCards != nil,
+                           retainedInput: input)
                     .environment(\.designCommentCards, designCards)
                     .environment(\.projectActionCards, projectCards)
                     .shComposerSize(designCards == nil ? .regular : .compact)
@@ -71,11 +74,12 @@ final class FakeThread {
 
     /// `header` puts the thread's toolbar (`ThreadHeader`) above it, as the workspace does.
     /// `reduceMotion` pins Reduce Motion for a test that needs motion whatever the machine's
-    /// setting (CI's VM has it on).
+    /// setting (CI's VM has it on). `subagentTray` has the thread open subagents in an inspector (a
+    /// no-op here), so the composer docks their tray.
     init(_ snapshot: NativeThreadSnapshot, history: [NativeThreadMessage]? = nil, starting: Bool = false,
          store: NativeThreadStore = NativeThreadStore(), size: CGSize = CGSize(width: 900, height: 800), dark: Bool = true,
          header: Bool = false, focused: Bool = false, reduceMotion: Bool? = nil, designCards: DesignCommentCards? = nil,
-         projectCards: ProjectActionCards? = nil) {
+         projectCards: ProjectActionCards? = nil, subagentTray: Bool = false) {
         self.snapshot = snapshot
         self.history = history
         self.starting = starting
@@ -104,7 +108,8 @@ final class FakeThread {
             }
         }
         window.show(Hosted(visibility: visibility, store: store, request: request, header: header, commands: commands,
-                           reduceMotion: reduceMotion, designCards: designCards, projectCards: projectCards, input: input))
+                           reduceMotion: reduceMotion, designCards: designCards, projectCards: projectCards, input: input,
+                           showsTray: subagentTray))
     }
 
     /// Serves `next` and has the store pull it now, outside any animation.

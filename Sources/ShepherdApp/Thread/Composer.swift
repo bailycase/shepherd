@@ -312,7 +312,7 @@ struct Composer: View, Equatable {
             + (showsTray ? ["tray"] : []) + (store.hasGoal ? ["goal"] : [])
     }
 
-    private var showsTray: Bool { subagents != nil && store.tray != nil }
+    private var showsTray: Bool { subagents != nil && store.hasTray }
 
     /// What the tray's rows do.
     private var subagents: SubagentActions? {
@@ -426,8 +426,8 @@ struct Composer: View, Equatable {
             if let dock = projectSend?.dock { dock().shTransition(.list, edge: .bottom) }
             // The subagents and "Up next" grow upward from the card, which never moves.
             if store.hasGoal || showsTray || queueStack.isVisible {
-                ComposerDock(tray: store.tray, trayState: trayState, runs: store.subagents, actions: subagents,
-                             showsQueue: queueStack.isVisible, goalStore: store, goalActive: active) {
+                ComposerDock(store: store, trayState: trayState, actions: subagents,
+                             showsQueue: queueStack.isVisible, goalActive: active) {
                     if queueStack.isVisible {
                         QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: !showsTray && !store.hasGoal,
                                        focusedRow: $focusedRow, focusComposer: { composing = true },
