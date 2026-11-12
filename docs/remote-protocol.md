@@ -546,6 +546,21 @@
   a configured destination, not an authenticated machine identity; future dispatch must compare
   the saved binding before using a host connection.
 - **Exact Project results:** `logicalProjects.result.v1` gates exact archived-worker snapshot reads (`ProjectRuntimeRequest.worker(taskID:)`, `ProjectExecutionRequest.worker(key:)`) and `ProjectExecutionRequest.result(key:offset:sha256:)` and owner `ProjectRuntimeRequest.result(taskID:operationID:offset:sha256:)`. Result pages use optional compatible fields on the existing reply models, at most 8 KiB of redacted visible final text, total length/digest, next byte offset, availability, stop reason and exact owner/executor identities. Remote reads keep the original host/binding and owner authorization; metadata cache hits cannot bypass revocation. Permission generations are rechecked after asynchronous I/O; disable/re-enable or remove/restore of the exact executor Space/path/binding cannot revive an old grant. Owner-directory and executor-Space tokens track only current eligible routes, scoped by Space ID and path. On the executor, removing, hiding, reserving or replacing the target rotates only its grant; no-op refreshes, renames and unrelated Space additions/updates/removals preserve it. Restoring the target requires a fresh grant, while global Projects-enablement and restart fences still apply. Disabled-executor cancellation, pause and receipt reconciliation keep their existing exemptions, not the new result/worker-content endpoints. Archived worker reads use the exact original task/session and executor binding and are snapshots only. Older peers refuse before transmission, never substitute snapshot text. `history(taskID:beforeSequence:)` is explicit bounded owner-record discovery, not arbitrary native transcript access.
+- **Fleet** (`fleet.v1`, offered only while Settings ▸ Experiments ▸ Fleet is on; `experiments.fleet.v1` switches it from a
+  client): every host has a `hostID` (`<support>/fleet/identity.json`, made once) that `helloOk` now carries (optional,
+  absent from older hosts), and a client that expects an id never sends a token to an address that answers with another.
+  Before `hello`, `fleetIdentify` asks who is there and `fleetPair` pairs with a code the other Mac's Join screen shows
+  (6 digits, five minutes, five wrong tries close it, kept only as a hash; unauthenticated fleet frames are rate limited).
+  Each side hands the other a random token of its own (`FleetPeers`, `peers.json`, kept as a hash on the side that
+  checks it), and the listener accepts the shared token or a peer's: the connection records which peer opened it.
+  After `hello`, `fleetEstablish` is the same exchange with the shared token standing for the code (a host the app
+  already reached becoming a peer), `fleetIntroduce` brings a new Mac to every member, and `fleetRevoke` removes one
+  everywhere (a tombstone, so a stale pairing never undoes a newer one). `fleetRead` and `fleetAction` (pair, start and
+  stop a join window, remove, hand over legacy hosts) are for this Mac's own app over `host.sock`. The host
+  advertises `_shepherd._tcp` (TXT: `v`, a hash of its id, name, build; never the id) while Fleet is on; the app browses
+  it for Add a Mac and hands the address to the host. Fleet needs the listener, so it opens it even with Serve this Mac
+  off. Shepherd adds no TLS: the fleet runs over the user's own network. A paired Mac the app reached with the shared
+  token is marked `fleetManaged` in `RemoteHostStore` (its address and token are the fleet's), keeping its `bindingID`.
 - **Protocol changes** touch the request and reply enums with every Codable arm, `RemoteProtocol`
   capabilities where relevant, server handling, `RemoteHostClient` (Mac and iOS), and the
   round-trip and listener tests.

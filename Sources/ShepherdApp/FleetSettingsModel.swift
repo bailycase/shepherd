@@ -27,7 +27,7 @@ struct FleetMacRow: Identifiable, Equatable {
                 .compactMap { $0 }.joined(separator: " · "),
             state: .thisMac)
         let peers = snapshot.peers.map { peer -> FleetMacRow in
-            let address = peer.host ?? "Unknown address"
+            let address = peer.host.map { host in peer.port.map { "\(host):\($0)" } ?? host } ?? "Unknown address"
             switch peer.link {
             case .connected:
                 return FleetMacRow(id: peer.hostID.uuidString, hostID: peer.hostID, title: peer.name,
@@ -78,19 +78,19 @@ final class FleetSettingsModel {
 
     /// The host's fleet: this Mac, the Macs it is paired with and each link. Empty (not enabled)
     /// until the host answers, and while Fleet is off.
-    private(set) var snapshot = FleetSnapshot()
+    var snapshot = FleetSnapshot()
     /// This Mac and each Mac it is paired with, as Settings lists them.
-    private(set) var rows: [FleetMacRow] = []
+    var rows: [FleetMacRow] = []
     /// The host has answered at least once since Fleet was switched on.
-    private(set) var loaded = false
+    var loaded = false
     /// The code this Mac shows while its Join screen is open.
-    private(set) var join: Join?
-    private(set) var joinEnd: JoinEnd?
+    var join: Join?
+    var joinEnd: JoinEnd?
     /// Add a Mac: the Macs Bonjour found that this Mac doesn't have and isn't.
-    private(set) var found: [FoundMac] = []
+    var found: [FoundMac] = []
     var pairing: Pairing = .idle
     /// The last thing that failed on the page, said under the Macs.
-    private(set) var problem: String?
+    var problem: String?
 
     /// This Mac's host, over its local socket; throws while it is away.
     @ObservationIgnored var host: () throws -> RemoteHostClient? = { nil }
@@ -163,7 +163,6 @@ final class FleetSettingsModel {
     /// Starts finding Macs while the Add a Mac sheet is open.
     func startFinding() {
         stopBrowsing?()
-        pairing = .idle
         stopBrowsing = browse { [weak self] macs in
             Task { @MainActor in
                 self?.everyFound = macs

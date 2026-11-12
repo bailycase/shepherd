@@ -11,7 +11,13 @@ struct FleetPairSheet: View {
     let dismiss: () -> Void
 
     @State private var picked: String?
-    @State private var code = ""
+    @State private var code: String
+
+    init(model: FleetSettingsModel, code: String = "", dismiss: @escaping () -> Void) {
+        self.model = model
+        self.dismiss = dismiss
+        _code = State(initialValue: code)
+    }
 
     private var mac: FoundMac? { model.found.first { $0.id == picked } ?? (model.found.count == 1 ? model.found.first : nil) }
     private var ready: Bool { mac != nil && code.count == FleetProtocol.codeLength && model.pairing != .working }
@@ -94,7 +100,7 @@ struct FleetPairSheet: View {
                 .foregroundStyle(yes ? Color.sh.done : Color.sh.textTertiary)
                 .frame(width: AppLayout.fleetGetsColumn)
                 .accessibilityHidden(true)
-            Text(text).fixedSize(horizontal: false, vertical: true)
+            Text(text).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .combine)
     }
