@@ -23,11 +23,12 @@ struct ExtensionMessageTests {
              .designList, .designRead, .designWriteBoard, .designEditBoard, .designUpdateIndex, .designComments, .designCommentReply,
              .designEditBoards, .designSearch, .designCheckpoint, .designRender, .designExport, .designExtract,
              .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote, .designPropose,
-             .projectPublish, .projectRuntime, .helloBrowser, .browser, .registerProject, .refreshProjects, .addChildProject, .editProject, .deleteProject:
+             .projectPublish, .projectRuntime, .helloBrowser, .browser, .registerProject, .refreshProjects, .addChildProject, .editProject, .deleteProject,
+             .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 63
+    static let caseCount = 68
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -75,6 +76,13 @@ struct ExtensionMessageTests {
         .spawnAgent(id: 18, agentID: agent, cwd: "/tmp/repo", prompt: "Fix the tests."),
         .spawnAgent(id: 19, agentID: agent, cwd: "/tmp/repo", prompt: "Fix the tests.", model: "claude-fable-5-1", thinking: "low"),
         .moveAgent(id: 118, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), spaceID: SpaceID(rawValue: "s2")),
+        .fleetListHosts(id: 130, agentID: agent),
+        .fleetDispatch(id: 131, agentID: agent, dispatchID: nil, task: "Fix the flaky test.", title: nil, host: nil, model: nil, thinking: nil),
+        .fleetDispatch(id: 132, agentID: agent, dispatchID: "toolu_01", task: "Fix the flaky test.", title: "Flaky test", host: "Mac mini", model: "claude-fable-5-1", thinking: "low"),
+        .fleetDispatchStatus(id: 133, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11"),
+        .fleetDispatchMessage(id: 134, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", text: "Also update the docs.", delivery: .steer),
+        .fleetDispatchMessage(id: 135, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", text: "Thanks.", delivery: .followUp),
+        .fleetDispatchCancel(id: 136, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11"),
         .coordinateAgent(id: 19, agentID: agent, targetAgentID: AgentID(rawValue: "a2"),
                          request: AgentCoordinationRequest(operation: .read, limit: 10, after: "entry-1")),
         .agentResponse(agentID: AgentID(rawValue: "a2"), requestID: "server-token",
@@ -426,14 +434,14 @@ struct ExtensionReplyTests {
     static func caseName(_ reply: ExtensionReply) -> String {
         switch reply {
         case .parentInput, .childCommand, .childStart, .childScope, .projectChildren, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .appResult, .automations,
-             .agents, .message, .agentRequest, .agentResult, .suggestion, .designList, .design, .designBoard, .designWritten, .designEdited,
+             .agents, .fleetHosts, .fleetDispatch, .message, .agentRequest, .agentResult, .suggestion, .designList, .design, .designBoard, .designWritten, .designEdited,
              .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals,
              .designBatchEdited, .designSearchResult, .designCheckpoints, .designRendered, .designExported, .designExtracted,
              .projectPublish, .projectRuntime, .designReference, .designNote, .browserResult, .projectResult:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 41
+    static let caseCount = 43
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -487,6 +495,13 @@ struct ExtensionReplyTests {
             AgentPeerInfo(id: AgentID(), name: "worker", status: "working", cwd: "/tmp", isSelf: false),
             AgentPeerInfo(id: AgentID(), name: "me", status: "idle", cwd: "/tmp", isSelf: true),
         ]),
+        .fleetHosts(id: 140, hosts: [FleetHostInfo(name: "Mac mini", isThisMac: false, room: "most room", connected: true, problems: ["muse"], hasRepo: true, weight: "Prefer"),
+                                     FleetHostInfo(name: "MacBook Pro", isThisMac: true, room: "no room", connected: true, weight: "Normal")]),
+        .fleetDispatch(id: 141, info: FleetDispatchInfo(dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", state: "running", host: "Mac mini", title: "Flaky test")),
+        .fleetDispatch(id: 142, info: FleetDispatchInfo(dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", state: "failed", failure: "repo_missing", detail: "Mac mini")),
+        .fleetDispatch(id: 143, info: FleetDispatchInfo(dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", state: "delivering", host: "Mac mini", title: "Flaky test",
+                                                        branch: "fleet/flaky-test", activity: "idle", resultText: "Fixed.",
+                                                        branchFacts: FleetBranchFacts(branch: "fleet/flaky-test", head: "abc", ahead: 1, pushed: true, filesChanged: 1, insertions: 2, deletions: 1))),
         .message(id: 0, text: "[from: worker] done"),
         .message(id: 0, text: "[from: worker] done", delivery: .report),
         .agentRequest(id: 0, requestID: "server-token", targetAgentID: AgentID(rawValue: "a2"),
