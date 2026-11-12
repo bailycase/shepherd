@@ -26,7 +26,8 @@ public struct FleetCloningCard: Equatable, Sendable, Identifiable {
         let host = record.targetHostName ?? "the other Mac"
         let words: String
         if clone.viaBundle {
-            words = "\(host) couldn't reach \(record.repoKey)'s origin, so \(clone.source) sent it the repository itself and \(host) is cloning that. The thread starts when it finishes."
+            let why = CanonicalRepoKey.isLocal(record.repoKey) ? "\(clone.name) has no origin" : "\(host) couldn't reach \(record.repoKey)'s origin"
+            words = "\(why), so \(clone.source) sent it the repository itself and \(host) is cloning that. The thread starts when it finishes."
         } else {
             words = "Cloning \(clone.name) from \(clone.source) with \(host)'s git sign-in. The thread starts when it finishes."
         }

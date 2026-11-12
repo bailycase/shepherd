@@ -221,6 +221,29 @@ extension FleetDispatch {
         if now - progressSavedAt > 500 { progressSavedAt = now; save() } else { onChange?() }
     }
 
+    /// Reads the target's record of `id` and takes what it says (`merge`); a target that can't be asked leaves the dispatch as it is for
+    /// `reconcile` to settle.
+    private func askTarget(_ id: UUID, _ target: UUID) {
+        let take: @Sendable (Result<FleetDispatchRecord, Error>) -> Void = { [weak self] result in
+            self?.queue.async {
+                guard let self, var record = self.outbound[id], record.state == .preparing, case .success(let theirs) = result else { return }
+                self.merge(theirs, into: &record)
+                self.outbound[id] = record
+                self.save()
+            }
+        }
+        if target == hostID {
+            control(id, .status, from: hostID) { result in
+                switch result {
+                case .success(let theirs): take(.success(theirs))
+                case .failure(let refusal): take(.failure(RemoteHostClientError.rejected(code: refusal.code, message: refusal.message)))
+                }
+            }
+        } else if let link = client(target) {
+            Task { do { take(.success(try await link.fleetDispatchControl(id, .status))) } catch { take(.failure(error)) } }
+        }
+    }
+
     private func transferFailed(_ id: UUID, _ error: Error) {
         transferring.remove(id)
         guard var record = outbound[id], record.state == .preparing else { return }
@@ -234,6 +257,11 @@ extension FleetDispatch {
                 outbound[id] = record
                 save()
                 return scheduleEvaluation()
+            }
+            // The target stopped waiting for the snapshot because it ended the dispatch itself (a clone that failed, a worktree that
+            // didn't check out): its own record says how, and that is what this one takes, never a guess from the refusal.
+            if rejected == FleetDispatchProtocol.Code.unknownDispatch, let target = record.targetHostID {
+                return askTarget(id, target)
             }
             code = [FleetDispatchCode.snapshotMismatch, FleetDispatchCode.commitUnreachable, FleetDispatchCode.repoMissing, FleetDispatchCode.repoAmbiguous,
                     FleetDispatchCode.snapshotFailed, FleetDispatchCode.snapshotTooLarge].contains(rejected) ? rejected : FleetDispatchCode.snapshotFailed

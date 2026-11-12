@@ -232,6 +232,41 @@ struct FleetCloneTests {
         #expect(a.sent().first?.failure == nil && a.sent().first?.clone == nil)
     }
 
+    @Test func aRepositoryWithNoRemoteAtAllIsSentToAMacThatHasNoCopyAndANewDispatchReusesIt() async throws {
+        try StubPi.installAsEngine()
+        let origin = try D.makeOrigin(extra: [".gitignore": FleetSnapshotTransferTests.ignores])
+        // The sender's repository never had a remote: nothing to clone, no key from an origin.
+        let a = try await Mac("MacBook Pro", origin: origin, repoKey: nil)
+        let b = try await Mac("Mac mini", origin: origin, checkout: false)
+        defer { a.stop(); b.stop() }
+        try git(["remote", "remove", "origin"], in: a.folder)
+        try await a.pair(with: b)
+        try await D.waitForReports(a, b)
+        try FleetSnapshotTransferTests.write("# acme-web\nedited, not committed\n", to: "README.md", in: a.folder)
+        let expected = try FleetSnapshotTransferTests.tree(of: a.folder)
+
+        let parent = try await a.parent()
+        try parent.hello()
+        _ = try await Self.send(parent, key: "first")
+        do { try await D.wait("Mac mini to run the dispatched thread", timeout: .seconds(20)) { !b.dispatched.isEmpty } } catch {
+            print("DEBUG sent", a.sent().map { ($0.state, $0.failure ?? "", $0.failureDetail ?? "", $0.clone?.phase ?? "") }, "taken", b.taken().map { ($0.state, $0.failure ?? "", $0.failureDetail ?? "") })
+            throw error
+        }
+        let key = try #require(a.sent().first?.repoKey)
+        #expect(CanonicalRepoKey.isLocal(key), "named by its first commit: \(key)")
+        let space = try #require(Self.space(b, repoKey: key))
+        #expect(space.name == a.space.name && space.id == a.space.id && Self.cloneCount(b) == 1)
+        #expect(try git(["remote"], in: URL(fileURLWithPath: space.path)).isEmpty, "the bundle file it came from is not left as its origin")
+        let worktree = URL(fileURLWithPath: try #require(b.dispatched.first?.worktreePath))
+        #expect(try FleetSnapshotTransferTests.tree(of: worktree) == expected && D.head(worktree) == D.head(a.folder))
+        try await D.wait("A to follow it as running") { a.sent().first?.state == .running && a.sent().first?.clone == nil }
+
+        // It is a copy there now: the next dispatch finds it by the same key and sends nothing of the repository.
+        _ = try await Self.send(parent, key: "second")
+        try await D.wait("the second thread", timeout: .seconds(60)) { b.dispatched.count == 2 }
+        #expect(Self.cloneCount(b) == 1 && b.server.state.spaces.filter { $0.repoKey == key }.count == 1)
+    }
+
     @Test func whenBothTheCloneAndTheBundleFailTheDispatchIsRefusedWithGitsOwnError() async throws {
         // No snapshot to carry a bundle (the setting leaves edits behind), so origin was the only way and it failed.
         let (a, b, _) = try await Self.pair(uncommittedA: .leaveBehind)

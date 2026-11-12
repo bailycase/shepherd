@@ -87,7 +87,8 @@ final class FleetRepoFinder: @unchecked Sendable {
         for (path, isSpace) in checkouts {
             let stamp = FleetRepoKeys.stamp(of: FleetRepoKeys.configFile(folder: path))
             let before = lock.withLock { seen[path] }
-            let key = before?.stamp == stamp ? before?.key : FleetRepoKeys.key(folder: path)
+            // A checkout with no origin is known by its first commit, so a repository that never had a remote can still be found.
+            let key = before?.stamp == stamp ? before?.key : FleetRepoKeys.key(folder: path) ?? FleetRepoKeys.localKey(folder: path)
             fresh[path] = Seen(stamp: stamp, key: key)
             guard let key else { continue }
             found[key, default: []].append(Candidate(path: path, isSpace: isSpace, modified: Self.modified(path)))

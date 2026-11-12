@@ -136,9 +136,10 @@ final class FleetRepoClone: @unchecked Sendable {
 
     // MARK: Where it goes
 
-    /// A folder name from a repository's key: "acme-web" from "github.com/acme/acme-web".
-    static func folderName(repoKey: String) -> String {
-        let last = repoKey.split(separator: "/").last.map(String.init) ?? repoKey
+    /// A folder name from a repository's key: "acme-web" from "github.com/acme/acme-web". A repository with no origin has only a first
+    /// commit for a key, so the sender's name for it stands in.
+    static func folderName(repoKey: String, name: String? = nil) -> String {
+        let last = CanonicalRepoKey.isLocal(repoKey) ? (name?.fleetNonEmpty ?? "repo") : repoKey.split(separator: "/").last.map(String.init) ?? repoKey
         let kept = String(last.unicodeScalars.map { scalar -> Character in
             scalar.isASCII && (scalar.properties.isAlphabetic || ("0"..."9").contains(Character(scalar)) || "-_.".unicodeScalars.contains(scalar)) ? Character(scalar) : "-"
         }).trimmingCharacters(in: CharacterSet(charactersIn: "-."))
@@ -148,10 +149,10 @@ final class FleetRepoClone: @unchecked Sendable {
     /// Makes (and so owns) the empty folder a clone goes into, and returns it: `<developer>/<name>` when the developer folder is
     /// there and that path doesn't exist, otherwise `<repos>/<slug of the key>`, with the dispatch's first characters added when even
     /// that exists. A folder that exists is never used, whatever it holds. Nil when none could be made.
-    static func claim(repoKey: String, dispatchID: UUID, developer: URL?, repos: URL) -> URL? {
+    static func claim(repoKey: String, name given: String? = nil, dispatchID: UUID, developer: URL?, repos: URL) -> URL? {
         let manager = FileManager.default
-        let name = folderName(repoKey: repoKey)
-        let slug = repoKey.split(separator: "/").map(String.init).joined(separator: "-")
+        let name = folderName(repoKey: repoKey, name: given)
+        let slug = CanonicalRepoKey.isLocal(repoKey) ? "local-" + name : repoKey.split(separator: "/").map(String.init).joined(separator: "-")
         let suffix = String(dispatchID.uuidString.lowercased().prefix(6))
         var isDirectory: ObjCBool = false
         var options: [URL] = []

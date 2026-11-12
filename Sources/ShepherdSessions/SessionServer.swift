@@ -1647,11 +1647,14 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private var repoCandidatesRefreshing = false
+    private var repoCandidatesAgain = false
 
     /// Server queue: looks at the folders this Mac knows (`fleetRepoPlaces`) for checkouts and their origins, off the queue, so a synced
-    /// space with no folder here binds to a checkout this Mac already has. Says so to the sync when what can be found changed.
+    /// space with no folder here binds to a checkout this Mac already has. Says so to the sync when what can be found changed. A place
+    /// that appears while a look is under way is looked at when it ends.
     private func refreshRepoCandidates() {
-        guard let finder = fleet?.dispatch.finder, fleet?.membership == true, !repoCandidatesRefreshing else { return }
+        guard let finder = fleet?.dispatch.finder, fleet?.membership == true else { return }
+        guard !repoCandidatesRefreshing else { repoCandidatesAgain = true; return }
         let places = fleetRepoPlaces()
         guard !places.isEmpty else { return }
         repoCandidatesRefreshing = true
@@ -1661,6 +1664,10 @@ public final class SessionServer: @unchecked Sendable {
                 guard let self else { return }
                 self.repoCandidatesRefreshing = false
                 if changed { self.fleet?.syncEngine.localChanged() }
+                if self.repoCandidatesAgain {
+                    self.repoCandidatesAgain = false
+                    self.refreshRepoCandidates()
+                }
             }
         }
     }

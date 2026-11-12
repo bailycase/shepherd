@@ -198,7 +198,9 @@ public enum FleetDispatchPresentation {
 
     /// "payments-api" from "github.com/acme/payments-api".
     static func repoName(_ key: String) -> String {
-        key.split(separator: "/").last.map(String.init) ?? key
+        // A repository with no origin is named by its first commit: nothing a person would call it.
+        if CanonicalRepoKey.isLocal(key) { return "this repository" }
+        return key.split(separator: "/").last.map(String.init) ?? key
     }
 
     static func short(_ sha: String) -> String { String(sha.prefix(7)) }

@@ -431,21 +431,26 @@ final class FleetDispatch: @unchecked Sendable {
             return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "The task is empty or longer than \(FleetDispatchProtocol.maxTaskBytes / 1024) KiB.")))
         }
         let state = host.state()
-        guard let agent = state.agents.first(where: { $0.id == agentID }), let space = state.spaces.first(where: { $0.id == agent.spaceID }),
-              let repoKey = space.repoKey else {
-            return reply(.failure(.init(code: FleetDispatchCode.repoMissing, message: "This thread's project has no origin remote, so no other Mac can find its repository.")))
+        guard let agent = state.agents.first(where: { $0.id == agentID }), let space = state.spaces.first(where: { $0.id == agent.spaceID }) else {
+            return reply(.failure(.init(code: FleetDispatchCode.repoMissing, message: "This thread's project isn't a repository another Mac can find.")))
         }
         let cwd = state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd ?? space.path
         placing.insert(id)
         waiters[id, default: []].append(reply)
-        let (spaceID, folder) = (space.id, space.path)
+        let (spaceID, folder, known) = (space.id, space.path, space.repoKey)
         Task.detached { [weak self] in
             let pinned = FleetDispatchGit.pin(cwd: (cwd as NSString).expandingTildeInPath)
             let origin = FleetDispatchGit.origin(cwd: (folder as NSString).expandingTildeInPath)
+            // A repository with no origin is named by its first commit: another Mac can't clone it, so it is sent the repository itself.
+            let key = known ?? FleetRepoKeys.localKey(folder: (folder as NSString).expandingTildeInPath)
             self?.queue.async {
                 guard let self else { return }
                 let waiting = self.waiters.removeValue(forKey: id) ?? []
                 func answer(_ result: Result<FleetDispatchRecord, FleetDispatchRefusal>) { for done in waiting { done(result) } }
+                guard let repoKey = key else {
+                    self.placing.remove(id)
+                    return answer(.failure(.init(code: FleetDispatchCode.repoMissing, message: "This thread's project has no origin remote and no commits, so no other Mac can find its repository.")))
+                }
                 switch pinned {
                 case .failure(.notARepository):
                     self.placing.remove(id)
@@ -745,6 +750,10 @@ final class FleetDispatch: @unchecked Sendable {
     /// Takes what the target says into the sender's record. A finished sender record never moves back.
     func merge(_ theirs: FleetDispatchRecord, into record: inout FleetDispatchRecord) {
         guard record.state.isLive else { return }
+        // A failed clone told a second time (the push and the answer to a status question both bring it) is the same attempt, already
+        // answered: the repository is on its way, and a clone from it never says this.
+        // (`clone_failed` is only ever said while preparing: once the thread runs it is stale.)
+        if theirs.state == .failed, theirs.failure == FleetDispatchCode.cloneFailed, record.state != .preparing || repoBundles.contains(record.id) { return }
         record.remoteAgentID = theirs.remoteAgentID ?? record.remoteAgentID
         record.branch = theirs.branch ?? record.branch
         record.activity = theirs.activity ?? record.activity
@@ -755,7 +764,8 @@ final class FleetDispatch: @unchecked Sendable {
         if theirs.state == .failed, theirs.failure == FleetDispatchCode.cloneFailed, record.state == .preparing, canSendRepository(record) {
             record.failure = nil
             record.failureDetail = nil
-            record.clone = FleetCloneProgress(name: FleetRepoClone.folderName(repoKey: record.repoKey), source: hostName(), viaBundle: true)
+            let named = record.spaceID.flatMap { wanted in host.state().spaces.first { $0.id == wanted }?.name }
+            record.clone = FleetCloneProgress(name: FleetRepoClone.folderName(repoKey: record.repoKey, name: named), source: hostName(), viaBundle: true)
             record.updatedAt = now
             let id = record.id
             queue.async { [weak self] in self?.sendRepository(id) }

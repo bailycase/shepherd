@@ -47,7 +47,9 @@ extension FleetDispatch {
                 return
             }
             guard let origin = create.repo?.origin else {
-                self.queue.async { self.failInbound(id, FleetDispatchCode.repoMissing, "this Mac has no checkout of it, and its origin isn't known") }
+                // A repository with no origin: it can only come from the sender, when there is a snapshot to carry it.
+                let canAsk = create.snapshot != nil
+                self.queue.async { self.failInbound(id, canAsk ? FleetDispatchCode.cloneFailed : FleetDispatchCode.repoMissing, "this Mac has no checkout of it, and it has no origin to clone from") }
                 return
             }
             await self.clone(id, create, source: origin, bundle: false)
@@ -58,7 +60,7 @@ extension FleetDispatch {
     func clone(_ id: UUID, _ create: FleetDispatchCreate, source: String, bundle: Bool) async {
         let developer = developerFolder
         let repos = directory.appendingPathComponent("repos", isDirectory: true)
-        guard let destination = FleetRepoClone.claim(repoKey: create.repoKey, dispatchID: id, developer: developer, repos: repos) else {
+        guard let destination = FleetRepoClone.claim(repoKey: create.repoKey, name: create.repo?.name, dispatchID: id, developer: developer, repos: repos) else {
             return queue.async { [weak self] in
                 self?.cloneEnded(id, create, nil, .failed("this Mac couldn't make a folder to clone into"), bundle: bundle)
             }

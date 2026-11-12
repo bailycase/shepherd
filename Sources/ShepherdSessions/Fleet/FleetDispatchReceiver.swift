@@ -77,7 +77,7 @@ extension FleetDispatch {
         record.updatedAt = record.createdAt
         // No checkout yet: the Mac gets one first, and says where that stands (the card "Cloning acme-web on Mac mini").
         if space == nil {
-            record.clone = FleetCloneProgress(name: FleetRepoClone.folderName(repoKey: create.repoKey), source: create.snapshot?.repoBundle == true ? create.from.hostName : create.repoKey,
+            record.clone = FleetCloneProgress(name: FleetRepoClone.folderName(repoKey: create.repoKey, name: create.repo?.name), source: create.snapshot?.repoBundle == true ? create.from.hostName : create.repoKey,
                                               viaBundle: create.snapshot?.repoBundle == true)
         }
         if let header = create.snapshot {

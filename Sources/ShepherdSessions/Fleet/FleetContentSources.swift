@@ -421,13 +421,13 @@ final class FleetSpacesSource: FleetUnitSource {
         if found == nil, let key = fields.repoKey, let path = host.locate(key) {
             bindings.bind(id, to: path)
             found = bound()
-            // A space here already is that checkout: it stands for the repository, and a second row for one folder would only confuse.
-            let canonical = PiHome.canonical(path)
-            if host.spaces().contains(where: { !$0.hidden && PiHome.canonical($0.path) == canonical }) { return }
         }
         guard let path = found else {
             throw FleetUnitRefused(description: "\(fields.name) has no folder on this Mac", quiet: true)
         }
+        // A space here already is that folder: it stands for the repository, and a second row for one folder would only confuse.
+        let canonical = PiHome.canonical(path)
+        if host.spaces().contains(where: { !$0.hidden && PiHome.canonical($0.path) == canonical }) { return }
         try host.mutate { spaces in
             guard !spaces.contains(where: { $0.id == id }) else { return }
             spaces.append(Space(id: id, name: fields.name, path: path, sidebarHidden: fields.sidebarHidden, parentID: fields.parentID,
