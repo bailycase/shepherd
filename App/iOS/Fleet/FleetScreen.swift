@@ -60,14 +60,14 @@ struct FleetScreen: View {
                     Macs(rows: rows, wide: wide, closed: navigator.hingeClosed == true, open: navigator.hingeClosed == false, actions: actions) { weight, id in
                         fleet.choose(weight, for: id, store.hosts)
                     }
-                    if !serves {
-                        Text(fleet.phase == .off ? "Fleet is off on this Mac. Switch it on in Settings ▸ Experiments on a Mac."
-                             : "Room and readings show while a Mac has Fleet on (Settings ▸ Experiments ▸ Fleet).")
+                    if serves {
+                        FleetSectionLabel(title: wide ? "Dispatches today" : "Dispatches", capitals: navigator.hingeClosed == nil)
+                            .padding(.top, wide ? SH.Space.s : 0)
+                        FleetDispatchesCard()
+                    } else {
+                        Text("Room and readings show while a Mac has Fleet on (Settings ▸ Experiments ▸ Fleet).")
                             .shText(.caption).foregroundStyle(Color.sh.textTertiary).padding(.horizontal, SH.Space.xs)
                     }
-                    FleetSectionLabel(title: wide ? "Dispatches today" : "Dispatches", capitals: navigator.hingeClosed == nil)
-                        .padding(.top, wide ? SH.Space.s : 0)
-                    FleetDispatchesCard()
                 }
             }
             .padding(.horizontal, wide ? MobileLayout.fleetPadInset : MobileLayout.gutter)
