@@ -374,8 +374,9 @@ enum SHPop {
 
 extension EnvironmentValues {
     /// True under a subtree that stays mounted but is not on screen (an agent layout the
-    /// workspace keeps while another one shows): the continuous motions (the spinner, the glow,
-    /// the shimmer, the pulse) stop drawing frames there. It changes only when visibility flips.
+    /// workspace keeps while another one shows, the sidebar while the window cannot be seen):
+    /// the continuous motions (the spinner, the glow, the shimmer, the pulse) stop drawing frames
+    /// there, and elapsed clocks stop ticking. It changes only when visibility flips.
     @Entry public var shMotionPaused: Bool = false
 }
 

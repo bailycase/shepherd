@@ -407,7 +407,7 @@ public struct SHSidebarRow: View, Equatable {
                     .shAnimation(.content, value: badge)
             }
             SHSidebarAccessoryView(accessory: accessory)
-                .shAnimation(.content, value: accessory)
+                .shAnimation(.content, value: accessory.motionKey)
         }
         .padding(.leading, nested ? density.treeChildLeading : density.sidebarRowPadding)
         .padding(.trailing, density.sidebarRowPadding)
@@ -455,8 +455,18 @@ struct SHSidebarDot: View {
     }
 }
 
+extension SHSidebarRow.Accessory {
+    /// The accessory as far as motion is concerned. A sparkline redrawn with new samples is not
+    /// a change to ease (its path does not animate), so every sparkline reads the same.
+    var motionKey: Self {
+        if case .activity = self { .activity([]) } else { self }
+    }
+}
+
 private struct SHSidebarAccessoryView: View {
     let accessory: SHSidebarRow.Accessory
+    /// While the sidebar cannot be seen its clocks stop ticking, and start again when it shows.
+    @Environment(\.shMotionPaused) private var motionPaused
 
     /// A ZStack, so the old and new accessory cross-fade in one slot; nothing at all without
     /// one, so the row's spacing leaves the title its room.
@@ -473,7 +483,8 @@ private struct SHSidebarAccessoryView: View {
         case .reason(let text):
             Text(text).font(.shMono(10)).foregroundStyle(.sh.lanternText).lineLimit(1).fixedSize()
         case .elapsed(let since):
-            TimelineView(SHElapsedSchedule(start: since)) { context in
+            TimelineView(SHElapsedSchedule(start: since, aligned: true, paused: motionPaused)) { context in
+                let _ = SHRenderProbe.tick("sidebar.clock")
                 Text(SHDuration.text(context.date.timeIntervalSince(since)))
                     .font(.shMono(10)).foregroundStyle(.sh.textTertiary).monospacedDigit().fixedSize()
             }
@@ -483,7 +494,8 @@ private struct SHSidebarAccessoryView: View {
                 .frame(width: SHSidebarMetrics.activityWidth, height: SHSidebarMetrics.activityHeight)
                 .accessibilityHidden(true)
         case .age(let since):
-            TimelineView(SHElapsedSchedule(start: since)) { context in
+            TimelineView(SHElapsedSchedule(start: since, aligned: true, paused: motionPaused)) { context in
+                let _ = SHRenderProbe.tick("sidebar.clock")
                 Text("\(SHDuration.text(max(0, context.date.timeIntervalSince(since)))) ago")
                     .font(.shMono(SHSidebarMetrics.accessoryFont)).foregroundStyle(.sh.textTertiary).monospacedDigit().fixedSize()
             }
