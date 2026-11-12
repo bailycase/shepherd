@@ -5220,6 +5220,14 @@ public final class SessionServer: @unchecked Sendable {
             refuse(message, on: client)
             return
         }
+        // The fleet tools answer for themselves, ahead of the scope lists below: a thread that may not send work
+        // is told `fleet_scope`, whichever kind of thread it is (the lists below refuse them too, as a second wall).
+        switch message {
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
+            serveFleetTool(message, from: client)
+            return
+        default: break
+        }
         let coordinatorPeer = store.state.agents.contains { agent in
             agent.coordinatorFor != nil && (agent.id == message.speaksFor || agent.id == client.agentID
                 || isPiProcess(client.peerPID, ofAgent: agent.id))
@@ -5463,7 +5471,7 @@ public final class SessionServer: @unchecked Sendable {
             }
             routeAgentPeerRequest(.move(agentID: agentID, targetAgentID: targetAgentID, spaceID: spaceID), requestID: id, client: client)
         case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
-            serveFleetTool(message, from: client)
+            break // Served ahead of the scope lists above (`serveFleetTool`).
         case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "cwd and prompt are required"), to: client)

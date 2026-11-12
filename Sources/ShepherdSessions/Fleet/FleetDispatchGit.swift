@@ -109,9 +109,11 @@ enum FleetDispatchGit {
                 (facts.filesChanged, facts.insertions, facts.deletions) = parseShortstat(stat.output)
             }
         }
-        // Origin has the head when a remote-tracking ref holds it, after asking origin about the branch.
-        _ = run(["fetch", "--quiet", "origin", "refs/heads/\(branch):refs/remotes/origin/\(branch)"], in: worktree, timeout: 30)
-        if let contains = run(["branch", "-r", "--contains", head], in: worktree), contains.status == 0 { facts.pushed = !contains.output.isEmpty }
+        // Pushed: origin has the branch, at this head (asked of origin now, so a push made since the last fetch counts).
+        _ = run(["fetch", "--quiet", "origin", "+refs/heads/\(branch):refs/remotes/origin/\(branch)"], in: worktree, timeout: 30)
+        if let remote = run(["rev-parse", "--verify", "--quiet", "refs/remotes/origin/\(branch)"], in: worktree), remote.status == 0 {
+            facts.pushed = remote.output == head
+        }
         return facts
     }
 
