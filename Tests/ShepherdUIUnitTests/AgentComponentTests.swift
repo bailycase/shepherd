@@ -43,6 +43,53 @@ struct AgentComponentTests {
         #expect(entries == [now, start.addingTimeInterval(59), start.addingTimeInterval(60), start.addingTimeInterval(120)])
     }
 
+    /// A whole second of the reference clock, with `fraction` of the next past it.
+    private static func moment(_ fraction: Double) -> Date { Date(timeIntervalSinceReferenceDate: 800_000_000 + fraction) }
+
+    /// Aligned, a tick lands on a whole second of the clock: at or after the moment the text
+    /// changes, and less than a second after it.
+    @Test(arguments: [0.0, 0.25, 0.73], [12.4, 150.4, 4_000.4])
+    func alignedTicksFallOnWholeSeconds(fraction: Double, elapsed: Double) {
+        let start = Self.moment(fraction)
+        let now = start.addingTimeInterval(elapsed)
+        let anchored = SHElapsedSchedule(start: start).boundary(after: now)
+        let aligned = SHElapsedSchedule(start: start, aligned: true).boundary(after: now)
+        let seconds = aligned.timeIntervalSinceReferenceDate
+        #expect(seconds == seconds.rounded())
+        #expect(aligned >= anchored && aligned.timeIntervalSince(anchored) < 1)
+    }
+
+    @Test(arguments: [0.0, 0.25, 0.73])
+    func alignedEntriesStrictlyIncrease(fraction: Double) {
+        let start = Self.moment(fraction)
+        let entries = Array(SHElapsedSchedule(start: start, aligned: true).entries(from: start.addingTimeInterval(0.4), mode: .normal).prefix(120))
+        #expect(entries.count == 120)
+        #expect(zip(entries, entries.dropFirst()).allSatisfy { $0 < $1 })
+    }
+
+    /// Clocks counting from different moments tick together once aligned, and apart otherwise. The
+    /// first tick each draws after being mounted can land a second apart (the nearer boundary);
+    /// every one after is shared.
+    @Test func clocksStartedApartShareTheirTicks() {
+        let (early, late) = (Self.moment(0.2), Self.moment(0.8))
+        let mounted = Self.moment(5.5), shared = Self.moment(7)
+        func ticks(_ start: Date, aligned: Bool) -> [Date] {
+            Array(SHElapsedSchedule(start: start, aligned: aligned).entries(from: mounted, mode: .normal).prefix(50)).filter { $0 >= shared }
+        }
+        #expect(ticks(early, aligned: true).count >= 40)
+        #expect(ticks(early, aligned: true).prefix(40) == ticks(late, aligned: true).prefix(40))
+        #expect(ticks(early, aligned: false).prefix(40) != ticks(late, aligned: false).prefix(40))
+    }
+
+    @Test func theDefaultScheduleIsUnchanged() {
+        let start = Self.moment(0.25)
+        let schedule = SHElapsedSchedule(start: start)
+        #expect(!schedule.aligned)
+        #expect(schedule == SHElapsedSchedule(start: start, style: .short, aligned: false))
+        #expect(schedule != SHElapsedSchedule(start: start, aligned: true))
+        #expect(schedule.boundary(after: start.addingTimeInterval(12.4)) == start.addingTimeInterval(13))
+    }
+
     /// The runs of `text` as (characters, is code, is strong, is a link).
     @MainActor private func runs(_ text: String) -> [(String, Bool, Bool, Bool)] {
         let attributed = SHInlineMarkup.attributed(text)
