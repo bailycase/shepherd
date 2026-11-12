@@ -1385,7 +1385,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             RemoteProtocol.fleetExperimentCapability,
             // Offered only while the host's Fleet experiment is on (SessionServer.setFleetEnabled).
-            RemoteProtocol.fleetCapability, RemoteProtocol.fleetPressureCapability,
+            RemoteProtocol.fleetCapability, RemoteProtocol.fleetPressureCapability, RemoteProtocol.fleetDispatchCapability,
             RemoteProtocol.fleetSyncCapability,
             // Offered whenever the host runs, Fleet on or off, and never to a client device (FleetAccess).
             RemoteProtocol.fleetDevicesCapability,
@@ -1409,6 +1409,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.nativeFleetDigestCapability == "native.fleetDigest.v1")
         #expect(RemoteProtocol.fleetCapability == "fleet.v1")
         #expect(RemoteProtocol.fleetPressureCapability == "fleet.pressure.v1")
+        #expect(RemoteProtocol.fleetDispatchCapability == "fleet.dispatch.v1")
         #expect(RemoteProtocol.fleetDevicesCapability == "fleet.devices.v1")
         #expect(RemoteProtocol.fleetExperimentCapability == "experiments.fleet.v1")
         #expect(RemoteProtocol.logicalProjectsCapability == "logicalProjects.v1")
