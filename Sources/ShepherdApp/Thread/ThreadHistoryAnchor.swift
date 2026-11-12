@@ -1,4 +1,5 @@
 import AppKit
+import ShepherdUI
 import SwiftUI
 
 /// Only the boundary row has a native marker. A prepend keeps its measured viewport offset,
@@ -106,6 +107,7 @@ final class ThreadHistoryAnchor {
     /// Keep correcting only this anchor through lazy remeasurement, until the reader moves,
     /// sends, switches session or hides the thread. Geometry bookkeeping never invalidates rows.
     func moved() {
+        SHRenderProbe.tick("thread.historyMove")
         // Lazy row replacement can temporarily detach the marker. Keep the last real offset.
         if waiting, pendingMaterialization == nil, marker?.rowID == rowID, let top = marker?.viewportTop {
             savedTop = top
