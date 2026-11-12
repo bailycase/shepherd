@@ -375,8 +375,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .instructions: ["AGENTS.md", "APPEND_SYSTEM.md", "History"]
         case .skills: ["Installed skills", "Browse skills.sh", "Add from repo",
                        "Skills in the / menu", "Same skills on every host", "Update automatically"]
-        case .mcp: ["Servers", "Add server", "Import…", "How the agent uses them", "Same servers on every host",
-                    "Also use a repo’s .mcp.json", "Hosts"]
+        case .mcp: ["Servers", "Add server", "Import…", "How the agent uses them",
+                    "Also use a repo’s .mcp.json", "Where they live"]
         case .fleet: ["Macs", "Add a Mac", "Join a fleet", "Remove", "Devices", "Add a device", "Revoke", "Listener"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Open files in", "Workspace state", "Extension socket", "Update channel", "Check for updates", "Share diagnostics", "Skipped confirmations", "Reset settings"]

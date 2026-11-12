@@ -210,10 +210,6 @@ struct MCPSettingsControlTests {
         try await eventuallyOnMain("the setting to follow") { settings.mcpProjectConfig == !repo }
         try window.press("Also use a repo’s .mcp.json", role: ControlRole.checkBox)
         try await eventuallyOnMain("the setting to go back") { settings.mcpProjectConfig == repo }
-        let same = settings.mcpSameEverywhere
-        try window.press("Same servers on every host", role: ControlRole.checkBox)
-        try await eventuallyOnMain("the setting to follow") { settings.mcpSameEverywhere == !same }
-        try window.press("Same servers on every host", role: ControlRole.checkBox)
 
         // Toolbar: Add server opens its sheet (a window of its own), and a filter narrows the list.
         try window.press("Add server")
