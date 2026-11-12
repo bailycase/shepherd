@@ -4,12 +4,12 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// Settings ▸ Skills (SettingsSkills, SkillsStates): the agent skills every thread and
-/// automation on every host can use, kept in each host's own pi home (`<support>/pi/skills`, the
-/// only folder its pi reads skills from). A wide page: the installed skills (a filter, All / On /
-/// Updates, when This Mac last checked, Update N; a row opens in place, one at a time), then, from
-/// a remote host running an older Shepherd, the skills its pi loads from elsewhere, read-only,
-/// beside a 280pt rail (how the agent
-/// uses skills, what they cost in every prompt, the options, and each host). Browse skills.sh and
+/// automation in the fleet can use, kept in each Mac's own pi home (`<support>/pi/skills`, the
+/// only folder its pi reads skills from) and the same on every Mac: a change here is made on this
+/// Mac and the fleet carries it. A wide page: the installed skills (a filter, All / On /
+/// Updates, when This Mac last checked, Update N; a row opens in place, one at a time), then the
+/// skills its pi loads from elsewhere, read-only, beside a 280pt rail (how the agent
+/// uses skills, what they cost in every prompt, the options, and where they live). Browse skills.sh and
 /// Add from repo open sheets.
 struct SkillsSettings: View {
     var vm: ShepherdViewModel
@@ -19,6 +19,13 @@ struct SkillsSettings: View {
     @State private var expanded: String?
     @State private var sheet: SkillsSheet?
     @State private var toast: SHToast?
+
+    /// `open` is the row that starts open (the page remembers none; previews draw an open row).
+    init(vm: ShepherdViewModel, model: ClientSkills, open: String? = nil) {
+        self.vm = vm
+        self.model = model
+        _expanded = State(initialValue: open)
+    }
 
     var body: some View {
         let hosts = vm.skillsHosts

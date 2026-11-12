@@ -1111,7 +1111,7 @@ enum SkillsSheetText {
 // MARK: A folder on this Mac
 
 /// Skills in a folder on this Mac (Add from repo): every folder under it that holds a SKILL.md,
-/// read here and copied to each host as its files.
+/// read here and copied to the host as its files.
 enum LocalSkillFolder {
     struct Failure: Error, CustomStringConvertible {
         let description: String
@@ -1154,7 +1154,7 @@ enum LocalSkillFolder {
             let data = try Data(contentsOf: url)
             total += data.count
             guard total <= SkillFile.maxTotalBytes else {
-                throw Failure(description: "\(folder.lastPathComponent) is too big to copy to other hosts. Put it in a git repository instead.")
+                throw Failure(description: "\(folder.lastPathComponent) is too big to copy to the host. Put it in a git repository instead.")
             }
             let executable = FileManager.default.isExecutableFile(atPath: url.path)
             result.append(SkillFile(path: relative(url, to: folder), contents: data, executable: executable))
