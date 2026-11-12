@@ -23,9 +23,7 @@ struct ProseLinkTests {
             var opened: [URL] = []
             // Exercise the actual prose environment without launching an app or taking focus.
             let window = OffscreenWindow(size: CGSize(width: 400, height: 200), dark: dark,
-                SHAgentProse([.paragraph(markdown), .code("", language: nil)]) { _, _ in
-                    LinkProbe(urls: [link, web, task])
-                }
+                SHAgentProse<LinkProbe>([.paragraph(markdown), .code(LinkProbe.code(for: [link, web, task]), language: nil)])
                 .environment(\.shProseFileRoot, root)
                 .environment(\.openURL, OpenURLAction { url in
                     opened.append(url)
@@ -109,9 +107,7 @@ private struct OpenerHost: View {
 
     var body: some View {
         let count = ticks.count
-        SHAgentProse([.paragraph(AttributedString("A link to follow.")), .code("", language: nil)]) { _, _ in
-            LinkReader()
-        }
+        SHAgentProse<LinkReader>([.paragraph(AttributedString("A link to follow.")), .code("", language: nil)])
         .environment(\.openURL, OpenURLAction { _ in
             _ = count
             return .handled
@@ -119,9 +115,13 @@ private struct OpenerHost: View {
     }
 }
 
-/// Reads the action prose gives its links, and counts how often it is drawn.
-private struct LinkReader: View {
+/// Reads the action prose gives its links, and counts how often it is drawn. Stands in for a fence.
+private struct LinkReader: SHProseCode {
     @Environment(\.openURL) private var openURL
+
+    init(code: String, language: String?, writing: Bool) {}
+
+    nonisolated static func == (lhs: LinkReader, rhs: LinkReader) -> Bool { true }
 
     var body: some View {
         let _ = SHRenderProbe.tick("prose.linkReader")
@@ -130,9 +130,18 @@ private struct LinkReader: View {
     }
 }
 
-private struct LinkProbe: View {
+/// Stands in for a fence: its code is the links to open, one per line, and it opens them through the opener it inherits when it appears.
+private struct LinkProbe: SHProseCode {
     let urls: [URL]
     @Environment(\.openURL) private var openURL
+
+    init(code: String, language: String?, writing: Bool) {
+        urls = code.split(separator: "\n").compactMap { URL(string: String($0)) }
+    }
+
+    static func code(for urls: [URL]) -> String { urls.map(\.absoluteString).joined(separator: "\n") }
+
+    nonisolated static func == (lhs: LinkProbe, rhs: LinkProbe) -> Bool { lhs.urls == rhs.urls }
 
     var body: some View {
         Color.clear.onAppear { for url in urls { openURL(url) } }

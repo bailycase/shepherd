@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 
 /// Reads an agent's checkout for the header's branch chip: its branch and how many files differ
 /// from HEAD, in one `git status` (`--no-optional-locks`, so it never takes the index lock
@@ -49,9 +50,9 @@ public enum CheckoutStatus {
 /// runs off the main thread, at most `maxConcurrent` at once, and requests for a checkout coalesce
 /// into one read `delay` later (a read already due is never pushed back, so a burst of edits
 /// reads at most once a second). The view model asks after the events that change a checkout:
-/// an agent appearing, a finished tool call that may write files, a status change (a turn
-/// starting or ending), the agent being selected, the app coming to the front, and commits and
-/// reverts from the review.
+/// an agent appearing, a finished tool call that may write files, a subagent writing files or
+/// finishing, a status change (a turn starting or ending), the agent being selected, the app
+/// coming to the front, and commits and reverts from the review.
 @MainActor
 public final class CheckoutMonitor {
     public typealias Reader = @Sendable (String) async -> AgentCheckout?
@@ -61,6 +62,21 @@ public final class CheckoutMonitor {
     public nonisolated static let readOnlyTools: Set<String> = ["read", "grep", "find", "ls"]
 
     public nonisolated static func touchesFiles(tool: String) -> Bool { !readOnlyTools.contains(tool) }
+
+    /// Whether a subagents publish may have changed files in its parent's checkout: a run's
+    /// edited files moved, a run ended, or a tool that may write files finished in one. The
+    /// extension republishes every row each time (and every 45 s unchanged), so rows are compared
+    /// by id, and a run that is only gone asks nothing.
+    public nonisolated static func childrenTouchedFiles(from old: [ChildRun], to new: [ChildRun]) -> Bool {
+        let before = Dictionary(old.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return new.contains { run in
+            let prior = before[run.id]
+            if (run.files ?? []) != (prior?.files ?? []) { return true }
+            if run.isTerminal, !(prior?.isTerminal ?? false) { return true }
+            guard let activity = run.lastActivity, !activity.isRunning, activity != prior?.lastActivity else { return false }
+            return touchesFiles(tool: activity.tool)
+        }
+    }
 
     /// `CheckoutStatus.read` on a detached task.
     public nonisolated static let git: Reader = { cwd in await Task.detached { CheckoutStatus.read(cwd: cwd) }.value }

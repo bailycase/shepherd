@@ -1450,6 +1450,52 @@ struct ListPerformanceTests {
         #expect(Self.nativeFields(in: thread.window.host) == fences.count, "the fences are still on screen")
     }
 
+    /// A reply streaming its closing paragraph draws that paragraph again and none of the blocks beside it in the chunk:
+    /// each block is its own view, equal to what it was, so the paragraphs, the list, the quote, the fences, the table
+    /// and the image chip evaluate no body (`prose.block` counts the blocks that do).
+    @Test func aStreamedChunkRedrawsOnlyTheBlockItGrew() async throws {
+        let fences = (1...3).map { "func unchanged\($0)() {\n    let value = \($0)\n    print(value)\n}" }
+        func reply(_ pulls: Int) -> String {
+            func paragraph(_ number: Int) -> String { "Paragraph \(number) of the walkthrough, which stays as it was.\n\n" }
+            let steps = fences.enumerated().map { "\(paragraph($0.offset + 2))```swift\n\($0.element)\n```\n\n" }.joined()
+            let list = (1...5).map { "- Item \($0) of the checklist\n" }.joined() + "\n"
+            let table = "| Step | Files | Tests |\n|---|---|---|\n| one | 2 | 4 |\n| two | 1 | 2 |\n| three | 3 | 6 |\n\n"
+            return paragraph(1) + steps + paragraph(5) + list + paragraph(6) + table + paragraph(7)
+                + "> A quote that stays as it was.\n\n" + paragraph(8) + "![Build status](https://ci.example.com/badge.png)\n\n"
+                + paragraph(9) + "In" + String(repeating: " all, the steps passed", count: pulls)
+        }
+        let turn = ThreadFixture.history(2) + [ThreadFixture.user("u", "Walk me through it")]
+        let thread = FakeThread(ThreadFixture.snapshot(turn, provisional: [ThreadFixture.streaming(reply(0))], running: true),
+                                size: CGSize(width: 900, height: 1400))
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await eventuallyOnMain("the closed fences to finish highlighting") {
+            ListPerf.settle(thread.window)
+            return fences.allSatisfy { CodeHighlightCache.cached(CodeHighlightCache.Key(fence: $0, language: "swift")) != nil }
+        }
+        try await atRest(thread.window)
+        #expect(Self.nativeFields(in: thread.window.host) == fences.count, "the fences are on screen")
+
+        let streamed = try await counting(thread.window) {
+            for pulls in 1...5 {
+                var next = thread.snapshot
+                next.revision += 1
+                next.provisional = [ThreadFixture.streaming(reply(pulls))]
+                await thread.serve(next)
+                ListPerf.settle(thread.window)
+            }
+        }
+        #expect(streamed["thread.liveRow", default: 0] >= 5, "the reply streamed: \(streamed)")
+        #expect(streamed["prose.chunk", default: 0] >= 5, "the chunk it grows in was drawn again: \(streamed)")
+        #expect(streamed["prose.block", default: 0] >= 5, "the paragraph it grew was drawn again: \(streamed)")
+        #expect(streamed["prose.block", default: 0] <= 10, "only the block it grew is drawn again: \(streamed)")
+        #expect(streamed["code.nativeUpdated", default: 0] == 0, "no closed fence is updated: \(streamed)")
+        #expect(streamed["code.highlighted", default: 0] == 0, "no closed fence is evaluated again: \(streamed)")
+        #expect(streamed["prose.image", default: 0] == 0, "the image chip is not drawn again: \(streamed)")
+        #expect(streamed["prose.table", default: 0] == 0, "the table is not drawn again: \(streamed)")
+        #expect(Self.nativeFields(in: thread.window.host) == fences.count, "the fences are still on screen")
+    }
+
     // MARK: Thread prose
 
     /// The blocks in the thread's last prose item once its parse has landed (0 before).

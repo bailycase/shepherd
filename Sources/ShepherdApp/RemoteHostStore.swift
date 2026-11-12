@@ -100,6 +100,8 @@ final class RemoteHostStore {
         @ObservationIgnored fileprivate var client: RemoteHostClient? {
             didSet { hubSlot.hub = client?.tunnels }
         }
+        /// The workspace pushes the host sent that the app has not taken yet (tests, diagnostics).
+        var queuedStateEvents: Int { client?.queuedStateEvents ?? 0 }
         /// Where a forwarded port of this host finds its connection's tunnels (Browser): filled
         /// while there is a client, empty while there is none.
         let hubSlot = BrowserTunnelHubSlot()
@@ -256,8 +258,9 @@ final class RemoteHostStore {
     static let defaultsKey = "shepherd.remote.hosts"
 
     @ObservationIgnored var onProjectionChanged: (() -> Void)?
-    /// Each workspace the background host on this Mac pushes, after its connection holds it.
-    @ObservationIgnored var onLocalHostState: ((ShepherdState) -> Void)?
+    /// Each workspace the background host on this Mac pushes, after its connection holds it, and whether a
+    /// newer push is already queued behind it.
+    @ObservationIgnored var onLocalHostState: ((ShepherdState, _ newerQueued: Bool) -> Void)?
     /// An agent's notify tool on the background host on this Mac, for the app to post.
     @ObservationIgnored var onLocalAgentNotify: ((AgentID, String, String) -> Void)?
     /// What a Settings page shows changed on the background host on this Mac.
@@ -499,7 +502,7 @@ final class RemoteHostStore {
                 }
                 if connection.stateGeneration == stateGeneration {
                     connection.state = state
-                    if connection.isLocalHost { self.onLocalHostState?(state) }
+                    if connection.isLocalHost { self.onLocalHostState?(state, false) }
                 }
                 connection.phase = .connected
                 self.rebindPanes(connection, to: client)
@@ -583,10 +586,10 @@ final class RemoteHostStore {
             guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalAgentNotify?(agentID, title, body)
         }
-        client.onStateChanged = { [weak self, weak connection] state in
+        client.onStateChanged = { [weak self, weak connection, weak client] state in
             guard let connection,
                   connection.client.map(ObjectIdentifier.init) == clientID else { return }
-            defer { if connection.isLocalHost { self?.onLocalHostState?(state) } }
+            defer { if connection.isLocalHost { self?.onLocalHostState?(state, client?.newerStateQueued ?? false) } }
             let liveSessionIDs = Set(state.tabs.flatMap { $0.layout.leaves.compactMap(\.sessionID) })
             for sessionID in Array(connection.panes.keys) where !liveSessionIDs.contains(sessionID) {
                 connection.panes.removeValue(forKey: sessionID)?.detach()

@@ -94,7 +94,9 @@
     `supportedActions`, a `generation` no request can name) without starting pi; a client that
     reads many threads at once (a Home screen) then starts no pi per idle agent. Any other
     request (send, abort, images…) starts pi as before, whose own snapshot replaces the preview.
-    A client that does not list it has every request start pi.
+    A client that does not list it has every request start pi. For an agent whose pi stopped, the
+    preview carries `startProblem` and the client wakes nothing; a client that does not list the
+    capability gets the problem alone.
   - `native.revisions.v1`: `nativeThreadSubscribe` replaces a connection's watch set (at most
     64 visible ordinary agents; empty unsubscribes). `nativeThreadChanged(agentID:)` is a
     coalesced invalidation, at most one per watched agent per 250 ms batch, never a snapshot
