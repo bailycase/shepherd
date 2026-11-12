@@ -41,6 +41,10 @@ enum RemoteSamples {
                FleetMacState(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F2")!)])
     static let fleetSample = FleetPressureSample(cpuUtilization: 0.72, cpuCount: 12, totalMemoryBytes: 38_654_705_664, availableMemoryBytes: 10_093_173_145,
                                                  thermal: .fair, onBattery: true, batteryPercent: 41, activeAgents: 3, reserved: 1)
+    static let fleetIndexStatus = FleetIndexStatus(indexing: true, repos: [
+        FleetIndexStatus.Repo(repo: "github.com/acme/web", name: "acme-web", files: 20_001, ready: true),
+        FleetIndexStatus.Repo(repo: "space:2F1D", name: "orders-svc", files: 412, ready: false),
+        FleetIndexStatus.Repo(repo: "space:90AB", name: "monorepo", files: 0, ready: false, tooLarge: true)])
     static let fleetManifestPrefixes = [FleetHashPrefix(hi: 0x0123_4567_89AB_CDEF, lo: 0xFEDC_BA98_7654_3210), FleetHashPrefix(hi: 1, lo: 2)]
     static let fleetManifestFull = FleetRepoManifestUpdate(repo: "github.com/acme/web", kind: .full, generation: 7, seq: 0,
                                                            added: FleetHashPrefix.pack(fleetManifestPrefixes), part: 0, parts: 2,
@@ -833,6 +837,7 @@ struct RemoteReplyTests {
         .fleetSyncReply(id: 11, reply: .state(vector: S.fleetVector)),
         .fleetSyncReply(id: 12, reply: .blob(hash: String(repeating: "cd", count: 32), offset: 0, total: 5, data: Data("hello".utf8))),
         .fleetResult(id: 7, result: FleetResult(snapshot: S.fleetSnapshot)),
+        .fleetResult(id: 17, result: FleetResult(snapshot: { var snapshot = S.fleetSnapshot; snapshot.index = S.fleetIndexStatus; return snapshot }())),
         .fleetResult(id: 11, result: FleetResult(snapshot: { var snapshot = S.fleetSnapshot; snapshot.devices = S.fleetDevicesSnapshot; return snapshot }(),
                                                  deviceCode: .init(code: "482913", expiresAt: 1_790_000_300_000))),
         .fleetResult(id: 14, result: FleetResult(snapshot: S.fleetSnapshot, appToken: String(repeating: "cd", count: 32))),

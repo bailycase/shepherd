@@ -120,7 +120,7 @@ final class FleetLocalManifest {
 /// finds the copy still good. Server queue; saves happen off it (`save`).
 struct FleetPeerManifests {
     /// Prefixes one peer may have us hold, across its repositories, and repositories one peer may have.
-    static let maxPrefixesPerPeer = 8_000_000
+    static let maxPrefixesPerPeer = 4_000_000
     static let maxRepos = 500
 
     struct Copy {

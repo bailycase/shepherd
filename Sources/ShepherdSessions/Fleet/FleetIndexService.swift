@@ -70,7 +70,7 @@ final class FleetIndexService: @unchecked Sendable {
     private(set) var isActive = false
     private var roots: [String: Root] = [:]
     private var manifests: [String: FleetLocalManifest] = [:]
-    private var received: FleetPeerManifests
+    private var peerCopies: FleetPeerManifests
     private var sessions: [UUID: Session] = [:]
     private var pushScheduled = false
     private var saveScheduled = false
@@ -84,7 +84,7 @@ final class FleetIndexService: @unchecked Sendable {
         self.queue = queue
         self.directory = directory
         self.clock = clock
-        received = FleetPeerManifests.load(from: directory.appendingPathComponent("peers", isDirectory: true))
+        peerCopies = FleetPeerManifests.load(from: directory.appendingPathComponent("peers", isDirectory: true))
     }
 
     // MARK: Lifecycle (server queue)
@@ -226,7 +226,8 @@ final class FleetIndexService: @unchecked Sendable {
 
     func status() -> FleetIndexStatus? {
         guard isActive else { return nil }
-        let repos = roots.values.sorted { ($0.name, $0.repo) < ($1.name, $1.repo) }.map {
+        // A folder that isn't a git checkout has nothing to index and nothing to say.
+        let repos = roots.values.filter { $0.state != .notGit }.sorted { ($0.name, $0.repo) < ($1.name, $1.repo) }.map {
             FleetIndexStatus.Repo(repo: $0.repo, name: $0.name, files: $0.files, ready: $0.state == .ready, tooLarge: $0.state == .tooLarge)
         }
         return FleetIndexStatus(indexing: roots.values.contains { $0.state == .loading || $0.state == .scanning }, repos: repos)
@@ -256,7 +257,7 @@ final class FleetIndexService: @unchecked Sendable {
     /// A peer left the fleet: what it sent goes, in memory and on disk.
     func forget(peer: UUID) {
         sessions[peer] = nil
-        received.forget(peer)
+        peerCopies.forget(peer)
         FleetPeerManifests.erase(peer, in: peersDirectory)
     }
 
@@ -358,7 +359,7 @@ final class FleetIndexService: @unchecked Sendable {
 
     /// A peer's step of one of its manifests.
     func received(_ update: FleetRepoManifestUpdate, from peer: UUID) -> FleetRepoManifestAck {
-        let ack = received.receive(update, from: peer)
+        let ack = peerCopies.receive(update, from: peer)
         scheduleSave()
         return ack
     }
@@ -373,17 +374,17 @@ final class FleetIndexService: @unchecked Sendable {
     }
 
     private func flushSaves() {
-        if let job = received.takeSave(to: peersDirectory) { persistQueue.async(execute: job) }
+        if let job = peerCopies.takeSave(to: peersDirectory) { persistQueue.async(execute: job) }
     }
 
     // MARK: Reading (server queue)
 
     /// What `peer` holds of `repo`, as it last told this Mac.
-    func manifest(of peer: UUID, repo: String) -> FleetManifest? { received.manifest(of: peer, repo: repo) }
+    func manifest(of peer: UUID, repo: String) -> FleetManifest? { peerCopies.manifest(of: peer, repo: repo) }
 
-    func peerHead(of peer: UUID, repo: String) -> FleetManifestHead? { received.copy(of: peer, repo: repo)?.head }
+    func peerHead(of peer: UUID, repo: String) -> FleetManifestHead? { peerCopies.copy(of: peer, repo: repo)?.head }
 
-    func peerRepos(_ peer: UUID) -> [String] { received.repos(of: peer) }
+    func peerRepos(_ peer: UUID) -> [String] { peerCopies.repos(of: peer) }
 
     /// What this Mac holds of `repo`, as of the last flush.
     func localManifest(repo: String) -> FleetManifest? { manifests[repo]?.manifest }

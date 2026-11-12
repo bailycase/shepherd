@@ -98,6 +98,8 @@ final class FleetContentIndex: @unchecked Sendable {
     private(set) var rescans = 0
     /// The index came from disk at start, not from a scan.
     private(set) var loadedFromDisk = false
+    /// How long the first scan took, with git's classes and the save (what a person waits for the first time, in the background).
+    private(set) var firstScan: Duration?
 
     /// Queue: hashes that came into the index and hashes that left it, together (the content hashes of files and the Merkle
     /// hashes of directories). The first call after a scan carries everything.
@@ -138,7 +140,9 @@ final class FleetContentIndex: @unchecked Sendable {
             onState?()
             let from = FleetFSEvents.currentEventID()
             volume = FleetFSEvents.volumeID(of: root)
+            let began = ContinuousClock.now
             rescan(initial: true)
+            firstScan = ContinuousClock.now - began
             if state == .ready { eventID = from }
         }
         guard state == .ready else { return }

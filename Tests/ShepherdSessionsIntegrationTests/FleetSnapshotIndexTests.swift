@@ -355,3 +355,51 @@ extension FleetSnapshotIndexTests {
         #expect(status.index == nil)
     }
 }
+
+/// What the index costs on a repository of about 20,000 files (a made up one: source files, and a `node_modules` that git ignores):
+/// the first scan, an edit reaching the index and a peer's manifest, and what it takes on disk. The numbers are printed for the PR; the
+/// bounds are loose, because the machine decides the rest (`.timingSensitive`, so CI skips it).
+@Suite("Fleet snapshot index cost", .integrationTimeLimit, .timingSensitive)
+struct FleetSnapshotIndexCostTests {
+    @Test func aTwentyThousandFileRepositoryIndexesInTheBackgroundAndAnEditIsFastOnceWarm() async throws {
+        var files: [String: String] = [".gitignore": "node_modules/\n"]
+        for directory in 0..<300 { for file in 0..<40 { files["src/pkg-\(directory)/file-\(file).ts"] = "export const v\(directory)_\(file) = \(directory * file)\n// made up source, \(file)\n" } }
+        let tracked = files.count
+        let repo = try FleetSnapshotIndexTests.checkout(files: files, ignored: [:])
+        defer { try? FileManager.default.removeItem(at: repo) }
+        for package in 0..<400 {
+            for file in 0..<20 {
+                let url = repo.appendingPathComponent("node_modules/dep-\(package)/lib/part-\(file).js")
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data("module.exports = \(package + file)\n".utf8).write(to: url)
+            }
+        }
+        let total = tracked + 400 * 20
+        let (a, b, _) = try await FleetSnapshotIndexTests.pair(repo: repo)
+        defer { a.stop(); b.stop() }
+        try await eventually("A's first scan", timeout: .seconds(110), poll: .milliseconds(50)) { try await a.read().index?.repos.first?.ready == true }
+        let index = try #require(a.index(repo))
+        let (count, first, disk) = index.queue.sync { (index.entries.count, index.firstScan, index.bytesOnDisk) }
+        #expect(count == total)
+        let aID = try await a.hostID()
+        try await eventually("B to hold the whole manifest", timeout: .seconds(60)) { try await b.peerHolds(b, of: a) }
+        let peerFolder = b.host.dir.appendingPathComponent("fleet/index/peers/\(aID.uuidString)")
+        try await eventually("B to have saved its copy") { FileManager.default.fileExists(atPath: peerFolder.path) }
+        try await Task.sleep(for: .seconds(2))
+        let peerFiles = try FileManager.default.contentsOfDirectory(atPath: peerFolder.path)
+        var peerBytes = 0
+        for name in peerFiles { peerBytes += (try? FileManager.default.attributesOfItem(atPath: b.host.dir.appendingPathComponent("fleet/index/peers/\(aID.uuidString)/\(name)").path)[.size] as? Int) ?? 0 }
+        print("MEASURE 4b: \(count) files cold: first scan \(first.map { "\($0)" } ?? "?"); index on disk \(disk / 1024) KiB; the peer's manifest copy on disk \(peerBytes / 1024) KiB")
+
+        let aEdits = (0..<5).map { "src/pkg-\($0)/file-\($0).ts" }
+        let started = ContinuousClock.now
+        for (offset, path) in aEdits.enumerated() { try Data("export const edited = \(offset)\n".utf8).write(to: repo.appendingPathComponent(path)) }
+        let last = FleetHash(of: Data("export const edited = 4\n".utf8))
+        try await eventually("A's index to reflect 5 edits", poll: .milliseconds(2)) { index.queue.sync { index.entries[aEdits[4]]?.hash == last } }
+        let local = ContinuousClock.now - started
+        try await eventually("B's manifest to reflect them", poll: .milliseconds(2)) { b.manifest(of: aID)?.contains(last) == true }
+        let peer = ContinuousClock.now - started
+        print("MEASURE 4b: \(count) files warm: 5 files edited, local index in \(local), the peer's manifest in \(peer)")
+        #expect(local < .seconds(5) && peer < .seconds(5))
+    }
+}
