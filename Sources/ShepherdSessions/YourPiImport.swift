@@ -625,6 +625,46 @@ public struct YourPiImport: Sendable {
         }
     }
 
+    // MARK: Fleet sync
+
+    /// The extensions as copied here, each with whether it is on: what a fleet syncs (`FleetExtensionsSource`).
+    func syncedExtensions() -> [(copy: YourPiCopy, on: Bool)] {
+        let state = state()
+        return (state?.copies(.extensions) ?? []).map { ($0, state?.extensionsOn.contains($0.destination) == true) }
+    }
+
+    /// Takes an extension another Mac has: records its copy (its files are already under the
+    /// home's `your-extensions`) and switches it on or off, which puts its absolute path here in
+    /// settings.json's `extensions`. A copy made here keeps where it came from. Nothing changes,
+    /// and no failure is forgotten, when it already is as wanted.
+    func applySyncedExtension(destination: String, name: String, entries: [String]?, on: Bool) throws {
+        try updateState { state in
+            if let index = state.copies.firstIndex(where: { $0.destination == destination }) {
+                state.copies[index].name = name
+                state.copies[index].entries = entries
+            } else {
+                state.copies.append(YourPiCopy(kind: .extensions, name: name, source: "", destination: destination, entries: entries))
+            }
+            let wasOn = state.extensionsOn.contains(destination)
+            if on != wasOn {
+                state.extensionsOn.removeAll { $0 == destination }
+                if on { state.extensionsOn.append(destination) }
+                state.extensionFailures[destination] = nil
+            }
+            try applyExtensions(&state)
+        }
+    }
+
+    /// Forgets an extension that is gone from the fleet: its copy, its switch and its entry in settings.json.
+    func removeSyncedExtension(destination: String) throws {
+        try updateState { state in
+            state.copies.removeAll { $0.kind == .extensions && $0.destination == destination }
+            state.extensionsOn.removeAll { $0 == destination }
+            state.extensionFailures[destination] = nil
+            try applyExtensions(&state)
+        }
+    }
+
     /// An opted-in extension failed to load at `path` (pi's words: `Failed to load extension
     /// "<path>": <reason>`): it is left out of launches, with `reason`, until its files change or
     /// the user tries again. Returns its name, or nil when `path` isn't one of the user's

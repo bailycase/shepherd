@@ -78,12 +78,16 @@ final class FleetStore {
 
     /// Whether another Mac's op of `unit` ever carried exactly `content`: a copy the fleet already has.
     func otherMacsHeld(_ content: Data, in unit: String) -> Bool {
-        let hash = FleetSyncProtocol.hash(content)
-        return logs.contains { origin, log in
+        otherMacsHeld(hash: FleetSyncProtocol.hash(content), in: unit)
+    }
+
+    /// The same, by the content's hash.
+    func otherMacsHeld(hash: String, in unit: String) -> Bool {
+        logs.contains { origin, log in
             origin != mac && log.contains { op in
                 guard op.unit == unit else { return false }
                 switch op.change {
-                case .value(let text): return Data(text.utf8) == content
+                case .value(let text): return FleetSyncProtocol.hash(Data(text.utf8)) == hash
                 case .blob(let named, _): return named == hash
                 case .deletion: return false
                 }

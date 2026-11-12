@@ -429,6 +429,91 @@ public final class SkillsStore: @unchecked Sendable {
         return (try? checkUpdates()).map(withPi)
     }
 
+    // MARK: Fleet sync
+
+    /// A skill as a fleet's sync reads it: where it is, whether it is on, and where it came from.
+    struct Synced {
+        var name: String
+        var folder: URL
+        var isOn: Bool
+        var source: SkillSource?
+    }
+
+    /// Every skill here, on and off (the ones pi loads from elsewhere are not Shepherd's to sync).
+    func syncedSkills() -> [Synced] {
+        lock.withLock {
+            let records = loadRecords()
+            var skills: [String: Synced] = [:]
+            for (base, isOn) in [(offDirectory, false), (directory, true)] {
+                for name in skillNames(in: base) {
+                    skills[name] = Synced(name: name, folder: base.appendingPathComponent(name, isDirectory: true), isOn: isOn,
+                                          source: records.skills[name]?.source)
+                }
+            }
+            return skills.values.sorted { $0.name < $1.name }
+        }
+    }
+
+    /// The folder of a skill here, on or off.
+    func syncedFolder(_ name: String) -> URL? {
+        lock.withLock { locate(name)?.folder }
+    }
+
+    /// Where a skill's files are watched: the folder pi reads and the one holding the skills that are off.
+    var syncedFolders: [URL] { [directory, offDirectory] }
+
+    /// The file that records where each skill came from.
+    var syncedRecords: URL { recordsURL }
+
+    /// Writes (or, with nil, removes) one file of a skill another Mac has. A skill not here yet is
+    /// made where `on` says; one that is here keeps its place.
+    func writeSynced(_ name: String, path: String, data: Data?, on: Bool) throws {
+        try Self.check(name)
+        try lock.withLock {
+            let folder = locate(name)?.folder ?? (on ? directory : offDirectory).appendingPathComponent(name, isDirectory: true)
+            if let data {
+                try FleetFileTree.write(data, to: path, under: folder)
+            } else {
+                try FleetFileTree.remove(path, under: folder)
+                // A skill with no file left is gone.
+                if exists(folder), ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).isEmpty {
+                    try? FileManager.default.removeItem(at: folder)
+                }
+            }
+        }
+    }
+
+    /// Makes a skill here as another Mac has it: on or off, from where. False when the skill isn't
+    /// here yet (its files come first).
+    func applySynced(_ name: String, on: Bool, source: SkillSource?) throws -> Bool {
+        try Self.check(name)
+        return try lock.withLock {
+            guard let found = locate(name) else { return false }
+            if found.isOn != on {
+                let to = (on ? directory : offDirectory).appendingPathComponent(name, isDirectory: true)
+                guard !exists(to) else { throw StoreError.alreadyThere(name) }
+                try writing {
+                    try FileManager.default.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try FileManager.default.moveItem(at: found.folder, to: to)
+                }
+            }
+            var records = loadRecords()
+            if records.skills[name]?.source != source {
+                if let source {
+                    var record = records.skills[name] ?? Record(source: source, installedAt: now().timeIntervalSince1970)
+                    record.source = source
+                    // What a check found waits on the commit it named: a new one makes it stale.
+                    record.update = nil
+                    records.skills[name] = record
+                } else {
+                    records.skills[name] = nil
+                }
+                try writing { try save(records) }
+            }
+            return true
+        }
+    }
+
     // MARK: Records
 
     private struct Record: Codable {

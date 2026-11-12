@@ -24,6 +24,25 @@ protocol FleetUnitSource: AnyObject {
     /// The write lands later (the app applies it on the main actor): a scan before then must not
     /// take the old value for a local edit.
     var writesAsynchronously: Bool { get }
+
+    // Sources whose units come and go (a skill's files, an extension's): additive, with defaults.
+
+    /// Whether `unit` is this source's, beyond the ones `units` lists: a source of many files owns
+    /// every name of its kind, and `units` is then empty.
+    func owns(_ unit: String) -> Bool
+    /// Folders whose whole tree the watcher keeps an eye on (a save of any file in them).
+    var watchedTrees: [URL] { get }
+    /// What each unit holds here now, as the hash of its content (a unit that is absent is left
+    /// out). A source of many or large files answers from a cache of what it already hashed, so
+    /// nothing is read again that did not change.
+    func fingerprints() -> [String: String]
+    /// One unit's content now, asked only for a unit whose hash changed.
+    func value(of unit: String) -> Data?
+    /// Called before each scan: a source that mirrors a folder outside the store makes its copy current.
+    func prepare()
+    /// What the fleet holds for a unit now (nil: unset or its content isn't here yet), for a write
+    /// that depends on another unit (where a skill's file goes depends on the skill's state).
+    func attach(fleetValue: @escaping (String) -> Data?)
 }
 
 /// A source can't take a value (one this build doesn't understand): it keeps what it has and the
@@ -36,6 +55,12 @@ extension FleetUnitSource {
     var isReady: Bool { true }
     var watchedFiles: [URL] { [] }
     var writesAsynchronously: Bool { false }
+    func owns(_ unit: String) -> Bool { units.contains(unit) }
+    var watchedTrees: [URL] { [] }
+    func fingerprints() -> [String: String] { read().mapValues { FleetSyncProtocol.hash($0) } }
+    func value(of unit: String) -> Data? { read()[unit] }
+    func prepare() {}
+    func attach(fleetValue: @escaping (String) -> Data?) {}
 }
 
 /// Keeps this Mac's real state and the store the same, in both directions (docs: Sync engine).
@@ -70,13 +95,42 @@ final class FleetMaterializer {
         observed = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]
     }
 
-    func add(_ source: FleetUnitSource) { sources.append(source) }
+    func add(_ source: FleetUnitSource) {
+        sources.append(source)
+        let store = store
+        source.attach { unit in
+            switch store.winner(of: unit)?.change {
+            case .value(let text)?: Data(text.utf8)
+            case .blob(let hash, _)?: store.blob(hash)
+            default: nil
+            }
+        }
+    }
 
     var watchedFiles: [URL] { sources.flatMap(\.watchedFiles) }
-
-    private func source(for unit: String) -> FleetUnitSource? { sources.first { $0.units.contains(unit) } }
+    var watchedTrees: [URL] { sources.flatMap(\.watchedTrees) }
 
     static func fingerprint(_ value: Data?) -> String { value.map { FleetSyncProtocol.hash($0) } ?? "-" }
+
+    /// What a winning op leaves a unit holding, as the hash a read of it gives ("-" unset).
+    private static func hash(of change: FleetChange) -> String {
+        switch change {
+        case .deletion: "-"
+        case .value(let text): FleetSyncProtocol.hash(Data(text.utf8))
+        case .blob(let hash, _): hash
+        }
+    }
+
+    /// Every unit of `source` worth looking at: the ones it lists, the ones it holds, and the ones
+    /// the fleet or this Mac's record names that are its own (a file the store has and this Mac
+    /// doesn't, or one that is gone), in a stable order.
+    private func units(of source: FleetUnitSource, holding present: [String: String]) -> [String] {
+        var visit = Set(source.units)
+        visit.formUnion(present.keys)
+        visit.formUnion(store.units.filter(source.owns))
+        visit.formUnion(observed.keys.filter(source.owns))
+        return visit.sorted()
+    }
 
     // MARK: Local to store
 
@@ -87,10 +141,10 @@ final class FleetMaterializer {
         var emitted: [FleetOp] = []
         var changed = false
         for source in sources where source.isReady {
-            let present = source.read()
-            for unit in source.units {
-                let value = present[unit]
-                let hash = Self.fingerprint(value)
+            source.prepare()
+            let present = source.fingerprints()
+            for unit in units(of: source, holding: present) {
+                let hash = present[unit] ?? "-"
                 if let waiting = pending[unit] {
                     if waiting.hash == hash {
                         pending[unit] = nil
@@ -109,7 +163,10 @@ final class FleetMaterializer {
                 observed[unit] = hash
                 changed = true
                 // What the fleet already holds there needs no op.
-                if let winner = store.winner(of: unit), Self.matches(winner.change, value, store: store) { continue }
+                if let winner = store.winner(of: unit), Self.hash(of: winner.change) == hash { continue }
+                let value = hash == "-" ? nil : source.value(of: unit)
+                // It changed again between the two reads: the next scan sees it.
+                if hash != "-", value == nil { observed[unit] = seen; continue }
                 if seen == nil {
                     // First sight of this unit on this Mac: only a value worth sharing becomes a seed.
                     guard let value, source.isSeedable(unit, value) else { continue }
@@ -139,15 +196,6 @@ final class FleetMaterializer {
         return store.appendLocal(unit: unit, change: change, seed: seed, name: name)
     }
 
-    private static func matches(_ change: FleetChange, _ value: Data?, store: FleetStore) -> Bool {
-        switch (change, value) {
-        case (.deletion, nil): return true
-        case (.value(let text), let value?): return Data(text.utf8) == value
-        case (.blob(let hash, _), let value?): return FleetSyncProtocol.hash(value) == hash
-        default: return false
-        }
-    }
-
     // MARK: Store to local
 
     /// Writes every unit the store decided differently from what is here. A unit whose blob hasn't
@@ -158,9 +206,17 @@ final class FleetMaterializer {
         var failed = false
         var changed = false
         for source in sources where source.isReady {
-            let present = source.read()
-            for unit in source.units {
+            let present = source.fingerprints()
+            for unit in units(of: source, holding: present) {
                 guard let winner = store.winner(of: unit), winner.mac != store.mac || observed[unit] != nil else { continue }
+                let wanted = Self.hash(of: winner.change)
+                let current = present[unit] ?? "-"
+                guard current != wanted else {
+                    if observed[unit] != current { observed[unit] = current; changed = true }
+                    continue
+                }
+                // A local edit not scanned yet must be an op before it is overwritten.
+                if current != "-", observed[unit] != current { continue }
                 let target: Data?
                 switch winner.change {
                 case .deletion: target = nil
@@ -169,22 +225,14 @@ final class FleetMaterializer {
                     guard let data = store.blob(hash) else { continue }
                     target = data
                 }
-                let current = present[unit]
-                guard Self.fingerprint(current) != Self.fingerprint(target) else {
-                    if observed[unit] != Self.fingerprint(current) { observed[unit] = Self.fingerprint(current); changed = true }
-                    continue
-                }
-                // A local edit not scanned yet must be an op before it is overwritten.
-                if let current, observed[unit] != Self.fingerprint(current) { continue }
                 // A divergent copy this Mac only seeded, replaced by another's: the sync line says so. A copy
                 // the fleet already held (it made the same seed) replaced nothing.
-                let replacedSeed = current.map { copy in
-                    store.lastOwnOp(of: unit)?.seed == true && winner.mac != store.mac && !store.otherMacsHeld(copy, in: unit)
-                } ?? false
+                let replacedSeed = current != "-"
+                    && store.lastOwnOp(of: unit)?.seed == true && winner.mac != store.mac && !store.otherMacsHeld(hash: current, in: unit)
                 // Set before writing: the write may call back into a scan.
-                observed[unit] = Self.fingerprint(target)
+                observed[unit] = wanted
                 if source.writesAsynchronously {
-                    pending[unit] = (Self.fingerprint(target), Self.fingerprint(current), clock().addingTimeInterval(Self.pendingPatience))
+                    pending[unit] = (wanted, current, clock().addingTimeInterval(Self.pendingPatience))
                 }
                 do {
                     try source.write(unit, target, origin: winner.macName.isEmpty ? "another Mac" : winner.macName)
@@ -192,7 +240,7 @@ final class FleetMaterializer {
                     if replacedSeed { notices.append(Notice(unit: unit, from: winner.macName)) }
                 } catch {
                     ShepherdLog.warning("fleet: couldn't write \(unit): \(error)")
-                    observed[unit] = Self.fingerprint(current)
+                    observed[unit] = current
                     pending[unit] = nil
                     if !(error is FleetUnitRefused) { failed = true }
                 }

@@ -172,10 +172,25 @@ public struct FleetOp: Codable, Hashable, Sendable {
 }
 
 /// Unit names: `<kind>:<name>`. Slice 2a carries `setting` (`host.<key>` and `pi.<key>` and the
-/// `fleet.<key>` policy) and `instruction` (`AGENTS.md`, `APPEND_SYSTEM.md`).
+/// `fleet.<key>` policy) and `instruction` (`AGENTS.md`, `APPEND_SYSTEM.md`). Skills and
+/// extensions follow: `skill:<name>` holds a skill's state (on or off, where it came from) and
+/// `skill:<name>/<path>` each file in it; `extension:<path>` is a file under `your-extensions/` and
+/// `extmeta:<id>` says what one extension is (its name, the files pi loads, whether it is on).
 public enum FleetUnit {
     public static func setting(_ key: String) -> String { "setting:" + key }
     public static func instruction(_ file: InstructionFile) -> String { "instruction:" + file.fileName }
+    public static func skill(_ name: String) -> String { "skill:" + name }
+    public static func skillFile(_ name: String, _ path: String) -> String { "skill:\(name)/\(path)" }
+    public static func extensionFile(_ path: String) -> String { "extension:" + path }
+    public static func extensionMeta(_ id: String) -> String { "extmeta:" + id }
+
+    /// A skill unit's skill and, for a file, its path inside the skill ("pdf", "scripts/fill.py");
+    /// nil path is the skill's state.
+    public static func skillParts(of unit: String) -> (name: String, path: String?)? {
+        guard kind(of: unit) == "skill", let name = name(of: unit) else { return nil }
+        guard let slash = name.firstIndex(of: "/") else { return (name, nil) }
+        return (String(name[..<slash]), String(name[name.index(after: slash)...]))
+    }
 
     public static func kind(of unit: String) -> String? { split(unit)?.kind }
     public static func name(of unit: String) -> String? { split(unit)?.name }
