@@ -235,8 +235,8 @@ struct CodeHighlightTests {
         keyword.foregroundColor = Self.solid("#8892B5")
         let value = AttributedString("ab\n") + keyword
         #expect(value.runs.count == 2)
-        #expect(CodeHighlightCache.cost(of: key, value) == 5 * 2 + 2 * 128)
-        #expect(CodeHighlightCache.cost(of: CodeHighlightCache.Key(code: "🐑", language: nil), AttributedString("🐑")) == 4 * 2 + 128)
+        #expect(CodeHighlightCache.cost(of: key, value) == 5 * 2 + 2 * 384)
+        #expect(CodeHighlightCache.cost(of: CodeHighlightCache.Key(code: "🐑", language: nil), AttributedString("🐑")) == 4 * 2 + 384)
     }
 
     /// A render larger than the whole budget is not stored: NSCache would evict the others to make room for it.

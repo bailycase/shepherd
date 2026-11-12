@@ -434,9 +434,12 @@ enum CodeHighlightCache {
     /// What the cache may hold, by `cost(of:_:)`.
     static let costLimit = 16 * 1024 * 1024
 
-    /// What an entry holds: its code twice (the key and the colored text) and its runs, as `SHNativeCodeText`'s cache estimates.
+    /// What a run of a colored `AttributedString` holds, measured on a 3,000-line fence: 15,750 runs took 5.7 MB.
+    static let runCost = 384
+
+    /// What an entry holds: its code twice (the key and the colored text) and its runs.
     static func cost(of key: Key, _ value: AttributedString) -> Int {
-        key.code.utf8.count * 2 + value.runs.count * 128
+        key.code.utf8.count * 2 + value.runs.count * runCost
     }
 
     /// Each throttled render of a growing fence is a new key, and each one holds its whole text:
