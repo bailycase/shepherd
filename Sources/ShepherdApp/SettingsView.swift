@@ -54,13 +54,6 @@ struct SettingsView: View {
         .transition(SH.Motion.content.transition(reduceMotion: reduceMotion)
             .animation(SH.Motion.sheet.animation(reduceMotion: reduceMotion)))
         .onChange(of: searchText) { Self.showFirstMatch(of: matchingSections, in: vm) }
-        // One host choice for Settings: Spaces' filter follows the picker, and moves it when it is used.
-        .onChange(of: vm.settingsHostID) { vm.followSettingsHost(on: vm.settingsSection, entering: false) }
-        .onChange(of: vm.settingsSection) { vm.followSettingsHost(on: vm.settingsSection, entering: true) }
-        .onChange(of: vm.settingsSection == .projects ? vm.projects.host : nil) { _, host in
-            guard let host, host != "all" else { return }
-            vm.adoptSettingsHost(UUID(uuidString: host))
-        }
         .background {
             // ⌘F focuses the search field.
             Button("Search settings") { searchFocused = true }
@@ -185,36 +178,13 @@ struct SettingsView: View {
         app + (agent.map { " · \(section == .pi ? "pi" : "agent") \($0)" } ?? "")
     }
 
-    /// The page, under the host picker on a host-level page (a remote host draws its own page)
-    /// and a line saying a client-local page is this Mac's own, when there are remote hosts.
+    /// The page. Skills still has a host picker until it too is the fleet's one copy (slice 2b-i).
     @ViewBuilder private var page: some View {
-        let section = vm.settingsSection
-        if section == .skills, !vm.skills.sameEverywhere, !vm.remoteHosts.connections.isEmpty {
+        if vm.settingsSection == .skills, !vm.skills.sameEverywhere, !vm.remoteHosts.connections.isEmpty {
             // Per host, Skills shows and changes the host the picker chose.
             VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
                 SettingsHostPicker(vm: vm)
                 localPage
-            }
-        } else if section == .hooks, !vm.remoteHosts.connections.isEmpty {
-            // One page for every host: this Mac's catalog, or a remote host's over hooks.v1.
-            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
-                SettingsHostPicker(vm: vm)
-                HooksSettings(model: vm.hooks(for: vm.remoteSettingsHost?.id))
-            }
-        } else if section.isHostLevel, !vm.remoteHosts.connections.isEmpty {
-            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
-                SettingsHostPicker(vm: vm)
-                if let host = vm.remoteSettingsHost {
-                    RemoteHostSettingsPage(section: section, host: host, settings: vm.remoteHostSettings, config: vm.remoteHostConfig,
-                                           suggestions: vm.remoteSuggestions)
-                } else {
-                    localPage
-                }
-            }
-        } else if section.isClientLocal, !vm.remoteHosts.connections.isEmpty {
-            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
-                localPage
-                SettingsNote(text: "These settings are this Mac's own. Each host keeps its own.")
             }
         } else {
             localPage

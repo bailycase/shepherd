@@ -87,7 +87,6 @@ final class ProjectsModel {
     /// Parents whose subprojects are folded away, by row id.
     var collapsed: Set<String> = [] { didSet { if collapsed != oldValue { derive() } } }
     var filter = "" { didSet { derive() } }
-    var host = "all" { didSet { derive() } }
     private(set) var loading = false
     var error: String?
     var selected: ProjectsRow?
@@ -237,8 +236,7 @@ final class ProjectsModel {
     var selectedFiles: [ProjectFile] {
         files.filter { $0.category == category || (category == .extensions || category == .skills) && ($0.category == .skills || $0.category == .extensions) }
     }
-    var hostOptions: [(String, String)] { [("all", "All hosts")] + hosts.map { ($0.id, $0.name) } }
-    var addHost: ProjectsHost? { hosts.first { $0.id == (host == "all" ? "local" : host) } }
+    var addHost: ProjectsHost? { hosts.first { $0.id == "local" } }
 
     /// The tree, filtered: a subproject that matches keeps its parent above it, and a parent that
     /// matches keeps its subprojects. A collapsed parent's subprojects stay folded unless a filter
@@ -250,7 +248,7 @@ final class ProjectsModel {
                 $0.localizedCaseInsensitiveContains(query)
             }
         }
-        let tree = ProjectsRow.tree(rows.filter { host == "all" || $0.host.id == host })
+        let tree = ProjectsRow.tree(rows)
         let matching = tree.filter(matches)
         let matchingIDs = Set(matching.map(\.id))
         let ancestors = Set(matching.flatMap(\.ancestorIDs))
@@ -274,7 +272,6 @@ final class ProjectsModel {
         loadInFlight = true
         defer { if revision == loadGeneration { loadInFlight = false } }
         hosts = sources
-        if host != "all", !sources.contains(where: { $0.id == host }) { host = "all" }
         loading = rows.isEmpty; error = nil
         var next: [ProjectsRow] = []
         for source in sources {
@@ -522,12 +519,8 @@ extension ShepherdViewModel {
                                       projectID: space?.id, parent: parent)
             }
         }
-        return [ProjectsHost(id: "local", name: "This Mac", known: known(state, reason: nil))] + remoteHosts.connections.map { connection in
-            let reason: String? = connection.phase == .connected
-                ? connection.supportsProjects ? nil : "Update Shepherd on this host to edit space settings."
-                : "Host offline. Reconnect in Settings > Remote to edit its spaces."
-            return ProjectsHost(id: connection.id.uuidString, name: connection.config.name, endpointID: connection.endpointID, supportsDetails: connection.supportsProjectDetails, supportsMCP: connection.supportsProjectMCP, supportsResources: connection.supportsProjectResources, supportsInheritance: connection.supportsProjectInheritance, supportsInheritedResources: connection.supportsProjectInheritedResources, supportsParent: connection.supportsProjectParent, unavailable: reason, known: known(connection.state, reason: reason))
-        }
+        // Spaces are the fleet's: the same on every Mac, so this Mac's list is the list.
+        return [ProjectsHost(id: "local", name: "This Mac", known: known(state, reason: nil))]
     }
 
     var projects: ProjectsModel {
