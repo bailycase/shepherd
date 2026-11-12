@@ -106,6 +106,15 @@ struct DesignRulesTests {
         #expect(rules.isEmpty || DesignRules.prefilterAccepts(code), "the scan's quick test must let a violating line through: \(code)")
     }
 
+    /// A symbol that is renamed under a content transition is found, whatever the transition's
+    /// sibling views or a stack of fixed glyphs look like.
+    @Test(arguments: SymbolSwapSample.all)
+    func aRenamedSymbolUnderAContentTransitionIsFoundAndNothingElse(sample: SymbolSwapSample) {
+        let found = DesignRules.symbolSwaps(in: sample.source)
+        #expect(found.count == sample.hits, "\(sample.name): \(found)")
+        if let line = sample.line { #expect(found.first?.line == line, "\(sample.name): reports the image's line") }
+    }
+
     /// A glyph added to `SHGlyph` is policed at once: the scan's quick test and its rule both know it.
     @Test(arguments: SHGlyph.allCases)
     func everyRegisteredGlyphIsPolicedAsARawString(glyph: SHGlyph) {
@@ -123,4 +132,82 @@ struct DesignRulesTests {
     func aTrailingCommentIsNotCode(line: String, code: String) {
         #expect(String(DesignRules.strippingComment(Substring(line))) == code)
     }
+}
+
+/// Source as a view writes it, and how many renamed symbols under a content transition the scan finds in it.
+struct SymbolSwapSample: Sendable, CustomTestStringConvertible {
+    let name: String
+    let source: String
+    let hits: Int
+    /// The line the one hit is reported on.
+    var line: Int?
+
+    var testDescription: String { name }
+
+    static let all: [SymbolSwapSample] = [
+        .init(name: "Send and Stop as one renamed image", source: """
+            Button(action: action) {
+                Image(systemName: send ? "arrow.up" : "stop.fill")
+                    .font(.system(size: send ? 13 : 10, weight: .semibold))
+                    .foregroundStyle(send ? sh.textOnLantern : sh.textOnFailed)
+                    .shContentTransition(.crossFade)
+            }
+            """, hits: 1, line: 2),
+        .init(name: "a copy glyph's symbol replace", source: """
+            var body: some View {
+                Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.sh(.caption))
+                    .shContentTransition(.symbol)
+                    .shAnimation(.content, value: copied)
+            }
+            """, hits: 1, line: 2),
+        .init(name: "a state's symbol", source: """
+            Image(systemName: state.symbolName)
+                .shContentTransition(.symbol)
+            """, hits: 1, line: 1),
+        .init(name: "the transition on the image's own line", source: """
+            Image(systemName: name).shContentTransition(.crossFade)
+            """, hits: 1, line: 1),
+        .init(name: "the SwiftUI spelling", source: """
+            Image(systemName: name)
+                .contentTransition(.symbolEffect(.replace))
+            """, hits: 1, line: 1),
+        .init(name: "a symbol that never changes", source: """
+            Image(systemName: "checkmark")
+                .shContentTransition(.symbol)
+            """, hits: 0),
+        .init(name: "a registered glyph", source: """
+            Image(systemName: SHGlyph.pin.symbolName)
+                .shContentTransition(.crossFade)
+            """, hits: 0),
+        .init(name: "a label's transition, with an image above it", source: """
+            if let symbol {
+                Image(systemName: symbol)
+                    .font(.sh(.caption))
+            }
+            Text(label)
+                .font(.sh(.caption))
+                .shContentTransition(.crossFade)
+            """, hits: 0),
+        .init(name: "a numeric transition", source: """
+            Image(systemName: open ? "chevron.down" : "chevron.right")
+            Text("\\(count)")
+                .shContentTransition(.numeric())
+            """, hits: 0),
+        .init(name: "a rename with no transition", source: """
+            Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                .font(.sh(.caption))
+                .shAnimation(.disclosure, value: expanded)
+            """, hits: 0),
+        .init(name: "glyphs stacked and faded", source: """
+            ZStack {
+                Image(systemName: "arrow.up").opacity(send ? 1 : 0)
+                Image(systemName: "stop.fill").opacity(send ? 0 : 1)
+            }
+            .shAnimation(.content, value: send)
+            """, hits: 0),
+        .init(name: "a commented-out image", source: """
+            // Image(systemName: name)
+                .shContentTransition(.crossFade)
+            """, hits: 0),
+    ]
 }
