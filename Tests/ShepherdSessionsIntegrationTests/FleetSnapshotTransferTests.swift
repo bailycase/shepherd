@@ -402,10 +402,18 @@ struct FleetSnapshotTransferTests {
         print("FLEET-MEASURE warm: sender \(timing.build) ms \(String(describing: senderPhases)), transfer \(timing.transfer) ms, receiver \(millis) ms \(stats.phases) load \(Self.load())")
     }
 
-    /// Set from the spike's measurements: the file part (create received to a worktree that passed its digest) of a warm dispatch with a 200 MB
-    /// `node_modules` reference measured 150 to 190 ms in this debug test binary on a Mac whose load average was 160 to 350, so the budget is
-    /// twice the median. The plan's 50 ms is for an idle Mac and a release build; this constant is only ever tightened.
-    static let fileMillisBudget = 300
+    /// Set from measurements of this fixture (a warm 5 file dispatch with a 200 MB `node_modules` held on the target) on a Mac whose load
+    /// average was 250 to 320, so an idle one does better: the receiver's file part (create received to a worktree that passed its digest)
+    /// took a median of 40 ms in a release build and 57 ms in this debug test binary; the sender's snapshot build, most of which is waiting
+    /// for the system to deliver the five edits to the index, a median of 50 ms and 78 ms. Each budget is twice its median. These are only
+    /// ever tightened.
+    #if DEBUG
+    static let fileMillisBudget = 120
+    static let senderMillisBudget = 160
+    #else
+    static let fileMillisBudget = 80
+    static let senderMillisBudget = 100
+    #endif
 
     @Test(.timingSensitive) func theFilePartOfAWarmDispatchOnTheTargetIsUnderItsBudget() async throws {
         let fixture = try await Self.warm(nodeModulesMegabytes: 200)
@@ -418,6 +426,8 @@ struct FleetSnapshotTransferTests {
         let timing = Self.engine(a) { $0.timings[id] } ?? nil
         print("FLEET-MEASURE warm 200 MB node_modules: sender \(timing?.build ?? -1) ms \(String(describing: Self.engine(a) { $0.senderLog[id]?.phases } ?? nil)), transfer \(timing?.transfer ?? -1) ms, receiver \(millis) ms; \(String(describing: Self.engine(b) { $0.applyStats[id]?.phases } ?? nil)) load \(Self.load())")
         #expect(millis < Self.fileMillisBudget, "the file part took \(millis) ms")
+        let sender = try #require(timing?.build)
+        #expect(sender < Self.senderMillisBudget, "the sender's snapshot took \(sender) ms")
     }
 }
 

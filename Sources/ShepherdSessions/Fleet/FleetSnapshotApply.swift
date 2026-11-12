@@ -584,7 +584,9 @@ struct FleetSnapshotApply {
         var base: [String: (kind: FleetEntryKind, hash: FleetHash)] = [:]
         // What the manifest replaces or removes needs no hash of the commit's version.
         let replaced = Set(manifest.files.map(\.path) + manifest.deletions)
-        let ids = Set(tree.filter { !$0.value.isSubmodule && !replaced.contains($0.key) }.map(\.value.gitID))
+        var ids = Set<FleetGitBlobID>()
+        ids.reserveCapacity(tree.count)
+        for (path, entry) in tree where !entry.isSubmodule && !replaced.contains(path) { ids.insert(entry.gitID) }
         var known: [FleetGitBlobID: FleetHash] = [:]
         for index in input.indexes where index.stateNow == .ready {
             let found = index.queue.sync { index.locate(files: [], directories: [], gitIDs: ids.filter { known[$0] == nil }) }
