@@ -37,7 +37,7 @@ final class FleetFSEvents {
     var isDropping = false
 
     init(root: String, queue: DispatchQueue, latency: TimeInterval = 0.05, handler: @escaping ([Event]) -> Void) {
-        self.root = URL(fileURLWithPath: root).resolvingSymlinksInPath().path
+        self.root = FleetContentIndex.realPath(root)
         self.queue = queue
         self.latency = latency
         self.handler = handler

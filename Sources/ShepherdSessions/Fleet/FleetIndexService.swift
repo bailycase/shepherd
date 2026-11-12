@@ -124,7 +124,7 @@ final class FleetIndexService: @unchecked Sendable {
             let expanded = (space.path as NSString).expandingTildeInPath
             var isDirectory: ObjCBool = false
             guard FileManager.default.fileExists(atPath: expanded, isDirectory: &isDirectory), isDirectory.boolValue else { continue }
-            let real = URL(fileURLWithPath: expanded).resolvingSymlinksInPath().path
+            let real = FleetContentIndex.realPath(expanded)
             if wanted[real] == nil { wanted[real] = (space, FleetSnapshotProtocol.repoName(key: space.repoKey, space: space.id.rawValue)) }
         }
         for (path, root) in roots where wanted[path] == nil && !root.removing { erase(root, at: path) }
@@ -386,6 +386,6 @@ final class FleetIndexService: @unchecked Sendable {
 
     /// Tests: the index of the checkout at `path`.
     func index(at path: String) -> FleetContentIndex? {
-        roots[URL(fileURLWithPath: path).resolvingSymlinksInPath().path]?.index
+        roots[FleetContentIndex.realPath(path)]?.index
     }
 }

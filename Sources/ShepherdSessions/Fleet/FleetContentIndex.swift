@@ -97,9 +97,16 @@ final class FleetContentIndex: @unchecked Sendable {
     /// Queue: a rescan was needed, and why (a log line, and what tests wait on).
     var onDrift: ((String) -> Void)?
 
+    /// The path with every link resolved, as FSEvents reports it (`/private/var/...`, which `URL.resolvingSymlinksInPath` shortens to `/var/...`).
+    static func realPath(_ path: String) -> String {
+        guard let resolved = realpath(path, nil) else { return URL(fileURLWithPath: path).standardizedFileURL.path }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+
     init(root: String, storage: URL, exclusions: FleetExclusions = FleetExclusions(), classifier: FleetGitClassifier = .git,
          maxFiles: Int = FleetContentIndex.maxFiles, latency: TimeInterval = 0.05, clock: @escaping @Sendable () -> Date = Date.init) {
-        self.root = URL(fileURLWithPath: root).resolvingSymlinksInPath().path
+        self.root = Self.realPath(root)
         self.storage = FleetIndexStorage(directory: storage)
         self.exclusions = exclusions
         self.classifier = classifier
@@ -554,9 +561,10 @@ final class FleetContentIndex: @unchecked Sendable {
         rebuilt.commit()
         if rebuilt.root != tree.root { drift = "directory hashes disagree with the entries" }
         if drift == nil {
-            let count = min(sample, entries.count)
-            for _ in 0..<count {
-                guard let (path, entry) = entries.randomElement() else { break }
+            // Everything when the sample covers it, else that many entries at random.
+            let paths = sample >= entries.count ? Array(entries.keys) : (0..<sample).compactMap { _ in entries.randomElement()?.key }
+            for path in paths {
+                guard let entry = entries[path] else { continue }
                 var status = stat()
                 if lstat(absolute(path), &status) != 0 || UInt64(status.st_size) != entry.size || Self.nanoseconds(status.st_mtimespec) != entry.modified {
                     drift = "\(path) changed behind the index"
@@ -565,8 +573,10 @@ final class FleetContentIndex: @unchecked Sendable {
             }
         }
         if drift == nil {
-            for _ in 0..<max(8, sample / 4) {
-                guard let (path, stamp) = dirStamps.randomElement() else { break }
+            let wanted = max(8, sample / 4)
+            let directories = wanted >= dirStamps.count ? Array(dirStamps.keys) : (0..<wanted).compactMap { _ in dirStamps.randomElement()?.key }
+            for path in directories {
+                guard let stamp = dirStamps[path] else { continue }
                 var status = stat()
                 if lstat(absolute(path), &status) != 0 || Self.nanoseconds(status.st_mtimespec) != stamp {
                     // A directory that changed isn't drift by itself: look at it, and call it drift only if the index was wrong.

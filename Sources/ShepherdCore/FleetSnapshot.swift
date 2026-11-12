@@ -329,11 +329,12 @@ public struct FleetMerkleTree: Sendable {
     public mutating func set(_ path: String, kind: FleetEntryKind, hash: FleetHash) {
         let (parent, name) = Self.split(path)
         let node = Node(kind: kind == .symlink ? .symlink : kind == .executable ? .executable : .file, hash: hash)
+        // Every directory above the file that doesn't exist yet is made, with its place in its parent.
         var current = parent
-        // A directory that doesn't exist yet is made, with its place in its parent.
-        while !current.isEmpty, children[current] == nil {
-            children[current] = [:]
+        while !current.isEmpty {
             let (up, directory) = Self.split(current)
+            if children[current] == nil { children[current] = [:] }
+            if children[up]?[directory] != nil { break }
             children[up, default: [:]][directory] = Node(kind: .directory, hash: FleetHash(a: 0, b: 0, c: 0, d: 0))
             current = up
         }
@@ -400,8 +401,8 @@ public struct FleetMerkleTree: Sendable {
     /// The hash of the directory at `path` as of the last `commit()`.
     public func hash(ofDirectory path: String) -> FleetHash? { committed[path] }
 
-    /// Every directory hash held, with its path (the root excluded).
-    public var directoryHashes: [(path: String, hash: FleetHash)] { committed.filter { !$0.key.isEmpty }.map { ($0.key, $0.value) } }
+    /// Every directory hash held, with its path ("" is the root: a tree identical to this one has this hash).
+    public var directoryHashes: [(path: String, hash: FleetHash)] { committed.map { ($0.key, $0.value) } }
 }
 
 // MARK: - Manifests

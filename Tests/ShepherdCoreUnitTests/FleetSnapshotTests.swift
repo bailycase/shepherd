@@ -78,6 +78,14 @@ struct FleetSnapshotTests {
         #expect(untouched.hash(ofDirectory: "a") == Self.tree([("a/x", "x")]).hash(ofDirectory: "a"))
     }
 
+    @Test func aFileDeepInADirectoryTheTreeNeverSawStillHashesEveryDirectoryAboveIt() {
+        let tree = Self.tree([("tools/env/bin/python", "py")])
+        for directory in ["tools", "tools/env", "tools/env/bin"] { #expect(tree.hash(ofDirectory: directory) != nil, "\(directory)") }
+        #expect(tree.root != FleetMerkleTree().root)
+        #expect(tree.root != Self.tree([("tools/env/bin/python", "another")]).root)
+        #expect(tree.names(in: "tools")?["env"]?.kind == .directory)
+    }
+
     @Test func merkleSeesTheExecBitAndALinkAsDifferentFromAPlainFile() {
         let plain = Self.tree([("bin/run", "echo")])
         let exec = Self.tree([("bin/run", "echo")], kinds: ["bin/run": .executable])
