@@ -169,11 +169,14 @@ public struct SHStateGlyph: View {
         .accessibilityHidden(true)
     }
 
+    /// Keyed on the state, so one outcome's symbol fades out as the next fades in. Not a renamed
+    /// symbol: that draws through RenderBox, which loads about 258 MB of drawing pool.
     private var symbol: some View {
         Image(systemName: state.symbolName)
             .font(.system(size: size - 3, weight: .semibold))
             .foregroundStyle(state.color)
-            .shContentTransition(.symbol)
+            .id(state)
+            .shTransition(.content)
     }
 }
 

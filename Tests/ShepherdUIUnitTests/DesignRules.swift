@@ -11,6 +11,7 @@ enum DesignRule: String, CaseIterable, Sendable, CustomTestStringConvertible {
     case statusTintByOpacity = "status-tint-by-opacity"
     case rawColor = "raw-color"
     case rawGlyphName = "raw-glyph-name"
+    case symbolSwapInTransition = "symbol-swap-in-transition"
 
     var testDescription: String { rawValue }
 
@@ -25,6 +26,8 @@ enum DesignRule: String, CaseIterable, Sendable, CustomTestStringConvertible {
             "A view never hardcodes a color: Color(red:…), Color(light: \"#…\"), a hex string, Color.white, .foregroundStyle(.gray), NSColor.white. (DESIGN.md › Shepherd Design)"
         case .rawGlyphName:
             "A glyph with a shared definition is never named as a raw SF Symbol string: it comes from SHGlyph (Tokens/Glyphs.swift). (DESIGN.md › Shepherd Design › Icons)"
+        case .symbolSwapInTransition:
+            "An SF Symbol is never renamed inside a content transition: Image(systemName: a ? \"x\" : \"y\") under .shContentTransition(.crossFade) or (.symbol) draws through RenderBox, which loads about 258 MB of accelerated drawing pool for 1.2 to 1.6 s after each change. (DESIGN.md › Shepherd Design › Motion)"
         }
     }
 
@@ -39,6 +42,8 @@ enum DesignRule: String, CaseIterable, Sendable, CustomTestStringConvertible {
             "Use Color.sh.<role>. A color that has no role is a new role on ThemeColors, filled in both variants of every theme, with a contrast rule if it carries text. A color that is the user's own data (a design system's swatch) goes in the allowlist with that reason."
         case .rawGlyphName:
             "Draw it through SHGlyph (SHGlyph.fastBolt.image, or SHFastBolt for the Fast mark) or pass SHGlyph.<case>.symbolName where an API takes a symbol name. A new glyph that more than one view draws is a new case in Tokens/Glyphs.swift."
+        case .symbolSwapInTransition:
+            "Stack the glyphs in a ZStack, each an Image with a fixed name, and cross-fade them by opacity under .shAnimation(.content, value:) (SHComposerActionButton); or key one image with .id(state) and .shTransition(.content) in a ZStack (SHCopyGlyph, SHStateGlyph). Put no content transition on the image."
         }
     }
 }
@@ -112,6 +117,35 @@ enum DesignRules {
         if matches(color) { broken.append(.rawColor) }
         if registeredSymbols.contains(where: code.contains) { broken.append(.rawGlyphName) }
         return broken
+    }
+
+    // MARK: Symbols renamed under a content transition
+
+    private static let symbolTransition = try! NSRegularExpression(pattern: #"ontentTransition\(\s*\.(?:crossFade|symbol|opacity|symbolEffect)\b"#)
+    /// An `Image(systemName:)` whose name is not a string literal or a registered glyph: one that can change.
+    private static let renamedSymbol = try! NSRegularExpression(pattern: #"Image\(systemName:(?!\s*")(?!\s*SHGlyph\.\w+\.symbolName\))"#)
+
+    /// The `Image(systemName:)` lines in `source` whose name can change and that sit under a
+    /// content transition that fades or replaces symbols (`.crossFade`, `.symbol`). The image is the
+    /// head of the modifier chain the transition ends: the transition's own line, or the first line
+    /// above it that does not begin with a modifier.
+    static func symbolSwaps(in source: String) -> [(line: Int, text: String)] {
+        let lines = source.split(separator: "\n", omittingEmptySubsequences: false)
+        func trimmed(_ index: Int) -> Substring { lines[index].drop { $0 == " " || $0 == "\t" } }
+        func isRenamed(_ index: Int) -> Bool {
+            let text = String(strippingComment(lines[index]))
+            return renamedSymbol.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+        }
+        var found: [(line: Int, text: String)] = []
+        for index in lines.indices {
+            let text = String(strippingComment(lines[index]))
+            guard text.contains("ontentTransition("),
+                  symbolTransition.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil else { continue }
+            var head = index
+            while !isRenamed(head), trimmed(head).hasPrefix("."), head > 0, index - head < 12 { head -= 1 }
+            if isRenamed(head) { found.append((head + 1, String(trimmed(head)))) }
+        }
+        return found
     }
 
     /// `line` without a `//` comment, leaving `://` and anything inside a string alone.
@@ -201,6 +235,13 @@ enum DesignRules {
                             violations.append(DesignViolation(rule: rule, path: path, line: number, text: String(trimmed)))
                         }
                     }
+                }
+                if data.range(of: Data("ontentTransition(".utf8)) != nil {
+                    let first = violations.count
+                    for swap in symbolSwaps(in: String(decoding: data, as: UTF8.self)) {
+                        violations.append(DesignViolation(rule: .symbolSwapInTransition, path: path, line: swap.line, text: swap.text))
+                    }
+                    violations[first...].sort { $0.line < $1.line }
                 }
             }
         }

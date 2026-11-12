@@ -90,7 +90,9 @@ static void refuse(const char *bin, const char *command) {
 static const char *const agentVariables[] = {
     "SHEPHERD_AGENT_ID=", "SHEPHERD_SOCKET=", "SHEPHERD_EXT_", "SHEPHERD_NATIVE_CHILDREN=", "SHEPHERD_CHILD_",
     "SHEPHERD_NEEDS_NAME=", "SHEPHERD_AUTOMATION=", "SHEPHERD_MODEL=", "SHEPHERD_PI_THEME_",
-    "SHEPHERD_INSTRUCTIONS_DIR=", "SHEPHERD_SUGGEST_FILES=", "SHEPHERD_PI_EXECUTABLE=", "SHEPHERD_DESIGN_REFS=",
+    "SHEPHERD_INSTRUCTIONS_DIR=", "SHEPHERD_SUGGEST_FILES=", "SHEPHERD_PI_EXECUTABLE=", "SHEPHERD_DESIGN_",
+    "SHEPHERD_MCP_", "SHEPHERD_RESOURCE_", "SHEPHERD_PARENT_", "SHEPHERD_CLI_", "SHEPHERD_VISION_MODELS=",
+    "SHEPHERD_GOALS_ENABLED=", "SHEPHERD_TEXT_GENERATION_MODELS=", "SHEPHERD_DEFER_TOOLS=", "SHEPHERD_HOOKS_DIR=",
     // Git's repository selection, config injection, tracing and external helpers must never
     // escape the scratch process. Install our own config paths after clearing inherited GIT_*.
     "GIT_",
