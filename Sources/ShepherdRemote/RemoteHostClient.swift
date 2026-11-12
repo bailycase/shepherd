@@ -804,6 +804,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .changesUndoTurn, .changesRedoTurn:
             RemoteProtocol.changesCapability
         case .changesRevertFile: RemoteProtocol.changesRevertCapability
+        case .changesWriteBegan, .changesWriteEnded: RemoteProtocol.changesWritesCapability
         default: RemoteProtocol.agentInspectionCapability
         }
     }
@@ -822,6 +823,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         let cancellable: Bool
         switch query {
         case .search, .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch: cancellable = true
+        case .changesWriteBegan: cancellable = true // The app gives up waiting for it rather than hold a Save.
         default: cancellable = false // Undo, Redo and Revert must still await their outcome.
         }
         let reply = try await request(timeout: slow ? 150 : 30, cancellable: cancellable) { .agentQuery(id: $0, agentID: agentID, query: query) }

@@ -876,4 +876,85 @@ struct ChangesTurnTests {
         let turn = try await p.settle()
         #expect(turn.files.map(\.path) == ["b.txt"], "a solo turn owns what bash wrote, but not what Shepherd wrote for the person")
     }
+
+    // MARK: The person's writes and branch actions
+
+    /// A branch action or a commit rewrites the whole tree under a running turn: the turn is
+    /// shared, so it owns only the files its own calls named, and Undo leaves the rest as the
+    /// operation made them. Once the operation is over, a turn that begins is solo again.
+    @Test func aTreeEventMakesAnOverlappingTurnShared() async throws {
+        let p = try Pair(files: ["a.txt": "a\n", "x.txt": "x on main\n"])
+        p.service.turnStarted(agentID: p.agent)
+        await Self.drain(p.service, p.agent)
+        let event = p.service.beginTreeEvent(cwd: p.repo.path)
+        try p.edit(p.agent, "a.txt", id: "mine", text: "a edited\n")
+        try p.repo.write("x.txt", "x on the other branch\n")
+        p.service.endWrite(event)
+        let turn = try await p.settle()
+        #expect(turn.files.map(\.path) == ["a.txt"] && turn.canUndo, "the operation's files are not the turn's")
+
+        _ = try await p.service.undoTurn(agentID: p.agent, turnID: turn.id)
+        #expect(p.repo.read("a.txt") == "a\n" && p.repo.read("x.txt") == "x on the other branch\n")
+
+        p.service.promptSent(agentID: p.agent)
+        p.service.turnStarted(agentID: p.agent)
+        await Self.drain(p.service, p.agent)
+        try p.repo.write("x.txt", "x, by bash\n")
+        let later = try await p.settle()
+        #expect(later.files.map(\.path) == ["x.txt"], "no operation ran during it: it is solo and owns what bash wrote")
+    }
+
+    /// A tree event begun in one working tree is no writer in another.
+    @Test func aTreeEventElsewhereLeavesATurnSolo() async throws {
+        let p = try Pair(files: ["a.txt": "a\n"])
+        let elsewhere = try ChangesRepo()
+        p.service.turnStarted(agentID: p.agent)
+        await Self.drain(p.service, p.agent)
+        let event = p.service.beginTreeEvent(cwd: elsewhere.path)
+        try p.repo.write("a.txt", "a edited by bash\n")
+        p.service.endWrite(event)
+        #expect(try await p.settle().files.map(\.path) == ["a.txt"])
+    }
+
+    /// A write reported by absolute path counts where git sees the file, through a symlinked folder.
+    @Test func aWriteReportedThroughASymlinkedFolderStaysOutOfTheTurn() async throws {
+        let p = try Pair(files: ["a.txt": "a\n", "b.txt": "b\n"])
+        let link = p.repo.url.deletingLastPathComponent().appendingPathComponent("link-" + UUID().uuidString.prefix(6))
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: p.repo.url)
+        defer { try? FileManager.default.removeItem(at: link) }
+        p.service.turnStarted(agentID: p.agent)
+        await Self.drain(p.service, p.agent)
+        let span = p.service.beginWrite(absolute: [link.path + "/a.txt"])
+        try p.repo.write("a.txt", "a saved by the person\n")
+        try p.repo.write("b.txt", "b edited by the agent\n")
+        p.service.endWrite(span)
+        #expect(try await p.settle().files.map(\.path) == ["b.txt"])
+    }
+
+    /// A paired device's Save (`fileWrite`) while a turn runs is the person's: the turn lists and
+    /// undoes only what the agent changed, and the saved text survives its Undo.
+    @Test func aRemoteSaveDuringARunningTurnStaysOutOfThatTurn() async throws {
+        let repo = try ChangesRepo(files: ["a.txt": "one\n", "README.md": "# Readme\n"])
+        try "tool-*\n".write(to: repo.url.appendingPathComponent(".git/info/exclude"), atomically: true, encoding: .utf8)
+        let remote = try RemoteHost()
+        defer { remote.stop() }
+        let pi = try await PiAgent.launch(on: remote.host, cwd: repo.url)
+        let idle = try await pi.ready()
+        #expect(try await pi.send("tools:1 edit", from: idle).failureCode == nil)
+        let changes = remote.server.changes
+        try await eventually("the turn's baseline") { changes.turnStore.latest(pi.agent.id)?.startTree != nil }
+        try repo.write("a.txt", "one\ntwo\n")
+
+        let client = try await remote.typed()
+        defer { client.disconnect() }
+        #expect(try await client.writeFile(agentID: pi.agent.id, path: "README.md", text: "# Readme, saved\n", expected: "# Readme\n") == .saved)
+        FileManager.default.createFile(atPath: repo.url.appendingPathComponent("tool-1").path, contents: nil)
+        try await eventually("the turn to end") { changes.turns(agentID: pi.agent.id).last?.state == .ready }
+
+        let turn = try #require(changes.turns(agentID: pi.agent.id).last)
+        #expect(turn.files.map(\.path) == ["a.txt"] && turn.canUndo)
+        _ = try await changes.undoTurn(agentID: pi.agent.id, turnID: turn.id)
+        #expect(repo.read("a.txt") == "one\n")
+        #expect(repo.read("README.md") == "# Readme, saved\n", "the person's Save is not the agent's to undo")
+    }
 }

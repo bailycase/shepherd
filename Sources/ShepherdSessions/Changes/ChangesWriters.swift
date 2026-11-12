@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 
 /// Who wrote in a working tree, and when: the evidence a turn's own files are cut by
 /// (`TurnAttribution`). In memory only, behind `ChangesService.writers`; every append is O(1)
@@ -41,11 +42,15 @@ struct WriterLog {
         var ok: Bool?
     }
 
-    /// Shepherd writing files for the person: an Undo, a Redo, a Revert.
+    /// Shepherd writing files for the person: an Undo, a Redo, a Revert, a Save. Or, as a tree
+    /// event, running something that rewrites a whole working tree under them: a branch switch,
+    /// an update from the base, a commit that runs hooks.
     struct Span: Equatable {
         var id: UUID
-        /// Absolute.
+        /// Absolute. None for a tree event.
         var paths: [String]
+        /// The folder whose working tree a tree event rewrites; nil for a write of `paths`.
+        var tree: String? = nil
         var interval: TurnAttribution.Interval
     }
 
@@ -98,11 +103,12 @@ struct WriterLog {
         calls[index].ok = ok
     }
 
-    /// Shepherd is about to write `paths` (absolute) for the person. Returns its interval.
+    /// Shepherd is about to write `paths` (absolute) for the person, or to rewrite the working
+    /// tree of `tree`. Returns its interval.
     @discardableResult
-    mutating func beginSpan(_ id: UUID, paths: [String], at time: Double) -> TurnAttribution.Interval {
+    mutating func beginSpan(_ id: UUID, paths: [String], tree: String? = nil, at time: Double) -> TurnAttribution.Interval {
         let interval = TurnAttribution.Interval(start: time)
-        spans.append(Span(id: id, paths: paths, interval: interval))
+        spans.append(Span(id: id, paths: paths, tree: tree, interval: interval))
         sequence += 1
         trim()
         return interval
@@ -240,13 +246,57 @@ extension ChangesService {
     /// Shepherd is about to write `paths` (relative to `repository`) for the person; close the
     /// returned span with `endWrite` once the last one is written.
     func beginWrite(_ repository: Repository, paths: [String]) -> UUID {
-        let id = UUID()
+        beginSpan(UUID(), paths: paths.map { repository.root + "/" + $0 })
+    }
+
+    /// The same for `paths` as the writer names them (absolute, through any symlink): this Mac's
+    /// app saving or reverting a file, or a paired device's Save. A path counts where git sees it
+    /// (its folder resolved) and, when it is a symlink, where the write lands.
+    @discardableResult
+    func beginWrite(_ id: UUID = UUID(), absolute paths: [String]) -> UUID {
+        beginSpan(id, paths: paths.flatMap(Self.spanPaths))
+    }
+
+    /// Shepherd is about to run something for the person that rewrites the working tree of `cwd`
+    /// (a branch switch, an update from the base, an abort, a commit that runs hooks). A turn that
+    /// ran there meanwhile can't tell its files from the operation's: it is shared, and owns only
+    /// the files its own edit and write calls named. Close it with `endWrite`.
+    @discardableResult
+    func beginTreeEvent(_ id: UUID = UUID(), cwd: String) -> UUID {
+        beginSpan(id, paths: [], tree: cwd)
+    }
+
+    private func beginSpan(_ id: UUID, paths: [String], tree: String? = nil) -> UUID {
         let time = Self.nowMs()
-        let absolute = paths.map { repository.root + "/" + $0 }
-        let interval = writers.withValue { $0.beginSpan(id, paths: absolute, at: time) }
+        let interval = writers.withValue { $0.beginSpan(id, paths: paths, tree: tree, at: time) }
         reclassifyAffected(by: interval, excluding: nil, now: time)
         return id
     }
+
+    private static func spanPaths(_ path: String) -> [String] {
+        let name = (path as NSString).lastPathComponent
+        let parent = Self.realPath((path as NSString).deletingLastPathComponent)
+        let beside = parent == "/" ? "/" + name : parent + "/" + name
+        let through = Self.realPath(path)
+        return through == beside ? [beside] : [beside, through]
+    }
+
+    /// Server's `changesWriteBegan` from this Mac's app: `paths` it is about to write, or none
+    /// for a tree event in the agent's working tree. `id` is the app's.
+    func personWriteBegan(_ id: UUID, agentID: AgentID, paths: [String]?) throws {
+        guard let paths else {
+            beginTreeEvent(id, cwd: try context(agentID, cwd: nil).cwd)
+            return
+        }
+        guard !paths.isEmpty, paths.count <= Self.personWritePaths,
+              paths.allSatisfy({ $0.hasPrefix("/") && $0.utf8.count <= 4096 && !$0.contains("\0") }) else {
+            throw ChangesError(ChangesError.invalid, "Not files of this Mac.")
+        }
+        beginWrite(id, absolute: paths)
+    }
+
+    /// Most files one write the app reports may name.
+    static let personWritePaths = 64
 
     func endWrite(_ id: UUID) {
         let time = Self.nowMs()
