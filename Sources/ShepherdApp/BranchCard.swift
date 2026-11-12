@@ -274,7 +274,7 @@ extension ShepherdViewModel {
             branchGit(id, "Couldn’t push \(card.branch)") { try BranchGit.push(cwd: cwd, branch: card.branch) }
         case .switchBranch(let name):
             guard let cwd = checkoutDirectory(of: id) else { return }
-            branchGit(id, "Couldn’t switch to \(name)", record: { local in (local, nil) }) { try BranchGit.switchBranch(cwd: cwd, to: name) }
+            branchGit(id, "Couldn’t switch to \(name)", rewritesTree: true, record: { local in (local, nil) }) { try BranchGit.switchBranch(cwd: cwd, to: name) }
         case .moveToCheckout(let branch, let path):
             Task {
                 do {
@@ -294,9 +294,13 @@ extension ShepherdViewModel {
 
     /// One `BranchGit` change off the main thread: its failure in words, then the checkout read
     /// again and, for a worktree, the branch Shepherd records for it (`record` → branch, base).
-    func branchGit<T: Sendable>(_ id: AgentID, _ failure: String, record: ((T) -> (String?, String?))? = nil,
+    /// `rewritesTree`: it changes the working tree under a turn running there, which the host is told.
+    func branchGit<T: Sendable>(_ id: AgentID, _ failure: String, rewritesTree: Bool = false, record: ((T) -> (String?, String?))? = nil,
                                 _ work: @escaping @Sendable () throws -> T) {
         Task {
+            var end: (@MainActor () -> Void)?
+            if rewritesTree { end = await personWriteBegan(id) }
+            defer { end?() }
             do {
                 let value = try await Task.detached(priority: .userInitiated, operation: work).value
                 if let record, cardAgent(id)?.agent.worktreeBranch != nil {

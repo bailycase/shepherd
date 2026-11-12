@@ -199,8 +199,12 @@ extension ShepherdViewModel {
     /// came from, then reload the diff in place. A review retargeted meanwhile is left alone.
     func revertReviewFile(_ session: ReviewSession, file: DiffFile, in cwd: String) {
         guard reviewSessions[session.paneID] === session, !session.isPRMode else { return }
+        let agentID = session.agentID
         Task {
             do {
+                let paths = await Task.detached { Self.revertPaths(file, cwd: cwd) }.value
+                let end = await personWriteBegan(agentID, paths: paths)
+                defer { end?() }
                 try await Task.detached { try GitDiff.revert(file, cwd: cwd) }.value
             } catch {
                 actionError = ActionError(title: "Couldn’t revert \(file.displayPath)", message: ActionError.describe(error))
@@ -210,6 +214,13 @@ extension ShepherdViewModel {
             session.viewed.remove(file.id)
             reloadReview(session, reference: session.reference)
         }
+    }
+
+    /// The files `GitDiff.revert` of `file` touches, absolute.
+    nonisolated static func revertPaths(_ file: DiffFile, cwd: String) -> [String] {
+        let root = GitDiff.repositoryRoot(cwd: cwd)
+        let names = [file.oldPath, file.newPath].compactMap { $0 }
+        return (names.isEmpty ? [file.displayPath] : names).map { root + "/" + $0 }
     }
 
     /// Open a reviewed file in the editor chosen in Settings (the file's default app when none is).
@@ -330,6 +341,26 @@ extension ShepherdViewModel {
     func readCheckoutOnHost(_ agentID: AgentID) {
         guard let ref = localRef(agentID), localHost?.supportsCheckoutRead == true else { return }
         Task { try? await remoteHosts.agentAction(ref, action: .readCheckout) }
+    }
+
+    /// This Mac's host is told the person is about to change `agentID`'s working tree, so no turn
+    /// running meanwhile takes it for the agent's: `paths` (absolute) are the files a Save or a Revert
+    /// writes, none a branch action or a commit that rewrites the tree. Returns once the host has it,
+    /// which is before the write, and waits no longer than a moment for a slow host; what it returns
+    /// closes the note, to run when the write is done. Nil when the host can't be told: the write goes ahead.
+    func personWriteBegan(_ agentID: AgentID, paths: [String]? = nil) async -> (@MainActor () -> Void)? {
+        guard let ref = localRef(agentID), localHost?.supportsChangesWrites == true else { return nil }
+        let span = UUID()
+        let hosts = remoteHosts
+        let began = Task { _ = try? await hosts.agentQuery(ref, query: .changesWriteBegan(span: span, paths: paths)) }
+        let patience = Task {
+            try? await Task.sleep(for: .seconds(2))
+            began.cancel()
+        }
+        await began.value
+        patience.cancel()
+        // A note the host never heard of closes as nothing.
+        return { Task { _ = try? await hosts.agentQuery(ref, query: .changesWriteEnded(span: span)) } }
     }
 
     /// The person changed files in `agentID`'s working tree (a Files-tab Save): the Changes tab,

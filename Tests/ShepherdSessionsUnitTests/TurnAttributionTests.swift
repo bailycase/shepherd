@@ -99,6 +99,26 @@ struct TurnAttributionTests {
         #expect(Self.evidence(later, earlier).saved.isEmpty)
     }
 
+    @Test func aTreeEventMakesATurnSharedOnlyInTheWorkingTreeItRewrote() {
+        func evidence(rewriting tree: String, during span: Interval) -> TurnAttribution.Evidence {
+            let (log, turn) = Self.log { log, _ in
+                let id = UUID()
+                _ = log.beginSpan(id, paths: [], tree: tree, at: span.start)
+                if let end = span.end { log.endSpan(id, at: end) }
+            }
+            return Self.evidence(turn, log)
+        }
+        let here = evidence(rewriting: Self.root, during: Interval(start: 1_500_000, end: 1_600_000))
+        #expect(here.shared && here.partner == nil && here.saved.isEmpty, "a person's operation is no other agent, and names no file")
+        #expect(evidence(rewriting: Self.root, during: Interval(start: 1_900_000, end: nil)).shared, "still running when the turn ended")
+        #expect(!evidence(rewriting: "/work/elsewhere", during: Interval(start: 1_500_000, end: 1_600_000)).shared)
+        #expect(!evidence(rewriting: Self.root, during: Interval(start: 500_000, end: 900_000)).shared, "over before the turn began")
+
+        let result = TurnAttribution.classify(changed: [Self.change("named.txt"), Self.change("rewritten.txt")], shared: here.shared,
+                                              named: ["named.txt"], foreign: [], saved: [])
+        #expect(result.own == ["named.txt"] && result.other == ["rewritten.txt"])
+    }
+
     @Test func aSharedTurnOwnsOnlyNamedFilesNoOtherWriterNamed() {
         let changed = [Self.change("a.txt"), Self.change("both.txt"), Self.change("bash.txt"), Self.change("theirs.txt")]
         let result = TurnAttribution.classify(changed: changed, shared: true, named: ["a.txt", "both.txt"], foreign: ["both.txt", "theirs.txt"], saved: [])

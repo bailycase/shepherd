@@ -120,6 +120,8 @@ struct BranchUpdateSheet: View {
         stage = .running
         let (cwd, base, rebase) = (cwd, base, rebase)
         Task {
+            let end = await vm.personWriteBegan(agentID)
+            defer { end?() }
             do {
                 switch try await Task.detached(operation: { try BranchGit.update(cwd: cwd, base: base, rebase: rebase) }).value {
                 case .done: vm.branchSheet = nil
@@ -135,6 +137,8 @@ struct BranchUpdateSheet: View {
     private func abort(_ kind: BranchGit.Conflict.Kind) {
         let cwd = cwd
         Task {
+            let end = await vm.personWriteBegan(agentID)
+            defer { end?() }
             do {
                 try await Task.detached { try BranchGit.abort(cwd: cwd, kind) }.value
                 vm.branchSheet = nil
