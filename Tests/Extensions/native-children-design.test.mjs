@@ -10,7 +10,6 @@ import * as net from "node:net";
 import * as path from "node:path";
 import { spawn } from "node:child_process";
 import { children, childrenSource, harness, pkg, providerServer, root, scratchHome, sleep, tempDir, until, withEnv } from "./fixtures/children-harness.mjs";
-process.env.SHEPHERD_MISSIONS = "1"; // These tests cover mission records and the mission parameters, which are off unless this is set.
 
 const designSource = path.join(root, "Extensions/shepherd-design.ts");
 const BOARD = "<!doctype html>\n<x-dc>Pay now</x-dc>\n";
@@ -69,9 +68,9 @@ function script(dir) {
     const toolNames = (body.tools ?? []).map((tool) => tool.function.name);
     if (!toolNames.includes("shepherd_parent_message")) {
       // The parent.
-      const start = (task, extra = {}) => ({ name: "shepherd_child_start", args: { agent: "design-editor", task, mission: false, ...extra } });
+      const start = (task, extra = {}) => ({ name: "shepherd_child_start", args: { agent: "design-editor", task, ...extra } });
       if (text === "ROUND") {
-        if (steps.length === 0) return { toolCalls: [start("HELPER_A board A.dc.html"), start("HELPER_B board B.dc.html"), { name: "shepherd_child_start", args: { role: "scout", model: "fixture/helper", task: "SCOUT look around", mission: false } }] };
+        if (steps.length === 0) return { toolCalls: [start("HELPER_A board A.dc.html"), start("HELPER_B board B.dc.html"), { name: "shepherd_child_start", args: { role: "scout", model: "fixture/helper", task: "SCOUT look around" } }] };
         return { text: "round delegated" };
       }
       // The scenarios below start a helper whose design call Shepherd holds, then act on it a prompt at a time, so
@@ -294,7 +293,7 @@ test("a parent that draws no design refuses a profile's design tools before anyt
     SHEPHERD_EXT_CHILDREN: childrenSource, SHEPHERD_DESIGN_ID: undefined, SHEPHERD_CLIPROXYAPI_CONFIG: undefined }, async () => {
     const h = await harness(dir, { models: [{ provider: "fixture", id: "fixture" }, { provider: "fixture", id: "helper" }], extra: { activeTools: ["design_read", "board_edit", "design_check"] } });
     try {
-      await assert.rejects(h.call("start", { agent: "design-editor", task: "x", mission: false }),
+      await assert.rejects(h.call("start", { agent: "design-editor", task: "x" }),
         /design_read, board_edit, design_check: design tools are relayed only to the helpers of a design agent, and this session draws no design\. Drop them/);
       assert.deepEqual(await h.call("result", {}), [], "no helper was made");
     } finally { await h.shutdown(); }

@@ -37,8 +37,7 @@ final class DesignExportModel {
 }
 
 /// The Export sheet over a design (DZExport): its boards, the format, and Attach to a thread,
-/// then Cancel and Export. The live link and Attach to a mission are left out: the first is a
-/// network listener not built, the second waits for Missions.
+/// then Cancel and Export. The live link is left out: it is a network listener not built.
 struct DesignExportSheet: View {
     var vm: ShepherdViewModel
     @Bindable var model: DesignExportModel

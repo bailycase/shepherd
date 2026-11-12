@@ -2,7 +2,7 @@
 import { Input, Text, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { cleanText, clipColumns, duration, endTime, readTranscript, TranscriptViewport, wrapColumns, displayWidth, identityLine, composerLabel, repliesByResume, statusColor, stopScope } from "./shepherd-inspect.mjs";
 
-export const commandNames = ["subagents", "run", "subagents-fleet", "subagents-stop", "subagents-models", "subagents-doctor", "missions", "workflows"];
+export const commandNames = ["subagents", "run", "subagents-fleet", "subagents-stop", "subagents-models", "subagents-doctor", "workflows"];
 // Under Shepherd these two are not registered: the thread has the tray, the inspector and Stop for
 // them, and its pi runs in RPC mode, so there is no terminal for the fleet overlay.
 const coveredByShepherd = ["subagents-fleet", "subagents-stop"];
@@ -272,10 +272,6 @@ export function registerNativeCommands(pi, runtime, env = process.env) {
     try { diagnostics = diagnosticLines(runtime.catalog(ctx)); }
     catch (error) { diagnostics = [`discovery error · ${error.message}`]; }
     report(ctx, ["NATIVE SUBAGENTS", ...runtime.doctor(ctx), aliasNote, ...listed.map((n) => `/${names[n]}`), ...diagnostics].join("\n"));
-  });
-  register("missions", (args, ctx) => {
-    const id = oneArgument(args), records = runtime.missions(id);
-    report(ctx, id ? JSON.stringify(records, null, 2) : records.map((m) => `${m.id} · ${m.status} · ${m.title}`).join("\n") || "no native missions · records do not control processes");
   });
   register("workflows", (args, ctx) => {
     const id = oneArgument(args), records = runtime.workflows(id);

@@ -5,7 +5,6 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { children, childrenSource, harness, providerServer, scratchHome, tempDir, withEnv } from "./fixtures/children-harness.mjs";
-process.env.SHEPHERD_MISSIONS = "1"; // These tests cover mission records and the mission parameters, which are off unless this is set.
 
 const PARENT = (dir, home) => ({
   HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", SHEPHERD_CLIPROXYAPI_CONFIG: undefined,
@@ -86,7 +85,7 @@ test("a helper exits when its custom provider isn't loaded, and the message carr
     await withParent(dir, home, async () => {
       const h = await harness(dir, { models: [{ provider: "fixture", id: "fixture" }, { provider: "custom", id: "fixture-model" }] });
       try {
-        await assert.rejects(h.call("start", { task: "x", role: "scout", model: "custom/fixture-model", mission: false }), (error) => {
+        await assert.rejects(h.call("start", { task: "x", role: "scout", model: "custom/fixture-model" }), (error) => {
           assert.match(error.message, /^Child exited before clean settlement \(1\): Error: Model "custom\/fixture-model" not found\./);
           assert.match(error.message, /custom\/fixture-model resolves in this Pi, so its provider is one the helper doesn't load/);
           return true;
@@ -109,7 +108,7 @@ test("a model the helper's own catalog lacks names the providers the helper has"
       const h = await harness(dir, { models: [{ provider: "fixture", id: "fixture" }, { provider: "fixture", id: "parent-only-model" }] });
       try {
         // Pi takes the id as a custom model and starts; its catalog never lists it.
-        await assert.rejects(h.call("start", { task: "x", role: "scout", model: "fixture/parent-only-model", mission: false }),
+        await assert.rejects(h.call("start", { task: "x", role: "scout", model: "fixture/parent-only-model" }),
           /unavailable in isolated Pi\. Provider "fixture" has no model "parent-only-model" in the helper's Pi\..*Providers the helper's Pi has: fixture\./);
         assert.equal(fixture.requests.length, 0);
       } finally { await h.shutdown(); }

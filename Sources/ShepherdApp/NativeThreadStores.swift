@@ -167,12 +167,12 @@ final class NativeThreadStores<Key: Hashable> {
 }
 
 /// The views that need a thread's loaded history: every view showing it on screen, whichever
-/// one's loop polls the store, and a hidden but mounted one (a deck layout, a Mission station, a
-/// design chat) left scrolled up into the history, so its place survives. Per view owner, so one
-/// view leaving or hiding never unpins another's.
+/// one's loop polls the store, and a hidden but mounted one (a deck layout, a design chat)
+/// left scrolled up into the history, so its place survives. Per view owner, so one view
+/// leaving or hiding never unpins another's.
 ///
-/// It also hands a store's poll loop back when views share it (a deck thread and a Mission
-/// station): the newest view to show the thread runs the loop (a run ends the one before it);
+/// It also hands a store's poll loop back when views share it: the newest view to show the
+/// thread runs the loop (a run ends the one before it);
 /// when that view hides or goes, the most recent view still showing the thread runs it again. A
 /// loop stopped for any other reason (the store detached, the agent held off) is not restarted.
 /// Pins (who needs the history) and the loop (who polls) stay separate.

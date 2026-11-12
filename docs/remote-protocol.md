@@ -253,11 +253,11 @@
     unavailable. The relay receives optional `title` (100 Unicode scalars) and `preview` (240),
     whitespace-normalized and credential-redacted before truncation; redaction cannot detect every
     secret. Thinking and tool logs are not preview sources. It also receives `group` (the APNs thread-id:
-    `mission:<id>` for a mission's planner and stations, else `thread:<agentID>`), `subtitle` (60),
+    `thread:<agentID>` or `automation:<id>` for a run that never started), `subtitle` (60),
     `level` (`passive` for finished work, else `active`) and `relevance` (the Scheduled Summary
     rank); a relay that answers 400 to them gets the same event without them, and only the old
     fields until the host restarts. A registration may carry `preferences` (Settings ▸ Notifications
-    on the phone: which topics, away-only, and a level per mission); the host sends that phone only
+    on the phone: which topics and away-only); the host sends that phone only
     what they allow, and an older phone's registration without them gets everything. Hosts without this capability cannot register destinations.
   - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Agents, Worktrees and Pi set,
     the pi packages its pi loads, and its Shepherd and pi versions; one change per request
@@ -275,10 +275,7 @@
     repo's `.mcp.json`, and the slash commands with their switches (missing from an older host:
     the Mac's defaults). `experiments.designTool.v1` switches the Design tool; it is offered while
     the tool is off (it is not one of `designCapabilities`), and turning it on re-offers
-    `designs.v1` with `capabilitiesChanged`. `experiments.missions.v1` switches Missions;
-    `HostSettings.missionsActive` says a mission is planning, running or publishing, and the host
-    refuses Missions off then (`settings_failed`), as the Mac's own card does. The bundled
-    extension list gains `designReferences`. `hostSettings.closeOnMerge.v1` adds Close threads
+    `designs.v1` with `capabilitiesChanged`. The bundled extension list gains `designReferences`. `hostSettings.closeOnMerge.v1` adds Close threads
     when their pull request merges (missing from an older host: off).
   - `hostInventory` (`hostInventory.v1`): read-only, what the host's Settings ▸ MCP, Subagents and
     Sign-in show (`RemoteHostInventoryRequest`: `mcp`, `subagents`, `subagent(file:)`,
@@ -417,38 +414,6 @@
     read the whole @ picker catalog (`mentionCatalog`); it alone gets `designNotesChanged`,
     `designGitChanged` and its import's `designImportProgress` pushes.
     Answered by the server itself; boards render on the client
-  - `mission` (`missions.v1`, offered only while the host's Missions experiment is on and its app
-    drives missions, and only to a client that lists it in `hello`): `RemoteMissionRequest` lists
-    summaries (each names the agents the mission owns, so clients keep those threads out of their
-    thread lists), reads one record (at most 256 KiB), New mission's options, create, every owner
-    action of the Mac's Missions page (`action(missionID:revision:action:)`, refused `stale_mission`
-    when the shown revision moved; Pause and Stop of a running mission halt whatever its revision),
-    a review's files and fingerprints and one file's `DiffFile`, the Spec Kit reads, and the host's
-    templates (`templates`; `create` may name one, and `saveTemplate` saves a finished mission's map;
-    the app sends these only to its own host on this Mac). `retryLane(attempts:hint:)`,
-    behind `missions.retryLane.v1`, is a blocked push's Retry with hint: the stuck lane
-    (`Mission.stuck`, as the push's `detail.stuck` shows it) gets one attempt past its retry limit
-    with the hint in its prompts, and the mission resumes; `attempts` is the stuck count the push
-    showed, and a lane that moved since is refused `stale_mission`. Answered
-    by the host's own `MissionController` (reads by the server), with the same guards as its page:
-    Publish carries the run's `reviewFingerprint` and Spec Kit consent the preflight's
-    `consentFingerprint` the client showed, and the host checks both again. A host with
-    `missions.train.v1` also serves a published mission's merge train (`MissionRun.train` in the
-    record, `pauseTrain` and `resumeTrain`); the iPhone and iPad show the train only there. Missions never ride
-    `stateChanged` (still `withoutMissions`), except to this Mac's app showing the host's threads as
-    its own (`local.threads.v1`), which is sent the whole workspace (missions, Project coordinators
-    and executions); a capable client gets a pushed
-    `missionChanged(missionID:revision:)` hint (nil: it went) and pulls. What running agents say
-    (`RemoteMissionLive`: the planner's or working station's words and each working attempt's, 4 KiB
-    each, at most 16) comes with `get` and as a `missionLive` push at most every half second (empty
-    once nothing runs). Station threads are read through native-thread snapshots. A mission
-    thread's composer is offered (`send` in its actions) while the mission can take words there,
-    and its `send`, on this Mac or any client, goes to the owner (`onMissionThreadSend`): while its
-    turn works, as the composer chose (`followUp` queued for after the turn in the attempt's own
-    session, which settles only after it; `steer` or `interrupt` steered in, accepted once pi
-    queued it); while the mission waits on you, the planner's answer (a Spec Kit planning thread's
-    to its own repository only); else a failure result saying why; words only. Other requests to it stay
-    `mission_control`. A reply past the frame cap is `too_large`. An older client never sees missions
   - `tunnel` (`browser.tunnel.v1`, offered while the host can serve it, and only to a client that
     lists it in `hello`): a thread's Browser page on a viewing Mac reaches the host's dev server.
     `RemoteRequest.tunnel` and `RemoteReply.tunnel` carry `BrowserTunnelFrame`s (open, opened,

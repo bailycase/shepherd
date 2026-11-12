@@ -1,6 +1,6 @@
 import Foundation
 
-/// Async login-shell runner for commits from review, branch actions and missions. `zsh -l`
+/// Async login-shell runner for commits from review and branch actions. `zsh -l`
 /// resolves the user's PATH (gh, brew-installed git) exactly like Shepherd's pi launch path.
 /// Prompting is disabled so a missing credential fails fast instead of hanging a non-TTY child.
 public enum LoginShell {

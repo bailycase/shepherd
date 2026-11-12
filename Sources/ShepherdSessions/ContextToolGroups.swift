@@ -29,7 +29,7 @@ enum ContextToolGroups {
         if name.hasPrefix("agent_") || name == "goal_finish" { return "agent" }
         if name.hasPrefix("automation_") || name == "notify" { return "automation" }
         if name == "review_diff" { return "review" }
-        if name.hasPrefix("shepherd_child_") || name == "shepherd_workflow" || name == "shepherd_mission" || name == "shepherd_parent_message" { return "subagents" }
+        if name.hasPrefix("shepherd_child_") || name == "shepherd_workflow" || name == "shepherd_parent_message" { return "subagents" }
         if name.hasPrefix("browser_") { return "browser" }
         if name == "tool_search" || name.hasPrefix("mcp__") || Self.mcpResourceTools.contains(name) { return "mcp" }
         if designTools.contains(name) { return "design" }

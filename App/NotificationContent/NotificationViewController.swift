@@ -23,9 +23,7 @@ final class NotificationViewController: UIViewController, UNNotificationContentE
             .flatMap { try? JSONDecoder().decode(SHPushDetail.self, from: $0) }
         let preview = SHPushPreview(title: content.title, subtitle: content.subtitle, body: content.body,
                                     date: notification.date, detail: detail)
-        if let actions = PushButtons.actions(kind: content.categoryIdentifier, options: detail?.options,
-                                             mission: content.threadIdentifier.hasPrefix("mission:") && detail?.lanes != nil,
-                                             stuck: detail?.stuck?.lane) {
+        if let actions = PushButtons.actions(kind: content.categoryIdentifier, options: detail?.options) {
             extensionContext?.notificationActions = actions
         }
         if let host {

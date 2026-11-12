@@ -177,7 +177,7 @@ public struct SHStateGlyph: View {
     }
 }
 
-/// Mission and run steps, one segment per step in its state's color; pending steps are
+/// Run steps, one segment per step in its state's color; pending steps are
 /// `lineStrong` (Status board).
 public struct SHStepStrip: View {
     let steps: [AgentState?]

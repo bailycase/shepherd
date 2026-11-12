@@ -691,11 +691,9 @@ public struct ShepherdState: Codable, Hashable, Sendable {
     public var designs: [Design]
     public var projects: [Project]
     public var projectExecutions: [ProjectExecutionReceipt]
-    public var missions: [Mission]
 
     public init(spaces: [Space] = [], tabs: [Tab] = [], agents: [Agent] = [], automations: [Automation] = [],
-                designs: [Design] = [], projects: [Project] = [], projectExecutions: [ProjectExecutionReceipt] = [],
-                missions: [Mission] = []) {
+                designs: [Design] = [], projects: [Project] = [], projectExecutions: [ProjectExecutionReceipt] = []) {
         self.spaces = spaces
         self.tabs = tabs
         self.agents = agents
@@ -703,11 +701,10 @@ public struct ShepherdState: Codable, Hashable, Sendable {
         self.designs = designs
         self.projects = projects
         self.projectExecutions = projectExecutions
-        self.missions = missions
     }
 
     private enum CodingKeys: String, CodingKey {
-        case spaces, tabs, agents, automations, designs, projects, projectExecutions, missions
+        case spaces, tabs, agents, automations, designs, projects, projectExecutions
     }
 
     public init(from decoder: Decoder) throws {
@@ -721,7 +718,8 @@ public struct ShepherdState: Codable, Hashable, Sendable {
         designs = try c.decodeIfPresent([Design].self, forKey: .designs) ?? []
         projects = try c.decodeIfPresent([Project].self, forKey: .projects) ?? []
         projectExecutions = try c.decodeIfPresent([ProjectExecutionReceipt].self, forKey: .projectExecutions) ?? []
-        missions = try c.decodeIfPresent([Mission].self, forKey: .missions) ?? []
+        // `missions` in older state.json files is ignored: the Missions feature was removed
+        // (preserved on archive/missions); its agents stay as ordinary threads.
         // `subagents` in older state.json files is ignored: Shepherd-owned children
         // are ephemeral runtime records, never persisted app entities.
     }

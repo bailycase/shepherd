@@ -241,7 +241,7 @@ enum RemoteSamples {
         defaultServiceTier: .fast, textGenerationModel: "anthropic/claude-haiku", visionModel: "google/gemini-flash", compactAtPercent: 80,
         queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true, projectsEnabled: true,
         worktreeBase: .head, fetchBeforeCreating: false, mergePRAutomatically: true, mergeMethod: .rebase, closeOnMerge: true,
-        backgroundService: true, designToolEnabled: true, missionsEnabled: true, missionsActive: true,
+        backgroundService: true, designToolEnabled: true,
         subagentDefaults: HostSettings.SubagentDefaults(concurrency: 6, model: "openai/gpt-5-mini", thinking: .low, context: .fork),
         worktreeDeleteAction: .removeWorktree, skillsInSlashMenu: false, mcpProjectConfig: true,
         slashCommands: [NativeCommand(name: "review", description: "Review a diff", source: "extension")], hiddenSlashCommands: ["review"],
@@ -273,7 +273,7 @@ enum RemoteSamples {
         .worktreeBase(.fresh), .fetchBeforeCreating(true), .commitRemainingWork(false), .generatePRDescriptions(false),
         .deleteLocalBranch(false), .mergePRAutomatically(false), .mergeMethod(.squash),
         .bundledExtension(id: "review", on: true), .updatePiDaily(false), .updateExtensionsDaily(true),
-        .designToolEnabled(true), .missionsEnabled(false),
+        .designToolEnabled(true),
         .subagentDefaults(HostSettings.SubagentDefaults(concurrency: 2, model: nil, thinking: nil, context: .fresh)),
         .worktreeDeleteAction(.keepWorktree), .skillsInSlashMenu(false), .mcpProjectConfig(true), .slashCommand(name: "review", on: false),
         .closeOnMerge(true), .closeOnMerge(false),
@@ -403,12 +403,12 @@ struct RemoteRequestTests {
         switch request {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .projectRequest, .startThread, .focusThread, .projectExecutors, .createAgent, .upload,
-             .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
+             .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 54
+    static let caseCount = 53
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -417,7 +417,7 @@ struct RemoteRequestTests {
         .fleetDigest(id: 98, agentID: S.agent, session: nil, revision: nil),
         .pushRegistration(id: 93, registration: RemotePushRegistration(id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64))),
         .pushRegistration(id: 94, registration: RemotePushRegistration(id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64),
-            preferences: RemotePushPreferences(topics: [.questions, .failures], awayOnly: false, missions: ["m1": .onlyBlocked]))),
+            preferences: RemotePushPreferences(topics: [.questions, .failures], awayOnly: false))),
         .pushUnregister(id: 94, registrationID: "11111111-2222-3333-4444-555555555555"),
         .hostUpdate(id: 90, request: .status),
         .hostUpdate(id: 91, request: .check),
@@ -503,7 +503,6 @@ struct RemoteRequestTests {
         .logicalProjects(id: 31, request: .list),
         .projectExecution(id: 33, request: .execute(ProjectExecutionWireTests.assignment)),
         .design(id: 31, request: .boards(designID: RemoteDesignSamples.design, paths: nil, knownShas: [:])),
-        .mission(id: 34, request: .action(missionID: RemoteMissionSamples.mission.id, revision: 4, action: .publish(fingerprint: "f00d"))),
         .tunnel(.open(tunnel: 7, agentID: S.agent, port: 5173)),
         .browserClaim(id: 33, agentID: S.agent),
         .browserRelease(agentID: S.agent),
@@ -718,12 +717,11 @@ struct RemoteReplyTests {
         case .nativeThreadChanged, .fleetDigest, .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
-             .mission, .missionChanged, .missionLive,
              .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged, .pullRequestLinks:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 59
+    static let caseCount = 56
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -791,9 +789,6 @@ struct RemoteReplyTests {
         .design(id: 32, result: .ok),
         .designChanged(designID: RemoteDesignSamples.design, revision: 8, commentsRevision: 2),
         .designSystemsChanged,
-        .mission(id: 35, result: .mission(RemoteMissionSamples.mission)),
-        .missionChanged(missionID: RemoteMissionSamples.mission.id, revision: 5),
-        .missionLive(missionID: RemoteMissionSamples.mission.id, live: RemoteMissionLive(output: "Reading orders-svc", attempts: [RemoteMissionSamples.attempt: "Editing"])),
         .capabilitiesChanged(capabilities: [RemoteProtocol.designsCapability]),
         .tunnel(.data(tunnel: 7, bytes: Data("HTTP/1.1 200 OK\r\n\r\n".utf8))),
         .browserClaimed(id: 33, url: "http://localhost:5173/checkout"),
@@ -903,7 +898,7 @@ struct RemoteReplyTests {
     @Test func hostSettingsFromAnOlderHostDecodeWithDefaults() throws {
         var object = try Wire.object(RemoteReply.hostSettings(id: 1, settings: S.hostSettings))
         var settings = try #require(object["settings"] as? [String: Any])
-        for key in ["designToolEnabled", "missionsEnabled", "missionsActive", "subagentDefaults", "worktreeDeleteAction",
+        for key in ["designToolEnabled", "subagentDefaults", "worktreeDeleteAction",
                     "skillsInSlashMenu", "mcpProjectConfig", "slashCommands", "hiddenSlashCommands", "closeOnMerge", "backgroundService"] {
             settings[key] = nil
         }
@@ -912,7 +907,7 @@ struct RemoteReplyTests {
         guard case .hostSettings(_, let decoded) = try JSONDecoder().decode(RemoteReply.self, from: data) else {
             Issue.record("expected settings"); return
         }
-        #expect(!decoded.designToolEnabled && !decoded.missionsEnabled && !decoded.missionsActive)
+        #expect(!decoded.designToolEnabled)
         #expect(decoded.subagentDefaults == HostSettings.SubagentDefaults())
         #expect(decoded.worktreeDeleteAction == .ask && decoded.skillsInSlashMenu && !decoded.mcpProjectConfig)
         #expect(decoded.slashCommands.isEmpty && decoded.hiddenSlashCommands.isEmpty)
@@ -1234,10 +1229,10 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeServiceTierCapability, RemoteProtocol.nativeImagesCapability,
             RemoteProtocol.createAgentServiceTierCapability,
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
-            RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability,
+            RemoteProtocol.designToolExperimentCapability,
             RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostSettingsCloseOnMergeCapability, RemoteProtocol.hostSettingsBackgroundServiceCapability,
             RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.appsV2Capability, RemoteProtocol.agentRestartCapability, RemoteProtocol.completionSeenCapability,
-            RemoteProtocol.pushMuteCapability, RemoteProtocol.missionsRetryLaneCapability,
+            RemoteProtocol.pushMuteCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
@@ -1246,8 +1241,6 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.designGitCapability,
             // Offered only to a client that lists it in hello.
             RemoteProtocol.filesCapability, RemoteProtocol.filesWriteCapability,
-            // Offered only while the host's Missions experiment is on, and only to a client that lists it.
-            RemoteProtocol.missionsCapability, RemoteProtocol.missionsTrainCapability,
         ]
         #expect(Set(RemoteProtocol.capabilities) == Set(named))
         #expect(RemoteProtocol.capabilities.count == named.count)
@@ -1283,10 +1276,8 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.hostSettingsBackgroundServiceCapability == "hostSettings.backgroundService.v1")
         #expect(RemoteProtocol.hostConfigCapability == "hostConfig.v1")
         #expect(RemoteProtocol.designToolExperimentCapability == "experiments.designTool.v1")
-        #expect(RemoteProtocol.missionsExperimentCapability == "experiments.missions.v1")
         #expect(!RemoteProtocol.designCapabilities.contains(RemoteProtocol.designToolExperimentCapability))
         #expect(RemoteProtocol.filesCapability == "files.v1")
-        #expect(RemoteProtocol.missionsCapability == "missions.v1")
         #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.filesCapability))
         #expect(RemoteProtocol.nativeThreadStartingCapability == "native.thread.starting.v1")
         #expect(RemoteProtocol.nativeQueueCapability == "native.queue.v1")

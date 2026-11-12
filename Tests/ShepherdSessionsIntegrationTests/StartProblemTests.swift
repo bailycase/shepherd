@@ -184,7 +184,7 @@ struct StartProblemTests {
     }
 
     /// A stop Shepherd asks for keeps the agent, with nothing to report: its thread is starting.
-    /// `killSession` of an agent's own pi is one (a halted mission's threads stay).
+    /// `killSession` of an agent's own pi is one.
     @Test(arguments: [false, true])
     func aStopShepherdAsksForKeepsTheAgentWithoutAProblem(killed: Bool) async throws {
         let h = try ScratchServer.fresh()

@@ -71,7 +71,7 @@ test("real Pi RPC: every bundled command the menu lists answers in the thread, a
     const listed = (await pi.request({ type: "get_commands" })).data.commands.filter((c) => c.source === "extension");
     const bundled = listed.filter((c) => c.sourceInfo?.path?.startsWith(root)).map((c) => c.name).sort();
     // /shepherd-retry is the host's own (it leaves it out of the menu); the other six are the native subagents' reports.
-    assert.deepEqual(bundled, ["missions", "run", "shepherd-retry", "subagents", "subagents-doctor", "subagents-models", "workflows"]);
+    assert.deepEqual(bundled, ["run", "shepherd-retry", "subagents", "subagents-doctor", "subagents-models", "workflows"]);
     assert(!listed.some((c) => c.name === "subagents-fleet" || c.name === "subagents-stop"), "the tray, the inspector and Stop cover these");
 
     for (const name of bundled.filter((n) => n !== "shepherd-retry")) {

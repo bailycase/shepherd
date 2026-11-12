@@ -69,8 +69,8 @@ struct ThreadView: View {
     @Environment(\.designGitChat) private var designGitChat
     /// A Project conversation or one of its worker threads: the boards space the column at 16pt, not an ordinary thread's 28 and 14.
     private var leadColumn: Bool { projectSend != nil || workerStyle != nil }
-    /// No composer at all, not a disabled one: a resolved Project thread, or a finished thread nothing will
-    /// start again (a mission step's history: offline and offering no send).
+    /// No composer at all, not a disabled one: a resolved Project thread, or a held-off thread
+    /// (offline and offering no send).
     private var composerHidden: Bool {
         workerStyle?.composerHidden == true || (projectSend == nil && store.offline && !store.supports("send"))
     }

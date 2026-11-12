@@ -4,7 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 @testable import ShepherdApp
 
-/// One thread on screen in two Mac views (a deck thread and a Mission station): the history stays
+/// One thread on screen in two Mac views (a deck thread and a second view): the history stays
 /// pinned for each view separately, and the older view runs the store again when the newer leaves.
 @Suite("Thread reader handoff", .timeLimit(.minutes(1)))
 @MainActor
@@ -62,7 +62,7 @@ struct ThreadReaderHandoffTests {
         stores.protected = { ["selected"] }
         let store = stores.store(for: "shared")
         let asks = Asks()
-        let deck = UUID(), mission = UUID()
+        let deck = UUID(), second = UUID()
         var loops: [Task<Void, Never>] = []
         defer { loops.forEach { $0.cancel() } }
         // What a thread view does when it shows the thread (and again when the loop is handed back to it).
@@ -77,12 +77,12 @@ struct ThreadReaderHandoffTests {
         }
 
         await asks.next("A") { show(deck, "A") }
-        await asks.next("B") { show(mission, "B") }
+        await asks.next("B") { show(second, "B") }
         // The newer view leaves: only its own pin goes, and the older view runs the loop again.
         await asks.next("A") {
-            store.stop(owner: mission)
-            pins.stopped(store, owner: mission)
-            pins.unpin(store, owner: mission)
+            store.stop(owner: second)
+            pins.stopped(store, owner: second)
+            pins.unpin(store, owner: second)
         }
         #expect(store.isLive)
         #expect(asks.log.last == "A")
@@ -107,7 +107,7 @@ struct ThreadReaderHandoffTests {
         let pauses = Pauses()
         let store = NativeThreadStore(startingLimit: .seconds(60)) { _ in await pauses.wait() }
         let asks = Asks()
-        let deck = UUID(), mission_ = UUID()
+        let deck = UUID(), second_ = UUID()
         var resumedDeck = 0
         var loops: [Task<Void, Never>] = []
         defer { loops.forEach { $0.cancel() } }
@@ -122,17 +122,17 @@ struct ThreadReaderHandoffTests {
             pins.started(store, owner: deck) { resumedDeck += 1 }
             loops.append(run(deck, "A"))
         }
-        var mission: Task<Void, Never>?
+        var second: Task<Void, Never>?
         await asks.next("B") {
-            pins.started(store, owner: mission_) { }
-            mission = run(mission_, "B")
+            pins.started(store, owner: second_) { }
+            second = run(second_, "B")
         }
         // Detached elsewhere while both views still show the thread: B's loop returns on its own.
         store.stop()
         pauses.releaseAll()
-        if let mission { _ = await mission.value }
+        if let second { _ = await second.value }
         #expect(!store.isLive)
-        pins.stopped(store, owner: mission_)
+        pins.stopped(store, owner: second_)
         #expect(resumedDeck == 0, "a stopped loop stays stopped when the view that ran it goes")
         #expect(!store.isLive)
         pins.stopped(store, owner: deck)

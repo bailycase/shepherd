@@ -54,7 +54,7 @@ public enum RemoteProtocol {
     /// And it answers what a background host's agent asks of Shepherd's window (`AppRelayJob`),
     /// which a host asks only of a local client that lists it.
     public static let appRelayCapability = "appRelay.v1"
-    public static let clientCapabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, missionsCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability, designRelayCapability, appRelayCapability, appsV2Capability]
+    public static let clientCapabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability, designRelayCapability, appRelayCapability, appsV2Capability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -241,8 +241,6 @@ public enum RemoteProtocol {
     /// Settings ▸ Experiments ▸ Design tool switched from a client (`HostSettingChange.designToolEnabled`).
     /// Offered while the tool is off too: it is not one of `designCapabilities`.
     public static let designToolExperimentCapability = "experiments.designTool.v1"
-    /// Settings ▸ Experiments ▸ Missions switched from a client; off is refused while a mission is active.
-    public static let missionsExperimentCapability = "experiments.missions.v1"
     /// The creation page may choose a tier before the opening prompt reaches pi.
     public static let createAgentServiceTierCapability = "agent.create.serviceTier.v1"
     public static let projectExecutionCapability = "logicalProjects.execution.v1"
@@ -260,7 +258,7 @@ public enum RemoteProtocol {
     /// The host saves a file of a thread's folder (`RemoteAgentQuery.fileWrite`), only over the text the client
     /// edited from (`ThreadFileSaveResult.changed` otherwise). Served only to a client offered `filesCapability`.
     public static let filesWriteCapability = "files.write.v1"
-    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, missionsCapability, missionsTrainCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostSettingsTextGenerationModelCapability, hostSettingsVisionModelCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, missionsRetryLaneCapability, checkoutReadCapability, pullRequestLinkCapability]
+    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostSettingsTextGenerationModelCapability, hostSettingsVisionModelCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, checkoutReadCapability, pullRequestLinkCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -794,8 +792,6 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case projectExecution(id: Int, request: ProjectExecutionRequest)
     /// Read or change the host's designs (`RemoteProtocol.designsCapability`).
     case design(id: Int, request: RemoteDesignRequest)
-    /// A Missions request (`RemoteProtocol.missionsCapability`), answered `mission` or an error.
-    case mission(id: Int, request: RemoteMissionRequest)
     /// One message of a Browser tunnel (`RemoteProtocol.browserTunnelCapability`). Nothing answers it
     /// by id: the host's frames come back as `RemoteReply.tunnel`.
     case tunnel(BrowserTunnelFrame)
@@ -839,7 +835,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case logicalProjectRuntime
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
         case hostConfig, hooks, apps
-        case design, mission
+        case design
         case tunnel
         case browserClaim, browserRelease, browserAnswer
         case designRelayAnswer, appRelayAnswer
@@ -872,8 +868,6 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             self = .appRelayAnswer(requestToken: try c.decode(Int.self, forKey: .requestToken), result: try c.decode(AppRelayResult.self, forKey: .result))
         case .design:
             self = .design(id: try c.decode(Int.self, forKey: .id), request: try c.decode(RemoteDesignRequest.self, forKey: .request))
-        case .mission:
-            self = .mission(id: try c.decode(Int.self, forKey: .id), request: try c.decode(RemoteMissionRequest.self, forKey: .request))
         case .automation:
             self = .automation(id: try c.decode(Int.self, forKey: .id),
                                automationID: try c.decode(AutomationID.self, forKey: .automationID),
@@ -1157,10 +1151,6 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.design, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(request, forKey: .request)
-        case .mission(let id, let request):
-            try c.encode(Kind.mission, forKey: .type)
-            try c.encode(id, forKey: .id)
-            try c.encode(request, forKey: .request)
         case .tunnel(let frame):
             try c.encode(Kind.tunnel, forKey: .type)
             try c.encode(frame, forKey: .frame)
@@ -1366,14 +1356,6 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// Pushed to a client that lists `designSystemsCapability` after the host's design systems
     /// changed (one added, renamed, re-synced or deleted): a hint to list them again.
     case designSystemsChanged
-    /// A Missions request's answer (`RemoteRequest.mission`).
-    case mission(id: Int, result: RemoteMissionResult)
-    /// Pushed to a client that lists `missionsCapability` while the host offers it, after a mission
-    /// is made or changes (`revision`) or goes (nil). A hint to pull; it carries no record.
-    case missionChanged(missionID: MissionID, revision: UInt64?)
-    /// Pushed like `missionChanged`, at most every half second while a mission's agents talk: what they say
-    /// now (`RemoteMissionLive`, bounded); empty once nothing runs.
-    case missionLive(missionID: MissionID, live: RemoteMissionLive)
     /// Pushed to a client that lists `designsCapability` when what the host offers changes (its
     /// Design tool experiment turned on or off): the whole list, as `helloOk` gave it.
     case capabilitiesChanged(capabilities: [String])
@@ -1449,7 +1431,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case path, parent, dirs, models, defaultModel, withoutThinking, thinkingLevels, serviceTiers, contexts, withoutImages, attachment, options
         case snapshot, settings, status
         case designID, revision, commentsRevision
-        case url, push, missionID, live
+        case url, push
         case token, jobFile, job
         case title, body
         case page, tool, problem
@@ -1465,7 +1447,6 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
         case hostConfig, hooks, apps
         case design, designChanged, designSystemsChanged, capabilitiesChanged
-        case mission, missionChanged, missionLive
         case tunnel
         case browserClaimed, browserDrive, logicalProjectRuntime
         case designRelay, agentNotify, appRelay, settingsChanged, toolFinished, threadNotice, agentStartProblem, automationsChanged, automationNotify, designNotesChanged, designGitChanged, designImportProgress, appsChanged
@@ -1528,13 +1509,6 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             self = .designSystemsChanged
         case .capabilitiesChanged:
             self = .capabilitiesChanged(capabilities: try c.decode([String].self, forKey: .capabilities))
-        case .mission:
-            self = .mission(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteMissionResult.self, forKey: .result))
-        case .missionChanged:
-            self = .missionChanged(missionID: try c.decode(MissionID.self, forKey: .missionID),
-                                   revision: try c.decodeIfPresent(UInt64.self, forKey: .revision))
-        case .missionLive:
-            self = .missionLive(missionID: try c.decode(MissionID.self, forKey: .missionID), live: try c.decode(RemoteMissionLive.self, forKey: .live))
         case .helloOk:
             self = .helloOk(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1772,18 +1746,6 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .capabilitiesChanged(let capabilities):
             try c.encode(Kind.capabilitiesChanged, forKey: .type)
             try c.encode(capabilities, forKey: .capabilities)
-        case .mission(let id, let result):
-            try c.encode(Kind.mission, forKey: .type)
-            try c.encode(id, forKey: .id)
-            try c.encode(result, forKey: .result)
-        case .missionChanged(let missionID, let revision):
-            try c.encode(Kind.missionChanged, forKey: .type)
-            try c.encode(missionID, forKey: .missionID)
-            try c.encodeIfPresent(revision, forKey: .revision)
-        case .missionLive(let missionID, let live):
-            try c.encode(Kind.missionLive, forKey: .type)
-            try c.encode(missionID, forKey: .missionID)
-            try c.encode(live, forKey: .live)
         case .tunnel(let frame):
             try c.encode(Kind.tunnel, forKey: .type)
             try c.encode(frame, forKey: .frame)

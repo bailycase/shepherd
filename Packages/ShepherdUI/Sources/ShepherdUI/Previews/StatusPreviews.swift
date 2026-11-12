@@ -54,7 +54,7 @@ import SwiftUI
                      systemImage: "desktopcomputer") {
                 Button("Retry now") {}.buttonStyle(.sh(.secondary, size: .s))
             }
-            SHBanner(.done, title: "Mission done", message: "Every “done when” check is verified.")
+            SHBanner(.done, title: "All checks passed", message: "Every check is verified.")
         }
         .frame(width: 560)
     }
@@ -65,9 +65,8 @@ import SwiftUI
     SHPreviewBoth {
         VStack(spacing: SH.Space.xl) {
             SHToastView(toast: SHToast(.done, subject: "worker", message: "finished · 5 files", action: .init("Open") {})) {}
-            SHEmptyState(Text("No agents on watch"), message: "Start one here, or pick a repo and let a mission plan the work.") {
+            SHEmptyState(Text("No agents on watch"), message: "Start one here, or pick a repo and start an agent on it.") {
                 Button("New agent") {}.buttonStyle(.sh(.primary))
-                Button("New mission") {}.buttonStyle(.sh(.secondary))
             }
             SHLoadingRows()
             SHWordmark(size: .large)

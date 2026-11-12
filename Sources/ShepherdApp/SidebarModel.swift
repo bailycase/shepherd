@@ -12,8 +12,6 @@ import ShepherdUI
 enum MainDestination: Hashable, CaseIterable {
     /// NavNewThread: ⌘N or the first destination.
     case newThread
-    /// Native mission planning, execution and PR review.
-    case missions
     /// NavDesigns (Settings ▸ Experiments ▸ Design tool).
     case designs
     /// DZStart: a new design's brief. The sidebar shows Designs selected.
@@ -200,8 +198,6 @@ struct SidebarSource: Equatable {
         var state: ShepherdState
         /// Not connected: `state` is what it last sent this launch.
         var offline = false
-        /// The agents its missions started (`missions.v1`): a host sends no missions in its state.
-        var missionAgents: Set<AgentID> = []
     }
 
     var local: ShepherdState
@@ -256,21 +252,6 @@ struct SidebarSource: Equatable {
             }
         }
         return state
-    }
-}
-
-extension ShepherdState {
-    /// Every agent a mission started: its planner turns, workers, validators and Spec Kit planning
-    /// threads, running or long finished, from the mission's own receipts (never names). Their threads
-    /// belong to the mission, so the sidebar lists the mission, not them.
-    var missionAgentIDs: Set<AgentID> {
-        var ids: Set<AgentID> = []
-        for mission in missions {
-            guard let run = mission.run else { continue }
-            for attempt in run.attempts { if let agent = attempt.agentID { ids.insert(agent) } }
-            for lane in run.specKit?.lanes ?? [] { if let agent = lane.plannerAgentID { ids.insert(agent) } }
-        }
-        return ids
     }
 }
 
@@ -333,11 +314,9 @@ enum SidebarDerivation {
             tallies[key] = tally
         }
         let workers = source.local.projectWorkerIDs
-        let missionAgents = source.local.missionAgentIDs
         for (index, agent) in source.local.agents.enumerated() {
-            // A Project's coordinator is its conversation, never an ordinary thread row; a mission's
-            // threads are the mission's (its own section).
-            guard source.local.isSidebarThread(agent, workers: workers) || agent.designID != nil, !missionAgents.contains(agent.id) else { continue }
+            // A Project's coordinator is its conversation, never an ordinary thread row.
+            guard source.local.isSidebarThread(agent, workers: workers) || agent.designID != nil else { continue }
             if let design = agent.designID, designs.contains(design) { continue }
             let automation = localRuns[agent.id]
             let notSignedIn = source.notSignedIn.contains(agent.id)
@@ -387,9 +366,8 @@ enum SidebarDerivation {
                                       uniquingKeysWith: { first, _ in first })
             let automations = Dictionary(host.state.automations.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             let hostWorkers = host.state.projectWorkerIDs
-            let missionAgents = host.state.missionAgentIDs.union(host.missionAgents)
             // A host sends no design's agent (`withoutDesigns`); one from before that is no thread either.
-            for (index, agent) in host.state.agents.enumerated() where host.state.isSidebarThread(agent, workers: hostWorkers) && !missionAgents.contains(agent.id) {
+            for (index, agent) in host.state.agents.enumerated() where host.state.isSidebarThread(agent, workers: hostWorkers) {
                 // Nothing on an offline host can be answered, so none of it waits on you here.
                 let needsYou = !host.offline && agent.status == .blocked
                 let watcher = watchers[agent.id]
@@ -458,7 +436,7 @@ enum SidebarDerivation {
             case .designs: lists.designs.append(entry.row)
             case .automations: lists.automations.append(entry.row)
             // A thread row is never a Project; Projects are listed from `state.projects`.
-            case .recents, .pinned, .projects, .missions: lists.recents.append(entry.row)
+            case .recents, .pinned, .projects: lists.recents.append(entry.row)
             }
         }
         lists.pinned = pins.threads.compactMap { pinnedRows[$0] }
@@ -668,22 +646,17 @@ enum SidebarDerivation {
         var id: Target { target }
     }
 
-    /// New thread (with its chord), Missions, Designs while the Design tool is on (selected on its page and on New design), Automations
+    /// New thread (with its chord), Designs while the Design tool is on (selected on its page and on New design), Automations
     /// and Issues & PRs (with its Needs you count),
     /// as every ProjectLead board draws them. Hosts, Design systems and Extensions have no sidebar row: the command palette
     /// opens them ("Open Hosts", "Open Design systems", "Open Extensions"), Settings ▸ Remote and Settings ▸ Extensions hold the
     /// same settings, and a notification still opens Hosts. Archive is not built, so it is not shown.
-    static func destinations(shown: MainDestination?, newThreadChord: String, designs: Bool = false, missions: Bool = false,
+    static func destinations(shown: MainDestination?, newThreadChord: String, designs: Bool = false,
                              automations: SHSidebarDestination.Trailing = .none, forge: Int = 0) -> [Destination] {
         var rows = [
             Destination(target: .page(.newThread), title: "New thread", icon: .newThread, selected: shown == .newThread,
                         child: false, trailing: .keycaps(newThreadChord)),
         ]
-        // Settings ▸ Experiments ▸ Missions.
-        if missions {
-            rows.append(Destination(target: .page(.missions), title: "Missions", icon: .symbol(SHGlyph.mission.symbolName),
-                                    selected: shown == .missions, child: false, trailing: .none))
-        }
         if designs {
             rows.append(Destination(target: .page(.designs), title: "Designs", icon: .symbol("pencil.tip"),
                                     selected: shown == .designs || shown == .newDesign, child: false, trailing: .none))
