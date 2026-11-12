@@ -57,6 +57,21 @@ struct FleetDispatchHost: @unchecked Sendable {
     var messageThread: @Sendable (AgentID, String, NativeThreadDelivery) async -> Bool = { _, _, _ in false }
     /// What a thread last said and what it is doing (server queue); nil when it is gone.
     var threadFacts: @Sendable (AgentID) -> FleetThreadFacts? = { _ in nil }
+    /// The folders that may hold a checkout of a repository: this Mac's spaces, the main checkout of each thread's worktree, what the
+    /// content index reads and where spaces were bound before (server queue).
+    var repoPlaces: @Sendable () -> [FleetRepoFinder.Place] = { [] }
+    /// Puts a checkout in the workspace as a space (server queue): the one already at that path, else a new one. Nil when it couldn't.
+    var bindSpace: @Sendable (FleetSpaceBinding) -> Space? = { _ in nil }
+}
+
+/// A checkout a dispatch is to work in, as a space (`FleetDispatchHost.bindSpace`).
+struct FleetSpaceBinding: Sendable {
+    /// The fleet's space for the repository, when the sender named one: the checkout binds to it, so it is one space on every Mac.
+    var id: SpaceID?
+    var name: String
+    var path: String
+    var repoKey: String
+    var worktreeBase: String?
 }
 
 /// A dispatched thread as the host that runs it reads it.
@@ -89,6 +104,8 @@ final class FleetDispatch: @unchecked Sendable {
         /// The Mac's own folder for the thread's worktree, for reading branch facts.
         var worktree: String?
         var acceptedAt: Double = 0
+        /// The folder a clone for this dispatch is being made in (made by it, so it is the one thing a restart may remove).
+        var cloneDirectory: String?
     }
 
     let queue: DispatchQueue
@@ -146,6 +163,17 @@ final class FleetDispatch: @unchecked Sendable {
     /// The spare of each repository and what dispatches sent this Mac (`<directory>/spares`, `<directory>/snapshot-blobs`).
     let spares: FleetSpares
     let blobs: FleetSnapshotBlobs
+    /// Finds a checkout of a repository this Mac already has, and keeps which it chose (slice 4f).
+    let finder: FleetRepoFinder
+    /// Receiver: the clone running for each dispatch, so Stop can end it, and the ones started (tests).
+    var clones: [UUID: FleetRepoClone] = [:]
+    var cloneCount = 0
+    /// Receiver: when each clone's progress was last pushed (at most twice a second).
+    var clonePushedAt: [UUID: Double] = [:]
+    /// Where a clone goes first: `~/Developer`, when it is there. Tests point it at a scratch folder.
+    var developerFolder: URL? = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Developer", isDirectory: true)
+    /// Sender: dispatches that carry the repository itself, because the target couldn't clone it from origin.
+    var repoBundles: Set<UUID> = []
     private let reservedCount = FleetCounter()
     /// Told whenever the count of promised places changes (the host reads it for its samples).
     var reservedSink: FleetCounter?
@@ -167,15 +195,22 @@ final class FleetDispatch: @unchecked Sendable {
         self.clock = clock
         spares = FleetSpares(directory: directory.appendingPathComponent("spares", isDirectory: true))
         blobs = FleetSnapshotBlobs(directory: directory.appendingPathComponent("snapshot-blobs", isDirectory: true))
+        finder = FleetRepoFinder(directory: directory, clock: clock)
     }
 
     /// The receiver's state for one snapshot that is arriving.
     final class SnapshotIn: @unchecked Sendable {
         let header: FleetSnapshotHeader
-        let space: Space
+        var space: Space?
         let requestedBranch: String?
         let began = ContinuousClock.now
         var parts: [Int: FleetSnapshotPart] = [:]
+        /// Where the repository comes from, when this Mac has no checkout of it yet (`space` is nil until it has one).
+        var repo: FleetRepoSource?
+        /// Everything is in, and the build waits for a checkout (a clone that is running or a bundle to clone from).
+        var pendingBuild = false
+        /// Looking for a checkout this Mac already has is over.
+        var lookedUp = false
         var manifest: FleetSnapshotManifest?
         /// The contents still missing, once the manifest is whole; nil before. `needOrder` is the order they are asked for.
         var needs: Set<FleetHash>?
@@ -184,7 +219,7 @@ final class FleetDispatch: @unchecked Sendable {
         var building = false
         /// The branch name, chosen while the snapshot is still arriving (its git calls then overlap the transfer).
         var branch: Task<String, Never>?
-        init(header: FleetSnapshotHeader, space: Space, requestedBranch: String?) { (self.header, self.space, self.requestedBranch) = (header, space, requestedBranch) }
+        init(header: FleetSnapshotHeader, space: Space?, requestedBranch: String?) { (self.header, self.space, self.requestedBranch) = (header, space, requestedBranch) }
 
         /// Parts held, counted from the first with none missing.
         var held: Int {
@@ -224,6 +259,10 @@ final class FleetDispatch: @unchecked Sendable {
         }
         // A create that was still being made when the host went down has no thread to follow.
         for (id, entry) in inbound where entry.record.state == .preparing {
+            // A clone that was running has left a folder this host made for it: it goes, and nothing is bound to it.
+            if let folder = entry.cloneDirectory { FleetDispatch.discardClone(folder) }
+            inbound[id]?.cloneDirectory = nil
+            inbound[id]?.record.clone = nil
             inbound[id]?.record.state = .failed
             inbound[id]?.record.failure = FleetDispatchCode.snapshotFailed
             inbound[id]?.record.failureDetail = "restarted"
@@ -308,6 +347,8 @@ final class FleetDispatch: @unchecked Sendable {
         stopped = true
         timer?.cancel()
         timer = nil
+        // A clone that is running ends and takes its folder with it.
+        for job in clones.values { job.cancel() }
     }
 
     /// The links changed or a sample came in: look at everything that waits.
@@ -395,8 +436,10 @@ final class FleetDispatch: @unchecked Sendable {
         let cwd = state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd ?? space.path
         placing.insert(id)
         waiters[id, default: []].append(reply)
+        let (spaceID, folder) = (space.id, space.path)
         Task.detached { [weak self] in
             let pinned = FleetDispatchGit.pin(cwd: (cwd as NSString).expandingTildeInPath)
+            let origin = FleetDispatchGit.origin(cwd: (folder as NSString).expandingTildeInPath)
             self?.queue.async {
                 guard let self else { return }
                 let waiting = self.waiters.removeValue(forKey: id) ?? []
@@ -411,7 +454,8 @@ final class FleetDispatch: @unchecked Sendable {
                         id: id, parentAgentID: agentID, parentHostID: self.hostID, parentHostName: self.hostName(), parentTitle: agent.name,
                         requestedHost: FleetPlacement.isAuto(named) ? nil : named?.trimmingCharacters(in: .whitespacesAndNewlines),
                         state: .placing, title: Self.title(title, task: trimmedTask), task: trimmedTask, repoKey: repoKey,
-                        commitSHA: pin.sha, subdir: pin.subdir, model: model?.fleetNonEmpty, thinking: thinking?.fleetNonEmpty, createdAt: self.now)
+                        commitSHA: pin.sha, subdir: pin.subdir, model: model?.fleetNonEmpty, thinking: thinking?.fleetNonEmpty,
+                        spaceID: spaceID, origin: origin, createdAt: self.now)
                     record.updatedAt = record.createdAt
                     self.outbound[id] = record
                     self.save()
@@ -575,6 +619,7 @@ final class FleetDispatch: @unchecked Sendable {
         let message: String = switch code {
         case FleetDispatchCode.noSuchHost: "No Mac named \(detail ?? "that") is in the fleet. fleet_hosts lists them."
         case FleetDispatchCode.repoMissing: detail.map { "\($0) doesn't have this repository." } ?? "No Mac that can take work has this repository."
+        case FleetDispatchCode.cloneFailed: "That Mac couldn't clone this repository\(detail.map { ": \($0)" } ?? "")."
         case FleetDispatchCode.repoAmbiguous: "More than one folder on that Mac is this repository: \(detail ?? "")."
         case FleetDispatchCode.hostNotReady: "That Mac isn't ready: \(detail.map { $0 == "unknown" ? "it hasn't reported yet" : "\($0) isn't installed" } ?? "it can't run this work")."
         case FleetDispatchCode.commitUnreachable: "That Mac can't reach this commit from its origin."
@@ -617,11 +662,14 @@ final class FleetDispatch: @unchecked Sendable {
     /// The create itself, with the snapshot's header when there is one. `sending` holds `id`.
     func sendCreate(_ id: UUID, completion: ((Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void)?) {
         guard let record = outbound[id], let target = record.targetHostID else { sending.remove(id); return }
+        // Where a Mac with no checkout gets the repository: this Mac's origin, and the space it is, so the checkout becomes that space there.
+        let space = record.spaceID.flatMap { wanted in host.state().spaces.first { $0.id == wanted } }
+        let repo = FleetRepoSource(origin: record.origin, spaceID: record.spaceID, name: space?.name, worktreeBase: space?.worktreeBase)
         let create = FleetDispatchCreate(
             dispatchID: id, kind: record.kind, task: record.task, title: record.title, repoKey: record.repoKey, commitSHA: record.commitSHA,
             subdir: record.subdir, branch: record.branch, model: record.model, thinking: record.thinking,
             from: FleetDispatchSender(hostID: hostID, hostName: hostName(), agentID: record.parentAgentID, agentTitle: record.parentTitle),
-            snapshot: snapshots[id]?.header)
+            snapshot: snapshots[id]?.header, repo: repo)
         let finish: @Sendable (Result<FleetDispatchRecord, Error>) -> Void = { [weak self] result in
             self?.queue.async { self?.created(id, result, completion: completion) }
         }
@@ -667,7 +715,7 @@ final class FleetDispatch: @unchecked Sendable {
             if theirs.state == .preparing, snapshots[id] != nil { transfer(id) }
         case .failure(let error):
             if case RemoteHostClientError.rejected(let code, _) = error, !Self.transportCodes.contains(code) {
-                let known = [FleetDispatchCode.repoMissing, FleetDispatchCode.repoAmbiguous, FleetDispatchCode.commitUnreachable,
+                let known = [FleetDispatchCode.repoMissing, FleetDispatchCode.repoAmbiguous, FleetDispatchCode.commitUnreachable, FleetDispatchCode.cloneFailed,
                              FleetDispatchCode.hostNotReady, FleetDispatchCode.snapshotTooLarge, FleetDispatchCode.snapshotMismatch,
                              FleetDispatchCode.snapshotFailed, FleetDispatchCode.invalid]
                 record.state = .failed
@@ -699,12 +747,25 @@ final class FleetDispatch: @unchecked Sendable {
         record.branch = theirs.branch ?? record.branch
         record.activity = theirs.activity ?? record.activity
         record.targetHostName = record.targetHostName ?? theirs.targetHostName
+        // Where a clone on the target stands, while it is cloning.
+        record.clone = theirs.state == .preparing ? theirs.clone : nil
+        // The target couldn't clone the repository from origin: send it the repository itself, when there is a snapshot to send it with.
+        if theirs.state == .failed, theirs.failure == FleetDispatchCode.cloneFailed, record.state == .preparing, canSendRepository(record) {
+            record.failure = nil
+            record.failureDetail = nil
+            record.clone = FleetCloneProgress(name: FleetRepoClone.folderName(repoKey: record.repoKey), source: hostName(), viaBundle: true)
+            record.updatedAt = now
+            let id = record.id
+            queue.async { [weak self] in self?.sendRepository(id) }
+            return
+        }
         switch theirs.state {
         case .preparing: if record.state != .running { record.state = .preparing }
         case .running: record.state = .running
         case .failed:
             record.state = .failed
-            record.failure = theirs.failure ?? FleetDispatchCode.refused
+            // No way to send the repository: the clone's own failure is the dispatch's, with git's words.
+            record.failure = theirs.failure == FleetDispatchCode.cloneFailed ? FleetDispatchCode.repoMissing : theirs.failure ?? FleetDispatchCode.refused
             record.failureDetail = theirs.failureDetail
         case .cancelled: record.state = .cancelled
         default: break

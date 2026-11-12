@@ -34,7 +34,7 @@ final class FleetRepoKeys: @unchecked Sendable {
         return gitDir.appendingPathComponent("config")
     }
 
-    private static func stamp(of config: URL?) -> String {
+    static func stamp(of config: URL?) -> String {
         guard let config, let attributes = try? FileManager.default.attributesOfItem(atPath: config.path),
               let modified = attributes[.modificationDate] as? Date, let size = attributes[.size] as? NSNumber else { return "none" }
         return "\(Int64(modified.timeIntervalSince1970 * 1000)):\(size)"

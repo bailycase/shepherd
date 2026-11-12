@@ -44,6 +44,13 @@ enum FleetDispatchGit {
         return .success(Pin(sha: head.output, subdir: subdir, root: root, unpushed: !unpushed.output.isEmpty))
     }
 
+    /// The origin of the checkout at `cwd`, as another Mac may clone it: its fetch URL, with any password removed
+    /// (`FleetRepoSource.sanitized`). Nil when there is no origin.
+    static func origin(cwd: String) -> String? {
+        guard let result = run(["remote", "get-url", "origin"], in: cwd), result.status == 0 else { return nil }
+        return FleetRepoSource.sanitized(origin: result.output)
+    }
+
     /// A full commit id: 40 (SHA-1) or 64 (SHA-256) hex digits.
     static func isCommit(_ text: String) -> Bool {
         (text.count == 40 || text.count == 64) && text.allSatisfy(\.isHexDigit)

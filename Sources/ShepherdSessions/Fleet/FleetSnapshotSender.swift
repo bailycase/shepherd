@@ -40,8 +40,9 @@ struct FleetSnapshotSender {
     var warnAbove = FleetSnapshotCap.warnAbove
     var refuseAbove = FleetSnapshotCap.refuseAbove
 
-    /// Works out the snapshot. `unpushed` says the checkout has commits no remote ref holds.
-    func build(id: UUID, unpushed: Bool) throws -> Built {
+    /// Works out the snapshot. `unpushed` says the checkout has commits no remote ref holds; `wholeRepository` says the bundle is the
+    /// repository itself (every ref), for a target that has no checkout and couldn't clone it from origin.
+    func build(id: UUID, unpushed: Bool, wholeRepository: Bool = false) throws -> Built {
         // Whatever the system already has for this root reaches the index first, so a file written a moment ago is in it; then a
         // spot check of a sample of what the index holds against the disk (the plan's R13).
         guard index.stateNow == .ready else { throw Failure.notIndexed(index.stateNow.rawValue) }
@@ -59,7 +60,7 @@ struct FleetSnapshotSender {
             unindexedHash: { path in FleetSnapshotBlobs.hash(of: URL(fileURLWithPath: root + "/" + path)) ?? FleetHash(a: 0, b: 0, c: 0, d: 0) })
         if let problem = plan.manifest.problem { throw Failure.git("manifest: \(problem)") }
         var bundle: (FleetBlobRef, URL)?
-        if unpushed { bundle = try makeBundle(id: id) }
+        if wholeRepository || unpushed { bundle = try makeBundle(id: id, wholeRepository: wholeRepository) }
         let total = plan.bytes + (bundle?.0.size ?? 0)
         let verdict = FleetSnapshotCap.verdict(bytes: total, warnAbove: warnAbove, refuseAbove: refuseAbove)
         if verdict == .refuse {
@@ -69,7 +70,7 @@ struct FleetSnapshotSender {
         let header = FleetSnapshotHeader(
             commit: commit, rootHash: plan.manifest.rootHash, digest: plan.manifest.digest, files: plan.manifest.files.count,
             directories: plan.manifest.directories.count, deletions: plan.manifest.deletions.count, parts: parts.count,
-            fileCount: plan.fileCount, bytes: total, bundle: bundle?.0)
+            fileCount: plan.fileCount, bytes: total, bundle: bundle?.0, repoBundle: wholeRepository)
         return Built(id: id, plan: plan, header: header, parts: parts, root: root, bundle: bundle, warning: verdict == .warn)
     }
 
@@ -115,12 +116,13 @@ struct FleetSnapshotSender {
         return parts
     }
 
-    /// `git bundle` of what no remote ref holds, written under the fleet's own directory.
-    private func makeBundle(id: UUID) throws -> (FleetBlobRef, URL) {
+    /// `git bundle` of what no remote ref holds (or, for `wholeRepository`, of every ref), written under the fleet's own directory.
+    private func makeBundle(id: UUID, wholeRepository: Bool = false) throws -> (FleetBlobRef, URL) {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let url = directory.appendingPathComponent("\(id.uuidString.lowercased()).bundle")
         try? FileManager.default.removeItem(at: url)
-        guard let made = FleetDispatchGit.run(["bundle", "create", url.path, "HEAD", "--not", "--remotes"], in: root, timeout: 300), made.status == 0,
+        let arguments = wholeRepository ? ["bundle", "create", url.path, "--all"] : ["bundle", "create", url.path, "HEAD", "--not", "--remotes"]
+        guard let made = FleetDispatchGit.run(arguments, in: root, timeout: wholeRepository ? 3_600 : 300), made.status == 0,
               let hash = FleetSnapshotBlobs.hash(of: url),
               let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.uint64Value else { throw Failure.git("bundle") }
         return (FleetBlobRef(hash: hash, size: size), url)

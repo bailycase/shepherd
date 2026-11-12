@@ -39,6 +39,8 @@ extension FleetDispatch {
         let classifier = service.classifier
         let caps = self.caps
         let began = ContinuousClock.now
+        // The target couldn't clone the repository: this snapshot carries the repository itself.
+        let wholeRepository = repoBundles.contains(id)
         Task.detached { [weak self] in
             var temporary: FleetContentIndex?
             let index: FleetContentIndex
@@ -62,7 +64,7 @@ extension FleetDispatch {
             defer { if let temporary { temporary.requestStop(); temporary.queue.sync { temporary.erase() } } }
             do {
                 let sender = FleetSnapshotSender(index: index, root: pin.root, commit: commit, target: held, directory: outgoing, warnAbove: caps.warn, refuseAbove: caps.refuse)
-                let built = try sender.build(id: id, unpushed: pin.unpushed)
+                let built = try sender.build(id: id, unpushed: pin.unpushed, wholeRepository: wholeRepository)
                 let millis = Int((ContinuousClock.now - began) / .milliseconds(1))
                 self?.queue.async { self?.timings[id] = (millis, 0); self?.snapshotBuilt(id, built, done: done) }
             } catch let failure as FleetSnapshotSender.Failure {
@@ -119,6 +121,22 @@ extension FleetDispatch {
         if let built = snapshots.removeValue(forKey: id), let bundle = built.bundle { try? FileManager.default.removeItem(at: bundle.url) }
         pins[id] = nil
         transferring.remove(id)
+        repoBundles.remove(id)
+    }
+
+    /// Whether the target can be sent the repository itself: this dispatch carries a snapshot (the transfer the bundle goes in), and it
+    /// hasn't been tried already.
+    func canSendRepository(_ record: FleetDispatchRecord) -> Bool {
+        !repoBundles.contains(record.id) && wantsSnapshot(record)
+    }
+
+    /// The target couldn't clone the repository from origin: its create is sent again carrying a bundle of every ref, which it clones from.
+    /// A new snapshot is made (the old one's bundle held only the unpushed commits), and the target replaces its failed attempt with it.
+    func sendRepository(_ id: UUID) {
+        guard outbound[id]?.state == .preparing, !sending.contains(id), repoBundles.insert(id).inserted else { return }
+        if let old = snapshots.removeValue(forKey: id), let bundle = old.bundle { try? FileManager.default.removeItem(at: bundle.url) }
+        transferring.remove(id)
+        send(id, completion: nil)
     }
 
     private func snapshotLink(id: UUID, target: UUID) -> SnapshotLink? {
@@ -388,11 +406,21 @@ extension FleetDispatch {
         }
     }
 
-    /// Everything is in: build the worktree (once).
+    /// Everything is in: build the worktree (once). With no checkout of the repository yet it waits for one: a clone that is running
+    /// finishes it (`acquired`), and when the repository came in the snapshot (a bundle) the clone is made now.
     func startBuild(_ id: UUID) {
         guard let snap = snapshotsIn[id], !snap.building, inbound[id]?.record.state == .preparing else { return }
+        guard let space = snap.space else {
+            if snap.lookedUp, snap.header.repoBundle, let bundle = snap.header.bundle {
+                snap.building = true
+                cloneBundle(id, snap, bundle)
+            } else {
+                snap.pendingBuild = true
+            }
+            return
+        }
         snap.building = true
-        prepare(id, space: snap.space, requestedBranch: snap.requestedBranch)
+        prepare(id, space: space, requestedBranch: snap.requestedBranch)
     }
 
     /// Fleet is on and the spaces may have changed: each repository's spare is brought to its base tip in the background.

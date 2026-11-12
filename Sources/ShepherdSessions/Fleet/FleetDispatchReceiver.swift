@@ -24,7 +24,12 @@ extension FleetDispatch {
             guard known.record.parentHostID == sender else {
                 return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "That dispatch belongs to another Mac.")))
             }
-            return reply(.success(known.record))
+            // A clone that failed asked for the repository itself: this create carries it, and replaces the failed attempt.
+            if known.record.state == .failed, known.record.failure == FleetDispatchCode.cloneFailed, create.snapshot?.repoBundle == true {
+                inbound[create.dispatchID] = nil
+            } else {
+                return reply(.success(known.record))
+            }
         }
         guard !create.task.isEmpty, create.task.utf8.count <= FleetDispatchProtocol.maxTaskBytes else {
             return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "The task is empty or too long.")))
@@ -52,11 +57,17 @@ extension FleetDispatch {
             !space.hidden && space.repoKey == create.repoKey && Self.folderExists(space.path)
         }
         let checkouts = Dictionary(grouping: matches) { PiHome.canonical($0.path) }
-        guard let space = matches.first else {
-            return reply(.failure(Self.refusal(FleetDispatchCode.repoMissing, hostName())))
-        }
-        guard checkouts.count == 1 else {
+        guard checkouts.count <= 1 else {
             return reply(.failure(Self.refusal(FleetDispatchCode.repoAmbiguous, matches.map(\.name).sorted().joined(separator: ", "))))
+        }
+        var space = matches.first
+        // No space here is that repository: a checkout this Mac already has binds to it (slice 4f), else it is cloned.
+        if space == nil, let found = finder.locate(create.repoKey) {
+            space = bindCheckout(found.path, create)
+        }
+        // A sender that names no origin (an older build) can't be cloned from: refused as before, with the Mac's name.
+        if space == nil, create.repo == nil {
+            return reply(.failure(Self.refusal(FleetDispatchCode.repoMissing, hostName())))
         }
         var record = FleetDispatchRecord(
             id: create.dispatchID, kind: create.kind, parentAgentID: create.from.agentID, parentHostID: sender, parentHostName: create.from.hostName,
@@ -64,6 +75,11 @@ extension FleetDispatch {
             title: Self.title(create.title, task: create.task), task: create.task, repoKey: create.repoKey, commitSHA: create.commitSHA,
             subdir: create.subdir, branch: nil, model: create.model, thinking: create.thinking, createdAt: now)
         record.updatedAt = record.createdAt
+        // No checkout yet: the Mac gets one first, and says where that stands (the card "Cloning acme-web on Mac mini").
+        if space == nil {
+            record.clone = FleetCloneProgress(name: FleetRepoClone.folderName(repoKey: create.repoKey), source: create.snapshot?.repoBundle == true ? create.from.hostName : create.repoKey,
+                                              viaBundle: create.snapshot?.repoBundle == true)
+        }
         if let header = create.snapshot {
             guard header.isValid, header.commit == create.commitSHA else {
                 return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "That snapshot doesn't belong to that commit.")))
@@ -73,17 +89,22 @@ extension FleetDispatch {
             record.snapshotFiles = header.files + header.directories
             // The pieces come over the link next (`fleetSnapshotPart`, `fleetBlobPush`); the worktree is built when they are all here.
             let snap = SnapshotIn(header: header, space: space, requestedBranch: create.branch)
-            let (id, title, repo, requested, claims) = (record.id, record.title, space.path, create.branch, claimedBranches)
-            snap.branch = Task.detached { claims.claim { FleetDispatchGit.branchName(title: title, requested: requested, dispatchID: id, repo: repo, claimed: $0) } }
+            snap.repo = create.repo
+            if let space {
+                let (id, title, repo, requested, claims) = (record.id, record.title, space.path, create.branch, claimedBranches)
+                snap.branch = Task.detached { claims.claim { FleetDispatchGit.branchName(title: title, requested: requested, dispatchID: id, repo: repo, claimed: $0) } }
+            }
             snapshotsIn[record.id] = snap
             inbound[record.id] = Inbound(record: record, acceptedAt: now)
             save()
-            return reply(.success(record))
+            reply(.success(record))
+            if space == nil { acquireRepo(record.id, create) }
+            return
         }
         inbound[record.id] = Inbound(record: record, acceptedAt: now)
         save()
         reply(.success(record))
-        prepare(record.id, space: space, requestedBranch: create.branch)
+        if let space { prepare(record.id, space: space, requestedBranch: create.branch) } else { acquireRepo(record.id, create) }
     }
 
     /// Fetch, the branch, the worktree and the thread: off the server queue, with each step's outcome
@@ -188,6 +209,7 @@ extension FleetDispatch {
         switch outcome {
         case .success(let agent):
             entry.record.remoteAgentID = agent
+            entry.record.clone = nil
             entry.record.state = .running
             entry.worktree = host.state().agents.first { $0.id == agent }?.worktreePath
             entry.acceptedAt = now
@@ -206,6 +228,7 @@ extension FleetDispatch {
     func failInbound(_ id: UUID, _ code: String, _ detail: String?) {
         dropSnapshot(id)
         guard var entry = inbound[id], entry.record.state == .preparing else { return }
+        entry.record.clone = nil
         entry.record.state = .failed
         entry.record.failure = code
         entry.record.failureDetail = detail
@@ -241,8 +264,11 @@ extension FleetDispatch {
             entry.record.updatedAt = now
             entry.expectsResult = false
             entry.unsent = true
+            entry.record.clone = nil
             inbound[id] = entry
             dropSnapshot(id)
+            // A clone that is running ends and takes its folder with it (`cloneEnded`).
+            clones[id]?.cancel()
             if let agent = entry.record.remoteAgentID { host.stopThread(agent) }
             save()
             reply(.success(entry.record))

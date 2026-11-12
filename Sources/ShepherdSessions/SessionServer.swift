@@ -1403,6 +1403,7 @@ public final class SessionServer: @unchecked Sendable {
                     }
                 }
                 fleet = service
+                if fleetDeveloperFolderSet { service.dispatch.developerFolder = fleetDeveloperFolder }
                 wireFleetDispatch(service)
                 // What syncs: the root instructions, pi's own preferences, and (once the app reports
                 // them) the host settings. Each is read and written through the code that owns it.
@@ -1472,7 +1473,8 @@ public final class SessionServer: @unchecked Sendable {
         let host = FleetSpacesSource.Host(
             spaces: { [weak self] in self?.store.state.spaces ?? [] },
             hasThreads: { [weak self] id in self?.store.state.agents.contains { $0.spaceID == id } ?? false },
-            mutate: { [weak self] change in try self?.mutateState { change(&$0.spaces) } })
+            mutate: { [weak self] change in try self?.mutateState { change(&$0.spaces) } },
+            locate: { [weak service] key in service?.dispatch.finder.locate(key)?.path })
         let spaces = FleetSpacesSource(host: host, directory: directory)
         fleetSpacesSource = spaces
         sync.add(spaces)
@@ -1522,7 +1524,9 @@ public final class SessionServer: @unchecked Sendable {
                     lastText = assistant?.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
                 }
                 return FleetThreadFacts(status: agent.status, waitingOn: agent.waitingOn, lastText: lastText, worktree: agent.worktreePath)
-            })
+            },
+            repoPlaces: { [weak self] in self?.fleetRepoPlaces() ?? [] },
+            bindSpace: { [weak self] binding in self?.bindFleetCheckout(binding) })
     }
 
     /// An agent's `fleet_*` tool. Refused unless Fleet is on and the thread may send work at all (`fleet_scope`:
@@ -1565,6 +1569,46 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Server queue: the folders this Mac already knows that may hold a checkout of a repository (`FleetRepoFinder`): the folders of its
+    /// spaces, the main checkout of each thread's worktree, what the content index reads and where fleet spaces were bound. It never
+    /// looks anywhere else.
+    func fleetRepoPlaces() -> [FleetRepoFinder.Place] {
+        let state = store.state
+        var places = state.spaces.filter { !$0.hidden && !$0.holdsDesigns && !$0.holdsProjects && !$0.holdsThreads }
+            .map { FleetRepoFinder.Place(path: ($0.path as NSString).expandingTildeInPath, isSpace: true) }
+        places += state.agents.compactMap(\.worktreePath).map { FleetRepoFinder.Place(path: ($0 as NSString).expandingTildeInPath, isSpace: false) }
+        places += (fleet?.index.indexes() ?? []).map { FleetRepoFinder.Place(path: $0.root, isSpace: false) }
+        places += (fleetSpacesSource?.boundPaths ?? []).map { FleetRepoFinder.Place(path: ($0 as NSString).expandingTildeInPath, isSpace: false) }
+        return places
+    }
+
+    /// Server queue: puts a checkout in the workspace as a space for a dispatch (`FleetDispatchHost.bindSpace`). A space already at that
+    /// folder is the one (it takes the repository's key when it has none); otherwise a new space is added, with the fleet's id for it
+    /// when this Mac has no space by that id.
+    private func bindFleetCheckout(_ binding: FleetSpaceBinding) -> Space? {
+        let canonical = PiHome.canonical(binding.path)
+        if let existing = store.state.spaces.first(where: { !$0.hidden && PiHome.canonical($0.path) == canonical }) {
+            guard existing.repoKey == nil else { return existing }
+            try? mutateState { state in
+                if let index = state.spaces.firstIndex(where: { $0.id == existing.id }) { state.spaces[index].repoKey = binding.repoKey }
+            }
+            return store.state.spaces.first { $0.id == existing.id }
+        }
+        var id = binding.id ?? SpaceID()
+        if store.state.spaces.contains(where: { $0.id == id }) { id = SpaceID() }
+        let space = Space(id: id, name: binding.name, path: binding.path, worktreeBase: binding.worktreeBase, repoKey: binding.repoKey)
+        do { try mutateState { $0.spaces.append(space) } } catch { return nil }
+        fleetSpacesSource?.bind(id, to: binding.path)
+        return space
+    }
+
+    /// Tests: where a clone goes first, instead of `~/Developer`.
+    func configureFleetClones(developerFolder: URL?) {
+        queue.sync { fleet?.dispatch.developerFolder = developerFolder; fleetDeveloperFolder = developerFolder; fleetDeveloperFolderSet = true }
+    }
+    private var fleetDeveloperFolder: URL?
+    private var fleetDeveloperFolderSet = false
+
     /// Tests, and a person locating a folder: this Mac's folder for a space the fleet synced.
     func bindFleetSpace(_ id: SpaceID, to path: String) {
         queue.sync { fleetSpacesSource?.bind(id, to: path) }
@@ -1582,6 +1626,7 @@ public final class SessionServer: @unchecked Sendable {
     /// Server queue: looks at the checkout of each space whose git config changed (off the queue, since it
     /// runs git) and records the new `repoKey`s through the usual state mutation.
     private func refreshRepoKeys() {
+        refreshRepoCandidates()
         guard let keys = fleetRepoKeys, !repoKeysRefreshing, fleet?.membership == true else { return }
         let spaces = store.state.spaces.filter(FleetSpacesSource.syncs).map { (id: $0.id, path: $0.path, key: $0.repoKey) }
         guard !spaces.isEmpty else { return }
@@ -1597,6 +1642,25 @@ public final class SessionServer: @unchecked Sendable {
                         if let key = changes[state.spaces[index].id] { state.spaces[index].repoKey = key }
                     }
                 }
+            }
+        }
+    }
+
+    private var repoCandidatesRefreshing = false
+
+    /// Server queue: looks at the folders this Mac knows (`fleetRepoPlaces`) for checkouts and their origins, off the queue, so a synced
+    /// space with no folder here binds to a checkout this Mac already has. Says so to the sync when what can be found changed.
+    private func refreshRepoCandidates() {
+        guard let finder = fleet?.dispatch.finder, fleet?.membership == true, !repoCandidatesRefreshing else { return }
+        let places = fleetRepoPlaces()
+        guard !places.isEmpty else { return }
+        repoCandidatesRefreshing = true
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let changed = finder.refresh(places)
+            self?.queue.async {
+                guard let self else { return }
+                self.repoCandidatesRefreshing = false
+                if changed { self.fleet?.syncEngine.localChanged() }
             }
         }
     }

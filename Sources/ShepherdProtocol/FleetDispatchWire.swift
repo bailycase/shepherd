@@ -23,6 +23,45 @@ public struct FleetDispatchSender: Codable, Hashable, Sendable {
     }
 }
 
+/// Where the receiving Mac gets the repository when it has no checkout of it (slice 4f): the sender's own origin, the space it belongs
+/// to and its default base. The receiver finds a checkout it already has before it uses any of this; none of it is needed when it does.
+public struct FleetRepoSource: Codable, Hashable, Sendable {
+    /// The origin's URL as the sender reports it, with any password (and an https user) removed: what the receiver clones with its own
+    /// git sign-in. Nil for a repository with no origin.
+    public var origin: String?
+    /// The sender's space for it, and its name: the receiver binds the checkout it finds or makes to the same space, so the fleet's
+    /// space becomes one on this Mac with no "locate folder" step.
+    public var spaceID: SpaceID?
+    public var name: String?
+    /// The space's default base branch, as the sender has it.
+    public var worktreeBase: String?
+
+    public init(origin: String? = nil, spaceID: SpaceID? = nil, name: String? = nil, worktreeBase: String? = nil) {
+        self.origin = origin
+        self.spaceID = spaceID
+        self.name = name
+        self.worktreeBase = worktreeBase
+    }
+
+    /// `origin` as it may be sent: a URL's password never leaves the Mac (an https user goes too, since it is only ever a token), and
+    /// anything that could be read as an option is refused.
+    public static func sanitized(origin: String) -> String? {
+        let text = origin.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !text.hasPrefix("-"), !text.contains("\n"), !text.contains("\0"), text.utf8.count <= 2_048 else { return nil }
+        guard let scheme = text.range(of: "://") else { return text }
+        let rest = text[scheme.upperBound...]
+        let slash = rest.firstIndex(of: "/") ?? rest.endIndex
+        var authority = String(rest[..<slash])
+        if let at = authority.lastIndex(of: "@") {
+            let user = authority[..<at]
+            let web = ["http", "https"].contains(text[..<scheme.lowerBound].lowercased())
+            if web { authority = String(authority[authority.index(after: at)...]) }
+            else if let colon = user.firstIndex(of: ":") { authority = String(user[..<colon]) + String(authority[at...]) }
+        }
+        return String(text[..<scheme.upperBound]) + authority + String(rest[slash...])
+    }
+}
+
 /// `RemoteRequest.fleetDispatchCreate`: start this work on the receiving Mac. The receiver resolves
 /// `repoKey` against its own spaces, needs `commitSHA`, makes a fresh worktree on its own branch
 /// and starts a thread there with `task` as its first message. Idempotent on `dispatchID`.
@@ -45,10 +84,13 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
     /// What the work carries beyond its commit (slice 4c): edits, untracked and ignored files, and the unpushed commits. The
     /// parts and contents follow (`fleetSnapshotPart`, `fleetBlobPush`); the receiver starts the thread once they check out.
     public var snapshot: FleetSnapshotHeader?
+    /// Where to get the repository when the receiver has no checkout of it (slice 4f). Nil from an older sender, which is refused
+    /// `repo_missing` by a receiver with no checkout, as before.
+    public var repo: FleetRepoSource?
 
     public init(dispatchID: UUID, kind: FleetDispatchRecord.Kind = .agentDispatch, task: String, title: String, repoKey: String,
                 commitSHA: String? = nil, subdir: String? = nil, branch: String? = nil, model: String? = nil, thinking: String? = nil,
-                from: FleetDispatchSender, snapshot: FleetSnapshotHeader? = nil) {
+                from: FleetDispatchSender, snapshot: FleetSnapshotHeader? = nil, repo: FleetRepoSource? = nil) {
         self.dispatchID = dispatchID
         self.kind = kind
         self.task = task
@@ -61,9 +103,10 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         self.thinking = thinking
         self.from = from
         self.snapshot = snapshot
+        self.repo = repo
     }
 
-    private enum CodingKeys: String, CodingKey { case dispatchID, kind, task, title, repoKey, commitSHA, subdir, branch, model, thinking, from, snapshot }
+    private enum CodingKeys: String, CodingKey { case dispatchID, kind, task, title, repoKey, commitSHA, subdir, branch, model, thinking, from, snapshot, repo }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -79,6 +122,7 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         thinking = try c.decodeIfPresent(String.self, forKey: .thinking)
         from = try c.decode(FleetDispatchSender.self, forKey: .from)
         snapshot = try c.decodeIfPresent(FleetSnapshotHeader.self, forKey: .snapshot)
+        repo = try c.decodeIfPresent(FleetRepoSource.self, forKey: .repo)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -95,6 +139,7 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         try c.encodeIfPresent(thinking, forKey: .thinking)
         try c.encode(from, forKey: .from)
         try c.encodeIfPresent(snapshot, forKey: .snapshot)
+        try c.encodeIfPresent(repo, forKey: .repo)
     }
 }
 
