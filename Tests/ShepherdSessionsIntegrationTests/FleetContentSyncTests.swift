@@ -50,6 +50,7 @@ struct FleetContentSyncTests {
         try await repo.install(on: a)
         try await waitForSkill("pdf", on: b)
 
+        try await eventually("B to know where it came from") { Self.skill("pdf", on: b)?.source != nil }
         let there = try #require(Self.skill("pdf", on: b))
         #expect(there.source?.repo == repo.url && there.source == Self.skill("pdf", on: a)?.source, "it came from the same repository at the same commit")
         #expect(there.summary == "Read, fill, merge and split PDFs.")
@@ -233,6 +234,8 @@ struct FleetContentSyncTests {
         try await eventually("B's settings.json to list the extension") { ((try b.piJSON())["extensions"] as? [String])?.contains(entry) == true }
         let listed = (try b.piJSON()["extensions"] as? [String]) ?? []
         #expect(!listed.contains { $0.contains(theirs.dev.path) || $0.contains(a.server.pi.home.path) }, "the store holds no machine path")
+        // The state is saved just after the settings it wrote.
+        try await eventually("B to record the copy") { b.server.pi.importedState().state()?.copies(.extensions).isEmpty == false }
         let state = try #require(b.server.pi.importedState().state())
         #expect(state.extensionsOn == [destination] && state.copies(.extensions).first?.name == "acme-tool", "the extension is on, as it is on A")
         #expect(state.copies(.extensions).first?.source == "", "nothing says where it came from on another Mac")
@@ -272,8 +275,9 @@ struct FleetContentSyncTests {
         try await eventually("B to load it") { ((try b.piJSON())["extensions"] as? [String])?.contains(entry) == true }
 
         try a.server.pi.importedState().setExtension(destination, on: false)
-        try await eventually("B to stop loading it") { ((try b.piJSON())["extensions"] as? [String])?.contains(entry) != true }
-        #expect(b.server.pi.importedState().state()?.extensionsOn.isEmpty == true)
+        try await eventually("B to stop loading it") {
+            ((try b.piJSON())["extensions"] as? [String])?.contains(entry) != true && b.server.pi.importedState().state()?.extensionsOn.isEmpty == true
+        }
         #expect(FileManager.default.fileExists(atPath: entry), "its files stay")
     }
 

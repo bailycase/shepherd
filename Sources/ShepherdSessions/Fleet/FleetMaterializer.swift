@@ -51,6 +51,12 @@ struct FleetUnitRefused: Error, CustomStringConvertible {
     var description: String
 }
 
+/// A unit can't be written until another is (a skill's state needs the skill's files): the
+/// materializer tries it again once the rest of the pass has written.
+struct FleetUnitWaiting: Error, CustomStringConvertible {
+    var description: String
+}
+
 extension FleetUnitSource {
     var isReady: Bool { true }
     var watchedFiles: [URL] { [] }
@@ -206,23 +212,25 @@ final class FleetMaterializer {
         var failed = false
         var changed = false
         for source in sources where source.isReady {
-            let present = source.fingerprints()
-            for unit in units(of: source, holding: present) {
-                guard let winner = store.winner(of: unit), winner.mac != store.mac || observed[unit] != nil else { continue }
+            var present = source.fingerprints()
+            /// Units that must wait for another unit of the same pass (a skill's state, for its files).
+            var waiting: [String] = []
+            func apply(_ unit: String, retrying: Bool) {
+                guard let winner = store.winner(of: unit), winner.mac != store.mac || observed[unit] != nil else { return }
                 let wanted = Self.hash(of: winner.change)
                 let current = present[unit] ?? "-"
                 guard current != wanted else {
                     if observed[unit] != current { observed[unit] = current; changed = true }
-                    continue
+                    return
                 }
                 // A local edit not scanned yet must be an op before it is overwritten.
-                if current != "-", observed[unit] != current { continue }
+                if current != "-", observed[unit] != current { return }
                 let target: Data?
                 switch winner.change {
                 case .deletion: target = nil
                 case .value(let text): target = Data(text.utf8)
                 case .blob(let hash, _):
-                    guard let data = store.blob(hash) else { continue }
+                    guard let data = store.blob(hash) else { return }
                     target = data
                 }
                 // A divergent copy this Mac only seeded, replaced by another's: the sync line says so. A copy
@@ -239,11 +247,20 @@ final class FleetMaterializer {
                     changed = true
                     if replacedSeed { notices.append(Notice(unit: unit, from: winner.macName)) }
                 } catch {
-                    ShepherdLog.warning("fleet: couldn't write \(unit): \(error)")
                     observed[unit] = current
                     pending[unit] = nil
-                    if !(error is FleetUnitRefused) { failed = true }
+                    if error is FleetUnitWaiting, !retrying {
+                        waiting.append(unit)
+                        return
+                    }
+                    ShepherdLog.warning("fleet: couldn't write \(unit): \(error)")
+                    if !(error is FleetUnitRefused || error is FleetUnitWaiting) { failed = true }
                 }
+            }
+            for unit in units(of: source, holding: present) { apply(unit, retrying: false) }
+            if !waiting.isEmpty {
+                present = source.fingerprints()
+                for unit in waiting { apply(unit, retrying: true) }
             }
         }
         if changed { save() }

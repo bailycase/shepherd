@@ -254,7 +254,8 @@ final class FleetSkillsSource: FleetUnitSource {
         if let path {
             let state = fleetValue(FleetUnit.skill(name)).flatMap { try? JSONDecoder().decode(State.self, from: $0) }
             try store.writeSynced(name, path: path, data: value, on: state?.on ?? true)
-            // The state may have come first, before there was a skill to apply it to.
+            // The state is applied the moment there is a skill to apply it to, so no scan sees a skill the
+            // fleet has an opinion about as if it were this Mac's own.
             if value != nil, let state { _ = try store.applySynced(name, on: state.on, source: state.source) }
             return
         }
@@ -268,7 +269,7 @@ final class FleetSkillsSource: FleetUnitSource {
         }
         // Its files make it, and then this is applied: a skill that isn't here yet waits for them.
         guard try store.applySynced(name, on: state.on, source: state.source) else {
-            throw FleetUnitRefused(description: "\(name) isn't here yet")
+            throw FleetUnitWaiting(description: "\(name) isn't here yet")
         }
     }
 }
@@ -445,7 +446,7 @@ final class FleetExtensionsSource: FleetUnitSource {
             FleetFileTree.isSafe(entry.isEmpty ? "x" : entry)
                 && FileManager.default.fileExists(atPath: (entry.isEmpty ? folder : folder.appendingPathComponent(entry)).path)
         }
-        guard loaded else { throw FleetUnitRefused(description: "\(name)'s files aren't here yet") }
+        guard loaded else { throw FleetUnitWaiting(description: "\(name)'s files aren't here yet") }
         try imports.applySyncedExtension(destination: destination, name: meta.name, entries: meta.entries, on: meta.on)
     }
 }
