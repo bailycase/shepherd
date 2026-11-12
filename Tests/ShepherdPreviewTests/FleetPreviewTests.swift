@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdUI
 import ShepherdTestSupport
 import SwiftUI
@@ -17,6 +18,11 @@ struct FleetPreviewTests {
 
     static func model(peers: [FleetPeerStatus], port: UInt16? = 7434) -> FleetSettingsModel {
         let model = FleetSettingsModel()
+        // The board's sync line: the Mac mini holds the same, the Mac Studio is away.
+        let sync = peers.isEmpty ? nil : FleetSyncStatus(peers: peers.map {
+            FleetSyncStatus.Peer(hostID: $0.hostID, name: $0.name, state: $0.link == .connected ? .inSync : .offline)
+        })
+        model.syncLine = sync.flatMap(FleetSyncPresentation.line)
         let snapshot = FleetSnapshot(enabled: true, hostID: UUID(), name: "MacBook Pro", addresses: ["192.168.1.40"], port: port,
                                      advertising: port != nil, peers: peers)
         model.snapshot = snapshot

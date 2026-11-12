@@ -561,6 +561,27 @@
   it for Add a Mac and hands the address to the host. Fleet needs the listener, so it opens it even with Serve this Mac
   off. Shepherd adds no TLS: the fleet runs over the user's own network. A paired Mac the app reached with the shared
   token is marked `fleetManaged` in `RemoteHostStore` (its address and token are the fleet's), keeping its `bindingID`.
+- **Fleet sync** (`fleet.sync.v1`, offered with `fleet.v1`, `FleetSyncWire.swift`): settings and content the Macs hold the
+  same, as an append only op log per origin Mac (`<support>/fleet/store/ops-<macID>.ndjson`, mode 0600) plus content
+  addressed blobs and per unit history. An op is `{mac, seq, hlc, unit, change, seed?, macName?}`: `seq` counts a Mac's own
+  ops from 1 with no gaps, `hlc` is a hybrid logical clock (wall ms, counter), `change` is an inline value (a setting's
+  JSON, at most 64 KiB), a blob by SHA-256 (instruction files) or a deletion. A unit is `<kind>:<name>`: slice 2a carries
+  `setting:host.<key>` (the host settings in `FleetHostSetting`), `setting:pi.<key>` (an allowlist of pi's `settings.json`
+  keys) and `instruction:AGENTS.md` / `instruction:APPEND_SYSTEM.md`; a kind this build doesn't know is stored, relayed and
+  never applied. The later write wins by (hlc, then the larger Mac id); the loser is kept in `history/<unit>/` (100
+  versions or 30 days). An op a person didn't write, copied from what a Mac held when its sync first ran, is a `seed`: any
+  other op beats it and among seeds the earliest wins, so the Mac where Fleet was first switched on is the reference.
+  Only after `hello` with a peer's token (never the shared token, never a client device), one request, `fleetSync`, with
+  `FleetSyncRequest`: `hello(vector)` when a link comes up (answered with the receiver's version vector, `{macID: highest
+  seq held}`), `ops` and `op` (ops the receiver lacks, in order per origin, batches under 512 KiB; a skipped `seq` is
+  stored never and the sender resends from the vector in the answer; every op is validated for shape and size) and
+  `blob(hash, offset)` (a blob in 256 KiB chunks, answered `FleetSyncReply.blob`; the fetcher checks the whole against its
+  hash). Each Mac pushes what its peers lack over its own outbound link and relays ops verbatim, so a Mac that was asleep
+  catches up from any Mac awake. Nothing is applied by the receiver: the materializer writes through the code that owns
+  each unit (`InstructionsStore.save`, per key under pi's lock for `settings.json`, the app's own setting setters), keeps
+  a hash of what it wrote so its own writes never return as ops, and never writes a blob it doesn't hold. `FleetSnapshot.sync`
+  (`FleetSyncStatus`: each peer in sync, catching up or offline, and a one line notice of what the first sync replaced)
+  rides `fleetRead` for Settings ▸ Fleet. Credentials, skills, extensions, MCP, hooks, subagents and spaces are not units yet.
 - **Protocol changes** touch the request and reply enums with every Codable arm, `RemoteProtocol`
   capabilities where relevant, server handling, `RemoteHostClient` (Mac and iOS), and the
   round-trip and listener tests.
