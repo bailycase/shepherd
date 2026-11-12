@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 import ShepherdProtocol
-@testable import ShepherdApp
+@testable import ShepherdSessions
 
 /// pi's mcp.json, derived from the user's file: the
 /// servers pi can run, how their tools reach the model, and where each secret comes from.

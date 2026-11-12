@@ -397,7 +397,7 @@ final class FixtureHost: @unchecked Sendable {
             return [.ok(id: id)]
         case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .creationBranches, .agentQuery, .nativeThreadSubscribe, .fleetDigest,
              .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices,
-             .fleetRead, .fleetAction:
+             .fleetRead, .fleetAction, .fleetPressure, .fleetReadiness, .fleetPressureNow:
             return nil
         }
     }

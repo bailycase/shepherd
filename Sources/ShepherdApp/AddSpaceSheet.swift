@@ -6,9 +6,9 @@ import ShepherdProtocol
 import ShepherdUI
 import ShepherdRemote
 
-/// Add space (ProjectAdd board): a name, a host, an optional parent space on that host, and the
-/// space's folder. The parent is Shepherd's explicit organization (`Space.parentID`), so the folder
-/// can be anywhere on the host and nothing moves.
+/// Add space (ProjectAdd board): a name, an optional parent space, and the space's folder. The
+/// parent is Shepherd's explicit organization (`Space.parentID`), so the folder can be anywhere
+/// and nothing moves.
 @MainActor @Observable
 final class AddSpaceModel: Identifiable {
     struct Parent: Equatable, Identifiable { var id: SpaceID; var name: String }
@@ -102,23 +102,14 @@ struct AddSpaceSheet: View {
                 label("Space name")
                 TextField("Space name", text: $model.name, prompt: Text("shepherd-landing"))
                     .shField(focused: focused == .name).focused($focused, equals: .name).accessibilityLabel("Space name")
-                HStack(alignment: .top, spacing: SH.Space.xxl) {
-                    VStack(alignment: .leading, spacing: SH.Space.m) {
-                        label("Host")
-                        SHPopupMenu(model.host?.name ?? "This Mac") {
-                            ForEach(model.hosts) { host in Button(host.name) { model.hostID = host.id }.disabled(host.unavailable != nil) }
-                        }.accessibilityLabel("Space host")
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                    VStack(alignment: .leading, spacing: SH.Space.m) {
-                        label("Parent space")
-                        SHPopupMenu(model.parentName ?? "None · root space") {
-                            Button("None · root space") { model.parentID = nil }
-                            ForEach(model.parents) { parent in Button(parent.name) { model.parentID = parent.id } }
-                        }.accessibilityLabel("Parent space").disabled(!model.offersParents)
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                }.padding(.top, SH.Space.m)
-                hint(model.offersParents ? "Choose None to create a root space. Parent and child space use the same host."
-                                         : "Update Shepherd on \(model.host?.name ?? "this host") to choose a parent. Until then it adds a root space named after its folder.")
+                VStack(alignment: .leading, spacing: SH.Space.m) {
+                    label("Parent space")
+                    SHPopupMenu(model.parentName ?? "None · root space") {
+                        Button("None · root space") { model.parentID = nil }
+                        ForEach(model.parents) { parent in Button(parent.name) { model.parentID = parent.id } }
+                    }.accessibilityLabel("Parent space").disabled(!model.offersParents)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, SH.Space.m)
+                hint("Choose None to create a root space.")
                 label("Space folder").padding(.top, SH.Space.m)
                 TextField("Space folder", text: $model.path, prompt: Text("~/code/shepherd-landing"))
                     .shField(focused: focused == .path, mono: true).focused($focused, equals: .path).accessibilityLabel("Space folder")

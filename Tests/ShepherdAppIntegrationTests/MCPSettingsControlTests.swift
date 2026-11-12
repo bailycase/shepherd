@@ -7,6 +7,7 @@ import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+import ShepherdSessions
 
 /// Settings ▸ MCP servers, pressed the way VoiceOver presses (`ControlPress`): every control the
 /// page and its sheets draw, in the states they appear in, runs what it should. Each scenario
@@ -209,10 +210,6 @@ struct MCPSettingsControlTests {
         try await eventuallyOnMain("the setting to follow") { settings.mcpProjectConfig == !repo }
         try window.press("Also use a repo’s .mcp.json", role: ControlRole.checkBox)
         try await eventuallyOnMain("the setting to go back") { settings.mcpProjectConfig == repo }
-        let same = settings.mcpSameEverywhere
-        try window.press("Same servers on every host", role: ControlRole.checkBox)
-        try await eventuallyOnMain("the setting to follow") { settings.mcpSameEverywhere == !same }
-        try window.press("Same servers on every host", role: ControlRole.checkBox)
 
         // Toolbar: Add server opens its sheet (a window of its own), and a filter narrows the list.
         try window.press("Add server")

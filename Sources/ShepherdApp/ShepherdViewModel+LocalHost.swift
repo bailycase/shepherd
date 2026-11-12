@@ -135,6 +135,9 @@ extension ShepherdViewModel {
             guard case .skills(let snapshot)? = try? await localHost?.skillsClient?.skills(.fetch) else { return }
             skills.hostChanged(Self.thisMacSkills, snapshot)
         case .hooks: hooks.reload()
+        case .mcp: mcp.reload()
+        // The list, unless a profile is open in the editor: its draft is the person's.
+        case .subagents: if !subagentDefinitions.editing { await subagentDefinitions.refresh() }
         case .slashCommands:
             guard let host = try? remoteHosts.thisMacHost(), let settings = try? await host.hostSettings() else { return }
             slashCommands.catalog = settings.slashCommands

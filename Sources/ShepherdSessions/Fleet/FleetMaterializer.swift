@@ -11,6 +11,8 @@ protocol FleetUnitSource: AnyObject {
     var isReady: Bool { get }
     /// The files behind the units, which the watcher keeps an eye on (none for a source the app feeds).
     var watchedFiles: [URL] { get }
+    /// Files the watcher keeps an eye on alone, without their folders (a git config).
+    var watchedFilesOnly: [URL] { get }
     /// Whether a unit travels as content by hash (a file) rather than inline (a setting's JSON).
     func storesBlob(_ unit: String) -> Bool
     /// The units that hold a value here now, with it. A unit absent from the answer is unset.
@@ -53,6 +55,8 @@ protocol FleetUnitSource: AnyObject {
 /// materializer doesn't try again.
 struct FleetUnitRefused: Error, CustomStringConvertible {
     var description: String
+    /// Expected and steady (a synced space with no folder here yet): not worth a log line at every pass.
+    var quiet = false
 }
 
 /// A unit can't be written until another is (a skill's state needs the skill's files): the
@@ -64,6 +68,7 @@ struct FleetUnitWaiting: Error, CustomStringConvertible {
 extension FleetUnitSource {
     var isReady: Bool { true }
     var watchedFiles: [URL] { [] }
+    var watchedFilesOnly: [URL] { [] }
     var writesAsynchronously: Bool { false }
     func owns(_ unit: String) -> Bool { units.contains(unit) }
     var watchedTrees: [URL] { [] }
@@ -126,6 +131,7 @@ final class FleetMaterializer {
     }
 
     var watchedFiles: [URL] { sources.flatMap(\.watchedFiles) }
+    var watchedFilesOnly: [URL] { sources.flatMap(\.watchedFilesOnly) }
     var watchedTrees: [URL] { sources.flatMap(\.watchedTrees) }
 
     static func fingerprint(_ value: Data?) -> String { value.map { FleetSyncProtocol.hash($0) } ?? "-" }
@@ -265,7 +271,7 @@ final class FleetMaterializer {
                         waiting.append(unit)
                         return
                     }
-                    ShepherdLog.warning("fleet: couldn't write \(unit): \(error)")
+                    if !((error as? FleetUnitRefused)?.quiet ?? false) { ShepherdLog.warning("fleet: couldn't write \(unit): \(error)") }
                     if !(error is FleetUnitRefused || error is FleetUnitWaiting) { failed = true }
                 }
             }

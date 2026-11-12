@@ -73,10 +73,11 @@ struct ClientHooksTests {
 
     @Test func aHostsHooksGroupByEventInSettingsOrderWithTheirSources() async {
         let fake = FakeHooksHost(Self.snapshot)
-        let host = Self.host(fake), model = ClientHooks()
-        #expect(model.state(of: host) == .loading)
-        await model.refresh(host)
-        let page = try! #require(model.state(of: host).page)
+        let model = ClientHooks()
+        model.use([Self.host(fake)])
+        #expect(model.state == .loading)
+        await model.refresh()
+        let page = try! #require(model.state.page)
         #expect(page.groups.map(\.event) == ["SessionStart", "PreToolUse", "Stop"])
         #expect(page.groups[1].rows[0].source == "This Mac · ~/.shepherd/hooks.json")
         #expect(page.groups[2].rows[0].matcher == "always" && page.groups[2].rows[0].matcherIsAny)
@@ -85,37 +86,55 @@ struct ClientHooksTests {
         #expect(page.sections[1].files.map(\.state) == ["Not read: switched off above"])
     }
 
-    @Test func offlineAndOlderHostsSayWhyAndThePickerListsOnlyHostsThatServeHooks() {
+    @Test func offlineAndOlderHostsSayWhyAndTheFirstHostThatServesHooksIsTheOneRead() {
         let model = ClientHooks()
+        #expect(model.state == .offline, "no host, no hooks")
         let offline = SettingsHost(id: UUID(), name: "Air", client: nil, capabilities: [])
         let old = Self.host(FakeHooksHost(Self.snapshot), capable: false)
-        #expect(model.state(of: offline) == .offline)
-        #expect(model.state(of: old) == .unsupported)
+        model.use([offline])
+        #expect(model.state == .offline)
+        model.use([offline, old])
+        #expect(model.host?.name == "Air" && model.state == .offline)
+        model.use([old])
+        #expect(model.state == .unsupported)
         let capable = SettingsHost(id: UUID(), name: "build-01", client: FakeHooksHost(Self.snapshot), capabilities: [RemoteProtocol.hooksCapability])
-        #expect(ClientHooks.hosts([offline, old, capable]).map(\.name) == ["build-01"])
-        #expect(ClientHooks.host(chosen: offline.id, in: [offline, old, capable])?.name == "build-01")
-        #expect(ClientHooks.host(chosen: nil, in: [offline, old])?.name == "Air")
+        model.use([offline, old, capable])
+        #expect(model.host?.name == "build-01" && model.state == .loading)
+    }
+
+    @Test func aDifferentHostStartsWithNothingOfTheLastOnesPage() async {
+        let model = ClientHooks()
+        let first = Self.host(FakeHooksHost(Self.snapshot))
+        model.use([first])
+        await model.refresh()
+        #expect(model.state.page != nil)
+        model.use([first])
+        #expect(model.state.page != nil, "the same host keeps what it showed")
+        model.use([SettingsHost(id: UUID(), name: "build-01", client: FakeHooksHost(Self.snapshot), capabilities: [RemoteProtocol.hooksCapability])])
+        #expect(model.state == .loading)
     }
 
     @Test func aSwitchShowsAtOnceAndARefusalPutsTheHostsStateBack() async throws {
         let fake = FakeHooksHost(Self.snapshot)
-        let host = Self.host(fake), model = ClientHooks()
-        await model.refresh(host)
-        let row = try #require(model.state(of: host).page?.groups[2].rows.first)
-        await model.setOn(row, false, host: host)
-        #expect(model.state(of: host).page?.groups[2].rows.first?.on == false)
+        let model = ClientHooks()
+        model.use([Self.host(fake)])
+        await model.refresh()
+        let row = try #require(model.state.page?.groups[2].rows.first)
+        await model.setOn(row, false)
+        #expect(model.state.page?.groups[2].rows.first?.on == false)
         #expect(fake.requests.last == .setOn(hash: "h-npm test", on: false))
 
         fake.refuses = true
-        await model.setOn(row, true, host: host)
-        #expect(model.problem(of: host) == "Reload and try again.")
-        #expect(model.state(of: host).page?.groups[2].rows.first?.on == false)
+        await model.setOn(row, true)
+        #expect(model.problem == "Reload and try again.")
+        #expect(model.state.page?.groups[2].rows.first?.on == false)
         #expect(fake.requests.last == .fetch)
     }
 
     @Test func theEditorSavesInPlaceWithTheGuardAndAddsToASpace() async throws {
         let fake = FakeHooksHost(Self.snapshot)
-        let host = Self.host(fake), model = ClientHooks()
+        let model = ClientHooks()
+        model.use([Self.host(fake)])
         let entry = Self.snapshot.entries[1]
         let editor = ClientHookEditor(editing: entry, in: Self.snapshot)
         #expect(editor.title == "Edit hook" && !editor.readOnly)
@@ -124,7 +143,7 @@ struct ClientHooksTests {
         editor.handlers[0].statusMessage = "Checking the path"
         editor.addHandler()
         editor.handlers[1].command = "echo second"
-        #expect(await editor.save(with: model, host: host))
+        #expect(await editor.save(with: model))
         guard case .save(let drafts, let file, let ref, let kept) = fake.requests.last else { Issue.record("expected a save"); return }
         #expect(file == entry.file && ref == HookRef(entry) && kept == 0)
         #expect(drafts.map(\.handler.statusMessage) == ["Checking the path", nil])
@@ -132,10 +151,10 @@ struct ClientHooksTests {
 
         let adding = ClientHookEditor(adding: Self.snapshot)
         adding.target = Self.space + "/.shepherd/hooks.json"
-        #expect(await adding.save(with: model, host: host) == false)
+        #expect(await adding.save(with: model) == false)
         #expect(adding.problem == "Enter the command the hook runs.")
         adding.handlers[0].command = "npm run lint"
-        #expect(await adding.save(with: model, host: host))
+        #expect(await adding.save(with: model))
         guard case .save(_, let spaceFile, nil, nil) = fake.requests.last else { Issue.record("expected an add"); return }
         #expect(spaceFile == Self.space + "/.shepherd/hooks.json")
     }
@@ -157,17 +176,18 @@ struct ClientHooksTests {
 
     @Test func codexTomlOpensReadOnlyAndATestRunsOnTheHost() async {
         let fake = FakeHooksHost(Self.snapshot)
-        let host = Self.host(fake), model = ClientHooks()
+        let model = ClientHooks()
+        model.use([Self.host(fake)])
         let toml = ClientHookEditor(editing: Self.snapshot.entries[2], in: Self.snapshot)
         #expect(toml.readOnly && toml.title == "Hook")
-        #expect(await toml.save(with: model, host: host) == false)
+        #expect(await toml.save(with: model) == false)
         #expect(fake.requests.isEmpty)
 
         let editor = ClientHookEditor(editing: Self.snapshot.entries[1], in: Self.snapshot)
-        await editor.test(with: model, host: host)
+        await editor.test(with: model)
         #expect(fake.requests.last == .test(command: "./no-env.sh", event: .preToolUse, matcher: "Edit|Write", timeout: 10, root: nil))
         let result = try! #require(editor.testResult)
-        #expect(editor.testMeta(result, host: host.name) == "sample edit · exit 2 · 41 ms · on Studio")
+        #expect(editor.testMeta(result, host: "Studio") == "sample edit · exit 2 · 41 ms · on Studio")
         #expect(HookTestOutput(result)?.streams == [.init(label: "stderr", text: "no", note: nil)])
     }
 

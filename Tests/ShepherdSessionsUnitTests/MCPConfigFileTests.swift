@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import ShepherdProtocol
 import ShepherdTestKit
-@testable import ShepherdApp
+@testable import ShepherdSessions
 
 /// ~/.config/mcp/mcp.json: read tolerantly, written atomically, and every key Shepherd doesn't
 /// own kept as it was.

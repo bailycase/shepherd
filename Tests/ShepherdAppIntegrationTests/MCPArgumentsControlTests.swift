@@ -3,6 +3,7 @@ import ShepherdTestSupport
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+import ShepherdSessions
 
 @Suite("MCP argument controls", .mainActorExclusive)
 @MainActor

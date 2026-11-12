@@ -348,8 +348,6 @@ final class ShepherdViewModel {
     let fleetPage = FleetPageModel()
     /// The thread whose Browser waits for each app's address.
     @ObservationIgnored var appPageWaits: [AppKey: AgentID] = [:]
-    /// Each remote host's hooks, made when first shown (`hooks(for:)`).
-    @ObservationIgnored var remoteHookModels: [UUID: HooksModel] = [:]
     /// Settings ▸ Skills: every host's agent skills, This Mac's through its host.
     let skills: ClientSkills
     /// Settings ▸ MCP servers: this Mac's servers, their sign-ins, and the credentials agents ask for.
@@ -538,17 +536,11 @@ final class ShepherdViewModel {
     @ObservationIgnored var madeSubagentDefinitions: SubagentDefinitionsModel?
     /// Sign-ins remote clients drive on this Mac (`RemoteRequest.hostConfig`).
     @ObservationIgnored let remoteSignIns = RemoteSignIns()
-    /// Settings' host picker: the remote host a host-level page shows; nil for this Mac.
-    var settingsHostID: UUID?
     /// The background host's launchd job, when this launch may use it (`BackgroundService.prepare`);
     /// nil has the app supervise its own host, with no Settings line. Set at launch.
     @ObservationIgnored var backgroundService: BackgroundService?
     /// Its status as Settings last read it.
     var backgroundServiceStatus: BackgroundService.Status?
-    /// A remote host's settings and configuration as Settings shows them (`settingsHostID`).
-    @ObservationIgnored let remoteHostSettings = ClientHostSettings()
-    @ObservationIgnored let remoteHostConfig = ClientHostConfig()
-    @ObservationIgnored let remoteSuggestions = ClientSuggestions()
     var subagentDefinitions: SubagentDefinitionsModel {
         if let madeSubagentDefinitions { return madeSubagentDefinitions }
         let model = SubagentDefinitionsModel(pi: pi)

@@ -13,19 +13,12 @@ struct HooksSettings: View {
     static let explanation = "Commands that run at set points in a thread, in the format Claude Code and Codex use. Shepherd also reads the hooks you already have there. Every hook that matches runs."
 
     var body: some View {
-        Group {
-            if let unavailable = model.unavailable {
-                SettingsPage(title: "Hooks", explanation: unavailable) {}
-            } else {
-                page
-            }
-        }
-        // Read on showing a host, and when it connects or updates to serve hooks; nothing here repeats.
-        .task(id: "\(model.hostID?.uuidString ?? "")|\(model.unavailable ?? "")") { model.reload() }
+        // Read on showing; nothing here repeats.
+        page.task { model.reload() }
     }
 
     private var page: some View {
-        SettingsPage(title: "Hooks", explanation: model.isRemote ? "Hooks on \(model.hostName): commands that run at set points in its threads, in the format Claude Code and Codex use. Shepherd there also reads the hooks those files already have. Every hook that matches runs." : Self.explanation) {
+        SettingsPage(title: "Hooks", explanation: Self.explanation) {
             Button { model.add(spaceRoot: model.spaceFilter) } label: { Label("Add hook", systemImage: "plus") }
                 .buttonStyle(.sh(.secondary, size: .m))
                 .disabled(model.snapshot == nil)
@@ -37,7 +30,7 @@ struct HooksSettings: View {
                 }
                 if model.snapshot == nil {
                     if model.problem == nil {
-                        Text(model.isRemote ? "Reading \(model.hostName)’s hooks…" : "Reading hooks files…").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
+                        Text("Reading hooks files…").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
                     }
                 } else if model.tab == .hooks {
                     hooksTab
@@ -62,7 +55,7 @@ struct HooksSettings: View {
     @ViewBuilder private var hooksTab: some View {
         if let root = model.spaceFilter {
             HStack(spacing: SH.Space.m) {
-                Text("\(model.isRemote ? model.hostName : "This Mac")’s hooks and \((root as NSString).lastPathComponent)’s").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
+                Text("This Mac’s hooks and \((root as NSString).lastPathComponent)’s").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
                 Button("Show every space") { model.spaceFilter = nil }.buttonStyle(.shLink)
             }
         }
@@ -271,7 +264,7 @@ struct HookSourcesView: View {
                     .padding(.horizontal, SH.Space.xs)
                     SHGroupCard(fill: Color.sh.bgWindow, radius: SHCardRowMetrics.settingsCardRadius) {
                         if section.files.isEmpty {
-                            Text("No hooks files on \(model.hostName) yet.").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
+                            Text("No hooks files on this Mac yet.").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
                                 .frame(maxWidth: .infinity, minHeight: AppLayout.hooksFileRowHeight, alignment: .leading)
                                 .padding(.horizontal, SH.Space.xl)
                         }
@@ -388,7 +381,7 @@ struct HooksSpacePage: View {
                 }
             }
             if model.snapshot == nil {
-                Text(model.unavailable ?? model.problem ?? "Reading hooks files…").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
+                Text(model.problem ?? "Reading hooks files…").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
             } else if space.groups.isEmpty {
                 Text("No hooks in this space.").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
             }
@@ -397,13 +390,13 @@ struct HooksSpacePage: View {
             }
             if space.macCount > 0 {
                 HStack(spacing: SH.Space.xs) {
-                    Text(space.macCount == 1 ? "1 hook on \(model.hostName) also runs in this space." : "\(space.macCount) hooks on \(model.hostName) also run in this space.")
+                    Text(space.macCount == 1 ? "1 hook on this Mac also runs in this space." : "\(space.macCount) hooks on this Mac also run in this space.")
                         .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                     Button("See them in Settings › Hooks", action: openSettings).buttonStyle(.shLink(font: .sh(.caption)))
                 }
             }
         }
         .hookSheets(model)
-        .task(id: "\(model.hostID?.uuidString ?? "")|\(model.unavailable ?? "")") { model.reload() }
+        .task { model.reload() }
     }
 }
