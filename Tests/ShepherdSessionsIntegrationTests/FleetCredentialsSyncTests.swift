@@ -162,8 +162,9 @@ struct FleetCredentialsSyncTests {
         let first = await clock.measure { await engine.catchUpCredentials(patience: 0.4) }
         #expect(first >= .milliseconds(300) && first < .seconds(3), "it waited for the patience it was given, then went on")
         #expect(Self.refresh(b) == "fake-refresh-1", "with what the Mac mini has")
-        let second = await clock.measure { await engine.catchUpCredentials(patience: 0.4) }
-        #expect(second < .milliseconds(250), "a Mac that failed to catch this one up is not waited for again at once")
+        // Ask with a longer patience: waiting again would take all of it, however loaded the machine is.
+        let second = await clock.measure { await engine.catchUpCredentials(patience: 5) }
+        #expect(second < .seconds(3), "a Mac that failed to catch this one up is not waited for again at once")
     }
 
     @Test func withFleetOffNoSignInIsReadAndNothingWaits() async throws {
@@ -172,7 +173,7 @@ struct FleetCredentialsSyncTests {
         try Self.piWrites(Self.acme, Self.oauth(1), in: Self.auth(a))
         let before = try Data(contentsOf: Self.auth(a))
         let took = await ContinuousClock().measure { await a.server.fleetCredentialFence() }
-        #expect(took < .milliseconds(250))
+        #expect(took < .seconds(FleetSync.fencePatience / 2), "it doesn't wait out the fence's patience")
         #expect(try Data(contentsOf: Self.auth(a)) == before)
         #expect(!FileManager.default.fileExists(atPath: a.host.dir.appendingPathComponent("fleet/store").path), "no store until Fleet is on")
     }
@@ -294,7 +295,7 @@ struct FleetCredentialsSyncTests {
         #expect(b.server.fleetSyncWinner("mcpAuth:\(Self.notionKey)") == nil)
         // And its fence has no one to ask: it starts pi at once.
         let took = await ContinuousClock().measure { await b.server.fleetCredentialFence() }
-        #expect(took < .milliseconds(250))
+        #expect(took < .seconds(FleetSync.fencePatience / 2), "it doesn't wait out the fence's patience")
     }
 
     @Test func aDeviceOrASharedTokenClientNeverReceivesOrSendsSignIns() async throws {
