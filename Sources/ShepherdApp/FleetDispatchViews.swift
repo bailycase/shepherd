@@ -150,6 +150,27 @@ struct FleetDispatchCardView: View, Equatable {
         .accessibilityLabel(card.accessibilityLabel)
     }
 
+    /// "Sending with uncommitted changes": how much of the checkout's changes has reached the Mac, and a warning above the size that takes a while.
+    private func sendingProgress(_ sending: FleetSendingCard) -> some View {
+        let sh = Color.sh
+        return VStack(alignment: .leading, spacing: SH.Space.m) {
+            HStack(spacing: SH.Space.m) {
+                FleetGauge(fraction: sending.fraction ?? 0, color: sh.running, height: AppLayout.fleetSendBarHeight)
+                Text(sending.progress)
+                    .font(.sh(.mono))
+                    .foregroundStyle(sh.textTertiary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            if let warning = sending.warning {
+                Text(warning).font(.sh(.caption, weight: .regular)).foregroundStyle(sh.lanternText)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(sending.progress)
+        .accessibilityValue(sending.warning ?? "")
+    }
+
     /// FleetStates: the title with the Mac's tag and the state, what it waits for, and what the person can do.
     private var state: some View {
         let sh = Color.sh
@@ -166,6 +187,7 @@ struct FleetDispatchCardView: View, Equatable {
                 .foregroundStyle(sh.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if let sending = card.sending { sendingProgress(sending) }
             if !card.actions.isEmpty { buttons(card.actions) }
         }
         .padding(.vertical, SH.Space.l)

@@ -69,7 +69,13 @@ final class FleetContentIndex: @unchecked Sendable {
     private let latency: TimeInterval
     private let buffer = UnsafeMutableRawPointer.allocate(byteCount: 1 << 20, alignment: 16)
 
-    private(set) var state: State = .loading
+    private(set) var state: State = .loading {
+        didSet { stateLock.withLock { latestState = state } }
+    }
+    private let stateLock = NSLock()
+    private var latestState: State = .loading
+    /// `state`, readable from any thread without waiting for the index's queue (which a scan holds for as long as it runs).
+    var stateNow: State { stateLock.withLock { latestState } }
     private(set) var entries: [String: FleetIndexEntry] = [:]
     private(set) var exclusions: FleetExclusions
     private var tree = FleetMerkleTree()
@@ -94,6 +100,8 @@ final class FleetContentIndex: @unchecked Sendable {
         get { stopFlag.withLock { _stopped } }
         set { stopFlag.withLock { _stopped = newValue } }
     }
+    /// Files read and hashed so far: what a test reads to tell a dispatch that read only what changed from one that read everything.
+    private(set) var filesHashed = 0
     /// Full walks made (the first scan included): what a test reads to tell a rescan from an event.
     private(set) var rescans = 0
     /// Batches of events that said some were lost (the kernel's buffer overflowed, the root moved): the reason for a rescan nobody asked for.
@@ -428,6 +436,7 @@ final class FleetContentIndex: @unchecked Sendable {
 
     /// SHA-256 and git's blob id of a file, read once. Nil when it can't be read or changed size while it was.
     private func hashFile(_ path: String, size: UInt64) -> (FleetHash, FleetGitBlobID)? {
+        filesHashed += 1
         let descriptor = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         guard descriptor >= 0 else { return nil }
         defer { close(descriptor) }
@@ -569,6 +578,61 @@ final class FleetContentIndex: @unchecked Sendable {
     func reclassify() {
         guard let lookup = classifier.lookup(root, nil) else { return }
         apply(lookup)
+    }
+
+    // MARK: Snapshots (slice 4c)
+
+    /// What a dispatch reads: the entries and the Merkle tree as they are now (value copies, so reading them costs nothing). Queue.
+    func snapshotView() -> (entries: [String: FleetIndexEntry], tree: FleetMerkleTree)? { state == .ready ? (entries, tree) : nil }
+
+    /// Lets the events the system already holds for this root reach the index, so a file written a moment ago is in it. Not from
+    /// the index's own queue.
+    func settle() {
+        let stream = queue.sync { events }
+        stream?.flush()
+        queue.sync {}
+    }
+
+    /// A file or directory this index holds, where it is now.
+    struct Located: Equatable, Sendable {
+        var path: String
+        var size: UInt64
+        var modified: Int64
+        var kind: FleetEntryKind
+    }
+
+    private var reverse: (mutations: Int, files: [FleetHash: String], gitIDs: [FleetGitBlobID: FleetHash], directories: [FleetHash: String])?
+
+    private func reverseMaps() -> (files: [FleetHash: String], gitIDs: [FleetGitBlobID: FleetHash], directories: [FleetHash: String]) {
+        if let reverse, reverse.mutations == mutations { return (reverse.files, reverse.gitIDs, reverse.directories) }
+        var files: [FleetHash: String] = [:], gitIDs: [FleetGitBlobID: FleetHash] = [:], directories: [FleetHash: String] = [:]
+        files.reserveCapacity(entries.count)
+        for (path, entry) in entries {
+            if files[entry.hash] == nil { files[entry.hash] = path }
+            gitIDs[entry.gitID] = entry.hash
+        }
+        for (path, hash) in tree.directoryHashes where !path.isEmpty && directories[hash] == nil { directories[hash] = path }
+        reverse = (mutations, files, gitIDs, directories)
+        return (files, gitIDs, directories)
+    }
+
+    /// Where this index holds each of `hashes` (a file's content hash) and `directories` (a Merkle hash), and the content hash of each
+    /// of `gitIDs` (a blob id). Queue.
+    func locate(files wanted: Set<FleetHash>, directories wantedDirectories: Set<FleetHash>, gitIDs wantedIDs: Set<FleetGitBlobID>)
+        -> (files: [FleetHash: Located], directories: [FleetHash: Located], hashes: [FleetGitBlobID: FleetHash]) {
+        guard state == .ready else { return ([:], [:], [:]) }
+        let maps = reverseMaps()
+        var files: [FleetHash: Located] = [:], directories: [FleetHash: Located] = [:], hashes: [FleetGitBlobID: FleetHash] = [:]
+        for hash in wanted {
+            guard let path = maps.files[hash], let entry = entries[path] else { continue }
+            files[hash] = Located(path: absolute(path), size: entry.size, modified: entry.modified, kind: entry.kind)
+        }
+        for hash in wantedDirectories {
+            guard let path = maps.directories[hash] else { continue }
+            directories[hash] = Located(path: absolute(path), size: 0, modified: dirStamps[path] ?? 0, kind: .file)
+        }
+        for id in wantedIDs { if let hash = maps.gitIDs[id] { hashes[id] = hash } }
+        return (files, directories, hashes)
     }
 
     // MARK: Checking

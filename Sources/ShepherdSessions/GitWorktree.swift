@@ -150,12 +150,16 @@ public enum GitWorktree {
     /// otherwise set *that* as upstream and a bare `git push` inside the
     /// worktree would aim at the default branch. Returns the new worktree's
     /// absolute path.
-    public static func add(repo: String, branch: String, from startPoint: String? = nil) throws -> String {
+    ///
+    /// `checkout: false` (`--no-checkout`) makes the worktree and its branch and leaves the folder empty but for its
+    /// `.git` file: a fleet dispatch fills it itself, from files it already holds.
+    public static func add(repo: String, branch: String, from startPoint: String? = nil, checkout: Bool = true) throws -> String {
         let destination = destination(repo: repo, branch: branch)
         guard !FileManager.default.fileExists(atPath: destination) else {
             throw Failure(message: "\(destination) already exists")
         }
         var arguments = ["-C", (repo as NSString).expandingTildeInPath, "worktree", "add"]
+        if !checkout { arguments.append("--no-checkout") }
         if let startPoint {
             // Worktree forwards the base to `git branch`, which needs an option-like local ref qualified too.
             let startPoint = startPoint.hasPrefix("-") ? "refs/heads/\(startPoint)" : startPoint

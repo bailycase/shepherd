@@ -63,6 +63,9 @@ public struct FleetDispatchCard: Identifiable, Equatable, Sendable {
     public var tone: FleetTone
     /// A row's line under the title, or a state card's words.
     public var detail: String
+    /// While the work's snapshot is on its way (a `preparing` record with its sizes): the progress under the words, the "Sending with
+    /// uncommitted changes" card of FleetStates.
+    public var sending: FleetSendingCard?
     public var actions: [FleetCardAction]
     /// The thread that sent it, and the thread that runs it, for the buttons.
     public var parentAgentID: AgentID?
@@ -137,6 +140,10 @@ public enum FleetDispatchPresentation {
             let repo = repoName(record.repoKey)
             let at = record.commitSHA.map { "\(repo) at \(short($0))" } ?? repo
             card.detail = "Sent \(at). \(host.map { the($0, capitalized: true) } ?? "The Mac") makes a new worktree and starts the thread. Nothing touches your checkout."
+            if let sending = FleetSendingCard.make(record) {
+                card.sending = sending
+                card.detail = sending.summary
+            }
             card.actions = [.cancel]
         case .running:
             card.layout = .row
@@ -293,8 +300,6 @@ public enum FleetDispatchPresentation {
             return "\(host) lacks something the thread needs" + (record.failureDetail.flatMap { $0 == "unknown" ? nil : " (\($0))" } ?? "") + "."
         case FleetDispatchCode.noSuchHost:
             return "No Mac named \(record.requestedHost ?? "that") is in the fleet."
-        case FleetDispatchCode.needsBundle:
-            return "This checkout has changes origin doesn't. Commit and push them, or run this here."
         case FleetDispatchCode.peerGone:
             return "\(host) stopped answering and doesn't know this dispatch. Run it again, or run it here."
         case FleetDispatchCode.snapshotTooLarge:

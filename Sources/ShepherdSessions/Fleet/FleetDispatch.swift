@@ -125,6 +125,27 @@ final class FleetDispatch: @unchecked Sendable {
     var waiters: [UUID: [(Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void]] = [:]
     var timer: DispatchSourceTimer?
     var stopped = false
+    /// The content index (`fleet.snapshot.v1`): the sender's source of a snapshot, and where the receiver looks for files it already holds.
+    var indexService: FleetIndexService?
+    /// What the sender worked out for each dispatch whose snapshot is on its way (in memory: nothing resumes it after a restart).
+    var snapshots: [UUID: FleetSnapshotSender.Built] = [:]
+    /// Where each dispatch was pinned (the checkout it is read from).
+    var pins: [UUID: FleetDispatchGit.Pin] = [:]
+    var transferring: Set<UUID> = []
+    /// Receiver: the pieces of each snapshot that is arriving.
+    var snapshotsIn: [UUID: SnapshotIn] = [:]
+    /// Tests: what the receiver did to build each worktree, and a way to change a content on the wire.
+    var applyStats: [UUID: FleetSnapshotApply.Stats] = [:]
+    var wire: (@Sendable (FleetBlobChunk) async throws -> FleetBlobChunk)?
+    /// Tests: where a snapshot warns and where it is refused.
+    var caps: (warn: UInt64, refuse: UInt64) = (FleetSnapshotCap.warnAbove, FleetSnapshotCap.refuseAbove)
+    /// How long each snapshot took on this Mac as the sender: working it out and pushing it (milliseconds).
+    var timings: [UUID: (build: Int, transfer: Int)] = [:]
+    /// When the sending record was last written for progress (progress is saved at most twice a second).
+    var progressSavedAt: Double = 0
+    /// The spare of each repository and what dispatches sent this Mac (`<directory>/spares`, `<directory>/snapshot-blobs`).
+    let spares: FleetSpares
+    let blobs: FleetSnapshotBlobs
     private let reservedCount = FleetCounter()
     /// Told whenever the count of promised places changes (the host reads it for its samples).
     var reservedSink: FleetCounter?
@@ -144,6 +165,33 @@ final class FleetDispatch: @unchecked Sendable {
         self.hostID = hostID
         self.pressure = pressure
         self.clock = clock
+        spares = FleetSpares(directory: directory.appendingPathComponent("spares", isDirectory: true))
+        blobs = FleetSnapshotBlobs(directory: directory.appendingPathComponent("snapshot-blobs", isDirectory: true))
+    }
+
+    /// The receiver's state for one snapshot that is arriving.
+    final class SnapshotIn: @unchecked Sendable {
+        let header: FleetSnapshotHeader
+        let space: Space
+        let requestedBranch: String?
+        let began = ContinuousClock.now
+        var parts: [Int: FleetSnapshotPart] = [:]
+        var manifest: FleetSnapshotManifest?
+        /// The contents still missing, once the manifest is whole; nil before. `needOrder` is the order they are asked for.
+        var needs: Set<FleetHash>?
+        var needOrder: [FleetHash] = []
+        var computing = false
+        var building = false
+        /// The branch name, chosen while the snapshot is still arriving (its git calls then overlap the transfer).
+        var branch: Task<String, Never>?
+        init(header: FleetSnapshotHeader, space: Space, requestedBranch: String?) { (self.header, self.space, self.requestedBranch) = (header, space, requestedBranch) }
+
+        /// Parts held, counted from the first with none missing.
+        var held: Int {
+            var count = 0
+            while parts[count] != nil { count += 1 }
+            return count
+        }
     }
 
     var now: Double { (clock().timeIntervalSince1970 * 1000).rounded() }
@@ -357,11 +405,8 @@ final class FleetDispatch: @unchecked Sendable {
                 case .failure(.notARepository):
                     self.placing.remove(id)
                     answer(.failure(.init(code: FleetDispatchCode.repoMissing, message: "This thread's folder isn't a git checkout.")))
-                case .failure(.needsBundle):
-                    self.placing.remove(id)
-                    answer(.failure(.init(code: FleetDispatchCode.needsBundle,
-                                          message: "This checkout has uncommitted changes or commits origin doesn't have. Commit and push them, then dispatch again.")))
                 case .success(let pin):
+                    self.pins[id] = pin
                     var record = FleetDispatchRecord(
                         id: id, parentAgentID: agentID, parentHostID: self.hostID, parentHostName: self.hostName(), parentTitle: agent.name,
                         requestedHost: FleetPlacement.isAuto(named) ? nil : named?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -555,10 +600,28 @@ final class FleetDispatch: @unchecked Sendable {
         }
         sending.insert(id)
         if outbound[id]?.state != .preparing { outbound[id]?.state = .preparing; outbound[id]?.updatedAt = now; save() }
+        // A dispatch from a checkout carries a snapshot of it (slice 4c): worked out once, before the create.
+        if snapshots[id] == nil, wantsSnapshot(record) {
+            buildSnapshot(id) { [weak self] outcome in
+                guard let self else { return }
+                switch outcome {
+                case .success: self.sendCreate(id, completion: completion)
+                case .failure(let refusal): self.sending.remove(id); self.snapshotFailed(id, refusal, completion: completion)
+                }
+            }
+            return
+        }
+        sendCreate(id, completion: completion)
+    }
+
+    /// The create itself, with the snapshot's header when there is one. `sending` holds `id`.
+    func sendCreate(_ id: UUID, completion: ((Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void)?) {
+        guard let record = outbound[id], let target = record.targetHostID else { sending.remove(id); return }
         let create = FleetDispatchCreate(
             dispatchID: id, kind: record.kind, task: record.task, title: record.title, repoKey: record.repoKey, commitSHA: record.commitSHA,
             subdir: record.subdir, branch: record.branch, model: record.model, thinking: record.thinking,
-            from: FleetDispatchSender(hostID: hostID, hostName: hostName(), agentID: record.parentAgentID, agentTitle: record.parentTitle))
+            from: FleetDispatchSender(hostID: hostID, hostName: hostName(), agentID: record.parentAgentID, agentTitle: record.parentTitle),
+            snapshot: snapshots[id]?.header)
         let finish: @Sendable (Result<FleetDispatchRecord, Error>) -> Void = { [weak self] result in
             self?.queue.async { self?.created(id, result, completion: completion) }
         }
@@ -600,6 +663,8 @@ final class FleetDispatch: @unchecked Sendable {
             outbound[id] = record
             save()
             completion?(.success(record))
+            // The target took the work and is waiting for the rest of the snapshot.
+            if theirs.state == .preparing, snapshots[id] != nil { transfer(id) }
         case .failure(let error):
             if case RemoteHostClientError.rejected(let code, _) = error, !Self.transportCodes.contains(code) {
                 let known = [FleetDispatchCode.repoMissing, FleetDispatchCode.repoAmbiguous, FleetDispatchCode.commitUnreachable,
@@ -645,6 +710,7 @@ final class FleetDispatch: @unchecked Sendable {
         default: break
         }
         record.updatedAt = now
+        if !record.state.isLive || record.state == .running { releaseSnapshot(id: record.id) }
     }
 
     // MARK: Following (sender, server queue)
@@ -748,6 +814,7 @@ final class FleetDispatch: @unchecked Sendable {
         record.state = .cancelled
         record.updatedAt = now
         outbound[id] = record
+        releaseSnapshot(id: id)
         if shouldSave { save() }
         guard sent, let target = record.targetHostID else { return }
         if target == hostID {

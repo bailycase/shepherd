@@ -95,6 +95,11 @@ final class FleetFSEvents {
         handler(events)
     }
 
+    /// Delivers the events the system already has for the root, then returns. Never from the stream's own queue.
+    func flush() {
+        if let stream { FSEventStreamFlushSync(stream) }
+    }
+
     /// The newest id the stream has delivered, or nil when it isn't running.
     var latestEventID: UInt64? { stream.map { FSEventStreamGetLatestEventId($0) } }
 

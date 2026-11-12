@@ -4,7 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// Settings ▸ Fleet (FleetSettings): the Macs paired with this one, and the two ways to add one.
-/// Only the parts that exist yet: sync and dispatch are here; the code rows arrive with the slice that builds them.
+/// Sync, dispatch and code rows.
 struct FleetSettings: View {
     var model: FleetSettingsModel
     /// Agents keep running (and Fleet keeps its links) with Shepherd quit: the background service
@@ -19,9 +19,12 @@ struct FleetSettings: View {
     /// fleet peers (a Mac without Fleet, a host paired as a client).
     var clients: [FleetMacRow] = []
     var removeClient: (UUID) -> Void = { _ in }
+    /// Settings ▸ Fleet ▸ Code (slice 4c); nil draws no Code group.
+    var code: FleetCodeSettings?
     /// The Dispatch group's controls (`AppSettings`, synced across the fleet); nil draws none.
     var dispatch: FleetDispatchControls?
 
+    @State var excluding = false
     @State private var adding = false
     @State private var joining = false
     @State private var addingDevice = false
@@ -43,7 +46,7 @@ struct FleetSettings: View {
         SettingsPage(title: "Fleet", explanation: enabled ? Self.explanation : Self.offExplanation,
                      status: enabled ? model.syncLine.map { AnyView(FleetSyncLineView(line: $0)) } : nil) {
             if enabled, let dispatch { FleetDispatchGroup(controls: dispatch) }
-            if enabled { macs } else { hosts }
+            if enabled { codeGroup; macs } else { hosts }
             if enabled, !clients.isEmpty { otherHosts }
             devices
             if !enabled { serving }
@@ -62,6 +65,9 @@ struct FleetSettings: View {
         }
         .sheet(isPresented: $joining) {
             FleetJoinView(model: model) { joining = false }
+        }
+        .sheet(isPresented: $excluding) {
+            FleetExcludesSheet(spaces: code?.spaces ?? [], save: { code?.setExcludes($0, $1) }) { excluding = false }
         }
         .sheet(isPresented: $addingDevice) {
             FleetDeviceSheet(model: model) { addingDevice = false }

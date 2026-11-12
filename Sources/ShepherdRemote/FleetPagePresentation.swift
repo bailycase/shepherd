@@ -343,7 +343,9 @@ public enum FleetPagePresentation {
         case FleetDispatchCode.commitUnreachable: words = "That Mac can't fetch this commit from origin"
         case FleetDispatchCode.hostNotReady: words = "That Mac lacks something the thread needs"
         case FleetDispatchCode.noSuchHost: words = "No Mac has that name"
-        case FleetDispatchCode.needsBundle: words = "Has changes origin doesn't"
+        case FleetDispatchCode.snapshotTooLarge: return FleetSendingCard.tooLargeWords(detail)
+        case FleetDispatchCode.snapshotMismatch: return "The files didn't arrive intact, so nothing started"
+        case FleetDispatchCode.snapshotFailed: return "The files couldn't be sent, so nothing started"
         case FleetDispatchCode.peerGone: words = "The Mac went away"
         case FleetDispatchCode.refused: words = "That Mac refused it"
         default: words = "Not started"

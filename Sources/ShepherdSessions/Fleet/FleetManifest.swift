@@ -150,6 +150,13 @@ struct FleetPeerManifests {
 
     func holds(_ host: UUID, repo: String, _ hash: FleetHash) -> Bool { copies[host]?[repo]?.manifest.contains(hash) ?? false }
 
+    /// Drops one repository's copy of `host`'s manifest (found to claim what the Mac doesn't hold). The next step it sends is answered `resend`.
+    mutating func drop(peer host: UUID, repo: String) {
+        copies[host]?[repo] = nil
+        staging[host]?[repo] = nil
+        changed.insert(Pair(host: host, repo: repo))
+    }
+
     mutating func forget(_ host: UUID) {
         copies[host] = nil
         staging[host] = nil

@@ -209,6 +209,12 @@ struct SettingsView: View {
                               .client(id: $0.id, name: $0.config.name, host: $0.config.host, port: $0.config.port, phase: $0.phase)
                           },
                           removeClient: { vm.remoteHosts.removeHost(id: $0) },
+                          code: FleetCodeSettings(
+                              uncommitted: vm.settings.fleetUncommitted, setUncommitted: { vm.settings.fleetUncommitted = $0 },
+                              spaces: vm.state.spaces.filter { !$0.hidden && $0.repoKey != nil }.map {
+                                  FleetExcludeSpace(id: $0.id, name: $0.name, excludes: vm.settings.fleetExcludes(of: $0.id))
+                              },
+                              setExcludes: { vm.settings.setFleetExcludes($1, of: $0) }),
                           dispatch: FleetDispatchControls(
                               autoDispatch: Binding(get: { vm.settings.autoDispatch(pairedMacs: vm.fleetPage.snapshot.peers.count) },
                                                     set: { vm.settings.fleetAutoDispatch = $0 }),

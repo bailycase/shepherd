@@ -89,6 +89,19 @@ struct FleetDispatchPresentationTests {
         #expect(card.detail.contains("Nothing touches your checkout."))
     }
 
+    @Test func aPreparingDispatchSendingChangesCarriesTheProgressOfItsSnapshot() throws {
+        var record = Self.record(.preparing)
+        record.snapshotBytes = 2_800_000
+        record.snapshotProgress = 1_400_000
+        record.snapshotFiles = 3
+        let card = try #require(Self.cards([record]).first)
+        #expect(card.pill == "Starting" && card.actions == [.cancel])
+        let sending = try #require(card.sending)
+        #expect(sending.progress == "1.4 of 2.8 MB" && sending.fraction == 0.5)
+        #expect(card.detail == sending.summary && card.detail.contains("plus 3 uncommitted files"))
+        #expect(Self.cards([Self.record(.running)]).first?.sending == nil)
+    }
+
     @Test func aStoppedDispatchWithNoThreadOffersNoOpen() throws {
         let card = try #require(Self.cards([Self.record(.cancelled)]).first)
         #expect(card.pill == "Stopped" && card.actions.isEmpty)

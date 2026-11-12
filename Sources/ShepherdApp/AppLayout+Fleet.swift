@@ -42,6 +42,10 @@ extension AppLayout {
     static let fleetDispatchAgeWidth: CGFloat = 64
     /// The card's status pill.
     static let fleetPillHeight: CGFloat = 20
+    /// The sending card's progress bar.
+    static let fleetSendBarHeight: CGFloat = 6
+    /// Ignored files · Per space…: the list of paths a space keeps home or sends.
+    static let fleetExcludeEditorHeight: CGFloat = 88
     /// Send work here: its four buttons are 24pt tall.
     static let fleetWeightHeight: CGFloat = 24
     /// A repo tag.
