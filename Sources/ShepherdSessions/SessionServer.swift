@@ -1137,6 +1137,11 @@ public final class SessionServer: @unchecked Sendable {
     private var recoveryAgentIndices: (version: UInt64, indices: [AgentID: Int])?
     private(set) var recoveryAgentIndexBuildCount = 0
     private var projectDeliveries: (version: UInt64, byAgent: [AgentID: UUID?])?
+    /// Whole-state frames encoded for remote clients, one per view per broadcast. Written on the
+    /// server queue; a test reads it from anywhere.
+    private let encodedStateFramesLock = NSLock()
+    private var encodedStateFramesCount = 0
+    var encodedStateFrames: Int { encodedStateFramesLock.withLock { encodedStateFramesCount } }
 
     private var sessions: [SessionID: ServerSession] = [:]
     private var attachedSessions: Set<SessionID> = []
@@ -4598,6 +4603,7 @@ public final class SessionServer: @unchecked Sendable {
             let whole = takesWholeWorkspace(client)
             let view = RemoteStateView(designs: designs, legacy: legacy, whole: whole)
             if payloads[view] == nil {
+                encodedStateFramesLock.withLock { encodedStateFramesCount += 1 }
                 let shown = designs ? full : full.withoutDesigns
                 let state = whole ? shown : shown.withoutProjectCoordinators.withoutProjectExecutions.withoutMissions
                 payloads[view] = .some(Self.stateChangedPayload(legacy && !state.usesOnlyLegacyThinkingLevels
