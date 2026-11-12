@@ -2627,7 +2627,7 @@ public final class SessionServer: @unchecked Sendable {
             client.fleetDeviceID = device
             client.clientName = clientName
             if let peer { fleet?.peerAuthenticated(peer, from: client.peerHost) }
-            if let device { fleet?.deviceAuthenticated(device, connection: client.fd) }
+            if let device { fleet?.deviceAuthenticated(device, connection: client.fd, clientName: clientName, from: client.peerHost) }
             // A connection that lists no capabilities is a Mac's host establishing a peer, not a client someone uses.
             if shared, !client.isLocal, capabilities?.isEmpty == false { fleet?.sharedTokenUsed(clientName: clientName, host: client.peerHost) }
             client.authenticated = true

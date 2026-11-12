@@ -45,6 +45,8 @@ public enum FleetProtocol {
         public static let forbidden = "forbidden"
         public static let invalid = "invalid"
         public static let busy = "busy"
+        /// A device pairs with an id that was revoked: it makes a new one and pairs again.
+        public static let deviceRevoked = "device_revoked"
     }
 }
 
@@ -241,6 +243,9 @@ public enum FleetAction: Codable, Hashable, Sendable {
     case forgetLegacyClient(String)
     /// Stop accepting the shared token (`FleetSharedTokenStatus`).
     case retireSharedToken
+    /// This Mac's app asks for a token of its own for its direct connections to the Macs of the fleet
+    /// (a device of kind `macApp`); answered with it (`FleetResult.appDevice`).
+    case enrollApp(name: String)
 }
 
 /// The answer to `fleetRead` and `fleetAction`: the snapshot after it, plus what the action made.
@@ -262,10 +267,13 @@ public struct FleetResult: Codable, Hashable, Sendable {
     public var adopted: [FleetAdoption]?
     /// The code of Add a device, answering `FleetAction.startDeviceCode`.
     public var deviceCode: Join?
+    /// The token this Mac's app was given, answering `FleetAction.enrollApp`. Over the local socket only.
+    public var appToken: String?
 
     public init(snapshot: FleetSnapshot, join: Join? = nil, paired: FleetPeerStatus? = nil, adopted: [FleetAdoption]? = nil,
-                deviceCode: Join? = nil) {
+                deviceCode: Join? = nil, appToken: String? = nil) {
         self.deviceCode = deviceCode
+        self.appToken = appToken
         self.snapshot = snapshot
         self.join = join
         self.paired = paired
