@@ -62,7 +62,7 @@ final class MobileApp {
 
     /// The shipped app: preferences and the Keychain.
     static func live() -> MobileApp {
-        MobileApp(hosts: MobileHosts(), appearance: MobileAppearance())
+        MobileApp(hosts: MobileHosts(device: .current), appearance: MobileAppearance())
     }
 
     /// Forgets a host everywhere: its token and record, its open screens, its threads.

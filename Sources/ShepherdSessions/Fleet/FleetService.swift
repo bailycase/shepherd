@@ -224,6 +224,10 @@ final class FleetService: @unchecked Sendable {
             reply(.ok(id: id))
         case .fleetPairDevice(let id, let code, let device):
             guard !caller.authenticated else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Pair before saying hello.")) }
+            // Before the code is tried: a device whose identity was revoked pairs again as a new one with the same code.
+            if devices.record(device.deviceID)?.isRevoked == true {
+                return reply(Self.refusal(id, FleetProtocol.Code.deviceRevoked, "That device was removed from the fleet. Pairing again makes it a new one."))
+            }
             if let refusal = judge(\.deviceCode, code: code, id: id, caller: caller, screen: "Add a device",
                                    notOpen: "That Mac isn't showing a code. Open Add a device on it.") {
                 return reply(refusal)

@@ -1396,7 +1396,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
 /// (`RemoteReply.settingsChanged`).
 public enum RemoteSettingsPage: String, Codable, Hashable, Sendable, CaseIterable {
     case instructions, suggestions, skills, hooks, slashCommands
-    /// Settings ▸ Remote's Serve this Mac: the listener opened, closed or failed.
+    /// Settings ▸ Fleet's Serve this Mac (with Fleet off): the listener opened, closed or failed.
     case remote
     /// Settings ▸ Fleet: a Mac was added or removed, a link came or went, or the join code window changed.
     case fleet

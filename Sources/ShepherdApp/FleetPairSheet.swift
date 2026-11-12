@@ -1,6 +1,7 @@
 import SwiftUI
 import ShepherdUI
 import ShepherdProtocol
+import ShepherdRemote
 
 /// Add a Mac (FleetPair): pick a Mac Bonjour found, enter the code its Join screen shows. This
 /// Mac's host does the pairing, so the Mac it adds and every other member are introduced even

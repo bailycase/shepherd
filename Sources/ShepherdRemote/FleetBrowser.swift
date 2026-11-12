@@ -2,18 +2,28 @@ import Foundation
 import Network
 import ShepherdProtocol
 
-/// A Mac running Shepherd that Bonjour found (`_shepherd._tcp`), for Settings ▸ Fleet ▸ Add a Mac.
-struct FoundMac: Identifiable, Equatable, Sendable {
+/// A Mac running Shepherd that Bonjour found (`_shepherd._tcp`), for Settings ▸ Fleet ▸ Add a Mac and
+/// for a phone's or iPad's Add a Mac.
+public struct FoundMac: Identifiable, Equatable, Sendable {
     /// The Bonjour service's name and where it was found: stable while it is on the network.
-    let id: String
-    var name: String
+    public let id: String
+    public var name: String
     /// "1.9": what it says of its Shepherd, when it says.
-    var version: String?
+    public var version: String?
     /// `FleetProtocol.advertisedIDHash` of its host id: a Mac skips its own entry, and one it already has.
-    var idHash: String?
+    public var idHash: String?
     /// Where it listens, once resolved: an IPv4 address and the port.
-    var address: String?
-    var port: UInt16?
+    public var address: String?
+    public var port: UInt16?
+
+    public init(id: String, name: String, version: String? = nil, idHash: String? = nil, address: String? = nil, port: UInt16? = nil) {
+        self.id = id
+        self.name = name
+        self.version = version
+        self.idHash = idHash
+        self.address = address
+        self.port = port
+    }
 }
 
 /// Finds Macs by Bonjour while the Add a Mac sheet is open, and resolves each to an address by
@@ -21,15 +31,17 @@ struct FoundMac: Identifiable, Equatable, Sendable {
 /// real connection; this only fills the list. It runs in the app, which holds the Local Network
 /// permission, and stops with the sheet.
 @MainActor
-final class FleetBrowser {
+public final class FleetBrowser {
     private var browser: NWBrowser?
     private var resolving: [NWEndpoint: NWConnection] = [:]
     private var found: [NWEndpoint: FoundMac] = [:]
     private let queue = DispatchQueue(label: "shepherd.fleet.browser")
     private var onChange: (([FoundMac]) -> Void)?
 
+    public init() {}
+
     /// Starts browsing; `onChange` hears the list, sorted by name, each time it changes.
-    func start(_ onChange: @escaping ([FoundMac]) -> Void) {
+    public func start(_ onChange: @escaping ([FoundMac]) -> Void) {
         stop()
         self.onChange = onChange
         let browser = NWBrowser(for: .bonjourWithTXTRecord(type: FleetProtocol.bonjourType, domain: nil), using: .tcp)
@@ -41,7 +53,7 @@ final class FleetBrowser {
         self.browser = browser
     }
 
-    func stop() {
+    public func stop() {
         browser?.cancel()
         browser = nil
         for connection in resolving.values { connection.cancel() }

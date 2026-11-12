@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdUI
 import ShepherdTestSupport
 import SwiftUI
