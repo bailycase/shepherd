@@ -1177,6 +1177,7 @@ public final class RemoteHostClient: @unchecked Sendable {
             case .goalsEnabled: "toggle the Goals experiment"
             case .projectsEnabled: "toggle the Projects experiment"
             case .fleetEnabled: "toggle the Fleet experiment"
+            case .fleetWeight: "change where Fleet sends work"
             case .designToolEnabled: "toggle the Design tool experiment"
             case .missionsEnabled: "toggle the Missions experiment"
             case .subagentDefaults, .worktreeDeleteAction, .skillsInSlashMenu, .mcpProjectConfig, .slashCommand, .closeOnMerge: "change this setting"
@@ -1695,7 +1696,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         func push(_ event: PushedEvent) { self.push(event, bytes: line.count) }
         switch reply {
         case .fleetDigest(let id, _), .nativeThread(let id, _), .uploadResult(let id, _), .creationOptions(let id, _), .agentResult(let id, _), .helloOk(let id, _, _, _, _),
-             .fleetIdentity(let id, _, _, _, _), .fleetPaired(let id, _, _, _), .fleetResult(let id, _), .ok(let id), .paneOpened(let id, _),
+             .fleetIdentity(let id, _, _, _, _), .fleetPaired(let id, _, _, _), .fleetResult(let id, _), .fleetPressureSample(let id, _, _), .ok(let id), .paneOpened(let id, _),
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .forgeResult(let id, _), .instructions(let id, _),

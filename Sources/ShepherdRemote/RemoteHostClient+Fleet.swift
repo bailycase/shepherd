@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdCore
 import ShepherdProtocol
 
 /// Fleet requests (`RemoteProtocol.fleetCapability`, `FleetWire.swift`). The host owns a client of
@@ -76,6 +77,25 @@ extension RemoteHostClient {
     public func fleetAction(_ action: FleetAction) async throws -> FleetResult {
         // A pairing includes a connection to another Mac and the introductions to every member.
         try Self.fleetResult(from: try await request(timeout: Self.fleetActionTimeout) { .fleetAction(id: $0, action: action) })
+    }
+
+    /// Pushes this Mac's newest sample to the host this client authenticated to as a peer.
+    public func fleetPressure(_ sample: FleetPressureSample) async throws {
+        try expectFleetOk(try await request { .fleetPressure(id: $0, sample: sample) })
+    }
+
+    /// Pushes this Mac's readiness report to the host this client authenticated to as a peer.
+    public func fleetReadiness(_ report: FleetReadinessReport) async throws {
+        try expectFleetOk(try await request { .fleetReadiness(id: $0, report: report) })
+    }
+
+    /// Asks the peer for a sample now.
+    public func fleetPressureNow() async throws -> (sample: FleetPressureSample, readiness: FleetReadinessReport?) {
+        switch try await request({ .fleetPressureNow(id: $0) }) {
+        case .fleetPressureSample(_, let sample, let readiness): return (sample, readiness)
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected fleet reply")
+        }
     }
 
     /// An action that reaches other Macs takes longer than a read.

@@ -288,6 +288,7 @@ private struct DestinationLayer: View {
         case .automations?: AutomationsDestination(vm: vm, chrome: chrome)
         case .forge?: ForgeDestination(vm: vm, chrome: chrome)
         case .hosts?: HostsDestination(vm: vm, chrome: chrome)
+        case .fleet?: FleetDestination(vm: vm, chrome: chrome)
         case .project?: LogicalProjectDestination(vm: vm, chrome: chrome)
         case .projectSettings?: LogicalProjectSettingsDestination(vm: vm, chrome: chrome)
         case nil: EmptyView()

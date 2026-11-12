@@ -20,4 +20,29 @@ extension AppLayout {
     static let fleetJoinCodeSize: CGFloat = 40
     /// A Macs row's status dot.
     static let fleetDotSize: CGFloat = 6
+
+    // The Fleet page (FleetA).
+    /// A Mac card's tile: 32pt with a 16pt display glyph.
+    static let fleetTileSize: CGFloat = 32
+    static let fleetTileGlyph: CGFloat = 16
+    /// The cards' columns, and the least width a card keeps before the grid drops a column.
+    static let fleetColumns = 3
+    /// A fact row's label column, and the readings' value column.
+    static let fleetFactLabelWidth: CGFloat = 76
+    static let fleetFactValueWidth: CGFloat = 84
+    /// Room's gauge is 6pt tall, the CPU and memory gauges 4pt.
+    static let fleetRoomBarHeight: CGFloat = 6
+    static let fleetMetricBarHeight: CGFloat = 4
+    /// The card's status pill.
+    static let fleetPillHeight: CGFloat = 20
+    /// Send work here: its four buttons are 24pt tall.
+    static let fleetWeightHeight: CGFloat = 24
+    /// A repo tag.
+    static let fleetTagHeight: CGFloat = 16
+    /// A card of a Mac that isn't answering fades.
+    static let fleetAsleepOpacity: Double = 0.72
+    /// The sidebar's Fleet row: 36pt tall, its glyph 16pt.
+    static let fleetFooterRowHeight: CGFloat = 36
+    static let fleetFooterGlyph: CGFloat = 16
+    static let fleetFooterDotGap: CGFloat = SH.Space.xs
 }

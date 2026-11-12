@@ -129,6 +129,7 @@ final class AppSettings {
         static let projectsEnabled = "shepherd.experiments.projects"
         static let designToolEnabled = "shepherd.experiments.designTool"
         static let fleetEnabled = "shepherd.experiments.fleet"
+        static let fleetWeights = "shepherd.fleet.weights"
         static let missionsEnabled = "shepherd.experiments.missions"
         static let implementOpensThread = "shepherd.designs.implementOpensThread"
 
@@ -144,7 +145,7 @@ final class AppSettings {
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeGeneratePRDescription, worktreeDeleteAction, worktreeCloseOnMerge, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
             mcpProjectConfig, mcpSameEverywhere,
-            goalsEnabled, projectsEnabled, designToolEnabled, fleetEnabled, missionsEnabled, implementOpensThread,
+            goalsEnabled, projectsEnabled, designToolEnabled, fleetEnabled, fleetWeights, missionsEnabled, implementOpensThread,
             filesWordWrap, filesMarkdownPreview,
         ]
 
@@ -543,6 +544,24 @@ final class AppSettings {
     }
     @ObservationIgnored var onFleetChange: ((Bool) -> Void)?
 
+    /// The Fleet page's Send work here choice per Mac, under the setting keys `fleet.weight.<hostID>`
+    /// (`FleetSendWeight.settingKey`). A Mac with no entry is Normal.
+    var fleetWeights: [String: FleetSendWeight] {
+        didSet {
+            store.set(fleetWeights.mapValues(\.rawValue), forKey: Key.fleetWeights)
+            if fleetWeights != oldValue { onFleetWeightsChange?() }
+        }
+    }
+    @ObservationIgnored var onFleetWeightsChange: (() -> Void)?
+
+    func fleetWeight(of hostID: UUID) -> FleetSendWeight {
+        fleetWeights[FleetSendWeight.settingKey(hostID: hostID)] ?? .normal
+    }
+
+    func setFleetWeight(_ weight: FleetSendWeight, of hostID: UUID) {
+        fleetWeights[FleetSendWeight.settingKey(hostID: hostID)] = weight
+    }
+
     /// Settings ▸ Experiments ▸ Missions: the Missions destination and its sidebar section. Off by
     /// default, as every experiment. Off hides them only: missions, their worktrees and receipts are
     /// kept, and their threads stay out of the thread lists.
@@ -586,6 +605,7 @@ final class AppSettings {
         goalsEnabled = store.object(forKey: Key.goalsEnabled) as? Bool ?? false
         projectsEnabled = store.object(forKey: Key.projectsEnabled) as? Bool ?? false
         fleetEnabled = store.object(forKey: Key.fleetEnabled) as? Bool ?? false
+        fleetWeights = (store.dictionary(forKey: Key.fleetWeights) as? [String: String] ?? [:]).compactMapValues(FleetSendWeight.init(rawValue:))
         // Naming is always on now; only its model is a setting.
         store.removeObject(forKey: "shepherd.agent.autoName")
         // The session naming model became the text generation model: move its stored choice to
@@ -713,6 +733,7 @@ final class AppSettings {
         goalsEnabled = false
         projectsEnabled = false
         fleetEnabled = false
+        fleetWeights = [:]
         shareDiagnostics = false
         textGenerationModel = ""
         visionModel = ""

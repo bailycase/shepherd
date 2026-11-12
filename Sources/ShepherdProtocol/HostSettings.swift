@@ -152,6 +152,10 @@ public struct HostSettings: Codable, Hashable, Sendable {
     public var updatePiDaily: Bool
     public var updateExtensionsDaily: Bool
 
+    /// The Fleet page's Send work here choice per Mac: the settings `fleet.weight.<hostID>`
+    /// (`FleetSendWeight.settingKey`), keyed by that name. A Mac with no entry is Normal.
+    public var fleetWeights: [String: FleetSendWeight]
+
     public init(shepherdVersion: String? = nil, piVersion: String? = nil,
                 defaultModel: String? = nil, defaultThinking: ThinkingLevel = .medium,
                 defaultServiceTier: ServiceTier = .standard, textGenerationModel: String? = nil, visionModel: String? = nil, compactAtPercent: Int? = nil,
@@ -165,7 +169,8 @@ public struct HostSettings: Codable, Hashable, Sendable {
                 skillsInSlashMenu: Bool = true, mcpProjectConfig: Bool = false,
                 slashCommands: [NativeCommand] = [], hiddenSlashCommands: [String] = [],
                 bundledExtensions: [BundledExtension] = [], installedExtensions: [String] = [],
-                updatePiDaily: Bool = false, updateExtensionsDaily: Bool = false) {
+                updatePiDaily: Bool = false, updateExtensionsDaily: Bool = false,
+                fleetWeights: [String: FleetSendWeight] = [:]) {
         self.shepherdVersion = shepherdVersion
         self.piVersion = piVersion
         self.defaultModel = defaultModel
@@ -201,6 +206,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         self.installedExtensions = installedExtensions
         self.updatePiDaily = updatePiDaily
         self.updateExtensionsDaily = updateExtensionsDaily
+        self.fleetWeights = fleetWeights
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -208,7 +214,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         case queueDelivery, goalCrossProviderEvaluation, goalsEnabled, projectsEnabled, fleetEnabled
         case worktreeBase, fetchBeforeCreating, commitRemainingWork, generatePRDescriptions
         case deleteLocalBranch, mergePRAutomatically, mergeMethod, closeOnMerge, backgroundService, listenerPort, listenerProblem, listenerProblemDetail, bundledExtensions, installedExtensions
-        case updatePiDaily, updateExtensionsDaily
+        case updatePiDaily, updateExtensionsDaily, fleetWeights
         case designToolEnabled, missionsEnabled, missionsActive, subagentDefaults, worktreeDeleteAction
         case skillsInSlashMenu, mcpProjectConfig, slashCommands, hiddenSlashCommands
     }
@@ -254,6 +260,9 @@ public struct HostSettings: Codable, Hashable, Sendable {
         installedExtensions = try c.decode([String].self, forKey: .installedExtensions)
         updatePiDaily = try c.decode(Bool.self, forKey: .updatePiDaily)
         updateExtensionsDaily = try c.decode(Bool.self, forKey: .updateExtensionsDaily)
+        // A weight this client doesn't know reads as Normal (it is left out).
+        fleetWeights = ((try? c.decodeIfPresent([String: String].self, forKey: .fleetWeights)) ?? nil ?? [:])
+            .compactMapValues(FleetSendWeight.init(rawValue:))
     }
 
     /// Applies one change, as the host does.
@@ -282,6 +291,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
             if let index = bundledExtensions.firstIndex(where: { $0.id == id }) { bundledExtensions[index].on = on }
         case .updatePiDaily(let on): updatePiDaily = on
         case .updateExtensionsDaily(let on): updateExtensionsDaily = on
+        case .fleetWeight(let hostID, let weight): fleetWeights[FleetSendWeight.settingKey(hostID: hostID)] = weight
         case .designToolEnabled(let on): designToolEnabled = on
         case .missionsEnabled(let on):
             // The host refuses Missions off under a live mission; a client shows that at once.
@@ -340,6 +350,8 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
     case bundledExtension(id: String, on: Bool)
     case updatePiDaily(Bool)
     case updateExtensionsDaily(Bool)
+    /// How much auto placed work the Mac `hostID` gets (`RemoteProtocol.fleetPressureCapability`).
+    case fleetWeight(hostID: UUID, weight: FleetSendWeight)
     /// `RemoteProtocol.designToolExperimentCapability`: offered while the tool is off too.
     case designToolEnabled(Bool)
     /// `RemoteProtocol.missionsExperimentCapability`. Off is refused while a mission is active
@@ -360,6 +372,7 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
         case .goalsEnabled: RemoteProtocol.goalExperimentCapability
         case .projectsEnabled: RemoteProtocol.projectsExperimentCapability
         case .fleetEnabled: RemoteProtocol.fleetExperimentCapability
+        case .fleetWeight: RemoteProtocol.fleetPressureCapability
         case .defaultServiceTier, .namingModel, .compactAtPercent: RemoteProtocol.hostSettingsAgentDefaultsCapability
         case .textGenerationModel: RemoteProtocol.hostSettingsTextGenerationModelCapability
         case .visionModel: RemoteProtocol.hostSettingsVisionModelCapability

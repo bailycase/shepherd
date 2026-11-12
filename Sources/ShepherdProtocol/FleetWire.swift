@@ -158,9 +158,13 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
     public var advertising: Bool
     public var peers: [FleetPeerStatus]
     public var join: FleetJoinStatus?
+    /// This Mac and each peer with the last pressure sample and readiness report the host holds
+    /// (`FleetPressureWire.swift`); a Mac with nothing yet is absent.
+    public var macs: [FleetMacState]
 
     public init(enabled: Bool = false, hostID: UUID? = nil, name: String = "", build: String? = nil, addresses: [String] = [],
-                port: UInt16? = nil, advertising: Bool = false, peers: [FleetPeerStatus] = [], join: FleetJoinStatus? = nil) {
+                port: UInt16? = nil, advertising: Bool = false, peers: [FleetPeerStatus] = [], join: FleetJoinStatus? = nil,
+                macs: [FleetMacState] = []) {
         self.enabled = enabled
         self.hostID = hostID
         self.name = name
@@ -170,6 +174,24 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         self.advertising = advertising
         self.peers = peers
         self.join = join
+        self.macs = macs
+    }
+
+    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, advertising, peers, join, macs }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decode(Bool.self, forKey: .enabled)
+        hostID = try c.decodeIfPresent(UUID.self, forKey: .hostID)
+        name = try c.decode(String.self, forKey: .name)
+        build = try c.decodeIfPresent(String.self, forKey: .build)
+        addresses = try c.decode([String].self, forKey: .addresses)
+        port = try c.decodeIfPresent(UInt16.self, forKey: .port)
+        advertising = try c.decode(Bool.self, forKey: .advertising)
+        peers = try c.decode([FleetPeerStatus].self, forKey: .peers)
+        join = try c.decodeIfPresent(FleetJoinStatus.self, forKey: .join)
+        // A host from before pressure has none.
+        macs = try c.decodeIfPresent([FleetMacState].self, forKey: .macs) ?? []
     }
 }
 
@@ -227,6 +249,11 @@ public enum FleetAction: Codable, Hashable, Sendable {
     case remove(hostID: UUID)
     /// Make these known hosts fleet peers where they can be (`FleetAdoption`).
     case adopt([FleetLegacyHost])
+    /// The Fleet page is on screen (true) or isn't (false): the host samples and pushes while it
+    /// is, and stops when the connection that said so closes.
+    case watching(Bool)
+    /// Try the link to this Mac again now, without waiting out its backoff.
+    case reconnect(hostID: UUID)
 }
 
 /// The answer to `fleetRead` and `fleetAction`: the snapshot after it, plus what the action made.

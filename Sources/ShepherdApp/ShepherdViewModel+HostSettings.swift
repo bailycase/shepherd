@@ -104,7 +104,8 @@ enum HostSettingsMapping {
             // Shepherd's pi updates with Shepherd: nothing runs `pi update` any more.
             bundledExtensions: bundled.map { HostSettings.BundledExtension(id: $0.id, name: $0.name, on: app[keyPath: $0.keyPath]) },
             updatePiDaily: false,
-            updateExtensionsDaily: false
+            updateExtensionsDaily: false,
+            fleetWeights: app.fleetWeights
         )
     }
 
@@ -135,6 +136,7 @@ enum HostSettingsMapping {
         case .bundledExtension(let id, let on):
             guard let keyPath = bundled.first(where: { $0.id == id })?.keyPath else { return nil }
             app[keyPath: keyPath] = on
+        case .fleetWeight(let hostID, let weight): app.setFleetWeight(weight, of: hostID)
         case .updatePiDaily, .updateExtensionsDaily:
             // An older client's switches: Shepherd's pi updates only with Shepherd.
             break

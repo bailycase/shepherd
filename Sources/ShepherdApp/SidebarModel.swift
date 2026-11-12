@@ -28,6 +28,9 @@ enum MainDestination: Hashable, CaseIterable {
     case forge
     /// NavHosts (More ▸ Hosts).
     case hosts
+    /// FleetA (Settings ▸ Experiments ▸ Fleet): the Macs paired with this one, their room and what
+    /// was sent between them. The sidebar's Fleet footer row and the palette's Open Fleet open it.
+    case fleet
     /// A Project (ProjectLead boards): its Overview and conversation page, in the main column. Which
     /// project is `ShepherdViewModel.selectedLogicalProject`.
     case project
