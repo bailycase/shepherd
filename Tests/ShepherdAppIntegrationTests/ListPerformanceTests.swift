@@ -2191,6 +2191,59 @@ struct ListPerformanceTests {
         #expect(rows["tray.row", default: 0] <= 8, "\(rows)")
     }
 
+    /// Each tool call a subagent makes moves its row's words and counters on the host. The tray's
+    /// rows redraw; the composer, which only decides whether the tray is docked and whether Stop
+    /// reaches the subagents, runs no body. A run ending, which does change what Stop says,
+    /// still redraws it (the control).
+    @Test func aSubagentProgressUpdateRedrawsNoComposer() async throws {
+        let runs = (0..<2).map { index in
+            var run = ListFixtures.run(index)
+            run.toolCallID = "spawn-\(index)"
+            return run
+        }
+        var snapshot = Self.spawned(runs)
+        snapshot.running = true
+        let thread = FakeThread(snapshot, subagentTray: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await eventuallyOnMain("the tray to dock") { thread.store.tray != nil }
+        try await atRest(thread.window)
+
+        let rows = try await counting(thread.window) {
+            for step in 1...5 {
+                var next = thread.snapshot
+                next.revision += 1
+                next.subagents = runs.map { run in
+                    var run = run
+                    run.turns = (run.turns ?? 0) + step
+                    run.toolCalls = step
+                    run.lastActivity = ChildActivity(tool: "read", preview: "Sources/Step\(step).swift", at: 2_000 + Double(step))
+                    return run
+                }
+                await thread.serve(next)
+                ListPerf.settle(thread.window)
+            }
+        }
+
+        let line = thread.store.tray?.rows.first?.line
+        #expect(line == .working(verb: "Read", subject: "Step5.swift", live: false), "the tray followed the last call: \(String(describing: line))")
+        #expect(rows["tray.row", default: 0] >= 1, "the tray's rows redrew: \(rows)")
+        #expect(rows["composer.body", default: 0] == 0, "composer.body: \(rows)")
+
+        try await atRest(thread.window)
+        var ended = thread.snapshot
+        ended.revision += 1
+        ended.subagents = runs.map { run in
+            var run = run
+            run.state = "complete"
+            run.endedAt = 3_000
+            return run
+        }
+        let finished = try await counting(thread.window) { await thread.serve(ended) }
+        #expect(!thread.store.hasLiveSubagents)
+        #expect(finished["composer.body", default: 0] >= 1, "Stop's help changes with the last run: \(finished)")
+    }
+
     /// An open tray of two hundred runs scrolls inside, building only the rows in view.
     private struct TrayHost: View {
         let runs: [ChildRun]

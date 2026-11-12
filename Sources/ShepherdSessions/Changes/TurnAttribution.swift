@@ -117,7 +117,11 @@ enum TurnAttribution {
             if let landing { evidence.foreign[landing] = evidence.foreign[landing] ?? call.agent }
         }
         for span in log.spans where overlapping(span.interval) {
-            evidence.saved.formUnion(span.paths.compactMap(savedPath))
+            if let tree = span.tree {
+                if sameTree(tree) { evidence.shared = true }
+            } else {
+                evidence.saved.formUnion(span.paths.compactMap(savedPath))
+            }
         }
         if log.lost.contains(where: overlapping) {
             evidence.lossy = true

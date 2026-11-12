@@ -242,6 +242,7 @@ extension ShepherdViewModel {
     private func makeFileTree(_ agentID: AgentID, cwd: String) -> FileTreeModel {
         let model = FileTreeModel(rootPath: cwd)
         model.onSaved = { [weak self] _ in self?.workingTreeChanged(agentID) }
+        model.onWrite = { [weak self] path in await self?.personWriteBegan(agentID, paths: [path]) }
         return model
     }
 

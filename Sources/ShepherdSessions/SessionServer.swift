@@ -185,6 +185,9 @@ public final class SessionServer: @unchecked Sendable {
         var isLocal = false
         /// Terminals whose PTY is not read until this local app catches up (`localOutputHighWaterMark`).
         var heldOutput: Set<SessionID> = []
+        /// What this local app is writing for the person and has not closed (`changesWriteBegan`);
+        /// the Changes engine closes them when the app's connection does.
+        var personWrites: Set<UUID> = []
 
         init(fd: Int32, isRemote: Bool = false, peerPID: pid_t? = nil) {
             self.fd = fd
@@ -1090,7 +1093,7 @@ public final class SessionServer: @unchecked Sendable {
     /// What the host offers `client`: `files.v1` and `missions.v1` only to a client that listed it in `hello`. Server queue.
     private func offeredCapabilities(to client: ExtensionConnection) -> [String] {
         offeredCapabilities.filter { ($0 != RemoteProtocol.filesCapability && $0 != RemoteProtocol.missionsCapability) || client.clientCapabilities.contains($0) }
-            + (client.isLocal ? [RemoteProtocol.localCapability] : [])
+            + (client.isLocal ? [RemoteProtocol.localCapability, RemoteProtocol.changesWritesCapability] : [])
             + (client.isLocal && onDrainRequest != nil ? [RemoteProtocol.hostDrainCapability] : [])
     }
 
@@ -2755,12 +2758,23 @@ public final class SessionServer: @unchecked Sendable {
                     else { self.send(.agentResult(id: id, result: .ok), to: client) }
                 }
             }
+        case .agentQuery(let id, _, .changesWriteEnded(let span)):
+            guard client.isLocal else {
+                send(.error(id: id, code: "unsupported", message: "Only Shepherd on this Mac reports what it writes."), to: client)
+                return
+            }
+            if client.personWrites.remove(span) != nil { changes.endWrite(span) }
+            send(.agentResult(id: id, result: .ok), to: client)
         case .agentQuery(let id, let agentID, let query) where query.isFiles:
             remoteFiles(id: id, agentID: agentID, query: query, client: client)
         case .agentQuery(let id, let agentID, let query) where query.isChanges:
             // The server owns the engine: answered here, without the GUI, off the queue.
             guard store.state.agents.contains(where: { $0.id == agentID }) else {
                 send(.error(id: id, code: "no_such_agent", message: "Agent no longer exists on the host."), to: client)
+                return
+            }
+            guard !query.isPersonWrite || client.isLocal else {
+                send(.error(id: id, code: "unsupported", message: "Only Shepherd on this Mac reports what it writes."), to: client)
                 return
             }
             // A named folder is the agent's own or the one its `review_diff` asked for, never any path.
@@ -2771,6 +2785,8 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             let changes = changes
+            // Noted before the engine opens it, so an end that overtakes the open still finds it.
+            if case .changesWriteBegan(let span, _) = query { client.personWrites.insert(span) }
             // The connection is only touched back on the server queue.
             let connection = ChangesUnchecked(value: client)
             Task.detached { [weak self] in
@@ -2786,6 +2802,11 @@ public final class SessionServer: @unchecked Sendable {
                     case (.changesList(_, _, nil), .success), (.changesRevertFile, .success), (.changesUndoTurn, .success),
                          (.changesRedoTurn, .success):
                         self.hopToMain { [weak self] in self?.onThreadFocused?(agentID) }
+                    case (.changesWriteBegan(let span, _), .success):
+                        // The app already ended it, or is gone, before the engine opened it: it closes now.
+                        if !client.personWrites.contains(span) { self.changes.endWrite(span) }
+                    case (.changesWriteBegan(let span, _), .failure):
+                        client.personWrites.remove(span)
                     default: break
                     }
                     guard self.clients[client.fd] === client else { return }
@@ -3388,6 +3409,7 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         let root = (folder as NSString).expandingTildeInPath
+        let changes = changes
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let reply: RemoteReply
             switch query {
@@ -3402,6 +3424,9 @@ public final class SessionServer: @unchecked Sendable {
                 case .failure(let error): reply = .error(id: id, code: error.code, message: error.localizedDescription)
                 }
             case .fileWrite(let path, let text, let expected):
+                // The person's Save is not a running turn's: the engine knows the file while it is written.
+                let span = (try? ThreadFileSystem.resolve(path, in: root).get()).map { changes.beginWrite(absolute: [$0]) }
+                defer { if let span { changes.endWrite(span) } }
                 reply = .agentResult(id: id, result: .fileWrite(ThreadFileSystem.save(path, in: root, text: text, expected: expected)))
             default: return
             }
@@ -4753,6 +4778,8 @@ public final class SessionServer: @unchecked Sendable {
         }
         hostUpdateRequests[client.fd] = nil
         clients.removeValue(forKey: client.fd)
+        for span in client.personWrites { changes.endWrite(span) }
+        client.personWrites.removeAll()
         for (token, request) in agentRequests where !request.deletionConfirmed && (request.caller === client || request.target === client) {
             finishAgentRequest(token, result: .init(text: "agent connection closed", code: "disconnected"))
         }

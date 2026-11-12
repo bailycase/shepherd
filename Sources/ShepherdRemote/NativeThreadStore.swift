@@ -263,9 +263,28 @@ public final class NativeThreadStore {
     public private(set) var editingPath: String?
     /// Each reply's subagents, where their spawn calls were (keyed by turn id).
     public private(set) var placements: [String: NativeSubagentPlacement] = [:] { didSet { threadVersion &+= 1 } }
-    public private(set) var subagents: [NativeSubagent] = [] { didSet { chromeVersion &+= 1 } }
+    public private(set) var subagents: [NativeSubagent] = [] {
+        didSet {
+            chromeVersion &+= 1
+            let live = subagents.contains { !$0.isTerminal }
+            if live != hasLiveSubagents { hasLiveSubagents = live }
+        }
+    }
+    /// Whether any subagent is not finished, kept by `subagents`. Written only when it flips, so
+    /// a view that reads it (the composer's Stop help) skips a child's tool call, which moves the
+    /// runs and not this.
+    public private(set) var hasLiveSubagents = false
     /// The subagent tray above the composer, while it shows (`nativeTrayRuns`).
-    public private(set) var tray: NativeSubagentTray? { didSet { chromeVersion &+= 1 } }
+    public private(set) var tray: NativeSubagentTray? {
+        didSet {
+            chromeVersion &+= 1
+            let shows = tray != nil
+            if shows != hasTray { hasTray = shows }
+        }
+    }
+    /// Whether the tray shows, kept by `tray`. Written only when it flips: the composer docks the
+    /// tray on this, and the tray's own view reads the rows, which move with each child tool call.
+    public private(set) var hasTray = false
     /// When the prompt that opened the current turn was sent (ms). A queued follow-up has not
     /// opened a turn yet; nil while the newest prompt is an echo.
     public private(set) var lastPromptAt: Double?
@@ -618,8 +637,6 @@ public final class NativeThreadStore {
         if starting { return .milliseconds(200) }
         return snapshot?.running == true || snapshot?.dialogs.isEmpty == false || hasLiveSubagents ? .milliseconds(500) : .seconds(2)
     }
-
-    public var hasLiveSubagents: Bool { subagents.contains { !$0.isTerminal } }
 
     /// The host holds messages sent while pi works (`NativeQueue`): sends during a run join
     /// `queue`, and the queue actions below apply.
