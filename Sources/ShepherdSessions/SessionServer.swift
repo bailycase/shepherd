@@ -1099,7 +1099,8 @@ public final class SessionServer: @unchecked Sendable {
                 && ($0 != RemoteProtocol.missionsCapability || missionsServed && onRemoteMission != nil)
                 && (($0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetSyncCapability) || fleet?.membership == true)
                 && ($0 != RemoteProtocol.fleetDevicesCapability || fleet != nil)
-                && ($0 != RemoteProtocol.fleetPressureCapability || fleet?.membership == true)
+                && (($0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetViewCapability) || fleet?.membership == true)
+                && ($0 != RemoteProtocol.fleetSnapshotCapability || fleet?.membership == true)
         }
     }
 
@@ -1359,6 +1360,7 @@ public final class SessionServer: @unchecked Sendable {
                     for client in Array(clients.values) where client.fleetPeerID != nil { disconnect(client, reason: "fleet turned off") }
                 }
                 pushSettingsChanged(.fleet)
+                announceFleetCapabilities()
                 return
             }
             do {
@@ -1406,7 +1408,10 @@ public final class SessionServer: @unchecked Sendable {
                     service.syncEngine.add(FleetCredentialsSource(file: pi.files.directory.appendingPathComponent(file), kind: kind, exclusions: kept))
                 }
                 service.listenerChanged(remoteListenPort)
+                // Which checkouts the content index reads: the spaces' (`fleet.snapshot.v1`).
+                service.index.host = FleetIndexService.Host(spaces: { [weak self] in self?.store.state.spaces ?? [] })
                 service.start()
+                if enabled { announceFleetCapabilities() }
             } catch {
                 ShepherdLog.error("fleet could not start: \(error)")
             }
@@ -1466,6 +1471,7 @@ public final class SessionServer: @unchecked Sendable {
     func fleetSpacesChanged() {
         guard let fleet, fleet.membership else { return }
         refreshRepoKeys()
+        fleet.index.reconcile()
         fleet.syncEngine.localChanged()
     }
 
@@ -1491,13 +1497,21 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Fleet went on or off: remote clients (a phone drawing or hiding its Fleet screen) are told what the host offers now.
+    private func announceFleetCapabilities() {
+        for client in clients.values where client.isRemote && !client.isLocal && client.authenticated && client.fleetPeerID == nil {
+            guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: offeredCapabilities(to: client))) else { continue }
+            enqueuePayload(payload, to: client)
+        }
+    }
+
     /// Hands a fleet request to `FleetService`, or refuses it while Fleet is off.
     private func serveFleet(_ request: RemoteRequest, from client: ExtensionConnection) {
         let id: Int
         switch request {
         case .fleetIdentify(let value), .fleetPair(let value, _, _), .fleetEstablish(let value, _), .fleetIntroduce(let value, _),
              .fleetRevoke(let value, _, _), .fleetRead(let value), .fleetAction(let value, _), .fleetSync(let value, _),
-             .fleetPressure(let value, _), .fleetReadiness(let value, _), .fleetPressureNow(let value),
+             .fleetPressure(let value, _), .fleetReadiness(let value, _), .fleetPressureNow(let value), .fleetRepoManifest(let value, _),
              .fleetPairDevice(let value, _, _), .fleetEnrollDevice(let value, _), .fleetSyncDevices(let value, _):
             id = value
         default: return
@@ -2836,7 +2850,7 @@ public final class SessionServer: @unchecked Sendable {
 
         switch request {
         case .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
-             .fleetPressure, .fleetReadiness, .fleetPressureNow,
+             .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetRepoManifest,
              .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
             serveFleet(request, from: client)
         case .pushRegistration(let id, let registration):

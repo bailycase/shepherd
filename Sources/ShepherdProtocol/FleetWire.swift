@@ -167,10 +167,14 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
     public var sync: FleetSyncStatus?
     /// Phones, iPads and Mac apps paired as clients, and the shared token's state; nil from a host without them.
     public var devices: FleetDevicesSnapshot?
+    /// Where this Mac's content index stands (`FleetSnapshotWire.swift`); nil while it isn't indexing (Fleet off, or no Mac paired).
+    public var index: FleetIndexStatus?
 
     public init(enabled: Bool = false, hostID: UUID? = nil, name: String = "", build: String? = nil, addresses: [String] = [],
                 port: UInt16? = nil, advertising: Bool = false, peers: [FleetPeerStatus] = [], join: FleetJoinStatus? = nil,
-                sync: FleetSyncStatus? = nil, devices: FleetDevicesSnapshot? = nil, macs: [FleetMacState] = []) {
+                sync: FleetSyncStatus? = nil, devices: FleetDevicesSnapshot? = nil, macs: [FleetMacState] = [],
+                index: FleetIndexStatus? = nil) {
+        self.index = index
         self.devices = devices
         self.enabled = enabled
         self.hostID = hostID
@@ -185,7 +189,7 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         self.sync = sync
     }
 
-    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, advertising, peers, join, macs, devices, sync }
+    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, advertising, peers, join, macs, devices, sync, index }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -202,6 +206,19 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         macs = try c.decodeIfPresent([FleetMacState].self, forKey: .macs) ?? []
         devices = try c.decodeIfPresent(FleetDevicesSnapshot.self, forKey: .devices)
         sync = try c.decodeIfPresent(FleetSyncStatus.self, forKey: .sync)
+        index = try c.decodeIfPresent(FleetIndexStatus.self, forKey: .index)
+    }
+}
+
+extension FleetSnapshot {
+    /// What a client (a phone or an iPad) may read: the Macs, whether each is reachable, and their load and
+    /// readiness. Not where any Mac listens, a code window, the devices, the sync state or the build.
+    public var clientView: FleetSnapshot {
+        FleetSnapshot(enabled: enabled, hostID: hostID, name: name,
+                      peers: peers.map {
+                          FleetPeerStatus(hostID: $0.hostID, name: $0.name, kind: $0.kind, pairedAt: $0.pairedAt, link: $0.link, lastSeen: $0.lastSeen)
+                      },
+                      macs: macs)
     }
 }
 
@@ -469,6 +486,10 @@ public enum FleetAccess: Sendable, Hashable {
 
     /// Sync, credential and dispatch units, and the requests that pair or remove Macs.
     public var takesPartInFleet: Bool { self == .local || self == .member }
+
+    /// May read the fleet's Macs, load and readiness (`FleetSnapshot.clientView`) and ask for it to be
+    /// sampled while it looks. A device and a client on the shared token do; nothing else of the fleet.
+    public var mayViewFleet: Bool { self == .device || self == .shared }
 
     /// Whether `capability` is offered to a connection with this access. A device is offered no
     /// fleet capability; the shared token still is, so an old client can be given its own token.

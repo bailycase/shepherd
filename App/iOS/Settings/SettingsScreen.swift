@@ -31,7 +31,6 @@ private struct SettingsList: View {
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        let model = HomeFeed.of(hosts).model
         let designs = MobileDesigns.of(hosts).model
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
@@ -61,8 +60,8 @@ private struct SettingsList: View {
                 }
                 SettingsSection("Machines") {
                     SHListCard {
-                        row(.hosts, trailing: model.offlineCount > 0 ? .alert("\(model.offlineCount) offline")
-                            : .value(model.hosts.isEmpty ? "None" : String(model.hosts.count)))
+                        // The Macs this device is paired with, their room, and Add a Mac (what Hosts was).
+                        row(.fleet, trailing: store.fleetValue)
                         row(.spaces, trailing: SHListRow.Trailing.none)
                         row(.worktrees, trailing: SHListRow.Trailing.none)
                     }
@@ -180,7 +179,7 @@ struct SettingsPageView: View {
         case .instructions: InstructionsScreen()
         case .skills: SkillsScreen()
         case .hooks: HooksScreen()
-        case .hosts: HostsScreen()
+        case .fleet: FleetScreen()
         case .spaces: SpacesScreen()
         case .notifications: NotificationsScreen()
         case .experiments: ExperimentsScreen()

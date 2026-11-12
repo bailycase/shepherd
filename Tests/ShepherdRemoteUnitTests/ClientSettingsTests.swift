@@ -7,7 +7,7 @@ import ShepherdTestKit
 
 /// A host as the phone's Settings reads it: its settings, root instructions and suggestions kept
 /// in memory, every request recorded.
-final class FakeSettingsClient: SettingsClient, @unchecked Sendable {
+class FakeSettingsClient: SettingsClient, @unchecked Sendable {
     private let lock = NSLock()
     private var settings: HostSettings
     private var files: InstructionsSnapshot

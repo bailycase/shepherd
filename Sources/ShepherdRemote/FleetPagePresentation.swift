@@ -69,9 +69,59 @@ public struct FleetMacCard: Identifiable, Equatable, Sendable {
     public var repos: [String]
     /// Retry: try the link again now.
     public var canRetry: Bool
+    /// What a compact row says of the power: "battery 41%", "plugged in", with "warm" or "hot" after it
+    /// when the Mac runs warm. Empty while the Mac isn't answering.
+    public var powerFact = ""
+    /// When an asleep Mac was last seen, as a time of day ("10:42"); nil otherwise.
+    public var since: String?
+    /// Threads working on the Mac now; nil while it isn't answering.
+    public var working: Int?
+    /// The Mac is one of the fleet's (its id is a fleet host id), so a Send work here weight can be set for it. False for a
+    /// Mac this device holds that no fleet Mac has told it about (`FleetDeviceList`).
+    public var takesWeight = true
     /// Names the Mac's weight control for VoiceOver ("Send work to Mac mini").
     public var weightLabel: String { "Send work to \(name)" }
     public var isThisMac: Bool { status == .thisMac }
+}
+
+/// How much of a card a compact row (the iPhone's and iPhone Duo's Fleet list) says in its facts line.
+public enum FleetFactsStyle: Equatable, Sendable {
+    /// FleetA-phone: "CPU 72% · 9.4 GB free · battery 41%".
+    case phone
+    /// DuoOpenFleet and DuoBookFleet: the phone's line and how many threads work.
+    case duo
+    /// DuoClosedFleet: "CPU 72% · battery 41%" (the memory only while plugged in).
+    case compact
+}
+
+extension FleetMacCard {
+    /// The mono line under a compact row's gauge. A Mac that isn't answering says since when.
+    public func facts(_ style: FleetFactsStyle) -> String {
+        if status == .asleep { return since.map { "since \($0)" } ?? "not reached yet" }
+        guard let cpu else { return "Waiting for a reading" }
+        let cpuFact = "CPU \(cpu.text)"
+        let memoryFact = memory?.text
+        switch style {
+        case .phone, .duo:
+            var parts = [cpuFact, memoryFact, powerFact.isEmpty ? nil : powerFact].compactMap { $0 }
+            if style == .duo, let working, working > 0 { parts.append("\(working) working") }
+            return parts.joined(separator: " · ")
+        case .compact:
+            return [cpuFact, powerFact.hasPrefix("battery") || powerFact.hasPrefix("on battery") ? powerFact : memoryFact].compactMap { $0 }.joined(separator: " · ")
+        }
+    }
+
+    /// A compact row's VoiceOver label: "Mac mini, most room".
+    public var rowLabel: String { "\(name), \(status == .asleep ? "asleep" : room.text.lowercased())" }
+
+    /// The word at the right of a compact row's name: how much room, or "Asleep".
+    public var rowRoom: String { status == .asleep ? "Asleep" : room.text }
+}
+
+/// Who reads the page. A Mac's app draws its own host as "This Mac"; a phone or an iPad has no "this", and
+/// names the Mac it asked.
+public enum FleetViewer: Equatable, Sendable {
+    case mac, client
 }
 
 /// The page: its cards, the header's summary and where the next work would go.
@@ -115,7 +165,8 @@ public enum FleetPagePresentation {
     /// sample's age, so a Mac that stops pushing goes stale on screen without a new snapshot.
     /// `batteryCountsHalf` is the fleet setting that halves a Mac on battery.
     public static func make(snapshot: FleetSnapshot, weight: (UUID) -> FleetSendWeight, snapshotAge: TimeInterval = 0,
-                            batteryCountsHalf: Bool = true, locale: Locale = .current, calendar: Calendar = .current) -> FleetPage {
+                            batteryCountsHalf: Bool = true, viewer: FleetViewer = .mac,
+                            locale: Locale = .current, calendar: Calendar = .current) -> FleetPage {
         guard snapshot.enabled, let thisID = snapshot.hostID else { return .empty }
         let macs = Dictionary(snapshot.macs.map { ($0.hostID, $0) }, uniquingKeysWith: { first, _ in first })
 
@@ -130,7 +181,10 @@ public enum FleetPagePresentation {
             var sample: FleetPressureSample?
             var skip: FleetRoom.Skip?
         }
-        var entries: [Entry] = [Entry(id: thisID, name: "This Mac", status: .thisMac, lastSeen: nil, state: macs[thisID], weight: weight(thisID))]
+        // The Mac that answered is "This Mac" to its own app; a client names it, and reaches it, or it would not have answered.
+        let answering = viewer == .mac ? Entry(id: thisID, name: "This Mac", status: .thisMac, lastSeen: nil, state: macs[thisID], weight: weight(thisID))
+            : Entry(id: thisID, name: snapshot.name.isEmpty ? "Mac" : snapshot.name, status: .connected, lastSeen: nil, state: macs[thisID], weight: weight(thisID))
+        var entries: [Entry] = [answering]
         for peer in snapshot.peers {
             let status: FleetMacCard.Status = switch peer.link {
             case .connected: .connected
@@ -177,10 +231,10 @@ public enum FleetPagePresentation {
         summary.append(working == 0 ? "no threads working" : "\(working) \(working == 1 ? "thread" : "threads") working")
         return FleetPage(cards: cards, summary: summary.joined(separator: " · "),
                          nextGoesTo: winner.flatMap { id in cards.first { $0.id == id }?.name },
-                         footer: footer(cards, asleep: asleep))
+                         footer: footer(cards, asleep: asleep, viewer: viewer))
     }
 
-    private static func footer(_ cards: [FleetMacCard], asleep: [FleetMacCard]) -> FleetFooter {
+    private static func footer(_ cards: [FleetMacCard], asleep: [FleetMacCard], viewer: FleetViewer) -> FleetFooter {
         let dots: [FleetFooter.Dot] = cards.map {
             switch $0.status {
             case .thisMac: .thisMac
@@ -189,7 +243,7 @@ public enum FleetPagePresentation {
             case .asleep: .asleep
             }
         }
-        let detail = asleep.isEmpty ? (cards.count <= 1 ? "Just this Mac" : "All awake") : "\(asleep.count) asleep"
+        let detail = asleep.isEmpty ? (cards.count <= 1 ? (viewer == .mac ? "Just this Mac" : "One Mac") : "All awake") : "\(asleep.count) asleep"
         let label: String
         switch asleep.count {
         case 0: label = "Fleet: \(cards.count) \(cards.count == 1 ? "Mac" : "Macs")"
@@ -277,10 +331,19 @@ public enum FleetPagePresentation {
             note = lastSeen.map { "Asleep since \(time($0, locale: locale, calendar: calendar)). Nothing moves to another Mac; it catches up when it wakes." }
                 ?? "Not reachable yet. Nothing moves to another Mac."
         }
-        return FleetMacCard(id: id, name: name, hardware: hardware, status: status, statusText: statusText, room: room, cpu: cpu, memory: mem,
-                            power: power, ready: ready,
-                            agents: asleep || sample == nil ? "—" : sample!.activeAgents == 0 ? "None working" : "\(sample!.activeAgents) working",
-                            note: note, weight: weight, repos: readiness?.repos ?? [], canRetry: asleep)
+        var card = FleetMacCard(id: id, name: name, hardware: hardware, status: status, statusText: statusText, room: room, cpu: cpu, memory: mem,
+                                power: power, ready: ready,
+                                agents: asleep || sample == nil ? "—" : sample!.activeAgents == 0 ? "None working" : "\(sample!.activeAgents) working",
+                                note: note, weight: weight, repos: readiness?.repos ?? [], canRetry: asleep)
+        if !asleep, let sample {
+            var fact = sample.onBattery ? (sample.batteryPercent.map { "battery \($0)%" } ?? "on battery") : "plugged in"
+            if sample.thermal >= .fair { fact += " · \(thermalWord(sample.thermal))" }
+            card.powerFact = fact
+            card.working = sample.activeAgents
+        } else if asleep {
+            card.since = lastSeen.map { time($0, locale: locale, calendar: calendar) }
+        }
+        return card
     }
 
     // MARK: Words
@@ -320,5 +383,103 @@ public enum FleetPagePresentation {
 
     private static func time(_ milliseconds: Double, locale: Locale, calendar: Calendar) -> String {
         Date(timeIntervalSince1970: milliseconds / 1000).formatted(Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone).hour().minute())
+    }
+}
+
+// MARK: A device's list of Macs
+
+/// A Mac this device is paired with (`MobileHosts`): what the Fleet screen needs of it beyond the fleet's own view.
+public struct FleetHeldMac: Equatable, Sendable {
+    public enum Link: Equatable, Sendable { case connected, connecting, offline }
+
+    /// This device's own id for the pairing (what Forget and Retry act on).
+    public var configID: UUID
+    /// The Mac's fleet host id, once it has said it (`helloOk.hostID`); how its card is found in the fleet's view.
+    public var fleetID: UUID?
+    public var name: String
+    public var link: Link
+    /// When this device's connection to it last ended.
+    public var lastSeen: Date?
+
+    public init(configID: UUID, fleetID: UUID?, name: String, link: Link, lastSeen: Date? = nil) {
+        self.configID = configID
+        self.fleetID = fleetID
+        self.name = name
+        self.link = link
+        self.lastSeen = lastSeen
+    }
+}
+
+/// One row of a device's Fleet screen: a Mac's card, and the pairing this device holds with it (nil for a Mac the fleet
+/// told it about and it never paired with, which it can't forget).
+public struct FleetListRow: Identifiable, Equatable, Sendable {
+    public var card: FleetMacCard
+    public var held: UUID?
+    public var id: UUID { card.id }
+    /// This device can't reach the Mac itself (it is offline or asleep): Retry tries again now.
+    public var canRetry: Bool { held != nil && card.canRetry }
+}
+
+/// The Macs a phone or iPad lists on its Fleet screen: the fleet's own cards, each joined to the pairing this device
+/// holds with it, then the Macs it holds that the fleet's view doesn't show (the fleet couldn't be read, Fleet is off on
+/// that Mac, or it is an older one), drawn as asleep or waiting in the same list.
+public enum FleetDeviceList {
+    public static func rows(page: FleetPage, held: [FleetHeldMac], locale: Locale = .current, calendar: Calendar = .current) -> [FleetListRow] {
+        let byFleetID = Dictionary(held.compactMap { mac in mac.fleetID.map { ($0, mac) } }, uniquingKeysWith: { first, _ in first })
+        var rows = page.cards.map { FleetListRow(card: $0, held: byFleetID[$0.id]?.configID) }
+        let shown = Set(rows.compactMap(\.held))
+        for mac in held where !shown.contains(mac.configID) {
+            rows.append(FleetListRow(card: heldCard(mac, locale: locale, calendar: calendar), held: mac.configID))
+        }
+        return rows
+    }
+
+    /// The Mac's card from what this device knows of it alone.
+    static func heldCard(_ mac: FleetHeldMac, locale: Locale, calendar: Calendar) -> FleetMacCard {
+        let status: FleetMacCard.Status = switch mac.link {
+        case .connected: .connected
+        case .connecting: .connecting
+        case .offline: .asleep
+        }
+        let seen = mac.lastSeen.map {
+            $0.formatted(Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone).hour().minute())
+        }
+        var card = FleetMacCard(
+            id: mac.fleetID ?? mac.configID, name: mac.name, hardware: "", status: status,
+            statusText: status == .connected ? "Connected" : status == .connecting ? "Connecting" : seen == nil ? "Offline" : "Asleep",
+            room: FleetMetric(fraction: 0, text: "Not counted", tone: .tertiary), cpu: nil, memory: nil,
+            power: FleetLine(text: status == .asleep ? (seen.map { "Last seen \($0)" } ?? "Not seen yet") : "Waiting for a reading", tone: .tertiary),
+            ready: FleetLine(text: status == .asleep ? "Catches up when it wakes" : "Checking…", tone: .tertiary),
+            agents: "—", note: nil, weight: .normal, repos: [], canRetry: status == .asleep)
+        card.since = seen
+        card.takesWeight = mac.fleetID != nil
+        return card
+    }
+
+    /// "3 Macs · 1 asleep": the Settings row's trail, nil with no Mac.
+    public static func trail(_ rows: [FleetListRow]) -> String? {
+        guard !rows.isEmpty else { return nil }
+        let asleep = rows.filter { $0.card.status == .asleep }.count
+        return ["\(rows.count) \(rows.count == 1 ? "Mac" : "Macs")", asleep > 0 ? "\(asleep) asleep" : nil].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// The sidebar's Fleet row: "1 asleep", "All awake" or "One Mac"; and what VoiceOver reads.
+    public static func footer(_ rows: [FleetListRow]) -> FleetFooter {
+        let asleep = rows.filter { $0.card.status == .asleep }
+        let dots: [FleetFooter.Dot] = rows.map {
+            switch $0.card.status {
+            case .thisMac: .thisMac
+            case .connected: .connected
+            case .connecting: .connecting
+            case .asleep: .asleep
+            }
+        }
+        let detail = asleep.isEmpty ? (rows.count <= 1 ? "One Mac" : "All awake") : "\(asleep.count) asleep"
+        let label = switch asleep.count {
+        case 0: "Fleet: \(rows.count) \(rows.count == 1 ? "Mac" : "Macs")"
+        case 1: "Fleet: \(rows.count) Macs, \(asleep[0].card.name) asleep"
+        default: "Fleet: \(rows.count) Macs, \(asleep.count) asleep"
+        }
+        return FleetFooter(dots: dots, detail: detail, label: label, asleepCount: asleep.count)
     }
 }

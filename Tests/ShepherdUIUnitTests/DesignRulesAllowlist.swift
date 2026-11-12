@@ -51,7 +51,6 @@ enum DesignRuleAllowlist {
         .init(.rawGlyphName, "App/iOS/Home/AutomationRow.swift", 1, bolt),
         .init(.rawGlyphName, "App/iOS/Home/HomeRows.swift", 2, bolt),
         .init(.rawGlyphName, "App/iOS/Home/PadSidebar.swift", 1, bolt),
-        .init(.rawGlyphName, "App/iOS/Hosts/PadHostsScreen.swift", 1, bolt),
         .init(.rawGlyphName, "App/iOS/Settings/ExperimentsScreens.swift", 2, bolt),
         .init(.rawGlyphName, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Automations/Automations.swift", 1, bolt),
         .init(.rawGlyphName, "Sources/ShepherdApp/SettingsExperiments.swift", 1, bolt),
