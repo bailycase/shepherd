@@ -56,9 +56,10 @@ public struct FleetSnapshotHeader: Codable, Hashable, Sendable {
     /// `bundle` is the repository itself (`git bundle` of every ref), because the receiver has no checkout and couldn't clone it from
     /// origin (slice 4f): it clones from the bundle, then builds the worktree as for any snapshot.
     public var repoBundle: Bool
-    /// The repository is all there is to send (`repoBundle` too): no manifest, no digest and no edits, because this dispatch carries none
-    /// (Settings ▸ Fleet ▸ Uncommitted changes leaves them behind). The receiver clones from the bundle, then makes the worktree at the
-    /// commit as for a dispatch with no snapshot.
+    /// The bundle is all there is to send: no manifest, no digest and no edits, because this dispatch carries none (Settings ▸ Fleet ▸
+    /// Uncommitted changes leaves them behind, or a thread started on a base or a branch starts clean). With `repoBundle` it is the whole
+    /// repository, for a Mac with no checkout to clone from; without it, only the commits the Mac lacks, for one that has the repository.
+    /// The receiver gets the commit from it, then makes the worktree at the commit as for a dispatch with no snapshot.
     public var repoOnly: Bool
 
     public init(commit: String, rootHash: FleetHash, digest: FleetHash, files: Int, directories: Int, deletions: Int, parts: Int,
@@ -106,7 +107,7 @@ public struct FleetSnapshotHeader: Codable, Hashable, Sendable {
         FleetGitBlobID(hex: commit) != nil && files >= 0 && directories >= 0 && deletions >= 0 && parts >= 0 && parts <= FleetSnapshotTransfer.maxEntries
             && files + directories + deletions <= FleetSnapshotTransfer.maxEntries
             && (bundle.map { $0.size <= FleetSnapshotTransfer.maxBlobBytes } ?? true) && (!repoBundle || bundle != nil)
-            && (!repoOnly || (repoBundle && files == 0 && directories == 0 && deletions == 0 && parts == 0))
+            && (!repoOnly || (bundle != nil && files == 0 && directories == 0 && deletions == 0 && parts == 0))
     }
 }
 

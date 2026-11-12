@@ -20,7 +20,8 @@ extension FleetDispatch {
     /// Whether this dispatch carries a snapshot: one sent from a checkout (a thread's, or the space's for a thread the person started), with the
     /// setting on.
     func wantsSnapshot(_ record: FleetDispatchRecord) -> Bool {
-        record.commitSHA != nil && pins[record.id] != nil && indexService != nil
+        // A thread the person started carries the checkout's edits only when it starts in the checkout; on a base or a branch it starts clean.
+        (record.kind == .agentDispatch || record.start?.place == .checkout) && record.commitSHA != nil && pins[record.id] != nil && indexService != nil
             && (host.settings()?.fleetUncommitted ?? .sendThem) == .sendThem
     }
 
@@ -30,7 +31,7 @@ extension FleetDispatch {
         // The target has no checkout and couldn't clone one, and this dispatch carries no edits (the setting leaves them behind): the
         // repository is the whole transfer.
         if let record = outbound[id], repoBundles.contains(id), !wantsSnapshot(record), let pin = pins[id], let commit = record.commitSHA {
-            return buildRepositoryOnly(id, root: pin.root, commit: commit, done: done)
+            return buildRepositoryOnly(id, root: pin.root, commit: commit, rev: incrementalBundles.contains(id) ? pin.rev : nil, done: done)
         }
         guard let record = outbound[id], let pin = pins[id], let service = indexService, let target = record.targetHostID, let commit = record.commitSHA else {
             return done(.failure(.init(code: FleetDispatchCode.snapshotFailed, message: "There is no checkout to send.", detail: "no checkout")))
@@ -130,6 +131,8 @@ extension FleetDispatch {
         pins[id] = nil
         transferring.remove(id)
         repoBundles.remove(id)
+        incrementalBundles.remove(id)
+        awaitingRepository.remove(id)
     }
 
     /// Whether the target can be sent the repository itself: this Mac still holds the checkout the dispatch was pinned at, and it hasn't
@@ -139,12 +142,12 @@ extension FleetDispatch {
     }
 
     /// Makes the transfer that is only the repository (`FleetSnapshotSender.repositoryOnly`), off the queue.
-    private func buildRepositoryOnly(_ id: UUID, root: String, commit: String, done: @escaping (Result<Void, FleetDispatchRefusal>) -> Void) {
+    private func buildRepositoryOnly(_ id: UUID, root: String, commit: String, rev: String?, done: @escaping (Result<Void, FleetDispatchRefusal>) -> Void) {
         let outgoing = directory.appendingPathComponent("outgoing", isDirectory: true)
         let caps = self.caps
         Task.detached { [weak self] in
             do {
-                let built = try FleetSnapshotSender.repositoryOnly(id: id, root: root, commit: commit, directory: outgoing, warnAbove: caps.warn, refuseAbove: caps.refuse)
+                let built = try FleetSnapshotSender.repositoryOnly(id: id, root: root, commit: commit, rev: rev, directory: outgoing, warnAbove: caps.warn, refuseAbove: caps.refuse)
                 self?.queue.async { self?.snapshotBuilt(id, built, done: done) }
             } catch let FleetSnapshotSender.Failure.tooLarge(bytes, biggest) {
                 let refusal = FleetDispatchRefusal(code: FleetDispatchCode.snapshotTooLarge,
@@ -159,8 +162,9 @@ extension FleetDispatch {
 
     /// The target couldn't clone the repository from origin: its create is sent again carrying a bundle of every ref, which it clones from.
     /// A new snapshot is made (the old one's bundle held only the unpushed commits), and the target replaces its failed attempt with it.
-    func sendRepository(_ id: UUID) {
+    func sendRepository(_ id: UUID, incremental: Bool = false) {
         guard outbound[id]?.state == .preparing, !sending.contains(id), repoBundles.insert(id).inserted else { return }
+        if incremental { incrementalBundles.insert(id) }
         if let old = snapshots.removeValue(forKey: id), let bundle = old.bundle { try? FileManager.default.removeItem(at: bundle.url) }
         transferring.remove(id)
         send(id, completion: nil)

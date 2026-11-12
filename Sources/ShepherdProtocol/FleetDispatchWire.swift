@@ -87,10 +87,13 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
     /// Where to get the repository when the receiver has no checkout of it (slice 4f). Nil from an older sender, which is refused
     /// `repo_missing` by a receiver with no checkout, as before.
     public var repo: FleetRepoSource?
+    /// Where a thread the person started begins (the New thread form's workplace choice); nil for a thread's dispatch.
+    public var start: FleetThreadStart?
 
     public init(dispatchID: UUID, kind: FleetDispatchRecord.Kind = .agentDispatch, task: String, title: String, repoKey: String,
                 commitSHA: String? = nil, subdir: String? = nil, branch: String? = nil, model: String? = nil, thinking: String? = nil,
-                from: FleetDispatchSender, snapshot: FleetSnapshotHeader? = nil, repo: FleetRepoSource? = nil) {
+                from: FleetDispatchSender, snapshot: FleetSnapshotHeader? = nil, repo: FleetRepoSource? = nil, start: FleetThreadStart? = nil) {
+        self.start = start
         self.dispatchID = dispatchID
         self.kind = kind
         self.task = task
@@ -106,7 +109,7 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         self.repo = repo
     }
 
-    private enum CodingKeys: String, CodingKey { case dispatchID, kind, task, title, repoKey, commitSHA, subdir, branch, model, thinking, from, snapshot, repo }
+    private enum CodingKeys: String, CodingKey { case dispatchID, kind, task, title, repoKey, commitSHA, subdir, branch, model, thinking, from, snapshot, repo, start }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -123,6 +126,7 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         from = try c.decode(FleetDispatchSender.self, forKey: .from)
         snapshot = try c.decodeIfPresent(FleetSnapshotHeader.self, forKey: .snapshot)
         repo = try c.decodeIfPresent(FleetRepoSource.self, forKey: .repo)
+        start = try c.decodeIfPresent(FleetThreadStart.self, forKey: .start)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -140,6 +144,7 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         try c.encode(from, forKey: .from)
         try c.encodeIfPresent(snapshot, forKey: .snapshot)
         try c.encodeIfPresent(repo, forKey: .repo)
+        try c.encodeIfPresent(start, forKey: .start)
     }
 }
 
@@ -156,9 +161,13 @@ public struct FleetUserThread: Codable, Hashable, Sendable {
     public var host: String?
     public var model: String?
     public var thinking: String?
+    /// The form's workplace choice: a new worktree from a base, a new worktree on an existing branch, or the space's own checkout. Nil is a
+    /// new worktree from the base Settings ▸ Worktrees and the project give (as a form left at its defaults would).
+    public var start: FleetThreadStart?
 
     public init(dispatchID: UUID = UUID(), spaceID: SpaceID, task: String, title: String? = nil, host: String? = nil,
-                model: String? = nil, thinking: String? = nil) {
+                model: String? = nil, thinking: String? = nil, start: FleetThreadStart? = nil) {
+        self.start = start
         self.dispatchID = dispatchID
         self.spaceID = spaceID
         self.task = task

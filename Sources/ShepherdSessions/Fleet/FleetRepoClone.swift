@@ -168,6 +168,23 @@ final class FleetRepoClone: @unchecked Sendable {
         return nil
     }
 
+    /// Brings the commits a bundle holds into `repo`, under `refs/fleet/<id>/` (its branches and HEAD), so a worktree can start at one of them.
+    /// False when the bundle can't be used (it lacks a commit the repository doesn't have either).
+    @discardableResult
+    static func fetchBundle(_ path: String, into repo: String, id: UUID) -> Bool {
+        let prefix = "refs/fleet/\(id.uuidString.lowercased())"
+        let heads = FleetDispatchGit.run(["fetch", "--quiet", path, "+refs/heads/*:\(prefix)/heads/*"], in: repo, timeout: 300)
+        let head = FleetDispatchGit.run(["fetch", "--quiet", path, "+HEAD:\(prefix)/HEAD"], in: repo, timeout: 300)
+        return heads?.status == 0 || head?.status == 0
+    }
+
+    /// Removes what `fetchBundle` made: the commits stay for as long as the worktree's branch holds them.
+    static func dropBundleRefs(from repo: String, id: UUID) {
+        let prefix = "refs/fleet/\(id.uuidString.lowercased())/"
+        guard let listed = FleetDispatchGit.run(["for-each-ref", "--format=%(refname)", prefix], in: repo), listed.status == 0 else { return }
+        for ref in listed.output.split(separator: "\n") { _ = FleetDispatchGit.run(["update-ref", "-d", String(ref)], in: repo) }
+    }
+
     /// Points a clone's `origin` where the repository really is. A clone from a bundle names the bundle file as its origin, which goes.
     static func fixOrigin(at folder: String, to origin: String?) {
         if let origin { _ = FleetDispatchGit.run(["remote", "set-url", "origin", origin], in: folder) }

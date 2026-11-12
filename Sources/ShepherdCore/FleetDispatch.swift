@@ -190,6 +190,48 @@ public struct FleetBranchFacts: Codable, Hashable, Sendable {
 /// one: the sender's is what the Dispatches log and `fleet_read` show, the receiver's is the
 /// idempotency index (`id` to its thread), so a retried create returns the thread it already
 /// started. Decodes with defaults, so a file from an older build still loads.
+/// Where a thread the person started in New thread begins, as the form chose it: the same choice a local New thread makes, carried to the Mac
+/// that runs it so the thread starts exactly where it would have started here.
+public struct FleetThreadStart: Codable, Hashable, Sendable {
+    public enum Place: String, Codable, Sendable {
+        /// A new worktree from a base ref (the usual case). The thread doesn't see this Mac's uncommitted edits, as a local one wouldn't.
+        case newWorktree
+        /// A new worktree on a branch that exists: the branch's commit as this Mac has it.
+        case existingBranch
+        /// The space's own checkout, no worktree: it sees the checkout's edits, so they go with it as a snapshot.
+        case checkout
+    }
+
+    public var place: Place
+    /// `newWorktree`: the base ref the form picked or Settings ▸ Worktrees and the project's base resolved ("origin/main"); nil starts at the
+    /// checkout's HEAD.
+    public var base: String?
+    /// `existingBranch`: the branch ("feat/x" or "origin/x"). `newWorktree`: the name of the new branch when the form named one.
+    public var branch: String?
+
+    public init(place: Place = .newWorktree, base: String? = nil, branch: String? = nil) {
+        self.place = place
+        self.base = base
+        self.branch = branch
+    }
+
+    private enum CodingKeys: String, CodingKey { case place, base, branch }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        place = (try? c.decodeIfPresent(Place.self, forKey: .place)) ?? .newWorktree
+        base = try c.decodeIfPresent(String.self, forKey: .base)
+        branch = try c.decodeIfPresent(String.self, forKey: .branch)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(place, forKey: .place)
+        try c.encodeIfPresent(base, forKey: .base)
+        try c.encodeIfPresent(branch, forKey: .branch)
+    }
+}
+
 public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
     public enum Kind: String, Codable, Hashable, Sendable {
         /// A thread sent it.
@@ -245,6 +287,9 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
     public var origin: String?
     /// While the Mac that runs it is cloning the repository for it (`preparing`): where that stands.
     public var clone: FleetCloneProgress?
+    /// Where a thread the person started begins (the New thread form's workplace choice). Nil for a thread's dispatch, which starts at its commit
+    /// with the snapshot, and for a record from an older build.
+    public var start: FleetThreadStart?
     /// Epoch milliseconds.
     public var createdAt: Double
     public var updatedAt: Double
@@ -256,7 +301,8 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
                 thinking: String? = nil, reasonCodes: [FleetPlacementReason] = [], remoteAgentID: AgentID? = nil, activity: String? = nil,
                 resultText: String? = nil, resultBranchFacts: FleetBranchFacts? = nil, snapshotBytes: UInt64? = nil, snapshotProgress: UInt64? = nil,
                 snapshotFiles: Int? = nil, sendWarning: Bool = false, fileMillis: Int? = nil, spaceID: SpaceID? = nil, origin: String? = nil,
-                clone: FleetCloneProgress? = nil, createdAt: Double, updatedAt: Double? = nil) {
+                clone: FleetCloneProgress? = nil, start: FleetThreadStart? = nil, createdAt: Double, updatedAt: Double? = nil) {
+        self.start = start
         self.id = id
         self.kind = kind
         self.parentAgentID = parentAgentID
@@ -299,7 +345,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         case failure, failureDetail, title, task, repoKey, commitSHA, subdir, branch, model, thinking, reasonCodes, remoteAgentID
         case activity, resultText, resultBranchFacts, createdAt, updatedAt
         case snapshotBytes, snapshotProgress, snapshotFiles, sendWarning, fileMillis
-        case spaceID, origin, clone
+        case spaceID, origin, clone, start
     }
 
     public init(from decoder: Decoder) throws {
@@ -338,6 +384,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         spaceID = try c.decodeIfPresent(SpaceID.self, forKey: .spaceID)
         origin = try c.decodeIfPresent(String.self, forKey: .origin)
         clone = try c.decodeIfPresent(FleetCloneProgress.self, forKey: .clone)
+        start = try c.decodeIfPresent(FleetThreadStart.self, forKey: .start)
         createdAt = try c.decodeIfPresent(Double.self, forKey: .createdAt) ?? 0
         updatedAt = try c.decodeIfPresent(Double.self, forKey: .updatedAt) ?? createdAt
     }
@@ -377,6 +424,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(spaceID, forKey: .spaceID)
         try c.encodeIfPresent(origin, forKey: .origin)
         try c.encodeIfPresent(clone, forKey: .clone)
+        try c.encodeIfPresent(start, forKey: .start)
         try c.encode(createdAt, forKey: .createdAt)
         try c.encode(updatedAt, forKey: .updatedAt)
     }

@@ -358,8 +358,18 @@ struct FleetCloneTests {
     // MARK: A thread started in New thread, and a dispatch that carries no edits
 
     /// A thread the person starts in New thread on `host`: the record the host keeps for it.
-    static func userThread(from a: Mac, host: String = "Mac mini") async throws -> FleetDispatchRecord {
-        try #require(try await a.local.fleetAction(.sendThread(FleetUserThread(spaceID: a.space.id, task: "Profile the orders import.", host: host))).dispatch)
+    static func userThread(from a: Mac, host: String = "Mac mini", start: FleetThreadStart? = nil) async throws -> FleetDispatchRecord {
+        try #require(try await a.local.fleetAction(.sendThread(FleetUserThread(spaceID: a.space.id, task: "Profile the orders import.", host: host, start: start))).dispatch)
+    }
+
+    /// A commit of `file` on `branch` that no remote has, left with the checkout on the branch it was on.
+    static func commit(_ file: String, _ text: String, on branch: String, in mac: Mac) throws {
+        let was = try git(["branch", "--show-current"], in: mac.folder).trimmingCharacters(in: .whitespacesAndNewlines)
+        try git(["checkout", "-q", "-B", branch], in: mac.folder)
+        try FleetSnapshotTransferTests.write(text, to: file, in: mac.folder)
+        try git(["add", file], in: mac.folder)
+        try git(["commit", "-qm", "add \(file)"], in: mac.folder)
+        try git(["checkout", "-q", was], in: mac.folder)
     }
 
     /// Edits, a new file and an ignored `.env` in the sender's checkout, and the tree they make.
@@ -370,7 +380,7 @@ struct FleetCloneTests {
         return try FleetSnapshotTransferTests.tree(of: mac.folder)
     }
 
-    @Test func aThreadStartedOnAnotherMacStartsFromWhatThisMacHasLikeADispatch() async throws {
+    @Test func aThreadStartedInTheCheckoutOnAnotherMacSeesTheCheckoutsEditsUncommittedCommitsAndIgnoredFiles() async throws {
         let (a, b, _) = try await D.pair(originExtra: [".gitignore": FleetSnapshotTransferTests.ignores])
         defer { a.stop(); b.stop() }
         // An unpushed commit, then edits, a new file and an ignored file on top of it.
@@ -379,9 +389,9 @@ struct FleetCloneTests {
         try git(["commit", "-qm", "guide"], in: a.folder)
         let expected = try Self.dirty(a)
 
-        let record = try await Self.userThread(from: a)
+        let record = try await Self.userThread(from: a, start: FleetThreadStart(place: .checkout))
         let head = try D.head(a.folder)
-        #expect(record.kind == .userThread && record.commitSHA == head, "pinned at this Mac's commit, not origin's base")
+        #expect(record.kind == .userThread && record.commitSHA == head && record.start?.place == .checkout, "pinned at this Mac's commit")
         try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
         let thread = try #require(b.dispatched.first)
         #expect(thread.dispatchedFrom?.agentID == nil, "sent by you")
@@ -391,21 +401,23 @@ struct FleetCloneTests {
         #expect(a.sent().first?.snapshotBytes != nil && Self.cloneCount(b) == 0)
     }
 
-    @Test func newThreadToAMacForARepoWithNoRemoteArrivesAsABundleWithTheEdits() async throws {
+    @Test func newThreadToAMacForARepoWithNoRemoteArrivesAsABundleAtTheCommitWithoutTheEdits() async throws {
         let (a, b, _) = try await Self.pair()
         defer { a.stop(); b.stop() }
         let key = try await Self.removeOrigin(of: a)
-        let expected = try Self.dirty(a)
+        let committed = try FleetSnapshotTransferTests.tree(of: a.folder)
+        _ = try Self.dirty(a)
 
         let record = try await Self.userThread(from: a)
-        #expect(record.repoKey == key && record.origin == nil)
+        #expect(record.repoKey == key && record.origin == nil && record.start?.place == .newWorktree)
         try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
         let space = try #require(Self.space(b, repoKey: key))
         #expect(space.id == a.space.id && Self.cloneCount(b) == 1, "cloned once, from the bundle: there was no origin to try")
         #expect(try git(["remote"], in: URL(fileURLWithPath: space.path)).isEmpty, "the bundle file it came from is not its origin")
         let worktree = URL(fileURLWithPath: try #require(b.dispatched.first?.worktreePath))
-        #expect(try FleetSnapshotTransferTests.tree(of: worktree) == expected && D.head(worktree) == D.head(a.folder))
-        try await D.wait("A to follow it as running", timeout: .seconds(90)) { a.sent().first?.state == .running && a.sent().first?.clone == nil }
+        #expect(try FleetSnapshotTransferTests.tree(of: worktree) == committed, "a new worktree from the base: the commit, none of the edits")
+        #expect(try D.head(worktree) == D.head(a.folder))
+        try await D.wait("A to follow it as running") { a.sent().first?.state == .running && a.sent().first?.clone == nil }
         #expect(a.sent().first?.failure == nil)
     }
 
@@ -413,7 +425,8 @@ struct FleetCloneTests {
         let (a, b, _) = try await Self.pair()
         defer { a.stop(); b.stop() }
         try Self.breakOrigin(of: a)
-        let expected = try Self.dirty(a)
+        let expected = try FleetSnapshotTransferTests.tree(of: a.folder)
+        _ = try Self.dirty(a)
 
         _ = try await Self.userThread(from: a)
         try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
@@ -458,6 +471,92 @@ struct FleetCloneTests {
         #expect(Self.cloneCount(b) == 2 && a.sent().first?.failure == nil)
         let worktree = URL(fileURLWithPath: try #require(b.dispatched.first?.worktreePath))
         #expect(try D.head(worktree) == D.head(a.folder))
+    }
+
+    // MARK: Where a thread started in New thread begins
+
+    @Test func aNewWorktreeFromABaseHasTheBasesCommitAndNoneOfTheCheckoutsEditsOrUnpushedCommits() async throws {
+        let (a, b, origin) = try await D.pair(originExtra: [".gitignore": FleetSnapshotTransferTests.ignores])
+        defer { a.stop(); b.stop() }
+        let base = try git(["rev-parse", "origin/main"], in: a.folder).trimmingCharacters(in: .whitespacesAndNewlines)
+        // Origin moves on after this Mac last fetched: the other Mac fetches the base, so the thread starts at what origin has now.
+        let ahead = try makeScratchDirectory("origin-ahead").appendingPathComponent("web", isDirectory: true)
+        try git(["clone", "-q", origin.url.path, ahead.path], in: ahead.deletingLastPathComponent())
+        try FleetSnapshotTransferTests.write("# in origin\n", to: "docs/origin.md", in: URL(fileURLWithPath: ahead.path))
+        try git(["add", "docs/origin.md"], in: ahead)
+        try git(["-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "origin moves"], in: ahead)
+        try git(["push", "-q", "origin", "HEAD:main"], in: ahead)
+        let moved = try git(["rev-parse", "HEAD"], in: ahead).trimmingCharacters(in: .whitespacesAndNewlines)
+        // This Mac has an unpushed commit on main and edits in the checkout; neither is a base.
+        try Self.commit("docs/local.md", "# local\n", on: "main", in: a)
+        _ = try Self.dirty(a)
+
+        let record = try await Self.userThread(from: a, start: FleetThreadStart(place: .newWorktree, base: "origin/main"))
+        #expect(record.commitSHA == base && record.start?.base == "origin/main", "pinned at the base as this Mac has it")
+        try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        let worktree = URL(fileURLWithPath: try #require(b.dispatched.first?.worktreePath))
+        #expect(try D.head(worktree) == moved, "the base's commit, fetched")
+        for gone in ["NOTES.md", ".env", "docs/local.md"] { #expect(!Self.exists(worktree.appendingPathComponent(gone).path), "\(gone) stays home") }
+        #expect(try String(contentsOf: worktree.appendingPathComponent("README.md"), encoding: .utf8) == "# acme-web\n")
+        #expect(try String(contentsOf: worktree.appendingPathComponent("docs/origin.md"), encoding: .utf8) == "# in origin\n")
+        #expect(a.sent().first?.snapshotBytes == nil && Self.cloneCount(b) == 0, "nothing of this Mac's checkout was sent")
+    }
+
+    @Test func aNewWorktreeFromALocalBaseWithUnpushedCommitsGetsThemAsABundleTheTargetLacks() async throws {
+        let (a, b, _) = try await D.pair(originExtra: [".gitignore": FleetSnapshotTransferTests.ignores])
+        defer { a.stop(); b.stop() }
+        try Self.commit("docs/guide.md", "# The guide\n", on: "develop", in: a)
+        _ = try Self.dirty(a)
+        let develop = try git(["rev-parse", "develop"], in: a.folder).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        _ = try await Self.userThread(from: a, start: FleetThreadStart(place: .newWorktree, base: "develop"))
+        try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        let worktree = URL(fileURLWithPath: try #require(b.dispatched.first?.worktreePath))
+        #expect(try D.head(worktree) == develop)
+        #expect(try String(contentsOf: worktree.appendingPathComponent("docs/guide.md"), encoding: .utf8) == "# The guide\n")
+        #expect(!Self.exists(worktree.appendingPathComponent("NOTES.md").path), "the edits stay home")
+        let repo = URL(fileURLWithPath: try #require(Self.space(b)?.path))
+        try await D.wait("the bundle's refs to go") { (try? git(["for-each-ref", "refs/fleet"], in: repo))?.isEmpty == true }
+        #expect(Self.cloneCount(b) == 0)
+    }
+
+    @Test func anExistingBranchStartsAtTheCommitThisMacHasForItAndItsBundleCarriesWhatTheTargetLacks() async throws {
+        let (a, b, _) = try await D.pair(originExtra: [".gitignore": FleetSnapshotTransferTests.ignores])
+        defer { a.stop(); b.stop() }
+        try Self.commit("docs/orders.md", "# Orders\n", on: "feat/orders", in: a)
+        _ = try Self.dirty(a)
+        let tip = try git(["rev-parse", "feat/orders"], in: a.folder).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let record = try await Self.userThread(from: a, start: FleetThreadStart(place: .existingBranch, branch: "feat/orders"))
+        #expect(record.commitSHA == tip, "pinned at the branch's own commit, not the checkout's HEAD")
+        try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        let thread = try #require(b.dispatched.first)
+        let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
+        #expect(try D.head(worktree) == tip)
+        #expect(thread.worktreeBranch == "feat/orders", "on the branch the person chose")
+        #expect(try String(contentsOf: worktree.appendingPathComponent("docs/orders.md"), encoding: .utf8) == "# Orders\n")
+        #expect(!Self.exists(worktree.appendingPathComponent("NOTES.md").path) && !Self.exists(worktree.appendingPathComponent(".env").path), "no edits of the checkout")
+        #expect(a.sent().first?.snapshotBytes != nil && (a.sent().first?.snapshotBytes ?? .max) < 50_000, "only the commit it lacked, not the repository")
+        #expect(Self.cloneCount(b) == 0)
+    }
+
+    @Test func aBranchThisMacNeverPushedStartsOnAMacThatCantReachOriginFromTheWholeRepository() async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        try Self.breakOrigin(of: a)
+        try Self.commit("docs/orders.md", "# Orders\n", on: "feat/orders", in: a)
+        let tip = try git(["rev-parse", "feat/orders"], in: a.folder).trimmingCharacters(in: .whitespacesAndNewlines)
+        _ = try await Self.userThread(from: a, start: FleetThreadStart(place: .existingBranch, branch: "feat/orders"))
+        try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        let worktree = URL(fileURLWithPath: try #require(b.dispatched.first?.worktreePath))
+        #expect(try D.head(worktree) == tip && Self.cloneCount(b) == 2)
+    }
+
+    @Test func aFormNamingNoWorkplaceIsANewWorktreeFromTheProjectsBase() throws {
+        let thread = FleetUserThread(spaceID: SpaceID(rawValue: "s"), task: "t")
+        #expect(thread.start == nil)
+        let decoded = try JSONDecoder().decode(FleetUserThread.self, from: Data(#"{"dispatchID":"00000000-0000-0000-0000-00000000000A","spaceID":"s","task":"t"}"#.utf8))
+        #expect(decoded.start == nil, "an older app's request decodes")
     }
 
     // MARK: Stop

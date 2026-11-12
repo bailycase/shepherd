@@ -175,6 +175,11 @@ final class FleetDispatch: @unchecked Sendable {
     var developerFolder: URL? = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Developer", isDirectory: true)
     /// Sender: dispatches that carry the repository itself, because the target couldn't clone it from origin.
     var repoBundles: Set<UUID> = []
+    /// Dispatches whose repository was asked for again and whose new create the target hasn't answered yet: a second telling of the failure
+    /// that caused it (the push and the answer to a status question both bring it) is the same one, already answered.
+    var awaitingRepository: Set<UUID> = []
+    /// Dispatches whose target has the repository but lacks the commit: the bundle is only what it lacks, not the whole repository.
+    var incrementalBundles: Set<UUID> = []
     private let reservedCount = FleetCounter()
     /// Told whenever the count of promised places changes (the host reads it for its samples).
     var reservedSink: FleetCounter?
@@ -458,7 +463,7 @@ final class FleetDispatch: @unchecked Sendable {
                     return answer(.failure(.init(code: FleetDispatchCode.repoMissing, message: "This thread's project has no origin remote and no commits, so no other Mac can find its repository.")))
                 }
                 switch pinned {
-                case .failure(.notARepository):
+                case .failure:
                     self.placing.remove(id)
                     answer(.failure(.init(code: FleetDispatchCode.repoMissing, message: "This thread's folder isn't a git checkout.")))
                 case .success(let pin):
@@ -642,6 +647,9 @@ final class FleetDispatch: @unchecked Sendable {
         return FleetDispatchRefusal(code: code, message: message, detail: detail)
     }
 
+    /// A branch as the form names it ("origin/x" for a remote one): its local name.
+    static func localName(_ branch: String) -> String { branch.hasPrefix("origin/") ? String(branch.dropFirst("origin/".count)) : branch }
+
     // MARK: Create
 
     /// Sends `id`'s create to its target (this Mac included). The target answers at once with the record it
@@ -680,9 +688,10 @@ final class FleetDispatch: @unchecked Sendable {
         let repo = FleetRepoSource(origin: record.origin, spaceID: record.spaceID, name: space?.name, worktreeBase: space?.worktreeBase)
         let create = FleetDispatchCreate(
             dispatchID: id, kind: record.kind, task: record.task, title: record.title, repoKey: record.repoKey, commitSHA: record.commitSHA,
-            subdir: record.subdir, branch: record.branch, model: record.model, thinking: record.thinking,
+            subdir: record.subdir, branch: record.branch ?? record.start?.branch.map { record.start?.place == .existingBranch ? Self.localName($0) : $0 },
+            model: record.model, thinking: record.thinking,
             from: FleetDispatchSender(hostID: hostID, hostName: hostName(), agentID: record.parentAgentID, agentTitle: record.parentTitle),
-            snapshot: snapshots[id]?.header, repo: repo)
+            snapshot: snapshots[id]?.header, repo: repo, start: record.start)
         let finish: @Sendable (Result<FleetDispatchRecord, Error>) -> Void = { [weak self] result in
             self?.queue.async { self?.created(id, result, completion: completion) }
         }
@@ -705,6 +714,7 @@ final class FleetDispatch: @unchecked Sendable {
 
     private func created(_ id: UUID, _ result: Result<FleetDispatchRecord, Error>, completion: ((Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void)?) {
         sending.remove(id)
+        awaitingRepository.remove(id)
         guard var record = outbound[id] else { return }
         guard record.state == .preparing || record.state == .waitingWake else {
             // The person stopped it, or the target already reported: nothing to add.
@@ -759,13 +769,26 @@ final class FleetDispatch: @unchecked Sendable {
         // A failed clone told a second time (the push and the answer to a status question both bring it) is the same attempt, already
         // answered: the repository is on its way, and a clone from it never says this.
         // (`clone_failed` is only ever said while preparing: once the thread runs it is stale.)
-        if theirs.state == .failed, theirs.failure == FleetDispatchCode.cloneFailed, record.state != .preparing || repoBundles.contains(record.id) { return }
+        if theirs.state == .failed, [FleetDispatchCode.cloneFailed, FleetDispatchCode.commitUnreachable].contains(theirs.failure ?? ""),
+           record.state != .preparing || awaitingRepository.contains(record.id) { return }
         record.remoteAgentID = theirs.remoteAgentID ?? record.remoteAgentID
         record.branch = theirs.branch ?? record.branch
         record.activity = theirs.activity ?? record.activity
         record.targetHostName = record.targetHostName ?? theirs.targetHostName
         // Where a clone on the target stands, while it is cloning.
         record.clone = theirs.state == .preparing ? theirs.clone : nil
+        // The target lacks a commit no remote holds (it has the repository): the commits it lacks go as a bundle of their own, once.
+        // Only for commits no remote holds: one a remote has and this Mac can't reach is no bundle's to bring.
+        if theirs.state == .failed, theirs.failure == FleetDispatchCode.commitUnreachable, record.state == .preparing, canSendRepository(record),
+           pins[record.id]?.unpushed == true, snapshots[record.id]?.header.bundle == nil {
+            record.failure = nil
+            record.failureDetail = nil
+            record.updatedAt = now
+            let id = record.id
+            awaitingRepository.insert(id)
+            queue.async { [weak self] in self?.sendRepository(id, incremental: true) }
+            return
+        }
         // The target couldn't clone the repository from origin: send it the repository itself, when there is a snapshot to send it with.
         if theirs.state == .failed, theirs.failure == FleetDispatchCode.cloneFailed, record.state == .preparing, canSendRepository(record) {
             record.failure = nil
@@ -774,6 +797,7 @@ final class FleetDispatch: @unchecked Sendable {
             record.clone = FleetCloneProgress(name: FleetRepoClone.folderName(repoKey: record.repoKey, name: named), source: hostName(), viaBundle: true)
             record.updatedAt = now
             let id = record.id
+            awaitingRepository.insert(id)
             queue.async { [weak self] in self?.sendRepository(id) }
             return
         }

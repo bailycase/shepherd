@@ -70,9 +70,9 @@ struct FleetCloningCardTests {
         var snapshot = FleetDispatchPresentationTests.withOrders()
         for index in snapshot.macs.indices where snapshot.macs[index].hostID == P.mini { snapshot.macs[index].readiness?.repoKeys = [] }
         let picker = FleetWherePicker.make(snapshot: snapshot, pick: .mac(P.mini), repoKey: key, repoName: "orders-svc", autoDispatch: true, weight: { _ in .normal },
-                                           locale: P.en, calendar: P.utc)
+                                           baseBranch: "origin/main", locale: P.en, calendar: P.utc)
         #expect(picker.dispatches && picker.target == P.mini && picker.options.first { $0.name == "Mac mini" }?.selectable == true)
-        #expect(picker.note == "Mac mini clones orders-svc first, then runs in a new worktree from this Mac's checkout.")
+        #expect(picker.note == "Mac mini clones orders-svc first, then runs in a new worktree from origin/main.")
         #expect(FleetDispatchPresentation.repoName(key) == "this repository", "nothing a person would call it")
         var record = Self.record()
         record.repoKey = key
@@ -89,9 +89,9 @@ struct FleetCloningCardTests {
         // An awake Mac without it says it will clone, once.
         for index in snapshot.macs.indices where snapshot.macs[index].hostID == P.mini { snapshot.macs[index].readiness?.repoKeys = [] }
         let awake = FleetWherePicker.make(snapshot: snapshot, pick: .mac(P.mini), repoKey: FleetDispatchPresentationTests.orders, repoName: "orders-svc",
-                                          autoDispatch: true, weight: { _ in .normal }, locale: P.en, calendar: P.utc)
+                                          autoDispatch: true, weight: { _ in .normal }, baseBranch: "origin/main", locale: P.en, calendar: P.utc)
         let mini = try #require(awake.options.first { $0.name == "Mac mini" })
         #expect(mini.selectable && mini.detail.hasSuffix("CPU · Will clone (first time)"))
-        #expect(awake.note == "Mac mini clones orders-svc first, then runs in a new worktree from this Mac's checkout.")
+        #expect(awake.note == "Mac mini clones orders-svc first, then runs in a new worktree from origin/main.")
     }
 }

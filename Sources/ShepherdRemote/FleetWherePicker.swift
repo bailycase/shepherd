@@ -54,7 +54,7 @@ public struct FleetWherePicker: Equatable, Sendable {
     /// Mac, and Auto is still there to pick.
     public static func make(snapshot: FleetSnapshot, pick: FleetPlacePick?, repoKey: String?, repoName: String,
                             autoDispatch: Bool, weight: (UUID) -> FleetSendWeight, batteryCountsHalf: Bool = true, snapshotAge: TimeInterval = 0,
-                            locale: Locale = .current, calendar: Calendar = .current, now: Date = Date()) -> FleetWherePicker {
+                            baseBranch: String? = nil, startsInCheckout: Bool = false, locale: Locale = .current, calendar: Calendar = .current, now: Date = Date()) -> FleetWherePicker {
         guard snapshot.enabled, let thisID = snapshot.hostID, !snapshot.peers.isEmpty else { return .empty }
         let page = FleetPagePresentation.make(snapshot: snapshot, weight: weight, snapshotAge: snapshotAge, batteryCountsHalf: batteryCountsHalf,
                                               locale: locale, calendar: calendar, now: now)
@@ -151,9 +151,9 @@ public struct FleetWherePicker: Equatable, Sendable {
         var target: UUID?
         var note: String?
         var dispatches = false
-        // A thread started on another Mac begins where this Mac's checkout is, like a dispatch: its commit, edits, unpushed commits and ignored
-        // files, as Settings ▸ Fleet ▸ Code says (not from origin's base branch).
-        let base = "from this Mac's checkout"
+        // A thread started on another Mac begins where the same form would start it here: in a new worktree from its base, or, for a project
+        // started in its own checkout, from this Mac's checkout (its edits go with it).
+        let base = startsInCheckout ? "from this Mac's checkout" : baseBranch.map { "from \($0)" } ?? "from its base branch"
         switch effective {
         case .auto:
             if let winnerID, let winnerName {

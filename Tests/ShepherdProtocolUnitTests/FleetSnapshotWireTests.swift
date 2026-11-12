@@ -98,7 +98,8 @@ struct FleetCloneWireTests {
         }
         #expect(header().isValid)
         #expect(!header(files: 1).isValid && !header(parts: 1).isValid, "no manifest to go with it")
-        #expect(!header(repoBundle: false).isValid && !header(bundle: nil).isValid, "it is the repository, so there is one")
+        #expect(!header(bundle: nil).isValid, "it is a bundle, so there is one")
+        #expect(header(repoBundle: false).isValid, "or only the commits a Mac with the repository lacks")
         #expect(!String(decoding: try JSONEncoder().encode(header(repoOnly: false)), as: UTF8.self).contains("repoOnly"))
         #expect(try JSONDecoder().decode(FleetSnapshotHeader.self, from: JSONEncoder().encode(header())).repoOnly)
     }

@@ -25,7 +25,8 @@ extension FleetDispatch {
                 return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "That dispatch belongs to another Mac.")))
             }
             // A clone that failed asked for the repository itself: this create carries it, and replaces the failed attempt.
-            if known.record.state == .failed, known.record.failure == FleetDispatchCode.cloneFailed, create.snapshot?.repoBundle == true {
+            if known.record.state == .failed, [FleetDispatchCode.cloneFailed, FleetDispatchCode.commitUnreachable].contains(known.record.failure ?? ""),
+               create.snapshot.map({ $0.repoBundle || $0.repoOnly }) == true {
                 inbound[create.dispatchID] = nil
             } else {
                 return reply(.success(known.record))
@@ -73,8 +74,10 @@ extension FleetDispatch {
             id: create.dispatchID, kind: create.kind, parentAgentID: create.from.agentID, parentHostID: sender, parentHostName: create.from.hostName,
             parentTitle: create.from.agentTitle, targetHostID: hostID, targetHostName: hostName(), state: .preparing,
             title: Self.title(create.title, task: create.task), task: create.task, repoKey: create.repoKey, commitSHA: create.commitSHA,
-            subdir: create.subdir, branch: nil, model: create.model, thinking: create.thinking, createdAt: now)
+            subdir: create.subdir, branch: nil, model: create.model, thinking: create.thinking, start: create.start, createdAt: now)
         record.updatedAt = record.createdAt
+        // A name the person gave the branch, or the branch they chose, is the name here; a thread's own dispatch gets `fleet/<title>`.
+        let exact = create.start?.branch != nil
         // No checkout yet: the Mac gets one first, and says where that stands (the card "Cloning acme-web on Mac mini").
         if space == nil {
             record.clone = FleetCloneProgress(name: FleetRepoClone.folderName(repoKey: create.repoKey, name: create.repo?.name), source: create.snapshot?.repoBundle == true ? create.from.hostName : create.repoKey,
@@ -92,7 +95,7 @@ extension FleetDispatch {
             snap.repo = create.repo
             if let space {
                 let (id, title, repo, requested, claims) = (record.id, record.title, space.path, create.branch, claimedBranches)
-                snap.branch = Task.detached { claims.claim { FleetDispatchGit.branchName(title: title, requested: requested, dispatchID: id, repo: repo, claimed: $0) } }
+                snap.branch = Task.detached { claims.claim { FleetDispatchGit.branchName(title: title, requested: requested, dispatchID: id, repo: repo, claimed: $0, exact: exact) } }
             }
             snapshotsIn[record.id] = snap
             inbound[record.id] = Inbound(record: record, acceptedAt: now)
@@ -114,21 +117,43 @@ extension FleetDispatch {
         let record = entry.record
         let repo = space.path
         let snapshot = snapshotsIn[id]
-        // A transfer that was only the repository (it was cloned from) carries no edits: the worktree is made as for a dispatch with none.
+        // A transfer that was only the repository carries no edits: the worktree is made as for a dispatch with none.
         let carried = snapshot?.header.repoOnly == true ? nil : snapshot
+        let bundleFile = snapshot?.header.repoOnly == true ? snapshot?.header.bundle.map { blobs.url($0.hash).path } : nil
+        let exact = record.start?.branch != nil
         Task.detached { [weak self] in
-            // The commit has to be here: origin's, or already in the repo. (A snapshot's own steps make it present, from the bundle too.)
-            if carried == nil, let sha = record.commitSHA, !FleetDispatchGit.hasCommit(sha, in: repo) {
-                self?.queue.async { self?.failInbound(id, FleetDispatchCode.commitUnreachable, nil) }
-                return
+            // A thread started on `origin/<base>` starts at that ref as this Mac has it once it has asked origin for it (a thread started from a
+            // local branch, or whose base this Mac can't see, starts at the commit the sender had).
+            var startPoint = record.commitSHA
+            var baseResolved = false
+            if record.kind == .userThread, record.start?.place == .newWorktree, let base = record.start?.base, base.hasPrefix("origin/") {
+                GitWorktree.fetchPicked(repo: repo, base: base, fetchFirst: true)
+                if FleetDispatchGit.run(["rev-parse", "--verify", "--quiet", "\(base)^{commit}"], in: repo)?.status == 0 { startPoint = base; baseResolved = true }
             }
+            // The commit has to be here: origin's, already in the repo, or in the bundle that came for it. (A snapshot's own steps make it
+            // present, from its bundle too.)
+            var madeRefs = false
+            if carried == nil, !baseResolved, let sha = record.commitSHA {
+                var has = FleetDispatchGit.hasCommit(sha, in: repo)
+                if !has, let bundleFile {
+                    madeRefs = true
+                    FleetRepoClone.fetchBundle(bundleFile, into: repo, id: id)
+                    has = FleetDispatchGit.hasCommit(sha, in: repo, fetching: false)
+                }
+                if !has {
+                    if madeRefs { FleetRepoClone.dropBundleRefs(from: repo, id: id) }
+                    self?.queue.async { self?.failInbound(id, FleetDispatchCode.commitUnreachable, nil) }
+                    return
+                }
+            }
+            defer { if madeRefs { FleetRepoClone.dropBundleRefs(from: repo, id: id) } }
             guard let self else { return }
             let branch: String
             if let early = snapshot?.branch {
                 branch = await early.value
             } else {
                 branch = self.claimedBranches.claim {
-                    FleetDispatchGit.branchName(title: record.title, requested: requestedBranch, dispatchID: id, repo: repo, claimed: $0)
+                    FleetDispatchGit.branchName(title: record.title, requested: requestedBranch, dispatchID: id, repo: repo, claimed: $0, exact: exact)
                 }
             }
             defer { self.claimedBranches.release(branch) }
@@ -149,7 +174,7 @@ extension FleetDispatch {
                     await self.onQueue { self.applied(id, applied) }
                 }
             }
-            let request = await self.onQueue { self.threadRequest(for: record, branch: branch, space: space, worktree: built?.path) }
+            let request = await self.onQueue { self.threadRequest(for: record, branch: branch, space: space, worktree: built?.path, startPoint: startPoint) }
             // Stopped while the worktree was being built: no thread starts, and the worktree goes.
             if let built, await self.onQueue({ self.inbound[id]?.record.state != .preparing }) {
                 FleetSnapshotApply.discard(repo: repo, worktree: built.path, branch: branch, ref: built.madeRef ? id : nil)
@@ -177,13 +202,13 @@ extension FleetDispatch {
         save()
     }
 
-    private func threadRequest(for record: FleetDispatchRecord, branch: String, space: Space, worktree: String? = nil) -> RemoteCreateAgentRequest {
+    private func threadRequest(for record: FleetDispatchRecord, branch: String, space: Space, worktree: String? = nil, startPoint: String? = nil) -> RemoteCreateAgentRequest {
         var request = RemoteCreateAgentRequest(
             spaceID: space.id, cwd: space.path, model: record.model, thinking: record.thinking.flatMap(ThinkingLevel.init(rawValue:)),
-            initialPrompt: Self.prompt(for: record, branch: branch), worktreeBranch: branch, worktreeBase: record.commitSHA,
-            // A thread from a thread starts at its pinned commit; one the person started starts where this Mac's
-            // Settings ▸ Worktrees say (the space's base, fetched first when that is on).
-            worktreeFetchFirst: record.commitSHA == nil ? nil : false)
+            initialPrompt: Self.prompt(for: record, branch: branch), worktreeBranch: branch, worktreeBase: startPoint ?? record.commitSHA,
+            // It starts at its pinned commit, or at the base ref the person chose (already fetched); one from an older sender, with no
+            // commit, starts where this Mac's Settings ▸ Worktrees say.
+            worktreeFetchFirst: (startPoint ?? record.commitSHA) == nil ? nil : false)
         // A snapshot's worktree is already made: the thread works in it.
         request.worktreePath = worktree
         request.name = record.title

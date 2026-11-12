@@ -186,9 +186,9 @@ struct FleetDispatchPresentationTests {
     }
 
     static func picker(_ pick: FleetPlacePick? = nil, snapshot: FleetSnapshot = FleetDispatchPresentationTests.withOrders(), auto: Bool = true,
-                       repoKey: String? = FleetDispatchPresentationTests.orders) -> FleetWherePicker {
+                       repoKey: String? = FleetDispatchPresentationTests.orders, base: String? = "origin/main", checkout: Bool = false) -> FleetWherePicker {
         FleetWherePicker.make(snapshot: snapshot, pick: pick, repoKey: repoKey, repoName: "orders-svc", autoDispatch: auto, weight: { _ in .normal },
-                              locale: P.en, calendar: P.utc)
+                              baseBranch: base, startsInCheckout: checkout, locale: P.en, calendar: P.utc)
     }
 
     @Test func autoNamesTheMacWithTheMostRoomAndTheRepoLine() {
@@ -197,7 +197,11 @@ struct FleetDispatchPresentationTests {
         #expect(picker.options.map(\.name) == ["Auto", "Mac mini", "This Mac", "Mac Studio"], "ranked by room, Auto first")
         #expect(picker.options.first?.chosen == true)
         #expect(picker.options.first { $0.name == "Mac Studio" }?.roomWord == "asleep")
-        #expect(picker.note?.hasPrefix("Runs on Mac mini in a new worktree from this Mac's checkout") == true)
+        #expect(picker.note == "Runs on Mac mini in a new worktree from origin/main. It shows in your sidebar like any thread.")
+        // A project that starts in its own checkout says so; one with no base of its own says "its base branch".
+        #expect(Self.picker(checkout: true).note?.hasPrefix("Runs on Mac mini in a new worktree from this Mac's checkout.") == true)
+        #expect(Self.picker(base: nil).note?.hasPrefix("Runs on Mac mini in a new worktree from its base branch.") == true)
+        #expect(Self.picker(base: "feat/orders-import").note?.hasPrefix("Runs on Mac mini in a new worktree from feat/orders-import.") == true)
         #expect(picker.footnote == "orders-svc is checked out on This Mac and Mac mini. Mac Studio would clone it first.")
     }
 
