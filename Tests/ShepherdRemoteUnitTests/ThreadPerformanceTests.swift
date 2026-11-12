@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Testing
 import ShepherdProtocol
 @testable import ShepherdRemote
@@ -291,6 +292,42 @@ struct ThreadPerformanceTests {
         #expect(store.mountedCost(eagerRows: 7) == costs.reduce(0, +) + edge, "the earlier giant reply adds nothing")
         #expect(store.mountedCost(eagerRows: 2) == costs[6] + costs[5] + edge)
         #expect(store.mountedCost(eagerRows: 1) == costs[6], "the last reply is out of the sum, and so is its next chunk")
+    }
+
+    /// Written once when it changes, so the thread on screen (which never reads it) and a hidden one (which does) hear of nothing more.
+    @Test func releasingTheTranscriptKeepsTheThreadAndCostsNothingUntilItRunsAgain() async {
+        final class Fired: @unchecked Sendable { var count = 0 }
+        let history = (0..<10).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant(NativeMountedCostTests.bigReply(cycles: 2), id: "a\($0)")] }
+        let host = FakeHost(F.snapshot(messages: history))
+        let store = manualStore()
+        let loop = await start(store, host)
+        let rows = store.rows, messages = store.messages, cost = store.mountedCost(eagerRows: 30)
+        #expect(cost > 0 && !store.transcriptReleased)
+
+        let fired = Fired()
+        withObservationTracking { _ = store.transcriptReleased } onChange: { fired.count += 1 }
+        store.draft = "unsent"
+        store.releaseTranscript()
+        #expect(fired.count == 1 && store.transcriptReleased)
+        withObservationTracking { _ = store.transcriptReleased } onChange: { fired.count += 1 }
+        store.releaseTranscript()
+        #expect(fired.count == 1, "released again, nothing is written")
+
+        #expect(store.rows == rows && store.messages == messages && store.holdsHistory && store.draft == "unsent", "only the views' rows go, not the thread")
+        #expect(store.mountedCost(eagerRows: 30) == 0 && store.mountedCostWalk(eagerRows: 30, skipping: { _ in false }).visited == 0, "it holds nothing, and reading says so without a walk")
+
+        loop.cancel()
+        store.stop()
+        #expect(store.transcriptReleased, "stopping the loop does not clear it")
+        let again = await start(store, host)
+        #expect(!store.transcriptReleased, "a run shows the thread again")
+        #expect(store.mountedCost(eagerRows: 30) == cost && store.rows == rows)
+        again.cancel()
+
+        store.releaseTranscript()
+        store.stop()
+        store.release()
+        #expect(!store.transcriptReleased && store.rows.isEmpty, "releasing the history clears it with the rest")
     }
 
     @Test func childProgressInvalidatesItsOwningSuffixRatherThanAllHistory() async {
