@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
@@ -378,6 +379,38 @@ final class FleetSettingsModel {
     func reconnect(_ hostID: UUID) async {
         guard let client = try? host(), let result = try? await client.fleetAction(.reconnect(hostID: hostID)) else { return }
         apply(result)
+    }
+
+    // MARK: Dispatches
+
+    /// Starts the thread the person wrote in New thread on the Mac Auto (or `thread.host`) picks. The record it made, or nil when the work
+    /// stays on this Mac and the caller starts it as it always did. Throws the host's reason when it can't go.
+    func sendThread(_ thread: FleetUserThread) async throws -> FleetDispatchRecord? {
+        guard let client = try host() else { throw RemoteHostClientError.disconnected }
+        let result = try await client.fleetAction(.sendThread(thread))
+        apply(result)
+        return result.dispatch
+    }
+
+    /// Sends a dispatch that waits, is held or wasn't sent: to `target` (this Mac's id included), else as it was asked.
+    func retryDispatch(_ id: UUID, host target: UUID?) async {
+        do {
+            guard let client = try host() else { return }
+            apply(try await client.fleetAction(.retryDispatch(id: id, host: target)))
+            problem = nil
+        } catch {
+            problem = Self.words(error)
+        }
+    }
+
+    /// Stops a dispatch this Mac sent, and its thread on the other Mac.
+    func cancelDispatch(_ id: UUID) async {
+        do {
+            guard let client = try host() else { return }
+            apply(try await client.fleetAction(.cancelDispatch(id: id)))
+        } catch {
+            problem = Self.words(error)
+        }
     }
 
     // MARK: Moving a pre-fleet pairing over

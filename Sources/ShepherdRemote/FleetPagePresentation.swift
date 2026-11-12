@@ -100,8 +100,6 @@ public struct FleetDispatchRow: Identifiable, Equatable, Sendable {
     public var tone: FleetTone
     /// "4m ago".
     public var age: String
-    /// The "Sending with uncommitted changes" card, while the work's snapshot is on its way.
-    public var sending: FleetSendingCard?
 
     public var accessibilityLabel: String { "\(title), \(sentBy.lowercasedFirst), \(host), \(state), \(reason), \(age)" }
 }
@@ -160,6 +158,14 @@ public struct FleetPage: Equatable, Sendable {
     /// The Mac Auto would pick now, by name; nil when no Mac counts.
     public var nextGoesTo: String?
     public var footer: FleetFooter
+    /// Settings ▸ Fleet ▸ Auto dispatch: New thread's Auto place is on, and the page's placement card says so.
+    public var autoDispatch = true
+    /// Dispatches that need a decision or are on their way (waiting, held, starting, not sent), as cards (FleetStates).
+    public var attention: [FleetDispatchCard] = []
+    /// Macs that are linked and still taking in changes.
+    public var behind: [FleetDispatchPresentation.BehindMac] = []
+    /// Every dispatch this Mac sent, as a card: what a thread draws for the dispatches it made (`FleetDispatchPresentation`).
+    public var dispatchCards: [FleetDispatchCard] = []
 
     public static let empty = FleetPage(cards: [], summary: "", nextGoesTo: nil, footer: .init(dots: [], detail: "", label: "Fleet"))
 }
@@ -196,7 +202,8 @@ public enum FleetPagePresentation {
     /// sample's age, so a Mac that stops pushing goes stale on screen without a new snapshot.
     /// `batteryCountsHalf` is the fleet setting that halves a Mac on battery.
     public static func make(snapshot: FleetSnapshot, weight: (UUID) -> FleetSendWeight, snapshotAge: TimeInterval = 0,
-                            batteryCountsHalf: Bool = true, viewer: FleetViewer = .mac,
+                            batteryCountsHalf: Bool = true, autoDispatch: Bool = true, threadCap: Int = HostSettings.fleetThreadCapDefault,
+                            viewer: FleetViewer = .mac,
                             locale: Locale = .current, calendar: Calendar = .current, now: Date = Date()) -> FleetPage {
         guard snapshot.enabled, let thisID = snapshot.hostID else { return .empty }
         let macs = Dictionary(snapshot.macs.map { ($0.hostID, $0) }, uniquingKeysWith: { first, _ in first })
@@ -264,6 +271,17 @@ public enum FleetPagePresentation {
                              nextGoesTo: winner.flatMap { id in cards.first { $0.id == id }?.name },
                              footer: footer(cards, asleep: asleep, viewer: viewer))
         page.dispatches = snapshot.dispatches.sorted { $0.createdAt > $1.createdAt }.prefix(fleetDispatchLogLimit).map { dispatchRow($0, now: now) }
+        page.autoDispatch = autoDispatch
+        let context = FleetCardContext(snapshot: snapshot, cap: threadCap, locale: locale, calendar: calendar)
+        page.dispatchCards = FleetDispatchPresentation.cards(Array(snapshot.dispatches.prefix(fleetDispatchLogLimit)), in: context)
+        let dayAgo = (now.timeIntervalSince1970 - 86_400) * 1000
+        let waiting: Set<FleetDispatchState> = [.waitingRoom, .waitingWake, .heldLimit, .heldRestart, .preparing]
+        let recordState = Dictionary(snapshot.dispatches.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        page.attention = page.dispatchCards.filter { card in
+            guard card.layout == .state, let record = recordState[card.id] else { return false }
+            return waiting.contains(record.state) || (record.state == .failed && record.updatedAt > dayAgo)
+        }
+        page.behind = FleetDispatchPresentation.behind(snapshot)
         return page
     }
 
@@ -285,7 +303,7 @@ public enum FleetPagePresentation {
             id: record.id, title: record.title.isEmpty ? "Untitled" : record.title,
             sentBy: record.kind == .userThread ? "Sent by you" : record.parentTitle.isEmpty ? "Sent by a thread" : "Sent by \(record.parentTitle)",
             host: host, reason: reason(record, host: host), state: state, tone: tone,
-            age: ForgePresentation.ago(Date(timeIntervalSince1970: record.createdAt / 1000), now: now), sending: FleetSendingCard.make(record))
+            age: ForgePresentation.ago(Date(timeIntervalSince1970: record.createdAt / 1000), now: now))
     }
 
     private static func reason(_ record: FleetDispatchRecord, host: String) -> String {

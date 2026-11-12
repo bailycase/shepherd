@@ -39,12 +39,6 @@ struct FleetSendingCardTests {
         #expect(FleetSendingCard.make(Self.record(bytes: nil)) == nil)
     }
 
-    @Test func theDispatchesRowCarriesTheCardWhileThePageShowsThatRecord() {
-        let row = FleetPagePresentation.dispatchRow(Self.record(), now: Date(timeIntervalSince1970: 100))
-        #expect(row.sending?.progress == "1.8 of 2.8 MB")
-        #expect(FleetPagePresentation.dispatchRow(Self.record(state: .running), now: Date(timeIntervalSince1970: 100)).sending == nil)
-    }
-
     @Test func aSnapshotThatCouldntGoIsToldInWordsWithTheBiggestPath() {
         #expect(FleetSendingCard.tooLargeWords("6200000000;node_modules/big.bin:3100000000;a.bin:100") == "Too big to send (6.2 GB), mostly node_modules/big.bin (3.1 GB)")
         #expect(FleetSendingCard.tooLargeWords(nil) == "Too big to send")

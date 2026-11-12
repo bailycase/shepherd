@@ -165,8 +165,17 @@ public struct HostSettings: Codable, Hashable, Sendable {
     /// Settings ▸ Fleet ▸ Code ▸ Ignored files ▸ Per space: what a space keeps home or sends against the defaults, under the setting
     /// keys `fleet.snapshotExcludes.<spaceID>` (`FleetSnapshotExcludes.settingKey`). Synced.
     public var fleetSnapshotExcludes: [String: FleetSnapshotExcludes]
+    /// Settings ▸ Fleet ▸ Auto dispatch: New thread's Auto place sends the work to the Mac with the most room. The
+    /// same on every Mac (a synced setting). Nil until the person chooses: it then reads as on once a second Mac
+    /// is paired (`autoDispatch(pairedMacs:)`).
+    public var fleetAutoDispatch: Bool?
+    /// Settings ▸ Fleet ▸ On battery: a Mac running on battery counts half when Auto picks one (`FleetRoom.score`).
+    public var fleetBatteryCountsHalf: Bool
 
     public static let fleetThreadCapDefault = 3
+
+    /// Whether Auto places New thread's work: the person's choice, else on once this Mac is paired with another.
+    public func autoDispatch(pairedMacs: Int) -> Bool { fleetAutoDispatch ?? (pairedMacs > 0) }
     public static let fleetThreadCapRange = 1...10
 
     public init(shepherdVersion: String? = nil, piVersion: String? = nil,
@@ -184,7 +193,8 @@ public struct HostSettings: Codable, Hashable, Sendable {
                 bundledExtensions: [BundledExtension] = [], installedExtensions: [String] = [],
                 updatePiDaily: Bool = false, updateExtensionsDaily: Bool = false,
                 fleetWeights: [String: FleetSendWeight] = [:], fleetThreadsCanSend: Bool = false,
-                fleetThreadCap: Int = HostSettings.fleetThreadCapDefault, fleetUncommitted: FleetUncommittedChanges = .sendThem,
+                fleetThreadCap: Int = HostSettings.fleetThreadCapDefault, fleetAutoDispatch: Bool? = nil,
+                fleetBatteryCountsHalf: Bool = true, fleetUncommitted: FleetUncommittedChanges = .sendThem,
                 fleetSnapshotExcludes: [String: FleetSnapshotExcludes] = [:]) {
         self.shepherdVersion = shepherdVersion
         self.piVersion = piVersion
@@ -226,6 +236,8 @@ public struct HostSettings: Codable, Hashable, Sendable {
         self.fleetThreadCap = Self.clampedThreadCap(fleetThreadCap)
         self.fleetUncommitted = fleetUncommitted
         self.fleetSnapshotExcludes = fleetSnapshotExcludes
+        self.fleetAutoDispatch = fleetAutoDispatch
+        self.fleetBatteryCountsHalf = fleetBatteryCountsHalf
     }
 
     public static func clampedThreadCap(_ cap: Int) -> Int { min(fleetThreadCapRange.upperBound, max(fleetThreadCapRange.lowerBound, cap)) }
@@ -235,7 +247,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         case queueDelivery, goalCrossProviderEvaluation, goalsEnabled, projectsEnabled, fleetEnabled
         case worktreeBase, fetchBeforeCreating, commitRemainingWork, generatePRDescriptions
         case deleteLocalBranch, mergePRAutomatically, mergeMethod, closeOnMerge, backgroundService, listenerPort, listenerProblem, listenerProblemDetail, bundledExtensions, installedExtensions
-        case updatePiDaily, updateExtensionsDaily, fleetWeights, fleetThreadsCanSend, fleetThreadCap, fleetUncommitted, fleetSnapshotExcludes
+        case updatePiDaily, updateExtensionsDaily, fleetWeights, fleetThreadsCanSend, fleetThreadCap, fleetAutoDispatch, fleetBatteryCountsHalf, fleetUncommitted, fleetSnapshotExcludes
         case designToolEnabled, missionsEnabled, missionsActive, subagentDefaults, worktreeDeleteAction
         case skillsInSlashMenu, mcpProjectConfig, slashCommands, hiddenSlashCommands
     }
@@ -288,6 +300,8 @@ public struct HostSettings: Codable, Hashable, Sendable {
         fleetThreadCap = Self.clampedThreadCap((try? c.decodeIfPresent(Int.self, forKey: .fleetThreadCap)) ?? Self.fleetThreadCapDefault)
         fleetUncommitted = (try? c.decodeIfPresent(FleetUncommittedChanges.self, forKey: .fleetUncommitted)) ?? .sendThem
         fleetSnapshotExcludes = (try? c.decodeIfPresent([String: FleetSnapshotExcludes].self, forKey: .fleetSnapshotExcludes)) ?? [:]
+        fleetAutoDispatch = (try? c.decodeIfPresent(Bool.self, forKey: .fleetAutoDispatch)) ?? nil
+        fleetBatteryCountsHalf = (try? c.decodeIfPresent(Bool.self, forKey: .fleetBatteryCountsHalf)) ?? true
     }
 
     /// Applies one change, as the host does.
@@ -323,6 +337,8 @@ public struct HostSettings: Codable, Hashable, Sendable {
         case .fleetSnapshotExcludes(let spaceID, let excludes):
             let key = FleetSnapshotExcludes.settingKey(spaceID: spaceID)
             if excludes.isEmpty { fleetSnapshotExcludes[key] = nil } else { fleetSnapshotExcludes[key] = excludes }
+        case .fleetAutoDispatch(let on): fleetAutoDispatch = on
+        case .fleetBatteryCountsHalf(let on): fleetBatteryCountsHalf = on
         case .designToolEnabled(let on): designToolEnabled = on
         case .missionsEnabled(let on):
             // The host refuses Missions off under a live mission; a client shows that at once.
@@ -391,6 +407,10 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
     case fleetUncommitted(FleetUncommittedChanges)
     /// What a space keeps home or sends against the defaults, by space id; empty is back to the defaults (`RemoteProtocol.fleetSnapshotCapability`).
     case fleetSnapshotExcludes(spaceID: String, excludes: FleetSnapshotExcludes)
+    /// New thread's Auto place sends work to the Mac with the most room (`RemoteProtocol.fleetDispatchCapability`).
+    case fleetAutoDispatch(Bool)
+    /// A Mac on battery counts half when Auto picks one (`RemoteProtocol.fleetDispatchCapability`).
+    case fleetBatteryCountsHalf(Bool)
     /// `RemoteProtocol.designToolExperimentCapability`: offered while the tool is off too.
     case designToolEnabled(Bool)
     /// `RemoteProtocol.missionsExperimentCapability`. Off is refused while a mission is active
@@ -412,7 +432,7 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
         case .projectsEnabled: RemoteProtocol.projectsExperimentCapability
         case .fleetEnabled: RemoteProtocol.fleetExperimentCapability
         case .fleetWeight: RemoteProtocol.fleetViewCapability
-        case .fleetThreadsCanSend, .fleetThreadCap: RemoteProtocol.fleetDispatchCapability
+        case .fleetThreadsCanSend, .fleetThreadCap, .fleetAutoDispatch, .fleetBatteryCountsHalf: RemoteProtocol.fleetDispatchCapability
         case .fleetUncommitted, .fleetSnapshotExcludes: RemoteProtocol.fleetSnapshotCapability
         case .defaultServiceTier, .namingModel, .compactAtPercent: RemoteProtocol.hostSettingsAgentDefaultsCapability
         case .textGenerationModel: RemoteProtocol.hostSettingsTextGenerationModelCapability

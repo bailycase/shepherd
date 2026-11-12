@@ -300,12 +300,21 @@ public enum FleetAction: Codable, Hashable, Sendable {
     /// This Mac's app asks for a token of its own for its direct connections to the Macs of the fleet
     /// (a device of kind `macApp`); answered with it (`FleetResult.appDevice`).
     case enrollApp(name: String)
+    /// Start a thread the person made in New thread on the Mac Auto (or a named one) picks
+    /// (`RemoteProtocol.fleetDispatchCapability`); answered with the dispatch it made (`FleetResult.dispatch`), or with none
+    /// when the work stays on this Mac and the app starts it itself.
+    case sendThread(FleetUserThread)
+    /// Send a dispatch that is waiting, held or not sent again: to the Mac `host` (this Mac included), or as it was asked
+    /// when nil. Answered with the record (`FleetResult.dispatch`).
+    case retryDispatch(id: UUID, host: UUID?)
+    /// Stop a dispatch this Mac sent, and its thread on the other Mac.
+    case cancelDispatch(id: UUID)
 
     /// The actions about client devices, which work with Fleet off; the others are a member's.
     public var isDeviceAction: Bool {
         switch self {
         case .startDeviceCode, .stopDeviceCode, .revokeDevice, .forgetLegacyClient, .retireSharedToken, .enrollApp: true
-        case .startJoin, .stopJoin, .pair, .remove, .adopt, .watching, .reconnect: false
+        case .startJoin, .stopJoin, .pair, .remove, .adopt, .watching, .reconnect, .sendThread, .retryDispatch, .cancelDispatch: false
         }
     }
 }
@@ -331,9 +340,13 @@ public struct FleetResult: Codable, Hashable, Sendable {
     public var deviceCode: Join?
     /// The token this Mac's app was given, answering `FleetAction.enrollApp`. Over the local socket only.
     public var appToken: String?
+    /// The dispatch `FleetAction.sendThread`, `retryDispatch` or `cancelDispatch` made or changed, with its task and result
+    /// text left out like the log's (`FleetDispatchRecord.summary`).
+    public var dispatch: FleetDispatchRecord?
 
     public init(snapshot: FleetSnapshot, join: Join? = nil, paired: FleetPeerStatus? = nil, adopted: [FleetAdoption]? = nil,
-                deviceCode: Join? = nil, appToken: String? = nil) {
+                deviceCode: Join? = nil, appToken: String? = nil, dispatch: FleetDispatchRecord? = nil) {
+        self.dispatch = dispatch
         self.deviceCode = deviceCode
         self.appToken = appToken
         self.snapshot = snapshot

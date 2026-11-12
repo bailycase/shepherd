@@ -826,6 +826,31 @@ final class FleetService: @unchecked Sendable {
                     reply(.fleetResult(id: id, result: FleetResult(snapshot: self.snapshot(), appToken: token)))
                 }
             }
+        case .sendThread(let thread):
+            dispatch.dispatchUserThread(thread) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success(let record): reply(.fleetResult(id: id, result: FleetResult(snapshot: self.snapshot(), dispatch: record)))
+                case .failure(let refusal): reply(Self.refusal(id, refusal.code, refusal.message))
+                }
+            }
+        case .retryDispatch(let dispatchID, let target):
+            if let target, target != identity.hostID, peers.record(target).map({ !$0.revoked }) != true {
+                return reply(Self.refusal(id, FleetProtocol.Code.invalid, "That Mac isn't in the fleet."))
+            }
+            dispatch.retry(dispatchID, host: target) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success(let record): reply(.fleetResult(id: id, result: FleetResult(snapshot: self.snapshot(), dispatch: record.summary)))
+                case .failure(let refusal): reply(Self.refusal(id, refusal.code, refusal.message))
+                }
+            }
+        case .cancelDispatch(let dispatchID):
+            guard dispatch.record(dispatchID) != nil else {
+                return reply(Self.refusal(id, FleetDispatchProtocol.Code.unknownDispatch, "This Mac has no such dispatch."))
+            }
+            dispatch.cancel(dispatchID)
+            reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot(), dispatch: dispatch.record(dispatchID)?.summary)))
         case .adopt(let hosts):
             Task { [weak self] in
                 guard let self else { return }

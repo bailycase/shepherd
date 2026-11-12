@@ -111,6 +111,13 @@ final class RemoteHostStore {
         @ObservationIgnored fileprivate var client: RemoteHostClient? {
             didSet { hubSlot.hub = client?.tunnels }
         }
+        /// The host's fleet identity (`helloOk.hostID`), kept after the link drops so a thread it sent still nests under its sender
+        /// while that Mac is away. Nil until it has answered once, and for a host without Fleet.
+        var fleetID: UUID? {
+            if let id = client?.hostID { lastFleetID = id }
+            return lastFleetID
+        }
+        @ObservationIgnored private var lastFleetID: UUID?
         /// Where a forwarded port of this host finds its connection's tunnels (Browser): filled
         /// while there is a client, empty while there is none.
         let hubSlot = BrowserTunnelHubSlot()

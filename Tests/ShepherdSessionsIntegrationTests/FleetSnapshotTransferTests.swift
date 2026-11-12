@@ -394,27 +394,6 @@ struct FleetSnapshotTransferTests {
 @Suite("Fleet snapshot measurements", .integrationTimeLimit, .mainActorExclusive, .enabled(if: ProcessInfo.processInfo.environment["SHEPHERD_FLEET_MEASURE"] == "1", "set SHEPHERD_FLEET_MEASURE=1"))
 @MainActor
 struct FleetSnapshotMeasurementTests {
-    /// The first dispatch of a 20,000 file repository to a Mac with no spare for it (origin's HEAD ref removed there, so its tracked files come from git's own checkout).
-    @Test func aFirstDispatchOfATwentyThousandFileRepositoryToAMacWithNoSpare() async throws {
-        var extra: [String: String] = [:]
-        for index in 0..<20_000 { extra["src/gen/f\(index).ts"] = "export const v\(index) = \(index)\n" }
-        let (a, b, _) = try await FleetSnapshotTransferTests.pair(extra: extra)
-        defer { a.stop(); b.stop() }
-        for mac in [a, b] {
-            try await FleetDispatchTests.wait("the first index scan of \(mac.name)", timeout: .seconds(600)) {
-                mac.server.queue.sync { mac.server.fleet?.index.index(at: mac.folder.path) }?.stateNow == .ready
-            }
-        }
-        _ = try? git(["remote", "set-head", "origin", "--delete"], in: b.folder)
-        for index in 0..<5 { try FleetSnapshotTransferTests.write("changed \(index)\n", to: "src/gen/f\(index).ts", in: a.folder) }
-        let (_, _) = try await FleetSnapshotTransferTests.send(from: a, to: b, timeout: .seconds(600))
-        try await FleetDispatchTests.wait("the record to move on") { b.taken().first?.state != .preparing }
-        let id = try #require(a.sent().first?.id)
-        let timing = try #require(FleetSnapshotTransferTests.engine(a) { $0.timings[id] } ?? nil)
-        let stats = try #require(FleetSnapshotTransferTests.engine(b) { $0.applyStats[id] } ?? nil)
-        print("FLEET-MEASURE first dispatch, 20k tracked files, no spare: sender \(timing.build) ms, transfer \(timing.transfer) ms, receiver \(b.taken().first?.fileMillis ?? -1) ms \(stats.phases) spare=\(stats.usedSpare)")
-    }
-
     /// A `node_modules` of about 6,000 files and 200 MB that the target holds nothing of.
     @Test func aNodeModulesHeavyDispatchTheTargetHoldsNothingOf() async throws {
         let (a, b, _) = try await FleetSnapshotTransferTests.pair()

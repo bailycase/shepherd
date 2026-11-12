@@ -2,8 +2,8 @@ import Foundation
 import ShepherdCore
 
 /// The "Sending with uncommitted changes" card (FleetStates): work on its way to another Mac with the checkout's edits and files,
-/// drawn from the dispatch record alone. The Fleet page's Dispatches row shows it while the record is `preparing`; a thread that
-/// sent the work draws the same card (slice 4d reuses this derivation and the app's view).
+/// drawn from the dispatch record alone. It is `FleetDispatchCard.sending`: the dispatch's card in the thread that sent the work and on
+/// the Fleet page shows its progress while the record is `preparing`.
 public struct FleetSendingCard: Equatable, Sendable, Identifiable {
     public var id: UUID
     public var title: String

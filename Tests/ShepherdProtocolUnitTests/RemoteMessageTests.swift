@@ -351,6 +351,7 @@ enum RemoteSamples {
         .defaultServiceTier(.fast), .textGenerationModel("openai/gpt-5-mini"), .textGenerationModel(nil), .namingModel("openai/gpt-5-mini"), .compactAtPercent(70), .compactAtPercent(nil),
         .goalCrossProviderEvaluation(true), .goalCrossProviderEvaluation(false), .goalsEnabled(true), .goalsEnabled(false), .projectsEnabled(true), .projectsEnabled(false), .fleetEnabled(true), .fleetEnabled(false),
         .fleetWeight(hostID: RemoteSamples.fleetHost, weight: .prefer), .fleetWeight(hostID: RemoteSamples.fleetHost, weight: .manualOnly),
+        .fleetThreadsCanSend(true), .fleetThreadCap(5), .fleetAutoDispatch(true), .fleetAutoDispatch(false), .fleetBatteryCountsHalf(false),
         .worktreeBase(.fresh), .fetchBeforeCreating(true), .commitRemainingWork(false), .generatePRDescriptions(false),
         .deleteLocalBranch(false), .mergePRAutomatically(false), .mergeMethod(.squash),
         .bundledExtension(id: "review", on: true), .updatePiDaily(false), .updateExtensionsDaily(true),
@@ -554,6 +555,12 @@ struct RemoteRequestTests {
         .fleetAction(id: 89, action: .forgetLegacyClient("Shepherd iOS@192.168.1.31")),
         .fleetAction(id: 99, action: .retireSharedToken),
         .fleetAction(id: 100, action: .enrollApp(name: "MacBook Pro")),
+        .fleetAction(id: 101, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", host: nil))),
+        .fleetAction(id: 102, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", title: "Profile import",
+                                                                    host: "Mac mini", model: "acme/model-1", thinking: "high"))),
+        .fleetAction(id: 103, action: .retryDispatch(id: RemoteSamples.dispatchID, host: nil)),
+        .fleetAction(id: 104, action: .retryDispatch(id: RemoteSamples.dispatchID, host: RemoteSamples.fleetHost)),
+        .fleetAction(id: 105, action: .cancelDispatch(id: RemoteSamples.dispatchID)),
         .hostUpdate(id: 90, request: .status),
         .hostUpdate(id: 91, request: .check),
         .hostUpdate(id: 92, request: .install(offerID: S.op, authorized: true)),
@@ -887,6 +894,7 @@ struct RemoteReplyTests {
         .fleetResult(id: 11, result: FleetResult(snapshot: { var snapshot = S.fleetSnapshot; snapshot.devices = S.fleetDevicesSnapshot; return snapshot }(),
                                                  deviceCode: .init(code: "482913", expiresAt: 1_790_000_300_000))),
         .fleetResult(id: 14, result: FleetResult(snapshot: S.fleetSnapshot, appToken: String(repeating: "cd", count: 32))),
+        .fleetResult(id: 18, result: FleetResult(snapshot: S.fleetSnapshot, dispatch: S.dispatchRecord)),
         .fleetDevices(id: 13, result: FleetDevicesResult(hostID: S.fleetHost, name: "Mac mini", members: [S.fleetMember], devices: S.fleetDeviceEntries)),
         .fleetDevices(id: 15, result: FleetDevicesResult(hostID: S.fleetHost, name: "Mac mini")),
         .fleetResult(id: 8, result: FleetResult(snapshot: S.fleetSnapshot, join: .init(code: "482913", expiresAt: 1_790_000_300_000))),
@@ -1205,6 +1213,23 @@ struct RemoteReplyTests {
         settings.apply(.fleetEnabled(true))
         #expect(settings.fleetEnabled)
         #expect(HostSettingChange.fleetEnabled(true).capability == RemoteProtocol.fleetExperimentCapability)
+    }
+
+    /// The Dispatch settings: Auto dispatch is unset until the person chooses (it reads as on with a second Mac paired); battery counts half.
+    @Test func autoDispatchReadsAsOnOnceAMacIsPairedUntilTheUserChooses() throws {
+        var settings = HostSettings()
+        #expect(settings.fleetAutoDispatch == nil && settings.fleetBatteryCountsHalf && !settings.fleetThreadsCanSend)
+        #expect(!settings.autoDispatch(pairedMacs: 0) && settings.autoDispatch(pairedMacs: 1))
+        settings.apply(.fleetAutoDispatch(false))
+        #expect(!settings.autoDispatch(pairedMacs: 2), "a choice beats the default")
+        // A host from before these settings decodes with the defaults.
+        var object = try Wire.object(HostSettings(fleetAutoDispatch: true, fleetBatteryCountsHalf: false))
+        object["fleetAutoDispatch"] = nil
+        object["fleetBatteryCountsHalf"] = nil
+        let older = try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(older.fleetAutoDispatch == nil && older.fleetBatteryCountsHalf)
+        #expect(HostSettingChange.fleetAutoDispatch(true).capability == RemoteProtocol.fleetDispatchCapability)
+        #expect(HostSettingChange.fleetBatteryCountsHalf(false).capability == RemoteProtocol.fleetDispatchCapability)
     }
 
     /// A host from before Fleet says no id in `helloOk`; its client reads that as a Mac without a fleet identity.

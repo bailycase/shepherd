@@ -49,6 +49,8 @@ struct FleetPageContent: View {
     let page: FleetPage
     let actions: FleetPageActions
     var chrome = PageHeaderChrome()
+    /// What the buttons on dispatch cards do (FleetStates).
+    var cardActions: FleetThreadActions?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -60,7 +62,17 @@ struct FleetPageContent: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: SH.Space.xl) {
-                    FleetPlacementCard(nextGoesTo: page.nextGoesTo)
+                    FleetPlacementCard(autoDispatch: page.autoDispatch, nextGoesTo: page.nextGoesTo)
+                    if !page.attention.isEmpty || !page.behind.isEmpty {
+                        VStack(spacing: SH.Space.l) {
+                            ForEach(page.attention) { card in
+                                FleetDispatchCardView(card: card, actions: cardActions).equatable()
+                            }
+                            ForEach(page.behind) { mac in
+                                FleetBehindMacCard(mac: mac)
+                            }
+                        }
+                    }
                     Grid(horizontalSpacing: SH.Space.xl, verticalSpacing: SH.Space.xl) {
                         ForEach(rows, id: \.first?.id) { row in
                             GridRow {
@@ -92,8 +104,9 @@ struct FleetPageContent: View {
     }
 }
 
-/// "Auto placement": where work would go now. Nothing is sent from here.
+/// "Auto dispatch is on": where work would go now. Nothing is sent from here.
 private struct FleetPlacementCard: View {
+    let autoDispatch: Bool
     let nextGoesTo: String?
 
     var body: some View {
@@ -109,12 +122,13 @@ private struct FleetPlacementCard: View {
                 }
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text("Auto placement").font(.sh(.headline)).foregroundStyle(sh.textPrimary)
-                Text("Work goes to the Mac with the most room that has the thread’s models and tools.")
+                Text(autoDispatch ? "Auto dispatch is on" : "Auto dispatch is off").font(.sh(.headline)).foregroundStyle(sh.textPrimary)
+                Text(autoDispatch ? "New and sent work goes to the Mac with the most room that has the thread’s models and tools."
+                     : "New threads start on This Mac. Pick a Mac in the composer, or turn Auto dispatch on in Fleet settings.")
                     .font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
             }
             Spacer(minLength: SH.Space.xl)
-            if let nextGoesTo {
+            if autoDispatch, let nextGoesTo {
                 Text("Next goes to").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
                 FleetPill(text: nextGoesTo, dot: sh.done, text: sh.done, fill: sh.doneTint)
             }
@@ -418,12 +432,6 @@ struct FleetDispatchesCard: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(rows) { row in
                         FleetDispatchRowView(row: row).equatable()
-                        // Work on its way with the checkout's edits: the card of FleetStates, under its row.
-                        if let sending = row.sending {
-                            FleetSendingCardView(card: sending).equatable()
-                                .padding(.horizontal, SH.Space.xl)
-                                .padding(.bottom, SH.Space.l)
-                        }
                         if row.id != rows.last?.id { SHHairline() }
                     }
                 }
@@ -452,13 +460,7 @@ struct FleetDispatchRowView: View, Equatable {
                 .font(.sh(.caption, weight: .regular))
                 .foregroundStyle(sh.textTertiary)
                 .accessibilityHidden(true)
-            Text(row.host)
-                .font(.sh(.micro, weight: .regular))
-                .foregroundStyle(sh.textSecondary)
-                .lineLimit(1)
-                .padding(.horizontal, SH.Space.xs)
-                .frame(height: AppLayout.fleetTagHeight)
-                .shBorder(sh.lineStrong, radius: SH.Radius.xs)
+            FleetHostTag(name: row.host)
                 .frame(width: AppLayout.fleetDispatchHostWidth, alignment: .leading)
             Text(row.reason)
                 .font(.sh(.ui, weight: .regular))
@@ -480,7 +482,7 @@ struct FleetDispatchRowView: View, Equatable {
     }
 }
 
-private struct FleetDispatchStatePill: View {
+struct FleetDispatchStatePill: View {
     let text: String
     let tone: FleetTone
 

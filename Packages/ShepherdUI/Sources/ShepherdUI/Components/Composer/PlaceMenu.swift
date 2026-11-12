@@ -300,9 +300,10 @@ public struct SHPlaceMenu<RowMenu: View>: View {
 /// "·", a display glyph and the host in mono, and a chevron, as a composer chip.
 public struct SHPlaceChipLabel: View {
     let project: String
-    let host: String
+    let host: String?
 
-    public init(project: String, host: String) {
+    /// `host` nil draws the project alone: the Mac is its own chip while Fleet is on (`SHFleetPlaceChipLabel`).
+    public init(project: String, host: String?) {
         self.project = project
         self.host = host
     }
@@ -311,12 +312,14 @@ public struct SHPlaceChipLabel: View {
         HStack(spacing: SH.Space.s) {
             Image(systemName: "folder").font(.system(size: 11, weight: .regular)).foregroundStyle(.sh.textSecondary)
             Text(project).font(.shMono(12)).lineLimit(1)
-            Text("·").foregroundStyle(.sh.textTertiary)
-            Image(systemName: "display").font(.system(size: 11, weight: .regular)).foregroundStyle(.sh.textSecondary)
-            Text(host).font(.shMono(12)).lineLimit(1)
+            if let host {
+                Text("·").foregroundStyle(.sh.textTertiary)
+                Image(systemName: "display").font(.system(size: 11, weight: .regular)).foregroundStyle(.sh.textSecondary)
+                Text(host).font(.shMono(12)).lineLimit(1)
+            }
             SHChipChevron()
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Where it runs: \(project) on \(host)")
+        .accessibilityLabel(host.map { "Where it runs: \(project) on \($0)" } ?? "Project: \(project)")
     }
 }

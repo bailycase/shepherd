@@ -158,7 +158,9 @@ extension FleetDispatch {
         var request = RemoteCreateAgentRequest(
             spaceID: space.id, cwd: space.path, model: record.model, thinking: record.thinking.flatMap(ThinkingLevel.init(rawValue:)),
             initialPrompt: Self.prompt(for: record, branch: branch), worktreeBranch: branch, worktreeBase: record.commitSHA,
-            worktreeFetchFirst: false)
+            // A thread from a thread starts at its pinned commit; one the person started starts where this Mac's
+            // Settings ▸ Worktrees say (the space's base, fetched first when that is on).
+            worktreeFetchFirst: record.commitSHA == nil ? nil : false)
         // A snapshot's worktree is already made: the thread works in it.
         request.worktreePath = worktree
         request.name = record.title
@@ -170,9 +172,10 @@ extension FleetDispatch {
 
     /// What the thread is asked: the task, and where its work goes.
     static func prompt(for record: FleetDispatchRecord, branch: String) -> String {
-        record.task + "\n\n---\nYou were started by \(record.parentTitle.isEmpty ? "the person" : record.parentTitle) on \(record.parentHostName) to do the task above. "
-            + "Your branch is \(branch). Commit your work there and push it with git push -u origin \(branch). "
-            + "Your last message goes back to whoever sent you."
+        let sender = record.kind == .userThread || record.parentTitle.isEmpty ? "the person" : record.parentTitle
+        let tail = record.kind == .userThread ? "" : " Your last message goes back to whoever sent you."
+        return record.task + FleetDispatchProtocol.promptSeparator + "\(sender) on \(record.parentHostName) to do the task above. "
+            + "Your branch is \(branch). Commit your work there and push it with git push -u origin \(branch)." + tail
     }
 
     private func prepared(_ id: UUID, _ outcome: Result<AgentID, RemoteCreateAgentError>) {

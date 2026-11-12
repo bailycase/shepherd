@@ -214,7 +214,13 @@ struct SettingsView: View {
                               spaces: vm.state.spaces.filter { !$0.hidden && $0.repoKey != nil }.map {
                                   FleetExcludeSpace(id: $0.id, name: $0.name, excludes: vm.settings.fleetExcludes(of: $0.id))
                               },
-                              setExcludes: { vm.settings.setFleetExcludes($1, of: $0) }))
+                              setExcludes: { vm.settings.setFleetExcludes($1, of: $0) }),
+                          dispatch: FleetDispatchControls(
+                              autoDispatch: Binding(get: { vm.settings.autoDispatch(pairedMacs: vm.fleetPage.snapshot.peers.count) },
+                                                    set: { vm.settings.fleetAutoDispatch = $0 }),
+                              threadsCanSend: Binding(get: { vm.settings.fleetThreadsCanSend }, set: { vm.settings.fleetThreadsCanSend = $0 }),
+                              threadCap: Binding(get: { vm.settings.fleetThreadCap }, set: { vm.settings.fleetThreadCap = $0 }),
+                              batteryCountsHalf: Binding(get: { vm.settings.fleetBatteryCountsHalf }, set: { vm.settings.fleetBatteryCountsHalf = $0 })))
                 .task { await vm.refreshRemoteListener() }
         case .keyboard: KeyboardSettings(vm: vm)
         case .advanced: AdvancedSettings(vm: vm)

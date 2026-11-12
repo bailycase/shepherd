@@ -9,7 +9,7 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-/// Slice 4c's surfaces in light and dark: the "Sending with uncommitted changes" card (FleetStates), the Dispatches row that shows it, and
+/// Slice 4c's surfaces in light and dark: the "Sending with uncommitted changes" card (FleetStates) in its states, in the parent thread and on the Fleet page, and
 /// Settings ▸ Fleet ▸ Code with its two rows (FleetSettings) and the per space list. Made up names throughout.
 @Suite("Fleet snapshot previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL)"))
 @MainActor
@@ -23,25 +23,37 @@ struct FleetSnapshotPreviewTests {
     /// The card as FleetStates draws it, and its other states: nothing to send (warm), and above the warning size.
     @Test func sendingCard() async throws {
         let cards = [Self.record(), Self.record("Regenerate API client", bytes: 0, sent: 0, files: 1),
-                     Self.record("Rebuild the search index", bytes: 1_400_000_000, sent: 410_000_000, files: 12, warning: true)].compactMap(FleetSendingCard.make)
-        try await Preview.renderMatrix("4c-sending-card", size: CGSize(width: 960, height: 520)) {
-            VStack(spacing: SH.Space.xl) { ForEach(cards) { FleetSendingCardView(card: $0) } }
-                .padding(SH.Space.xxl).frame(width: 960, height: 520, alignment: .top).background(Color.sh.bgWindow)
+                     Self.record("Rebuild the search index", bytes: 1_400_000_000, sent: 410_000_000, files: 12, warning: true)]
+            .map { FleetDispatchPresentation.card($0, among: [$0], in: FleetDispatchPreviewTests.context) }
+        try await Preview.renderMatrix("4c-sending-card", size: CGSize(width: 960, height: 560)) {
+            VStack(spacing: SH.Space.xl) { ForEach(cards) { FleetDispatchCardView(card: $0, actions: FleetThreadActions()).equatable() } }
+                .padding(SH.Space.xxl).frame(width: 960, height: 560, alignment: .top).background(Color.sh.bgWindow)
         }
     }
 
-    /// The Dispatches log while one dispatch is sending: its row and the card under it.
-    @Test func dispatchesWhileSending() async throws {
+    /// The thread that sent the work, while its dispatch's snapshot is on its way: the card sits where its `fleet_dispatch` call is.
+    @Test func theParentThreadWhileTheSnapshotIsSending() async throws {
+        let id = try #require(FleetDispatchID.forToolCall(FleetDispatchPreviewTests.toolCall, agent: FleetDispatchPreviewTests.sender))
+        let fixture = ThreadFixture(FleetDispatchPreviewTests.parentSnapshot(done: false))
+        defer { fixture.store.stop() }
+        var record = Self.record()
+        record.id = id
+        record.parentAgentID = FleetDispatchPreviewTests.sender
+        let surface = FleetDispatchPreviewTests.surface([record])
+        try await Preview.renderMatrix("4c-parent-thread-sending", size: CGSize(width: 1000, height: 820), ready: { fixture.store.ready }) {
+            fixture.thread(title: FleetDispatchPreviewTests.senderTitle).environment(\.fleetThread, surface)
+        }
+    }
+
+    /// The Fleet page while one dispatch is sending: its card is the page's first, under the placement card.
+    @Test func theFleetPageWhileADispatchIsSending() async throws {
         var snapshot = FleetPagePreviewTests.snapshot
-        let done = FleetDispatchRecord(parentHostID: FleetPagePreviewTests.here, parentHostName: "MacBook Pro", parentTitle: "Regenerate API client",
-                                       targetHostName: "Mac mini", state: .done, title: "Bump Swift tools to 6.2", task: "", repoKey: "github.com/acme/web",
-                                       reasonCodes: [FleetPlacementReason(.mostRoom)], createdAt: Date().timeIntervalSince1970 * 1000 - 3_600_000)
         var sending = Self.record()
         sending.reasonCodes = [FleetPlacementReason(.localIneligible, skip: "cpu"), FleetPlacementReason(.mostRoom)]
-        snapshot.dispatches = [sending, done]
+        snapshot.dispatches = [sending]
         let page = FleetPagePresentation.make(snapshot: snapshot, weight: { [FleetPagePreviewTests.mini: FleetSendWeight.prefer][$0] ?? .normal })
-        try await Preview.renderMatrix("4c-page-dispatches-sending", size: CGSize(width: 1208, height: 980)) {
-            FleetPageContent(page: page, actions: FleetPagePreviewTests.noActions).frame(width: 1208, height: 980)
+        try await Preview.renderMatrix("4c-page-dispatches-sending", size: CGSize(width: 1208, height: 1060)) {
+            FleetPageContent(page: page, actions: FleetPagePreviewTests.noActions, cardActions: FleetThreadActions()).frame(width: 1208, height: 1060)
         }
     }
 
