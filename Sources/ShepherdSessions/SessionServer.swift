@@ -1142,6 +1142,11 @@ public final class SessionServer: @unchecked Sendable {
     private let encodedStateFramesLock = NSLock()
     private var encodedStateFramesCount = 0
     var encodedStateFrames: Int { encodedStateFramesLock.withLock { encodedStateFramesCount } }
+    /// Who is owed the workspace as it now stands, because a commit changed it since the last push
+    /// (`scheduleRemoteState`). Server queue.
+    private enum RemoteStateOwed { case wholeWorkspaceClients, everyone }
+    private var remoteStateOwed: RemoteStateOwed?
+    private var remoteStateFlushQueued = false
 
     private var sessions: [SessionID: ServerSession] = [:]
     private var attachedSessions: Set<SessionID> = []
@@ -2515,6 +2520,8 @@ public final class SessionServer: @unchecked Sendable {
                 sendFinal(.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token"), to: client)
                 return
             }
+            // What the other clients are owed goes out first: the new one reads its state from its fetch.
+            flushRemoteState()
             client.authenticated = true
             client.clientCapabilities = Set(capabilities ?? [])
             if client.isLocal { localAppsChanged() }
@@ -4584,8 +4591,30 @@ public final class SessionServer: @unchecked Sendable {
         send(reply, to: client)
     }
 
+    /// Server queue, after a commit: remote clients are owed the workspace as it stands. The push
+    /// goes out behind whatever the queue already holds, so the commits of a burst (a run of status
+    /// reports, a flood of thread events) share one encode and one frame per client. A frame to a
+    /// remote client that is not a state sends it first (`enqueuePayload`), so none is sent ahead
+    /// of the state it follows. `wholeOnly`: only this Mac's app, which draws missions from it.
+    private func scheduleRemoteState(wholeOnly: Bool = false) {
+        remoteStateOwed = wholeOnly && remoteStateOwed != .everyone ? .wholeWorkspaceClients : .everyone
+        guard !remoteStateFlushQueued else { return }
+        remoteStateFlushQueued = true
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.remoteStateFlushQueued = false
+            self.flushRemoteState()
+        }
+    }
+
+    /// Server queue: pushes the workspace as it is now to whoever `scheduleRemoteState` owes it.
+    private func flushRemoteState() {
+        guard let owed = remoteStateOwed else { return }
+        remoteStateOwed = nil
+        broadcastRemoteState(store.state, wholeOnly: owed == .wholeWorkspaceClients)
+    }
+
     /// Push a fresh state snapshot to every authenticated remote client.
-    /// Runs on the server queue alongside the mutation that produced it.
     private func broadcastRemoteState(_ full: ShepherdState, wholeOnly: Bool = false) {
         broadcastRemoteState(full, to: clients.values.filter { $0.isRemote && $0.authenticated && (!wholeOnly || takesWholeWorkspace($0)) })
     }
@@ -6195,6 +6224,10 @@ public final class SessionServer: @unchecked Sendable {
     private func enqueuePayload(_ payload: Data, to client: ExtensionConnection, limit: Int? = nil,
                                 revocation: (() -> ExtensionReply?)? = nil, state: Bool = false) {
         guard clients[client.fd] === client else { return }
+        if client.isRemote, client.authenticated, !state, remoteStateOwed != nil {
+            flushRemoteState()
+            guard clients[client.fd] === client else { return }
+        }
         let limit = limit ?? (client.isLocal ? Self.maxQueuedLocalReplyBytes : Self.maxQueuedReplyBytes)
         guard client.queuedReplyBytes + payload.count <= limit else {
             disconnect(client, reason: "reply queue overflow (\(client.queuedReplyBytes) B queued, \(payload.count) B more, limit \(limit) B)")
@@ -6378,7 +6411,7 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         let committedState = store.state
-        broadcastRemoteState(committedState)
+        scheduleRemoteState()
         hopToMain { [weak self] in
             self?.onAgentStatus?(agentID, status, failure)
             self?.onStateChanged?(committedState)
@@ -6429,7 +6462,7 @@ public final class SessionServer: @unchecked Sendable {
             $0.agents[index].waitingReason = reason
         }
         let committedState = store.state
-        broadcastRemoteState(committedState)
+        scheduleRemoteState()
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
     }
 
@@ -6441,7 +6474,7 @@ public final class SessionServer: @unchecked Sendable {
         let now = Self.nowMilliseconds()
         store.updateLive { $0.agents[index].completedAt = max(now, ($0.agents[index].completedAt ?? 0) + 1) }
         let committedState = store.state
-        broadcastRemoteState(committedState)
+        scheduleRemoteState()
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
     }
 
@@ -6458,7 +6491,7 @@ public final class SessionServer: @unchecked Sendable {
         let now = Self.nowMilliseconds()
         store.updateLive { $0.agents[index].lastActiveAt = now }
         let committedState = store.state
-        broadcastRemoteState(committedState)
+        scheduleRemoteState()
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
     }
 
@@ -6605,10 +6638,10 @@ public final class SessionServer: @unchecked Sendable {
         let missionsChanged = before.missions != state.missions
         // Private mission progress has its own hints; the fleet would contain identical data.
         if !missionsChanged || before.withoutMissions != state.withoutMissions {
-            broadcastRemoteState(state)
+            scheduleRemoteState()
         } else {
             // This Mac's app draws missions from the state.
-            broadcastRemoteState(state, wholeOnly: true)
+            scheduleRemoteState(wholeOnly: true)
         }
         if missionsChanged { pushMissionChanges(before: before.missions, after: state.missions) }
         hopToMain { [weak self] in self?.onStateChanged?(state) }
@@ -7220,7 +7253,7 @@ public final class SessionServer: @unchecked Sendable {
                 for index in indices { state.agents[index].checkout = checkout }
             }
             let committedState = self.store.state
-            self.broadcastRemoteState(committedState)
+            self.scheduleRemoteState()
             self.hopToMain { [weak self] in self?.onStateChanged?(committedState) }
         }
     }
@@ -8547,7 +8580,7 @@ public final class SessionServer: @unchecked Sendable {
             $0.designs[index].lastActiveAt = now
         }
         let committedState = store.state
-        broadcastRemoteState(committedState)
+        scheduleRemoteState()
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
     }
 
@@ -8568,7 +8601,7 @@ public final class SessionServer: @unchecked Sendable {
                     for i in changed { state.designs[i].boardCount = counts[state.designs[i].id] }
                 }
                 let committedState = self.store.state
-                self.broadcastRemoteState(committedState)
+                self.scheduleRemoteState()
                 self.hopToMain { [weak self] in self?.onStateChanged?(committedState) }
             }
         }
@@ -8957,7 +8990,7 @@ public final class SessionServer: @unchecked Sendable {
                 server.applyAgentStatus(agentID: agentID, status: goal?.state == .needsYou || question != nil ? .blocked
                                        : thread?.running == true ? .working : .done)
                 let state = server.store.state
-                server.broadcastRemoteState(state)
+                server.scheduleRemoteState()
                 server.hopToMain { [weak server] in
                     server?.onStateChanged?(state)
                     if previous != nil, previous != goal?.state.rawValue, let goal,
@@ -9540,7 +9573,7 @@ public final class SessionServer: @unchecked Sendable {
         if !store.state.isProjectWorker(agentID), runLog.agentStopped(agentID, failure: problem.title) { changed = true }
         guard changed else { return }
         let committedState = store.state
-        broadcastRemoteState(committedState)
+        scheduleRemoteState()
         hopToMain { [weak self] in
             self?.onAgentStatus?(agentID, .idle, nil)
             self?.onStateChanged?(committedState)

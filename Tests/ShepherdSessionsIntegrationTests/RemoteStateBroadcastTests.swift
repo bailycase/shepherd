@@ -90,6 +90,33 @@ struct RemoteStateBroadcastTests {
         #expect(rig.encoded - before <= 32)
     }
 
+    /// Turns that were already waiting behind a busy queue share the encode: the push goes out
+    /// when the backlog is cleared, not after each of its turns.
+    @Test func aBacklogOfTurnsEncodesTheWorkspaceOnce() async throws {
+        let rig = try await Rig(agents: 32)
+        defer { rig.stop() }
+        let server = rig.remote.server
+        let held = Locked(false), gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        server.queue.async { held.withValue { $0 = true }; gate.wait() }
+        try await eventually("the server queue to be held") { held.current }
+        let before = rig.encoded
+        for agent in rig.agents {
+            server.queue.async {
+                try? server.mutateState { state in
+                    if let index = state.agents.firstIndex(where: { $0.id == agent }) { state.agents[index].status = .working }
+                }
+            }
+        }
+        gate.signal()
+        let pushes = try await rig.pushes(until: { working($0) == 32 })
+
+        let encoded = rig.encoded - before
+        #expect((1...2).contains(encoded), "32 turns in one backlog encoded the workspace \(encoded) times")
+        #expect((1...2).contains(pushes.count), "32 turns in one backlog sent \(pushes.count) frames")
+        #expect(pushes.last == view(server.state))
+    }
+
     @Test func anIsolatedChangeStillArrives() async throws {
         let rig = try await Rig(agents: 3)
         defer { rig.stop() }
