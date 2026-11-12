@@ -62,6 +62,13 @@ struct FleetSnapshotTransferTests {
         var entries: [String: String] = [:]
     }
 
+    /// The paths two trees differ at, with what each holds there (for a failure message).
+    static func difference(_ built: Tree, _ expected: Tree) -> [String] {
+        Set(built.entries.keys).union(expected.entries.keys).sorted().compactMap { path in
+            built.entries[path] == expected.entries[path] ? nil : "\(path): built \(built.entries[path] ?? "missing"), expected \(expected.entries[path] ?? "missing")"
+        }
+    }
+
     static func tree(of folder: URL, skipping skip: Set<String> = []) throws -> Tree {
         var tree = Tree()
         let manager = FileManager.default
@@ -119,7 +126,7 @@ struct FleetSnapshotTransferTests {
         let (_, thread) = try await Self.send(from: a, to: b)
         let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
         let built = try Self.tree(of: worktree)
-        #expect(built == expected, "the worktree is the checkout, byte for byte")
+        #expect(built == expected, "the worktree is the checkout, byte for byte; differs at \(Self.difference(built, expected))")
         // Git agrees: the same commit, the same edits, the same new files, nothing else.
         #expect(try Self.head(worktree) == Self.head(a.folder))
         #expect(try Self.porcelain(worktree) == Self.porcelain(a.folder))
@@ -236,7 +243,9 @@ struct FleetSnapshotTransferTests {
         let counts = first.current
         #expect(counts.count == 6 && counts.values.filter { $0 > 1 }.count <= 1 && counts.values.max() ?? 0 <= 2)
         let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
-        #expect(try Self.tree(of: worktree) == Self.tree(of: a.folder))
+        let built = try Self.tree(of: worktree)
+        let expected = try Self.tree(of: a.folder)
+        #expect(built == expected, "differs at \(Self.difference(built, expected))")
     }
 
     // MARK: What stays home

@@ -1,6 +1,7 @@
 import CryptoKit
 import Darwin
 import Foundation
+import os
 import ShepherdCore
 import ShepherdRemote
 
@@ -631,6 +632,43 @@ final class FleetContentIndex: @unchecked Sendable {
     func treeAgreed(at version: Int) { treeCheckedAt = version }
 
     private var treeCheckedAt = -1
+
+    /// What a dispatch relies on: nothing the system hasn't yet told the index about is missing from it. Every file the index holds is
+    /// looked at (size and time, across the cores: a few milliseconds for tens of thousands of files) and so is every directory it
+    /// scanned (a file made, removed or renamed in one changes its time); what differs is read again here, as an event for it would have
+    /// made the index do. Events and `settle()` get nearly all of it first, so this finds nothing in the usual case. Queue. Returns how many
+    /// paths it had to read again.
+    @discardableResult
+    func catchUp() -> Int {
+        guard state == .ready, !stopped else { return 0 }
+        let files = Array(entries), directories = Array(dirStamps)
+        let root = self.root
+        let stale = OSAllocatedUnfairLock<(files: [String], directories: [String])>(initialState: ([], []))
+        func absolute(_ path: String) -> String { path.isEmpty ? root : root + "/" + path }
+        let chunk = max(512, (files.count + directories.count) / 16 + 1)
+        let total = files.count + directories.count
+        DispatchQueue.concurrentPerform(iterations: (total + chunk - 1) / chunk) { part in
+            var changedFiles: [String] = [], changedDirectories: [String] = []
+            for position in (part * chunk)..<min(total, (part + 1) * chunk) {
+                var status = stat()
+                if position < files.count {
+                    let (path, entry) = files[position]
+                    if lstat(absolute(path), &status) != 0 || UInt64(status.st_size) != entry.size || Self.nanoseconds(status.st_mtimespec) != entry.modified { changedFiles.append(path) }
+                } else {
+                    let (path, stamp) = directories[position - files.count]
+                    if lstat(absolute(path), &status) != 0 || Self.nanoseconds(status.st_mtimespec) != stamp { changedDirectories.append(path) }
+                }
+            }
+            if !changedFiles.isEmpty || !changedDirectories.isEmpty { stale.withLock { $0.files += changedFiles; $0.directories += changedDirectories } }
+        }
+        let (changedFiles, changedDirectories) = stale.withLock { $0 }
+        guard !changedFiles.isEmpty || !changedDirectories.isEmpty else { return 0 }
+        // Directories first (what is new or gone in them), shallowest first, then the files that are still there and differ.
+        for path in changedDirectories.sorted(by: { ($0.split(separator: "/").count, $0) < ($1.split(separator: "/").count, $1) }) { scanAfterEvent(path, deep: false) }
+        for path in changedFiles.sorted() { refreshFile(path) }
+        finishBatch(classifyingInBackground: true)
+        return changedFiles.count + changedDirectories.count
+    }
 
     /// Lets the events the system already holds for this root reach the index, so a file written a moment ago is in it. Not from
     /// the index's own queue.

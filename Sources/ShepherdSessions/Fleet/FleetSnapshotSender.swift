@@ -65,14 +65,14 @@ struct FleetSnapshotSender {
             }
             listed.leave()
         }
-        // Whatever the system already has for this root reaches the index first, so a file written a moment ago is in it; then a
-        // spot check of a sample of what the index holds against the disk (the plan's R13). The check that the directory hashes still
-        // agree with the entries reads nothing and runs beside the rest, below.
+        // Whatever the system already has for this root reaches the index first, so a file written a moment ago is in it; then
+        // the check below. The check that the directory hashes still agree with the entries reads nothing and runs beside the rest.
         guard index.stateNow == .ready else { listed.wait(); throw Failure.notIndexed(index.stateNow.rawValue) }
         index.settle()
         mark("settle")
-        index.queue.sync { _ = index.verify(sample: 64, checkingTree: false) }
-        mark("verify")
+        // Then every file and directory the index holds is looked at against the disk, so an edit the system hasn't reported yet is still in it.
+        index.queue.sync { _ = index.catchUp() }
+        mark("catch-up")
         guard let view = index.queue.sync(execute: { index.snapshotView() }) else {
             listed.wait()
             throw Failure.notIndexed(index.stateNow.rawValue)

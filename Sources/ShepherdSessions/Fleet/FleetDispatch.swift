@@ -399,8 +399,10 @@ final class FleetDispatch: @unchecked Sendable {
         let cwd = state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd ?? space.path
         placing.insert(id)
         waiters[id, default: []].append(reply)
+        // The snapshot will need the commit's tree: it starts being listed the moment the commit is known, while the dispatch is placed.
+        let prefetching = indexService != nil && (host.settings()?.fleetUncommitted ?? .sendThem) == .sendThem
         Task.detached { [weak self] in
-            let pinned = FleetDispatchGit.pin(cwd: (cwd as NSString).expandingTildeInPath)
+            let pinned = FleetDispatchGit.pin(cwd: (cwd as NSString).expandingTildeInPath, prefetchingTree: prefetching)
             self?.queue.async {
                 guard let self else { return }
                 let waiting = self.waiters.removeValue(forKey: id) ?? []
@@ -411,10 +413,6 @@ final class FleetDispatch: @unchecked Sendable {
                     answer(.failure(.init(code: FleetDispatchCode.repoMissing, message: "This thread's folder isn't a git checkout.")))
                 case .success(let pin):
                     self.pins[id] = pin
-                    // The snapshot will need the commit's tree: it starts being listed now, while the dispatch is placed.
-                    if self.indexService != nil, (self.host.settings()?.fleetUncommitted ?? .sendThem) == .sendThem {
-                        FleetTrackedTrees.shared.prefetch(root: pin.root, commit: pin.sha)
-                    }
                     var record = FleetDispatchRecord(
                         id: id, parentAgentID: agentID, parentHostID: self.hostID, parentHostName: self.hostName(), parentTitle: agent.name,
                         requestedHost: FleetPlacement.isAuto(named) ? nil : named?.trimmingCharacters(in: .whitespacesAndNewlines),

@@ -1,4 +1,5 @@
 import Foundation
+import os
 import ShepherdCore
 import ShepherdProtocol
 
@@ -29,19 +30,33 @@ enum FleetDispatchGit {
     }
 
     /// The commit `cwd`'s checkout is at. Edits, untracked and ignored files and unpushed commits don't hold it back: they go in the
-    /// snapshot (`FleetSnapshotSender`).
-    static func pin(cwd: String) -> Result<Pin, PinFailure> {
-        guard let top = run(["rev-parse", "--show-toplevel"], in: cwd), top.status == 0, !top.output.isEmpty,
-              let head = run(["rev-parse", "HEAD"], in: cwd), head.status == 0, isCommit(head.output) else { return .failure(.notARepository) }
-        // A commit no remote-tracking ref holds is one origin may not have.
-        guard let unpushed = run(["rev-list", "-n", "1", "HEAD", "--not", "--remotes"], in: cwd), unpushed.status == 0 else {
+    /// snapshot (`FleetSnapshotSender`). The checkout's top and HEAD come from one git call, and the unpushed check runs beside it;
+    /// `prefetchingTree` starts listing the commit's tree the moment it is known, so the snapshot finds it when it is built.
+    static func pin(cwd: String, prefetchingTree: Bool = false) -> Result<Pin, PinFailure> {
+        let unpushedGroup = DispatchGroup()
+        let unpushedResult = OSAllocatedUnfairLock<(status: Int32, output: String)?>(initialState: nil)
+        unpushedGroup.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let found = run(["rev-list", "-n", "1", "HEAD", "--not", "--remotes"], in: cwd)
+            unpushedResult.withLock { $0 = found }
+            unpushedGroup.leave()
+        }
+        // `rev-parse --show-toplevel HEAD`: the top on the lines before the last, the commit on the last.
+        guard let both = run(["rev-parse", "--show-toplevel", "HEAD"], in: cwd), both.status == 0, let newline = both.output.lastIndex(of: "\n") else {
+            unpushedGroup.wait()
             return .failure(.notARepository)
         }
-        let root = URL(fileURLWithPath: top.output).resolvingSymlinksInPath().path
+        let top = String(both.output[..<newline]), sha = String(both.output[both.output.index(after: newline)...])
+        guard !top.isEmpty, isCommit(sha) else { unpushedGroup.wait(); return .failure(.notARepository) }
+        let root = URL(fileURLWithPath: top).resolvingSymlinksInPath().path
+        if prefetchingTree { FleetTrackedTrees.shared.prefetch(root: root, commit: sha) }
+        unpushedGroup.wait()
+        // A commit no remote-tracking ref holds is one origin may not have.
+        guard let unpushed = unpushedResult.withLock({ $0 }), unpushed.status == 0 else { return .failure(.notARepository) }
         let here = URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath).resolvingSymlinksInPath().path
         var subdir: String?
         if here != root, here.hasPrefix(root + "/") { subdir = String(here.dropFirst(root.count + 1)) }
-        return .success(Pin(sha: head.output, subdir: subdir, root: root, unpushed: !unpushed.output.isEmpty))
+        return .success(Pin(sha: sha, subdir: subdir, root: root, unpushed: !unpushed.output.isEmpty))
     }
 
     /// A full commit id: 40 (SHA-1) or 64 (SHA-256) hex digits.
