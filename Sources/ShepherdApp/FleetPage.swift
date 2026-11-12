@@ -418,6 +418,12 @@ struct FleetDispatchesCard: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(rows) { row in
                         FleetDispatchRowView(row: row).equatable()
+                        // Work on its way with the checkout's edits: the card of FleetStates, under its row.
+                        if let sending = row.sending {
+                            FleetSendingCardView(card: sending).equatable()
+                                .padding(.horizontal, SH.Space.xl)
+                                .padding(.bottom, SH.Space.l)
+                        }
                         if row.id != rows.last?.id { SHHairline() }
                     }
                 }

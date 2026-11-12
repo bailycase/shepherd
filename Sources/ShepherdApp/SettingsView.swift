@@ -208,7 +208,13 @@ struct SettingsView: View {
                           clients: vm.remoteHosts.pairedConnections.filter { !vm.settings.fleetEnabled || !$0.config.fleetManaged }.map {
                               .client(id: $0.id, name: $0.config.name, host: $0.config.host, port: $0.config.port, phase: $0.phase)
                           },
-                          removeClient: { vm.remoteHosts.removeHost(id: $0) })
+                          removeClient: { vm.remoteHosts.removeHost(id: $0) },
+                          code: FleetCodeSettings(
+                              uncommitted: vm.settings.fleetUncommitted, setUncommitted: { vm.settings.fleetUncommitted = $0 },
+                              spaces: vm.state.spaces.filter { !$0.hidden && $0.repoKey != nil }.map {
+                                  FleetExcludeSpace(id: $0.id, name: $0.name, excludes: vm.settings.fleetExcludes(of: $0.id))
+                              },
+                              setExcludes: { vm.settings.setFleetExcludes($1, of: $0) }))
                 .task { await vm.refreshRemoteListener() }
         case .keyboard: KeyboardSettings(vm: vm)
         case .advanced: AdvancedSettings(vm: vm)
