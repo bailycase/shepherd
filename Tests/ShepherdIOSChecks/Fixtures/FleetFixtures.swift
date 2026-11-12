@@ -17,6 +17,17 @@ extension FixtureCatalog {
             // A fleet of one Mac, and one with a Mac that has no room and one that hasn't answered yet.
             FixtureScreen(name: "fleet-alone", hosts: FleetFixtureData.hosts(snapshot: FleetFixtureData.alone()), routes: [.settings(.fleet)],
                           tab: .settings, prepare: { app in await FleetFixtureData.settle(app) }),
+            // iPhone Duo folded shut (the hinge's callback, which a pose set before the app starts never fires) and open or half open.
+            FixtureScreen(name: "fleet-closed", hosts: FleetFixtureData.hosts(), routes: [.settings(.fleet)], tab: .settings,
+                          prepare: { app in
+                app.navigator.hingeClosed = true
+                await FleetFixtureData.settle(app)
+            }),
+            FixtureScreen(name: "fleet-open", hosts: FleetFixtureData.hosts(), routes: [.settings(.fleet)], tab: .settings,
+                          prepare: { app in
+                app.navigator.hingeClosed = false
+                await FleetFixtureData.settle(app)
+            }),
             // The iPad's Settings list with Fleet beside its page.
             FixtureScreen(name: "fleet-pad-settings", hosts: FleetFixtureData.hosts(), routes: [.settings(.root)], tab: .settings,
                           prepare: { app in

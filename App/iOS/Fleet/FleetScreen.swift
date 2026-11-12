@@ -18,6 +18,9 @@ struct FleetScreen: View {
     @State private var measuredWide: Bool?
 
     private var wide: Bool { measuredWide ?? (sizeClass == .regular && !inColumn) }
+    /// The title is drawn in the content, not the bar's: the iPad's, and iPhone Duo open or half open, whose bar the system
+    /// moves to the side (iPadFleet, DuoOpenFleet, DuoBookFleet).
+    private var contentTitle: Bool { sizeClass == .regular && !inColumn }
 
     var body: some View {
         let store = SettingsStore.of(hosts)
@@ -27,7 +30,7 @@ struct FleetScreen: View {
         let serves = store.showsFleet
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                if wide { FleetPadHeader(page: page, add: addMac) } else if !page.cards.isEmpty { FleetSubtitle(page: page) }
+                if contentTitle { FleetHeader(page: page, add: wide ? addMac : nil) } else if !page.cards.isEmpty { FleetSubtitle(page: page) }
                 if let problem = fleet.problem {
                     SHBanner(.failed, title: problem) { Button("OK") { fleet.dismissProblem() }.buttonStyle(.sh(.secondary)) }
                 }
@@ -54,8 +57,8 @@ struct FleetScreen: View {
         .refreshable { await fleet.refresh(store.hosts, watching: true) }
         .task { await watch(store) }
         .navigationTitle("Fleet")
-        .navigationBarTitleDisplayMode(wide || inColumn ? .inline : .large)
-        .toolbar(removing: wide ? .title : nil)
+        .navigationBarTitleDisplayMode(contentTitle || inColumn ? .inline : .large)
+        .toolbar(removing: contentTitle ? .title : nil)
         .toolbar {
             if !wide {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -249,10 +252,10 @@ private struct FleetWeightMenu: View {
     }
 }
 
-/// The wide detail's header: "Fleet", where the next work goes, and Add a Mac (iPadFleet).
-private struct FleetPadHeader: View {
+/// The header drawn in the content: "Fleet", where the next work goes, and on a wide detail Add a Mac (iPadFleet).
+private struct FleetHeader: View {
     let page: FleetPage
-    let add: () -> Void
+    let add: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .bottom) {
@@ -261,11 +264,13 @@ private struct FleetPadHeader: View {
                 if !page.cards.isEmpty { FleetSubtitle(page: page) }
             }
             Spacer(minLength: SH.Space.xl)
-            Button(action: add) {
-                Label("Add a Mac", systemImage: "plus").font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.running)
-                    .frame(minHeight: SH.Height.touch)
+            if let add {
+                Button(action: add) {
+                    Label("Add a Mac", systemImage: "plus").font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.running)
+                        .frame(minHeight: SH.Height.touch)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
     }
 }
