@@ -145,6 +145,11 @@ final class FileTreeModel {
     /// Told the path of every file a Save wrote, so the branch chip and the Changes tab follow.
     @ObservationIgnored var onSaved: (@MainActor (String) -> Void)?
 
+    /// Told the path of a file a Save is about to write, on the main actor before the write; what
+    /// it returns runs once the write returns. The Changes engine keeps the file out of an agent's
+    /// turn running between the two.
+    @ObservationIgnored var onWrite: (@MainActor (String) async -> (@MainActor () -> Void)?)?
+
     // MARK: Private
 
     /// Paths currently expanded, persisted across reloads.
@@ -393,7 +398,9 @@ final class FileTreeModel {
         saving = true
         defer { saving = false }
         let text = edit.text, expected = edit.conflict ?? edit.saved
+        let written = await onWrite?(path)
         let result = await Task.detached(priority: .userInitiated) { await write(path, text, expected) }.value
+        written?()
         guard edits[path] != nil else {
             if result == .saved { onSaved?(path) }
             return
