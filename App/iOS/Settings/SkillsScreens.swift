@@ -3,15 +3,14 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-// Settings ▸ Skills on iPhone and iPad (MobileSkills; home track): the agent skills every host
-// keeps in its own pi's skills (an older host: ~/.agents/skills), the same on every host, read and changed over `skills.v1`. The list
-// turns a skill on or off, updates the ones with a newer commit, and searches skills.sh in place.
-// A skill opens its detail (how the agent uses it, its version, which hosts have it, its files),
-// a search result its preview with Install, and + adds skills from a repository. A host that is
-// offline is owed each change and takes it when it's back. `ClientSkills` keeps every rule;
-// these screens draw it.
+// Settings ▸ Skills on iPhone and iPad (MobileSkills; home track): the agent skills the whole
+// fleet shares, read and changed over `skills.v1` on the first connected host; the fleet carries a
+// change to every other Mac. The list turns a skill on or off, updates the ones with a newer
+// commit, and searches skills.sh in place. A skill opens its detail (how the agent uses it, its
+// version, its files), a search result its preview with Install, and + adds skills from a
+// repository. `ClientSkills` keeps every rule; these screens draw it.
 
-/// Settings ▸ Skills (MobileSkills): what every host has installed, or skills.sh's answer to a
+/// Settings ▸ Skills (MobileSkills): what the fleet has installed, or skills.sh's answer to a
 /// search.
 struct SkillsScreen: View {
     @Environment(MobileHosts.self) private var hosts
@@ -21,7 +20,6 @@ struct SkillsScreen: View {
     @State private var results: [DirectorySkill] = []
     @State private var searching = false
     @State private var failure: String?
-    @State private var resolving: ClientSkills.Unacknowledged?
     @FocusState private var searchFocused: Bool
 
     private var term: String { query.trimmingCharacters(in: .whitespaces) }
@@ -33,7 +31,7 @@ struct SkillsScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                    Text("Global: every host gets the same skills. Tap one for how it’s used, its files and hosts.")
+                    Text("Global: the whole fleet gets the same skills. Tap one for how it’s used and its files.")
                         .shText(.caption)
                         .foregroundStyle(Color.sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -42,9 +40,6 @@ struct SkillsScreen: View {
                 }
                 if let problem = model.problem {
                     SHBanner(.failed, title: problem) {
-                        if let entry = model.unacknowledged {
-                            Button("Resolve…") { resolving = entry }.buttonStyle(.sh(.secondary))
-                        }
                         Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
                     }
                 }
@@ -68,15 +63,6 @@ struct SkillsScreen: View {
             .padding(.bottom, MobileLayout.sectionSpacing)
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
-        }
-        .confirmationDialog("Stop waiting for this skill change?", isPresented: Binding(get: { resolving != nil }, set: { if !$0 { resolving = nil } }), presenting: resolving) { entry in
-            Button("Continue without retrying") {
-                resolving = nil
-                Task { await model.resolveUnacknowledged(entry, in: skillsHosts) }
-            }
-            Button("Cancel", role: .cancel) { resolving = nil }
-        } message: { entry in
-            Text("Check the skill on \(entry.hostName) first. This forgets only this change's missing receipt, without retrying or undoing it, then sends the later changes.")
         }
         .scrollDismissesKeyboard(.interactively)
         .refreshable { await store.refresh() }
@@ -121,8 +107,7 @@ struct SkillsScreen: View {
     }
 }
 
-/// "Installed · 8" with Update N, a card of every skill, and which hosts are away; or why the
-/// hosts' skills can't show yet.
+/// "Installed · 8" with Update N and a card of every skill; or why the skills can't show yet.
 private struct InstalledSkills: View {
     let model: ClientSkills
     let hosts: [SkillsHost]
@@ -155,9 +140,6 @@ private struct InstalledSkills: View {
                     }
                     .clipShape(RoundedRectangle(cornerRadius: SHListMetrics.cardRadius))
                     .shCard(radius: SHListMetrics.cardRadius)
-                }
-                if let note = SkillsPresentation.offlineNote(hosts) {
-                    SettingsFootnote(note)
                 }
             }
             .shAnimation(.list, value: rows.map(\.id))
@@ -192,7 +174,7 @@ private struct InstalledSkills: View {
 
 /// A skill's row (MobileSkills): its name in mono over its description ("/skill only · …" for
 /// one only /skill loads), Update while a newer commit waits (Updating while it goes), and its
-/// switch. The row opens the skill; the switch turns it on or off on every host.
+/// switch. The row opens the skill; the switch turns it on or off for the fleet.
 private struct SkillListRow: View, Equatable {
     let row: SkillRow
     let first: Bool
@@ -364,7 +346,7 @@ private struct SkillSearchResults: View {
 }
 
 /// A skill on skills.sh: its name (the search's match lit) and seal over its repository and
-/// installs, and at its end Install, how many hosts have it so far, Installed, or Update.
+/// installs, and at its end Install, Installing, Installed, or Update.
 private struct SkillResultLine: View, Equatable {
     let skill: DirectorySkill
     let state: SkillResultState
@@ -435,8 +417,8 @@ private struct SkillResultLine: View, Equatable {
             Button("Install", action: install)
                 .buttonStyle(.sh(.secondary, size: .s))
                 .accessibilityLabel("Install \(skill.name)")
-        case .installing(let progress):
-            Text("\(progress.installed) of \(progress.steps.count) hosts")
+        case .installing:
+            Text("Installing")
                 .font(.sh(.caption))
                 .foregroundStyle(sh.textSecondary)
                 .shShimmer(active: true)
@@ -453,7 +435,7 @@ private struct SkillResultLine: View, Equatable {
 }
 
 /// A skill on skills.sh before it's installed: what it does, how the agent will use it, Install on
-/// every host with each host's progress, its SKILL.md and files, and the rest of its repository.
+/// its progress, its SKILL.md and files, and the rest of its repository.
 struct SkillResultScreen: View {
     let skill: DirectorySkill
     @Environment(MobileHosts.self) private var hosts
@@ -531,8 +513,7 @@ struct SkillResultScreen: View {
         .task { await load() }
     }
 
-    /// Install with how the agent will use it and where it goes; once it's going, each host's
-    /// progress; once it's there, Installed (or Update) and a way to the skill itself.
+    /// Install with how the agent will use it; once it's going, its progress; once it's there, Installed (or Update) and a way to the skill itself.
     @ViewBuilder
     private func installBlock(model: ClientSkills, hosts: [SkillsHost]) -> some View {
         let state = SkillResultState(skill, model: model, hosts: hosts)
@@ -555,10 +536,7 @@ struct SkillResultScreen: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.sh(.primary, size: .l))
-                .disabled(state != .install || model.targets(in: hosts).isEmpty)
-                if case .install = state {
-                    SettingsFootnote(SkillsPresentation.destinations(model.targets(in: hosts)))
-                }
+                .disabled(state != .install || model.edited(in: hosts) == nil)
             case .installed:
                 HStack(spacing: SH.Space.m) {
                     Label("Installed", systemImage: "checkmark")
@@ -580,7 +558,7 @@ struct SkillResultScreen: View {
                 .disabled(model.row(skill.slug, in: hosts)?.isUpdating == true)
             }
             if let install = model.installs[skill.id], install.isRunning || install.failure != nil {
-                SkillInstallSteps(install: install) { model.cancelInstall(skill.id) }
+                SkillInstallLine(install: install)
                     .shTransition(.disclosure)
             }
         }
@@ -603,7 +581,7 @@ struct SkillResultScreen: View {
 // MARK: One skill
 
 /// One installed skill: on or off, how the agent uses it, its version (and Update while a newer
-/// commit waits), which hosts have it, its files, and Remove, which Undo on the list takes back.
+/// commit waits), its files, and Remove, which Undo on the list takes back.
 struct SkillDetailScreen: View {
     let name: String
     @Environment(MobileHosts.self) private var hosts
@@ -621,7 +599,7 @@ struct SkillDetailScreen: View {
                     ProgressView().progressViewStyle(SHSpinnerStyle())
                         .frame(maxWidth: .infinity)
                 } else {
-                    SettingsFootnote("No host has \(name) now.")
+                    SettingsFootnote("The fleet has no skill named \(name) now.")
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
@@ -684,13 +662,6 @@ struct SkillDetailScreen: View {
                 Task { await model.update(skill.name, in: hosts) }
             }
         }
-        SettingsSection("Hosts") {
-            SHListCard {
-                ForEach(model.copies(of: skill.name, in: hosts)) { copy in
-                    SkillHostLine(copy: copy)
-                }
-            }
-        }
         if !skill.files.isEmpty {
             SettingsSection("Files") {
                 SkillFileChips(entries: skill.files)
@@ -701,7 +672,7 @@ struct SkillDetailScreen: View {
             model.remove(skill.name, in: hosts)
             dismiss()
         } label: {
-            Label(hosts.count > 1 ? "Remove from every host" : "Remove", systemImage: "trash")
+            Label("Remove", systemImage: "trash")
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.sh(.danger, size: .l))
@@ -765,48 +736,11 @@ private struct SkillVersionCard: View {
     }
 }
 
-/// A host's line in a skill's Hosts: its name and where it is with the skill ("installed",
-/// "offline · updates later").
-private struct SkillHostLine: View {
-    let copy: SkillCopy
-
-    var body: some View {
-        let sh = Color.sh
-        HStack(spacing: SH.Space.l) {
-            Image(systemName: "desktopcomputer")
-                .font(.sh(.caption, weight: .medium))
-                .foregroundStyle(sh.textSecondary)
-                .frame(width: SHListMetrics.leadingWidth)
-                .accessibilityHidden(true)
-            Text(copy.name)
-                .font(.shMono(SHTextStyle.ui.size))
-                .foregroundStyle(sh.textPrimary)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text(SkillsPresentation.copy(copy.state))
-                .font(.sh(.caption))
-                .foregroundStyle(tone)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, SH.Space.l)
-        .frame(maxWidth: .infinity, minHeight: MobileLayout.instructionsHostRowHeight, alignment: .leading)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var tone: Color {
-        switch copy.state {
-        case .installed: Color.sh.done
-        case .updating, .checking: Color.sh.running
-        case .missing, .owed, .offline, .unsupported: Color.sh.textTertiary
-        }
-    }
-}
-
 // MARK: Add from repo
 
 /// Add skills from a repository: a GitHub owner/repo or URL, looked up on a host (which fetches
 /// it); its skills to pick from (the ones already installed stay ticked and dimmed), how the agent
-/// will use them, and Install N skills on every host, with each host's progress.
+/// will use them, and Install N skills, with its progress.
 struct AddSkillsScreen: View {
     let initialRepo: String?
     @Environment(MobileHosts.self) private var hosts
@@ -826,7 +760,7 @@ struct AddSkillsScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                    Text("A GitHub owner/repo or URL. Shepherd copies the skills you pick into its own pi's skills on every host.")
+                    Text("A GitHub owner/repo or URL. Shepherd copies the skills you pick into its own pi's skills, and the fleet carries them to every Mac.")
                         .shText(.caption)
                         .foregroundStyle(Color.sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -907,7 +841,7 @@ struct AddSkillsScreen: View {
         }
     }
 
-    /// How the agent will use them, where they go (or each host's progress), and Install.
+    /// How the agent will use them, its progress, and Install.
     @ViewBuilder
     private func footer(_ found: RepoSkills, model: ClientSkills, hosts: [SkillsHost]) -> some View {
         let install = installKey.flatMap { model.installs[$0] }
@@ -919,12 +853,8 @@ struct AddSkillsScreen: View {
                 }
             }
             if let install {
-                SkillInstallSteps(install: install) {
-                    if let installKey { model.cancelInstall(installKey) }
-                }
+                SkillInstallLine(install: install)
                     .shTransition(.disclosure)
-            } else {
-                SettingsFootnote(SkillsPresentation.destinations(model.targets(in: hosts)))
             }
             Button {
                 installPicked(found, model: model, hosts: hosts)
@@ -961,8 +891,7 @@ struct AddSkillsScreen: View {
         lookingUp = false
     }
 
-    /// Installs what's ticked on every host; the screen closes once every host that could take
-    /// them has them.
+    /// Installs what's ticked; the screen closes once they are installed.
     private func installPicked(_ found: RepoSkills, model: ClientSkills, hosts: [SkillsHost]) {
         guard !picked.isEmpty else { return }
         let key = "repo:\(found.repo)"
@@ -971,7 +900,7 @@ struct AddSkillsScreen: View {
         installKey = key
         Task {
             await model.install(key, repo: found.repo, paths: paths, commit: found.commit, invocation: use, in: hosts)
-            if let install = model.installs[key], install.failure == nil, !install.cancelled { dismiss() }
+            if let install = model.installs[key], install.failure == nil { dismiss() }
         }
     }
 }
@@ -1035,62 +964,17 @@ private struct SkillPickLine: View, Equatable {
 
 // MARK: Shared parts
 
-/// An install on its way to each host: its line ("Installing · 1 of 3 hosts"), Cancel while it
-/// runs, and each host's step.
-private struct SkillInstallSteps: View {
+/// An install on its way: its line ("Installing", "Installed", or why it failed).
+private struct SkillInstallLine: View {
     let install: SkillInstall
-    let cancel: () -> Void
 
     var body: some View {
-        let sh = Color.sh
-        VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-            HStack(spacing: SH.Space.m) {
-                Text(SkillsPresentation.installLine(install))
-                    .font(.sh(.caption, weight: .semibold))
-                    .foregroundStyle(install.failure != nil && install.installed == 0 ? sh.failed : sh.textSecondary)
-                    .shShimmer(active: install.isRunning)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: SH.Space.m)
-                if install.isRunning {
-                    Button("Cancel", action: cancel)
-                        .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
-                }
-            }
+        Text(SkillsPresentation.installLine(install))
+            .font(.sh(.caption, weight: .semibold))
+            .foregroundStyle(install.failure != nil ? Color.sh.failed : Color.sh.textSecondary)
+            .shShimmer(active: install.isRunning)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, SH.Space.xs)
-            SHListCard {
-                ForEach(install.steps) { step in
-                    HStack(spacing: SH.Space.l) {
-                        Image(systemName: "desktopcomputer")
-                            .font(.sh(.caption, weight: .medium))
-                            .foregroundStyle(sh.textSecondary)
-                            .frame(width: SHListMetrics.leadingWidth)
-                            .accessibilityHidden(true)
-                        Text(step.name)
-                            .font(.shMono(SHTextStyle.ui.size))
-                            .foregroundStyle(sh.textPrimary)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Text(SkillsPresentation.step(step.state))
-                            .font(.sh(.caption))
-                            .foregroundStyle(Self.tone(step.state))
-                            .multilineTextAlignment(.trailing)
-                            .lineLimit(2)
-                    }
-                    .padding(.horizontal, SH.Space.l)
-                    .frame(maxWidth: .infinity, minHeight: MobileLayout.instructionsHostRowHeight, alignment: .leading)
-                    .accessibilityElement(children: .combine)
-                }
-            }
-        }
-    }
-
-    private static func tone(_ state: SkillInstall.Step.State) -> Color {
-        switch state {
-        case .installed: Color.sh.done
-        case .copying: Color.sh.running
-        case .waiting, .owed: Color.sh.textTertiary
-        case .failed: Color.sh.failed
-        }
     }
 }
 

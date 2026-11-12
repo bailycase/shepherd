@@ -20,7 +20,7 @@ enum WorktreeDeleteAction: String, CaseIterable {
 /// agent or another process makes is confirmed whatever is stored here.
 enum SkippableConfirmation: String, CaseIterable {
     case removeSpace, deleteAgent, deleteDesign, deleteDesignSystem, revertFile, stopAll, quit, removeHost,
-         removeMCPServer, removeSpaceMCPServer, deleteProject, updateHost, forgetSkillReceipt,
+         removeMCPServer, removeSpaceMCPServer, deleteProject, updateHost,
          discardSubagentEdits, restoreSubagents, deleteSubagent
 
     /// Its name in Settings ▸ Advanced ▸ Confirmations.
@@ -38,7 +38,6 @@ enum SkippableConfirmation: String, CaseIterable {
         case .removeSpaceMCPServer: "Remove a space's MCP server"
         case .deleteProject: "Delete project"
         case .updateHost: "Update and restart host"
-        case .forgetSkillReceipt: "Stop waiting for a skill change"
         case .discardSubagentEdits: "Discard subagent edits"
         case .restoreSubagents: "Restore default subagents"
         case .deleteSubagent: "Delete subagent"

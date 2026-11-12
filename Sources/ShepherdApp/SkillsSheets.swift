@@ -7,13 +7,13 @@ import ShepherdRemote
 // Settings ▸ Skills' sheets (SettingsSkillsBrowse, SettingsSkillsSearch, SettingsSkillsRepo):
 // Browse skills.sh (its ranked lists and topics, or a search) and Add from repo (a repository's
 // skills, or a folder's on this Mac, to pick from). Each lists on the left and previews the
-// selected skill on the right: its SKILL.md, its files, and how to install it on every host.
+// selected skill on the right: its SKILL.md, its files, and how to install it.
 
 // MARK: Browse skills.sh
 
 /// Browse skills.sh: Trending, All time, Hot and Official, topics, or a
-/// search as you type; the selected skill's preview, Install with how it will be used, and each
-/// host's progress while it installs.
+/// search as you type; the selected skill's preview, Install with how it will be used, and its
+/// progress while it installs.
 struct SkillsDirectorySheet: View {
     var vm: ShepherdViewModel
     var model: ClientSkills
@@ -43,7 +43,7 @@ struct SkillsDirectorySheet: View {
     var body: some View {
         let hosts = vm.skillsHosts
         SkillsSheetFrame(title: "Browse skills.sh",
-                         subtitle: "The open directory of agent skills. Anything you install goes to all your hosts.", close: close) {
+                         subtitle: "The open directory of agent skills. Anything you install goes to the whole fleet.", close: close) {
             Button { openURL(SkillsDirectory.home) } label: { Label("Open skills.sh", systemImage: "arrow.up.right.square") }
                 .buttonStyle(.sh(.ghost, size: .s))
         } content: {
@@ -188,7 +188,7 @@ struct SkillsDirectorySheet: View {
                                       meta: "\(DirectoryPresentation.installs(skill.installs)) installs")
                     actions(skill, hosts: hosts)
                     if let install = model.installs[skill.id], install.isRunning || install.failure != nil {
-                        SkillInstallCard(install: install) { model.cancelInstall(skill.id) }
+                        SkillInstallCard(install: install)
                             .shTransition(.disclosure)
                     }
                     if let preview, preview.skill == skill {
@@ -329,7 +329,7 @@ struct SkillsDirectorySheet: View {
 }
 
 /// A skill in the directory: its place in a ranked list, name (the search's match lit), seal,
-/// repository, installs, and whether it's installed, installing (hosts counted, nothing spins),
+/// repository, installs, and whether it's installed, installing (nothing spins),
 /// or has an update.
 private struct SkillResultRow: View, Equatable {
     let rank: Int?
@@ -409,12 +409,12 @@ private struct SkillResultRow: View, Equatable {
         switch state {
         case .install:
             Button("Install", action: install).buttonStyle(.sh(.secondary, size: .s))
-        case .installing(let progress):
+        case .installing:
             HStack(spacing: SH.Space.s) {
-                Text("\(progress.installed) of \(progress.steps.count) hosts")
+                Text("Installing")
                     .font(.shSans(AppLayout.skillsMetaSize))
                     .foregroundStyle(sh.textSecondary)
-                SkillInstallMeter(steps: progress.steps.map(\.state))
+                SkillInstallMeter()
             }
         case .installed:
             Label("Installed", systemImage: "checkmark")
@@ -426,17 +426,13 @@ private struct SkillResultRow: View, Equatable {
     }
 }
 
-/// An install's hosts as a thin bar: green where it's installed, blue where it's on its way, a
-/// rule where it waits.
+/// An install's progress as a thin bar: done, on its way, waiting (SkillInstallState).
 private struct SkillInstallMeter: View {
-    let steps: [SkillInstall.Step.State]
-
     var body: some View {
         let sh = Color.sh
         HStack(spacing: SHSkillMetrics.budgetGap) {
-            ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
-                RoundedRectangle(cornerRadius: SHSkillMetrics.budgetGap)
-                    .fill(step == .installed ? sh.done : step == .copying ? sh.running : sh.lineStrong)
+            ForEach([sh.done, sh.running, sh.lineStrong], id: \.self) { color in
+                RoundedRectangle(cornerRadius: SHSkillMetrics.budgetGap).fill(color)
             }
         }
         .frame(width: AppLayout.skillsProgressWidth, height: AppLayout.skillsProgressHeight)
@@ -465,7 +461,7 @@ struct SkillsDirectoryProblem: View {
 
 /// Add skills from a repo: a GitHub owner/repo or URL (looked up on a host, which fetches it), or
 /// a folder on this Mac; its skills to pick from (the ones already installed stay ticked and
-/// dimmed), the selected one's preview, how to use them, and Install N skills on every host. A
+/// dimmed), the selected one's preview, how to use them, and Install N skills. A
 /// repository with one new skill installs it at once.
 struct AddSkillsSheet: View {
     var vm: ShepherdViewModel
@@ -488,7 +484,7 @@ struct AddSkillsSheet: View {
         let hosts = vm.skillsHosts
         SkillsSheetFrame(title: "Add skills from a repo",
                          subtitle: "A GitHub owner/repo or URL, or a folder on this Mac. Shepherd copies the skills you pick into "
-                             + "its own pi's skills on every host.", close: close) {
+                             + "its own pi's skills, and the fleet carries them to every Mac.", close: close) {
             EmptyView()
         } content: {
             VStack(spacing: 0) {
@@ -648,12 +644,7 @@ struct AddSkillsSheet: View {
                 Text(SkillsPresentation.installLine(install))
                     .font(.shSans(AppLayout.skillsNoteSize, .medium))
                     .shShimmer(active: install.isRunning)
-                    .foregroundStyle(install.failure != nil && install.installed == 0 ? sh.failed : sh.textSecondary)
-                    .lineLimit(1)
-            } else {
-                Label(SkillsPresentation.destinations(model.targets(in: hosts)), systemImage: "desktopcomputer")
-                    .font(.shSans(AppLayout.skillsNoteSize))
-                    .foregroundStyle(sh.textTertiary)
+                    .foregroundStyle(install.failure != nil ? sh.failed : sh.textSecondary)
                     .lineLimit(1)
             }
             Spacer(minLength: SH.Space.m)
@@ -742,9 +733,9 @@ struct AddSkillsSheet: View {
         }
     }
 
-    /// Closes the sheet once every host that could take the skills has them.
+    /// Closes the sheet once the skills are installed.
     private func finish(_ key: String) {
-        guard let install = model.installs[key], install.failure == nil, !install.cancelled else { return }
+        guard let install = model.installs[key], install.failure == nil else { return }
         close()
     }
 }
@@ -947,10 +938,9 @@ private struct SkillPreviewTitle: View {
     }
 }
 
-/// An install on its way: the line that shimmers while it runs, Cancel, and each host's step.
+/// An install on its way: the line that shimmers while it runs.
 private struct SkillInstallCard: View {
     let install: SkillInstall
-    let cancel: () -> Void
 
     var body: some View {
         let sh = Color.sh
@@ -959,29 +949,14 @@ private struct SkillInstallCard: View {
                 Text(SkillsPresentation.installLine(install))
                     .font(.shSans(AppLayout.skillsOptionTitleSize, .medium))
                     .shShimmer(active: install.isRunning)
-                    .foregroundStyle(install.failure != nil && install.installed == 0 ? sh.failed : sh.textPrimary)
+                    .foregroundStyle(install.failure != nil ? sh.failed : sh.textPrimary)
                 Spacer(minLength: SH.Space.m)
-                if install.isRunning {
-                    Button("Cancel", action: cancel).buttonStyle(.sh(.ghost, size: .s))
-                }
-            }
-            ForEach(install.steps) { step in
-                SHHostStateRow(step.name, detail: SkillsPresentation.step(step.state), mark: Self.mark(step.state))
             }
         }
         .padding(.vertical, SH.Space.l)
         .padding(.horizontal, SH.Space.l + SH.Space.xxs)
         .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: AppLayout.skillsCardRadius))
         .shBorder(sh.lineSubtle, radius: AppLayout.skillsCardRadius)
-    }
-
-    static func mark(_ state: SkillInstall.Step.State) -> SHHostStateRow.Mark {
-        switch state {
-        case .installed: .done
-        case .copying: .working
-        case .owed: .offline
-        case .waiting, .failed: .none
-        }
     }
 }
 

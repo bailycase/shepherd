@@ -692,7 +692,7 @@ final class ShepherdViewModel {
         instructions.piHome = pi.home
         self.instructions = instructions
         self.suggestions = SuggestionsModel(instructions: instructions, remoteHosts: hosts)
-        self.skills = ClientSkills(defaults: sidebarDefaults)
+        self.skills = ClientSkills()
         // The host's catalog arrives on connect (`localHostSettingsChanged`).
         self.slashCommands = SlashCommandsModel(hidden: self.settings.hiddenSlashCommands)
         // This Mac's hook files, as the host reads them.

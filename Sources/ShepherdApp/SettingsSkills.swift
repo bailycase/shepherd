@@ -19,8 +19,6 @@ struct SkillsSettings: View {
     @State private var expanded: String?
     @State private var sheet: SkillsSheet?
     @State private var toast: SHToast?
-    @State private var resolving: ClientSkills.Unacknowledged?
-    @State private var dontAskAgain = false
 
     var body: some View {
         let hosts = vm.skillsHosts
@@ -34,11 +32,6 @@ struct SkillsSettings: View {
                     if let problem = model.problem {
                         HStack(spacing: SH.Space.m) {
                             SHInlineProblem(problem)
-                            if let entry = model.unacknowledged {
-                                Button("Resolve…") {
-                                    if AppSettings.shared.skipped(.forgetSkillReceipt) != nil { forget(entry) } else { resolving = entry }
-                                }.buttonStyle(.shLink)
-                            }
                             Button("Dismiss") { model.dismissProblem() }.buttonStyle(.shLink)
                         }
                         .shTransition(.disclosure)
@@ -65,17 +58,6 @@ struct SkillsSettings: View {
         .shAnimation(.list, value: rows.map(\.id))
         .shAnimation(.list, value: groups.map { $0.rows.map(\.id) })
         .shAnimation(.disclosure, value: model.problem)
-        .confirmationDialog("Stop waiting for this skill change?", isPresented: Binding(get: { resolving != nil }, set: { if !$0 { resolving = nil } }), presenting: resolving) { entry in
-            Button("Continue without retrying") {
-                resolving = nil
-                if dontAskAgain { AppSettings.shared.skip(.forgetSkillReceipt, with: "Continue without retrying") }
-                forget(entry)
-            }
-            Button("Cancel", role: .cancel) { resolving = nil }
-        } message: { entry in
-            Text("Check the skill on \(entry.hostName) first. This forgets only this change's missing receipt, without retrying or undoing it, then sends the later changes.")
-        }
-        .dialogSuppressionToggle(isSuppressed: $dontAskAgain)
         .task { await model.refresh(vm.skillsHosts) }
         .sheet(item: $sheet) { sheet in
             switch sheet {
@@ -94,15 +76,11 @@ struct SkillsSettings: View {
         }
     }
 
-    private func forget(_ entry: ClientSkills.Unacknowledged) {
-        Task { await model.resolveUnacknowledged(entry, in: vm.skillsHosts) }
-    }
-
     private var header: some View {
         HStack(alignment: .bottom, spacing: SH.Space.xl) {
             SettingsHeader(title: "Skills",
                            explanation: "Instructions and scripts the agent picks up when a task calls for them. Installed skills are "
-                               + "global: every thread and automation on every host gets the same set.")
+                               + "global: every thread and automation in the fleet gets the same set.")
                 .frame(maxWidth: AppLayout.skillsExplanationWidth, alignment: .leading)
             Spacer(minLength: SH.Space.l)
             HStack(spacing: SH.Space.m) {
@@ -218,7 +196,7 @@ private struct SkillsList: View {
             SkillsListHeader()
             if showsInstalled {
                 SkillsGroupTitle(title: "Installed", count: rows.count, trailing: model.directory(in: hosts), readOnly: false,
-                                 rule: false, help: "Shepherd installs, updates and removes these, on every host.", open: nil)
+                                 rule: false, help: "Shepherd installs, updates and removes these, and the fleet keeps them the same on every Mac.", open: nil)
                     .equatable()
                 if rows.isEmpty {
                     Text(empty)
@@ -579,7 +557,7 @@ private struct SkillsListRow: View, Equatable {
         } else if row.skill.update != nil {
             Button(action: actions.update) { SHUpdatePill() }
                 .buttonStyle(.plain)
-                .help("Install the newer commit on every host")
+                .help("Install the newer commit")
         } else {
             Text(SkillsPresentation.date(row.skill.updatedAt))
                 .font(.shMono(AppLayout.skillsMetaSize))
@@ -591,8 +569,7 @@ private struct SkillsListRow: View, Equatable {
 
 // MARK: A skill's detail
 
-/// An open row: how the agent may use the skill, its version, where each host is with it, and
-/// its files, with Open SKILL.md, Show folder and Remove.
+/// An open row: how the agent may use the skill, its version, and its files, with Open SKILL.md, Show folder and Remove.
 private struct SkillDetail: View {
     var vm: ShepherdViewModel
     var model: ClientSkills
@@ -620,14 +597,6 @@ private struct SkillDetail: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 block("Version") { version(skill) }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                block("Hosts") {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(model.copies(of: skill.name, in: hosts)) { copy in
-                            SHHostStateRow(copy.name, detail: SkillsPresentation.copy(copy.state), mark: Self.mark(copy.state))
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack(spacing: SH.Space.s) {
                 ForEach(skill.files) { entry in
@@ -644,7 +613,7 @@ private struct SkillDetail: View {
                     .disabled(!here)
                 Button("Remove") { model.remove(skill.name, in: vm.skillsHosts) }
                     .buttonStyle(.sh(.danger, size: .s))
-                    .help("Take it off every host. Undo puts it back.")
+                    .help("Take it off the fleet. Undo puts it back.")
             }
             .padding(.top, AppLayout.skillsDetailSpacing)
             .overlay(alignment: .top) { SHHairline() }
@@ -713,21 +682,12 @@ private struct SkillDetail: View {
             content()
         }
     }
-
-    static func mark(_ state: SkillCopy.State) -> SHHostStateRow.Mark {
-        switch state {
-        case .installed: .done
-        case .updating: .working
-        case .owed, .offline: .offline
-        case .missing, .unsupported, .checking: .none
-        }
-    }
 }
 
 // MARK: The rail
 
 /// How the agent uses skills, what the automatic ones cost in every prompt, the options, and
-/// each host.
+/// where the skills live.
 private struct SkillsRail: View {
     var vm: ShepherdViewModel
     var model: ClientSkills
@@ -779,28 +739,18 @@ private struct SkillsRail: View {
                 SHSectionHeader("Options", style: .settings).padding(.horizontal, SH.Space.xxs).padding(.bottom, SH.Space.m)
                 option("Skills in the / menu", note: "List every skill as /skill:name in the composer’s slash menu.",
                        isOn: $settings.skillsInSlashMenu)
-                option("Same skills on every host", note: "Installs, updates and removals go to all hosts. Offline hosts catch up.",
-                       isOn: Binding(get: { model.sameEverywhere }, set: { model.sameEverywhere = $0 }))
                 option("Update automatically", note: "Off: new versions wait here with an Update badge.",
                        isOn: Binding(get: { model.autoUpdate(in: hosts) }, set: { model.setAutoUpdate($0, in: vm.skillsHosts) }))
             }
             VStack(alignment: .leading, spacing: SH.Space.s) {
-                SHSectionHeader("Hosts", style: .settings) {
+                SHSectionHeader("Where they live", style: .settings) {
                     Text(model.directory(in: hosts))
                         .font(.shMono(AppLayout.skillsMetaSize - 0.5))
                         .foregroundStyle(sh.textTertiary)
                         .lineLimit(1)
                 }
                 .padding(.horizontal, SH.Space.xxs)
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(hosts) { host in
-                        let state = model.state(of: host)
-                        SHHostStateRow(host.name, detail: SkillsPresentation.host(state, owed: model.owes(host.id)),
-                                       mark: Self.mark(state))
-                    }
-                }
-                .padding(.horizontal, SH.Space.xxs)
-                Text("Skills you copy into that folder by hand show up as Local.")
+                Text("Skills you copy into that folder by hand show up as Local and reach the whole fleet.")
                     .shText(size: AppLayout.skillsNoteSize, lineHeight: AppLayout.skillsNoteLineHeight)
                     .foregroundStyle(sh.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -827,14 +777,5 @@ private struct SkillsRail: View {
         }
         .padding(.vertical, SH.Space.m + SH.Space.xxs)
         .overlay(alignment: .top) { SHHairline() }
-    }
-
-    static func mark(_ state: HostSkills) -> SHHostStateRow.Mark {
-        switch state {
-        case .loaded: .done
-        case .loading: .working
-        case .offline: .offline
-        case .unsupported, .failed: .none
-        }
     }
 }

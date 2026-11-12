@@ -189,13 +189,7 @@ struct SettingsView: View {
     /// and a line saying a client-local page is this Mac's own, when there are remote hosts.
     @ViewBuilder private var page: some View {
         let section = vm.settingsSection
-        if section == .skills, !vm.skills.sameEverywhere, !vm.remoteHosts.connections.isEmpty {
-            // Per host, Skills shows and changes the host the picker chose.
-            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
-                SettingsHostPicker(vm: vm)
-                localPage
-            }
-        } else if section == .hooks, !vm.remoteHosts.connections.isEmpty {
+        if section == .hooks, !vm.remoteHosts.connections.isEmpty {
             // One page for every host: this Mac's catalog, or a remote host's over hooks.v1.
             VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
                 SettingsHostPicker(vm: vm)
@@ -374,7 +368,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .hooks: ["Add hook", "Sources", "Read hooks from Claude Code", "Read hooks from Codex"]
         case .instructions: ["AGENTS.md", "APPEND_SYSTEM.md", "History"]
         case .skills: ["Installed skills", "Browse skills.sh", "Add from repo",
-                       "Skills in the / menu", "Same skills on every host", "Update automatically"]
+                       "Skills in the / menu", "Update automatically"]
         case .mcp: ["Servers", "Add server", "Import…", "How the agent uses them", "Same servers on every host",
                     "Also use a repo’s .mcp.json", "Hosts"]
         case .fleet: ["Macs", "Add a Mac", "Join a fleet", "Remove", "Devices", "Add a device", "Revoke", "Listener"]
@@ -435,7 +429,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills", "from your pi", "copied", ".pi", ".shepherd"],
                        "Browse skills.sh": ["directory", "search", "install"],
                        "Add from repo": ["github", "git", "folder"], "Skills in the / menu": ["slash", "command", "composer"],
-                       "Same skills on every host": ["sync", "hosts"], "Update automatically": ["update", "upgrade"]]
+                       "Update automatically": ["update", "upgrade"]]
         case .mcp: ["Servers": ["mcp", "model context protocol", "tools", "connectors", "mcp.json"],
                     "Add server": ["remote", "local", "url", "command", "stdio", "http", "sse"],
                     "Import…": ["claude desktop", "cursor", "vs code", "paste json", "mcpServers"],
