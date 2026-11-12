@@ -555,6 +555,13 @@
   a configured destination, not an authenticated machine identity; future dispatch must compare
   the saved binding before using a host connection.
 - **Exact Project results:** `logicalProjects.result.v1` gates exact archived-worker snapshot reads (`ProjectRuntimeRequest.worker(taskID:)`, `ProjectExecutionRequest.worker(key:)`) and `ProjectExecutionRequest.result(key:offset:sha256:)` and owner `ProjectRuntimeRequest.result(taskID:operationID:offset:sha256:)`. Result pages use optional compatible fields on the existing reply models, at most 8 KiB of redacted visible final text, total length/digest, next byte offset, availability, stop reason and exact owner/executor identities. Remote reads keep the original host/binding and owner authorization; metadata cache hits cannot bypass revocation. Permission generations are rechecked after asynchronous I/O; disable/re-enable or remove/restore of the exact executor Space/path/binding cannot revive an old grant. Owner-directory and executor-Space tokens track only current eligible routes, scoped by Space ID and path. On the executor, removing, hiding, reserving or replacing the target rotates only its grant; no-op refreshes, renames and unrelated Space additions/updates/removals preserve it. Restoring the target requires a fresh grant, while global Projects-enablement and restart fences still apply. Disabled-executor cancellation, pause and receipt reconciliation keep their existing exemptions, not the new result/worker-content endpoints. Archived worker reads use the exact original task/session and executor binding and are snapshots only. Older peers refuse before transmission, never substitute snapshot text. `history(taskID:beforeSequence:)` is explicit bounded owner-record discovery, not arbitrary native transcript access.
+- **Devices need no fleet** (`fleet.devices.v1`, offered whenever the host runs, never to a device): `FleetService` exists for as long as the
+  host does and Fleet switches only its **membership** (links, pairing Macs, Join, peer tokens, `fleet.v1`). With Fleet off the host still
+  advertises `_shepherd._tcp` while its listener is open, takes devices by `fleetPairDevice`, keeps `devices.json`, and answers the app's
+  device actions (Add a device, Revoke, retire the shared token, `enrollApp`); `fleetIdentify` then says `fleetEnabled: false`, and every
+  member request (`fleetPair`, `fleetEstablish`, `fleetIntroduce`, `fleetRevoke`, and the Join, pair, remove and adopt actions) is
+  refused `fleet_off`. A Mac's own app is a client of another Mac the same way (`RemoteHostStore.pairAsClient`: its own device token,
+  `ownToken` in its config), with Fleet on or off. Turning Fleet off ends peer connections only; devices stay connected.
 - **Fleet** (`fleet.v1`, offered only while Settings ▸ Experiments ▸ Fleet is on; `experiments.fleet.v1` switches it from a
   client): every host has a `hostID` (`<support>/fleet/identity.json`, made once) that `helloOk` now carries (optional,
   absent from older hosts), and a client that expects an id never sends a token to an address that answers with another.
@@ -580,7 +587,8 @@
   `fleetDevices` with the other Macs of its fleet, after they have taken the device in (`fleetSyncDevices` over the
   peer links, at most a few seconds) so one pairing works on every Mac. A client already connected on the shared
   token and seeing `fleet.v1` is offered its own the same way (`fleetEnrollDevice`) and stores it before it is used; a
-  Mac's app asks its own host (`FleetAction.enrollApp`, local socket) and the host never keeps that token. `devices.json`
+  Mac's app asks its own host (`FleetAction.enrollApp`, local socket) and the host never keeps that token (with Fleet on; a Mac
+  that is only a client of another pairs itself, above). `devices.json`
   holds each device's hash and a tombstone for a revoked one, equal on every Mac (a revocation always wins, and a Mac
   that was away hears of it when its link comes up). Revoking (`FleetAction.revokeDevice`, from any Mac) ends the device's
   connections on every Mac and refuses its token; a revoked id can't pair again, so the device makes a new identity
