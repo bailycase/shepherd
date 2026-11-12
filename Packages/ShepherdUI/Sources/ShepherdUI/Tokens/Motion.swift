@@ -310,9 +310,11 @@ private struct SHAnimationModifier<V: Equatable>: ViewModifier {
     let motion: SH.Motion
     let value: V
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.shMotionPaused) private var paused
 
+    /// Under `shMotionPaused` a change lands at once: nobody is looking.
     func body(content: Content) -> some View {
-        content.animation(motion.animation(reduceMotion: reduceMotion), value: value)
+        content.animation(paused ? nil : motion.animation(reduceMotion: reduceMotion), value: value)
     }
 }
 
@@ -374,8 +376,10 @@ enum SHPop {
 
 extension EnvironmentValues {
     /// True under a subtree that stays mounted but is not on screen (an agent layout the
-    /// workspace keeps while another one shows): the continuous motions (the spinner, the glow,
-    /// the shimmer, the pulse) stop drawing frames there. It changes only when visibility flips.
+    /// workspace keeps while another one shows, the sidebar while the window cannot be seen):
+    /// the continuous motions (the spinner, the glow, the shimmer, the pulse) stop drawing frames
+    /// there, elapsed clocks stop ticking, and store-driven `shAnimation`s land their changes at
+    /// once. It changes only when visibility flips.
     @Entry public var shMotionPaused: Bool = false
 }
 

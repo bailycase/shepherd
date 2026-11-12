@@ -457,6 +457,8 @@ struct SHSidebarDot: View {
 
 private struct SHSidebarAccessoryView: View {
     let accessory: SHSidebarRow.Accessory
+    /// While the sidebar cannot be seen its clocks stop ticking, and start again when it shows.
+    @Environment(\.shMotionPaused) private var motionPaused
 
     /// A ZStack, so the old and new accessory cross-fade in one slot; nothing at all without
     /// one, so the row's spacing leaves the title its room.
@@ -473,7 +475,7 @@ private struct SHSidebarAccessoryView: View {
         case .reason(let text):
             Text(text).font(.shMono(10)).foregroundStyle(.sh.lanternText).lineLimit(1).fixedSize()
         case .elapsed(let since):
-            TimelineView(SHElapsedSchedule(start: since, aligned: true)) { context in
+            TimelineView(SHElapsedSchedule(start: since, aligned: true, paused: motionPaused)) { context in
                 let _ = SHRenderProbe.tick("sidebar.clock")
                 Text(SHDuration.text(context.date.timeIntervalSince(since)))
                     .font(.shMono(10)).foregroundStyle(.sh.textTertiary).monospacedDigit().fixedSize()
@@ -484,7 +486,7 @@ private struct SHSidebarAccessoryView: View {
                 .frame(width: SHSidebarMetrics.activityWidth, height: SHSidebarMetrics.activityHeight)
                 .accessibilityHidden(true)
         case .age(let since):
-            TimelineView(SHElapsedSchedule(start: since, aligned: true)) { context in
+            TimelineView(SHElapsedSchedule(start: since, aligned: true, paused: motionPaused)) { context in
                 let _ = SHRenderProbe.tick("sidebar.clock")
                 Text("\(SHDuration.text(max(0, context.date.timeIntervalSince(since)))) ago")
                     .font(.shMono(SHSidebarMetrics.accessoryFont)).foregroundStyle(.sh.textTertiary).monospacedDigit().fixedSize()

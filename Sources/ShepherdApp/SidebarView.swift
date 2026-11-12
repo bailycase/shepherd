@@ -15,6 +15,8 @@ import ShepherdRemote
 /// or a selection redraws the rows it changed and nothing else.
 struct SidebarView: View {
     var vm: ShepherdViewModel
+    /// While the window cannot be seen the sidebar rests: its changes land at once and its clocks stop.
+    @Environment(\.mainWindowVisible) private var windowVisible
 
     var body: some View {
         let _ = SHRenderProbe.tick("shell.sidebar")
@@ -34,6 +36,7 @@ struct SidebarView: View {
             let footer = vm.sidebarFooterIdentity ?? SidebarDerivation.footer
             SHSidebarFooter(name: footer.name, detail: footer.detail, settingsShortcut: "⌘,") { vm.showSettings = true }
         }
+        .environment(\.shMotionPaused, !windowVisible)
     }
 }
 

@@ -39,13 +39,12 @@ struct SidebarClockTests {
         }
     }
 
-    @Test func clocksThatStartedApartTickInOneTurn() async throws {
-        let app = try AppHarness()
-        defer { app.stop() }
+    /// A sidebar of `count` threads that finished one after another, so each Done row's age counts
+    /// from its own phase of the second.
+    private func finishedThreads(_ count: Int, in app: AppHarness) async throws -> ShepherdViewModel {
         let space = Fixture.space(path: app.dir.path)
-        let agents = (0..<12).map { Fixture.agent("agent \($0)", in: space, order: $0) }
+        let agents = (0..<count).map { Fixture.agent("agent \($0)", in: space, order: $0) }
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
-        // Each turn ends in its own moment, so every Done row's age counts from a different phase.
         let reporter = try ExtensionClient(path: app.scratch.socketPath)
         for fixture in agents {
             let id = fixture.agent.id
@@ -54,9 +53,21 @@ struct SidebarClockTests {
             try await eventuallyOnMain("\(fixture.agent.name) to reach Done") { vm.state.agents.first { $0.id == id }?.status == .done }
         }
         try await eventuallyOnMain("every finished thread to show its age") {
-            vm.sidebarLists.done.count == agents.count && vm.sidebarLists.done.allSatisfy { if case .age = $0.accessory { true } else { false } }
+            vm.sidebarLists.done.count == count && vm.sidebarLists.done.allSatisfy { if case .age = $0.accessory { true } else { false } }
         }
-        let window = OffscreenWindow(size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 900), dark: false, SidebarView(vm: vm))
+        return vm
+    }
+
+    private func sidebarWindow(_ view: some View) -> OffscreenWindow {
+        OffscreenWindow(size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 900), dark: false, view)
+    }
+
+    @Test func clocksThatStartedApartTickInOneTurn() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let count = 12
+        let vm = try await finishedThreads(count, in: app)
+        let window = sidebarWindow(SidebarView(vm: vm))
         defer { window.close() }
         ListPerf.settle(window)
 
@@ -66,12 +77,67 @@ struct SidebarClockTests {
         turns.start()
         defer { turns.stop() }
         try await eventuallyOnMain("three ticks of every clock", timeout: .seconds(10)) {
-            SHRenderProbe.count("sidebar.clock") >= agents.count * 3
+            SHRenderProbe.count("sidebar.clock") >= count * 3
         }
         let drawn = SHRenderProbe.count("sidebar.clock")
 
         // Three ticks of one turn each; the slack is for a timer or two firing a turn late on a
         // busy machine. Clocks each ticking at their own phase take a turn per clock (36).
         #expect(turns.turns <= 8, "\(drawn) clock draws took \(turns.turns) turns")
+    }
+
+    /// Whether the window can be seen, as `MainWindowRoutes` publishes it.
+    @Observable final class Presence {
+        var visible: Bool
+        init(visible: Bool) { self.visible = visible }
+    }
+
+    private struct SidebarInWindow: View {
+        let vm: ShepherdViewModel
+        let presence: Presence
+
+        var body: some View { SidebarView(vm: vm).environment(\.mainWindowVisible, presence.visible) }
+    }
+
+    /// Beats once a second, a witness that time has passed.
+    @MainActor private final class Beats {
+        var count = 0
+    }
+
+    private struct Metronome: View {
+        let beats: Beats
+
+        var body: some View {
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                let _ = beats.count += 1
+                Color.clear
+            }
+        }
+    }
+
+    /// While nobody can see the window its clocks stop (a witness clock beats three times without
+    /// one of theirs drawing), and showing it again starts them from the current time.
+    @Test func aSidebarNobodyCanSeeStopsItsClocksUntilItShows() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let count = 6
+        let vm = try await finishedThreads(count, in: app)
+        let presence = Presence(visible: false)
+        let window = sidebarWindow(SidebarInWindow(vm: vm, presence: presence))
+        defer { window.close() }
+        ListPerf.settle(window)
+        let beats = Beats()
+        let witness = OffscreenWindow(size: CGSize(width: 40, height: 40), dark: false, Metronome(beats: beats))
+        defer { witness.close() }
+
+        SHRenderProbe.start()
+        defer { SHRenderProbe.stop() }
+        try await eventuallyOnMain("three beats of time passing", timeout: .seconds(10)) { beats.count >= 3 }
+        #expect(SHRenderProbe.count("sidebar.clock") == 0, "a clock nobody can see drew")
+
+        presence.visible = true
+        try await eventuallyOnMain("the clocks to tick again once shown", timeout: .seconds(10)) {
+            SHRenderProbe.count("sidebar.clock") >= count * 2
+        }
     }
 }

@@ -81,11 +81,20 @@ struct AgentComponentTests {
         #expect(ticks(early, aligned: false).prefix(40) != ticks(late, aligned: false).prefix(40))
     }
 
+    /// A clock nobody can see draws once, as it is mounted, and then waits to be shown again.
+    @Test func aPausedScheduleGivesOneEntry() {
+        let start = Self.moment(0.25)
+        let now = start.addingTimeInterval(12.4)
+        let paused = SHElapsedSchedule(start: start, aligned: true, paused: true)
+        #expect(Array(paused.entries(from: now, mode: .normal).prefix(5)) == [now])
+        #expect(paused != SHElapsedSchedule(start: start, aligned: true))
+    }
+
     @Test func theDefaultScheduleIsUnchanged() {
         let start = Self.moment(0.25)
         let schedule = SHElapsedSchedule(start: start)
-        #expect(!schedule.aligned)
-        #expect(schedule == SHElapsedSchedule(start: start, style: .short, aligned: false))
+        #expect(!schedule.aligned && !schedule.paused)
+        #expect(schedule == SHElapsedSchedule(start: start, style: .short, aligned: false, paused: false))
         #expect(schedule != SHElapsedSchedule(start: start, aligned: true))
         #expect(schedule.boundary(after: start.addingTimeInterval(12.4)) == start.addingTimeInterval(13))
     }

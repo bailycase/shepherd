@@ -34,16 +34,19 @@ public enum SHDuration {
 ///
 /// `aligned` moves each tick to the next whole second of the clock, so figures counting from
 /// different moments tick together and one update redraws them all; a figure then changes up to a
-/// second late.
+/// second late. `paused` gives the moment the timeline starts (the figure is current) and nothing
+/// after, for a clock nobody can see; the timeline starts over when it is false again.
 public struct SHElapsedSchedule: TimelineSchedule, Sendable, Equatable {
     public let start: Date
     public let style: SHDuration.Style
     public let aligned: Bool
+    public let paused: Bool
 
-    public init(start: Date, style: SHDuration.Style = .short, aligned: Bool = false) {
+    public init(start: Date, style: SHDuration.Style = .short, aligned: Bool = false, paused: Bool = false) {
         self.start = start
         self.style = style
         self.aligned = aligned
+        self.paused = paused
     }
 
     public func entries(from startDate: Date, mode: TimelineScheduleMode) -> Entries {
@@ -63,10 +66,12 @@ public struct SHElapsedSchedule: TimelineSchedule, Sendable, Equatable {
     public struct Entries: Sequence, IteratorProtocol, Sendable {
         let schedule: SHElapsedSchedule
         var upcoming: Date
+        var exhausted = false
 
         public mutating func next() -> Date? {
+            guard !exhausted else { return nil }
             let current = upcoming
-            upcoming = schedule.boundary(after: current)
+            if schedule.paused { exhausted = true } else { upcoming = schedule.boundary(after: current) }
             return current
         }
     }
