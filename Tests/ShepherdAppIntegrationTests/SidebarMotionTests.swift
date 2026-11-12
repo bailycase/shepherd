@@ -127,6 +127,29 @@ struct SidebarMotionTests {
         #expect(selecting.inBetween.isEmpty, "selection is not animated")
     }
 
+    /// Nobody can see the window (occluded, minimized, on another Space, or the app hidden): the
+    /// rows take their new places at once, with no frames between.
+    @Test func aSidebarNobodyCanSeeMovesItsRowsAtOnce() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, _, _) = try await twoSpaces(app)
+        let window = OffscreenWindow(size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 500), dark: false,
+                                     SidebarView(vm: vm).environment(\.mainWindowVisible, false))
+        defer { window.close() }
+        _ = await MotionProbe.record(window, region: titles, timeout: 0.5) {}
+
+        var state = app.server.state
+        let last = try #require(vm.sidebarLists.recents.last)
+        let index = try #require(state.agents.firstIndex { $0.id == last.id.agentID })
+        state.agents[index].lastActiveAt = Date().timeIntervalSince1970 * 1000
+        let server = app.server, next = state
+        let moving = await MotionProbe.record(window, region: titles) { Task { try? await server.putState(next) } }
+
+        #expect(vm.sidebarLists.recents.first?.id == last.id)
+        #expect(!moving.settled.matches(moving.before), "the rows move to their new places")
+        #expect(moving.inBetween.isEmpty, "the rows land at once")
+    }
+
     /// A status report eases the row's dot to its new state.
     @Test func aStatusReportEasesTheRowsDot() async throws {
         let app = try AppHarness()
