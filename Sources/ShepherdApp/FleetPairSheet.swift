@@ -25,7 +25,7 @@ struct FleetPairSheet: View {
 
     var body: some View {
         let sh = Color.sh
-        SHDialog("Add a Mac to your fleet", message: "Open Shepherd on the other Mac. It needs to be on this network or your VPN.",
+        SHDialog("Add a Mac to your fleet", message: "Open Shepherd on the other Mac. It needs to be on the same local network.",
                  width: AppLayout.fleetPairWidth) {
             VStack(alignment: .leading, spacing: 0) {
                 section("1 · Pick the Mac") { macs }

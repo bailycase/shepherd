@@ -136,10 +136,10 @@ final class FleetSettingsModel {
 
     /// Opens a code window on the host and shows its code.
     func startJoin() async {
-        join = nil
-        joinEnd = nil
         do {
             guard let client = try host() else { return }
+            joinEnd = nil
+            join = nil
             let result = try await client.fleetAction(.startJoin)
             joinBaseline = Set(result.snapshot.peers.map(\.hostID))
             apply(result)

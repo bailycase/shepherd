@@ -98,6 +98,13 @@ struct FleetPreviewTests {
         }
     }
 
+    @Test func joinAFleetOpeningTheCode() async throws {
+        let model = Self.model(peers: [])
+        try await Preview.render("fleet-join-opening", size: CGSize(width: 600, height: 380)) {
+            FleetJoinView(model: model) {}.padding(SH.Space.xxl).frame(width: 600, height: 380).background(Color.sh.scrim)
+        }
+    }
+
     @Test func joinedAndExpired() async throws {
         for (name, end) in [("fleet-joined", FleetSettingsModel.JoinEnd.joined("MacBook Pro")), ("fleet-join-expired", .closed)] {
             try await Preview.render(name, size: CGSize(width: 600, height: 280)) {

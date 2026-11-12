@@ -16,7 +16,7 @@ struct FleetSettings: View {
 
     static let explanation = "Your Macs work as one. Settings, instructions, skills, extensions, MCP servers and sign-ins are the same on every Mac, and any Mac can take a thread. Changes sync on their own, including each save in a linked extension folder."
     /// FleetSettings' footer, reworded: Shepherd adds no TLS, so the fleet runs over the person's own network.
-    static let footnote = "Macs pair once with a code shown on the other Mac. Shepherd doesn't encrypt fleet traffic. Run the fleet over your own network: a LAN, Tailscale or a VPN."
+    static let footnote = "Macs pair once, on the same local network, with a code shown on the other Mac. Shepherd doesn't encrypt fleet traffic, so keep the fleet on a network you trust."
     static let stopsAtQuit = "The background service is off, so Fleet stops when you quit Shepherd. Turn it on in System Settings ▸ General ▸ Login Items."
 
     var body: some View {
