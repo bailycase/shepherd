@@ -19,7 +19,7 @@ enum SettingsRoute: Hashable, Codable {
     case piExtensions
     /// A host's MCP servers and their last known status, read-only.
     case mcp
-    /// A host's subagent profiles, read-only; one profile's Markdown.
+    /// The fleet's subagent profiles, read-only; one profile's Markdown.
     case subagents
     case subagent(String)
     /// A host's providers and whether each is signed in, read-only.
