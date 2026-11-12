@@ -2772,6 +2772,8 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             let changes = changes
+            // Noted before the engine opens it, so an end that overtakes the open still finds it.
+            if case .changesWriteBegan(let span, _) = query { client.personWrites.insert(span) }
             // The connection is only touched back on the server queue.
             let connection = ChangesUnchecked(value: client)
             Task.detached { [weak self] in
@@ -2788,8 +2790,10 @@ public final class SessionServer: @unchecked Sendable {
                          (.changesRedoTurn, .success):
                         self.hopToMain { [weak self] in self?.onThreadFocused?(agentID) }
                     case (.changesWriteBegan(let span, _), .success):
-                        // The app that opened it is gone: nobody will close it.
-                        if self.clients[client.fd] === client { client.personWrites.insert(span) } else { self.changes.endWrite(span) }
+                        // The app already ended it, or is gone, before the engine opened it: it closes now.
+                        if !client.personWrites.contains(span) { self.changes.endWrite(span) }
+                    case (.changesWriteBegan(let span, _), .failure):
+                        client.personWrites.remove(span)
                     default: break
                     }
                     guard self.clients[client.fd] === client else { return }

@@ -282,7 +282,9 @@ extension ChangesService {
     }
 
     /// Server's `changesWriteBegan` from this Mac's app: `paths` it is about to write, or none
-    /// for a tree event in the agent's working tree. `id` is the app's.
+    /// for a tree event in the agent's working tree. `id` is the app's. The tree is the agent's
+    /// own, as the app's branch actions and commits run in it; one that ran in another
+    /// repository would need to name it.
     func personWriteBegan(_ id: UUID, agentID: AgentID, paths: [String]?) throws {
         guard let paths else {
             beginTreeEvent(id, cwd: try context(agentID, cwd: nil).cwd)

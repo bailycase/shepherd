@@ -94,6 +94,51 @@ struct ChangesPersonWriteTests {
         try await eventually("the app's open notes to be closed") { t.changes.writers.withValue { $0.spans.allSatisfy { $0.interval.end != nil } } }
     }
 
+    /// The app stops waiting for a slow host and ends the note it began a moment before: the host
+    /// reads both before it has opened the first.
+    @Test func anEndThatOvertakesItsBeginStillClosesIt() async throws {
+        let t = try await Running()
+        defer { t.stop() }
+        let raw = try Self.rawLocal(t.local)
+        defer { raw.closeConnection() }
+        try await raw.hello(token: t.local.token)
+
+        let tree = UUID(), save = UUID(), agent = t.pi.agent.id
+        let release = DispatchSemaphore(value: 0)
+        await t.local.host.server.holdQueue(until: release)
+        defer { release.signal() }
+        var frames = Data()
+        for (id, query) in [(21, RemoteAgentQuery.changesWriteBegan(span: tree, paths: nil)), (22, .changesWriteEnded(span: tree)),
+                            (23, .changesWriteBegan(span: save, paths: [t.repo.path + "/notes.txt"])), (24, .changesWriteEnded(span: save))] {
+            frames.append(try NDJSON.encode(RemoteRequest.agentQuery(id: id, agentID: agent, query: query)))
+        }
+        try raw.sendRaw(frames)
+        release.signal()
+
+        var answered: Set<Int> = []
+        while answered.count < 4 {
+            if case .agentResult(let id, _) = try await raw.next() { answered.insert(id) }
+        }
+        try await eventually("both notes to be closed") {
+            t.changes.writers.withValue { $0.spans.count == 2 && $0.spans.allSatisfy { $0.interval.end != nil } }
+        }
+    }
+
+    /// A connection to the host's local socket, authenticated on the first frame like the app's.
+    private static func rawLocal(_ local: LocalListenerTests.Local) throws -> RawRemote {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw WireError("socket: errno \(errno)") }
+        var address = try SessionServer.socketAddress(for: local.path)
+        let connected = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        guard connected == 0 else {
+            close(fd)
+            throw WireError("connect: errno \(errno)")
+        }
+        return RawRemote(connected: fd)
+    }
+
     @Test func theHostRefusesWhatItCannotTrust() async throws {
         let t = try await Running()
         defer { t.stop() }
