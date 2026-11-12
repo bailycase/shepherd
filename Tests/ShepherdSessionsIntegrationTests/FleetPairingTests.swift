@@ -24,7 +24,7 @@ struct FleetPairingTests {
         var server: SessionServer { host.server }
         var peersFile: URL { host.dir.appendingPathComponent("fleet/peers.json") }
 
-        /// `port` 0 picks one; a restarted Mac asks for the one it had, as a real host's is fixed.
+        /// `port` 0 picks one that stays free for a restart; a restarted Mac asks for the one it had, as a real host's is fixed.
         init(_ name: String, dir: URL? = nil, port: UInt16 = 0, fleet: Bool = true) async throws {
             self.name = name
             let host = try ScratchServer(dir: dir)
@@ -32,7 +32,7 @@ struct FleetPairingTests {
             server.configureFleet(name: name, advertises: false)
             let tokenURL = host.dir.appendingPathComponent("remote-token")
             let socket = host.dir.appendingPathComponent("h.sock").path
-            let port = try server.startRemoteListener(port: port, tokenURL: tokenURL)
+            let port = try RestartablePort.listen(port) { try server.startRemoteListener(port: $0, tokenURL: tokenURL) }
             let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             try server.startLocalListener(path: socket, tokenURL: tokenURL)
             // A host always has its fleet service (devices pair with it); `fleet: false` leaves membership off, as a fresh install is.

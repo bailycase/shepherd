@@ -247,6 +247,9 @@ final class FleetMaterializer {
                 }
                 // A local edit not scanned yet must be an op before it is overwritten.
                 if current != "-", observed[unit] != current { return }
+                // And a file taken away since the last scan is an op too: the scan and this pass read the source
+                // separately, so a deletion between them looks like a unit that hasn't arrived and would be written back.
+                if current == "-", pending[unit] == nil, let seen = observed[unit], seen != "-" { return }
                 let target: Data?
                 switch winner.change {
                 case .deletion: target = nil
