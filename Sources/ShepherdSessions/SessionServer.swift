@@ -1100,6 +1100,7 @@ public final class SessionServer: @unchecked Sendable {
                 && (($0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetSyncCapability) || fleet?.membership == true)
                 && ($0 != RemoteProtocol.fleetDevicesCapability || fleet != nil)
                 && (($0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetViewCapability) || fleet?.membership == true)
+                && ($0 != RemoteProtocol.fleetSnapshotCapability || fleet?.membership == true)
         }
     }
 
@@ -1392,6 +1393,8 @@ public final class SessionServer: @unchecked Sendable {
                 service.syncEngine.add(FleetSkillsSource(skills) { [weak self] in self?.skillsSyncWrote() })
                 service.syncEngine.add(FleetExtensionsSource(pi.importedState()))
                 service.listenerChanged(remoteListenPort)
+                // Which checkouts the content index reads: the spaces' (`fleet.snapshot.v1`).
+                service.index.host = FleetIndexService.Host(spaces: { [weak self] in self?.store.state.spaces ?? [] })
                 service.start()
                 if enabled { announceFleetCapabilities() }
             } catch {
@@ -1453,6 +1456,7 @@ public final class SessionServer: @unchecked Sendable {
     func fleetSpacesChanged() {
         guard let fleet, fleet.membership else { return }
         refreshRepoKeys()
+        fleet.index.reconcile()
         fleet.syncEngine.localChanged()
     }
 
@@ -1492,7 +1496,7 @@ public final class SessionServer: @unchecked Sendable {
         switch request {
         case .fleetIdentify(let value), .fleetPair(let value, _, _), .fleetEstablish(let value, _), .fleetIntroduce(let value, _),
              .fleetRevoke(let value, _, _), .fleetRead(let value), .fleetAction(let value, _), .fleetSync(let value, _),
-             .fleetPressure(let value, _), .fleetReadiness(let value, _), .fleetPressureNow(let value),
+             .fleetPressure(let value, _), .fleetReadiness(let value, _), .fleetPressureNow(let value), .fleetRepoManifest(let value, _),
              .fleetPairDevice(let value, _, _), .fleetEnrollDevice(let value, _), .fleetSyncDevices(let value, _):
             id = value
         default: return
@@ -2831,7 +2835,7 @@ public final class SessionServer: @unchecked Sendable {
 
         switch request {
         case .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
-             .fleetPressure, .fleetReadiness, .fleetPressureNow,
+             .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetRepoManifest,
              .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
             serveFleet(request, from: client)
         case .pushRegistration(let id, let registration):

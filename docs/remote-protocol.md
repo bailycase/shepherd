@@ -644,6 +644,34 @@
   than 15 s is stale and counts for nothing. `FleetAction.reconnect(hostID:)` is the Fleet page's Retry. The Send work
   here choice is the host setting `fleet.weight.<hostID>` (`HostSettings.fleetWeights`, `HostSettingChange.fleetWeight`),
   Prefer 1.5, Normal 1, Less often 0.5, Manual only (never picked by Auto). The weights sync like a host setting: one unit `setting:fleet.weight.<hostID>` per Mac (`FleetWeightSetting`, value the weight's name as JSON), applied through the app's own setter, so a choice on one Mac holds on every member.
+- **Fleet manifests and the content index** (`fleet.snapshot.v1`, offered with `fleet.v1`, `FleetSnapshotWire.swift`): while Fleet is on
+  and at least one Mac is paired, the host keeps a persisted content index of each space's checkout
+  (`<support>/fleet/index/roots/<id>/`: `snapshot.ndjson`, `journal.ndjson`, `meta.json`, mode 0600; never anything inside a
+  repository or its `.git`). Each file is held with its SHA-256, git's blob id for the content, size, time, exec bit and git
+  class (tracked, untracked, ignored); directories are hashed bottom up (Merkle) so a directory is one hash. Path bound caches
+  stay out (Swift `.build`, `DerivedData`, a directory with `pyvenv.cfg` or `CMakeCache.txt`, `target` beside a `Cargo.toml`;
+  `FleetExclusions`); `node_modules` and `.env` are indexed. A space's own additions and removals are `FleetExclusions.Overrides` (the
+  Settings row and the synced `fleet.snapshotExcludes.<spaceID>` are slice 4c's). The index is kept current by an FSEvents stream
+  per checkout, replayed from the saved event id after a restart, and a root is walked again when the stream says events were
+  lost, the volume's journal or the exclusion rules changed, or a spot check of a sample of entries (and a rebuilt Merkle tree) finds
+  the index wrong. Hashing runs on one serial utility queue per checkout; a file is read again only when its size or time changed,
+  and a checkout over 500,000 files is left out (`FleetIndexStatus.Repo.tooLarge`).
+  What a Mac holds of a repository is a **manifest**: the 128 bit prefixes of every content hash and directory hash across its
+  checkouts of the repository, named by the canonical repo key (`space:<id>` while a space has no origin) and kept with a running
+  digest (count and XOR of the prefixes). A Mac pushes `fleetRepoManifest` steps over its own link to each peer, and the peer
+  answers `fleetRepoManifestAck`: a `full` set in batches (`part` of `parts`, as of step `seq`), `delta`s (each one `seq` more
+  than the last, add and remove batches) and `head`s (where the sender stands, no data, sent as a link comes up). The receiver keeps one copy per peer per
+  repository (`<support>/fleet/index/peers/<hostID>/`, so a restarted host knows what its peers hold before any link is up),
+  applies a step only if it is the next one of the generation, and checks the digest after each; anything that doesn't line
+  up (another generation, a copy that can't reproduce the digest, a malformed or out of order batch) is answered `resend: true`
+  and the sender sends the whole set again and checks its own index against the disk. A copy that is behind in the same generation is
+  answered with where it stands and the sender sends the deltas between (the last 64 are kept). A 128 bit prefix names a hash; two contents
+  sharing one would only make a manifest say "held" for a blob the target lacks, which the target's own hash check repairs (slice 4c).
+  Only a `FleetAccess.member` connection sends or is sent them: a client on the shared token or a device with its own token is
+  refused `forbidden` (and a device is not offered the capability, see `fleetMemberCapabilities`). `FleetSnapshot.index`
+  (`FleetIndexStatus`: per repository its name, files indexed, `ready` once the first scan is done, and `indexing` while any is
+  still on it) tells this Mac's app where the first scan stands, and is nil while the index isn't running. Nothing is
+  sent, cloned or applied yet: slice 4c carries the blobs.
 - **Fleet view for clients** (`fleet.view.v1`, offered to every client while Fleet is on, a device included; not one of
   `fleetMemberCapabilities`): a phone or an iPad reads the Macs, their load and readiness, and chooses where work is sent, and
   does nothing else of the fleet. `fleetRead` from a `device` (or a client on the shared token) is answered with
