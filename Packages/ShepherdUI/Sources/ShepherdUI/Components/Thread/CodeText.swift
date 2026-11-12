@@ -180,7 +180,21 @@ struct SHNativeCodeText: NSViewRepresentable {
         override var intrinsicContentSize: CGSize {
             if let measuredSize { return measuredSize }
             if !stringValue.isEmpty { SHRenderProbe.tick("layout.codeMeasured") }
-            return super.intrinsicContentSize
+            let size = super.intrinsicContentSize
+            return size.width < 0 || size.height < 0 ? unboundedContentSize : size
+        }
+
+        /// NSTextField gives no intrinsic size (`noIntrinsicMetric`, -1) to a side past 40,000 pt, so a fence
+        /// of about 2,050 lines, or a line of about 5,400 characters, would be a 1 pt field drawing nothing.
+        /// The cell measures that text without the limit; its size less the field's alignment insets,
+        /// rounded up, is the intrinsic size the field gives text under it.
+        var unboundedContentSize: CGSize {
+            guard let cell else { return .zero }
+            let size = cell.cellSize(forBounds: NSRect(origin: .zero, size: CGSize(width: CGFloat.greatestFiniteMagnitude,
+                                                                                   height: CGFloat.greatestFiniteMagnitude)))
+            let insets = alignmentRectInsets
+            func side(_ length: CGFloat) -> CGFloat { length.isFinite ? max(0, ceil(length)) : 0 }
+            return CGSize(width: side(size.width - insets.left - insets.right), height: side(size.height - insets.top - insets.bottom))
         }
     }
 
