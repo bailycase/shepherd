@@ -16,6 +16,8 @@ public enum FleetTone: Equatable, Sendable {
     case warn
     /// Full or hot: Auto leaves the Mac out.
     case bad
+    /// Work in progress.
+    case active
 }
 
 /// A gauge and the words beside it.
@@ -74,9 +76,33 @@ public struct FleetMacCard: Identifiable, Equatable, Sendable {
     public var isThisMac: Bool { status == .thisMac }
 }
 
+/// One line of the Dispatches log: work this Mac sent, where it went and why.
+public struct FleetDispatchRow: Identifiable, Equatable, Sendable {
+    public var id: UUID
+    public var title: String
+    /// "Sent by Speed up checkout CI", or "Sent by you" for a thread started from New Thread.
+    public var sentBy: String
+    /// The Mac it went to, as the chip names it; "No Mac yet" while it is waiting to be placed.
+    public var host: String
+    /// Why it went there, or why it didn't start.
+    public var reason: String
+    public var state: String
+    public var tone: FleetTone
+    /// "4m ago".
+    public var age: String
+
+    public var accessibilityLabel: String { "\(title), \(sentBy.lowercasedFirst), \(host), \(state), \(reason), \(age)" }
+}
+
+private extension String {
+    var lowercasedFirst: String { prefix(1).lowercased() + dropFirst() }
+}
+
 /// The page: its cards, the header's summary and where the next work would go.
 public struct FleetPage: Equatable, Sendable {
     public var cards: [FleetMacCard]
+    /// The Dispatches log, newest first.
+    public var dispatches: [FleetDispatchRow] = []
     /// "3 Macs · 1 asleep · 6 threads working".
     public var summary: String
     /// The Mac Auto would pick now, by name; nil when no Mac counts.
@@ -111,11 +137,14 @@ public struct FleetFooter: Equatable, Sendable {
 }
 
 public enum FleetPagePresentation {
+    /// How many dispatches the log lists.
+    static let fleetDispatchLogLimit = 50
+
     /// Builds the page. `snapshotAge` is how long this device has held `snapshot`, added to each
     /// sample's age, so a Mac that stops pushing goes stale on screen without a new snapshot.
     /// `batteryCountsHalf` is the fleet setting that halves a Mac on battery.
     public static func make(snapshot: FleetSnapshot, weight: (UUID) -> FleetSendWeight, snapshotAge: TimeInterval = 0,
-                            batteryCountsHalf: Bool = true, locale: Locale = .current, calendar: Calendar = .current) -> FleetPage {
+                            batteryCountsHalf: Bool = true, locale: Locale = .current, calendar: Calendar = .current, now: Date = Date()) -> FleetPage {
         guard snapshot.enabled, let thisID = snapshot.hostID else { return .empty }
         let macs = Dictionary(snapshot.macs.map { ($0.hostID, $0) }, uniquingKeysWith: { first, _ in first })
 
@@ -175,9 +204,77 @@ public enum FleetPagePresentation {
         var summary = ["\(cards.count) \(cards.count == 1 ? "Mac" : "Macs")"]
         if !asleep.isEmpty { summary.append("\(asleep.count) asleep") }
         summary.append(working == 0 ? "no threads working" : "\(working) \(working == 1 ? "thread" : "threads") working")
-        return FleetPage(cards: cards, summary: summary.joined(separator: " · "),
-                         nextGoesTo: winner.flatMap { id in cards.first { $0.id == id }?.name },
-                         footer: footer(cards, asleep: asleep))
+        var page = FleetPage(cards: cards, summary: summary.joined(separator: " · "),
+                             nextGoesTo: winner.flatMap { id in cards.first { $0.id == id }?.name },
+                             footer: footer(cards, asleep: asleep))
+        page.dispatches = snapshot.dispatches.sorted { $0.createdAt > $1.createdAt }.prefix(fleetDispatchLogLimit).map { dispatchRow($0, now: now) }
+        return page
+    }
+
+    /// The words of one record: the state, why it went where it did (or why it didn't start) and its age.
+    static func dispatchRow(_ record: FleetDispatchRecord, now: Date) -> FleetDispatchRow {
+        let (state, tone): (String, FleetTone) = switch record.state {
+        case .placing: ("Placing", .tertiary)
+        case .waitingRoom, .waitingWake: ("Waiting", .tertiary)
+        case .heldLimit, .heldRestart: ("Held", .warn)
+        case .preparing: ("Preparing", .active)
+        case .running: ("Working", .active)
+        case .delivering: ("Delivering", .active)
+        case .done: ("Done", .good)
+        case .failed: ("Failed", .bad)
+        case .cancelled: ("Cancelled", .tertiary)
+        }
+        let host = record.targetHostName ?? record.requestedHost.flatMap { FleetPlacement.isAuto($0) ? nil : $0 } ?? "No Mac yet"
+        return FleetDispatchRow(
+            id: record.id, title: record.title.isEmpty ? "Untitled" : record.title,
+            sentBy: record.kind == .userThread ? "Sent by you" : record.parentTitle.isEmpty ? "Sent by a thread" : "Sent by \(record.parentTitle)",
+            host: host, reason: reason(record, host: host), state: state, tone: tone,
+            age: ForgePresentation.ago(Date(timeIntervalSince1970: record.createdAt / 1000), now: now))
+    }
+
+    private static func reason(_ record: FleetDispatchRecord, host: String) -> String {
+        switch record.state {
+        case .failed: return failureWords(record.failure, detail: record.failureDetail)
+        case .heldLimit: return "This thread already has its limit of dispatches going"
+        case .heldRestart: return "Held since the restart; send it again from the thread"
+        case .waitingRoom: return "\(host) has no room for it yet"
+        case .waitingWake: return "Waiting for \(host) to wake"
+        default: break
+        }
+        let codes = record.reasonCodes
+        if let skip = codes.first(where: { $0.code == .localIneligible })?.skip {
+            let why = switch skip {
+            case "cpu": "is busy"
+            case "memory": "is low on memory"
+            case "thermal": "is running hot"
+            case "manualOnly": "is set to Manual only"
+            default: "isn't counted"
+            }
+            return "Auto: This Mac \(why)"
+        }
+        switch codes.first?.code {
+        case .named?: return record.kind == .userThread ? "You picked \(host)" : "Picked \(host)"
+        case .mostRoom?: return "Auto: most room"
+        case .onlyChoice?: return "Auto: the only Mac that counts"
+        case .keptLocal?: return "Auto: This Mac has room"
+        default: return ""
+        }
+    }
+
+    private static func failureWords(_ code: String?, detail: String?) -> String {
+        let words: String
+        switch code {
+        case FleetDispatchCode.repoMissing: words = "That Mac doesn't have this repository"
+        case FleetDispatchCode.repoAmbiguous: words = "That Mac has this repository more than once"
+        case FleetDispatchCode.commitUnreachable: words = "That Mac can't fetch this commit from origin"
+        case FleetDispatchCode.hostNotReady: words = "That Mac lacks something the thread needs"
+        case FleetDispatchCode.noSuchHost: words = "No Mac has that name"
+        case FleetDispatchCode.needsBundle: words = "Has changes origin doesn't"
+        case FleetDispatchCode.peerGone: words = "The Mac went away"
+        case FleetDispatchCode.refused: words = "That Mac refused it"
+        default: words = "Not started"
+        }
+        return detail.map { "\(words): \($0)" } ?? words
     }
 
     private static func footer(_ cards: [FleetMacCard], asleep: [FleetMacCard]) -> FleetFooter {

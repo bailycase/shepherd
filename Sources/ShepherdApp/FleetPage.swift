@@ -27,6 +27,7 @@ extension FleetTone {
         case .good: sh.done
         case .warn: sh.lanternText
         case .bad: sh.failed
+        case .active: sh.running
         }
     }
 
@@ -38,6 +39,7 @@ extension FleetTone {
         case .good: sh.done
         case .warn: sh.lantern
         case .bad: sh.failed
+        case .active: sh.running
         }
     }
 }
@@ -73,7 +75,7 @@ struct FleetPageContent: View {
                             }
                         }
                     }
-                    FleetDispatchesCard()
+                    FleetDispatchesCard(rows: page.dispatches)
                 }
                 .padding(.vertical, SH.Space.xxl)
                 .padding(.horizontal, SH.Space.xxxl)
@@ -392,8 +394,10 @@ struct FleetWeightPicker: View {
 
 // MARK: Dispatches
 
-/// The Dispatches log. Nothing sends work yet, so it holds its empty state.
+/// The Dispatches log (FleetA): one line per dispatch, newest first, with where it went and why.
 struct FleetDispatchesCard: View {
+    let rows: [FleetDispatchRow]
+
     var body: some View {
         let sh = Color.sh
         VStack(alignment: .leading, spacing: 0) {
@@ -404,14 +408,85 @@ struct FleetDispatchesCard: View {
                 .padding(.horizontal, SH.Space.xl)
                 .accessibilityAddTraits(.isHeader)
             SHHairline()
-            Text("Nothing sent yet. When a thread sends work to another Mac, it shows here with why it went there.")
-                .font(.sh(.ui, weight: .regular))
-                .foregroundStyle(sh.textTertiary)
-                .padding(.vertical, SH.Space.xl)
-                .padding(.horizontal, SH.Space.xl)
+            if rows.isEmpty {
+                Text("Nothing sent yet. When a thread sends work to another Mac, it shows here with why it went there.")
+                    .font(.sh(.ui, weight: .regular))
+                    .foregroundStyle(sh.textTertiary)
+                    .padding(.vertical, SH.Space.xl)
+                    .padding(.horizontal, SH.Space.xl)
+            } else {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(rows) { row in
+                        FleetDispatchRowView(row: row).equatable()
+                        if row.id != rows.last?.id { SHHairline() }
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: sh.lineSubtle)
+    }
+}
+
+/// One dispatch: its title and sender, an arrow and the Mac, why, its state and its age.
+struct FleetDispatchRowView: View, Equatable {
+    let row: FleetDispatchRow
+
+    nonisolated static func == (a: FleetDispatchRowView, b: FleetDispatchRowView) -> Bool { a.row == b.row }
+
+    var body: some View {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.l) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(row.title).font(.sh(.ui, weight: .medium)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                Text(row.sentBy).font(.sh(.caption, weight: .regular)).foregroundStyle(sh.textTertiary).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "arrow.right")
+                .font(.sh(.caption, weight: .regular))
+                .foregroundStyle(sh.textTertiary)
+                .accessibilityHidden(true)
+            Text(row.host)
+                .font(.sh(.micro, weight: .regular))
+                .foregroundStyle(sh.textSecondary)
+                .lineLimit(1)
+                .padding(.horizontal, SH.Space.xs)
+                .frame(height: AppLayout.fleetTagHeight)
+                .shBorder(sh.lineStrong, radius: SH.Radius.xs)
+                .frame(width: AppLayout.fleetDispatchHostWidth, alignment: .leading)
+            Text(row.reason)
+                .font(.sh(.ui, weight: .regular))
+                .foregroundStyle(sh.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: AppLayout.fleetDispatchReasonWidth, alignment: .leading)
+            FleetDispatchStatePill(text: row.state, tone: row.tone)
+                .frame(width: AppLayout.fleetDispatchStateWidth, alignment: .trailing)
+            Text(row.age)
+                .font(.sh(.micro, weight: .regular))
+                .foregroundStyle(sh.textTertiary)
+                .frame(width: AppLayout.fleetDispatchAgeWidth, alignment: .trailing)
+        }
+        .padding(.vertical, SH.Space.m)
+        .padding(.horizontal, SH.Space.xl)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(row.accessibilityLabel)
+    }
+}
+
+private struct FleetDispatchStatePill: View {
+    let text: String
+    let tone: FleetTone
+
+    var body: some View {
+        let sh = Color.sh
+        switch tone {
+        case .active: FleetPill(text: text, dot: sh.running, text: sh.running, fill: sh.runningTint)
+        case .good: FleetPill(text: text, dot: sh.done, text: sh.done, fill: sh.doneTint)
+        case .bad: FleetPill(text: text, dot: sh.failed, text: sh.failed, fill: sh.failedTint)
+        case .warn: FleetPill(text: text, dot: sh.lantern, text: sh.lanternText, fill: sh.lanternTint)
+        case .primary, .secondary, .tertiary: FleetPill(text: text, dot: sh.textTertiary, text: sh.textTertiary, fill: sh.bgSelected)
+        }
     }
 }
 
