@@ -8,7 +8,7 @@ struct SettingsSearchTests {
     @Test func theNavListsEveryPageInDesignOrder() {
         #expect(SettingsSection.allCases.map(\.title) == [
             "Appearance", "Terminal", "Agents", "Subagents", "Worktrees", "Spaces", "Sign-in", "Pi", "Instructions", "Skills",
-            "Extensions", "Slash commands", "Apps", "Hooks", "MCP servers", "Remote", "Keyboard", "Advanced", "Experiments",
+            "Extensions", "Slash commands", "Apps", "Hooks", "MCP servers", "Fleet", "Remote", "Keyboard", "Advanced", "Experiments",
         ])
     }
 
