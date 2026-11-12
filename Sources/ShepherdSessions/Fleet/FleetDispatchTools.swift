@@ -32,14 +32,13 @@ extension FleetDispatch {
         }
     }
 
-    /// Why a thread may not use the fleet tools, or nil: a dispatched thread, a mission or project worker, a
+    /// Why a thread may not use the fleet tools, or nil: a dispatched thread, a project worker, a
     /// coordinator, a design's agent and an automation run never send work on (`fleet_scope`).
     static func scopeProblem(for agentID: AgentID, in state: ShepherdState, unattended: Set<AgentID>) -> FleetDispatchRefusal? {
         guard let agent = state.agents.first(where: { $0.id == agentID }) else {
             return FleetDispatchRefusal(code: "no_such_agent", message: "unknown agent \(agentID)")
         }
         let reason: String? = if agent.dispatchedFrom != nil { "a dispatched thread" }
-            else if state.isMissionAgent(agentID) { "a mission station" }
             else if state.isProjectWorker(agentID) { "a project worker" }
             else if state.isProjectCoordinator(agent) { "a project coordinator" }
             else if state.isDesignAgent(agent) { "a design's agent" }

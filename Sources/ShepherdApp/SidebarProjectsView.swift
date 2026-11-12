@@ -246,7 +246,6 @@ private struct ProjectsAddMenu: View {
 }
 
 /// The project menu (SidebarTree, `SHProjectMenu`): right-click a project, or ··· on hover.
-/// Missions are not built, so there is no New Mission.
 struct SidebarProjectMenu: View {
     var vm: ShepherdViewModel
     let project: SidebarProjectRow

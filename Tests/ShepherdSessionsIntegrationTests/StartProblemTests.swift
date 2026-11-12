@@ -129,6 +129,55 @@ struct StartProblemTests {
         #expect(await code { try await pi.request(send) } == NativeThreadCode.unavailable)
     }
 
+    /// A viewer that reads previews (`nativeThreadPreviewCapability`) is shown a stopped agent's
+    /// conversation under its problem, read from pi's session file with no pi running, and with no
+    /// actions; a viewer that does not read previews gets the problem alone, as before. Before and
+    /// after the app retires the dead session, and without asking for pi to be started.
+    @Test func aStoppedAgentsHistoryGoesToAViewerThatReadsPreviews() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let demanded = Locked<[AgentID]>([])
+        r.server.onNativeThreadDemand = { id in demanded.withValue { $0.append(id) } }
+        let callbacks = Callbacks(r.server)
+        let pi = try await PiAgent.launch(on: r.host)
+        let ready = try await pi.ready()
+        _ = try await pi.send("die", from: ready)
+        try await eventually("pi to exit") { callbacks.exited(pi.sessionID) }
+        let stopped = NativeStartProblem(kind: .stopped, exitCode: 3, lines: ["stub-pi: dying"])
+
+        // pi's file for the agent's session, as the stopped pi left it.
+        let sessionID = try #require(r.server.state.agents.first { $0.id == pi.agent.id }).effectivePiSessionID
+        let cwd = r.host.dir.path
+        let folder = r.server.pi.sessionsRoot.appendingPathComponent(PiSessionFolder.name(forCwd: cwd), isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let lines = [
+            #"{"type":"session","version":3,"id":"\#(sessionID)","timestamp":"2026-09-24T00:00:00.000Z","cwd":"\#(cwd)"}"#,
+            #"{"type":"message","id":"e0","parentId":null,"timestamp":"2026-09-24T00:00:00.000Z","message":{"role":"user","content":"hello there","timestamp":1000}}"#,
+            #"{"type":"message","id":"e1","parentId":"e0","timestamp":"2026-09-24T00:00:01.000Z","message":{"role":"assistant","content":[{"type":"text","text":"hi"}],"provider":"anthropic","model":"claude-x","stopReason":"stop","timestamp":2000}}"#,
+        ]
+        try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: folder.appendingPathComponent("2026-09-24T00-00-00-000Z_\(sessionID).jsonl"))
+
+        let previewing = try await r.typed(capabilities: RemoteProtocol.clientCapabilities + [RemoteProtocol.nativeThreadPreviewCapability])
+        defer { previewing.disconnect() }
+        let plain = try await r.typed()
+        defer { plain.disconnect() }
+        for retired in [false, true] {
+            if retired { await r.server.retireSession(sessionID: pi.sessionID) }
+            let history = try await previewing.nativeThread(agentID: pi.agent.id, request: .snapshot()).snapshotValue
+            #expect(history?.messages.map { $0.blocks.first?.text } == ["hello there", "hi"], "retired: \(retired)")
+            #expect(history?.startProblem == stopped && history?.isPreview == true, "retired: \(retired)")
+            #expect(history?.supportedActions.isEmpty == true && history?.running == false)
+            #expect(history?.piSessionID == sessionID)
+
+            let bare = try await plain.nativeThread(agentID: pi.agent.id, request: .snapshot()).snapshotValue
+            #expect(bare?.startProblem == stopped && bare?.messages.isEmpty == true && bare?.isPreview == false, "retired: \(retired)")
+        }
+        #expect(demanded.current.isEmpty, "reading a stopped thread starts no pi")
+        #expect(r.server.state.agents.contains { $0.id == pi.agent.id })
+        let send = NativeThreadRequest.send(expectedSessionID: sessionID, generation: "g", operationID: UUID(), text: "hi", delivery: .followUp)
+        #expect(await code { try await previewing.nativeThread(agentID: pi.agent.id, request: send) } == NativeThreadCode.unavailable)
+    }
+
     /// A pi killed by a signal says which, once it has served.
     @Test func aServedPiEndedByASignalSaysWhichSignal() async throws {
         let h = try ScratchServer.fresh()
@@ -184,7 +233,7 @@ struct StartProblemTests {
     }
 
     /// A stop Shepherd asks for keeps the agent, with nothing to report: its thread is starting.
-    /// `killSession` of an agent's own pi is one (a halted mission's threads stay).
+    /// `killSession` of an agent's own pi is one.
     @Test(arguments: [false, true])
     func aStopShepherdAsksForKeepsTheAgentWithoutAProblem(killed: Bool) async throws {
         let h = try ScratchServer.fresh()

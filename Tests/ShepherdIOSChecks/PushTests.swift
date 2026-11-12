@@ -17,47 +17,27 @@ struct PushTests {
         assert(PushPayload.from(["shepherd": ["hostID": hostID.uuidString, "agentID": agentID.uuidString,
             "eventID": "bad", "kind": "done"]]) == nil)
 
-        // A review push carries what Approve publishes, and each action opens its own screen.
-        let missionID = UUID().uuidString.lowercased()
-        var review = PushPayload.from(["shepherd": ["hostID": hostID.uuidString, "agentID": agentID.uuidString,
-            "eventID": eventID.uuidString, "kind": "review",
-            "mission": ["id": missionID, "revision": 7, "fingerprint": "fp-1"]]])!
-        assert(review.mission == PushPayload.Mission(id: missionID, revision: 7, fingerprint: "fp-1"))
-        assert(review.destination == .thread && PushRouter.route(review) == .thread(payload.agentRef!))
-        review.destination = .missionReview
-        assert(PushRouter.route(review) == .missions(.review(host: hostID, mission: MissionID(rawValue: missionID))))
-        review.destination = .changes
-        assert(PushRouter.route(review) == .review(.changes(payload.agentRef!, file: nil)))
-        review.destination = .mission(missionID)
-        assert(PushRouter.route(review) == .missions(.mission(host: hostID, mission: MissionID(rawValue: missionID))))
-        // An opened push swaps in its own buttons: a question's options, or Open mission when blocked.
-        assert(PushButtons.actions(kind: "needsAnswer", options: ["order_id", "payment_id"], mission: false)?.map(\.identifier)
+        // Each action opens its own screen.
+        var tapped = payload
+        assert(tapped.destination == .thread && PushRouter.route(tapped) == .thread(payload.agentRef!))
+        tapped.destination = .changes
+        assert(PushRouter.route(tapped) == .review(.changes(payload.agentRef!, file: nil)))
+        // An opened push swaps in its own buttons: a question's options before Reply… and Open.
+        assert(PushButtons.actions(kind: "needsAnswer", options: ["order_id", "payment_id"])?.map(\.identifier)
                == ["option:0", "option:1", "reply", "open"])
-        assert(PushButtons.actions(kind: "error", options: nil, mission: true)?.map(\.identifier) == ["openMission"])
-        assert(PushButtons.actions(kind: "error", options: nil, mission: false) == nil)
-        // A stuck lane adds Retry with hint, a text field, before Open mission (NotifPhoneRich).
-        let retryButtons = PushButtons.actions(kind: "error", options: nil, mission: true, stuck: "orders")
-        assert(retryButtons?.map(\.identifier) == ["retry", "openMission"])
-        assert((retryButtons?.first as? UNTextInputNotificationAction)?.textInputPlaceholder == "A hint for orders")
-        let blocked: [AnyHashable: Any] = ["shepherd": ["detail": ["stuck": ["lane": "orders", "count": 3, "tries": []]]]]
-        assert(PushButtons.retryTarget(userInfo: blocked, thread: "mission:\(missionID)")! == (missionID, 3))
-        assert(PushButtons.retryTarget(userInfo: blocked, thread: "thread:\(missionID)") == nil)
-        assert(PushButtons.retryTarget(userInfo: ["shepherd": [:]], thread: "mission:\(missionID)") == nil)
+        assert(PushButtons.actions(kind: "error", options: nil) == nil)
         // An automation run that never started opens its automation.
         let automationID = UUID().uuidString.lowercased()
         var automationPush = PushPayload.from(["shepherd": ["hostID": hostID.uuidString, "agentID": automationID,
             "eventID": eventID.uuidString, "kind": "error"]])!
         automationPush.destination = .automation(automationID)
         assert(PushRouter.route(automationPush) == .automations(.detail(host: hostID, automation: AutomationID(rawValue: automationID))))
-        assert(PushButtons.actions(kind: "needsAnswer", options: [], mission: false) == nil)
+        assert(PushButtons.actions(kind: "needsAnswer", options: []) == nil)
         let asked: [AnyHashable: Any] = ["shepherd": ["detail": ["options": ["order_id", "payment_id"]]]]
         assert(PushButtons.optionText("option:1", userInfo: asked) == "payment_id")
         assert(PushButtons.optionText("option:2", userInfo: asked) == nil && PushButtons.optionText("open", userInfo: asked) == nil)
         let categories = Dictionary(uniqueKeysWithValues: PushButtons.categories.map { ($0.identifier, $0.actions.map(\.identifier)) })
-        assert(categories == ["needsAnswer": ["reply", "open"], "error": ["open"], "done": ["review"], "review": ["approve", "openReview"]])
-        let approve = PushButtons.categories.first { $0.identifier == "review" }!.actions[0]
-        assert(approve.options.contains(.foreground) && approve.options.contains(.authenticationRequired),
-               "Approve opens Shepherd, which asks for Face ID")
+        assert(categories == ["needsAnswer": ["reply", "open"], "error": ["open"], "done": ["review"]])
         // Reply…'s words pick the option they name, or answer a question that takes words.
         let pick = NativeThreadDialog(id: "d1", kind: .select, title: "Which key joins a refund to the funnel?",
                                       options: ["order_id", "payment_id"])
@@ -72,12 +52,6 @@ struct PushTests {
             defaults.removePersistentDomain(forName: suite)
             try? FileManager.default.removeItem(atPath: suite + ".plist")
         }
-        var refused = false
-        do {
-            try await PushActions.perform(PushButtons.approve, text: nil, payload: review,
-                                          hosts: MobileHosts(defaults: defaults, tokens: .memory()), authenticate: { throw GlanceFailure("no") })
-        } catch { refused = (error as? GlanceFailure)?.message == "no" }
-        assert(refused, "nothing is published without Face ID")
         let memory = PushKeychainMemory()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [RelayStub.self]
@@ -133,7 +107,7 @@ struct PushTests {
 
         // Settings ▸ Notifications outlives the app, and a phone that never chose sends everything.
         assert(manager.preferences == RemotePushPreferences())
-        let chosen = RemotePushPreferences(topics: [.questions], awayOnly: false, missions: ["m": .nothing])
+        let chosen = RemotePushPreferences(topics: [.questions], awayOnly: false)
         await manager.setPreferences(chosen, hosts: [])
         assert(PushManager(defaults: defaults, keychain: .memory(memory), session: session, registerToken: {}).preferences == chosen)
         let restored = PushManager(defaults: defaults, keychain: .memory(memory), session: session, registerToken: {})

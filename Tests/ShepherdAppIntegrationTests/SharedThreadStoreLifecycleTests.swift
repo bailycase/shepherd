@@ -7,7 +7,7 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-/// One agent's store, two thread views (the deck's ordinary thread and a Mission station's embedded one).
+/// One agent's store, two thread views (the deck's ordinary thread and a second embedded one).
 /// Hiding or removing one view must not stop the other's polling or freeze its actions; hiding every view
 /// still stops the store cleanly.
 @Suite("A thread store shared by two views", .mainActorExclusive)

@@ -70,7 +70,7 @@ public enum AgentLaunch {
                                   sessionIsFresh: Bool, isAutomation: Bool = false,
                                   project: Project? = nil, worktreeOwningSpace: String? = nil,
                                   suggestFiles: [InstructionFile] = [], modelOverride: String? = nil,
-                                  specKit: MissionSpecKitLaunch? = nil, inherited: SpaceInheritedDefaults? = nil,
+                                  inherited: SpaceInheritedDefaults? = nil,
                                   mcp: () throws -> MCPLaunch?) throws -> SessionCommand {
         try StatusExtension.command(
             home: pi.files,
@@ -104,7 +104,6 @@ public enum AgentLaunch {
             browserExtensionPath: wantsBrowser(for: agent, enabled: settings.browser) ? try BrowserExtension.installedPath() : nil,
             contextExtensionPath: settings.trimToolOutput ? try ContextExtension.installedPath() : nil,
             projectContext: try project.map { (try ProjectContextExtension.installedPath(), try ProjectContextExtension.context($0), agent.coordinatorFor != nil) },
-            specKit: specKit,
             deferTools: settings.deferTools,
             userHome: pi.userHome,
             // Use another model (an agent not signed in): its next start takes the model picked.

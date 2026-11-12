@@ -73,7 +73,7 @@ struct SubagentListControlTests {
 
     // MARK: The tab
 
-    /// The Subagents tab sits after the Browser, selects itself when pressed, has a desktop hit area, and is not in the
+    /// The Subagents tab sits after the Browser and Files, selects itself when pressed, has a desktop hit area, and is not in the
     /// strip while the thread has no run. Its dot is a status the user decided on (blue still working, green done, red
     /// failed or stopped), read aloud with the count; pressing the tab leaves it, since it is not news; Changes and
     /// the Browser carry no status.
@@ -94,7 +94,7 @@ struct SubagentListControlTests {
             let tab = try window.press("Subagents")
             #expect(tab.value == "5, \(word)", "its count and its status word are read aloud: \(String(describing: tab.value))")
             #expect(ControlPress.undersized([tab], minimum: .desktop).isEmpty, "the tab has a desktop hit area: \(tab)")
-            #expect(window.controls().map(\.label).compactMap { $0 }.prefix(3) == ["Changes", "Browser", "Subagents"], "after the Browser")
+            #expect(window.controls().map(\.label).compactMap { $0 }.prefix(4) == ["Changes", "Browser", "Files", "Subagents"], "after the Browser and Files")
             #expect(try window.press("Subagents").value == "5, \(word)", "pressing it again leaves the status as it was")
             #expect(window.controls().first { $0.label == "Changes" }?.value == "5", "Changes carries no status")
         }

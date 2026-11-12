@@ -116,7 +116,7 @@ extension ThreadPreviewTests {
         try await Preview.render("prose-rich-parts", size: size) {
             VStack(alignment: .leading, spacing: SH.Space.l) {
                 SHAgentProse(blocks)
-                SHProseDetails(summary: "An open disclosure", blocks: details, depth: 0, open: true) { SHCodeBlock($0, language: $1) }
+                SHProseDetails<SHCodeBlock>(summary: "An open disclosure", blocks: details, depth: 0, open: true)
                 SHCodeBlock("graph TD\n  A --> B", language: "mermaid")
                 SHCodeBlock("E = mc^2", language: "math")
                 Spacer(minLength: 0)

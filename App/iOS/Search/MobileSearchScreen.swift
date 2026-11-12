@@ -5,7 +5,7 @@ import ShepherdUI
 /// whose title matches and the conversations that mention the query, each on its own card, with
 /// snippets and host tags. Opening a result pushes its thread over search, so Back returns to
 /// the results. Designs (where a host serves them) follow the threads, and the results end in New
-/// design with the query as its brief. Missions don't exist yet, so neither does their section.
+/// design with the query as its brief.
 struct MobileSearchScreen: View {
     let initialQuery: String
     @Environment(MobileHosts.self) private var hosts

@@ -35,10 +35,10 @@ final class NativeThreadStores<Key: Hashable> {
         inputs[key] = input
         return input
     }
-    /// The keys whose thread is on screen: its store's poll loop runs (`NativeThreadStore.isLive`).
+    /// The keys whose thread is on screen, in a window that can be seen: its store wants the host's pushed
+    /// revisions (`NativeThreadStore.wantsRevisions`). A resting store (`rest`) is not in it, though its loop runs.
     private(set) var live: Set<Key> = []
-    /// Told the new `live` whenever it changes: the local app asks its server to push revisions
-    /// for these threads only.
+    /// Told the new `live` whenever it changes: the hosts are asked to push revisions for these threads only.
     var onLiveChange: ((Set<Key>) -> Void)?
     /// Names the machine a thread's agent runs on, for its errors' Details.
     var hostName: ((Key) -> String?)?
@@ -103,7 +103,7 @@ final class NativeThreadStores<Key: Hashable> {
     func install(_ store: NativeThreadStore, for key: Key) {
         stores[key] = store
         store.onLiveChange = { [weak self] isLive in self?.setLive(key, isLive) }
-        setLive(key, store.isLive)
+        setLive(key, store.wantsRevisions)
     }
 
     private func setLive(_ key: Key, _ isLive: Bool) {
@@ -167,12 +167,12 @@ final class NativeThreadStores<Key: Hashable> {
 }
 
 /// The views that need a thread's loaded history: every view showing it on screen, whichever
-/// one's loop polls the store, and a hidden but mounted one (a deck layout, a Mission station, a
-/// design chat) left scrolled up into the history, so its place survives. Per view owner, so one
-/// view leaving or hiding never unpins another's.
+/// one's loop polls the store, and a hidden but mounted one (a deck layout, a design chat)
+/// left scrolled up into the history, so its place survives. Per view owner, so one view
+/// leaving or hiding never unpins another's.
 ///
-/// It also hands a store's poll loop back when views share it (a deck thread and a Mission
-/// station): the newest view to show the thread runs the loop (a run ends the one before it);
+/// It also hands a store's poll loop back when views share it: the newest view to show the
+/// thread runs the loop (a run ends the one before it);
 /// when that view hides or goes, the most recent view still showing the thread runs it again. A
 /// loop stopped for any other reason (the store detached, the agent held off) is not restarted.
 /// Pins (who needs the history) and the loop (who polls) stay separate.

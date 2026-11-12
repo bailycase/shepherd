@@ -10,14 +10,6 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings", routes: [.settings(.root)], tab: .settings),
             FixtureScreen(name: "appearance", routes: [.settings(.appearance)], tab: .settings),
             FixtureScreen(name: "notifications", routes: [.settings(.notifications)], tab: .settings),
-            // NotifSettings: Send me, Which device, and each mission still going.
-            FixtureScreen(name: "notifications-missions", hosts: MissionsFixtureData.hosts(), routes: [.settings(.notifications)],
-                          tab: .settings, prepare: { app in
-                for host in app.hosts.hosts where host.servesMissions { await host.missions.refresh() }
-                await app.push.setPreferences(RemotePushPreferences(missions: [MissionsFixtureData.question.rawValue: .onlyBlocked,
-                                                                               MissionsFixtureData.running.rawValue: .onlyFailures]),
-                                              hosts: app.hosts.hosts)
-            }),
             // Threads muted from their long-press menus, found again here with Unmute.
             FixtureScreen(name: "notifications-muted", hosts: FixtureData.mutedThreads(), routes: [.settings(.notifications)], tab: .settings),
             FixtureScreen(name: "diagnostics", routes: [.settings(.diagnostics)], tab: .settings),

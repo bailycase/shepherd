@@ -109,44 +109,34 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
         let option = PushButtons.optionText(response.actionIdentifier, userInfo: content.userInfo)
         let action = option == nil ? response.actionIdentifier : PushButtons.reply
         let text = option ?? (response as? UNTextInputNotificationResponse)?.userText
-        let retryTarget = option == nil ? PushButtons.retryTarget(userInfo: content.userInfo, thread: thread) : nil
         Task { @MainActor in
-            await act(action, text: text, payload: payload, thread: thread, retryTarget: retryTarget)
+            await act(action, text: text, payload: payload, thread: thread)
             completionHandler()
         }
     }
 
-    /// A tap or Open goes to the thread; Review and Open review to the changes; Reply… and
-    /// Approve act on the host, saying so in a notification when they couldn't.
+    /// A tap or Open goes to the thread; Review to the changes; Reply… acts on the host,
+    /// saying so in a notification when it couldn't.
     @MainActor
-    func act(_ action: String, text: String?, payload: PushPayload, thread: String,
-             retryTarget: (mission: String, attempts: Int)? = nil) async {
+    func act(_ action: String, text: String?, payload: PushPayload, thread: String) async {
         switch action {
-        case PushButtons.reply, PushButtons.approve, PushButtons.retry:
+        case PushButtons.reply:
             guard let hosts = mobileHosts else { return }
             do {
-                try await PushActions.perform(action, text: text, payload: payload, hosts: hosts, retryTarget: retryTarget)
-                if action == PushButtons.approve { receive(payload, to: .missionReview) }
+                try await PushActions.perform(action, text: text, payload: payload, hosts: hosts)
             } catch {
                 let failure = (error as? GlanceFailure)?.message ?? error.localizedDescription
                 let content = UNMutableNotificationContent()
-                content.title = switch action {
-                case PushButtons.reply: "Your answer wasn’t sent"
-                case PushButtons.retry: "The lane didn’t retry"
-                default: "Not approved"
-                }
+                content.title = "Your answer wasn’t sent"
                 content.body = failure
                 content.threadIdentifier = thread
                 try? await UNUserNotificationCenter.current().add(
                     UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
             }
         case PushButtons.review: receive(payload, to: .changes)
-        case PushButtons.openReview: receive(payload, to: .missionReview)
         // An automation run that never started has no thread: its push names the automation, and opens it.
         case _ where thread.hasPrefix("automation:") && payload.agentID.lowercased() == thread.dropFirst("automation:".count):
             receive(payload, to: .automation(String(thread.dropFirst("automation:".count))))
-        case PushButtons.openMission where thread.hasPrefix("mission:"):
-            receive(payload, to: .mission(String(thread.dropFirst("mission:".count))))
         default: receive(payload)
         }
     }

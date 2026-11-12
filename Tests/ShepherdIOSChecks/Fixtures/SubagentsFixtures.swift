@@ -17,6 +17,9 @@ extension FixtureCatalog {
             FixtureScreen(name: "subagents", hosts: SubagentFixtures.hosts(), routes: [.thread(live), .subagents(.list(live))]),
             FixtureScreen(name: "subagent-run", hosts: SubagentFixtures.hosts(),
                           routes: [.thread(live), .subagents(.run(live, runID: SubagentFixtures.worker))]),
+            // The run's transcript gains a step at every poll while its screen is open: it keeps its tail (ios-duo-1's class).
+            FixtureScreen(name: "subagent-run-follow", hosts: SubagentFollowFixture.hosts(),
+                          routes: [.thread(live), .subagents(.run(live, runID: SubagentFixtures.worker))], prepare: SubagentFollowFixture.follow),
             FixtureScreen(name: "subagent-question", hosts: SubagentFixtures.hosts(),
                           routes: [.thread(live), .subagents(.run(live, runID: SubagentFixtures.reviewer))]),
             // Opened from the palette while another thread is on screen.

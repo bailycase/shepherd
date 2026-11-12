@@ -4,9 +4,10 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-/// What Missions and Projects (`MissionController`, `ProjectCoordinatorController`,
-/// `ProjectExecutionController`) need from whoever runs them: `Shepherd --host` (`headless`). They run where the agents run, so with the background service
-/// on they keep acting after Quit; a restart still brings them back paused (the server's start).
+/// What Projects (`ProjectCoordinatorController`, `ProjectExecutionController`) need from
+/// whoever runs them: `Shepherd --host` (`headless`). They run where the agents run, so with
+/// the background service on they keep acting after Quit; a restart still brings them back
+/// paused (the server's start).
 @MainActor
 struct RuntimeHosting {
     let server: SessionServer
@@ -30,7 +31,6 @@ struct RuntimeHosting {
     /// The app's own: open a thread, and its thread store. The headless host shows nothing.
     var selectAgent: (AgentID) -> Void = { _ in }
     var threadStore: (AgentID) -> NativeThreadStore? = { _ in nil }
-    var missionStartRequested: (get: () -> Bool, set: (Bool) -> Void) = ({ false }, { _ in })
 
     /// The paired Macs a Project reaches, each addressed only by its exact host and binding: never
     /// another host, never a local path.
@@ -83,7 +83,6 @@ struct RuntimeHosting {
             restartAgent: { agent, _, _, entry in
                 var spawn = AgentSpawn(agent: agent, cwd: "", settings: settings.agentLaunch)
                 spawn.requiredHistoryEntryID = entry
-                spawn.specKit = true
                 spawn.mcp = mcp
                 do {
                     guard try await server.respawnAgent(spawn) != nil else { throw AgentStartFailure(message: "The agent's pane is unavailable.") }
@@ -99,16 +98,14 @@ struct RuntimeHosting {
             worktrees: worktrees, executors: .relayed(through: server))
     }
 
-    /// Builds the three controllers on `server` and serves their requests: missions (`missions.v1`
-    /// and mission threads' messages), the Project runtime, placements, launches and executions,
-    /// and Project-owned automation runs. Keep what it returns for as long as they serve.
-    func serve() -> (missions: MissionController, coordinator: ProjectCoordinatorController, execution: ProjectExecutionController) {
-        let missions = MissionController(hosting: self)
+    /// Builds the Project controllers on `server` and serves their requests: the Project runtime,
+    /// placements, launches and executions, and Project-owned automation runs. Keep what it
+    /// returns for as long as they serve.
+    func serve() -> (coordinator: ProjectCoordinatorController, execution: ProjectExecutionController) {
         let coordinator = ProjectCoordinatorController(hosting: self)
         let execution = ProjectExecutionController(hosting: self)
-        missions.installRemote()
         coordinator.install()
         execution.install()
-        return (missions, coordinator, execution)
+        return (coordinator, execution)
     }
 }

@@ -169,7 +169,7 @@ struct FleetSyncWireTests {
 
     @Test func settingsThatStayPerMacAreNeverUnits() {
         let keys = Set(FleetHostSetting.allCases.map(\.rawValue))
-        for perMac in ["fleetEnabled", "listenerPort", "backgroundService", "shepherdVersion", "slashCommands", "missionsEnabled"] {
+        for perMac in ["fleetEnabled", "listenerPort", "backgroundService", "shepherdVersion", "slashCommands"] {
             #expect(!keys.contains(perMac), "\(perMac) is about this Mac")
         }
         #expect(FleetHostSetting.named(unit: "setting:host.defaultModel") == .defaultModel)

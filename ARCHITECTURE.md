@@ -13,7 +13,7 @@ owns:
 
 The app never runs agents. It is always the host's client over `<support>/host.sock`, through the
 remote-host paths it uses for a paired Mac plus `local.v1` and `local.threads.v1` for what only this
-Mac's app gets: the host's whole workspace (threads, designs, automations, Projects, missions,
+Mac's app gets: the host's whole workspace (threads, designs, automations, Projects,
 Settings) as the app's own, why a thread's pi can't start (`agentStartProblem`, opened or not), and
 what needs a window (the Browser, design drawing, `review_diff`, Update this Mac) relayed to it.
 The host on this Mac is transport only: no host list, picker or page shows it, and no view asks
@@ -123,7 +123,11 @@ decodes on a concurrent queue while its session holds its later records in order
 It never starts a server (`BackgroundHostClient`): it takes its host's workspace as its own over
 `host.sock` (`ShepherdViewModel+LocalHost`); every terminal is the host's (`HostTerminalLeaf`). A
 persistence task tail keeps user mutations ordered. If the host rejects a mutation, the view
-model adopts the host's state again.
+model adopts the host's state again. It adopts the newest of the host's pushes: one with a newer
+push already queued behind it (`RemoteHostClient.newerStateQueued`) is skipped, though its status
+changes still run their effects, and at least every 32nd push is adopted (`StateAdoption`). The
+connection holds a skipped push without the host projection (`RemoteHostStore.onProjectionChanged`),
+which the push behind it runs once.
 
 **Observation.** The view model and the app's stores (`NativeThreadStore`, `AppSettings`,
 `KeybindingsStore`, `ThemeManager`, `RemoteHostStore`, `AppUpdater`, the
@@ -146,7 +150,7 @@ Start at these files, then follow the code. There is no per-feature doc.
 | Design tool | `Extensions/shepherd-design*.ts`, `Extensions/design-skill/`, `ShepherdSessions/Design*Store.swift`, `DesignSurfaceKit` |
 | Skills, instructions, hooks | `ShepherdSessions/Skills*.swift`, `InstructionsStore.swift`, `Hooks/`; matching `Extensions/shepherd-*.ts` |
 | MCP | `Extensions/shepherd-mcp-*`, `ShepherdApp/MCP/`, `ShepherdSessions/ProjectMCP*.swift` |
-| Projects, missions, automations | `ShepherdSessions/SessionServer+*Project*.swift`, `SessionServer+Missions.swift`, `SessionServer+Automations.swift` (runs and triggers), `ShepherdApp/Automation*.swift`; the Mission and Project runtime (`ShepherdApp/MissionController*.swift`, `Project*Controller.swift`) runs where the agents run, in `Shepherd --host` (`RuntimeHosting.headless`) |
+| Projects, automations | `ShepherdSessions/SessionServer+*Project*.swift`, `SessionServer+Automations.swift` (runs and triggers), `ShepherdApp/Automation*.swift`; the Project runtime (`ShepherdApp/Project*Controller.swift`) runs where the agents run, in `Shepherd --host` (`RuntimeHosting.headless`) |
 | Goals | `Extensions/shepherd-goal.ts`, `ShepherdProtocol/NativeGoal.swift`, `ShepherdApp/Thread/GoalCard.swift` |
 | Remote listener and iOS client | `ShepherdSessions/Remote*.swift`, `ShepherdRemote/RemoteHostClient.swift`, `App/iOS/`, [remote protocol](docs/remote-protocol.md) |
 | Terminals | `ShepherdSessions/PTYSession.swift`, `ShepherdApp/HostTerminalLeaf.swift`, `TerminalHost.swift` |

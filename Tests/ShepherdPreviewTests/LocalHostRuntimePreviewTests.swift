@@ -10,30 +10,9 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-/// Missions and Projects run on the host (`RuntimeHosting`) and draw as This Mac's own, as the
-/// in-process app drew them.
+/// Projects run on the host (`RuntimeHosting`) and draw as This Mac's own, as the in-process
+/// app drew them.
 extension PreviewTests {
-    /// The Missions page's list, a mission's map and the sidebar's Missions section.
-    @Test func localHostMissionsMatchTheInProcessBaseline() async throws {
-        let fixture = try MissionPreviewFixture(dir: try makeScratchDirectory("missions"))
-        let workspace = try PreviewWorkspace()
-        workspace.settings.missionsEnabled = true
-        defer { workspace.stop() }
-        try await fixture.seed(workspace)
-        let vm = workspace.vm
-        vm.openDestination(.missions)
-        let page = try #require(vm.thisMacMissions)
-        // Every mission, in the host's order: one fetched on its own change hint waits for the list to place it.
-        let hostOrder = workspace.server.state.missions.map(\.id)
-        for (id, name) in [(MissionID?.none, "list"), (fixture.draft.id, "map")] {
-            page.selectedID = id
-            try await Preview.render("this-mac-missions-\(name)", size: CGSize(width: 1440, height: 900),
-                                     ready: { !page.availableModels.isEmpty && page.records.map(\.id) == hostOrder }) { RootView(vm: vm) }
-        }
-        try await Preview.render("this-mac-missions-sidebar", size: CGSize(width: 232, height: 900)) { SidebarView(vm: vm) }
-        for surface in ["list", "map", "sidebar"] { try expectBaseline("this-mac-missions-\(surface)") }
-    }
-
     /// The Projects page and the sidebar with a Project's working threads, its workers started by the
     /// runtime on the stub engine.
     @Test func localHostProjectsMatchTheInProcessBaseline() async throws {

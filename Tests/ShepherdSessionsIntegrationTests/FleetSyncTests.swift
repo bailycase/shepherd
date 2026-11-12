@@ -299,10 +299,9 @@ struct FleetSyncTests {
         b.change(.defaultModel(nil))
         try await eventually("A to follow B's later change") { a.settings.current.defaultModel == nil && a.settings.current.defaultThinking == .high }
         // Per Mac settings never travel.
-        a.change(.missionsEnabled(true))
         a.change(.fleetEnabled(true))
-        try await eventually("A to report them") { a.settings.current.missionsEnabled }
-        #expect(!b.settings.current.missionsEnabled && !b.settings.current.fleetEnabled)
+        try await eventually("A to report it") { a.settings.current.fleetEnabled }
+        #expect(!b.settings.current.fleetEnabled)
     }
 
     /// Where Fleet sends work (`fleet.weight.<hostID>`) is chosen once for the fleet: a Mac that never heard

@@ -40,9 +40,9 @@ struct NativeThreadStoresHistoryTests {
             stores.noteShown(key)
         }
         let reader = stores.store(for: "read")
-        let deck = UUID(), mission = UUID()
+        let deck = UUID(), second = UUID()
         pins.pin(reader, owner: deck)
-        pins.pin(reader, owner: mission)
+        pins.pin(reader, owner: second)
         // One of two readers leaves: the other's place is still kept.
         pins.unpin(reader, owner: deck)
         stores.enforceHistoryBounds()
@@ -52,7 +52,7 @@ struct NativeThreadStoresHistoryTests {
         #expect(stores.store(for: "newest").holdsHistory, "the thread just shown is never released")
         for key in ["a", "read", "selected", "newest"] { #expect(stores.store(for: key).draft == "draft \(key)") }
 
-        pins.unpin(reader, owner: mission)
+        pins.unpin(reader, owner: second)
         stores.enforceHistoryBounds()
         #expect(!reader.holdsHistory)
         #expect(reader.draft == "draft read")

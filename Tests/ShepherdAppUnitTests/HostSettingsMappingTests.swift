@@ -124,7 +124,7 @@ struct HostSettingsMappingTests {
         .generatePRDescriptions(false),
         .bundledExtension(id: "review", on: false), .bundledExtension(id: "nativeSubagents", on: false), .bundledExtension(id: "context", on: false),
         .bundledExtension(id: "designReferences", on: false),
-        .designToolEnabled(true), .missionsEnabled(true),
+        .designToolEnabled(true),
         .subagentDefaults(HostSettings.SubagentDefaults(concurrency: 9, model: "openai/gpt-5-mini", thinking: .high, context: .fork)),
         .worktreeDeleteAction(.removeWorktree), .skillsInSlashMenu(false), .mcpProjectConfig(true), .slashCommand(name: "review", on: false),
         .closeOnMerge(true), .closeOnMerge(false),
@@ -155,20 +155,8 @@ struct HostSettingsMappingTests {
         #expect(app.hiddenSlashCommands.isEmpty)
         #expect(HostSettingsMapping.apply(.slashCommand(name: "", on: false), to: app) != nil)
         let commands = [NativeCommand(name: "review")]
-        let settings = HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil, missionsActive: true, slashCommands: commands)
-        #expect(settings.missionsActive && settings.slashCommands == commands)
-    }
-
-    /// The Mac's card locks Missions on under a live mission; a client is refused the same, and
-    /// may still turn it on.
-    @Test func missionsCantBeTurnedOffWhileOneIsActive() {
-        let app = AppSettings(store: Fixture.defaults())
-        #expect(HostSettingsMapping.apply(.missionsEnabled(true), to: app, missionsActive: true) == nil)
-        #expect(app.missionsEnabled)
-        #expect(HostSettingsMapping.apply(.missionsEnabled(false), to: app, missionsActive: true) == HostSettingsMapping.missionsLocked)
-        #expect(app.missionsEnabled)
-        #expect(HostSettingsMapping.apply(.missionsEnabled(false), to: app, missionsActive: false) == nil)
-        #expect(!app.missionsEnabled)
+        let settings = HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil, slashCommands: commands)
+        #expect(settings.slashCommands == commands)
     }
 
     /// A client's MCP sign-in ends with the address its browser landed on: only pi's own loopback

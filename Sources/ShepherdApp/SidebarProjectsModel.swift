@@ -435,9 +435,7 @@ private struct TreeBuilder {
         let runs = Dictionary(state.automations.compactMap { automation in automation.agentID.map { ($0, automation) } },
                               uniquingKeysWith: { first, _ in first })
         let workers = state.projectWorkerIDs
-        let missionAgents = state.missionAgentIDs
-        for (index, agent) in state.agents.enumerated() where agent.designID == nil && !state.isProjectCoordinator(agent) && !workers.contains(agent.id)
-            && !missionAgents.contains(agent.id) {
+        for (index, agent) in state.agents.enumerated() where agent.designID == nil && !state.isProjectCoordinator(agent) && !workers.contains(agent.id) {
             let automation = runs[agent.id]
             // A triggered run's thread is ordinary but sits under its automation's group.
             let origin = agent.automationOrigin.flatMap { origin in state.automations.first { $0.id == origin.automationID } }
@@ -500,8 +498,7 @@ private struct TreeBuilder {
         let runs = Dictionary(state.automations.compactMap { automation in automation.agentID.map { ($0, automation) } },
                               uniquingKeysWith: { first, _ in first })
         let workers = state.projectWorkerIDs
-        let missionAgents = state.missionAgentIDs
-        for (index, agent) in state.agents.enumerated() where state.isSidebarThread(agent, workers: workers) && agent.designID == nil && !missionAgents.contains(agent.id) {
+        for (index, agent) in state.agents.enumerated() where state.isSidebarThread(agent, workers: workers) && agent.designID == nil {
             let automation = runs[agent.id]
             var project = projectOf[agent.spaceID]
             if project == nil, let automation,

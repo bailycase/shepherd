@@ -10,8 +10,7 @@ import ShepherdSessions
 /// on?", the composer with attach, the workplace chip (project · host, with the worktree option
 /// in its menu), the shared model, thinking and speed chips and Send, and the Continue card for the most recent
 /// running thread, and "Start a design" while the Design tool is on. Sending creates the agent
-/// with the prompt and its images as its opening message and opens its thread. The mission card
-/// waits on Missions, so it is not shown.
+/// with the prompt and its images as its opening message and opens its thread.
 struct NewThreadPage: View {
     var vm: ShepherdViewModel
     let chrome: PageHeaderChrome
@@ -675,7 +674,7 @@ extension ShepherdViewModel {
 }
 
 /// The suggestion cards under the composer, each a third of the row: Continue, and "Start a
-/// design" last while the Design tool is on (Missions is not built).
+/// design" last while the Design tool is on.
 private struct ContinueCards: View, Equatable {
     let card: ContinueCard?
     let open: (SidebarRowID) -> Void
