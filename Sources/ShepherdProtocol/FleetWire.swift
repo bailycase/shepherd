@@ -158,9 +158,12 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
     public var advertising: Bool
     public var peers: [FleetPeerStatus]
     public var join: FleetJoinStatus?
+    /// Where sync stands with each Mac (`FleetSyncStatus`); nil while this host doesn't sync.
+    public var sync: FleetSyncStatus?
 
     public init(enabled: Bool = false, hostID: UUID? = nil, name: String = "", build: String? = nil, addresses: [String] = [],
-                port: UInt16? = nil, advertising: Bool = false, peers: [FleetPeerStatus] = [], join: FleetJoinStatus? = nil) {
+                port: UInt16? = nil, advertising: Bool = false, peers: [FleetPeerStatus] = [], join: FleetJoinStatus? = nil,
+                sync: FleetSyncStatus? = nil) {
         self.enabled = enabled
         self.hostID = hostID
         self.name = name
@@ -170,6 +173,7 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         self.advertising = advertising
         self.peers = peers
         self.join = join
+        self.sync = sync
     }
 }
 

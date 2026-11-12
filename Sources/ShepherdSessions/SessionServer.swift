@@ -1092,7 +1092,7 @@ public final class SessionServer: @unchecked Sendable {
                 && (designsServed && designs || !RemoteProtocol.designCapabilities.contains($0))
                 && (tunnelsServed || ($0 != RemoteProtocol.browserTunnelCapability && $0 != RemoteProtocol.browserDriveCapability))
                 && ($0 != RemoteProtocol.missionsCapability || missionsServed && onRemoteMission != nil)
-                && ($0 != RemoteProtocol.fleetCapability || fleet != nil)
+                && (($0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetSyncCapability) || fleet != nil)
         }
     }
 
@@ -1256,6 +1256,28 @@ public final class SessionServer: @unchecked Sendable {
     /// over Bonjour. Tests name their hosts and keep them off the network. Server queue.
     private var fleetOptions: (name: String?, advertises: Bool) = (nil, true)
 
+    /// The app's settings as a fleet syncs them (`FleetHostSettingsSource`); nil until the app says how to apply one.
+    private var fleetHostSettings: FleetHostSettingsSource?
+
+    /// Lets the host settings sync across a fleet: `apply` changes one the way the Mac's own Settings
+    /// would (called from any thread). The app then reports the settings with `fleetHostSettingsChanged`.
+    public func setFleetHostSettings(apply: @escaping @Sendable (HostSettingChange) -> Void) {
+        queue.async { [self] in
+            let source = FleetHostSettingsSource(apply: apply)
+            fleetHostSettings = source
+            fleet?.syncEngine.add(source)
+        }
+    }
+
+    /// The host settings as the app has them now: a change here becomes an op, and a synced
+    /// value the app was told to apply shows up here when it has.
+    public func fleetHostSettingsChanged(_ settings: HostSettings) {
+        queue.async { [self] in
+            fleetHostSettings?.update(settings)
+            fleet?.syncEngine.localChanged()
+        }
+    }
+
     /// Sets `fleetOptions` for the next `setFleetEnabled(true)`.
     public func configureFleet(name: String?, advertises: Bool) {
         queue.sync { fleetOptions = (name, advertises) }
@@ -1272,6 +1294,7 @@ public final class SessionServer: @unchecked Sendable {
             guard enabled else {
                 fleet?.stop()
                 fleet = nil
+                instructions.onChange = nil
                 for client in Array(clients.values) where client.fleetPeerID != nil { disconnect(client, reason: "fleet turned off") }
                 pushSettingsChanged(.fleet)
                 return
@@ -1286,6 +1309,12 @@ public final class SessionServer: @unchecked Sendable {
                     for client in Array(self.clients.values) where client.fleetPeerID == hostID { self.disconnect(client, reason: "removed from the fleet") }
                 }
                 fleet = service
+                // What syncs: the root instructions, pi's own preferences, and (once the app reports
+                // them) the host settings. Each is read and written through the code that owns it.
+                instructions.onChange = { [weak self] _ in self?.queue.async { self?.fleet?.syncEngine.localChanged() } }
+                service.syncEngine.add(FleetInstructionsSource(instructions))
+                service.syncEngine.add(FleetPiSettingsSource(settings: pi.files.settings))
+                if let source = fleetHostSettings { service.syncEngine.add(source) }
                 service.listenerChanged(remoteListenPort)
                 service.start()
             } catch {
@@ -1299,7 +1328,7 @@ public final class SessionServer: @unchecked Sendable {
         let id: Int
         switch request {
         case .fleetIdentify(let value), .fleetPair(let value, _, _), .fleetEstablish(let value, _), .fleetIntroduce(let value, _),
-             .fleetRevoke(let value, _, _), .fleetRead(let value), .fleetAction(let value, _):
+             .fleetRevoke(let value, _, _), .fleetRead(let value), .fleetAction(let value, _), .fleetSync(let value, _):
             id = value
         default: return
         }
@@ -2622,7 +2651,7 @@ public final class SessionServer: @unchecked Sendable {
         }
 
         switch request {
-        case .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction:
+        case .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync:
             serveFleet(request, from: client)
         case .pushRegistration(let id, let registration):
             guard offeredCapabilities.contains(RemoteProtocol.pushNotificationsCapability),

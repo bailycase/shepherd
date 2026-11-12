@@ -30,6 +30,8 @@ final class FleetService: @unchecked Sendable {
     private let queue: DispatchQueue
     private let directory: URL
     let identity: FleetIdentity
+    /// Settings and content the Macs hold the same (`fleet.sync.v1`).
+    let syncEngine: FleetSync
     private var name: String
     private let build: String?
     private let discovery: FleetDiscovery?
@@ -75,6 +77,9 @@ final class FleetService: @unchecked Sendable {
         identity = try FleetIdentity.loadOrCreate(in: directory, now: clock())
         peers = try FleetPeers.load(from: directory)
         discovery = advertises ? FleetDiscovery() : nil
+        syncEngine = try FleetSync(queue: queue, directory: directory.appendingPathComponent("store", isDirectory: true),
+                             mac: identity.hostID, name: { name }, clock: clock)
+        syncEngine.onChange = { [weak self] in self?.changed() }
     }
 
     var hostID: UUID { identity.hostID }
@@ -85,6 +90,7 @@ final class FleetService: @unchecked Sendable {
 
     /// Opens a link to every Mac this host is paired with.
     func start() {
+        syncEngine.start()
         for record in peers.members where record.isLinkable { startLink(record.hostID) }
         advertise()
         changed()
@@ -95,6 +101,7 @@ final class FleetService: @unchecked Sendable {
         stopped = true
         join = nil
         for id in Array(links.keys) { stopLink(id) }
+        syncEngine.stop()
         discovery?.stop()
     }
 
@@ -158,6 +165,12 @@ final class FleetService: @unchecked Sendable {
             guard let from = caller.peerHostID else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet removes another.")) }
             revoked(hostID, at: at, heardFrom: from)
             reply(.ok(id: id))
+        case .fleetSync(let id, let request):
+            guard let from = caller.peerHostID else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet syncs.")) }
+            switch syncEngine.serve(request, from: from) {
+            case .success(let answer): reply(.fleetSyncReply(id: id, reply: answer))
+            case .failure(let refusal): reply(Self.refusal(id, refusal.code, refusal.message))
+            }
         case .fleetRead(let id):
             guard caller.isLocal else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only this Mac's app reads its fleet.")) }
             reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot())))
@@ -472,8 +485,9 @@ final class FleetService: @unchecked Sendable {
         let window = join.map {
             FleetJoinStatus(expiresAt: (($0.window.expiresAt).timeIntervalSince1970 * 1000).rounded(), attemptsLeft: $0.window.attemptsLeft)
         }
+        let syncStatus = syncEngine.status(peers: statuses.map { ($0.hostID, $0.name, $0.link == .connected) })
         return FleetSnapshot(enabled: true, hostID: identity.hostID, name: name, build: build, addresses: FleetAddresses.local(),
-                             port: listenerPort, advertising: discovery?.isAdvertising ?? false, peers: statuses, join: window)
+                             port: listenerPort, advertising: discovery?.isAdvertising ?? false, peers: statuses, join: window, sync: syncStatus)
     }
 
     private func status(of record: FleetPeerRecord) -> FleetPeerStatus {
@@ -510,6 +524,7 @@ final class FleetService: @unchecked Sendable {
     /// close once it has said what it has to.
     private func stopLink(_ hostID: UUID, closing: Bool = true) {
         guard let link = links.removeValue(forKey: hostID) else { return }
+        syncEngine.linkDown(peer: hostID)
         link.task?.cancel()
         if closing { link.client?.disconnect() }
         link.client = nil
@@ -584,6 +599,7 @@ final class FleetService: @unchecked Sendable {
             try? save(record)
         }
         announceRemovals(over: client, to: link.hostID)
+        syncEngine.linkUp(peer: link.hostID, client: client)
         changed()
         brokerPending()
         return true
@@ -591,6 +607,7 @@ final class FleetService: @unchecked Sendable {
 
     private func lost(_ link: Link) {
         guard links[link.hostID] === link else { return }
+        syncEngine.linkDown(peer: link.hostID)
         link.client = nil
         link.phase = .offline
         link.lastSeen = nowMilliseconds

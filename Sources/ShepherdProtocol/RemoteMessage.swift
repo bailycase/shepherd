@@ -245,6 +245,9 @@ public enum RemoteProtocol {
     /// carries its `hostID`. Offered only while Fleet is on; the other fleet requests are the
     /// app's, on the local socket.
     public static let fleetCapability = "fleet.v1"
+    /// The host syncs settings and content with the Macs it is paired with (`FleetSyncWire.swift`):
+    /// `fleetSync` after `hello` with a peer's token. Offered only while Fleet is on.
+    public static let fleetSyncCapability = "fleet.sync.v1"
     /// Settings ▸ Experiments ▸ Design tool switched from a client (`HostSettingChange.designToolEnabled`).
     /// Offered while the tool is off too: it is not one of `designCapabilities`.
     public static let designToolExperimentCapability = "experiments.designTool.v1"
@@ -267,7 +270,7 @@ public enum RemoteProtocol {
     /// The host saves a file of a thread's folder (`RemoteAgentQuery.fileWrite`), only over the text the client
     /// edited from (`ThreadFileSaveResult.changed` otherwise). Served only to a client offered `filesCapability`.
     public static let filesWriteCapability = "files.write.v1"
-    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, missionsCapability, missionsTrainCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostSettingsTextGenerationModelCapability, hostSettingsVisionModelCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, missionsRetryLaneCapability, checkoutReadCapability, pullRequestLinkCapability, fleetExperimentCapability, fleetCapability]
+    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, missionsCapability, missionsTrainCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostSettingsTextGenerationModelCapability, hostSettingsVisionModelCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, missionsExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, missionsRetryLaneCapability, checkoutReadCapability, pullRequestLinkCapability, fleetExperimentCapability, fleetCapability, fleetSyncCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -704,6 +707,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// After `hello` with a peer's token: `hostID` was removed from the fleet at `at` (epoch
     /// milliseconds). Answered `ok`.
     case fleetRevoke(id: Int, hostID: UUID, at: Double)
+    /// After `hello` with a peer's token (`RemoteProtocol.fleetSyncCapability`): sync ops, live ops
+    /// and blobs between two Macs' stores. Answered `fleetSyncReply`.
+    case fleetSync(id: Int, request: FleetSyncRequest)
     /// Local clients only: this Mac's fleet as its app draws it. Answered `fleetResult`.
     case fleetRead(id: Int)
     /// Local clients only: this Mac's app acts on its host's fleet. Answered `fleetResult`.
@@ -854,12 +860,13 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case automationID, initialImages, serviceTier
         case requestToken, outcome, result
         case thread, step, update
-        case code, from, introduction, hostID, at
+        case code, from, introduction, hostID, at, sync
     }
 
     private enum Kind: String, Codable {
         case pushRegistration, pushUnregister
         case fleetIdentify, fleetPair, fleetEstablish, fleetIntroduce, fleetRevoke, fleetRead, fleetAction
+        case fleetSync
         case nativeThread, nativeThreadSubscribe, fleetDigest, projectExecution
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
@@ -899,6 +906,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case .fleetRevoke:
             self = .fleetRevoke(id: try c.decode(Int.self, forKey: .id), hostID: try c.decode(UUID.self, forKey: .hostID),
                                 at: try c.decode(Double.self, forKey: .at))
+        case .fleetSync:
+            self = .fleetSync(id: try c.decode(Int.self, forKey: .id), request: try c.decode(FleetSyncRequest.self, forKey: .sync))
         case .fleetRead:
             self = .fleetRead(id: try c.decode(Int.self, forKey: .id))
         case .fleetAction:
@@ -1105,6 +1114,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(hostID, forKey: .hostID)
             try c.encode(at, forKey: .at)
+        case .fleetSync(let id, let request):
+            try c.encode(Kind.fleetSync, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(request, forKey: .sync)
         case .fleetRead(let id):
             try c.encode(Kind.fleetRead, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1387,6 +1400,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case fleetPaired(id: Int, hostID: UUID, name: String, myTokenHash: String)
     /// This Mac's fleet, for its app (`RemoteRequest.fleetRead`, `.fleetAction`).
     case fleetResult(id: Int, result: FleetResult)
+    /// The answer to `RemoteRequest.fleetSync`.
+    case fleetSyncReply(id: Int, reply: FleetSyncReply)
     /// Generic success for acked requests with no payload (paste).
     case agentResult(id: Int, result: RemoteAgentResult)
     case ok(id: Int)
@@ -1528,7 +1543,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case result, frame, executionKey, executionRevision
         case type, id, protocolVersion, capabilities, code, message, state
         case sessionID, data, exitCode, spaceID, agentID, paneID
-        case hostBuild, hostID, name, build, fleetEnabled, myTokenHash
+        case hostBuild, hostID, name, build, fleetEnabled, myTokenHash, sync
         case path, parent, dirs, models, defaultModel, withoutThinking, thinkingLevels, serviceTiers, contexts, withoutImages, attachment, options
         case snapshot, settings, status
         case designID, revision, commentsRevision
@@ -1543,6 +1558,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     private enum Kind: String, Codable {
         case nativeThread, nativeThreadChanged, fleetDigest, projectExecution, projectExecutionChanged
         case fleetIdentity, fleetPaired, fleetResult
+        case fleetSyncReply
         case agentResult, helloOk, ok, paneOpened, error, state, stateChanged, attached, output, sessionExited
         case dirListing, models, spaceAdded, agentCreated, uploadResult, creationOptions
         case automationResult, forgeResult
@@ -1636,6 +1652,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
                                 name: try c.decode(String.self, forKey: .name), myTokenHash: try c.decode(String.self, forKey: .myTokenHash))
         case .fleetResult:
             self = .fleetResult(id: try c.decode(Int.self, forKey: .id), result: try c.decode(FleetResult.self, forKey: .result))
+        case .fleetSyncReply:
+            self = .fleetSyncReply(id: try c.decode(Int.self, forKey: .id), reply: try c.decode(FleetSyncReply.self, forKey: .sync))
         case .uploadResult:
             self = .uploadResult(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteUploadResult.self, forKey: .result))
         case .creationOptions:
@@ -1795,6 +1813,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(Kind.fleetResult, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(result, forKey: .result)
+        case .fleetSyncReply(let id, let reply):
+            try c.encode(Kind.fleetSyncReply, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(reply, forKey: .sync)
         case .uploadResult(let id, let result):
             try c.encode(Kind.uploadResult, forKey: .type)
             try c.encode(id, forKey: .id)
