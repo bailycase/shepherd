@@ -47,6 +47,18 @@ public enum SHRenderProbe {
     public static func count(_ key: String) -> Int { 0 }
     #endif
 
+    /// Counts `amount` units of work (text styled, laid out or colored), not one pass. The amount is
+    /// only worked out while a test records.
+    @inline(__always)
+    public static func add(_ key: StaticString, _ amount: @autoclosure () -> Int) {
+        #if DEBUG
+        let active = recording.withLock { $0.active }
+        guard active else { return }
+        let units = amount()
+        recording.withLock { $0.counts[key.description, default: 0] += units }
+        #endif
+    }
+
     /// Counts one render or layout pass, including SwiftUI's background layout work.
     @inline(__always)
     public static func tick(_ key: StaticString) {

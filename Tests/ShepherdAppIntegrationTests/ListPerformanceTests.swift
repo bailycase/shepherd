@@ -1331,10 +1331,21 @@ struct ListPerformanceTests {
         let thread = FakeThread(ThreadFixture.snapshot(turn, provisional: [ThreadFixture.streaming(reply(2))], running: true))
         defer { thread.close() }
         try await thread.waitUntilReady()
-        let initialCode = CodeHighlightCache.Key(fence: reply(2).components(separatedBy: "```swift\n")[1], language: "swift")
+        /// Whether the fence on screen draws `marker` in a syntax color: the lines up to it are colored.
+        func isColored(_ marker: String) -> Bool {
+            func field(in view: NSView) -> NSTextField? {
+                if let field = view as? NSTextField, field.stringValue.hasPrefix(function) { return field }
+                return view.subviews.lazy.compactMap(field(in:)).first
+            }
+            guard let field = field(in: thread.window.host) else { return false }
+            let at = (field.stringValue as NSString).range(of: marker).location
+            guard at != NSNotFound else { return false }
+            let color = field.attributedStringValue.attribute(.foregroundColor, at: at, effectiveRange: nil) as? NSColor
+            return color != nil && color != NSColor(Color.sh.textPrimary)
+        }
         try await eventuallyOnMain("initial complete code lines to finish highlighting") {
             ListPerf.settle(thread.window)
-            return CodeHighlightCache.cached(initialCode.prefix(lines: 2)) != nil
+            return isColored("let value0")
         }
 
         let burst = try await counting(thread.window) {
@@ -1346,10 +1357,9 @@ struct ListPerformanceTests {
                 next.provisional = [ThreadFixture.streaming(reply(2 + chunk * 6) + "    let partial")]
                 await thread.serve(next)
             }
-            let code = CodeHighlightCache.Key(fence: (reply(92) + "    let partial").components(separatedBy: "```swift\n")[1], language: "swift")
             try await eventuallyOnMain("burst's final complete lines to finish highlighting") {
                 ListPerf.settle(thread.window)
-                return CodeHighlightCache.cached(code.prefix(lines: 93)) != nil
+                return isColored("let value91")
             }
         }
         let finished = try await counting(thread.window) {
