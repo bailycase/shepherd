@@ -270,8 +270,8 @@ extension ShepherdViewModel {
         let previous = sidebarActivityLast[id] ?? statusSince[id]
         sidebarActivityLast[id] = now
         guard let previous, now > previous else { return }
-        let box = sidebarActivityBox(id)
-        box.samples = Array((box.samples + [1 / now.timeIntervalSince(previous)]).suffix(10))
+        let live = agentLive(id)
+        live.samples = Array((live.samples + [1 / now.timeIntervalSince(previous)]).suffix(10))
     }
 
     /// Leaving for a page does not clear Done. Only opening another thread marks the current
@@ -309,11 +309,4 @@ extension ShepherdViewModel {
             if let ref { try? await remoteHosts.agentAction(ref, action: .markSeen(upTo: stamp)) }
         }
     }
-}
-
-/// One agent's activity samples (`ShepherdViewModel.sidebarActivityBoxes`): its row reads this
-/// box's `samples`, never the dictionary of every agent's.
-@MainActor @Observable
-final class SidebarActivityBox {
-    var samples: [Double] = []
 }

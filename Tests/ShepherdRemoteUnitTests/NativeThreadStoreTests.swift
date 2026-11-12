@@ -1669,6 +1669,192 @@ struct NativeThreadStoreTests {
         #expect(host.requests.count == 2, "shown again, it pulls once and waits")
     }
 
+    // MARK: Resting
+
+    /// Starts the store's run loop for `owner` and returns once the first answer has been applied.
+    private func startOwned(_ store: NativeThreadStore, _ host: FakeHost, owner: UUID) async -> Task<Void, Never> {
+        var task: Task<Void, Never>?
+        await withCheckedContinuation { (served: CheckedContinuation<Void, Never>) in
+            host.onServed = { served.resume() }
+            task = Task { await store.run(request: { try host.handle($0) }, owner: owner) }
+        }
+        return task!
+    }
+
+    /// A resting loop pulls nothing for the revisions pushed meanwhile; seen again, it pulls once, however many came.
+    @Test func aRestingStorePullsNothingForPushesAndOnceWhenItWakes() async {
+        let pauses = Pauses()
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = pushedStore(pauses)
+        let owner = UUID()
+        let task = await startOwned(store, host, owner: owner)
+        defer { task.cancel() }
+        await until { pauses.count == 1 }
+
+        store.rest(true, owner: owner)
+        for revision in 2...6 {
+            host.snapshot = F.snapshot(revision: UInt64(revision), messages: [hi])
+            store.revisionAvailable()
+        }
+        #expect(host.requests.count == 1)
+
+        store.rest(false, owner: owner)
+        await until { pauses.count == 2 }
+        #expect(host.requests.count == 2, "the five pushes and the wake made one pull")
+        #expect(store.snapshot?.revision == 6)
+    }
+
+    /// An interval that ends while the loop rests pulls nothing.
+    @Test func aPauseThatEndsWhileRestingPullsNothing() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let pauses = Pauses()
+        let (ends, interval) = AsyncStream<Void>.makeStream()
+        let store = NativeThreadStore { duration in
+            guard duration > NativeThreadStore.pushedPullSpacing else { return }
+            await pauses.began()
+            for await _ in ends { return }
+            throw CancellationError()
+        }
+        let owner = UUID()
+        let task = await startOwned(store, host, owner: owner)
+        defer { task.cancel() }
+        await until { pauses.count == 1 }
+
+        store.rest(true, owner: owner)
+        interval.yield()
+        for _ in 0..<20 { await Task.yield() }
+        #expect(host.requests.count == 1 && pauses.count == 1, "the interval ended while the loop rested")
+
+        host.snapshot = F.snapshot(revision: 2, messages: [hi])
+        store.rest(false, owner: owner)
+        await until { store.snapshot?.revision == 2 }
+        #expect(host.requests.count == 2)
+    }
+
+    /// `onLiveChange` says whether the thread wants revisions: not while it rests. `isLive` says the loop runs.
+    @Test func aRestingStoreAsksForNoRevisions() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = pushedStore(Pauses())
+        var changes: [Bool] = []
+        store.onLiveChange = { changes.append($0) }
+        let owner = UUID()
+        let task = await startOwned(store, host, owner: owner)
+        defer { task.cancel() }
+        #expect(changes == [true] && store.wantsRevisions)
+
+        store.rest(true, owner: owner)
+        store.rest(true, owner: owner)
+        #expect(changes == [true, false] && !store.wantsRevisions && store.isLive, "asked twice, said once; the loop stays")
+
+        store.rest(false, owner: owner)
+        store.rest(false, owner: owner)
+        #expect(changes == [true, false, true] && store.wantsRevisions && store.isLive)
+    }
+
+    /// A send waiting for pi to start is not dropped by a rest, and keeps the loop pulling until pi answers.
+    @Test func aSendWaitingForPiKeepsARestingStorePulling() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        host.starting = true
+        host.acceptAll()
+        let store = pushedStore(Pauses())
+        let owner = UUID()
+        store.rest(true, owner: owner)
+        let task = await startOwned(store, host, owner: owner)
+        defer { task.cancel() }
+        store.draft = "hello"
+        let sending = Task { await store.send() }
+        await until { store.busy }
+
+        host.starting = false
+        host.snapshot = F.snapshot(messages: [hi])
+        store.revisionAvailable()
+        await sending.value
+
+        let texts = host.actions.compactMap { action -> String? in
+            if case .send(_, _, _, let text, _, _, _, _, _) = action { return text } else { return nil }
+        }
+        #expect(texts == ["hello"] && store.notice == nil)
+        #expect(!store.wantsRevisions && store.isLive, "it rests again once the send is gone")
+    }
+
+    /// The view whose loop runs is the one that rests it.
+    @Test func onlyTheLoopsOwnerRestsIt() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = pushedStore(Pauses())
+        let owner = UUID(), other = UUID()
+        let task = await startOwned(store, host, owner: owner)
+        defer { task.cancel() }
+
+        store.rest(true, owner: other)
+        #expect(store.wantsRevisions)
+        store.rest(true, owner: owner)
+        #expect(!store.wantsRevisions)
+        store.rest(false, owner: other)
+        #expect(!store.wantsRevisions, "another view being seen wakes nothing")
+        store.rest(false, owner: owner)
+        #expect(store.wantsRevisions)
+    }
+
+    /// A rest asked for before the loop starts (its view's tasks start together) holds once the loop runs: it makes its
+    /// first pull, as every loop does, and then rests.
+    @Test func aRestWishedBeforeTheLoopStartsAppliesAfterItsFirstPull() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let pauses = Pauses()
+        let store = pushedStore(pauses)
+        var changes: [Bool] = []
+        store.onLiveChange = { changes.append($0) }
+        let owner = UUID()
+        store.rest(true, owner: owner)
+        #expect(!store.isLive && !store.wantsRevisions)
+
+        let task = await startOwned(store, host, owner: owner)
+        defer { task.cancel() }
+        #expect(host.requests.count == 1 && store.ready)
+        #expect(store.isLive && !store.wantsRevisions && changes.isEmpty, "it never asked for revisions")
+        store.revisionAvailable()
+
+        store.rest(false, owner: owner)
+        await until { pauses.count == 1 }
+        #expect(host.requests.count == 2 && changes == [true] && store.wantsRevisions)
+    }
+
+    /// The first pull after a rest lands as a catch-up, as the first one after switching back does.
+    @Test func aStoreThatWakesCatchesUpAtOnce() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let pauses = Pauses()
+        let store = pushedStore(pauses)
+        let owner = UUID()
+        let task = await startOwned(store, host, owner: owner)
+        defer { task.cancel() }
+        await until { pauses.count == 1 }
+        let first = store.catchUp
+        #expect(first != nil)
+
+        store.rest(true, owner: owner)
+        #expect(store.catchUp == first, "what it shows stays as it was")
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.user("more", id: "u")])
+        store.rest(false, owner: owner)
+        #expect(store.catchUp == nil)
+
+        await until { pauses.count == 2 }
+        #expect(store.catchUp?.thread == store.threadVersion, "the pull that woke it is the catch-up")
+    }
+
+    @Test func aStoppedStoreForgetsItsRest() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = pushedStore(Pauses())
+        let owner = UUID()
+        let task = await startOwned(store, host, owner: owner)
+        store.rest(true, owner: owner)
+        store.stop()
+        task.cancel()
+        await task.value
+
+        let again = await startOwned(store, host, owner: owner)
+        defer { again.cancel() }
+        #expect(store.wantsRevisions)
+    }
+
     @Test func thereIsNoOlderPageWithoutACursor() async {
         let (store, host, task) = await started()
         defer { task.cancel() }

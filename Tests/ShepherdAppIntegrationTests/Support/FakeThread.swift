@@ -18,6 +18,8 @@ final class FakeThread {
         var active = true
         var motionPaused = false
         var focused = false
+        /// Whether the window can be seen (`mainWindowVisible`): false while it is covered, minimized, hidden or on another Space.
+        var windowVisible = true
     }
 
     private struct Hosted: View {
@@ -52,6 +54,8 @@ final class FakeThread {
             // As the workspace hides a layout it keeps mounted.
             .opacity(visibility.active ? 1 : 0)
             .environment(\.shMotionPaused, visibility.motionPaused)
+            .environment(\.mainWindowVisible, visibility.windowVisible)
+            .environment(\.threadRestDelay, .zero)
             .environment(\.threadCommands, commands)
             .transformEnvironment(\._accessibilityReduceMotion) { if let reduceMotion { $0 = reduceMotion } }
         }
@@ -70,21 +74,25 @@ final class FakeThread {
     /// While true, snapshot requests answer that pi is still starting.
     var starting = false
     private(set) var snapshotRequests = 0
+    /// The sends pi was handed.
+    private(set) var sends = 0
     let window: OffscreenWindow
 
     /// `header` puts the thread's toolbar (`ThreadHeader`) above it, as the workspace does.
     /// `reduceMotion` pins Reduce Motion for a test that needs motion whatever the machine's
     /// setting (CI's VM has it on). `subagentTray` has the thread open subagents in an inspector (a
-    /// no-op here), so the composer docks their tray.
+    /// no-op here), so the composer docks their tray. `windowVisible: false` mounts the thread in a window
+    /// nobody can see.
     init(_ snapshot: NativeThreadSnapshot, history: [NativeThreadMessage]? = nil, starting: Bool = false,
          store: NativeThreadStore = NativeThreadStore(), size: CGSize = CGSize(width: 900, height: 800), dark: Bool = true,
          header: Bool = false, focused: Bool = false, reduceMotion: Bool? = nil, designCards: DesignCommentCards? = nil,
-         projectCards: ProjectActionCards? = nil, subagentTray: Bool = false) {
+         projectCards: ProjectActionCards? = nil, subagentTray: Bool = false, windowVisible: Bool = true) {
         self.snapshot = snapshot
         self.history = history
         self.starting = starting
         self.store = store
         visibility.focused = focused
+        visibility.windowVisible = windowVisible
         window = OffscreenWindow(size: size, dark: dark)
         let request: NativeThreadStore.Request = { [weak self] value in
             guard let self else { return .failure(code: "gone", message: "harness released") }
@@ -99,7 +107,10 @@ final class FakeThread {
                 page.messages = Array(history[start..<end])
                 page.olderCursor = start > 0 ? history[start].entryID : nil
                 return .snapshot(value: page)
-            case .send(_, _, let operation, _, _, _, _, _, _), .abort(_, _, let operation), .answer(_, _, let operation, _, _),
+            case .send(_, _, let operation, _, _, _, _, _, _):
+                self.sends += 1
+                return .accepted(operationID: operation)
+            case .abort(_, _, let operation), .answer(_, _, let operation, _, _),
                  .setModel(_, _, let operation, _), .setThinking(_, _, let operation, _),
                  .subagentCommand(_, _, let operation, _, _, _, _):
                 return .accepted(operationID: operation)

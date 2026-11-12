@@ -35,10 +35,10 @@ final class NativeThreadStores<Key: Hashable> {
         inputs[key] = input
         return input
     }
-    /// The keys whose thread is on screen: its store's poll loop runs (`NativeThreadStore.isLive`).
+    /// The keys whose thread is on screen, in a window that can be seen: its store wants the host's pushed
+    /// revisions (`NativeThreadStore.wantsRevisions`). A resting store (`rest`) is not in it, though its loop runs.
     private(set) var live: Set<Key> = []
-    /// Told the new `live` whenever it changes: the local app asks its server to push revisions
-    /// for these threads only.
+    /// Told the new `live` whenever it changes: the hosts are asked to push revisions for these threads only.
     var onLiveChange: ((Set<Key>) -> Void)?
     /// Names the machine a thread's agent runs on, for its errors' Details.
     var hostName: ((Key) -> String?)?
@@ -103,7 +103,7 @@ final class NativeThreadStores<Key: Hashable> {
     func install(_ store: NativeThreadStore, for key: Key) {
         stores[key] = store
         store.onLiveChange = { [weak self] isLive in self?.setLive(key, isLive) }
-        setLive(key, store.isLive)
+        setLive(key, store.wantsRevisions)
     }
 
     private func setLive(_ key: Key, _ isLive: Bool) {

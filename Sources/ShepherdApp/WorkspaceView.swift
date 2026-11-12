@@ -16,6 +16,7 @@ struct WorkspaceView: View {
     @State private var frozenSize: CGSize?
 
     var body: some View {
+        let _ = SHRenderProbe.tick("shell.workspace")
         VStack(spacing: 0) {
             ZStack {
                 // A layout mounts the first time its agent is shown and stays
@@ -121,6 +122,9 @@ struct AgentLayoutModel: Equatable {
         let agentName: String
         /// The pi session its history is previewed from while pi starts.
         let piSessionID: String
+        /// The agent's status, for the folded terminal line to read itself while the panel is maximized. The
+        /// box is the agent's own for its life, so a status report is no change of the model and reruns no layout.
+        let live: AgentLive
         /// Waiting for the first launch's copy, or not signed in: the line or card at its end.
         var authNotice: ThreadAuthNotice? = nil
         /// The branch the card beside the transcript names; nil outside a git checkout and for a
@@ -128,6 +132,11 @@ struct AgentLayoutModel: Equatable {
         /// writes every thread in it, and the count changing must rerun no layout. The card on
         /// screen is asked to read again instead (`ShepherdViewModel.adopt`).
         var branch: String? = nil
+
+        static func == (a: Thread, b: Thread) -> Bool {
+            a.agentID == b.agentID && a.paneID == b.paneID && a.agentName == b.agentName && a.piSessionID == b.piSessionID
+                && a.live === b.live && a.authNotice == b.authNotice && a.branch == b.branch
+        }
     }
 
     let tab: Tab
@@ -146,9 +155,6 @@ struct AgentLayoutModel: Equatable {
     let review: ReviewSession?
     /// The terminal panel under the thread, and its height.
     var terminal = TerminalPanels.Panel()
-    /// The thread's state while the panel is maximized over it, for its folded line; nil
-    /// otherwise, so a status report reruns no other layout.
-    var foldedState: AgentState?
     var terminalHeight: CGFloat = AppLayout.terminalPanelHeight
     /// The design the thread's agent draws: the layout is its canvas and chat (`DesignLayoutView`).
     var design: DesignID?
@@ -161,12 +167,13 @@ struct AgentLayoutModel: Equatable {
             && a.design == b.design && a.systemBuild == b.systemBuild
             && a.inspectingRunID == b.inspectingRunID && a.sideTab == b.sideTab && a.sideNews == b.sideNews
             && a.sideMaximized == b.sideMaximized && a.review === b.review
-            && a.terminal == b.terminal && a.terminalHeight == b.terminalHeight && a.foldedState == b.foldedState
+            && a.terminal == b.terminal && a.terminalHeight == b.terminalHeight
     }
 
     /// Resolves every mounted layout's model from one pass over the workspace.
     @MainActor
     struct Resolver {
+        private let vm: ShepherdViewModel
         private let visibleTabID: TabID?
         private let focusedPaneID: PaneID?
         private let agentsByTab: [TabID: Agent]
@@ -183,11 +190,13 @@ struct AgentLayoutModel: Equatable {
         private let defaultModel: String?
 
         init(vm: ShepherdViewModel, visibleTabID: TabID?) {
+            self.vm = vm
             terminals = vm.terminalPanels
-            designs = Dictionary(vm.state.designs.map { ($0.id, $0.buildsSystem) }, uniquingKeysWith: { first, _ in first })
+            // The workspace's structure, not its state: a status report reruns no layout (an agent's live fields read idle here).
+            designs = Dictionary(vm.workspaceStructure.designs.map { ($0.id, $0.buildsSystem) }, uniquingKeysWith: { first, _ in first })
             self.visibleTabID = visibleTabID
             focusedPaneID = vm.showSettings || vm.showComponentGallery || vm.showCommandPalette ? nil : vm.focusedPaneID
-            agentsByTab = Dictionary(vm.state.agents.map { ($0.tabID, $0) }, uniquingKeysWith: { first, _ in first })
+            agentsByTab = Dictionary(vm.workspaceStructure.agents.map { ($0.tabID, $0) }, uniquingKeysWith: { first, _ in first })
             runs = vm.subagentInspector.runByAgent
             panes = vm.subagentInspector
             reviews = Dictionary(vm.reviewSessions.values.map { ($0.agentID, $0) }, uniquingKeysWith: { first, _ in first })
@@ -212,18 +221,18 @@ struct AgentLayoutModel: Equatable {
             let thread = agentsByTab[tab.id].flatMap { agent in
                 tab.layout.leaves.first { primaryAgent(in: tab, pane: $0, agents: [agent]) != nil }
                     .map { Thread(agentID: agent.id, paneID: $0.id, agentName: agent.name, piSessionID: agent.effectivePiSessionID,
-                                  authNotice: notice(agent), branch: agent.designID == nil ? AgentBranchLabel(agent: agent)?.branch : nil) }
+                                  live: vm.agentLive(agent.id), authNotice: notice(agent),
+                                  branch: agent.designID == nil ? AgentBranchLabel(agent: agent)?.branch : nil) }
             }
             let owner = thread.map { SidePaneOwner.local($0.agentID) }
             let terminal = terminals.panel(TerminalPanelKey(host: nil, tab: tab.id))
-            let folded = terminal.shown && terminal.maximized ? agentsByTab[tab.id].map { AgentState($0.status) } : nil
             return AgentLayoutModel(tab: tab, isVisible: visible, thread: thread, focusedPaneID: visible ? focusedPaneID : nil,
                                     inspectingRunID: thread.flatMap { runs[$0.agentID] },
                                     sideTab: owner.flatMap { panes.open.contains($0) ? panes.tab(for: $0) : nil },
                                     sideNews: owner.flatMap { panes.news[$0] } ?? [],
                                     sideMaximized: owner.map { panes.maximized.contains($0) } ?? false,
                                     review: thread.flatMap { reviews[$0.agentID] },
-                                    terminal: terminal, foldedState: folded, terminalHeight: terminals.height,
+                                    terminal: terminal, terminalHeight: terminals.height,
                                     design: agentsByTab[tab.id]?.designID.flatMap { designs[$0] != nil ? $0 : nil },
                                     systemBuild: agentsByTab[tab.id]?.designID.flatMap { designs[$0] } ?? false)
         }
@@ -437,8 +446,8 @@ struct PaneTreeView: View {
                         .allowsHitTesting(leaf.shown)
                         .accessibilityHidden(!leaf.shown)
                 }
-                TerminalPanelChrome(geometry: geometry, threadTitle: thread.agentName, threadState: model.foldedState ?? .idle,
-                                    restore: { [vm] in vm.toggleTerminalMaximized() })
+                LocalFoldedThreadChrome(geometry: geometry, threadTitle: thread.agentName, live: thread.live,
+                                        restore: { [vm] in vm.toggleTerminalMaximized() })
                 if let bar = geometry.tabBar {
                     TerminalPanelBar(vm: vm, target: target, tabs: geometry.tabs, selected: selected, maximized: panel.maximized,
                                      onScreen: model.isVisible, host: nil)

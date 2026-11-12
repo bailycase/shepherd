@@ -410,6 +410,8 @@ public final class NativeThreadStore {
     /// pulls at most this often, so a streaming turn lands at about 30 Hz.
     nonisolated public static let pushedPullSpacing: Duration = .milliseconds(33)
     @ObservationIgnored private let pollWake = PollWake()
+    /// Ends the wait of a resting loop (`rest`): the thread is seen again, or a send waits for pi.
+    @ObservationIgnored private let restWake = PollWake()
     @ObservationIgnored private var lastPull: ContinuousClock.Instant?
 
     public init(startingLimit: Duration = .seconds(60), pause: @escaping Pause = { try await Task.sleep(for: $0) }) {
@@ -418,16 +420,33 @@ public final class NativeThreadStore {
     }
 
     @ObservationIgnored private var request: Request? {
-        didSet { if (request != nil) != (oldValue != nil) { onLiveChange?(request != nil) } }
+        didSet { publishLive() }
     }
-    /// Told when the poll loop starts (true: the thread is on screen) and when it ends, so the
-    /// host pushes revisions only for threads on screen (`revisionAvailable`).
+    /// Told when the thread starts or stops wanting revisions (`wantsRevisions`): its poll loop starts or ends,
+    /// or rests (`rest`), so the host pushes revisions only for threads on screen that can be seen.
     @ObservationIgnored public var onLiveChange: ((Bool) -> Void)?
+    /// What `onLiveChange` last said.
+    @ObservationIgnored private var reportedLive = false
     /// A design agent's chat: what the design screen shows as a message leaves
     /// (`DesignViewRecord`), sent with it where the host takes one (`designContext`).
     @ObservationIgnored public var designContext: (() -> DesignViewRecord?)?
-    /// The poll loop runs: the thread is on screen, and a pushed revision pulls it.
+    /// The poll loop runs: the thread is on screen. A resting loop (`rest`) still runs.
     public var isLive: Bool { request != nil }
+    /// The thread is on screen and its loop pulls: it wants the host's pushed revisions. False once the loop ends,
+    /// and while it rests.
+    public var wantsRevisions: Bool { request != nil && !resting }
+    /// The view whose loop runs has asked to rest (`rest`).
+    private var resting: Bool { request != nil && restOwner != nil && restOwner == owner }
+    /// The view that asked the store to rest, whose wish `owner`'s loop honors: held across loops, so a rest asked
+    /// for before the loop starts, or by a view handed the loop back, still applies.
+    @ObservationIgnored private var restOwner: UUID?
+
+    private func publishLive() {
+        let wants = wantsRevisions
+        guard wants != reportedLive else { return }
+        reportedLive = wants
+        onLiveChange?(wants)
+    }
     /// When the current stretch of `native_starting` answers began.
     @ObservationIgnored private var startingSince: ContinuousClock.Instant?
     /// The run (`epoch`) in which pi was woken for a preview snapshot: once per time on screen.
@@ -1348,7 +1367,7 @@ public final class NativeThreadStore {
             await pull(fresh: !warm)
             await renewHolds(run)
             while !Task.isCancelled && epoch == run {
-                do { try await pauseUntilNextPull() } catch { break }
+                do { try await pauseUntilNextPull(run: run) } catch { break }
                 guard epoch == run else { break }
                 await pull()
             }
@@ -1393,13 +1412,14 @@ public final class NativeThreadStore {
         derive()
     }
 
-    /// The host has a newer revision to pull (the local server pushes each one a local agent's
-    /// pi reaches): the poll loop pulls now instead of when its pause ends, or once more right
-    /// after the pull in flight however many arrive meanwhile, and at most every
-    /// `pushedPullSpacing`. A thread off screen has no loop and ignores it; its first pull when
-    /// shown again catches it up. The interval's poll stays as the fallback.
+    /// The host has a newer revision to pull (it pushes each one a local agent's pi reaches): the
+    /// poll loop pulls now instead of when its pause ends, or once more right after the pull in
+    /// flight however many arrive meanwhile, and at most every `pushedPullSpacing`. A thread off
+    /// screen has no loop, and a resting one (`rest`) pulls nothing, unless a send waits for pi:
+    /// both ignore it, and the first pull when shown or seen again catches them up. The
+    /// interval's poll stays as the fallback.
     public func revisionAvailable() {
-        guard request != nil else { return }
+        guard request != nil, !resting || !startWaiters.isEmpty else { return }
         pollWake.signal()
     }
 
@@ -1416,23 +1436,56 @@ public final class NativeThreadStore {
     }
 
     /// Waits out one poll interval, or less once a revision is pushed, but never less than
-    /// `pushedPullSpacing` since the last pull began. Throws once the loop's task is cancelled.
-    private func pauseUntilNextPull() async throws {
+    /// `pushedPullSpacing` since the last pull began. While the loop rests it waits for being seen again, or for
+    /// a send to wait for pi, and a wait that ends meanwhile pulls nothing. Throws once the loop's task is cancelled.
+    private func pauseUntilNextPull(run: UUID) async throws {
         let pause = self.pause
-        if !pollWake.pending {
-            let interval = pollInterval
-            let wake = pollWake
-            try await withThrowingTaskGroup(of: Void.self) { group in
-                group.addTask { try await pause(interval) }
-                group.addTask { await wake.wait() }
-                try await group.next()
-                group.cancelAll()
+        repeat {
+            while epoch == run, resting, startWaiters.isEmpty {
+                restWake.pending = false
+                await restWake.wait()
+                try Task.checkCancellation()
             }
+            guard epoch == run else { return }
+            if !pollWake.pending {
+                let interval = pollInterval
+                let wake = pollWake
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    group.addTask { try await pause(interval) }
+                    group.addTask { await wake.wait() }
+                    try await group.next()
+                    group.cancelAll()
+                }
+            }
+            if let lastPull {
+                let rest = Self.pushedPullSpacing - (ContinuousClock.now - lastPull)
+                if rest > .zero { try await pause(rest) }
+            }
+        } while epoch == run && resting && startWaiters.isEmpty
+    }
+
+    /// The thread rests (`rests`) while `owner`'s view can't be seen (its window is covered, minimized, hidden or on
+    /// another Space), and wakes when it can be. The loop `owner` runs pulls nothing meanwhile, a pushed
+    /// revision included, and the host is told it wants none (`wantsRevisions`, `onLiveChange`). Seen again, the
+    /// loop pulls once, as a thread shown again does: what arrived meanwhile lands at once, without motion
+    /// (`catchUp`).
+    ///
+    /// Unlike `suspend`, everything stays: the loop, an action in flight (its outcome is not "unknown"), a send
+    /// waiting for pi (it goes, and the loop pulls until pi is up), and `isLive`, so the thread is still the
+    /// one on screen and its history is not released. The wish belongs to `owner` and is kept across loops until
+    /// `stop`, so a rest asked for before `run` starts applies after its first pull. Only the running loop's
+    /// owner rests it.
+    public func rest(_ rests: Bool, owner: UUID) {
+        guard rests ? restOwner != owner : restOwner == owner else { return }
+        let was = resting
+        restOwner = rests ? owner : nil
+        guard resting != was else { return }
+        if !resting {
+            catchUp = nil
+            pollWake.signal()
+            restWake.signal()
         }
-        if let lastPull {
-            let rest = Self.pushedPullSpacing - (ContinuousClock.now - lastPull)
-            if rest > .zero { try await pause(rest) }
-        }
+        publishLive()
     }
 
     /// The thread went off screen (its agent is hidden): the poll loop ends, and everything the
@@ -1450,6 +1503,8 @@ public final class NativeThreadStore {
         }
         resumeStartWaiters(false)
         epoch = UUID()
+        // A loop resting ends too.
+        restWake.signal()
         recentRequest = UUID()
         historyEpoch = UUID()
         request = nil
@@ -1477,6 +1532,7 @@ public final class NativeThreadStore {
 
     public func stop() {
         suspend()
+        restOwner = nil
         connection = nil
         if ready { ready = false }
         // Unknown until the thread polls again.
@@ -1867,7 +1923,11 @@ public final class NativeThreadStore {
         guard loadError == nil, !busy, request != nil else { return false }
         let run = epoch
         busy = true
-        let started = await withCheckedContinuation { startWaiters.append($0) }
+        let started = await withCheckedContinuation { (waiter: CheckedContinuation<Bool, Never>) in
+            startWaiters.append(waiter)
+            // A resting loop pulls until pi is up.
+            restWake.signal()
+        }
         // stop() already reset everything for a thread that went away meanwhile.
         guard epoch == run else { return false }
         busy = !inFlight.isEmpty

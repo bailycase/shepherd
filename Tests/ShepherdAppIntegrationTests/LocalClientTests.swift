@@ -141,7 +141,7 @@ struct LocalClientTests {
             host.server.queue.async { host.server.sendToLocalApps(.toolFinished(agentID: id, tool: "edit")) }
             try await Task.sleep(for: .milliseconds(20))
         }
-        try await eventuallyOnMain("the sparkline to take the host's tool calls") { !vm.sidebarActivityBox(id).samples.isEmpty }
+        try await eventuallyOnMain("the sparkline to take the host's tool calls") { !vm.agentLive(id).samples.isEmpty }
 
         let line = "Switched Acme to work: personal hit its limit."
         host.server.noticeToLocalApps(agentID: id, message: line)

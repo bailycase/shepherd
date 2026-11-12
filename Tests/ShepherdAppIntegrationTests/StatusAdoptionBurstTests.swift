@@ -76,6 +76,7 @@ struct StatusAdoptionBurstTests {
 
         // Working, done, then working again: each agent's turn ended and began another inside one drain.
         let rounds: [AgentStatus] = [.working, .done, .working]
+        let lives = fleet.ids.map { vm.agentLive($0) }
         try report(rounds.flatMap { status in fleet.ids.map { ($0, status) } }, to: fleet)
         try await drained(fleet)
 
@@ -83,6 +84,7 @@ struct StatusAdoptionBurstTests {
         #expect(vm.skippedAdoptions == skipped + 23)
         #expect(vm.statusEdges == edges + 24, "the end of each turn and the start of the next were both seen")
         #expect(vm.state.agents.map(\.status) == Array(repeating: .working, count: 8))
+        #expect(lives.map(\.status) == Array(repeating: .working, count: 8), "each agent's box follows its newest status")
         #expect(fleet.ids.allSatisfy { vm.statusSince[$0] != nil })
         #expect(vm.failedTurns.isEmpty)
     }
