@@ -46,10 +46,27 @@ extension AppLayout {
     static let fleetWeightHeight: CGFloat = 24
     /// A repo tag.
     static let fleetTagHeight: CGFloat = 16
+    /// A Mac's tag ("mini") is mono 10 (FleetDispatch, FleetSidebar).
+    static let fleetTagFont: CGFloat = 10
     /// A card of a Mac that isn't answering fades.
     static let fleetAsleepOpacity: Double = 0.72
     /// The sidebar's Fleet row: 36pt tall, its glyph 16pt.
     static let fleetFooterRowHeight: CGFloat = 36
     static let fleetFooterGlyph: CGFloat = 16
     static let fleetFooterDotGap: CGFloat = SH.Space.xs
+
+    // Dispatch cards in a thread (FleetDispatch, FleetStates) and the dispatched thread (FleetRemote).
+    /// A dispatch row's tile: 28pt.
+    static let fleetRowTile: CGFloat = 28
+    /// The From box's dash, and the result card's tick.
+    static let fleetFromDash: [CGFloat] = [4, 3]
+    static let fleetResultTick: CGFloat = 12
+    /// The header's host pill is 24pt tall; its dot is the Fleet page's.
+    static let fleetHeaderPillHeight: CGFloat = 24
+    /// A card's buttons are 26pt tall.
+    static let fleetCardButtonHeight: CGFloat = 26
+    /// The thread behind an offline banner fades to this.
+    static let fleetOfflineOpacity: Double = 0.6
+    /// New thread's Where it runs popover hangs 33pt in from the card's trailing edge (FleetNewThread).
+    static let fleetPlaceTrailingInset: CGFloat = 33
 }

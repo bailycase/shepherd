@@ -1179,6 +1179,7 @@ public final class RemoteHostClient: @unchecked Sendable {
             case .fleetEnabled: "toggle the Fleet experiment"
             case .fleetWeight: "change where Fleet sends work"
             case .fleetThreadsCanSend, .fleetThreadCap: "change what threads may send"
+            case .fleetAutoDispatch, .fleetBatteryCountsHalf: "change how Fleet picks a Mac"
             case .designToolEnabled: "toggle the Design tool experiment"
             case .missionsEnabled: "toggle the Missions experiment"
             case .subagentDefaults, .worktreeDeleteAction, .skillsInSlashMenu, .mcpProjectConfig, .slashCommand, .closeOnMerge: "change this setting"

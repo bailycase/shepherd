@@ -117,6 +117,8 @@ final class FleetDispatch: @unchecked Sendable {
     var sending: Set<UUID> = []
     var delivering: Set<UUID> = []
     var placing: Set<UUID> = []
+    /// Threads the person started whose first placement is under way (`dispatchUserThread`): one that stays here is dropped.
+    var firstPlacements: Set<UUID> = []
     /// Pushes to the sending Mac on their way (never twice at once).
     var pushing: Set<UUID> = []
     /// Tool calls waiting on a placement that is under way, answered together.
@@ -442,10 +444,16 @@ final class FleetDispatch: @unchecked Sendable {
         guard var record = outbound[id] else { return }
         guard [.placing, .waitingRoom, .heldLimit].contains(record.state) else { return completion?(.success(record)) ?? () }
         let macs = placementMacs(for: record)
-        let batteryHalf = true
+        let batteryHalf = host.settings()?.fleetBatteryCountsHalf ?? true
         let outcome = FleetPlacement.place(host: record.requestedHost, macs: macs, batteryCountsHalf: batteryHalf)
         switch outcome {
         case .place(let target, let reasons):
+            // A thread the person started that stays on this Mac isn't a dispatch: the app starts it itself.
+            if record.kind == .userThread, target == hostID, firstPlacements.remove(id) != nil {
+                outbound[id] = nil
+                save()
+                return completion?(.failure(.init(code: Self.keptHere, message: "It stays on this Mac."))) ?? ()
+            }
             record.targetHostID = target
             record.targetHostName = macs.first { $0.hostID == target }?.name
             record.reasonCodes = reasons

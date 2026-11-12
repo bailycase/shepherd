@@ -95,6 +95,8 @@ struct SidebarListRow: Identifiable, Equatable {
     var foldedUnder: AutomationKey? = nil
     /// This Mac's thread's pull request (`ShepherdViewModel.pullRequestLinks`).
     var pullRequest: SHSidebarRow.Badge? = nil
+    /// A thread another Mac runs for the thread above it in this list (`SidebarDerivation.nestDispatched`): drawn a level in, with an elbow.
+    var fleetNested = false
 }
 
 /// An active automation's row in Activity's Automations group (the user's request: one row per automation, as Designs
@@ -205,9 +207,13 @@ struct SidebarSource: Equatable {
         var offline = false
         /// The agents its missions started (`missions.v1`): a host sends no missions in its state.
         var missionAgents: Set<AgentID> = []
+        /// The Mac's fleet host id (`helloOk.hostID`), which `DispatchedFrom.hostID` names; nil before it has said it.
+        var fleetID: UUID?
     }
 
     var local: ShepherdState
+    /// This Mac's own fleet host id, for a thread whose sender is one of This Mac's.
+    var localFleetID: UUID?
     var openingTurns: Set<AgentID> = []
     var completions: [SidebarRowID: SidebarCompletions.Record] = [:]
     /// This Mac's agents whose last turn ended in an error.
@@ -286,6 +292,8 @@ enum SidebarDerivation {
         SHRenderProbe.tick("sidebar.lists")
         let pinned = Set(pins.threads)
         var entries: [Entry] = []
+        /// Each thread another Mac runs for one of ours or a host's: the row of the thread that sent it.
+        var dispatchParents: [SidebarRowID: SidebarRowID] = [:]
         /// A thread's entry, marked for pinning; `pin` is nil for what is never pinned (an
         /// automation's run, a design). Only a pinned thread keeps its pin on the entry.
         func entry(_ row: SidebarListRow, _ pin: PinnedThread?, needsYou: Bool, key: Double, host: Int, index: Int) -> Entry {
@@ -353,6 +361,7 @@ enum SidebarDerivation {
                                notSignedIn: notSignedIn, waiting: source.waiting.contains(agent.id),
                                opening: source.openingTurns.contains(agent.id), since: source.statusSince[agent.id])
             if let pull = source.pullRequests[agent.id] { row.attach(pull) }
+            if let sender = fleetSender(of: agent, source) { dispatchParents[row.id] = sender }
             // A manual automation's watcher run folds under it while live; a triggered run's thread is ordinary but
             // folds under its automation while that is on (as in the space tree). One waiting on you stays in Needs you;
             // a run of an automation that isn't active is a thread like any other.
@@ -407,6 +416,7 @@ enum SidebarDerivation {
                 var parent: Automation?
                 if !host.offline, let candidate = watcher ?? origin, live || candidate.activeTrigger { parent = candidate }
                 var row = remoteRow(agent, host: host, automation: watcher != nil, needsYou: needsYou, folded: parent != nil)
+                if let sender = fleetSender(of: agent, source) { dispatchParents[row.id] = sender }
                 if let parent {
                     tally(&row, parent, host: host.id, hostIndex: hostIndex + 1, hostName: host.name, agent: agent,
                           running: agent.status == .working, watcher: live, needsYou: needsYou)
@@ -465,6 +475,11 @@ enum SidebarDerivation {
             }
         }
         lists.pinned = pins.threads.compactMap { pinnedRows[$0] }
+        // A thread under the thread that sent it, where both are in one list (FleetSidebar).
+        lists.needsYou = nestDispatched(lists.needsYou, parents: dispatchParents)
+        lists.working = nestDispatched(lists.working, parents: dispatchParents)
+        lists.done = nestDispatched(lists.done, parents: dispatchParents)
+        lists.recents = nestDispatched(lists.recents, parents: dispatchParents)
         // A run asking you first, then running, then the rest by their latest run, then by name.
         let ordered = tallies.sorted { a, b in
             if a.value.rank != b.value.rank { return a.value.rank < b.value.rank }
@@ -493,6 +508,36 @@ enum SidebarDerivation {
         }
         lists.activity = entries.filter(\.needsYou).map(\.row) + calm
         return lists
+    }
+
+    /// The row of the thread that sent `agent` to another Mac (`Agent.dispatchedFrom`): This Mac's, or a connected host's. Nil for a
+    /// thread the person started, or whose sender is on a Mac this one isn't connected to.
+    static func fleetSender(of agent: Agent, _ source: SidebarSource) -> SidebarRowID? {
+        guard let from = agent.dispatchedFrom, let sender = from.agentID else { return nil }
+        if let local = source.localFleetID, from.hostID == local { return .local(sender) }
+        return source.hosts.first { $0.fleetID == from.hostID }.map { .remote(RemoteAgentRef(hostID: $0.id, agentID: sender)) }
+    }
+
+    /// A dispatched thread goes right under the thread that sent it, indented, when that thread is in the same list. Otherwise it
+    /// keeps its place as a row of its own, with its Mac's tag. A sender on another Mac this one doesn't know, or that was
+    /// deleted, never matches a row.
+    static func nestDispatched(_ rows: [SidebarListRow], parents: [SidebarRowID: SidebarRowID]) -> [SidebarListRow] {
+        guard !parents.isEmpty else { return rows }
+        let ids = Set(rows.map(\.id))
+        var children: [SidebarRowID: [SidebarListRow]] = [:]
+        var rest: [SidebarListRow] = []
+        for row in rows {
+            // One level: a thread that is itself under another stays where it is.
+            if let parent = parents[row.id], parent != row.id, ids.contains(parent), parents[parent] == nil {
+                var nested = row
+                nested.fleetNested = true
+                children[parent, default: []].append(nested)
+            } else {
+                rest.append(row)
+            }
+        }
+        guard !children.isEmpty else { return rows }
+        return rest.flatMap { [$0] + (children[$0.id] ?? []) }
     }
 
     /// The short reason a Needs you row gives: the agent's own word or two for its question
@@ -628,7 +673,8 @@ enum SidebarDerivation {
             word = "needs you"
         } else {
             leading = automation ? .glyph("bolt", attention: false) : .dot(AgentState(agent.status))
-            accessory = .tag(host.name)
+            // A Mac of the fleet is tagged as the boards draw it: "mini", not "Mac mini".
+            accessory = .tag(host.fleetID == nil ? host.name : FleetWherePicker.tagName(host.name))
             word = AgentRow.statusWord(agent.status)
         }
         let help = agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name

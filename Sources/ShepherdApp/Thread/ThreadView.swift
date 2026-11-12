@@ -115,6 +115,8 @@ struct ThreadView: View {
     @State private var loopRun = 0
     @Environment(\.designCommentCards) private var commentCards
     @Environment(\.shUserBubbleMetrics) private var bubbleMetrics
+    /// Dispatches: what this thread sent and where it came from (FleetDispatch, FleetRemote).
+    @Environment(\.fleetThread) private var fleetThread
 
     var body: some View {
         let _ = SHRenderProbe.tick("thread.view")
@@ -187,6 +189,10 @@ struct ThreadView: View {
                         if projectSend == nil { ThreadSubmissions(store: store, input: input) }
                         ThreadWaitLine(store: store, hasLiveRow: liveRowID != nil, active: active, parentCatchingUp: catchingUp, drawn: drawnVersion,
                                        project: projectActionCards != nil || workerStyle != nil)
+                        // Where its last message goes, while the dispatch that started this thread is going (FleetRemote).
+                        if let line = fleetThread?.sentBy?.goesBackLine, fleetThread?.goesBack == true {
+                            FleetGoesBackBanner(line: line).equatable()
+                        }
                         if let authNotice {
                             ThreadAuthNoticeView(notice: authNotice, actions: authActions)
                                 .id(ThreadAuthNotice.rowID)
@@ -221,6 +227,8 @@ struct ThreadView: View {
                     .environment(\.shProseFileLinks, .app)
                 }
                 .id(transcriptRevision)
+                // A dispatched thread whose Mac stopped answering: its words fade under the banner, the composer and header don't (FleetRemote).
+                .opacity(fleetThread?.offline == true ? AppLayout.fleetOfflineOpacity : 1)
                 .scrollPosition($historyAnchor.position)
                 // The composer floats over the scroll view; inset by its real height so "the
                 // bottom" is the last turn, not the space under the card.
@@ -412,6 +420,9 @@ struct ThreadView: View {
                               continues: row.commentAnswered)
                     .equatable()
                     .shArrival(arriving, .list, edge: .bottom)
+            } else if let fleet = fleetThread, let message = fleetMessage(row, fleet) {
+                message
+                    .shArrival(arriving, .list, edge: .bottom)
             } else if segments.count == 1, case .person(let person) = segments[0] {
                 UserTurn(turn: person)
                     .equatable()
@@ -430,6 +441,22 @@ struct ThreadView: View {
                 .equatable()
                 .modifier(CommentAnswer(inCard: card != nil))
         }
+    }
+
+    /// A user turn a dispatch wrote: the result a dispatched thread sent back, or the task a dispatched thread started with. Nil for any other.
+    private func fleetMessage(_ row: NativeThreadRow, _ fleet: FleetThreadSurface) -> FleetMessageRow? {
+        let bubbles = row.turn.bubbles
+        guard bubbles.count == 1, let bubble = bubbles.first else { return nil }
+        let time = bubble.sentAt.map { nativeClockText($0, meridiem: false) }
+        if let result = FleetResultMessage.parse(bubble.text) {
+            return FleetMessageRow(kind: .result(result, fleet.card(for: result)), time: time, actions: fleet.actions)
+        }
+        // The first message of a thread another thread sent: the From box, over the words that were sent.
+        if let sentBy = fleet.sentBy, FleetSentBy.isDispatchMessage(bubble.text) {
+            return FleetMessageRow(kind: .from(sentBy, FleetSentBy.task(in: bubble.text)),
+                                   time: sentBy.at > 0 ? nativeClockText(sentBy.at, meridiem: false) : time, actions: fleet.actions)
+        }
+        return nil
     }
 
     /// What this turn's typed Project references resolve to now (empty in an ordinary thread), so its card redraws when they change.
