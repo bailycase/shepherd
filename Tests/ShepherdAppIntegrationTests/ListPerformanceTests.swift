@@ -1428,6 +1428,7 @@ struct ListPerformanceTests {
             ListPerf.settle(thread.window)
             return fences.allSatisfy { CodeHighlightCache.cached(CodeHighlightCache.Key(fence: $0, language: "swift")) != nil }
         }
+        try await atRest(thread.window)
         #expect(Self.nativeFields(in: thread.window.host) == fences.count, "the fences are on screen")
 
         let streamed = try await counting(thread.window) {
