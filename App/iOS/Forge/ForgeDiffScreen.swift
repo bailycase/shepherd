@@ -3,6 +3,17 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
+/// A file's hunks as touch-diff rows, plain text (derived once per read, never in `body`).
+func forgeDiffRows(_ file: DiffFile) -> [SHDiffRow] {
+    file.hunks.flatMap { hunk -> [SHDiffRow] in
+        [.hunk(id: hunk.id, header: hunk.header)] + hunk.lines.map { line in
+            let kind: SHDiffLineKind = switch line.kind { case .added: .added; case .removed: .removed; case .context: .context }
+            return .line(SHDiffLineContent(id: "\(hunk.id)#\(line.id)", key: line.id, kind: kind, oldNumber: line.oldLine,
+                                           newNumber: line.newLine, text: AttributedString(line.text), source: line.text))
+        }
+    }
+}
+
 /// One file of a pull request's diff on iPhone: wrapped lines, Mark viewed in the bar.
 struct ForgeDiffScreen: View {
     let key: ForgeItemKey
@@ -49,7 +60,7 @@ struct ForgeDiffScreen: View {
         }
         .task(id: path) {
             if store.files[key]?.value == nil { await store.loadFiles(key) }
-            rows = store.files[key]?.value?.file(path).map { MissionFileScreen.rows($0.file) } ?? []
+            rows = store.files[key]?.value?.file(path).map { forgeDiffRows($0.file) } ?? []
         }
     }
 }
@@ -134,7 +145,7 @@ struct ForgeDiffPane: View {
         .background(sh.bgWindow)
         .task(id: path) {
             if store.files[key]?.value == nil { await store.loadFiles(key) }
-            rows = store.files[key]?.value?.file(path).map { MissionFileScreen.rows($0.file) } ?? []
+            rows = store.files[key]?.value?.file(path).map { forgeDiffRows($0.file) } ?? []
         }
     }
 }

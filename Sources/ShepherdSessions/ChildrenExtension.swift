@@ -20,7 +20,7 @@ public enum ChildrenExtension {
     public static var sources: [(String, String)] {
         [("shepherd-lines.mjs", EmbeddedExtensions.source("shepherd-lines.mjs")),
          ("shepherd-children.ts", extensionSource), ("shepherd-children-config.ts", configSource),
-         ("shepherd-workflow.ts", workflowSource), ("shepherd-missions.ts", missionsSource),
+         ("shepherd-workflow.ts", workflowSource),
          ("shepherd-children-ui.ts", uiSource), ("shepherd-cli.ts", EmbeddedExtensions.source("shepherd-cli.ts")),
          ("shepherd-cli-client.mjs", EmbeddedExtensions.source("shepherd-cli-client.mjs")),
          ("shepherd-inspect.mjs", InspectExtension.extensionSource)]
@@ -28,7 +28,6 @@ public enum ChildrenExtension {
     public static var extensionSource: String { EmbeddedExtensions.source("shepherd-children.ts") }
     public static var configSource: String { EmbeddedExtensions.source("shepherd-children-config.ts") }
     public static var workflowSource: String { EmbeddedExtensions.source("shepherd-workflow.ts") }
-    public static var missionsSource: String { EmbeddedExtensions.source("shepherd-missions.ts") }
     public static var uiSource: String { EmbeddedExtensions.source("shepherd-children-ui.ts") }
 
 }

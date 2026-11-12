@@ -83,10 +83,10 @@ function anthropic(model, decision) {
 }
 
 // `onRequest({ index, path, body })` runs before the reply and may return { call: "shell command" } to make it a
-// bash tool call, { tool: { name, arguments } } to make it a call to any tool, or { status, text } to fail the
-// request; `reasoning: N` adds a reasoning item of N characters to a Responses reply. `usage(entry)` says how many
-// tokens the reply reports ({ input, output }); without it a million each way. `uniqueIds` gives every Responses
-// reply ids of its own (see `responses`).
+// bash tool call, { tool: { name, arguments } } to make it a call to any tool, { status, text } to fail the
+// request, or { stall: true } to start an Anthropic reply and then only ping; `reasoning: N` adds a reasoning item
+// of N characters to a Responses reply. `usage(entry)` says how many tokens the reply reports ({ input, output });
+// without it a million each way. `uniqueIds` gives every Responses reply ids of its own (see `responses`).
 export async function startProvider({ onRequest, usage, uniqueIds = false } = {}) {
   const requests = [];
   const server = http.createServer(async (req, res) => {
@@ -105,6 +105,14 @@ export async function startProvider({ onRequest, usage, uniqueIds = false } = {}
       return;
     }
     res.writeHead(200, { "content-type": "text/event-stream" });
+    if (decision.stall) {
+      // An Anthropic stream that begins and then never produces content, kept open by `ping` events: it passes an
+      // HTTP idle timeout, which counts bytes.
+      res.write(sse([["message_start", { type: "message_start", message: { id: "m1", type: "message", role: "assistant", content: [], model: body?.model, stop_reason: null, usage: { input_tokens: 5, output_tokens: 1 } } }]]));
+      const timer = setInterval(() => res.write(sse([["ping", { type: "ping" }]])), 100);
+      res.on("close", () => clearInterval(timer));
+      return;
+    }
     const path = String(req.url).split("?")[0];
     const tier = body?.service_tier;
     const used = usage?.(entry);

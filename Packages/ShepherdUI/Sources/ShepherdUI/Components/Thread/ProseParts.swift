@@ -24,16 +24,17 @@ enum SHProseLink {
 struct SHProseImageView: View {
     let image: SHProseImage
     @Environment(\.shProseFileRoot) private var root
-    @Environment(\.openURL) private var openURL
+    @Environment(\.shProseLinkRouter) private var router
     @Environment(\.displayScale) private var displayScale
     @State private var thumbnail: (url: URL, image: CGImage)?
 
     var body: some View {
+        let _ = SHRenderProbe.tick("prose.image")
         let source = SHProseImageSource(image.source, root: root)
         Group {
             if case .file(let url) = source,
                let cg = (thumbnail?.url == url ? thumbnail?.image : nil) ?? SHProseThumbnails.cached(url) {
-                Button { openURL(url) } label: {
+                Button { router?.open(url) } label: {
                     Image(decorative: cg, scale: displayScale)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
@@ -63,7 +64,7 @@ struct SHProseImageView: View {
     @ViewBuilder private func chip(_ source: SHProseImageSource) -> some View {
         let label = SHProseImageChip(name: image.alt.isEmpty ? source.name : image.alt, detail: source.detail)
         if case .web(let url) = source {
-            Button { openURL(url) } label: { label }
+            Button { router?.open(url) } label: { label }
                 .buttonStyle(.plain)
                 .shFocusRing(radius: SH.Radius.s)
                 .help(url.absoluteString)
@@ -183,26 +184,24 @@ enum SHProseThumbnails {
 /// the blocks inside sit 12pt past a 2pt `lineStrong` rule, as expanded thinking does. With
 /// nothing inside, the summary is a plain line: its chevron's place stays, empty, and nothing
 /// opens.
-struct SHProseDetails<Code: View>: View {
+struct SHProseDetails<Code: SHProseCode>: View {
     let summary: AttributedString
     let blocks: [SHProseBlock]
-    let path: [Int]
+    /// The open fence inside the blocks: the index of the block that holds it, then its path inside that block.
+    let writing: [Int]?
     let depth: Int
     let voice: SHProseVoice
-    let code: (String, String?) -> Code
     @State private var open: Bool
     @Environment(\.shProseSize) private var size
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// `open` starts it open (previews).
-    init(summary: AttributedString, blocks: [SHProseBlock], path: [Int] = [], depth: Int, voice: SHProseVoice = .reply, open: Bool = false,
-         code: @escaping (String, String?) -> Code) {
+    init(summary: AttributedString, blocks: [SHProseBlock], writing: [Int]? = nil, depth: Int, voice: SHProseVoice = .reply, open: Bool = false) {
         self.summary = summary
         self.blocks = blocks
-        self.path = path
+        self.writing = writing
         self.depth = depth
         self.voice = voice
-        self.code = code
         _open = State(initialValue: open)
     }
 
@@ -223,7 +222,7 @@ struct SHProseDetails<Code: View>: View {
             }
             if open, !blocks.isEmpty {
                 VStack(alignment: .leading, spacing: voice == .thinking ? SH.Space.m : SH.Space.l) {
-                    SHProseBlocks(blocks: blocks, path: path, nested: true, depth: depth, voice: voice, code: code)
+                    SHProseBlocks<Code>(blocks: blocks, writing: writing, nested: true, depth: depth, voice: voice)
                 }
                 .padding(.leading, SH.Space.l)
                 .overlay(alignment: .leading) { sh.lineStrong.frame(width: SHThreadMetrics.ruleWidth) }

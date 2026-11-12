@@ -273,15 +273,6 @@ private struct DestinationLayer: View {
     var body: some View {
         switch vm.shownDestination {
         case .newThread?: NewThreadPage(vm: vm, chrome: chrome)
-        case .missions?:
-            if let host = vm.missionsHost, let driver = vm.missionDriver(for: host) {
-                MissionsDestination(controller: driver, chrome: chrome)
-                    .environment(\.missionHostName, vm.remoteHosts.allConnections.first { $0.id == host }?.config.name ?? "Host")
-                    .id(host)
-            } else if let local = vm.localHost, let driver = vm.missionDriver(for: local.id) {
-                // The background host runs This Mac's missions; its page is This Mac's own.
-                MissionsDestination(controller: driver, chrome: chrome).id(local.id)
-            }
         case .designs?: DesignsDestination(vm: vm, chrome: chrome)
         case .newDesign?: NewDesignPage(vm: vm, chrome: chrome)
         case .designSystem?: DesignSystemDestination(vm: vm, chrome: chrome)

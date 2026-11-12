@@ -32,6 +32,17 @@ struct StateCodingTests {
         #expect(state.automations.isEmpty)
     }
 
+    @Test func removedMissionsDoNotPreventLoadingTheirThreads() throws {
+        var object = try #require(JSONSerialization.jsonObject(with: Data(Self.terminalEraFile.utf8)) as? [String: Any])
+        object["missions"] = [["id": "m1", "run": ["attempts": [["agentID": "a1"]]]]]
+        let state = try JSONDecoder().decode(ShepherdState.self, from: JSONSerialization.data(withJSONObject: object))
+        try state.validate()
+        let previous = try Fixture.decode(ShepherdState.self, Self.terminalEraFile)
+        #expect(state == previous)
+        #expect(state.isSidebarThread(try #require(state.agents.first)))
+        #expect(try Fixture.encodeObject(state)["missions"] == nil)
+    }
+
     /// A terminal tab's name (Rename tab) rides on its first pane; older files have none.
     @Test func aPaneKeepsItsTabNameAndOlderPanesHaveNone() throws {
         let old = try Fixture.decode(LeafPane.self, #"{"id":"p1","cwd":"/tmp/x"}"#)

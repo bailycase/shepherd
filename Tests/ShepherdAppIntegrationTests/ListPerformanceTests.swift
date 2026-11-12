@@ -1405,6 +1405,97 @@ struct ListPerformanceTests {
         #expect(streamed["prose.tableCell", default: 0] == 0, "\(streamed)")
     }
 
+    // MARK: Fences and links
+
+    /// A reply streaming its closing paragraph redraws that chunk, and nothing in it that did not change: the closed
+    /// fences keep their native views (no `updateNSView`, no highlight), the remote image chip and the table keep
+    /// their bodies. The paragraph is the only thing that moves, so the chunk's blocks all evaluate again, but a
+    /// block whose inputs are equal does not.
+    @Test func aStreamedChunkRedrawsNoUnchangedFence() async throws {
+        let fences = (1...3).map { "func unchanged\($0)() {\n    let value = \($0)\n    print(value)\n}" }
+        func reply(_ pulls: Int) -> String {
+            let steps = fences.enumerated().map { "Step \($0.offset + 1):\n\n```swift\n\($0.element)\n```\n\n" }.joined()
+            let table = "| Step | Files | Tests |\n|---|---|---|\n| one | 2 | 4 |\n| two | 1 | 2 |\n| three | 3 | 6 |\n\n"
+            return "Here is the change.\n\n" + steps + "![Build status](https://ci.example.com/badge.png)\n\n" + table
+                + "In" + String(repeating: " all, the steps passed", count: pulls)
+        }
+        let turn = ThreadFixture.history(2) + [ThreadFixture.user("u", "Walk me through it")]
+        let thread = FakeThread(ThreadFixture.snapshot(turn, provisional: [ThreadFixture.streaming(reply(0))], running: true),
+                                size: CGSize(width: 900, height: 800))
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await eventuallyOnMain("the closed fences to finish highlighting") {
+            ListPerf.settle(thread.window)
+            return fences.allSatisfy { CodeHighlightCache.cached(CodeHighlightCache.Key(fence: $0, language: "swift")) != nil }
+        }
+        try await atRest(thread.window)
+        #expect(Self.nativeFields(in: thread.window.host) == fences.count, "the fences are on screen")
+
+        let streamed = try await counting(thread.window) {
+            for pulls in 1...5 {
+                var next = thread.snapshot
+                next.revision += 1
+                next.provisional = [ThreadFixture.streaming(reply(pulls))]
+                await thread.serve(next)
+                ListPerf.settle(thread.window)
+            }
+        }
+        #expect(streamed["thread.liveRow", default: 0] >= 5, "the reply streamed: \(streamed)")
+        #expect(streamed["prose.chunk", default: 0] >= 5, "the chunk it grows in was drawn again: \(streamed)")
+        #expect(streamed["code.nativeUpdated", default: 0] == 0, "no closed fence is updated: \(streamed)")
+        #expect(streamed["code.highlighted", default: 0] == 0, "no closed fence is evaluated again: \(streamed)")
+        #expect(streamed["highlight.render", default: 0] == 0, "no closed fence is colored again: \(streamed)")
+        #expect(streamed["prose.image", default: 0] == 0, "the image chip is not drawn again: \(streamed)")
+        #expect(streamed["prose.table", default: 0] == 0, "the table is not drawn again: \(streamed)")
+        #expect(Self.nativeFields(in: thread.window.host) == fences.count, "the fences are still on screen")
+    }
+
+    /// A reply streaming its closing paragraph draws that paragraph again and none of the blocks beside it in the chunk:
+    /// each block is its own view, equal to what it was, so the paragraphs, the list, the quote, the fences, the table
+    /// and the image chip evaluate no body (`prose.block` counts the blocks that do).
+    @Test func aStreamedChunkRedrawsOnlyTheBlockItGrew() async throws {
+        let fences = (1...3).map { "func unchanged\($0)() {\n    let value = \($0)\n    print(value)\n}" }
+        func reply(_ pulls: Int) -> String {
+            func paragraph(_ number: Int) -> String { "Paragraph \(number) of the walkthrough, which stays as it was.\n\n" }
+            let steps = fences.enumerated().map { "\(paragraph($0.offset + 2))```swift\n\($0.element)\n```\n\n" }.joined()
+            let list = (1...5).map { "- Item \($0) of the checklist\n" }.joined() + "\n"
+            let table = "| Step | Files | Tests |\n|---|---|---|\n| one | 2 | 4 |\n| two | 1 | 2 |\n| three | 3 | 6 |\n\n"
+            return paragraph(1) + steps + paragraph(5) + list + paragraph(6) + table + paragraph(7)
+                + "> A quote that stays as it was.\n\n" + paragraph(8) + "![Build status](https://ci.example.com/badge.png)\n\n"
+                + paragraph(9) + "In" + String(repeating: " all, the steps passed", count: pulls)
+        }
+        let turn = ThreadFixture.history(2) + [ThreadFixture.user("u", "Walk me through it")]
+        let thread = FakeThread(ThreadFixture.snapshot(turn, provisional: [ThreadFixture.streaming(reply(0))], running: true),
+                                size: CGSize(width: 900, height: 1400))
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await eventuallyOnMain("the closed fences to finish highlighting") {
+            ListPerf.settle(thread.window)
+            return fences.allSatisfy { CodeHighlightCache.cached(CodeHighlightCache.Key(fence: $0, language: "swift")) != nil }
+        }
+        try await atRest(thread.window)
+        #expect(Self.nativeFields(in: thread.window.host) == fences.count, "the fences are on screen")
+
+        let streamed = try await counting(thread.window) {
+            for pulls in 1...5 {
+                var next = thread.snapshot
+                next.revision += 1
+                next.provisional = [ThreadFixture.streaming(reply(pulls))]
+                await thread.serve(next)
+                ListPerf.settle(thread.window)
+            }
+        }
+        #expect(streamed["thread.liveRow", default: 0] >= 5, "the reply streamed: \(streamed)")
+        #expect(streamed["prose.chunk", default: 0] >= 5, "the chunk it grows in was drawn again: \(streamed)")
+        #expect(streamed["prose.block", default: 0] >= 5, "the paragraph it grew was drawn again: \(streamed)")
+        #expect(streamed["prose.block", default: 0] <= 10, "only the block it grew is drawn again: \(streamed)")
+        #expect(streamed["code.nativeUpdated", default: 0] == 0, "no closed fence is updated: \(streamed)")
+        #expect(streamed["code.highlighted", default: 0] == 0, "no closed fence is evaluated again: \(streamed)")
+        #expect(streamed["prose.image", default: 0] == 0, "the image chip is not drawn again: \(streamed)")
+        #expect(streamed["prose.table", default: 0] == 0, "the table is not drawn again: \(streamed)")
+        #expect(Self.nativeFields(in: thread.window.host) == fences.count, "the fences are still on screen")
+    }
+
     // MARK: Thread prose
 
     /// The blocks in the thread's last prose item once its parse has landed (0 before).
@@ -1767,6 +1858,115 @@ struct ListPerformanceTests {
         #expect(rows["layout.paneTreeGeo", default: 0] == 0, "\(rows)")
     }
 
+    /// A hidden agent starting a turn, asking a question and ending it changes only what the sidebar shows of it: the
+    /// root view, the workspace, the layouts' resolver and every thread read the workspace's structure, so none of them
+    /// runs again. Each edge redraws its sidebar row and the headers whose counts it moves. Renaming a thread is
+    /// structure, and reruns the workspace and that one layout.
+    @Test func aStatusReportAmongMountedAgentsRunsNoShellBody() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, agents) = try await MountedWorkspace.start(8, in: app)
+        let window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        // Measure after every stub has served and the hidden threads have stopped updating, not while they boot.
+        for agent in agents { _ = try await app.readyThread(agent.agent.id) }
+        func settled() async throws {
+            var quiet = 0
+            try await eventuallyOnMain("the mounted workspace to settle", timeout: .seconds(60)) {
+                ListPerf.settle(window)
+                guard vm.mountedTabs.count == agents.count, vm.threadStores.store(for: agents[0].agent.id).ready,
+                      IdleCostTests.spinners(in: window.host).all == 0 else { return false }
+                let counts = ListPerf.counting { ListPerf.settle(window) }
+                quiet = ["shell.root", "shell.workspace", "thread.view", "deck.hiddenLayout"].allSatisfy { counts[$0, default: 0] == 0 } ? quiet + 1 : 0
+                return quiet >= 10
+            }
+        }
+        try await settled()
+        // The first adoption that changes anything reruns every mounted thread once, whatever it changed: take it before counting.
+        var first = vm.state
+        first.agents[0].lastActiveAt = 1
+        vm.adopt(first)
+        try await settled()
+        let hidden = agents.dropFirst()
+        let stamp = 1_800_000_000_000.0
+
+        func report(_ who: ArraySlice<AgentFixture>? = nil, _ change: (inout Agent) -> Void) -> [String: Int] {
+            ListPerf.counting {
+                for agent in who ?? hidden {
+                    var next = vm.state
+                    guard let index = next.agents.firstIndex(where: { $0.id == agent.agent.id }) else { continue }
+                    change(&next.agents[index])
+                    ListPerf.time(window) { vm.adopt(next) }
+                }
+            }
+        }
+        let edges: [(String, [String: Int])] = [
+            ("a turn starting", report { $0.status = .working; $0.lastActiveAt = stamp + 1 }),
+            ("a question", report { $0.status = .blocked; $0.waitingOn = "Which database?"; $0.waitingReason = "database?" }),
+            ("a turn ending", report {
+                $0.status = .done; $0.waitingOn = nil; $0.waitingReason = nil; $0.lastActiveAt = stamp + 2; $0.completedAt = stamp + 2
+            }),
+        ]
+        #expect(vm.state.agents.filter { $0.status == .done }.count == hidden.count)
+        for (edge, rows) in edges {
+            for key in ["shell.root", "shell.workspace", "layout.agentLayout", "thread.view", "deck.update"] {
+                #expect(rows[key, default: 0] == 0, "\(edge), \(key): \(rows)")
+            }
+            #expect(rows["sidebar.row", default: 0] <= hidden.count * 2, "\(edge): \(rows)")
+            #expect(rows["sidebar.header", default: 0] <= hidden.count * 2, "\(edge): \(rows)")
+        }
+
+        // Control: a name is structure.
+        let renamed = report(hidden.prefix(1)) { $0.name = "Checkout funnel v2" }
+        #expect(renamed["shell.workspace", default: 0] >= 1, "\(renamed)")
+        #expect(renamed["layout.agentLayout", default: 0] == 1, "\(renamed)")
+    }
+
+    /// The same through the host, as the app receives it: its pushes set the connection's state and are adopted
+    /// (`receiveLocalHostState`), and a hidden agent's reports redraw neither the shell nor a thread.
+    @Test func aReportThroughTheHostRunsNoShellBody() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, agents) = try await MountedWorkspace.start(6, in: app)
+        let window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        for agent in agents { _ = try await app.readyThread(agent.agent.id) }
+        let reporter = try ExtensionClient(path: app.scratch.socketPath)
+        func report(_ agent: AgentFixture, _ status: AgentStatus) async throws {
+            try reporter.send(.setAgentStatus(agentID: agent.agent.id, status: status))
+            try await eventuallyOnMain("the host's \(status) report for \(agent.agent.name)", timeout: .seconds(30)) {
+                ListPerf.settle(window)
+                return vm.state.agents.first { $0.id == agent.agent.id }?.status == status
+            }
+        }
+        func settled() async throws {
+            var quiet = 0
+            try await eventuallyOnMain("the mounted workspace to settle", timeout: .seconds(60)) {
+                ListPerf.settle(window)
+                guard vm.mountedTabs.count == agents.count, vm.threadStores.store(for: agents[0].agent.id).ready,
+                      IdleCostTests.spinners(in: window.host).all == 0 else { return false }
+                let counts = ListPerf.counting { ListPerf.settle(window) }
+                quiet = ["shell.root", "shell.workspace", "thread.view", "deck.hiddenLayout"].allSatisfy { counts[$0, default: 0] == 0 } ? quiet + 1 : 0
+                return quiet >= 10
+            }
+        }
+        try await settled()
+        // The first adoption that changes anything reruns every mounted thread once, whatever it changed: take it before counting.
+        try await report(agents[0], .working)
+        try await settled()
+
+        SHRenderProbe.start()
+        for agent in agents.dropFirst() {
+            try await report(agent, .working)
+            try await report(agent, .done)
+        }
+        let rows = SHRenderProbe.stop()
+        for key in ["shell.root", "shell.workspace", "layout.agentLayout", "thread.view", "deck.update"] {
+            #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
+        }
+        #expect(rows["sidebar.row", default: 0] > 0, "the sidebar showed the reports: \(rows)")
+    }
+
     /// One checkout read writes every thread that shares the checkout. The count it carries is
     /// not in a layout's model, so a change of it reruns no layout, thread or composer, hidden or
     /// not; only the card on screen is asked to read again.
@@ -1989,6 +2189,59 @@ struct ListPerformanceTests {
 
         #expect(rows["tray.row", default: 0] > 0, "the tray shows: \(rows)")
         #expect(rows["tray.row", default: 0] <= 8, "\(rows)")
+    }
+
+    /// Each tool call a subagent makes moves its row's words and counters on the host. The tray's
+    /// rows redraw; the composer, which only decides whether the tray is docked and whether Stop
+    /// reaches the subagents, runs no body. A run ending, which does change what Stop says,
+    /// still redraws it (the control).
+    @Test func aSubagentProgressUpdateRedrawsNoComposer() async throws {
+        let runs = (0..<2).map { index in
+            var run = ListFixtures.run(index)
+            run.toolCallID = "spawn-\(index)"
+            return run
+        }
+        var snapshot = Self.spawned(runs)
+        snapshot.running = true
+        let thread = FakeThread(snapshot, subagentTray: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await eventuallyOnMain("the tray to dock") { thread.store.tray != nil }
+        try await atRest(thread.window)
+
+        let rows = try await counting(thread.window) {
+            for step in 1...5 {
+                var next = thread.snapshot
+                next.revision += 1
+                next.subagents = runs.map { run in
+                    var run = run
+                    run.turns = (run.turns ?? 0) + step
+                    run.toolCalls = step
+                    run.lastActivity = ChildActivity(tool: "read", preview: "Sources/Step\(step).swift", at: 2_000 + Double(step))
+                    return run
+                }
+                await thread.serve(next)
+                ListPerf.settle(thread.window)
+            }
+        }
+
+        let line = thread.store.tray?.rows.first?.line
+        #expect(line == .working(verb: "Read", subject: "Step5.swift", live: false), "the tray followed the last call: \(String(describing: line))")
+        #expect(rows["tray.row", default: 0] >= 1, "the tray's rows redrew: \(rows)")
+        #expect(rows["composer.body", default: 0] == 0, "composer.body: \(rows)")
+
+        try await atRest(thread.window)
+        var ended = thread.snapshot
+        ended.revision += 1
+        ended.subagents = runs.map { run in
+            var run = run
+            run.state = "complete"
+            run.endedAt = 3_000
+            return run
+        }
+        let finished = try await counting(thread.window) { await thread.serve(ended) }
+        #expect(!thread.store.hasLiveSubagents)
+        #expect(finished["composer.body", default: 0] >= 1, "Stop's help changes with the last run: \(finished)")
     }
 
     /// An open tray of two hundred runs scrolls inside, building only the rows in view.

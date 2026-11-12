@@ -21,6 +21,9 @@ final class ComposerDrafts {
 
     private let defaults: UserDefaults
     private var drafts: [String: String]
+    /// Ids noted since the last write, whose length has not been checked: counting a draft's
+    /// Characters costs its length, so it is done once per write, not on each key.
+    private var unchecked: Set<String> = []
     private var recoveries: [String: [NativeRecoveredSubmission]]
     /// The saved records as they were, when some could not be taken in (unreadable, repeated ids, past the budget).
     private let quarantine: Data?
@@ -49,11 +52,14 @@ final class ComposerDrafts {
     }
 
     /// What `id` had typed when the app last ran, if anything.
-    func restore(_ id: String) -> String? { drafts[id] }
+    func restore(_ id: String) -> String? {
+        guard let draft = drafts[id] else { return nil }
+        return unchecked.contains(id) && draft.count > Self.maxLength ? nil : draft
+    }
 
     /// The draft as it is now; written after `delay`.
     func note(_ id: String, draft: String) {
-        if draft.isEmpty || draft.count > Self.maxLength { drafts.removeValue(forKey: id) } else { drafts[id] = draft }
+        if draft.isEmpty { drafts.removeValue(forKey: id); unchecked.remove(id) } else { drafts[id] = draft; unchecked.insert(id) }
         pending?.cancel()
         pending = Task { [weak self] in
             try? await Task.sleep(for: Self.delay)
@@ -111,6 +117,8 @@ final class ComposerDrafts {
     func flush(recordsFirst: Bool = true) {
         pending?.cancel()
         pending = nil
+        for id in unchecked where (drafts[id]?.count ?? 0) > Self.maxLength { drafts.removeValue(forKey: id) }
+        unchecked.removeAll()
         func writeRecords() {
             if recoveries.isEmpty { defaults.removeObject(forKey: Self.recoveriesKey) }
             else if let data = try? JSONEncoder().encode(recoveries) { defaults.set(data, forKey: Self.recoveriesKey) }

@@ -8,13 +8,7 @@ import ShepherdRemote
 /// bounded, never retried or replayed. The injected transport returns a cancellation closure.
 final class PushNotifications: @unchecked Sendable {
     typealias Transport = (URLRequest, @escaping @Sendable (Int?) -> Void) -> (() -> Void)
-    enum Kind: String, Codable { case done, error, needsAnswer, review }
-    /// The mission an alert approves: Approve publishes exactly this reviewed revision (NotifPhoneReview).
-    struct MissionReview: Encodable, Equatable {
-        let id: String
-        let revision: UInt64
-        let fingerprint: String
-    }
+    enum Kind: String, Codable { case done, error, needsAnswer }
     private struct Event: Encodable {
         let eventID = UUID()
         let agentID: AgentID
@@ -27,17 +21,15 @@ final class PushNotifications: @unchecked Sendable {
         var subtitle: String?
         var level: String?
         var relevance: Double?
-        var mission: MissionReview?
         /// The long-press preview's data (shepherd-landing#4); a relay without it hears the rest.
         var detail: PushDetail?
         /// The same event for a relay at `level`: one without `detail` drops it, and the oldest
-        /// knows no review either, so it hears a finished turn with no approval.
+        /// hears only the basic fields.
         func shaped(for level: Relay) -> Event {
             var event = self
             if level != .detail { event.detail = nil }
             if level == .legacy {
-                (event.group, event.subtitle, event.level, event.relevance, event.mission) = (nil, nil, nil, nil, nil)
-                if event.kind == .review { event.kind = .done }
+                (event.group, event.subtitle, event.level, event.relevance) = (nil, nil, nil, nil)
             }
             return event
         }
@@ -161,7 +153,7 @@ final class PushNotifications: @unchecked Sendable {
     /// Which Send me switch an alert of `kind` answers to, when the caller names none.
     static func topic(_ kind: Kind) -> RemotePushPreferences.Topic {
         switch kind {
-        case .needsAnswer, .review: .questions
+        case .needsAnswer: .questions
         case .error: .failures
         case .done: .finished
         }
@@ -170,17 +162,16 @@ final class PushNotifications: @unchecked Sendable {
     /// Loudness and Scheduled Summary rank by kind: a question outranks a failure outranks finished work.
     static func presentation(_ kind: Kind) -> (level: String, relevance: Double) {
         switch kind {
-        case .review: ("active", 0.9)
         case .needsAnswer: ("active", 0.8)
         case .error: ("active", 0.6)
         case .done: ("passive", 0.2)
         }
     }
 
-    /// `group` stacks the alert with its thread's or mission's others; `subtitle` names the kind.
+    /// `group` stacks the alert with its thread's others; `subtitle` names the kind.
     func send(agentID: AgentID, kind: Kind, title: String? = nil, preview: String? = nil,
-              group: String? = nil, subtitle: String? = nil, mission: MissionReview? = nil,
-              topic: RemotePushPreferences.Topic? = nil, missionID: String? = nil, detail: PushDetail? = nil) {
+              group: String? = nil, subtitle: String? = nil,
+              topic: RemotePushPreferences.Topic? = nil, detail: PushDetail? = nil) {
         let topic = topic ?? Self.topic(kind)
         let skip = { (why: String) in ShepherdLog.push("push \(kind.rawValue) for \(agentID.rawValue) skipped: \(why)") }
         guard !registrations.isEmpty else { return skip("no phone registered") }
@@ -188,7 +179,7 @@ final class PushNotifications: @unchecked Sendable {
         let away = idle >= RemotePushPreferences.awayAfter
         let wanted = registrations.values.filter { registration in
             guard let preferences = registration.preferences else { return true }
-            return (away || !preferences.awayOnly) && preferences.allows(topic, mission: missionID ?? mission?.id)
+            return (away || !preferences.awayOnly) && preferences.allows(topic)
         }
         guard !wanted.isEmpty else {
             return skip("no phone wants \(topic.rawValue) now (Mac idle \(Int(idle))s, \(registrations.count) registered)")
@@ -204,7 +195,7 @@ final class PushNotifications: @unchecked Sendable {
         let event = Event(agentID: agentID, kind: kind,
             title: Self.notificationText(title, limit: 100), preview: Self.notificationText(preview, limit: 240),
             group: group ?? "thread:\(agentID.rawValue)", subtitle: Self.notificationText(subtitle, limit: 60),
-            level: level, relevance: relevance, mission: mission,
+            level: level, relevance: relevance,
             detail: detail == PushDetail() ? nil : detail)
         // Each shape this relay may take, newest first, without repeats; a detail that would
         // overflow the relay's 2048-byte body is left out rather than cut.

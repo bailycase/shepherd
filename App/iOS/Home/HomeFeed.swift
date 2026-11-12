@@ -191,7 +191,6 @@ final class HomeFeed {
         var quietReads = 0
         var busyWaits = 0
         // A design's agent has no thread row to read for (its design is the row).
-        // Nor has a mission's agent: its mission is the row.
         let state = host.threadState
         threads: for agent in state.agents where !state.isDesignAgent(agent) {
             let ref = FleetRef(host: host.id, agent: agent.id)

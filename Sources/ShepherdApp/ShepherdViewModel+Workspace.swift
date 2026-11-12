@@ -13,7 +13,7 @@ extension ShepherdViewModel {
     /// Which layouts the workspace mounts, and which one shows.
     private var workspaceSelection: WorkspaceSelection {
         WorkspaceSelection(
-            state: state,
+            state: workspaceStructure,
             selectedSpaceID: selectedSpaceID,
             selectedAgentID: selectedAgentID,
             remoteSelectionActive: selectedRemoteAgent != nil,
@@ -426,7 +426,7 @@ extension ShepherdViewModel {
 extension ShepherdViewModel {
     /// The provider a local agent's model uses (its own, else the default every launch resolves to); nil when none names one.
     func provider(of agentID: AgentID) -> String? {
-        let model = state.agents.first { $0.id == agentID }?.model ?? settings.defaultModel(piHome: pi.home)
+        let model = latestState.agents.first { $0.id == agentID }?.model ?? settings.defaultModel(piHome: pi.home)
         guard let model, let slash = model.firstIndex(of: "/"), slash != model.startIndex else { return nil }
         return String(model[..<slash])
     }
@@ -445,7 +445,7 @@ extension ShepherdViewModel {
     /// a model, and Sign-in hears which providers agents wait on.
     func noteSignIn(_ agentID: AgentID, problem: NativeStartProblem?) {
         if let problem, problem.kind == .notSignedIn {
-            let agent = state.agents.first { $0.id == agentID }
+            let agent = latestState.agents.first { $0.id == agentID }
             let fallback = settings.agentDefaults.model ?? yourPi.survey?.shepherdDefaultModel
             let provider = PiAuthText.missingProvider(lines: problem.lines, model: agent?.model, defaultModel: fallback)
             notSignedIn[agentID] = NotSignedIn(provider: provider, at: Date())

@@ -243,8 +243,11 @@ struct Composer: View, Equatable {
         return slashLogin == nil ? pi : pi + SlashLogin.commands
     }
     /// "/login " (or "/logout ") being typed: its verb and argument so far, for the provider list.
+    /// The store derives the draft's first word once per edit, so a draft that starts with anything
+    /// but a verb ("/skill:debug fix …") is not read again for every key.
     private var loginQuery: (verb: SlashLogin.Verb, partial: String)? {
-        guard slashLogin != nil, store.draft != dismissedQuery else { return nil }
+        guard slashLogin != nil, let leading = store.draftLeadingCommand, SlashLogin.Verb(rawValue: leading) != nil,
+              store.draft != dismissedQuery else { return nil }
         return SlashLogin.argumentQuery(store.draft)
     }
     /// The provider rows for `loginQuery`, as the menu last drew them.
@@ -252,20 +255,28 @@ struct Composer: View, Equatable {
         guard let loginQuery, let slashLogin else { return [] }
         return SlashLogin.matches(loginQuery.partial, in: slashLogin.choices())
     }
-    /// The "/" (commands) or "$" (skills) being typed at the end of the draft.
+    /// The "/" (commands) or "$" (skills) being typed at the end of the draft, as the store derived
+    /// it on the last edit. The draft is read only while a word exists and Esc closed its menu.
+    private var commandWord: ComposerCommandWord? {
+        guard let word = store.draftCommand else { return nil }
+        if let dismissedQuery, store.draft == dismissedQuery { return nil }
+        return word
+    }
+    /// The same, with the words before it: for action time only (choosing, completing, attaching a
+    /// skill). Reading it while drawing walks the draft for every render.
     private var commandToken: ComposerCommandToken? {
         store.draft == dismissedQuery ? nil : ComposerCommandToken.token(in: store.draft)
     }
     /// What the open menu lists: pi's commands for "/", its skills for "$".
     private var menuCommands: [NativeCommand] {
-        commandToken?.sigil == "$" ? store.commands.filter { $0.source == "skill" } : commands
+        commandWord?.sigil == "$" ? store.commands.filter { $0.source == "skill" } : commands
     }
     /// The query the menu matches; skills are named "skill:<name>", so "$" matches past that.
     /// Mid-draft, a token that matches nothing is prose ("see /tmp") and opens no menu.
     private var commandQuery: String? {
-        guard let token = commandToken, !menuCommands.isEmpty, !token.isSkill(in: store.commands) else { return nil }
-        let query = (token.sigil == "$" ? "skill:" + token.text : token.text).lowercased()
-        guard token.startsDraft || !SlashMatchCache.matches(query: query, in: menuCommands).isEmpty else { return nil }
+        guard let word = commandWord, !menuCommands.isEmpty, !word.isSkill(in: store.commands) else { return nil }
+        let query = (word.sigil == "$" ? "skill:" + word.text : word.text).lowercased()
+        guard word.startsDraft || !SlashMatchCache.matches(query: query, in: menuCommands).isEmpty else { return nil }
         return query
     }
     /// The commands the slash menu lists for the draft, as `body` last derived them: every key
@@ -301,7 +312,7 @@ struct Composer: View, Equatable {
             + (showsTray ? ["tray"] : []) + (store.hasGoal ? ["goal"] : [])
     }
 
-    private var showsTray: Bool { subagents != nil && store.tray != nil }
+    private var showsTray: Bool { subagents != nil && store.hasTray }
 
     /// What the tray's rows do.
     private var subagents: SubagentActions? {
@@ -415,8 +426,8 @@ struct Composer: View, Equatable {
             if let dock = projectSend?.dock { dock().shTransition(.list, edge: .bottom) }
             // The subagents and "Up next" grow upward from the card, which never moves.
             if store.hasGoal || showsTray || queueStack.isVisible {
-                ComposerDock(tray: store.tray, trayState: trayState, runs: store.subagents, actions: subagents,
-                             showsQueue: queueStack.isVisible, goalStore: store, goalActive: active) {
+                ComposerDock(store: store, trayState: trayState, actions: subagents,
+                             showsQueue: queueStack.isVisible, goalActive: active) {
                     if queueStack.isVisible {
                         QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: !showsTray && !store.hasGoal,
                                        focusedRow: $focusedRow, focusComposer: { composing = true },
@@ -576,8 +587,7 @@ struct Composer: View, Equatable {
             // One menu at a time: typing a command takes over from a chip's menu.
             if query != nil { menu = nil }
         }
-        // A pasted reference becomes a chip; a mention opens the @ picker.
-        .onChange(of: store.draft, initial: true) { old, new in draftChanged(from: old, to: new) }
+        .modifier(ComposerDraftWatching(store: store, watching: mentionsAvailable || mentions.isOpen) { draftChanged(from: $0, to: $1) })
         .onChange(of: references?.catalog) { _, _ in updateMentions() }
         .onChange(of: references?.catalogStage) { _, _ in updateMentions() }
         .onChange(of: mentionsAvailable) { _, _ in updateMentions() }
@@ -640,7 +650,7 @@ struct Composer: View, Equatable {
             if let query {
                 let slash = slash
                 SHSlashMenu(commands: slash.rows, total: menuCommands.count, query: query,
-                            title: commandToken?.sigil == "$" ? "Skills" : "Commands", selection: $commandIndex, maxHeight: room) { command in
+                            title: commandWord?.sigil == "$" ? "Skills" : "Commands", selection: $commandIndex, maxHeight: room) { command in
                     if let match = slash.matches.first(where: { $0.name == command.name }) { choose(match) }
                 }
                 .shTransition(.overlay, anchor: .bottomLeading)
@@ -768,7 +778,7 @@ struct Composer: View, Equatable {
                     .shTransition(.list, edge: .leading)
             }
         } field: {
-            field.shEntrance(.content)
+            ComposerFieldHost(store: store) { field }.shEntrance(.content)
         } controls: {
             ComposerControls(model: controlsModel, actions: controlsActions, store: store,
                              dismissal: dismissal).equatable()
@@ -1138,6 +1148,8 @@ struct Composer: View, Equatable {
     /// Derives what the @ picker lists for the draft as it is; opening it reads this Mac's designs.
     private func updateMentions() {
         guard mentionsAvailable, let references else { return }
+        // A closed picker whose draft opens nothing would only close again: a prose key writes nothing.
+        guard mentions.isOpen || mentions.opens(for: store.draft) else { return }
         let wasOpen = mentions.isOpen, scope = mentions.scope
         // Opening reads the designs afresh: from this call the picker says it is loading, not what
         // the last opening ended with.
@@ -1246,6 +1258,49 @@ struct Composer: View, Equatable {
     /// drops (longest edge 2000px, JPEG stays JPEG, everything else PNG).
     private func attach(_ providers: [NSItemProvider]) {
         input.attach(providers, store: store, localFiles: allowsLocalFiles, imagesSupported: projectSend?.carriesImages)
+    }
+}
+
+// MARK: The draft's readers
+
+/// The field's slot, the one reader of the draft that keystrokes reach: a prose key reruns this and
+/// the field, never the composer's body (the store derives what the body reads, once per edit). Each
+/// change of the words rebuilds the field, so `updateNSView` also takes words that arrive from
+/// outside. The slot's entrance stays on the host's view, not inside it.
+private struct ComposerFieldHost<Content: View>: View {
+    let store: NativeThreadStore
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        let _ = SHRenderProbe.tick("composer.field")
+        let _ = store.draft
+        content()
+    }
+}
+
+/// Follows the draft for the composer: a pasted reference becomes a chip, and the @ picker follows
+/// the mention the draft ends in. The one read of the draft that every key would otherwise cost the
+/// composer's body is here, behind the view, mounted only where either can happen (`watching`).
+private struct ComposerDraftWatching: ViewModifier {
+    let store: NativeThreadStore
+    let watching: Bool
+    let changed: (String, String) -> Void
+
+    func body(content: Content) -> some View {
+        content.background {
+            if watching { ComposerDraftWatch(store: store, changed: changed) }
+        }
+    }
+}
+
+private struct ComposerDraftWatch: View {
+    let store: NativeThreadStore
+    let changed: (String, String) -> Void
+
+    var body: some View {
+        Color.clear
+            .accessibilityHidden(true)
+            .onChange(of: store.draft, initial: true) { old, new in changed(old, new) }
     }
 }
 

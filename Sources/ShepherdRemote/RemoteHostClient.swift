@@ -44,6 +44,16 @@ public enum RemoteHostClientError: Error, CustomStringConvertible, Sendable {
 public final class RemoteHostClient: @unchecked Sendable {
     /// Remote host state pushed after every host-side mutation. Main queue.
     public var onStateChanged: ((ShepherdState) -> Void)?
+    /// The `state` pushes received and not yet given to `onStateChanged` (tests, diagnostics): read inside
+    /// it, those queued behind the push it is delivering. A push an adjacent newer one replaced is not counted.
+    public var queuedStateEvents: Int {
+        queuedStatesLock.lock()
+        defer { queuedStatesLock.unlock() }
+        return storedQueuedStates
+    }
+    /// Read inside `onStateChanged`: another `state` push is already queued behind this one, so a consumer
+    /// that only needs the newest workspace can leave this one for it.
+    public var newerStateQueued: Bool { queuedStateEvents > 0 }
     /// PTY output (replay or live) for an attached session. Main queue.
     public var onNativeThreadChanged: ((AgentID) -> Void)?
     public var onOutput: ((SessionID, Data) -> Void)?
@@ -60,10 +70,6 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// The host's design systems changed (`designSystemsCapability`): list them again. Main queue.
     public var onDesignSystemsChanged: (() -> Void)?
     public var onProjectExecutionChanged: ((ProjectExecutionKey, UInt64) -> Void)?
-    /// A mission on the host was made or changed (its new revision) or went (nil). A hint to pull. Main queue.
-    public var onMissionChanged: ((MissionID, UInt64?) -> Void)?
-    /// What a host mission's agents say now (`RemoteReply.missionLive`). Main queue.
-    public var onMissionLive: ((MissionID, RemoteMissionLive) -> Void)?
     /// What the host offers changed while connected (its Design tool turned on or off);
     /// `capabilities` already holds the new list. Main queue.
     public var onCapabilitiesChanged: ((Set<String>) -> Void)?
@@ -161,8 +167,9 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// so a flooding host cannot queue a closure per frame behind UI work
     /// (the host side has the same one-delivery rule). Kept as one FIFO for
     /// every event kind so `sessionExited` still follows that session's
-    /// last bytes. A newer whole state replaces one still waiting (only the
-    /// last is adopted). Every event contributes encoded content cost and event count;
+    /// last bytes. A newer whole state replaces one still waiting right before it (other pushes
+    /// between two states keep both, and `newerStateQueued` tells the consumer of the first).
+    /// Every event contributes encoded content cost and event count;
     /// batches have both budgets (one oversized frame may run alone). Socket reads pause
     /// at either high watermark. Output completion includes downstream parsing, not merely
     /// the main callback, so stalled consumers back up the host. Client queue only.
@@ -174,8 +181,6 @@ public final class RemoteHostClient: @unchecked Sendable {
         case designChanged(DesignID, UInt64?, UInt64?)
         case designSystemsChanged
         case projectExecutionChanged(ProjectExecutionKey, UInt64)
-        case missionChanged(MissionID, UInt64?)
-        case missionLive(MissionID, RemoteMissionLive)
         case capabilities(Set<String>)
         case browserDrive(BrowserDrivePush)
         case designRelay(Int, DesignRelayJob)
@@ -200,6 +205,11 @@ public final class RemoteHostClient: @unchecked Sendable {
     private var pendingEvents: [QueuedEvent] = []
     /// Encoded content cost of all event kinds among `pendingEvents`.
     private var pendingEventBytes = 0
+    /// `state` pushes received and not yet delivered: waiting in `pendingEvents`, or in the batch on its way
+    /// to the main queue. Written under the lock by the client queue (a push, a teardown) and by main (a
+    /// delivery), which never waits on the client queue.
+    private let queuedStatesLock = NSLock()
+    private var storedQueuedStates = 0
     private var deliveryInFlight = false
     private var deliveryToken: UUID?
     /// The read source is suspended until a delivery drains the backlog.
@@ -399,7 +409,8 @@ public final class RemoteHostClient: @unchecked Sendable {
                 throw error
             }
         } onCancel: {
-            self.queue.sync {
+            // Never `sync`: this runs under the task's lock, which the queue needs to resume its replies.
+            self.queue.async {
                 if self.connectionGeneration == attempt { self.teardown(reason: "cancelled") }
             }
         }
@@ -445,7 +456,9 @@ public final class RemoteHostClient: @unchecked Sendable {
                 source.activate()
             }
         } onCancel: {
-            self.queue.sync {
+            // Never `sync`: cancel holds the task's status lock, and the queue may be resuming this task's reply,
+            // which waits for that lock. A teardown that runs late is harmless (the generation check).
+            self.queue.async {
                 if self.connectionGeneration == attempt { self.teardown(reason: "cancelled") }
             }
         }
@@ -878,6 +891,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .changesUndoTurn, .changesRedoTurn:
             RemoteProtocol.changesCapability
         case .changesRevertFile: RemoteProtocol.changesRevertCapability
+        case .changesWriteBegan, .changesWriteEnded: RemoteProtocol.changesWritesCapability
         default: RemoteProtocol.agentInspectionCapability
         }
     }
@@ -896,6 +910,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         let cancellable: Bool
         switch query {
         case .search, .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch: cancellable = true
+        case .changesWriteBegan: cancellable = true // The app gives up waiting for it rather than hold a Save.
         default: cancellable = false // Undo, Redo and Revert must still await their outcome.
         }
         let reply = try await request(timeout: slow ? 150 : 30, cancellable: cancellable) { .agentQuery(id: $0, agentID: agentID, query: query) }
@@ -1182,7 +1197,6 @@ public final class RemoteHostClient: @unchecked Sendable {
             case .fleetUncommitted, .fleetSnapshotExcludes: "change what a dispatch carries"
             case .fleetAutoDispatch, .fleetBatteryCountsHalf: "change how Fleet picks a Mac"
             case .designToolEnabled: "toggle the Design tool experiment"
-            case .missionsEnabled: "toggle the Missions experiment"
             case .subagentDefaults, .worktreeDeleteAction, .skillsInSlashMenu, .mcpProjectConfig, .slashCommand, .closeOnMerge: "change this setting"
             default: "change this default"
             }
@@ -1704,7 +1718,7 @@ public final class RemoteHostClient: @unchecked Sendable {
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .forgeResult(let id, _), .instructions(let id, _),
              .suggestions(let id, _), .hostSettings(let id, _), .hostInventory(let id, _), .hostUpdate(let id, _), .skills(let id, _), .hooks(let id, _), .projects(let id, _), .logicalProjects(let id, _), .logicalProjectRuntime(let id, _), .projectExecution(let id, _), .design(let id, _),
-             .browserClaimed(let id, _), .mission(let id, _),
+             .browserClaimed(let id, _),
              .hostConfig(let id, _), .apps(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):
@@ -1723,10 +1737,6 @@ public final class RemoteHostClient: @unchecked Sendable {
             push(.designChanged(designID, revision, commentsRevision))
         case .designSystemsChanged:
             push(.designSystemsChanged)
-        case .missionChanged(let missionID, let revision):
-            push(.missionChanged(missionID, revision))
-        case .missionLive(let missionID, let live):
-            push(.missionLive(missionID, live))
         case .tunnel(let frame):
             tunnels.receive(frame)
         case .browserDrive(let push):
@@ -1798,15 +1808,17 @@ public final class RemoteHostClient: @unchecked Sendable {
             case (.state, .state), (.capabilities, .capabilities), (.designSystemsChanged, .designSystemsChanged), (.appsChanged, .appsChanged): return true
             case (.designChanged(let a, _, _), .designChanged(let b, _, _)): return a == b
             case (.projectExecutionChanged(let a, _), .projectExecutionChanged(let b, _)): return a == b
-            case (.missionChanged(let a, _), .missionChanged(let b, _)): return a == b
-            case (.missionLive(let a, _), .missionLive(let b, _)): return a == b
             default: return false
             }
         }
+        var queuedStatesChange = 0
         if let last = pendingEvents.last, replaces(last.event) {
             pendingEventBytes -= last.bytes
             pendingEvents.removeLast()
+            if case .state = last.event { queuedStatesChange -= 1 }
         }
+        if case .state = event { queuedStatesChange += 1 }
+        if queuedStatesChange != 0 { adjustQueuedStates(by: queuedStatesChange) }
         if case .output(let sessionID, let data) = event,
            let last = pendingEvents.last,
            case .output(let previousID, var merged) = last.event,
@@ -1870,7 +1882,9 @@ public final class RemoteHostClient: @unchecked Sendable {
                 guard self.connectionGeneration == generation else { finish(); return }
                 switch queued.event {
                 case .nativeThreadChanged(let agentID): self.onNativeThreadChanged?(agentID)
-                case .state(let state): self.onStateChanged?(state)
+                case .state(let state):
+                    self.adjustQueuedStates(by: -1)
+                    self.onStateChanged?(state)
                 case .output(let sessionID, let data):
                     if let consume = self.onOutputConsumed {
                         consume(sessionID, data, finish)
@@ -1881,8 +1895,6 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .projectExecutionChanged(let key, let revision): self.onProjectExecutionChanged?(key, revision)
                 case .designChanged(let designID, let revision, let comments): self.onDesignChanged?(designID, revision, comments)
                 case .designSystemsChanged: self.onDesignSystemsChanged?()
-                case .missionChanged(let missionID, let revision): self.onMissionChanged?(missionID, revision)
-                case .missionLive(let missionID, let live): self.onMissionLive?(missionID, live)
                 case .capabilities(let capabilities): self.onCapabilitiesChanged?(capabilities)
                 case .browserDrive(let push): self.onBrowserDrive?(push)
                 case .designRelay(let token, let job): self.onDesignRelay?(token, job)
@@ -1939,6 +1951,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         // view state on disconnect and re-snapshots on reconnect.
         pendingEvents.removeAll()
         pendingEventBytes = 0
+        resetQueuedStates()
         deliveryInFlight = false
         for continuation in pendingReplies.values {
             continuation.resume(throwing: RemoteHostClientError.disconnected)
@@ -1954,6 +1967,19 @@ public final class RemoteHostClient: @unchecked Sendable {
             }
         }
         established = false
+    }
+
+    /// Never below zero: a delivery that was running when a teardown cleared the queue finds it empty.
+    private func adjustQueuedStates(by change: Int) {
+        queuedStatesLock.lock()
+        storedQueuedStates = max(0, storedQueuedStates + change)
+        queuedStatesLock.unlock()
+    }
+
+    private func resetQueuedStates() {
+        queuedStatesLock.lock()
+        storedQueuedStates = 0
+        queuedStatesLock.unlock()
     }
 
     private func hopToMain(_ body: @escaping () -> Void) {

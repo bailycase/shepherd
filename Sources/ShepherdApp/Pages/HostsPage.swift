@@ -11,8 +11,8 @@ struct HostsPageActions {
 
 /// The Hosts page (NavHosts; More ▸ Hosts): where agents run. This Mac and each remote host as a
 /// card with its connection, what runs or waits there, and Retry and Remove for a remote host;
-/// Add host opens the host form. Missions and daemons are not built, so the board's daemon
-/// facts, Load, worktree sizes, Open terminal and Logs are left out.
+/// Add host opens the host form. Daemons are not built, so the board's daemon facts, Load,
+/// worktree sizes, Open terminal and Logs are left out.
 struct HostsPage: View {
     let model: HostsPageModel
     let actions: HostsPageActions

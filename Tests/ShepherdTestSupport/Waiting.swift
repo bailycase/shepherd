@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 
@@ -44,6 +45,18 @@ public func eventuallyOnMain(
     }
     if try condition() { return }
     throw WaitTimeout(what: what)
+}
+
+/// Keeps the main thread busy, as a long frame does, until `condition` holds: everything queued for the main
+/// queue waits behind the spin. It neither runs the run loop nor awaits, and never sleeps a fixed amount.
+/// Throws `WaitTimeout` naming `what` when the condition does not come.
+@MainActor
+public func holdingMain(until what: String, timeout: Duration = .seconds(10), _ condition: () -> Bool) throws {
+    let deadline = ContinuousClock.now + timeout
+    while !condition() {
+        guard ContinuousClock.now < deadline else { throw WaitTimeout(what: what) }
+        sched_yield()
+    }
 }
 
 /// Runs the body of an exit test (`#expect(processExitsWith:)`), recording what it throws as an

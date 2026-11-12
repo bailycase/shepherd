@@ -6,7 +6,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-process.env.SHEPHERD_MISSIONS = "1"; // These tests cover mission records and the mission parameters, which are off unless this is set.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const pkg = process.env.PI_PACKAGE_DIR;
 if (!pkg) throw Error("Set PI_PACKAGE_DIR to the installed Pi package");
@@ -20,7 +19,6 @@ const jiti = createJiti(import.meta.url, { alias: {
 } });
 const config = await jiti.import(path.join(root, "Extensions/shepherd-children-config.ts"));
 const { executeWorkflow, lifecycleWaiters } = await jiti.import(path.join(root, "Extensions/shepherd-workflow.ts"));
-const { missionStore } = await jiti.import(path.join(root, "Extensions/shepherd-missions.ts"));
 const put = (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
 
 test("child user extensions respect Pi filters and exclude project resources", async () => {
@@ -62,27 +60,6 @@ test("a child's space always counts as trusted; only the home folder never does"
     if (old === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = old;
     fs.rmSync(dir, { recursive: true, force: true });
   }
-});
-
-test("mission records persist privately, isolate projects, bound writes and keep failed updates atomic", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-missions-"));
-  try {
-    const a = path.join(dir, "a"), b = path.join(dir, "b"); fs.mkdirSync(a); fs.mkdirSync(b);
-    const store = missionStore(dir, a), mission = store.create("../../not-a-path", "objective");
-    store.update(mission.id, (m) => { m.status = "active"; m.state.answer = 42; });
-    assert.equal(missionStore(dir, a).read(mission.id).state.answer, 42);
-    assert.throws(() => missionStore(dir, b).read(mission.id), /ENOENT/);
-    assert.throws(() => store.read("../outside"), /Invalid mission id/);
-    assert.throws(() => store.update(mission.id, (m) => { m.summary = "x".repeat(256 * 1024); }), /exceeds/);
-    assert.equal(store.read(mission.id).summary, undefined);
-    const projectDir = path.join(dir, "missions", fs.readdirSync(path.join(dir, "missions"))[0]);
-    assert.equal(fs.statSync(path.join(projectDir, `${mission.id}.json`)).mode & 0o777, 0o600);
-    assert.equal(fs.statSync(projectDir).mode & 0o777, 0o700);
-    const before = fs.readFileSync(path.join(projectDir, `${mission.id}.json`));
-    fs.mkdirSync(path.join(projectDir, `${mission.id}.json.lock`));
-    assert.throws(() => store.update(mission.id, () => {}), /locked/);
-    assert.deepEqual(fs.readFileSync(path.join(projectDir, `${mission.id}.json`)), before);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("workflow JSON boundary rejects host constructors, imports, thenables and host errors", async () => {
@@ -278,7 +255,7 @@ const nativeCommandFixture = (existing = [{name:'run'}]) => {
   const pi = {getCommands:()=>existing,getAllTools:()=>[],registerCommand:(n,c)=>commands.set(n,c),registerEntryRenderer(){},appendEntry:(_t,e)=>entries.push(e),sendMessage:(m,o)=>messages.push({m,o})};
   const run = {id:'native-a',role:'scout',task:'task',state:'running'};
   const runtime = {defaults:{scope:'bundled',context:'fresh'},catalog:()=>({agents:[],diagnostics:[]}),doctor:()=>['supported'],list:()=>[run],get:()=>run,
-    workflow:async(p)=>{calls.push(p);return{id:'w',state:'complete',output:'ok'};},stop:async(id)=>{calls.push(id);return{id,state:'stopped'};},missions:()=>[],workflows:()=>[]};
+    workflow:async(p)=>{calls.push(p);return{id:'w',state:'complete',output:'ok'};},stop:async(id)=>{calls.push(id);return{id,state:'stopped'};},workflows:()=>[]};
   return {commands,entries,messages,calls,pi,runtime};
 };
 
@@ -307,7 +284,7 @@ test("under Shepherd the fleet overlay and Stop are not registered, and every co
   assert.deepEqual(ui.listedCommandNames({}), ui.commandNames, 'any other use keeps every command');
   const {commands,entries,messages,pi,runtime} = nativeCommandFixture([]);
   const names = ui.registerNativeCommands(pi,runtime,env);
-  assert.deepEqual([...commands.keys()].sort(), ['missions','run','subagents','subagents-doctor','subagents-models','workflows']);
+  assert.deepEqual([...commands.keys()].sort(), ['run','subagents','subagents-doctor','subagents-models','workflows']);
   assert.equal(names.run,'run');
   // What Shepherd's pi does with each: RPC mode, a UI whose notify the thread never draws.
   const ctx = {mode:'rpc',hasUI:true,isProjectTrusted:()=>true,ui:{notify:()=>assert.fail('a notify is not drawn'),confirm:async()=>false,select:async()=>undefined}};

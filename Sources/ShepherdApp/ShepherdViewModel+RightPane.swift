@@ -109,7 +109,7 @@ extension ShepherdViewModel {
     /// The side pane of the thread on screen.
     var sidePaneOwner: SidePaneOwner? {
         if let remote = selectedRemoteAgent { return .remote(remote) }
-        guard let agent = selectedAgent, activeTabID == agent.tabID else { return nil }
+        guard let agent = structuralAgent(selectedAgentID), activeTabID == agent.tabID else { return nil }
         return .local(agent.id)
     }
 
@@ -242,6 +242,7 @@ extension ShepherdViewModel {
     private func makeFileTree(_ agentID: AgentID, cwd: String) -> FileTreeModel {
         let model = FileTreeModel(rootPath: cwd)
         model.onSaved = { [weak self] _ in self?.workingTreeChanged(agentID) }
+        model.onWrite = { [weak self] path in await self?.personWriteBegan(agentID, paths: [path]) }
         return model
     }
 

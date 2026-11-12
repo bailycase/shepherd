@@ -37,6 +37,35 @@ struct CheckoutMonitorTests {
         #expect(vm.state.agents.first?.checkout == AgentCheckout(branch: "main", changedFiles: 2))
     }
 
+    /// A file a subagent wrote counts on its parent's chip within about a second, with no tool call
+    /// of the parent's own and no change of its status to read the checkout after.
+    @Test func aSubagentsWritesReachItsParentsCount() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let repo = try makeScratchRepo(files: ["file.txt": "before\n"])
+        defer { try? FileManager.default.removeItem(at: repo) }
+        let space = Fixture.space(path: repo.path)
+        let parent = try await app.liveAgent("parent", in: space)
+        let id = parent.agent.id
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [parent]))
+        _ = try await app.readyThread(id)
+        let server = app.server
+        let publisher = try ExtensionClient(path: app.scratch.socketPath)
+        try await eventuallyOnMain("the first read") {
+            server.state.agents.first?.checkout == AgentCheckout(branch: "main", changedFiles: 0)
+        }
+
+        try "fresh\n".write(to: repo.appendingPathComponent("child.txt"), atomically: true, encoding: .utf8)
+        var run = ChildRun(runID: "run-1", label: "worker", state: "running")
+        run.files = [ChildFileChange(path: "child.txt", added: 1, removed: 0)]
+        try publisher.send(.setAgentChildren(agentID: id, children: [run]))
+
+        try await eventuallyOnMain("the child's file on the parent's chip") {
+            server.state.agents.first?.checkout == AgentCheckout(branch: "main", changedFiles: 1)
+        }
+        #expect(vm.state.agents.first?.checkout == AgentCheckout(branch: "main", changedFiles: 1))
+    }
+
     /// A branch card's switch (git run by the app) and a review's load (read by the host) move the
     /// chip at once, with no turn, tool or selection to read the checkout after.
     @Test func aBranchSwitchOrAReviewLoadMovesTheChipAtOnce() async throws {

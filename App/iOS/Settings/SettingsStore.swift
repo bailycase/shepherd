@@ -103,7 +103,7 @@ final class SettingsStore {
 
     /// The capabilities of the experiments a client switches per host.
     static let hostExperiments = [RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
-                                  RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability]
+                                  RemoteProtocol.designToolExperimentCapability]
 
     /// The hosts with any experiment a client switches.
     var experimentHosts: [SettingsHost] {
@@ -114,7 +114,7 @@ final class SettingsStore {
     var experimentsValue: String? {
         let on: [(String, (HostSettings) -> Bool)] = [
             (RemoteProtocol.goalExperimentCapability, \.goalsEnabled), (RemoteProtocol.projectsExperimentCapability, \.projectsEnabled),
-            (RemoteProtocol.designToolExperimentCapability, \.designToolEnabled), (RemoteProtocol.missionsExperimentCapability, \.missionsEnabled),
+            (RemoteProtocol.designToolExperimentCapability, \.designToolEnabled),
         ]
         let hostCount = on.filter { capability, isOn in
             hosts.contains { $0.serves(capability) && hostSettings.settings(of: $0).map(isOn) == true }

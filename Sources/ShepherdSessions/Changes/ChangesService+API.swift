@@ -201,6 +201,9 @@ extension ChangesService {
         case .changesRevertFile(let revision, let path, let oldPath):
             try await revertFile(agentID: agentID, revision: revision, path: path, oldPath: oldPath)
             return .ok
+        case .changesWriteBegan(let span, let paths):
+            try personWriteBegan(span, agentID: agentID, paths: paths)
+            return .ok
         default:
             throw ChangesError(ChangesError.invalid, "Not a changes query.")
         }

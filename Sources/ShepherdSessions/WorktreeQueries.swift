@@ -242,8 +242,13 @@ public final class WorktreeQueries {
             operations[id] = RemoteWorktreeOperation(id: id, progress: ["\(ReviewCommitStepLabel.check): working…"])
             let committer = ReviewCommitter()
             committer.runner = commitRunner
+            // Its hooks can rewrite files under a turn running here: that turn is not the only writer.
+            let event = server.changes.beginTreeEvent(cwd: root)
             Task {
-                defer { busy.remove(checkout) }
+                defer {
+                    busy.remove(checkout)
+                    server.changes.endWrite(event)
+                }
                 let progress = Task {
                     while !Task.isCancelled {
                         operations[id]?.progress = committer.progress

@@ -218,27 +218,24 @@ struct ClientSettingsTests {
         #expect(client.requests.count == 4)
     }
 
-    /// Every change that needs a newer host waits for that host: the Design tool and Missions
-    /// switches, and hostSettings.v2's rows. Missions stays on in the client under a live mission.
+    /// Every change that needs a newer host waits for that host: the Design tool switch and
+    /// hostSettings.v2's rows.
     @Test func newerSwitchesReachOnlyHostsThatAdvertiseThem() async {
-        let client = FakeSettingsClient(settings: HostSettings(missionsEnabled: true, missionsActive: true))
+        let client = FakeSettingsClient(settings: HostSettings())
         let model = ClientHostSettings()
         let old = Self.host("old", client)
         await model.refresh(old)
-        for change: HostSettingChange in [.designToolEnabled(true), .missionsEnabled(false), .skillsInSlashMenu(false),
+        for change: HostSettingChange in [.designToolEnabled(true), .skillsInSlashMenu(false),
                                           .subagentDefaults(HostSettings.SubagentDefaults(concurrency: 2)), .closeOnMerge(true)] {
             #expect(model.post(change, on: old) == nil, "\(change)")
         }
         #expect(client.requests == ["settings.fetch"])
         let live = Self.host("new", client, capabilities: Self.all.union([RemoteProtocol.designToolExperimentCapability,
-                                                                          RemoteProtocol.missionsExperimentCapability,
                                                                           RemoteProtocol.hostSettingsV2Capability,
                                                                           RemoteProtocol.hostSettingsCloseOnMergeCapability]))
         await model.refresh(live)
         await model.change(.designToolEnabled(true), on: live)
         #expect(model.settings(of: live)?.designToolEnabled == true)
-        await model.change(.missionsEnabled(false), on: live)
-        #expect(model.settings(of: live)?.missionsEnabled == true, "a live mission keeps Missions on")
         await model.change(.slashCommand(name: "review", on: false), on: live)
         #expect(model.settings(of: live)?.hiddenSlashCommands == ["review"])
         await model.change(.closeOnMerge(true), on: live)

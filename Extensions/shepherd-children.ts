@@ -11,7 +11,6 @@ import { SessionManager, createBashTool, getPackageDir, resolveCliModel } from "
 import { Type } from "typebox";
 import { bundledAgents as ROLES, childDefaults, discoverChildAgents, childSkills, childTargetContext, defaultChildTools, childUserExtensions, thinkingLevels, parentAllows, designRelayedTools as DESIGN_RELAYED, designTools as DESIGN_TOOLS } from "./shepherd-children-config.ts";
 import { executeWorkflow, lifecycleWaiters } from "./shepherd-workflow.ts";
-import { missionStore } from "./shepherd-missions.ts";
 import { registerNativeCommands } from "./shepherd-children-ui.ts";
 import { registerCliBash, expandCliPrompt, cliRelayAllowed, withoutCliDispatch } from "./shepherd-cli.ts";
 import { StringEnum, validateToolArguments } from "@earendil-works/pi-ai";
@@ -547,7 +546,6 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     }
   }
   const defaults = childDefaults();
-  let missions;
   let owner, active = false, timer, sessionContext;
   // Inspector requests even while no tick runs: run id -> watcher of its control dir.
   const controlWatchers = new Map();
@@ -572,7 +570,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     return run.sessionID;
   };
   const summary = (run) => ({ id: run.id, role: run.role, state: run.state, task: run.task, startedAt: run.startedAt, endedAt: run.endedAt, currentTool: run.currentTool, latestTool: run.latestTool, model: run.model, cwd: run.cwd,
-    workflowId: run.workflowId, delivery: run.delivery ?? "continue", settled: run.settled, missionId: run.missionId, missionWarning: run.missionWarning, thinking: run.thinking, context: run.context, tools: run.tools, sessionFile: run.sessionFile, output: run.output, error: run.error, needsReply: run.needsReply, stopReason: run.lastStop, omittedInFlight: run.omittedInFlight,
+    workflowId: run.workflowId, delivery: run.delivery ?? "continue", settled: run.settled, thinking: run.thinking, context: run.context, tools: run.tools, sessionFile: run.sessionFile, output: run.output, error: run.error, needsReply: run.needsReply, stopReason: run.lastStop, omittedInFlight: run.omittedInFlight,
     turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, files: fileChanges(run), added: run.added, removed: run.removed, lastActivity: run.lastActivity, questionOptions: run.questionOptions, questionText: run.questionText, questionShort: run.questionShort,
     projectScope: run.projectScope, attempt: run.attempt, questionID: run.questionID, exitCode: run.exitCode, toolCallID: run.toolCallID, stepIndex: run.stepIndex,
     relaying: run.relays?.size || undefined });
@@ -663,14 +661,6 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         steps: [{ label: run.task, agent: run.role, model: run.model, status: run.state, sessionFile: run.sessionFile,
           startedAt: run.startedAt, endedAt: run.endedAt, recentTools: run.currentTool ? [{ tool: run.currentTool }] : [] }] });
     } catch (error) { run.error = `Cannot persist child status: ${clip(error.message)}`; }
-    if (run.missionId && missions) {
-      try { missions.update(run.missionId, (m) => {
-        if (m.status === "planned" && run.state === "running") m.status = "active";
-        const link = { id: run.id, task: run.task, agent: run.role, state: run.state, sessionFile: run.sessionFile, updatedAt: Date.now() };
-        const index = m.runs.findIndex((r) => r.id === run.id);
-        if (index < 0) m.runs.push(link); else m.runs[index] = link;
-      }); } catch (error) { run.missionWarning = clip(error.message); }
-    }
     publish();
   }
   let parentWorking = false, parentInterrupted = false, parentInputVersion = 0, userInputWaiting = false;
@@ -1139,20 +1129,8 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     userTimestamp = ctx.sessionManager.getBranch().filter((e) => e.type === "message" && e.message?.role === "user").at(-1)?.message.timestamp;
     parentWorking = false; parentInterrupted = false; userInputWaiting = false; directInputWaiting = false; parentInputVersion += 1; pendingNotices.clear(); clearTimeout(noticeTimer); noticeTimer = undefined;
     connectControl();
-    missions = missionStore(path.join(path.dirname(root), "shepherd-native"), ctx.cwd);
     fs.mkdirSync(root, { recursive: true, mode: 0o700 });
     for (const entry of ctx.sessionManager.getEntries()) {
-      if (entry.type === "custom" && entry.customType === "shepherd-workflow" && entry.data?.owner === owner && entry.data.missionId) {
-        const data = entry.data;
-        // A live previous owner is not ours to reconcile. No PID is ever signalled from metadata.
-        if (!Number.isInteger(data.ownerPID) || (data.ownerPID !== process.pid && alive(data.ownerPID))) continue;
-        try { missions.update(data.missionId, (m) => {
-          if (m.workflow?.id === data.id && m.workflow.state === "running") {
-            m.workflow.state = "stopped"; m.workflow.error = "Interrupted with previous parent; workflows are not replayed";
-            if (!["complete", "cancelled"].includes(m.status)) m.status = "needs_decision";
-          }
-        }); } catch { /* Missing or locked mission records remain inspectable by id. */ }
-      }
       if (entry.type !== "custom" || entry.customType !== "shepherd-child" || entry.data?.owner !== owner || runs.size >= MAX_RUNS) continue;
       const data = entry.data;
       if (!/^native-[\w-]+$/.test(data.id) || typeof data.role !== "string") continue;
@@ -1168,15 +1146,10 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
           turns: status.turns, toolCalls: status.toolCalls, tokens: status.tokens, contextPercent: status.contextPercent, added: status.added, removed: status.removed,
           files: new Map((Array.isArray(status.files) ? status.files : []).map((f) => typeof f === "string" ? [f, { added: 0, removed: 0 }] : [f.path, { added: f.added ?? 0, removed: f.removed ?? 0 }])), lastActivity: status.lastActivity?.kind === "running" ? { ...status.lastActivity, kind: "tool" } : status.lastActivity, questionOptions: status.questionOptions, questionText: status.questionText, questionShort: shortReason(status.questionShort), attempt: status.attempt, questionID: status.questionID, exitCode: status.exitCode,
           tools: Array.isArray(status.tools) ? data.tools.filter((name) => status.tools.includes(name)) : data.tools,
-          missionId: status.missionId ?? data.missionId,
           state: ["complete", "failed", "stopped"].includes(status.state) ? status.state : "stopped", startedAt: status.startedAt ?? data.startedAt, endedAt: status.endedAt, latestTool: status.latestTool });
         if (interrupted) {
           const restored = runs.get(data.id); restored.endedAt ??= Date.now(); restored.error = "Interrupted with previous parent; explicit resume required";
           save(restored);
-          if (restored.missionId) try { missions.update(restored.missionId, (m) => {
-            if (m.workflow?.id === restored.workflowId && m.workflow?.state === "running") m.workflow.state = "stopped";
-            if (!["complete", "cancelled"].includes(m.status)) m.status = "needs_decision";
-          }); } catch (error) { restored.missionWarning = clip(error.message); }
         }
       } catch { /* Missing artifacts cannot be resumed. */ }
     }
@@ -1194,27 +1167,11 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     await Promise.all([...runs.values()].map((run) => stop(run, "Parent session ended")));
   });
 
-  // Missions are not shipped (no screen shows them), so by default the model gets no mission tool or parameter and
-  // no record is written for a run. SHEPHERD_MISSIONS=1 brings all of it back (the tests that cover it set it).
-  const missionsOn = process.env.SHEPHERD_MISSIONS === "1";
-  const missionSchema = Type.Object({ title: textSchema, objective: Type.Optional(textSchema) }, { additionalProperties: false });
-  const missionFields = missionsOn ? { missionId: Type.Optional(idSchema), mission: Type.Optional(Type.Union([Type.Boolean(), missionSchema])) } : {};
   const startSchema = Type.Object({ task: textSchema,
     delivery: Type.Optional(StringEnum(["report", "continue"], { description: "report stores the result without starting a parent turn; continue resumes the parent to finish dependent work (default). Blocking questions may notify in either mode." })), role: Type.Optional(idSchema), agent: Type.Optional(idSchema), context: Type.Optional(StringEnum(["fresh", "fork"])),
     cwd: Type.Optional(Type.String({ maxLength: 4096 })), model: Type.Optional(Type.String({ maxLength: 256 })),
-    thinking: Type.Optional(StringEnum(thinkingLevels)), ...missionFields }, { additionalProperties: false });
+    thinking: Type.Optional(StringEnum(thinkingLevels)) }, { additionalProperties: false });
   function checked(schema, params) { return validateToolArguments({ name: "shepherd", parameters: schema }, { id: "check", name: "shepherd", arguments: params }); }
-  function missionFor(params, title) {
-    if (!missionsOn) return {};
-    if (params.missionId && params.mission !== undefined) throw Error("Use missionId or mission, not both");
-    if (params.mission === false) return {};
-    try {
-      const mission = params.missionId ? missions.read(params.missionId) : missions.create(typeof params.mission === "object" ? params.mission.title : title,
-        typeof params.mission === "object" ? params.mission.objective : title);
-      if (["complete", "cancelled"].includes(mission.status)) throw Error("Mission is closed");
-      return { missionId: mission.id };
-    } catch (error) { if (params.missionId || params.mission !== undefined) throw error; return { missionWarning: clip(error.message) }; }
-  }
   function resolveModel(profile, ctx, explicit) {
     const requestedModel = explicit ?? profile.model ?? defaults.model ?? "inherit";
     const resolved = requestedModel === "inherit" ? { model: ctx.model } : resolveCliModel({ cliModel: requestedModel,
@@ -1277,7 +1234,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       const run = { id, dir, owner, projectScope, role, model, cwd, thinking: params.thinking ?? resolved.thinkingLevel ?? profile.thinking ?? defaults.thinking ?? ctx.thinkingLevel ?? "off", task: params.task,
         context: params.context ?? profile.context ?? defaults.context, delivery: params.delivery ?? "continue",
         profileSource: profile.source, systemPromptMode: profile.systemPromptMode, inheritProjectContext: profile.inheritProjectContext,
-        extensions: profile.extensions ?? [], skills, workflowId, ...missionFor(params, params.task),
+        extensions: profile.extensions ?? [], skills, workflowId,
         tools: requestedTools.filter((name) => cli ? ctx.tools.some(tool => tool.name === name) : parentAllows(name, pi.getActiveTools())),
         ...(cli ? { cliCommand: params.task, localToolExtensions: requestedTools.filter(name => ["codemode", "tool_search"].includes(name)).map(name => name === "tool_search" ? "tool-search" : name) } : {}), state: "queued", startedAt: Date.now(), sessionFile: path.join(dir, "session.jsonl"), output: "",
         queueRequestID: queueInput?.requestID,
@@ -1325,7 +1282,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       signal.addEventListener("abort", abort, { once: true });
       try {
         await start({ task: request.prompt, model: `${resolved.model.provider}/${resolved.model.id}`, thinking: request.thinking,
-          delivery: "report", ...(missionsOn ? { mission: false } : {}) }, signal, ctx, undefined, toolCallID, undefined, undefined, cli);
+          delivery: "report" }, signal, ctx, undefined, toolCallID, undefined, undefined, cli);
         const run = cli.run;
         await run.closed;
         signal.throwIfAborted();
@@ -1356,7 +1313,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   pi.registerTool({ name: "shepherd_child_agents", label: "child agents", ...later, description: "List effective agent profiles, sources and unsupported-field diagnostics. Reads only Shepherd's pi/agents folder. Invalid files stay visible as diagnostics and cannot run.",
     parameters: Type.Object({}), async execute(_id, _p, _s, _u, ctx) { return result({ defaults, ...discoverChildAgents(ctx, defaults.scope) }); } });
   pi.registerTool({ name: "shepherd_child_start", label: "start child", parameters: startSchema,
-    description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Progress stays in the child record. A child never reaches the user: when it is blocked it asks you (needsReply, in a notice and result with a questionID): answer it yourself if you can with shepherd_child_resume and that questionID, else ask the user in your own reply and pass their answer down. delivery:report stores completion without waking the parent, so the user can keep chatting; delivery:continue resumes dependent work; a question wakes you in either. Result reads consume pending notices. For dependent work use delivery:continue and end your turn; completion resumes you. Do not poll child_result. " + (missionsOn ? "Default creates a mission; mission:false opts out. " : "") + "No nested delegation or automatic worktrees.",
+    description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Progress stays in the child record. A child never reaches the user: when it is blocked it asks you (needsReply, in a notice and result with a questionID): answer it yourself if you can with shepherd_child_resume and that questionID, else ask the user in your own reply and pass their answer down. delivery:report stores completion without waking the parent, so the user can keep chatting; delivery:continue resumes dependent work; a question wakes you in either. Result reads consume pending notices. For dependent work use delivery:continue and end your turn; completion resumes you. Do not poll child_result. No nested delegation or automatic worktrees.",
     async execute(id, p, signal, _update, ctx) { return result(await start(p, signal, ctx, undefined, id)); } });
   // The parent's answer to a child's question, from either tool with the questionID. A child that asked is told to finish
   // its turn, and its process ends when that turn settles, so an answer sent into the turn is lost with it. The answer
@@ -1432,54 +1389,20 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     }
     return send(run, message, mode);
   }
-  const missionToolSchema = Type.Object({ action: StringEnum(["create", "list", "show", "update", "close", "attach-run", "attachment"]),
-    id: Type.Optional(idSchema), title: Type.Optional(textSchema), objective: Type.Optional(textSchema), summary: Type.Optional(textSchema),
-    status: Type.Optional(StringEnum(["planned", "active", "waiting", "needs_decision", "complete", "cancelled"])),
-    runId: Type.Optional(idSchema), attachment: Type.Optional(Type.Object({ title: textSchema, uri: textSchema }, { additionalProperties: false })) }, { additionalProperties: false });
-  if (missionsOn) pi.registerTool({ name: "shepherd_mission", label: "missions", description: "Create/list/show/update/close durable project-scoped records, attach an owned run or a descriptive attachment URI. Records do not execute files, grant permissions or restart work. Close does not cancel processes. At most 200 records listed; show by id for older records.",
-    parameters: missionToolSchema, async execute(_id, params) {
-      if (!active) throw Error("No active parent session");
-      const p = checked(missionToolSchema, params);
-      if (p.action === "create") { if (!p.title) throw Error("Mission title is required"); return result(missions.create(p.title, p.objective)); }
-      if (p.action === "list") return result(missions.list().map(({ id, title, status, updatedAt }) => ({ id, title, status, updatedAt })));
-      if (p.action === "show") return result(missions.read(p.id));
-      const run = p.action === "attach-run" ? get(p.runId) : undefined;
-      if (run?.missionId && run.missionId !== p.id) throw Error("Run already belongs to another mission");
-      const record = missions.update(p.id, (m) => {
-        if (p.action === "close") {
-          if (p.status && !["complete", "cancelled"].includes(p.status)) throw Error("Close requires complete or cancelled status");
-          m.status = p.status ?? "complete";
-        } else if (p.action === "attachment") {
-          if (!p.attachment) throw Error("Attachment is required");
-          if (m.attachments.length >= 64) throw Error("64 attachments reached");
-          m.attachments.push(p.attachment);
-        } else if (p.action === "update") {
-          if (p.title !== undefined) m.title = p.title;
-          if (p.objective !== undefined) m.objective = p.objective;
-          if (p.status !== undefined) m.status = p.status;
-        }
-        if (p.summary !== undefined) m.summary = p.summary;
-        if (run && !m.runs.some((r) => r.id === run.id)) m.runs.push({ id: run.id, task: run.task, agent: run.role, state: run.state });
-      });
-      if (run) { run.missionId = p.id; save(run); }
-      return result(record);
-    } });
-
   const workflowSchema = Type.Object({ delivery: Type.Optional(StringEnum(["report", "continue"])), action: Type.Optional(StringEnum(["start", "status", "cancel", "wait"])), id: Type.Optional(idSchema),
     workflowScript: Type.Optional(Type.String({ minLength: 1, maxLength: 32768 })), task: Type.Optional(textSchema),
-    async: Type.Optional(Type.Boolean()), timeoutSeconds: Type.Optional(Type.Number({ minimum: 0.1, maximum: 1800 })),
-    ...missionFields }, { additionalProperties: false });
+    async: Type.Optional(Type.Boolean()), timeoutSeconds: Type.Optional(Type.Number({ minimum: 0.1, maximum: 1800 })) }, { additionalProperties: false });
   // The children of a workflow that ended their turn on a question to its parent, which answers them after the workflow.
   const workflowAsks = (w) => [...w.keys.values()].filter((run) => run.workflowId === w.id && run.needsReply && run.questionID);
   const workflowSummary = (w) => {
     const asking = workflowAsks(w);
-    return { id: w.id, state: w.state, output: w.output, error: w.error, missionId: w.missionId, missionWarning: w.missionWarning,
+    return { id: w.id, state: w.state, output: w.output, error: w.error,
       children: [...w.keys].map(([key, run]) => ({ key, id: run.id, state: run.state,
         ...(asking.includes(run) ? { needsReply: true, questionID: run.questionID, question: run.questionText } : {}) })),
       ...(asking.length ? { parentAction: `${asking.length === 1 ? "A child" : `${asking.length} children`} of this workflow asked you a question and wait on you, never on the user. Answer each yourself if you can with shepherd_child_resume {id, message, questionID}; ask the USER yourself, in one message, only what you cannot answer, and pass their answer down the same way.` } : {}) };
   };
   pi.registerTool({ name: "shepherd_workflow", label: "workflow", parameters: workflowSchema, ...later,
-    description: "Start a background JavaScript statement body with runs.run(key,{agent,task,...}), runs.all([{key,agent,task,...}]), runs.steer(key,message,{mode}), runs.status(key), runs.cancel(key). Await or return calls. Use ordinary sequencing/branching; no imports, process or filesystem API. This is restricted execution, NOT an OS sandbox. Children retain their normal tools. Default 30-minute deadline" + (missionsOn ? " and enclosing mission; mission:false disables persistence and state.get/set" : "") + ". delivery:report records completion without waking the parent; continue resumes dependent work. A child that is blocked asks you instead of finishing: its runs.run result then has needsReply:true, questionID and question (its output is not a result); once the workflow ends, answer it yourself with shepherd_child_resume {id, message, questionID} or ask the user and pass their answer down. A question wakes you in either delivery. async:false waits; new user input interrupts action:wait without stopping children. status/wait/cancel target this parent's workflow id. No automatic retries, worktrees or scheduling.",
+    description: "Start a background JavaScript statement body with runs.run(key,{agent,task,...}), runs.all([{key,agent,task,...}]), runs.steer(key,message,{mode}), runs.status(key), runs.cancel(key). Await or return calls. Use ordinary sequencing/branching; no imports, process or filesystem API. This is restricted execution, NOT an OS sandbox. Children retain their normal tools. Default 30-minute deadline" + ". delivery:report records completion without waking the parent; continue resumes dependent work. A child that is blocked asks you instead of finishing: its runs.run result then has needsReply:true, questionID and question (its output is not a result); once the workflow ends, answer it yourself with shepherd_child_resume {id, message, questionID} or ask the user and pass their answer down. A question wakes you in either delivery. async:false waits; new user input interrupts action:wait without stopping children. status/wait/cancel target this parent's workflow id. No automatic retries, worktrees or scheduling.",
     async execute(id, params, signal, _update, ctx) { return runWorkflow(params, signal, ctx, undefined, id); } });
   async function runWorkflow(params, signal, ctx, onSlashComplete, toolCallID) {
       const p = checked(workflowSchema, params), action = p.action ?? "start";
@@ -1506,17 +1429,12 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       checkScope(projectScope); signal?.throwIfAborted();
       if (!p.workflowScript) throw Error("workflowScript is required");
       if (workflows.size >= 32 || [...workflows.values()].filter((w) => w.state === "running").length >= 4) throw Error("Workflow limit reached: four active, 32 retained per parent");
-      const w = { id: `workflow-${randomUUID()}`, owner, projectScope, state: "running", async: p.async !== false, keys: new Map(), claims: new Set(), starts: new Set(), controller: new AbortController(),
-        ...missionFor(p, p.task ?? "Scripted workflow") };
+      const w = { id: `workflow-${randomUUID()}`, owner, projectScope, state: "running", async: p.async !== false, keys: new Map(), claims: new Set(), starts: new Set(), controller: new AbortController() };
       workflows.set(w.id, w);
-      pi.appendEntry("shepherd-workflow", { id: w.id, owner, ownerPID: process.pid, missionId: w.missionId });
-      if (w.missionId) try { missions.update(w.missionId, (m) => { m.workflow = { id: w.id, state: "running" }; }); }
-      catch (error) { workflows.delete(w.id); throw error; }
       const guard = () => { checkScope(w.projectScope); w.controller.signal.throwIfAborted(); if (!active || w.state !== "running") throw Error("Workflow is no longer accepting calls"); };
       const keySchema = Type.String({ minLength: 1, maxLength: 128, pattern: "^[a-zA-Z0-9][a-zA-Z0-9._-]*$" });
       async function runChild(key, params) {
         checked(Type.Object({ key: keySchema, params: startSchema }, { additionalProperties: false }), { key, params });
-        if (params.mission !== undefined || params.missionId !== undefined) throw Error("Workflow owns its children's mission");
         guard();
         if (w.claims.has(key)) throw Error(`Duplicate workflow key: ${key}`);
         if (w.claims.size >= 64) throw Error("64 workflow children reached");
@@ -1529,7 +1447,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
             await admission.wait(w.controller.signal); guard();
           }
           guard();
-          const promise = start({ ...params, ...(missionsOn ? (w.missionId ? { missionId: w.missionId } : { mission: false }) : {}) }, w.controller.signal, ctx, w.id, toolCallID, w.claims.size);
+          const promise = start({ ...params }, w.controller.signal, ctx, w.id, toolCallID, w.claims.size);
           w.starts.add(promise);
           try { receipt = await promise; }
           catch (error) { if (error.code !== "capacity") throw error; }
@@ -1556,14 +1474,6 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
           checked(Type.Object({ items: Type.Array(itemSchema, { minItems: 1, maxItems: 16 }) }, { additionalProperties: false }), args);
           return Promise.all(args.items.map(({ key, ...params }) => runChild(key, params).catch((error) => ({ key, ok: false, state: "failed", error: clip(error.message) }))));
         }
-        if (method === "state.get" || method === "state.set") {
-          checked(Type.Object({ key: keySchema, ...(method === "state.set" ? { value: Type.Unknown() } : {}) }, { additionalProperties: false }), args);
-          if (["constructor", "prototype", "__proto__"].includes(args.key)) throw Error("Reserved state key");
-          if (!w.missionId) throw Error("Workflow has no mission state");
-          guard();
-          if (method === "state.get") return Object.hasOwn(missions.read(w.missionId).state, args.key) ? missions.read(w.missionId).state[args.key] : undefined;
-          return missions.update(w.missionId, (m) => { Object.defineProperty(m.state, args.key, { value: args.value, enumerable: true, configurable: true, writable: true }); }).state[args.key];
-        }
         if (!["steer", "status", "cancel"].includes(method)) throw Error("Unsupported workflow operation");
         checked(Type.Object({ key: keySchema, ...(method === "steer" ? { message: textSchema, options: Type.Object({ mode: Type.Optional(StringEnum(["steer", "follow_up", "followUp", "auto"])) }, { additionalProperties: false }) } : {}) }, { additionalProperties: false }), args);
         // Keys are claimed before asynchronous Pi startup, so steering may wait for acceptance.
@@ -1578,7 +1488,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       }
       w.done = (async () => {
         try {
-          w.output = await executeWorkflow(p.workflowScript, call, { signal: w.controller.signal, timeoutMs: (p.timeoutSeconds ?? 1800) * 1000, stateEnabled: !!w.missionId });
+          w.output = await executeWorkflow(p.workflowScript, call, { signal: w.controller.signal, timeoutMs: (p.timeoutSeconds ?? 1800) * 1000, stateEnabled: false });
           guard();
           if (w.starts.size || [...runs.values()].some((r) => r.workflowId === w.id && ["running", "queued"].includes(r.state))) throw Error("Workflow returned with unfinished children");
           w.state = "complete";
@@ -1588,12 +1498,6 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
           await Promise.allSettled([...w.starts]);
           await Promise.all([...runs.values()].filter((r) => r.workflowId === w.id).map((r) => stop(r, "Workflow ended")));
           w.cleaned = true;
-          if (w.missionId) try { missions.update(w.missionId, (m) => {
-            // A later workflow on the same mission owns its lifecycle now; an older one ending must not overwrite it.
-            if (m.workflow?.id !== w.id) return;
-            if (!["complete", "cancelled"].includes(m.status)) m.status = w.state === "complete" ? "waiting" : "needs_decision";
-            m.workflow = { id: w.id, state: w.state, error: w.error };
-          }); } catch (error) { w.missionWarning = clip(error.message); }
           if (active && owner === w.owner && onSlashComplete) { if (w.async) onSlashComplete(workflowSummary(w)); }
           else if (active && owner === w.owner && w.async && !closedScopes.has(scopeKey(w.projectScope))) {
             const asking = workflowAsks(w);
@@ -1628,7 +1532,6 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     send: (id, message, mode) => messageChild(get(id), checked(Type.Object({ message: textSchema }), { message }).message, mode, sessionContext),
     stop: async (id) => { const run = get(id); await stop(run); return summary(run); },
     workflow: (params, ctx, onComplete) => runWorkflow(params, undefined, ctx, onComplete).then((r) => r.details),
-    missions: (id) => id ? missions.read(id) : missions.list(),
     workflows: (id) => {
       if (!id) return [...workflows.values()].map(workflowSummary);
       const workflow = workflows.get(id); if (!workflow) throw Error("Unknown workflow in this parent session");

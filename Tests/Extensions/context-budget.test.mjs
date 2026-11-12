@@ -80,7 +80,7 @@ for (const [scenario, context, { designRefs }] of LAUNCHES) {
   });
 }
 
-test("missions are off: no mission tool and no mission parameter in a thread, and SHEPHERD_MISSIONS=1 brings both back", { timeout: 120000 }, async () => {
+test("missions are removed: no mission tool and no mission parameter in a thread", { timeout: 120000 }, async () => {
   const find = (captured, name) => captured.body.tools.find((tool) => (tool.name ?? tool.function?.name) === name);
   // Every tool direct (shepherd_workflow is deferred in an ordinary thread), so each is in the request to inspect.
   const off = await capture("thread-defer-off", { pkg });
@@ -90,8 +90,4 @@ test("missions are off: no mission tool and no mission parameter in a thread, an
     assert.ok(!properties.includes("mission") && !properties.includes("missionId"), `${name} offers no mission parameter: ${properties}`);
     assert.ok(!/mission/i.test(JSON.stringify(find(off, name))), `${name} says nothing of missions`);
   }
-  const on = await capture("thread-defer-off", { pkg, env: { SHEPHERD_MISSIONS: "1" } });
-  assert.ok(find(on, "shepherd_mission"), "the tool is back");
-  const properties = Object.keys((find(on, "shepherd_child_start").parameters).properties);
-  assert.ok(properties.includes("mission") && properties.includes("missionId"));
 });

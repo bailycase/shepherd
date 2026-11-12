@@ -96,12 +96,16 @@ final class RemoteHostStore {
         fileprivate(set) var lastSeen: Date?
         var state = ShepherdState() {
             didSet {
+                guard projects else { return }
                 let agentIDs = Set(state.agents.map(\.id))
                 let kept = children.filter { agentIDs.contains($0.key) }
                 if kept.count != children.count { children = kept }
                 onProjectionChanged?()
             }
         }
+        /// Off while `skip` writes `state`: the push behind it projects (`onProjectionChanged`, the child rows' prune)
+        /// for both. Every projection reads the connections whole, so none is owed to a push it skipped.
+        @ObservationIgnored private var projects = true
         fileprivate(set) var children: [AgentID: [ChildRun]] = [:] { didSet { onProjectionChanged?() } }
         @ObservationIgnored fileprivate var onProjectionChanged: (() -> Void)?
         @ObservationIgnored fileprivate var childRefreshTask: Task<Void, Never>?
@@ -118,6 +122,8 @@ final class RemoteHostStore {
             return lastFleetID
         }
         @ObservationIgnored private var lastFleetID: UUID?
+        /// The workspace pushes the host sent that the app has not taken yet (tests, diagnostics).
+        var queuedStateEvents: Int { client?.queuedStateEvents ?? 0 }
         /// Where a forwarded port of this host finds its connection's tunnels (Browser): filled
         /// while there is a client, empty while there is none.
         let hubSlot = BrowserTunnelHubSlot()
@@ -133,21 +139,20 @@ final class RemoteHostStore {
         /// The host's designs (`designs.v1`, while its Design tool is on): its listing and each
         /// design's files, fetched by hash into the store's cache.
         let designs: RemoteDesignLibrary
-        /// The host's missions (`missions.v1`, while its Missions experiment is on).
-        let missions: RemoteMissions
 
         init(config: HostConfig, designCache: RemoteDesignCache = RemoteDesignCache()) {
             self.config = config
             self.id = config.id
             designs = RemoteDesignLibrary(hostID: config.id, cache: designCache)
-            missions = RemoteMissions(hostID: config.id)
         }
 
-        /// Points the host's missions at `client` (nil: disconnected) and reads them when it offers them.
-        fileprivate func connectMissions(_ client: RemoteHostClient?) {
-            let available = client?.capabilities.contains(RemoteProtocol.missionsCapability) == true
-            missions.connect(client.map { client in { try await client.mission($0) } }, available: available)
-            if available { Task { await missions.refresh() } }
+        /// Takes a push that a newer one is queued behind and the app leaves unadopted. `state` holds it at once, so
+        /// no reader sees an older one than the app does, and observers are told as for any push; only the
+        /// projection waits for the push behind it.
+        fileprivate func skip(_ push: ShepherdState) {
+            projects = false
+            state = push
+            projects = true
         }
 
         /// The host serves designs now (observed: it can change while connected).
@@ -221,6 +226,8 @@ final class RemoteHostStore {
         var supportsTerminalControl: Bool { client?.capabilities.contains(RemoteProtocol.terminalControlCapability) == true }
         var supportsTerminalStart: Bool { client?.capabilities.contains(RemoteProtocol.terminalStartCapability) == true }
         var supportsCheckoutRead: Bool { client?.capabilities.contains(RemoteProtocol.checkoutReadCapability) == true }
+        /// This Mac's host takes what the app writes for the person (`changesWriteBegan`).
+        var supportsChangesWrites: Bool { client?.capabilities.contains(RemoteProtocol.changesWritesCapability) == true }
         /// The host takes a new thread's images with its opening prompt.
         var supportsCreateAgentImages: Bool { client?.capabilities.contains(RemoteProtocol.createAgentImagesCapability) == true }
         var supportsWorktreeCreation: Bool {
@@ -272,8 +279,13 @@ final class RemoteHostStore {
     static let defaultsKey = "shepherd.remote.hosts"
 
     @ObservationIgnored var onProjectionChanged: (() -> Void)?
-    /// Each workspace the background host on this Mac pushes, after its connection holds it.
-    @ObservationIgnored var onLocalHostState: ((ShepherdState) -> Void)?
+    /// Whether the app leaves the next workspace the background host on this Mac pushes unadopted when a newer
+    /// one is already queued behind it (`StateAdoption`). Asked before the connection holds the push: a push it
+    /// leaves is held without its projection, which the push behind it runs.
+    @ObservationIgnored var leavesQueuedLocalHostState: (() -> Bool)?
+    /// Each workspace the background host on this Mac pushes, after its connection holds it, and whether a
+    /// newer push is already queued behind it.
+    @ObservationIgnored var onLocalHostState: ((ShepherdState, _ newerQueued: Bool) -> Void)?
     /// An agent's notify tool on the background host on this Mac, for the app to post.
     @ObservationIgnored var onLocalAgentNotify: ((AgentID, String, String) -> Void)?
     /// What a Settings page shows changed on the background host on this Mac.
@@ -486,7 +498,6 @@ final class RemoteHostStore {
         connection.client?.disconnect()
         connection.client = nil
         connection.designs.connect(nil, available: false)
-        connection.connectMissions(nil)
         for pane in connection.panes.values {
             pane.phase = .failed("host removed")
         }
@@ -507,7 +518,6 @@ final class RemoteHostStore {
         let oldClient = connection.client
         connection.client = nil
         connection.designs.connect(nil, available: false)
-        connection.connectMissions(nil)
         oldClient?.disconnect()
         connection.reconnectDelay = .seconds(1)
         connect(connection)
@@ -554,7 +564,7 @@ final class RemoteHostStore {
                 }
                 if connection.stateGeneration == stateGeneration {
                     connection.state = state
-                    if connection.isLocalHost { self.onLocalHostState?(state) }
+                    if connection.isLocalHost { self.onLocalHostState?(state, false) }
                 }
                 connection.phase = .connected
                 self.rebindPanes(connection, to: client)
@@ -562,7 +572,6 @@ final class RemoteHostStore {
                 self.threadHints.forget(connection.id)
                 self.sendThreadHints()
                 connection.designs.connect(client, available: client.capabilities.contains(RemoteProtocol.designsCapability))
-                connection.connectMissions(client)
                 connection.startChildRefresh(client: client, every: childRefreshInterval)
                 connection.reconnectDelay = .seconds(1)
                 if connection.isLocalHost, BackgroundHostClient.asksToDrain(appBuild: self.appBuild, hostBuild: client.hostBuild,
@@ -638,16 +647,19 @@ final class RemoteHostStore {
             guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalAgentNotify?(agentID, title, body)
         }
-        client.onStateChanged = { [weak self, weak connection] state in
+        client.onStateChanged = { [weak self, weak connection, weak client] state in
             guard let connection,
                   connection.client.map(ObjectIdentifier.init) == clientID else { return }
-            defer { if connection.isLocalHost { self?.onLocalHostState?(state) } }
+            // This Mac's host is the app's workspace, which leaves a push unadopted when a newer one is queued behind it.
+            // The connection holds that push without the projection, which the newer one runs, and the app is told so.
+            let skipped = connection.isLocalHost && client?.newerStateQueued == true && self?.leavesQueuedLocalHostState?() == true
+            defer { if connection.isLocalHost { self?.onLocalHostState?(state, skipped || client?.newerStateQueued == true) } }
             let liveSessionIDs = Set(state.tabs.flatMap { $0.layout.leaves.compactMap(\.sessionID) })
             for sessionID in Array(connection.panes.keys) where !liveSessionIDs.contains(sessionID) {
                 connection.panes.removeValue(forKey: sessionID)?.detach()
             }
             connection.stateGeneration &+= 1
-            connection.state = state
+            if skipped { connection.skip(state) } else { connection.state = state }
         }
         client.onOutputConsumed = { [weak connection] sessionID, data, completion in
             guard let connection,
@@ -670,14 +682,6 @@ final class RemoteHostStore {
             connection.designs.systemsChanged()
             if connection.isLocalHost { self?.onLocalDesignSystemsChanged?() }
         }
-        client.onMissionChanged = { [weak connection] mission, revision in
-            guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
-            connection.missions.changed(mission, revision: revision)
-        }
-        client.onMissionLive = { [weak connection] mission, live in
-            guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
-            connection.missions.liveChanged(mission, live)
-        }
         client.onNativeThreadChanged = { [weak self, weak connection] agent in
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onNativeThreadChanged?(RemoteAgentRef(hostID: connection.id, agentID: agent))
@@ -698,7 +702,6 @@ final class RemoteHostStore {
         client.onCapabilitiesChanged = { [weak self, weak connection, weak client] capabilities in
             guard let connection, let client, connection.client === client, connection.phase == .connected else { return }
             connection.designs.connect(client, available: capabilities.contains(RemoteProtocol.designsCapability))
-            connection.connectMissions(client)
             self?.onProjectionChanged?()
         }
         client.onDisconnected = { [weak self, weak connection] reason in
@@ -707,7 +710,6 @@ final class RemoteHostStore {
             connection.phase = .failed(RemoteHostFailure(disconnect: reason))
             connection.client = nil
             connection.designs.connect(nil, available: false)
-            connection.connectMissions(nil)
             connection.stopChildRefresh()
             if connection.isLocalHost {
                 // This Mac's host keeps its terminals across a dropped link: each pane keeps its

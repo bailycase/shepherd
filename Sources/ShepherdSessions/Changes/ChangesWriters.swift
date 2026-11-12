@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 
 /// Who wrote in a working tree, and when: the evidence a turn's own files are cut by
 /// (`TurnAttribution`). In memory only, behind `ChangesService.writers`; every append is O(1)
@@ -41,17 +42,39 @@ struct WriterLog {
         var ok: Bool?
     }
 
-    /// Shepherd writing files for the person: an Undo, a Redo, a Revert.
+    /// A subagent run of an agent, as its publisher last reported it: a writer that outlives the
+    /// turn that started it, and whose files arrive up to seconds after it wrote them.
+    struct Run: Equatable {
+        /// The run's id and its attempt: a resume is a new stretch of the same run.
+        var key: String
+        var agent: AgentID
+        /// Where it ran, or the agent's own directory for a publisher that names none.
+        var cwd: String
+        /// As the publisher stamped it, with no lead: open while the run lives.
+        var interval: TurnAttribution.Interval
+        /// The files it edited or wrote, as it named them (`runFiles` at most), resolved against
+        /// `cwd` only when classified.
+        var files: [String]
+    }
+
+    /// Shepherd writing files for the person: an Undo, a Redo, a Revert, a Save. Or, as a tree
+    /// event, running something that rewrites a whole working tree under them: a branch switch,
+    /// an update from the base, a commit that runs hooks.
     struct Span: Equatable {
         var id: UUID
-        /// Absolute.
+        /// Absolute. None for a tree event.
         var paths: [String]
+        /// The folder whose working tree a tree event rewrites; nil for a write of `paths`.
+        var tree: String? = nil
         var interval: TurnAttribution.Interval
     }
 
     static let windowCap = 256
     static let callCap = 4_096
     static let spanCap = 512
+    static let runCap = 512
+    /// Most files a publisher lists for one run.
+    static let runFiles = 32
     static let lostCap = 64
     /// How long a closed item stays when nothing open or undoable could still be judged by it, ms.
     static let keep: Double = 3_600_000
@@ -59,6 +82,7 @@ struct WriterLog {
     private(set) var windows: [Window] = []
     private(set) var calls: [Call] = []
     private(set) var spans: [Span] = []
+    private(set) var runs: [Run] = []
     /// Stretches an eviction forced out of the log while a turn could still need them.
     private(set) var lost: [TurnAttribution.Interval] = []
     private(set) var sequence = 0
@@ -98,11 +122,12 @@ struct WriterLog {
         calls[index].ok = ok
     }
 
-    /// Shepherd is about to write `paths` (absolute) for the person. Returns its interval.
+    /// Shepherd is about to write `paths` (absolute) for the person, or to rewrite the working
+    /// tree of `tree`. Returns its interval.
     @discardableResult
-    mutating func beginSpan(_ id: UUID, paths: [String], at time: Double) -> TurnAttribution.Interval {
+    mutating func beginSpan(_ id: UUID, paths: [String], tree: String? = nil, at time: Double) -> TurnAttribution.Interval {
         let interval = TurnAttribution.Interval(start: time)
-        spans.append(Span(id: id, paths: paths, interval: interval))
+        spans.append(Span(id: id, paths: paths, tree: tree, interval: interval))
         sequence += 1
         trim()
         return interval
@@ -111,6 +136,45 @@ struct WriterLog {
     mutating func endSpan(_ id: UUID, at time: Double) {
         guard let index = spans.lastIndex(where: { $0.id == id && $0.interval.end == nil }) else { return }
         spans[index].interval.end = max(time, spans[index].interval.start)
+    }
+
+    /// `agent` published its subagent rows, all of them. `parent` is the agent's own directory,
+    /// for a row that names none. Returns the intervals of the runs that are new or now reach
+    /// further than before: a settled turn they overlap may have to be re-cut. A row that
+    /// dropped out of the publication while open ended when it was published without it.
+    @discardableResult
+    mutating func noteRuns(_ agent: AgentID, rows: [ChildRun], parent: String?, at time: Double) -> [TurnAttribution.Interval] {
+        var known: [String: Int] = [:]
+        for index in runs.indices where runs[index].agent == agent { known[runs[index].key] = index }
+        var seen: Set<String> = []
+        var arrived: [TurnAttribution.Interval] = []
+        for row in rows {
+            let key = row.id + "@" + (row.attempt ?? "")
+            seen.insert(key)
+            guard let cwd = row.cwd ?? parent else { continue }
+            let before = known[key].map { runs[$0] }
+            let start = row.startedAt ?? before?.interval.start ?? time - TurnAttribution.lead
+            let end = row.isTerminal ? max(row.endedAt ?? before?.interval.end ?? time, start) : nil
+            let run = Run(key: key, agent: agent, cwd: cwd, interval: .init(start: start, end: end),
+                          files: (row.files ?? []).prefix(Self.runFiles).map(\.path))
+            if let index = known[key] {
+                runs[index] = run
+            } else {
+                known[key] = runs.count
+                runs.append(run)
+            }
+            if let before, before.files == run.files, before.cwd == run.cwd, before.interval.start == start,
+               before.interval.end == nil || end != nil {
+                continue
+            }
+            arrived.append(run.interval)
+        }
+        for index in runs.indices where runs[index].agent == agent && runs[index].interval.end == nil && !seen.contains(runs[index].key) {
+            runs[index].interval.end = max(time, runs[index].interval.start)
+        }
+        if !arrived.isEmpty { sequence += 1 }
+        trim()
+        return arrived
     }
 
     /// The turn's end capture finished (or it never began): the window closes, and so does any
@@ -126,8 +190,8 @@ struct WriterLog {
         }
     }
 
-    /// The agent is gone, or its pi exited: whatever it had open ends now. Windows and calls
-    /// stay in the log: a deleted agent's leftover edits keep another agent's overlapping turn shared.
+    /// The agent is gone, or its pi exited: whatever it had open ends now. Windows, calls and
+    /// runs stay in the log: a deleted agent's leftover edits keep another agent's overlapping turn shared.
     mutating func agentEnded(_ agent: AgentID, at time: Double) {
         prompts[agent] = nil
         for i in windows.indices where windows[i].agent == agent && windows[i].interval.end == nil {
@@ -137,6 +201,15 @@ struct WriterLog {
         for i in calls.indices where calls[i].agent == agent && calls[i].interval.end == nil {
             calls[i].interval.end = max(time, calls[i].interval.start)
         }
+        for i in runs.indices where runs[i].agent == agent && runs[i].interval.end == nil {
+            runs[i].interval.end = max(time, runs[i].interval.start)
+        }
+    }
+
+    /// The agent was deleted with its records: its windows stay as evidence for the turns they
+    /// overlapped, but nothing is left to re-cut.
+    mutating func forget(_ agent: AgentID) {
+        for i in windows.indices where windows[i].agent == agent { windows[i].settled = nil }
     }
 
     /// The turn's record was cut from the log as it stood at `settled.sequence`.
@@ -185,11 +258,12 @@ struct WriterLog {
     }
 
     private mutating func trim() {
-        guard windows.count > Self.windowCap || calls.count > Self.callCap || spans.count > Self.spanCap else { return }
+        guard windows.count > Self.windowCap || calls.count > Self.callCap || spans.count > Self.spanCap || runs.count > Self.runCap else { return }
         let protected = protected()
         Self.evict(&windows, cap: Self.windowCap, protected: protected, lost: &lost) { $0.interval }
         Self.evict(&calls, cap: Self.callCap, protected: protected, lost: &lost) { $0.interval }
         Self.evict(&spans, cap: Self.spanCap, protected: protected, lost: &lost) { $0.interval }
+        Self.evict(&runs, cap: Self.runCap, protected: protected, lost: &lost) { $0.interval }
     }
 
     /// Drops what ended over an hour ago and before every open and undoable turn began.
@@ -200,6 +274,7 @@ struct WriterLog {
         windows.removeAll { stale($0.interval) }
         calls.removeAll { stale($0.interval) }
         spans.removeAll { stale($0.interval) }
+        runs.removeAll { stale($0.interval) }
         lost.removeAll { stale($0) }
     }
 }
@@ -237,16 +312,72 @@ extension ChangesService {
         writers.withValue { $0.agentEnded(agentID, at: time) }
     }
 
+    /// Server queue: `agentID` published its subagent runs (a full replacement). A run is a writer
+    /// that outlives the turn that started it and is published seconds after it wrote, so one that
+    /// reaches a turn other agents already settled re-cuts it.
+    func noteChildren(agentID: AgentID, runs: [ChildRun], at time: Double = ChangesService.nowMs()) {
+        let parent = agentContext(agentID)?.cwd
+        for interval in writers.withValue({ $0.noteRuns(agentID, rows: runs, parent: parent, at: time) }) {
+            reclassifyAffected(by: interval, excluding: agentID, now: time)
+        }
+    }
+
     /// Shepherd is about to write `paths` (relative to `repository`) for the person; close the
     /// returned span with `endWrite` once the last one is written.
     func beginWrite(_ repository: Repository, paths: [String]) -> UUID {
-        let id = UUID()
+        beginSpan(UUID(), paths: paths.map { repository.root + "/" + $0 })
+    }
+
+    /// The same for `paths` as the writer names them (absolute, through any symlink): this Mac's
+    /// app saving or reverting a file, or a paired device's Save. A path counts where git sees it
+    /// (its folder resolved) and, when it is a symlink, where the write lands.
+    @discardableResult
+    func beginWrite(_ id: UUID = UUID(), absolute paths: [String]) -> UUID {
+        beginSpan(id, paths: paths.flatMap(Self.spanPaths))
+    }
+
+    /// Shepherd is about to run something for the person that rewrites the working tree of `cwd`
+    /// (a branch switch, an update from the base, an abort, a commit that runs hooks). A turn that
+    /// ran there meanwhile can't tell its files from the operation's: it is shared, and owns only
+    /// the files its own edit and write calls named. Close it with `endWrite`.
+    @discardableResult
+    func beginTreeEvent(_ id: UUID = UUID(), cwd: String) -> UUID {
+        beginSpan(id, paths: [], tree: cwd)
+    }
+
+    private func beginSpan(_ id: UUID, paths: [String], tree: String? = nil) -> UUID {
         let time = Self.nowMs()
-        let absolute = paths.map { repository.root + "/" + $0 }
-        let interval = writers.withValue { $0.beginSpan(id, paths: absolute, at: time) }
+        let interval = writers.withValue { $0.beginSpan(id, paths: paths, tree: tree, at: time) }
         reclassifyAffected(by: interval, excluding: nil, now: time)
         return id
     }
+
+    private static func spanPaths(_ path: String) -> [String] {
+        let name = (path as NSString).lastPathComponent
+        let parent = Self.realPath((path as NSString).deletingLastPathComponent)
+        let beside = parent == "/" ? "/" + name : parent + "/" + name
+        let through = Self.realPath(path)
+        return through == beside ? [beside] : [beside, through]
+    }
+
+    /// Server's `changesWriteBegan` from this Mac's app: `paths` it is about to write, or none
+    /// for a tree event in the agent's working tree. `id` is the app's. The tree is the agent's
+    /// own, as the app's branch actions and commits run in it; one that ran in another
+    /// repository would need to name it.
+    func personWriteBegan(_ id: UUID, agentID: AgentID, paths: [String]?) throws {
+        guard let paths else {
+            beginTreeEvent(id, cwd: try context(agentID, cwd: nil).cwd)
+            return
+        }
+        guard !paths.isEmpty, paths.count <= Self.personWritePaths,
+              paths.allSatisfy({ $0.hasPrefix("/") && $0.utf8.count <= 4096 && !$0.contains("\0") }) else {
+            throw ChangesError(ChangesError.invalid, "Not files of this Mac.")
+        }
+        beginWrite(id, absolute: paths)
+    }
+
+    /// Most files one write the app reports may name.
+    static let personWritePaths = 64
 
     func endWrite(_ id: UUID) {
         let time = Self.nowMs()

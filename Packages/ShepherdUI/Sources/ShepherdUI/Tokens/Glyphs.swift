@@ -18,9 +18,7 @@ public enum SHGlyph: CaseIterable, Sendable {
     case fastBolt
     /// An automation: the outline bolt. The sidebar, Automations and the iOS home's bolt.
     case automation
-    /// Mission repository swimlanes (NavMissions, MXMap).
-    case mission
-    /// A mission lane's repository: lane chips, lane headers and the brief (NavMissions, MXMap).
+    /// A repository: repo chips and headers.
     case repository
     /// A remote host: Settings and the command palette's outward radio waves.
     case remoteConnection
@@ -52,7 +50,6 @@ public enum SHGlyph: CaseIterable, Sendable {
         switch self {
         case .fastBolt: "bolt.fill"
         case .automation: "bolt"
-        case .mission: "map"
         case .repository: "book.closed"
         case .remoteConnection: "dot.radiowaves.left.and.right"
         case .popupChevrons: "chevron.up.chevron.down"
