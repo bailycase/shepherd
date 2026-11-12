@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 // Home track's settings and hosts screens.
 extension FixtureCatalog {
@@ -29,8 +30,14 @@ extension FixtureCatalog {
             FixtureScreen(name: "hosts-refused", hosts: FixtureData.refusingLaptop(), routes: [.settings(.hosts)], tab: .settings),
             FixtureScreen(name: "host-refused", hosts: FixtureData.refusingLaptop(),
                           routes: [.settings(.hosts), .settings(.host(FixtureData.laptop))], tab: .settings),
-            FixtureScreen(name: "addhost", routes: [.settings(.hosts), .settings(.host(nil))], tab: .settings),
-            FixtureScreen(name: "addhost-sheet", presented: .settings(.host(nil))),
+            // Add a Mac: the Macs Bonjour found, the code half entered, and the ways it can go wrong.
+            FixtureScreen(name: "addhost", routes: [.settings(.hosts), .settings(.host(nil))], tab: .settings,
+                          setup: { FixtureData.pairing(code: "4829") }),
+            FixtureScreen(name: "addhost-sheet", presented: .settings(.host(nil)), setup: { FixtureData.pairing(code: "4829") }),
+            FixtureScreen(name: "addhost-refused", routes: [.settings(.hosts), .settings(.host(nil))], tab: .settings,
+                          setup: { FixtureData.pairing(code: "482913", failure: "That code isn't right. 4 tries left.") }),
+            FixtureScreen(name: "addhost-none", routes: [.settings(.hosts), .settings(.host(nil))], tab: .settings,
+                          setup: { FixtureData.pairing(found: [], code: "") }),
             // Each host's own settings (hostSettings.v1).
             FixtureScreen(name: "settings-defaults", routes: [.settings(.defaults)], tab: .settings),
             FixtureScreen(name: "settings-worktrees", routes: [.settings(.worktrees)], tab: .settings),
@@ -69,6 +76,19 @@ extension FixtureCatalog {
 }
 
 extension FixtureData {
+    /// Add a Mac's seams: the Macs Bonjour found, and a code (and refusal) already on the screen.
+    @MainActor static func pairing(found: [FoundMac] = [
+        FoundMac(id: "mini", name: "Mac mini", version: "1.9", idHash: "aaaaaaaaaaaaaaaa", address: "192.168.1.52", port: 7434),
+        FoundMac(id: "studio", name: "Mac Studio", version: "1.9", idHash: "bbbbbbbbbbbbbbbb", address: "192.168.1.60", port: 7434),
+    ], code: String, failure: String? = nil) {
+        MobilePairing.source = { update in update(found); return {} }
+        MobilePairing.seed = { model in
+            model.picked = found.first?.id
+            model.code = code
+            if let failure { model.phase = .failed(failure) }
+        }
+    }
+
     /// The usual hosts, with the studio's background service turned off in Login Items.
     /// Two of the studio's threads muted on the host (`Agent.pushMuted`).
     static func mutedThreads() -> [FixtureHostData] {

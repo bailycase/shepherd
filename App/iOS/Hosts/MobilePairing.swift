@@ -26,7 +26,7 @@ final class MobilePairing {
             if digits != code { code = digits }
         }
     }
-    private(set) var phase: Phase = .idle
+    var phase: Phase = .idle
 
     @ObservationIgnored private let hosts: MobileHosts
     @ObservationIgnored private let browse: @MainActor (@escaping @Sendable ([FoundMac]) -> Void) -> () -> Void
@@ -35,9 +35,15 @@ final class MobilePairing {
     /// A scanned QR named this Mac (`FleetProtocol.advertisedIDHash`): pairing checks it answers.
     @ObservationIgnored private var expecting: String?
 
-    init(hosts: MobileHosts, browse: @escaping @MainActor (@escaping @Sendable ([FoundMac]) -> Void) -> () -> Void = MobilePairing.bonjour) {
+    /// Where Macs are found: Bonjour. The simulator fixtures (no network to browse) replace it.
+    @MainActor static var source: @MainActor (@escaping @Sendable ([FoundMac]) -> Void) -> () -> Void = MobilePairing.bonjour
+
+    /// Called with each new model: the simulator fixtures use it to show a state (a code half entered, a refusal).
+    @MainActor static var seed: (MobilePairing) -> Void = { _ in }
+
+    init(hosts: MobileHosts, browse: (@MainActor (@escaping @Sendable ([FoundMac]) -> Void) -> () -> Void)? = nil) {
         self.hosts = hosts
-        self.browse = browse
+        self.browse = browse ?? Self.source
     }
 
     /// Finds Macs by Bonjour (`FleetBrowser`) until `stop`.

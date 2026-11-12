@@ -29,6 +29,7 @@ struct HostPairScreen: View {
         }
         .task {
             let pairing = MobilePairing(hosts: hosts)
+            MobilePairing.seed(pairing)
             model = pairing
             pairing.start()
         }
