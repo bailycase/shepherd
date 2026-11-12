@@ -92,7 +92,7 @@ struct NotificationsScreen: View {
                 }
                 SettingsSection("Send from") {
                     if hosts.hosts.isEmpty {
-                        SettingsFootnote("Add a host in Settings ▸ Hosts to enable push notifications.")
+                        SettingsFootnote("Add a host in Settings ▸ Fleet to enable push notifications.")
                     } else {
                         SHListCard {
                             ForEach(hosts.hosts) { host in

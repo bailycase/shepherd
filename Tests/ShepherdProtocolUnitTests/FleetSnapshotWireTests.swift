@@ -50,4 +50,11 @@ struct FleetSnapshotWireTests {
         let text = String(decoding: try JSONEncoder().encode(repo), as: UTF8.self)
         #expect(!text.contains("tooLarge"))
     }
+
+    /// What a phone reads of a Mac's fleet says nothing of what its files are being indexed.
+    @Test func theViewAClientIsGivenCarriesNoIndexStatus() {
+        var snapshot = FleetSnapshot(enabled: true, hostID: UUID(), name: "Mac mini")
+        snapshot.index = FleetIndexStatus(indexing: true, repos: [.init(repo: "github.com/acme/web", name: "acme-web", files: 3, ready: false)])
+        #expect(snapshot.clientView.index == nil)
+    }
 }

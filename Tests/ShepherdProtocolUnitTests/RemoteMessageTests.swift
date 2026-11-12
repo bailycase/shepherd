@@ -1381,6 +1381,8 @@ struct RemoteProtocolConstantTests {
             // Offered only while the host's Fleet experiment is on (SessionServer.setFleetEnabled).
             RemoteProtocol.fleetCapability, RemoteProtocol.fleetPressureCapability,
             RemoteProtocol.fleetSyncCapability, RemoteProtocol.fleetSnapshotCapability,
+            // Offered to every client, a device included, while the host's Fleet experiment is on.
+            RemoteProtocol.fleetViewCapability,
             // Offered whenever the host runs, Fleet on or off, and never to a client device (FleetAccess).
             RemoteProtocol.fleetDevicesCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).

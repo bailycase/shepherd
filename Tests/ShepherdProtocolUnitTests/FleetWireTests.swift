@@ -65,4 +65,42 @@ struct FleetWireTests {
         settings.apply(.fleetWeight(hostID: host, weight: .lessOften))
         #expect(settings.fleetWeights[FleetSendWeight.settingKey(hostID: host)] == .lessOften)
     }
+
+    // MARK: What a client may read (`fleet.view.v1`)
+
+    @Test func aClientViewKeepsTheMacsAndTheirLoadAndNothingOfHowTheyAreReached() throws {
+        let mini = UUID(), here = UUID()
+        let sample = FleetPressureSample(cpuUtilization: 0.2, cpuCount: 8, totalMemoryBytes: 1 << 34, availableMemoryBytes: 1 << 33)
+        let snapshot = FleetSnapshot(
+            enabled: true, hostID: here, name: "MacBook Pro", build: "1.9.0", addresses: ["192.168.1.40"], port: 7434, advertising: true,
+            peers: [FleetPeerStatus(hostID: mini, name: "Mac mini", host: "192.168.1.52", port: 7434, pairedAt: 5, link: .connected, lastSeen: 9)],
+            join: FleetJoinStatus(expiresAt: 1, attemptsLeft: 5),
+            sync: FleetSyncStatus(peers: []),
+            devices: FleetDevicesSnapshot(devices: [FleetDeviceStatus(deviceID: UUID(), name: "iPhone", kind: .iphone, pairedAt: 1, connected: true)]),
+            macs: [FleetMacState(hostID: mini, sample: sample, sampleAge: 1, readiness: FleetReadinessReport(model: "Mac mini", repos: ["acme-web"]))])
+        let view = snapshot.clientView
+        #expect(view.enabled && view.hostID == here && view.name == "MacBook Pro")
+        #expect(view.peers.map(\.name) == ["Mac mini"] && view.peers[0].link == .connected && view.peers[0].lastSeen == 9 && view.peers[0].pairedAt == 5)
+        #expect(view.macs == snapshot.macs)
+        #expect(view.addresses.isEmpty && view.port == nil && view.build == nil && !view.advertising)
+        #expect(view.peers[0].host == nil && view.peers[0].port == nil)
+        #expect(view.join == nil && view.sync == nil && view.devices == nil)
+        // Nothing of the above is on the wire either.
+        let text = String(decoding: try JSONEncoder().encode(view), as: UTF8.self)
+        for hidden in ["192.168", "7434", "1.9.0", "iPhone"] { #expect(!text.contains(hidden), "\(hidden)") }
+    }
+
+    @Test func onlyADeviceAndTheSharedTokenMayViewTheFleet() {
+        #expect(FleetAccess.device.mayViewFleet && FleetAccess.shared.mayViewFleet)
+        #expect(!FleetAccess.member.mayViewFleet && !FleetAccess.local.mayViewFleet)
+        #expect(!FleetAccess.device.takesPartInFleet)
+    }
+
+    @Test func theViewCapabilityReachesADeviceAndGivesItNothingOfTheStore() {
+        let view = RemoteProtocol.fleetViewCapability
+        #expect(RemoteProtocol.capabilities.contains(view))
+        #expect(FleetAccess.device.isOffered(view) && !FleetAccess.device.isOffered(RemoteProtocol.fleetPressureCapability))
+        #expect(!RemoteProtocol.fleetMemberCapabilities.contains(view))
+        #expect(HostSettingChange.fleetWeight(hostID: UUID(), weight: .prefer).capability == view)
+    }
 }

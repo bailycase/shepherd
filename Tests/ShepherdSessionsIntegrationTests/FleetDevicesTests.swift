@@ -136,9 +136,8 @@ struct FleetDevicesIntegrationTests {
         defer { legacy.disconnect() }
         #expect(legacy.capabilities.contains(RemoteProtocol.fleetCapability))
 
-        // The fleet's requests are a member's: a device can't read the store, pair, remove or sync.
+        // The fleet's requests are a member's: a device can't read the store, pair, remove or sync (what it may read is `fleet.view.v1`: `FleetDeviceViewTests`).
         let attempts: [(String, () async throws -> Void)] = [
-            ("fleetRead", { _ = try await client.fleetRead() }),
             ("fleetAction", { _ = try await client.fleetAction(.retireSharedToken) }),
             ("fleetRevoke", { try await client.fleetRevoke(hostID: UUID(), at: 1) }),
             ("fleetSyncDevices", { _ = try await client.fleetSyncDevices([]) }),

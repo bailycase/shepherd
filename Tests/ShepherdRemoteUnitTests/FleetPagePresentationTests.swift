@@ -253,4 +253,154 @@ struct FleetPagePresentationTests {
     func memoryIsInBinaryGigabytesWithADecimalUnderTen(bytes: UInt64, text: String) {
         #expect(FleetPagePresentation.memory(bytes) == text)
     }
+
+    // MARK: A phone or an iPad reads the page (`FleetViewer.client`)
+
+    static func clientPage(_ snapshot: FleetSnapshot = snapshot(), weights: [UUID: FleetSendWeight] = [:]) -> FleetPage {
+        FleetPagePresentation.make(snapshot: snapshot, weight: { weights[$0] ?? .normal }, viewer: .client, locale: en, calendar: utc)
+    }
+
+    @Test func aClientNamesTheMacItAskedAndHasNoThisMac() {
+        let page = Self.clientPage()
+        #expect(page.cards.map(\.name) == ["MacBook Pro", "Mac mini", "Mac Studio"])
+        #expect(page.cards.map(\.statusText) == ["Connected", "Connected", "Asleep"])
+        #expect(page.cards.allSatisfy { !$0.isThisMac })
+        // The same derivations: nothing about room, readings or the next Mac changes for a client.
+        let mac = Self.page()
+        #expect(page.nextGoesTo == mac.nextGoesTo && page.summary == mac.summary)
+        #expect(zip(page.cards, mac.cards).allSatisfy { $0.0.room == $0.1.room && $0.0.cpu == $0.1.cpu && $0.0.power == $0.1.power })
+        #expect(page.cards[0].weightLabel == "Send work to MacBook Pro")
+    }
+
+    @Test func aClientsFooterNeverSaysThisMac() {
+        #expect(Self.clientPage().footer.detail == "1 asleep" && Self.clientPage().footer.label == "Fleet: 3 Macs, Mac Studio asleep")
+        var alone = Self.snapshot()
+        alone.peers = []
+        #expect(Self.clientPage(alone).footer.detail == "One Mac")
+        #expect(Self.clientPage(Self.snapshot(studioLink: .connected)).footer.detail == "All awake")
+    }
+
+    @Test func aMacWithNoNameIsStillNamedForAClient() {
+        var snapshot = Self.snapshot()
+        snapshot.name = ""
+        #expect(Self.clientPage(snapshot).cards[0].name == "Mac")
+    }
+
+    @Test func aClientTakesTheWeightsItIsGiven() {
+        let page = Self.clientPage(weights: [Self.mini: .prefer, Self.studio: .manualOnly])
+        #expect(page.cards.map(\.weight) == [.normal, .prefer, .manualOnly])
+    }
+
+    // MARK: Compact rows (FleetA-phone, DuoOpenFleet, DuoClosedFleet)
+
+    @Test func theFactsLineOfARowIsWhatEachBoardDraws() {
+        let page = Self.clientPage()
+        let here = page.cards[0], mini = page.cards[1], studio = page.cards[2]
+        #expect(here.facts(.phone) == "CPU 72% · 9.4 GB free · battery 41% · warm")
+        #expect(mini.facts(.phone) == "CPU 18% · 41 GB free · plugged in")
+        #expect(here.facts(.duo) == "CPU 72% · 9.4 GB free · battery 41% · warm · 3 working")
+        #expect(mini.facts(.duo) == "CPU 18% · 41 GB free · plugged in · 3 working")
+        #expect(here.facts(.compact) == "CPU 72% · battery 41% · warm")
+        #expect(mini.facts(.compact) == "CPU 18% · 41 GB free")
+        for style in [FleetFactsStyle.phone, .duo, .compact] { #expect(studio.facts(style) == "since 22:42") }
+    }
+
+    @Test func aRowSaysWhatItKnowsOfAMacThatHasNoReadingOrWasNeverReached() {
+        var snapshot = Self.snapshot(miniLink: .connecting)
+        snapshot.macs.removeAll { $0.hostID == Self.mini }
+        snapshot.peers[1].lastSeen = nil
+        let page = Self.clientPage(snapshot)
+        #expect(page.cards[1].facts(.phone) == "Waiting for a reading")
+        #expect(page.cards[2].facts(.phone) == "not reached yet")
+    }
+
+    @Test func aRowDropsTheThreadsWorkingWhenNoneWorks() {
+        var snapshot = Self.snapshot()
+        snapshot.macs[1].sample?.activeAgents = 0
+        #expect(Self.clientPage(snapshot).cards[1].facts(.duo) == "CPU 18% · 41 GB free · plugged in")
+    }
+
+    @Test func aRowsRoomWordAndLabelFollowTheMacsState() {
+        let page = Self.clientPage()
+        #expect(page.cards.map(\.rowRoom) == ["Little room", "Most room", "Asleep"])
+        #expect(page.cards.map(\.rowLabel) == ["MacBook Pro, little room", "Mac mini, most room", "Mac Studio, asleep"])
+    }
+
+    @Test func aBatteryMacWithNoPercentSaysOnBattery() {
+        var snapshot = Self.snapshot()
+        snapshot.macs[0].sample?.batteryPercent = nil
+        snapshot.macs[0].sample?.thermal = .nominal
+        let here = Self.clientPage(snapshot).cards[0]
+        #expect(here.powerFact == "on battery" && here.facts(.compact) == "CPU 72% · on battery")
+    }
+
+    // MARK: A device's list of Macs (`FleetDeviceList`)
+
+    static let cfgHere = UUID(), cfgMini = UUID(), cfgStudio = UUID(), cfgIMac = UUID()
+
+    static func held(_ studioLink: FleetHeldMac.Link = .offline) -> [FleetHeldMac] {
+        [FleetHeldMac(configID: cfgHere, fleetID: here, name: "MacBook Pro", link: .connected),
+         FleetHeldMac(configID: cfgMini, fleetID: mini, name: "Mac mini", link: .connected),
+         FleetHeldMac(configID: cfgStudio, fleetID: studio, name: "Mac Studio", link: studioLink, lastSeen: Date(timeIntervalSince1970: 1_790_030_520))]
+    }
+
+    @Test func eachCardIsJoinedToThePairingThisDeviceHoldsWithThatMac() {
+        let rows = FleetDeviceList.rows(page: Self.clientPage(), held: Self.held(), locale: Self.en, calendar: Self.utc)
+        #expect(rows.map(\.card.name) == ["MacBook Pro", "Mac mini", "Mac Studio"])
+        #expect(rows.map(\.held) == [Self.cfgHere, Self.cfgMini, Self.cfgStudio])
+        #expect(rows.map(\.card.status) == [.connected, .connected, .asleep], "the fleet's own view of each Mac is kept")
+    }
+
+    @Test func aMacTheFleetToldThisDeviceAboutAndItNeverPairedWithCanNotBeForgotten() {
+        let rows = FleetDeviceList.rows(page: Self.clientPage(), held: [Self.held()[0]], locale: Self.en, calendar: Self.utc)
+        #expect(rows.map(\.held) == [Self.cfgHere, nil, nil])
+        #expect(!rows[1].canRetry && !rows[2].canRetry, "nothing to retry without a pairing")
+    }
+
+    @Test func aHeldMacTheFleetDoesNotShowIsListedAsleepOrWaitingInTheSameList() {
+        var snapshot = Self.snapshot()
+        snapshot.peers = []
+        snapshot.macs = [snapshot.macs[0]]
+        let rows = FleetDeviceList.rows(page: Self.clientPage(snapshot), held: Self.held(), locale: Self.en, calendar: Self.utc)
+        #expect(rows.map(\.card.name) == ["MacBook Pro", "Mac mini", "Mac Studio"])
+        let mini = rows[1].card, studio = rows[2].card
+        #expect(mini.status == .connected && mini.facts(.phone) == "Waiting for a reading" && mini.id == Self.mini)
+        #expect(studio.status == .asleep && studio.statusText == "Asleep" && studio.facts(.phone) == "since 22:42" && studio.rowRoom == "Asleep")
+        #expect(rows[2].canRetry && rows[2].held == Self.cfgStudio)
+    }
+
+    @Test func withNoFleetViewEveryHeldMacIsListedAndAMacNeverReachedIsOffline() {
+        let held = [FleetHeldMac(configID: Self.cfgIMac, fleetID: nil, name: "iMac", link: .offline),
+                    FleetHeldMac(configID: Self.cfgMini, fleetID: nil, name: "Mac mini", link: .connecting)]
+        let rows = FleetDeviceList.rows(page: .empty, held: held, locale: Self.en, calendar: Self.utc)
+        #expect(rows.map(\.card.name) == ["iMac", "Mac mini"] && rows.map(\.held) == [Self.cfgIMac, Self.cfgMini])
+        #expect(rows[0].card.statusText == "Offline" && rows[0].card.facts(.phone) == "not reached yet")
+        #expect(rows[1].card.status == .connecting && rows[1].card.statusText == "Connecting")
+        #expect(rows.allSatisfy { !$0.card.takesWeight }, "a weight is a fleet setting; a Mac with no fleet id has none")
+        #expect(rows.map(\.card.id) == [Self.cfgIMac, Self.cfgMini])
+    }
+
+    @Test func nothingHeldAndNothingReadIsNoRows() {
+        #expect(FleetDeviceList.rows(page: .empty, held: []).isEmpty)
+        #expect(FleetDeviceList.trail([]) == nil)
+    }
+
+    @Test func theTrailCountsMacsAndSleepersAndNeverSaysOffline() {
+        let rows = FleetDeviceList.rows(page: Self.clientPage(), held: Self.held(), locale: Self.en, calendar: Self.utc)
+        #expect(FleetDeviceList.trail(rows) == "3 Macs · 1 asleep")
+        #expect(FleetDeviceList.trail(Array(rows.prefix(2))) == "2 Macs")
+        #expect(FleetDeviceList.trail(Array(rows.prefix(1))) == "1 Mac")
+        let unreached = FleetDeviceList.rows(page: .empty, held: [FleetHeldMac(configID: Self.cfgIMac, fleetID: nil, name: "iMac", link: .offline)])
+        #expect(FleetDeviceList.trail(unreached) == "1 Mac · 1 asleep")
+        #expect(!(FleetDeviceList.trail(rows) ?? "").contains("offline"))
+    }
+
+    @Test func theSidebarFooterFollowsTheSameRows() {
+        let rows = FleetDeviceList.rows(page: Self.clientPage(), held: Self.held(), locale: Self.en, calendar: Self.utc)
+        let footer = FleetDeviceList.footer(rows)
+        #expect(footer.detail == "1 asleep" && footer.asleepCount == 1 && footer.dots == [.connected, .connected, .asleep])
+        #expect(footer.label == "Fleet: 3 Macs, Mac Studio asleep")
+        #expect(FleetDeviceList.footer(Array(rows.prefix(2))).detail == "All awake")
+        #expect(FleetDeviceList.footer(Array(rows.prefix(1))).detail == "One Mac")
+    }
 }

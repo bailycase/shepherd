@@ -336,9 +336,21 @@ final class FleetService: @unchecked Sendable {
             mergeDevices(entries, from: caller.peerHostID)
             reply(.fleetDevices(id: id, result: FleetDevicesResult(hostID: identity.hostID, name: name, devices: devices.entries)))
         case .fleetRead(let id):
-            guard caller.isLocal else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only this Mac's app reads its fleet.")) }
-            reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot())))
+            if caller.isLocal {
+                reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot())))
+            } else if caller.authenticated, caller.access.mayViewFleet {
+                // A phone or an iPad reads the Macs, their load and their readiness, and nothing of how they are reached.
+                guard membership else { return reply(Self.off(id)) }
+                reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView)))
+            } else {
+                reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only this Mac's app reads its fleet."))
+            }
         case .fleetAction(let id, let action):
+            // A client that looks at the Fleet page may ask the host to sample while it does; it changes nothing else.
+            if !caller.isLocal, caller.authenticated, caller.access.mayViewFleet, case .watching(let on) = action {
+                pressure.watch(on, connection: caller.connection)
+                return reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView)))
+            }
             guard caller.isLocal else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only this Mac's app changes its fleet.")) }
             perform(action, id: id, caller: caller, reply: reply)
         default:

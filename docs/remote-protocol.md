@@ -672,6 +672,16 @@
   (`FleetIndexStatus`: per repository its name, files indexed, `ready` once the first scan is done, and `indexing` while any is
   still on it) tells this Mac's app where the first scan stands, and is nil while the index isn't running. Nothing is
   sent, cloned or applied yet: slice 4c carries the blobs.
+- **Fleet view for clients** (`fleet.view.v1`, offered to every client while Fleet is on, a device included; not one of
+  `fleetMemberCapabilities`): a phone or an iPad reads the Macs, their load and readiness, and chooses where work is sent, and
+  does nothing else of the fleet. `fleetRead` from a `device` (or a client on the shared token) is answered with
+  `FleetSnapshot.clientView`: this Mac's id and name, each peer's name, link and last seen, and `macs` (samples and readiness
+  reports); never an address or port, a code window, the devices, the sync state or the build. `fleetAction(.watching(_))` is
+  served to it too (the host samples while the screen is open and stops when the connection closes); every other action, and
+  `fleetPressure`, `fleetReadiness`, `fleetPressureNow`, `fleetSync`, pairing, removing and introducing, stay refused with
+  `forbidden`. The weight is written with the existing `hostSettings` change `fleetWeight(hostID:weight:)` (capability
+  `fleet.view.v1` rather than `fleet.pressure.v1`, so a device can send it); the Mac applies it as its own Settings would and
+  the weights sync from there. With Fleet off, `fleetRead` is refused `fleet_off` and the capability isn't offered.
 - **Protocol changes** touch the request and reply enums with every Codable arm, `RemoteProtocol`
   capabilities where relevant, server handling, `RemoteHostClient` (Mac and iOS), and the
   round-trip and listener tests.

@@ -350,7 +350,7 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
     case bundledExtension(id: String, on: Bool)
     case updatePiDaily(Bool)
     case updateExtensionsDaily(Bool)
-    /// How much auto placed work the Mac `hostID` gets (`RemoteProtocol.fleetPressureCapability`).
+    /// How much auto placed work the Mac `hostID` gets (`RemoteProtocol.fleetViewCapability`: a device sets it too).
     case fleetWeight(hostID: UUID, weight: FleetSendWeight)
     /// `RemoteProtocol.designToolExperimentCapability`: offered while the tool is off too.
     case designToolEnabled(Bool)
@@ -372,7 +372,7 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
         case .goalsEnabled: RemoteProtocol.goalExperimentCapability
         case .projectsEnabled: RemoteProtocol.projectsExperimentCapability
         case .fleetEnabled: RemoteProtocol.fleetExperimentCapability
-        case .fleetWeight: RemoteProtocol.fleetPressureCapability
+        case .fleetWeight: RemoteProtocol.fleetViewCapability
         case .defaultServiceTier, .namingModel, .compactAtPercent: RemoteProtocol.hostSettingsAgentDefaultsCapability
         case .textGenerationModel: RemoteProtocol.hostSettingsTextGenerationModelCapability
         case .visionModel: RemoteProtocol.hostSettingsVisionModelCapability
