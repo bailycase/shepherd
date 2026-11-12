@@ -27,15 +27,18 @@ struct FleetPairingTests {
         /// `port` 0 picks one; a restarted Mac asks for the one it had, as a real host's is fixed.
         init(_ name: String, dir: URL? = nil, port: UInt16 = 0, fleet: Bool = true) async throws {
             self.name = name
-            host = try ScratchServer(dir: dir)
+            let host = try ScratchServer(dir: dir)
+            let server = host.server
             server.configureFleet(name: name, advertises: false)
             let tokenURL = host.dir.appendingPathComponent("remote-token")
-            self.port = try server.startRemoteListener(port: port, tokenURL: tokenURL)
-            sharedToken = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-            try server.startLocalListener(path: host.dir.appendingPathComponent("h.sock").path, tokenURL: tokenURL)
+            let socket = host.dir.appendingPathComponent("h.sock").path
+            let port = try server.startRemoteListener(port: port, tokenURL: tokenURL)
+            let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+            try server.startLocalListener(path: socket, tokenURL: tokenURL)
             if fleet { server.setFleetEnabled(true) }
-            local = RemoteHostClient(localSocket: host.dir.appendingPathComponent("h.sock").path)
-            _ = try await local.connect(host: "", port: 0, token: sharedToken, clientName: "Shepherd")
+            let local = RemoteHostClient(localSocket: socket)
+            _ = try await local.connect(host: "", port: 0, token: token, clientName: "Shepherd")
+            (self.host, self.port, self.sharedToken, self.local) = (host, port, token, local)
         }
 
         func stop(keepFiles: Bool = false) {
@@ -143,7 +146,8 @@ struct FleetPairingTests {
         // The right code is no good now: the Join screen has to open again for a new one.
         do { try await a.pair(with: b, code: code); Issue.record("a locked out code paired") }
         catch RemoteHostClientError.rejected(let refused, _) { #expect(refused == FleetProtocol.Code.notJoining) }
-        #expect(try await a.peers().isEmpty && b.peers().isEmpty)
+        let (aPeers, bPeers) = (try await a.peers(), try await b.peers())
+        #expect(aPeers.isEmpty && bPeers.isEmpty)
 
         // A new window, a new code.
         try await a.pair(with: b, code: try await b.startJoin())
