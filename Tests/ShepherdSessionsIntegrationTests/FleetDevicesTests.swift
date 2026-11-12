@@ -330,6 +330,18 @@ struct FleetDevicesIntegrationTests {
         try await phone.connect(to: mac)
     }
 
+    @Test func aRetiredSharedTokenStaysRetiredWhenFleetIsTurnedOffAndOn() async throws {
+        let mac = try await Mac("MacBook Pro")
+        defer { mac.stop() }
+        _ = try await mac.local.fleetAction(.retireSharedToken)
+        mac.server.setFleetEnabled(false)
+        try await eventually("Fleet to be off") { try await mac.read().devices == nil }
+        let whileOff = await Self.refused(mac.sharedToken, by: mac)
+        #expect(whileOff, "turning Fleet off does not open the old token again")
+        mac.server.setFleetEnabled(true)
+        try await eventually("Fleet to be on") { try await mac.read().devices?.sharedToken.retired == true }
+    }
+
     @Test func aClientThatConnectsWithItsOwnTokenIsNoLongerWaitedFor() async throws {
         let a = try await Mac("MacBook Pro"), b = try await Mac("Mac mini")
         defer { a.stop(); b.stop() }

@@ -85,7 +85,7 @@
   token hasn't been given its own (`devices_waiting`; Forget drops one that will not return). After
   that only device and peer tokens connect (this Mac's own app on `host.sock` keeps its own token), and
   connections that came in on the shared token end. Turning Fleet off ends peer and device
-  connections and puts the shared token back as it was. **There is no TLS.** A VPN or trusted
+  connections (they connect only while Fleet is on); a retired shared token stays retired, read from `devices.json`. **There is no TLS.** A VPN or trusted
   network is the transport boundary. Never describe the listener as internet-safe.
 - **Protocol** (NDJSON, `RemoteMessage.swift`):
   - state fetch and pushed `stateChanged`

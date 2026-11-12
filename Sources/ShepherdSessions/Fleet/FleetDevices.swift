@@ -88,6 +88,12 @@ struct FleetDevices: Codable, Equatable, Sendable {
         return try JSONDecoder().decode(FleetDevices.self, from: data)
     }
 
+    /// Whether the shared token was retired here, read without a `FleetService`: retiring it holds while
+    /// Fleet is off, so turning Fleet off never opens the old token again.
+    static func sharedTokenRetired(in directory: URL) -> Bool {
+        (try? load(from: directory))?.sharedTokenRetired ?? false
+    }
+
     func save(to directory: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

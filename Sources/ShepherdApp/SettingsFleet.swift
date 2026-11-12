@@ -37,7 +37,7 @@ struct FleetSettings: View {
         SettingsPage(title: "Fleet", explanation: Self.offExplanation) {
             if let serve {
                 SettingsGroup(title: "Serve this Mac",
-                              footnote: "Sessions run on this Mac. Your own network is the transport, and the token that opened this Mac to a device stays good until you turn Fleet on and retire it.") {
+                              footnote: "Sessions run on this Mac. Your own network is the transport. The token that opened this Mac to a device stays good until you turn Fleet on and stop accepting it there; once stopped, it stays stopped while Fleet is off.") {
                     SettingsRow(title: "Listener", subtitle: serve.status, problem: serve.problem, problemHelp: serve.problemDetail) {
                         SettingsSwitch(label: "Listener", isOn: serve.isOn)
                     }

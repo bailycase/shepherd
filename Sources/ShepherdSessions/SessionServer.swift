@@ -2615,7 +2615,8 @@ public final class SessionServer: @unchecked Sendable {
             // The shared token (until it is retired, while Fleet is on), a paired Mac's own (a fleet
             // peer) or a client device's own; the last two never on the local socket.
             let sharedMatches = (client.isLocal ? localToken : remoteToken).map { RemoteToken.matches(token, expected: $0) } ?? false
-            let shared = sharedMatches && (client.isLocal || fleet?.sharedTokenRetired != true)
+            let retired = fleet?.sharedTokenRetired ?? FleetDevices.sharedTokenRetired(in: supportDirectory.appendingPathComponent("fleet", isDirectory: true))
+            let shared = sharedMatches && (client.isLocal || !retired)
             let peer = sharedMatches || client.isLocal ? nil : fleet?.authenticate(token: token)
             let device = sharedMatches || client.isLocal || peer != nil ? nil : fleet?.authenticateDevice(token: token)
             guard shared || peer != nil || device != nil else {
