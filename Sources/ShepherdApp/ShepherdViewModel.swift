@@ -686,7 +686,7 @@ final class ShepherdViewModel {
         remoteThreadStores.onLiveChange = { [weak hosts] live in hosts?.updateThreadHints(live: live) }
         hosts.onNativeThreadChanged = { [weak remoteThreadStores] ref in remoteThreadStores?.existing(for: ref)?.historyChanged() }
         remoteThreadStores.hostName = { [weak hosts] ref in hosts?.allConnections.first { $0.id == ref.hostID }?.config.name }
-        let instructions = InstructionsModel(remoteHosts: hosts, defaults: sidebarDefaults)
+        let instructions = InstructionsModel(remoteHosts: hosts)
         instructions.piHome = pi.home
         self.instructions = instructions
         self.suggestions = SuggestionsModel(instructions: instructions, remoteHosts: hosts)
@@ -733,9 +733,8 @@ final class ShepherdViewModel {
         self.yourPi.checkLogins = { [weak piAuth = self.piAuth] providers in await piAuth?.checkLogins(providers) ?? [:] }
         // Logins re-imported from your pi: agents waiting on a sign-in try again.
         self.yourPi.onSignInsChanged = { [weak self] in _ = self?.retrySignedOutAgents(nil) }
-        // A host that comes back takes the instruction and skill changes it is owed.
-        hosts.onHostConnected = { [weak self, weak instructions = self.instructions] hostID in
-            instructions?.hostConnected(hostID)
+        // A host that comes back takes the skill changes it is owed (instructions sync underneath, over the fleet).
+        hosts.onHostConnected = { [weak self] hostID in
             self?.skillsHostConnected(hostID)
         }
         threadStores.configure = { [weak self] agent, store in store.offline = self?.coordinatorHeldOff(agent) ?? false }

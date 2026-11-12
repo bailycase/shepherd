@@ -1,6 +1,7 @@
 import SwiftUI
 import ShepherdUI
 import ShepherdProtocol
+import ShepherdRemote
 
 /// Settings ▸ Fleet (FleetSettings): the Macs paired with this one, and the two ways to add one.
 /// Only the parts that exist yet: sync, dispatch and code rows arrive with the slices that build them.
@@ -20,7 +21,7 @@ struct FleetSettings: View {
     static let stopsAtQuit = "The background service is off, so Fleet stops when you quit Shepherd. Turn it on in System Settings ▸ General ▸ Login Items."
 
     var body: some View {
-        SettingsPage(title: "Fleet", explanation: Self.explanation) {
+        SettingsPage(title: "Fleet", explanation: Self.explanation, status: model.syncLine.map { AnyView(FleetSyncLineView(line: $0)) }) {
             SettingsGroup(title: "Macs", footnote: serviceKeepsRunning == true ? Self.footnote : Self.footnote + " " + Self.stopsAtQuit) {
                 ForEach(model.rows) { row in
                     FleetMacRowView(row: row) { removing = row }
@@ -64,6 +65,41 @@ struct FleetSettings: View {
                         if let hostID = row.hostID { Task { await model.remove(hostID) } }
                     },
                 ])
+        }
+    }
+}
+
+/// The line under the page's explanation: a dot, where sync stands, and after a dot who is away (FleetSettings).
+struct FleetSyncLineView: View {
+    let line: FleetSyncLine
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SH.Space.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: SH.Space.s) {
+                dot
+                text
+            }
+            .accessibilityElement(children: .combine)
+            if let notice = line.notice {
+                Text(notice)
+                    .font(.sh(.ui))
+                    .foregroundStyle(Color.sh.textTertiary)
+            }
+        }
+    }
+
+    private var text: some View {
+        let sh = Color.sh
+        return (line.lead.map { Text($0).foregroundStyle(sh.textSecondary) } ?? Text(""))
+            + (line.lead != nil && line.tail != nil ? Text("  ·  ").foregroundStyle(sh.textTertiary) : Text(""))
+            + (line.tail.map { Text($0).foregroundStyle(sh.textTertiary) } ?? Text(""))
+    }
+
+    @ViewBuilder private var dot: some View {
+        switch line.tone {
+        case .inSync: SHStatusDot(.done, size: AppLayout.fleetDotSize)
+        case .catchingUp: SHStatusDot(.running, size: AppLayout.fleetDotSize)
+        case .alone: SHStatusDot(.idle, size: AppLayout.fleetDotSize)
         }
     }
 }

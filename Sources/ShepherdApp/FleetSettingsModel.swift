@@ -81,6 +81,8 @@ final class FleetSettingsModel {
     var snapshot = FleetSnapshot()
     /// This Mac and each Mac it is paired with, as Settings lists them.
     var rows: [FleetMacRow] = []
+    /// Where sync stands, in the line under the page's explanation; nil with no Mac paired.
+    var syncLine: FleetSyncLine?
     /// The host has answered at least once since Fleet was switched on.
     var loaded = false
     /// The code this Mac shows while its Join screen is open.
@@ -121,6 +123,7 @@ final class FleetSettingsModel {
         if result.snapshot != snapshot {
             snapshot = result.snapshot
             rows = FleetMacRow.rows(of: result.snapshot)
+            syncLine = result.snapshot.sync.flatMap(FleetSyncPresentation.line)
         }
         loaded = result.snapshot.enabled
         if join != nil, result.snapshot.join == nil {

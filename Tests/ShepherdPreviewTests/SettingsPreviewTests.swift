@@ -387,7 +387,7 @@ struct SettingsPreviewTests {
         let model = workspace.vm.instructions
         await model.refresh()
         model.setText(Self.instructionsSample.replacingOccurrences(of: "passes.", with: "passes and `swiftformat --lint .` is clean."),
-                      file: .agents, on: .local)
+                      file: .agents)
         workspace.vm.settingsSection = .instructions
         try await Preview.render("settings-instructions-edited", size: CGSize(width: 1440, height: 900)) {
             SettingsView(vm: workspace.vm)

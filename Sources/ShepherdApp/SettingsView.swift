@@ -57,14 +57,9 @@ struct SettingsView: View {
         .transition(SH.Motion.content.transition(reduceMotion: reduceMotion)
             .animation(SH.Motion.sheet.animation(reduceMotion: reduceMotion)))
         .onChange(of: searchText) { Self.showFirstMatch(of: matchingSections, in: vm) }
-        // One host choice for Settings: Instructions' chips and Spaces' filter follow the picker,
-        // and move it when they are used.
+        // One host choice for Settings: Spaces' filter follows the picker, and moves it when it is used.
         .onChange(of: vm.settingsHostID) { vm.followSettingsHost(on: vm.settingsSection, entering: false) }
         .onChange(of: vm.settingsSection) { vm.followSettingsHost(on: vm.settingsSection, entering: true) }
-        .onChange(of: vm.instructions.machine) {
-            guard !vm.instructions.sameEverywhere else { return }
-            if case .remote(let id) = vm.instructions.machine { vm.adoptSettingsHost(id) } else { vm.adoptSettingsHost(nil) }
-        }
         .onChange(of: vm.settingsSection == .projects ? vm.projects.host : nil) { _, host in
             guard let host, host != "all" else { return }
             vm.adoptSettingsHost(UUID(uuidString: host))
