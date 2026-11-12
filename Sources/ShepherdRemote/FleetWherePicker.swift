@@ -107,7 +107,14 @@ public struct FleetWherePicker: Equatable, Sendable {
             detail: winnerName.map { "The Mac with the most room when you send. Now: \($0)" } ?? "The Mac with the most room when you send. None has room now",
             room: auto?.room.fraction ?? 0, roomWord: winnerName.map { Self.shortName($0) } ?? "—", tone: auto?.room.tone ?? .tertiary,
             chosen: effective == .auto, selectable: repoKey != nil))
-        for card in page.cards {
+        // The Macs ranked by room, as the board draws them: awake ones first, the most room on top; ties keep the page's order.
+        let ranked = page.cards.enumerated().sorted { a, b in
+            let (left, right) = (a.element, b.element)
+            if (left.status == .asleep) != (right.status == .asleep) { return right.status == .asleep }
+            if left.room.fraction != right.room.fraction { return left.room.fraction > right.room.fraction }
+            return a.offset < b.offset
+        }.map(\.element)
+        for card in ranked {
             let state = macs.first { $0.hostID == card.id }
             let asleep = card.status == .asleep
             let hasRepo = card.isThisMac ? true : state?.hasRepo
@@ -117,11 +124,15 @@ public struct FleetWherePicker: Equatable, Sendable {
                 chosen: effective == .mac(card.id), selectable: card.isThisMac || (hasRepo != false && repoKey != nil)))
         }
 
-        let with = options.dropFirst().filter { option in
+        // The footnote names Macs in the page's order (This Mac first), not the popover's ranking.
+        let pageOrder = Dictionary(page.cards.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        func pageIndex(_ option: FleetPlaceOption) -> Int { if case .mac(let id) = option.pick { pageOrder[id] ?? 0 } else { 0 } }
+        let inPageOrder = options.dropFirst().sorted { pageIndex($0) < pageIndex($1) }
+        let with = inPageOrder.filter { option in
             if case .mac(let id) = option.pick { return id == thisID || macs.first { $0.hostID == id }?.hasRepo == true }
             return false
         }.map(\.name)
-        let without = options.dropFirst().filter { option in
+        let without = inPageOrder.filter { option in
             if case .mac(let id) = option.pick, id != thisID { return macs.first { $0.hostID == id }?.hasRepo == false }
             return false
         }.map(\.name)
@@ -164,8 +175,11 @@ public struct FleetWherePicker: Equatable, Sendable {
         return FleetWherePicker(options: options, chip: chip, winner: winnerName, target: target, dispatches: dispatches, note: note, footnote: footnote)
     }
 
+    /// A Mac's name on a tag: "mini" for "Mac mini", any other name as it is.
+    public static func tagName(_ name: String) -> String { name.hasPrefix("Mac ") && name.count > 4 ? shortName(name) : name }
+
     /// "Mac mini" as the room column names it: "mini".
-    static func shortName(_ name: String) -> String {
+    public static func shortName(_ name: String) -> String {
         let words = name.split(separator: " ")
         if words.count > 1, words[0] == "Mac" { return words.dropFirst().joined(separator: " ").lowercased() }
         return name.lowercased()

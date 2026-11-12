@@ -227,6 +227,8 @@ struct ThreadView: View {
                     .environment(\.shProseFileLinks, .app)
                 }
                 .id(transcriptRevision)
+                // A dispatched thread whose Mac stopped answering: its words fade under the banner, the composer and header don't (FleetRemote).
+                .opacity(fleetThread?.offline == true ? AppLayout.fleetOfflineOpacity : 1)
                 .scrollPosition($historyAnchor.position)
                 // The composer floats over the scroll view; inset by its real height so "the
                 // bottom" is the last turn, not the space under the card.

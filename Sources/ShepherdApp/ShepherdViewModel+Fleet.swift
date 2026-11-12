@@ -83,7 +83,7 @@ extension ShepherdViewModel {
         switch action {
         case .open: openDispatchedThread(card)
         case .stop, .cancel: Task { await fleet.cancelDispatch(card.id) }
-        case .runHere: Task { await fleet.retryDispatch(card.id, host: thisFleetID) }
+        case .runHere, .runHereNow: Task { await fleet.retryDispatch(card.id, host: thisFleetID) }
         case .tryAgain, .send: Task { await fleet.retryDispatch(card.id, host: nil) }
         case .sendTo(let id, _): Task { await fleet.retryDispatch(card.id, host: id) }
         case .openOthers:

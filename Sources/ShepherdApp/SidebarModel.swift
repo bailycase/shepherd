@@ -673,7 +673,8 @@ enum SidebarDerivation {
             word = "needs you"
         } else {
             leading = automation ? .glyph("bolt", attention: false) : .dot(AgentState(agent.status))
-            accessory = .tag(host.name)
+            // A Mac of the fleet is tagged as the boards draw it: "mini", not "Mac mini".
+            accessory = .tag(host.fleetID == nil ? host.name : FleetWherePicker.tagName(host.name))
             word = AgentRow.statusWord(agent.status)
         }
         let help = agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name

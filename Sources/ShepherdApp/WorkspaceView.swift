@@ -801,7 +801,8 @@ extension RemoteLayoutModel {
         let own = host.state.agents.filter { $0.tabID == tab.id }
         let thread = tab.layout.leaves.lazy.compactMap { leaf in
             primaryAgent(in: tab, pane: leaf, agents: own).map {
-                Thread(paneID: leaf.id, agentName: $0.name, cwd: leaf.cwd, fleet: screen.fleet)
+                Thread(paneID: leaf.id, agentName: $0.name, cwd: leaf.cwd,
+                       fleet: screen.fleet.map { var fleet = $0; fleet.offline = dispatchedAway; return fleet })
             }
         }.first
         let panel = screen.panel(tab.id)
@@ -985,7 +986,6 @@ private struct RemoteAgentLayoutView: View, Equatable {
                 .simultaneousGesture(TapGesture().onEnded { [vm] in vm.remoteFocusedPaneID = thread.paneID })
             }
             }
-            .opacity(model.offline == nil ? 1 : AppLayout.fleetOfflineOpacity)
         }
     }
 }

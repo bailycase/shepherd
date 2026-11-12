@@ -18,6 +18,8 @@ public enum FleetCardAction: Hashable, Sendable {
     case cancel
     /// Run it on this Mac instead.
     case runHere
+    /// Run it on this Mac now, instead of waiting for room.
+    case runHereNow
     /// Send it again, to the Mac asked for.
     case tryAgain
     /// Send it to this Mac instead (`FleetCard.alternative`): its id and name.
@@ -33,6 +35,7 @@ public enum FleetCardAction: Hashable, Sendable {
         case .stop: "Stop"
         case .cancel: "Cancel"
         case .runHere: "Run on This Mac"
+        case .runHereNow: "Run on This Mac now"
         case .tryAgain: "Try again"
         case .sendTo(_, let name): "Send to \(name) instead"
         case .send: "Send it"
@@ -112,7 +115,7 @@ public enum FleetDispatchPresentation {
         case .waitingRoom:
             (card.pill, card.tone) = ("Waiting for room", .tertiary)
             card.detail = busyWords(record, among: records, in: context)
-            card.actions = [.runHere, .cancel]
+            card.actions = [.runHereNow, .cancel]
         case .waitingWake:
             (card.pill, card.tone) = ("Waiting", .tertiary)
             card.detail = asleepWords(record, in: context)
@@ -133,7 +136,7 @@ public enum FleetDispatchPresentation {
             (card.pill, card.tone) = ("Starting", .active)
             let repo = repoName(record.repoKey)
             let at = record.commitSHA.map { "\(repo) at \(short($0))" } ?? repo
-            card.detail = "Sent \(at). \(host ?? "The Mac") makes a new worktree and starts the thread. Nothing touches your checkout."
+            card.detail = "Sent \(at). \(host.map { the($0, capitalized: true) } ?? "The Mac") makes a new worktree and starts the thread. Nothing touches your checkout."
             card.actions = [.cancel]
         case .running:
             card.layout = .row
@@ -166,6 +169,13 @@ public enum FleetDispatchPresentation {
     /// The Mac a card's tag names: where it went, else the one named.
     static func hostName(of record: FleetDispatchRecord) -> String? {
         record.targetHostName ?? record.requestedHost.flatMap { FleetPlacement.isAuto($0) ? nil : $0 }
+    }
+
+    /// How a sentence names a Mac, as the boards write it: "the mini" for "Mac mini", the name as it is for any other ("iMac").
+    /// `capitalized` opens a sentence.
+    static func the(_ name: String, capitalized: Bool = false) -> String {
+        guard name.hasPrefix("Mac "), name.count > 4 else { return name }
+        return (capitalized ? "The " : "the ") + FleetWherePicker.shortName(name)
     }
 
     /// "payments-api" from "github.com/acme/payments-api".
@@ -228,7 +238,7 @@ public enum FleetDispatchPresentation {
         }
         for peer in snapshot.peers where peer.link == .connected {
             if let sample = macs[peer.hostID]?.sample {
-                facts.append("\(peer.name) has \(sample.activeAgents) \(sample.activeAgents == 1 ? "agent" : "agents") working")
+                facts.append("\(the(peer.name)) has \(sample.activeAgents) \(sample.activeAgents == 1 ? "agent" : "agents") working")
             }
         }
         let ahead = records.filter { $0.state == .waitingRoom && $0.createdAt < record.createdAt }.count
@@ -269,7 +279,7 @@ public enum FleetDispatchPresentation {
 
     /// Why it wasn't sent, in a sentence, from the code.
     static func failureWords(_ record: FleetDispatchRecord, in context: FleetCardContext) -> String {
-        let host = hostName(of: record) ?? "That Mac"
+        let host = hostName(of: record).map { the($0, capitalized: true) } ?? "That Mac"
         let repo = repoName(record.repoKey)
         let sha = record.commitSHA.map(short)
         switch record.failure {
@@ -321,7 +331,7 @@ public enum FleetDispatchPresentation {
     public static func behind(_ snapshot: FleetSnapshot) -> [BehindMac] {
         (snapshot.sync?.peers ?? []).filter { $0.state == .catchingUp }.map {
             BehindMac(id: $0.hostID, name: $0.name,
-                      detail: "Settings, instructions, skills and other changes are still reaching it. Give it a moment before sending it work.")
+                      detail: "Settings, instructions, skills and other changes are still reaching it. It updates before it takes any work, so nothing runs with old settings.")
         }
     }
 }

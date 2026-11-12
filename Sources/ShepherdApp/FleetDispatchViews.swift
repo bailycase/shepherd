@@ -32,10 +32,12 @@ struct FleetThreadSurface: Equatable {
     var cards: [FleetDispatchCard] = []
     var parent: AgentID?
     var actions: FleetThreadActions?
+    /// The Mac running it stopped answering: the transcript fades under the offline banner.
+    var offline = false
 
     static func == (a: FleetThreadSurface, b: FleetThreadSurface) -> Bool {
         a.sentBy == b.sentBy && a.dispatched == b.dispatched && a.goesBack == b.goesBack && a.cards == b.cards && a.parent == b.parent
-            && a.actions === b.actions
+            && a.actions === b.actions && a.offline == b.offline
     }
 
     /// The card a `fleet_dispatch` call at `toolCallID` made.
@@ -56,14 +58,14 @@ extension EnvironmentValues {
 
 // MARK: - Pieces
 
-/// The Mac's name as a tag: mono 10 on a 1pt strong line.
+/// The Mac's short name as a tag ("mini"): mono 10 on a 1pt strong line.
 struct FleetHostTag: View {
     let name: String
 
     var body: some View {
         let sh = Color.sh
-        Text(name)
-            .font(.sh(.micro, weight: .regular))
+        Text(FleetWherePicker.tagName(name))
+            .font(.shMono(10))
             .foregroundStyle(sh.textSecondary)
             .lineLimit(1)
             .padding(.horizontal, SH.Space.xs)
@@ -404,8 +406,14 @@ struct FleetOfflineBannerView: View {
                     .font(.sh(.ui, weight: .medium))
                     .accessibilityHidden(true)
                 Text(banner.message(now: context.date)).font(.sh(.ui, weight: .regular)).frame(maxWidth: .infinity, alignment: .leading)
-                Button("Retry", action: retry)
-                    .buttonStyle(.sh(.secondary, size: .s))
+                Button(action: retry) {
+                    Text("Retry")
+                        .font(.sh(.caption, weight: .medium))
+                        .padding(.horizontal, SH.Space.l)
+                        .frame(height: AppLayout.fleetCardButtonHeight)
+                        .shBorder(sh.lantern, radius: SH.Radius.s)
+                }
+                .buttonStyle(.plain)
             }
             .foregroundStyle(sh.lanternText)
             .padding(.vertical, SH.Space.m)

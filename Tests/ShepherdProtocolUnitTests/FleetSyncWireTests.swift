@@ -139,6 +139,10 @@ struct FleetSyncWireTests {
         settings.generatePRDescriptions = false
         settings.closeOnMerge = true
         settings.worktreeDeleteAction = .keepWorktree
+        settings.fleetThreadsCanSend = true
+        settings.fleetThreadCap = 5
+        settings.fleetAutoDispatch = false
+        settings.fleetBatteryCountsHalf = false
         var applied = HostSettings()
         for setting in FleetHostSetting.allCases {
             let change = try #require(setting.change(fromJSON: setting.json(in: settings)), "\(setting) decodes its own JSON")

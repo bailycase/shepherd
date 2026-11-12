@@ -54,9 +54,8 @@ extension AppLayout {
     static let fleetFooterDotGap: CGFloat = SH.Space.xs
 
     // Dispatch cards in a thread (FleetDispatch, FleetStates) and the dispatched thread (FleetRemote).
-    /// A dispatch row's tile: 28pt with a 14pt glyph.
+    /// A dispatch row's tile: 28pt.
     static let fleetRowTile: CGFloat = 28
-    static let fleetRowTileGlyph: CGFloat = 14
     /// The From box's dash, and the result card's tick.
     static let fleetFromDash: [CGFloat] = [4, 3]
     static let fleetResultTick: CGFloat = 12
@@ -66,10 +65,6 @@ extension AppLayout {
     static let fleetCardButtonHeight: CGFloat = 26
     /// The thread behind an offline banner fades to this.
     static let fleetOfflineOpacity: Double = 0.6
-    /// New thread's Where it runs popover: 360pt wide; each row a 16pt mark, the words, and a 72pt room column with a 64pt gauge.
-    static let fleetPlaceWidth: CGFloat = 360
-    static let fleetPlaceMark: CGFloat = 16
-    static let fleetPlaceRoomColumn: CGFloat = 72
-    static let fleetPlaceGauge: CGFloat = 64
-    static let fleetPlaceGaugeHeight: CGFloat = 4
+    /// New thread's Where it runs popover hangs 33pt in from the card's trailing edge (FleetNewThread).
+    static let fleetPlaceTrailingInset: CGFloat = 33
 }

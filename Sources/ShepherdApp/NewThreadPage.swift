@@ -39,12 +39,12 @@ struct NewThreadPage: View {
     /// What a click outside closes: a chip's menu, the slash menu, or the @ picker.
     private enum OpenMenu: Equatable { case none, chip, slash, mention }
 
-    /// `settingsOpen` and `placeOpen` start with the model settings or the place menu open, for the
+    /// `settingsOpen`, `placeOpen` and `whereOpen` start with the model settings, the place menu or Where it runs open, for the
     /// preview renders.
-    init(vm: ShepherdViewModel, chrome: PageHeaderChrome, settingsOpen: Bool = false, placeOpen: Bool = false) {
+    init(vm: ShepherdViewModel, chrome: PageHeaderChrome, settingsOpen: Bool = false, placeOpen: Bool = false, whereOpen: Bool = false) {
         self.vm = vm
         self.chrome = chrome
-        _menu = State(initialValue: settingsOpen ? .settings : placeOpen ? .place : nil)
+        _menu = State(initialValue: settingsOpen ? .settings : placeOpen ? .place : whereOpen ? .whereRuns : nil)
     }
 
     private var draft: NewThreadState { vm.newThread }
@@ -287,7 +287,10 @@ struct NewThreadPage: View {
             return true
         }
         .background { if mentionShown || commandQuery != nil { ComposerMenuRegion(dismissal: dismissal) } }
-        .overlay(alignment: .bottomLeading) { menus }
+        // Where it runs hangs under its own chip, toward the card's trailing edge (FleetNewThread); the others at its leading one.
+        .overlay(alignment: menu == .whereRuns ? .bottomTrailing : .bottomLeading) {
+            menus.padding(.trailing, menu == .whereRuns ? AppLayout.fleetPlaceTrailingInset : 0)
+        }
         .overlay(alignment: .bottomLeading) { mentionMenu }
     }
 

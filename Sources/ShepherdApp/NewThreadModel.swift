@@ -254,7 +254,7 @@ final class NewThreadState {
             snapshot: snapshot, pick: wherePick, repoKey: space.repoKey, repoName: space.name,
             autoDispatch: vm.settings.autoDispatch(pairedMacs: snapshot.peers.count), weight: { vm.settings.fleetWeight(of: $0) },
             batteryCountsHalf: vm.settings.fleetBatteryCountsHalf, snapshotAge: max(0, Date().timeIntervalSince(vm.fleetPage.snapshotAt)),
-            baseBranch: space.worktreeBase)
+            baseBranch: (worktreeBase ?? projectBase(vm)).map(BranchCardGitReader.baseName))
     }
 
     /// A project from the chip's menu.
