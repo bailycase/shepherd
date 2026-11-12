@@ -272,13 +272,16 @@ struct MountedBudgetTests {
             return try work.fields(1) == 0
         }
 
-        // Select it and look at the pass that shows its layout: the rows are in it.
+        // Select it and look at the pass that shows its layout: the rows are in it, laid out by the deck as it shows the host.
+        SHRenderProbe.start()
+        defer { SHRenderProbe.stop() }
         work.vm.selectAgent(work.agents[1].agent.id)
         var passes = 0
         while try work.host(1)?.isHidden != false, passes < 50 {
             ListPerf.settle(work.window)
             passes += 1
         }
+        #expect(SHRenderProbe.count("deck.flipLayout") == 1, "the deck laid the host out once as it showed it")
         let scroll = try #require(try work.transcript(1))
         #expect(try work.host(1)?.isHidden == false, "the layout is shown after \(passes) passes")
         let drawn = try work.fields(1)
@@ -286,6 +289,41 @@ struct MountedBudgetTests {
         let frame = Self.drawing(work.window, in: scroll)
         #expect(frame.ink > 0, "the thread draws something in its first frame")
         #expect(frame.longestBlankBand <= ThreadBlankScreenTests.blankBandLimit, "no blank stretch of \(frame.longestBlankBand) points")
+    }
+
+    /// The window is driven by its own run loop here, no pass of the test's: the layout is never visible with its rows
+    /// still to be built, in any run-loop turn between the selection and the rows.
+    @Test func aReleasedLayoutIsNeverShownBeforeItsRows() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let work = try await Workspace.open(2, replies: 6, cycles: 15, in: app)
+        defer { work.window.close() }
+        for index in [1, 0] { try await work.show(index) }
+        let fences = try work.fields(1)
+        #expect(fences > 0)
+
+        var blank: [Int] = []
+        for round in 0..<4 {
+            work.releaseHidden()
+            try await eventuallyOnMain("agent 1's layout to hold no code field") {
+                ListPerf.settle(work.window)
+                return try work.fields(1) == 0
+            }
+            try await Task.sleep(for: .milliseconds(200))
+            work.vm.selectAgent(work.agents[1].agent.id)
+            var turns = 0, blankTurns = 0
+            let start = ContinuousClock.now
+            while ContinuousClock.now - start < .seconds(10) {
+                try await Task.sleep(for: .milliseconds(1))
+                turns += 1
+                guard try work.host(1)?.isHidden == false else { continue }
+                if try work.fields(1) == 0 { blankTurns += 1 } else { break }
+            }
+            if blankTurns > 0 { blank.append(round) }
+            #expect(try work.fields(1) == fences, "round \(round): the rows are back after \(turns) turns")
+            try await work.show(0)
+        }
+        #expect(blank.isEmpty, "rounds that showed the layout before its rows: \(blank)")
     }
 
     // MARK: Readers
