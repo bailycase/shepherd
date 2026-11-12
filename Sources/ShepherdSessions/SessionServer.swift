@@ -7051,6 +7051,10 @@ public final class SessionServer: @unchecked Sendable {
         let oldProjects = ProjectSettingsStore.directories(in: before)
         let newProjects = ProjectSettingsStore.directories(in: state)
         if before.spaces != state.spaces, fleet != nil { queue.async { [weak self] in self?.fleetSpacesChanged() } }
+        // A thread's worktree is a place a checkout of a repository may be found from (`FleetRepoFinder`).
+        else if fleet != nil, Set(before.agents.compactMap(\.worktreePath)) != Set(state.agents.compactMap(\.worktreePath)) {
+            queue.async { [weak self] in self?.refreshRepoCandidates() }
+        }
         if before.spaces != state.spaces || !oldProjects.elementsEqual(newProjects, by: { $0.0 == $1.0 && $0.1 == $1.1 }) {
             projects.remember(before)
             projects.remember(state)

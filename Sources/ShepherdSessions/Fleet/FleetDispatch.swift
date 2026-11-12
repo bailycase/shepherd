@@ -288,6 +288,8 @@ final class FleetDispatch: @unchecked Sendable {
     }
 
     private func prune() {
+        // A clone is something a dispatch that is still preparing is doing.
+        for (id, record) in outbound where record.clone != nil && record.state != .preparing { outbound[id]?.clone = nil }
         func trim<T>(_ items: inout [UUID: T], finished: (T) -> Bool, order: (T) -> Double) {
             let done = items.filter { finished($0.value) }.sorted { order($0.value) > order($1.value) }
             for (id, _) in done.dropFirst(Self.keptFinished) { items[id] = nil }
