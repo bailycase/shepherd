@@ -99,6 +99,16 @@ struct AgentComponentTests {
         #expect(schedule.boundary(after: start.addingTimeInterval(12.4)) == start.addingTimeInterval(13))
     }
 
+    /// A sparkline taking a new sample is not a change the row eases; anything else on the accessory still is.
+    @Test func aSparklineSampleIsNotAnAnimatedChange() {
+        typealias Accessory = SHSidebarRow.Accessory
+        let since = Self.moment(0)
+        #expect(Accessory.activity([0.1, 0.4]).motionKey == Accessory.activity([0.1, 0.4, 0.9]).motionKey)
+        #expect(Accessory.activity([0.1]).motionKey != Accessory.elapsed(since: since).motionKey)
+        #expect(Accessory.elapsed(since: since).motionKey == .elapsed(since: since))
+        #expect(Accessory.text("done").motionKey != Accessory.text("failed").motionKey)
+    }
+
     /// The runs of `text` as (characters, is code, is strong, is a link).
     @MainActor private func runs(_ text: String) -> [(String, Bool, Bool, Bool)] {
         let attributed = SHInlineMarkup.attributed(text)

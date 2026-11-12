@@ -407,7 +407,7 @@ public struct SHSidebarRow: View, Equatable {
                     .shAnimation(.content, value: badge)
             }
             SHSidebarAccessoryView(accessory: accessory)
-                .shAnimation(.content, value: accessory)
+                .shAnimation(.content, value: accessory.motionKey)
         }
         .padding(.leading, nested ? density.treeChildLeading : density.sidebarRowPadding)
         .padding(.trailing, density.sidebarRowPadding)
@@ -452,6 +452,14 @@ struct SHSidebarDot: View {
                 SHStatusDot(state)
             }
         }
+    }
+}
+
+extension SHSidebarRow.Accessory {
+    /// The accessory as far as motion is concerned. A sparkline redrawn with new samples is not
+    /// a change to ease (its path does not animate), so every sparkline reads the same.
+    var motionKey: Self {
+        if case .activity = self { .activity([]) } else { self }
     }
 }
 
