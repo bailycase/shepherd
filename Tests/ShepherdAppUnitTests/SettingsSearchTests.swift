@@ -55,7 +55,7 @@ struct SettingsSearchTests {
         ("tool search", .agents, ["Defer rarely used tools"]),
         ("defer", .agents, ["Defer rarely used tools"]),
         ("system prompt", .instructions, ["AGENTS.md", "APPEND_SYSTEM.md"]),
-        ("sync", .instructions, ["Same on every host"]),
+        ("restore", .instructions, ["History"]),
         ("append", .instructions, ["APPEND_SYSTEM.md"]),
         ("lessons", .experiments, ["Suggested instructions"]),
         ("projects", .experiments, ["Projects"]),

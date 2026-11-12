@@ -198,73 +198,31 @@ public final class ClientHostSettings {
 
 // MARK: Instructions
 
-/// Settings ▸ Instructions on a client: the root instructions on every host. With Same on every
-/// host on (the default, kept per device), the page edits one set of files, read from the first
-/// host that answers, and a save writes them to every host; a host offline then is owed them and
-/// takes them the next time the page reads it. Off, the page edits one host at a time.
+/// Settings ▸ Instructions on a client: the root instructions every Mac in the fleet shares. The
+/// page edits one copy, read from the first connected host that serves it; a save writes it there
+/// and the fleet carries it to every other Mac on its own (`fleet.sync.v1`). Nothing here knows
+/// about the other hosts: no scope, no chips, no owed writes.
 @MainActor
 @Observable
 public final class ClientInstructions {
-    private enum Key {
-        static let sameEverywhere = "shepherd.ios.instructions.sameEverywhere"
-        static let pending = "shepherd.ios.instructions.pendingSync"
-    }
-
-    /// A draft of one file: on every host (`host` nil, with Same on every host on) or on one.
-    public struct DraftKey: Hashable, Sendable {
-        public var host: UUID?
-        public var file: InstructionFile
-    }
-
-    public var sameEverywhere: Bool {
-        didSet { if sameEverywhere != oldValue { defaults.set(sameEverywhere, forKey: Key.sameEverywhere) } }
-    }
-    /// Per host, the host being edited; the reference when nil or gone.
-    public var chosenHost: UUID?
     public private(set) var busy = false
     /// What went wrong with the last save, in words.
     public private(set) var problem: String?
 
     private var files: [UUID: InstructionsHostFiles] = [:]
-    private var drafts: [DraftKey: String] = [:]
-    private var syncedAt: [UUID: Date] = [:]
-    private struct Pending: Codable, Equatable {
-        // nil for an older UUID-only marker: its intended content cannot be recovered safely.
-        var snapshot: InstructionsSnapshot?
-    }
-    private var pending: [UUID: Pending] {
-        didSet {
-            if let data = try? JSONEncoder().encode(pending) { defaults.set(data, forKey: Key.pending) }
-        }
-    }
-    @ObservationIgnored private var editRevisions: [DraftKey: Int] = [:]
+    private var drafts: [InstructionFile: String] = [:]
+    @ObservationIgnored private var editRevisions: [InstructionFile: Int] = [:]
     @ObservationIgnored private var forgotten: Set<UUID> = []
+    /// This device in a host's history ("Synced from iPhone").
+    @ObservationIgnored private let origin: String
+
+    public init(origin: String) {
+        self.origin = origin
+    }
 
     public func forget(host: UUID) {
         forgotten.insert(host)
         files[host] = nil
-        drafts = drafts.filter { $0.key.host != host }
-        editRevisions = editRevisions.filter { $0.key.host != host }
-        pending[host] = nil
-        syncedAt[host] = nil
-        if chosenHost == host { chosenHost = nil }
-    }
-
-    @ObservationIgnored private let defaults: UserDefaults
-    /// This device in a host's history ("Synced from iPhone").
-    @ObservationIgnored private let origin: String
-
-    public init(defaults: UserDefaults = .standard, origin: String) {
-        self.defaults = defaults
-        self.origin = origin
-        sameEverywhere = defaults.object(forKey: Key.sameEverywhere) as? Bool ?? true
-        if let data = defaults.data(forKey: Key.pending),
-           let stored = try? JSONDecoder().decode([UUID: Pending].self, from: data) {
-            pending = stored
-        } else {
-            pending = Dictionary(uniqueKeysWithValues: Set((defaults.stringArray(forKey: Key.pending) ?? [])
-                .compactMap(UUID.init(uuidString:))).map { ($0, Pending()) })
-        }
     }
 
     // MARK: Reading
@@ -275,22 +233,12 @@ public final class ClientInstructions {
         return files[host.id] ?? .checking
     }
 
-    /// The first host whose files are read: with Same on every host on, what the page edits and
-    /// every other host is compared with.
-    public func reference(in hosts: [SettingsHost]) -> SettingsHost? {
+    /// The host whose files the page edits: the first whose files are read.
+    public func edited(in hosts: [SettingsHost]) -> SettingsHost? {
         hosts.first { files(of: $0).snapshot != nil }
     }
 
-    /// The host whose files the page edits.
-    public func edited(in hosts: [SettingsHost], selectedHost: UUID? = nil) -> SettingsHost? {
-        if !sameEverywhere, let id = selectedHost ?? chosenHost {
-            guard !forgotten.contains(id) else { return nil }
-            if let chosen = hosts.first(where: { $0.id == id }) { return chosen }
-        }
-        return reference(in: hosts)
-    }
-
-    /// Reads every connected host's files, then gives a host that is owed them its copy.
+    /// Reads every connected host's files.
     public func refresh(_ hosts: [SettingsHost]) async {
         guard !busy else { return }
         busy = true
@@ -298,143 +246,69 @@ public final class ClientInstructions {
         for host in hosts where host.serves(RemoteProtocol.instructionsCapability) {
             await fetch(host)
         }
-        guard sameEverywhere else { return }
-        for host in hosts where pending[host.id] != nil && host.serves(RemoteProtocol.instructionsCapability) {
-            await write(to: host)
-        }
     }
 
-    public func saved(_ file: InstructionFile, in hosts: [SettingsHost], selectedHost: UUID? = nil) -> String? {
-        edited(in: hosts, selectedHost: selectedHost).flatMap { files(of: $0).snapshot?[file] }
+    public func saved(_ file: InstructionFile, in hosts: [SettingsHost]) -> String? {
+        edited(in: hosts).flatMap { files(of: $0).snapshot?[file] }
     }
 
     /// What the editor shows: the draft, else what is saved.
-    public func text(_ file: InstructionFile, in hosts: [SettingsHost], selectedHost: UUID? = nil) -> String {
-        drafts[draftKey(file, in: hosts, selectedHost: selectedHost)] ?? saved(file, in: hosts, selectedHost: selectedHost) ?? ""
+    public func text(_ file: InstructionFile, in hosts: [SettingsHost]) -> String {
+        drafts[file] ?? saved(file, in: hosts) ?? ""
     }
 
-    public func setText(_ text: String, file: InstructionFile, in hosts: [SettingsHost], selectedHost: UUID? = nil) {
-        guard sameEverywhere || edited(in: hosts, selectedHost: selectedHost) != nil else { return }
-        let key = draftKey(file, in: hosts, selectedHost: selectedHost)
-        editRevisions[key, default: 0] += 1
+    public func setText(_ text: String, file: InstructionFile, in hosts: [SettingsHost]) {
+        guard edited(in: hosts) != nil else { return }
+        editRevisions[file, default: 0] += 1
         // While a write waits, even returning to the old saved text is a newer edit.
-        let draft: String? = !busy && text == saved(file, in: hosts, selectedHost: selectedHost) ? nil : text
-        if drafts[key] != draft { drafts[key] = draft }
+        let draft: String? = !busy && text == saved(file, in: hosts) ? nil : text
+        if drafts[file] != draft { drafts[file] = draft }
     }
 
-    public func isEdited(_ file: InstructionFile, in hosts: [SettingsHost], selectedHost: UUID? = nil) -> Bool {
-        drafts[draftKey(file, in: hosts, selectedHost: selectedHost)] != nil
+    public func isEdited(_ file: InstructionFile) -> Bool {
+        drafts[file] != nil
     }
 
-    public func revert(_ file: InstructionFile, in hosts: [SettingsHost], selectedHost: UUID? = nil) {
-        let key = draftKey(file, in: hosts, selectedHost: selectedHost)
-        editRevisions[key, default: 0] += 1
-        drafts[key] = busy ? saved(file, in: hosts, selectedHost: selectedHost) : nil
+    public func revert(_ file: InstructionFile, in hosts: [SettingsHost]) {
+        editRevisions[file, default: 0] += 1
+        drafts[file] = busy ? saved(file, in: hosts) : nil
     }
 
-    /// A host's chip: with Same on every host on how it compares with the reference ("synced",
-    /// "differs · 2 lines", "offline · will sync"); per host, how `file` does.
-    public func chip(for host: SettingsHost, file: InstructionFile, in hosts: [SettingsHost], now: Date = Date()) -> InstructionsChip {
-        InstructionsPresentation.hostChip(files(of: host), local: reference(in: hosts).flatMap { files(of: $0).snapshot },
-                                          file: file, sameEverywhere: sameEverywhere, pending: pending[host.id] != nil,
-                                          keptDifferent: false, syncedAt: syncedAt[host.id], now: now)
-    }
-
-    /// "Save to all hosts", "Save", "Save to demo-mac".
-    public func saveTitle(in hosts: [SettingsHost], selectedHost: UUID? = nil) -> String {
-        if sameEverywhere {
-            let targets = hosts.filter { files(of: $0) != .unsupported }.count
-            return targets > 1 ? "Save to all hosts" : "Save"
-        }
-        return edited(in: hosts, selectedHost: selectedHost).map { "Save to \($0.name)" } ?? "Save"
-    }
-
-    /// Where a save goes, under the editor's file name: "every host", or the host edited.
-    public func scope(in hosts: [SettingsHost], selectedHost: UUID? = nil) -> String {
-        sameEverywhere ? "every host" : edited(in: hosts, selectedHost: selectedHost)?.name ?? "no host"
-    }
-
-    /// With Same on every host on, the connected hosts whose files differ from the reference's.
-    public func differing(in hosts: [SettingsHost]) -> [SettingsHost] {
-        guard sameEverywhere, let reference = reference(in: hosts), let snapshot = files(of: reference).snapshot else { return [] }
-        return hosts.filter { host in
-            guard let other = files(of: host).snapshot else { return false }
-            return InstructionFile.allCases.contains { other[$0] != snapshot[$0] }
-        }
-    }
-
-    /// With Same on every host on, each host's state in one line ("Studio, demo-mac synced ·
-    /// horizon when it's back"); per host, nil.
-    public func syncLine(in hosts: [SettingsHost]) -> String? {
-        guard sameEverywhere, let reference = reference(in: hosts), let snapshot = files(of: reference).snapshot else { return nil }
-        var synced: [String] = [], differing: [String] = [], waiting: [String] = []
-        for host in hosts {
-            switch files(of: host) {
-            case .loaded(let other):
-                if InstructionFile.allCases.allSatisfy({ other[$0] == snapshot[$0] }) { synced.append(host.name) } else { differing.append(host.name) }
-            case .offline where pending[host.id] != nil:
-                waiting.append(host.name)
-            default:
-                break
-            }
-        }
-        return InstructionsPresentation.syncLine(synced: synced, differing: differing, waiting: waiting)
-    }
-
-    /// The edited host's saved versions of `file`, newest first.
-    public func history(_ file: InstructionFile, in hosts: [SettingsHost], selectedHost: UUID? = nil) -> [InstructionHistoryEntry] {
-        edited(in: hosts, selectedHost: selectedHost).flatMap { files(of: $0).snapshot?.history.filter { $0.file == file } } ?? []
+    /// The saved versions of `file`, newest first.
+    public func history(_ file: InstructionFile, in hosts: [SettingsHost]) -> [InstructionHistoryEntry] {
+        edited(in: hosts).flatMap { files(of: $0).snapshot?.history.filter { $0.file == file } } ?? []
     }
 
     // MARK: Saving
 
-    /// Saves the draft of `file`: with Same on every host on, to every host (one offline is owed
-    /// it); per host, to the host being edited.
-    public func save(_ file: InstructionFile, in hosts: [SettingsHost], selectedHost: UUID? = nil) async {
-        let key = draftKey(file, in: hosts, selectedHost: selectedHost)
-        guard let text = drafts[key], let edited = edited(in: hosts, selectedHost: selectedHost), !busy else { return }
-        let revision = editRevisions[key, default: 0]
-        let recipients = sameEverywhere ? hosts.filter { $0.id != edited.id } : []
+    /// Saves the draft of `file` to the host the page edits; the fleet takes it from there.
+    public func save(_ file: InstructionFile, in hosts: [SettingsHost]) async {
+        guard let text = drafts[file], let edited = edited(in: hosts), !busy else { return }
+        let revision = editRevisions[file, default: 0]
         busy = true
         problem = nil
         defer { busy = false }
         do {
-            try await save(file, content: text, to: edited, sync: false)
-            if editRevisions[key, default: 0] == revision { drafts[key] = nil }
-            await spread(from: edited, in: recipients)
+            files[edited.id] = .loaded(try await request(.save(file: file, content: text, origin: origin, sync: false), on: edited))
+            if editRevisions[file, default: 0] == revision { drafts[file] = nil }
         } catch {
             if !forgotten.contains(edited.id) { problem = settingsProblem(error) }
         }
     }
 
-    /// Puts a saved version back on the edited host, dropping the file's draft; with Same on every
-    /// host on, every other host then takes the files too.
-    public func restore(_ entry: InstructionHistoryEntry, in hosts: [SettingsHost], selectedHost: UUID? = nil) async {
-        guard let edited = edited(in: hosts, selectedHost: selectedHost), !busy else { return }
-        let key = draftKey(entry.file, in: hosts, selectedHost: selectedHost)
-        let revision = editRevisions[key, default: 0]
-        let recipients = sameEverywhere ? hosts.filter { $0.id != edited.id } : []
+    /// Puts a saved version back, dropping the file's draft.
+    public func restore(_ entry: InstructionHistoryEntry, in hosts: [SettingsHost]) async {
+        guard let edited = edited(in: hosts), !busy else { return }
+        let revision = editRevisions[entry.file, default: 0]
         busy = true
         problem = nil
         defer { busy = false }
         do {
             files[edited.id] = .loaded(try await request(.restore(revisionID: entry.id, origin: origin), on: edited))
-            if editRevisions[key, default: 0] == revision { drafts[key] = nil }
-            await spread(from: edited, in: recipients)
+            if editRevisions[entry.file, default: 0] == revision { drafts[entry.file] = nil }
         } catch {
             if !forgotten.contains(edited.id) { problem = settingsProblem(error) }
         }
-    }
-
-    /// With Same on every host on, gives every host whose files differ the reference's.
-    public func syncNow(in hosts: [SettingsHost]) async {
-        guard let reference = reference(in: hosts), let snapshot = files(of: reference).snapshot, !busy else { return }
-        busy = true
-        problem = nil
-        defer { busy = false }
-        let targets = differing(in: hosts).filter { $0.id != reference.id }
-        for host in targets { pending[host.id] = Pending(snapshot: snapshot) }
-        for host in targets { await write(to: host) }
     }
 
     public func dismissProblem() {
@@ -442,10 +316,6 @@ public final class ClientInstructions {
     }
 
     // MARK: Private
-
-    private func draftKey(_ file: InstructionFile, in hosts: [SettingsHost], selectedHost: UUID? = nil) -> DraftKey {
-        DraftKey(host: sameEverywhere ? nil : edited(in: hosts, selectedHost: selectedHost)?.id, file: file)
-    }
 
     private func fetch(_ host: SettingsHost) async {
         guard !forgotten.contains(host.id), host.client != nil else { return }
@@ -458,46 +328,12 @@ public final class ClientInstructions {
         }
     }
 
-    /// Writes to the recipients captured when Save or Restore began, not its current UI scope.
-    private func spread(from edited: SettingsHost, in hosts: [SettingsHost]) async {
-        guard let snapshot = files(of: edited).snapshot else { return }
-        let targets = hosts.filter { !forgotten.contains($0.id) && $0.id != edited.id && ($0.serves(RemoteProtocol.instructionsCapability) || !$0.isConnected) }
-        // Record every recipient before the first await, not just the ones already attempted.
-        pending[edited.id] = nil
-        for host in targets { pending[host.id] = Pending(snapshot: snapshot) }
-        for host in targets { await write(to: host) }
-    }
-
-    private func save(_ file: InstructionFile, content: String, to host: SettingsHost, sync: Bool) async throws {
-        files[host.id] = .loaded(try await request(.save(file: file, content: content, origin: origin, sync: sync), on: host))
-    }
-
     private func request(_ request: RemoteInstructionsRequest, on host: SettingsHost) async throws -> InstructionsSnapshot {
         guard !forgotten.contains(host.id) else { throw CancellationError() }
         guard let client = host.client else { throw RemoteHostClientError.disconnected }
         let snapshot = try await client.instructions(request)
         guard !forgotten.contains(host.id) else { throw CancellationError() }
         return snapshot
-    }
-
-    /// Writes both of `snapshot`'s files to a host; one that can't take them now is owed them,
-    /// unless its Shepherd will never take them.
-    private func write(to host: SettingsHost) async {
-        guard !forgotten.contains(host.id), host.serves(RemoteProtocol.instructionsCapability) else { return }
-        guard let snapshot = pending[host.id]?.snapshot else {
-            problem = "Save the intended instructions again to sync \(host.name)."
-            return
-        }
-        do {
-            for file in InstructionFile.allCases where files(of: host).snapshot?[file] != snapshot[file] {
-                try await save(file, content: snapshot[file], to: host, sync: true)
-            }
-            syncedAt[host.id] = Date()
-            pending[host.id] = nil
-        } catch {
-            guard !forgotten.contains(host.id) else { return }
-            problem = "Couldn't write to \(host.name): \(settingsProblem(error))"
-        }
     }
 }
 

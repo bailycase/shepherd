@@ -594,6 +594,27 @@
   connections on every Mac and refuses its token; a revoked id can't pair again, so the device makes a new identity
   (`device_revoked`). The iOS client keeps one identity for every Mac in the Keychain and saves each host's token there too;
   `MobileHosts.ownTokenKey` records which hosts are on it.
+- **Fleet sync** (`fleet.sync.v1`, offered with `fleet.v1` and so to members only, `FleetSyncWire.swift`): settings and content the Macs hold the
+  same, as an append only op log per origin Mac (`<support>/fleet/store/ops-<macID>.ndjson`, mode 0600) plus content
+  addressed blobs and per unit history. An op is `{mac, seq, hlc, unit, change, seed?, macName?}`: `seq` counts a Mac's own
+  ops from 1 with no gaps, `hlc` is a hybrid logical clock (wall ms, counter), `change` is an inline value (a setting's
+  JSON, at most 64 KiB), a blob by SHA-256 (instruction files) or a deletion. A unit is `<kind>:<name>`: slice 2a carries
+  `setting:host.<key>` (the host settings in `FleetHostSetting`), `setting:pi.<key>` (an allowlist of pi's `settings.json`
+  keys) and `instruction:AGENTS.md` / `instruction:APPEND_SYSTEM.md`; a kind this build doesn't know is stored, relayed and
+  never applied. The later write wins by (hlc, then the larger Mac id); the loser is kept in `history/<unit>/` (100
+  versions or 30 days). An op a person didn't write, copied from what a Mac held when its sync first ran, is a `seed`: any
+  other op beats it and among seeds the earliest wins, so the Mac where Fleet was first switched on is the reference.
+  Only while Fleet is on (`fleet_off` otherwise, and the sync engine stops with it), and only to a `member` connection (`FleetAccess`: never a client device, never the shared token, never this Mac's own app; refused `forbidden`), after `hello` with a peer's token, one request, `fleetSync`, with
+  `FleetSyncRequest`: `hello(vector)` when a link comes up (answered with the receiver's version vector, `{macID: highest
+  seq held}`), `ops` and `op` (ops the receiver lacks, in order per origin, batches under 512 KiB; a skipped `seq` is
+  stored never and the sender resends from the vector in the answer; every op is validated for shape and size) and
+  `blob(hash, offset)` (a blob in 256 KiB chunks, answered `FleetSyncReply.blob`; the fetcher checks the whole against its
+  hash). Each Mac pushes what its peers lack over its own outbound link and relays ops verbatim, so a Mac that was asleep
+  catches up from any Mac awake. Nothing is applied by the receiver: the materializer writes through the code that owns
+  each unit (`InstructionsStore.save`, per key under pi's lock for `settings.json`, the app's own setting setters), keeps
+  a hash of what it wrote so its own writes never return as ops, and never writes a blob it doesn't hold. `FleetSnapshot.sync`
+  (`FleetSyncStatus`: each peer in sync, catching up or offline, and a one line notice of what the first sync replaced)
+  rides `fleetRead` for Settings ▸ Fleet. Credentials, skills, extensions, MCP, hooks, subagents and spaces are not units yet.
 - **Fleet pressure and readiness** (`fleet.pressure.v1`, offered with `fleet.v1`): each Mac pushes `fleetPressure` (a
   `FleetPressureSample`: CPU share, core count, total and available memory, thermal state, power, threads working,
   reserved places) every 5 s to the Macs it holds a link to, `fleetReadiness` (a `FleetReadinessReport`: model, chip, the
@@ -607,7 +628,7 @@
   carries this Mac's and each peer's last sample (with its age on the host's clock) and report to the app; a sample older
   than 15 s is stale and counts for nothing. `FleetAction.reconnect(hostID:)` is the Fleet page's Retry. The Send work
   here choice is the host setting `fleet.weight.<hostID>` (`HostSettings.fleetWeights`, `HostSettingChange.fleetWeight`),
-  Prefer 1.5, Normal 1, Less often 0.5, Manual only (never picked by Auto).
+  Prefer 1.5, Normal 1, Less often 0.5, Manual only (never picked by Auto). The weights sync like a host setting: one unit `setting:fleet.weight.<hostID>` per Mac (`FleetWeightSetting`, value the weight's name as JSON), applied through the app's own setter, so a choice on one Mac holds on every member.
 - **Protocol changes** touch the request and reply enums with every Codable arm, `RemoteProtocol`
   capabilities where relevant, server handling, `RemoteHostClient` (Mac and iOS), and the
   round-trip and listener tests.

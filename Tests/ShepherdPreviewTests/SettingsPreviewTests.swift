@@ -327,10 +327,11 @@ struct SettingsPreviewTests {
         defer { workspace.stop() }
         try workspace.server.instructions.save(.agents, content: Self.instructionsSample)
         try workspace.server.instructions.save(.appendSystem, content: "Never force-push to main.\n")
+        try await workspace.seed(workspace.server.state)
         let model = workspace.vm.instructions
         await model.refresh()
         model.setText(Self.instructionsSample.replacingOccurrences(of: "passes.", with: "passes and `swiftformat --lint .` is clean."),
-                      file: .agents, on: .local)
+                      file: .agents)
         workspace.vm.settingsSection = .instructions
         try await Preview.render("settings-instructions-edited", size: CGSize(width: 1440, height: 900)) {
             SettingsView(vm: workspace.vm)
@@ -345,6 +346,7 @@ struct SettingsPreviewTests {
         let home = workspace.server.pi.home
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         try Self.instructionsSample.write(to: home.appendingPathComponent("AGENTS.md"), atomically: true, encoding: .utf8)
+        try await workspace.seed(workspace.server.state)
         let model = workspace.vm.instructions
         model.piHome = workspace.server.pi.home
         await model.refresh()

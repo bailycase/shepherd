@@ -847,6 +847,24 @@ final class AppSettings {
         follower = SettingsFollower(store: store, notice: notice) { [weak self] in self?.reload() }
     }
 
+    /// Calls `changed` once a burst of writes to the store (this process's, or another's that
+    /// `followOtherProcesses` took) has settled: what Fleet's sync reads the settings again on.
+    func observeWrites(settling delay: Duration = .milliseconds(300), _ changed: @escaping @MainActor () -> Void) {
+        writeObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: store, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.writeSettling?.cancel()
+                self?.writeSettling = Task { @MainActor in
+                    try? await Task.sleep(for: delay)
+                    guard !Task.isCancelled else { return }
+                    changed()
+                }
+            }
+        }
+    }
+
+    @ObservationIgnored private var writeObserver: NSObjectProtocol?
+    @ObservationIgnored private var writeSettling: Task<Void, Never>?
+
     /// The Darwin notification this bundle's processes post when they write their settings.
     nonisolated static var changeNotice: String { (Bundle.main.bundleIdentifier ?? "Shepherd") + ".settings-changed" }
 

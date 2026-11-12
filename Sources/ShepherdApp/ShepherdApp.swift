@@ -302,6 +302,16 @@ extension ShepherdHost {
             // A Mac already serving keeps its clients when Fleet is switched; only a change opens or closes the listener.
             if (settings.remoteListenerEnabled || on) != listening.open { relisten() }
         }
+        // Fleet sync: the host settings that are the same on every Mac are read from these settings and
+        // applied to them as the Settings pages would (`FleetHostSetting`).
+        server.setFleetHostSettings { change in
+            Task { @MainActor in HostSettingsMapping.apply(change, to: settings) }
+        }
+        let report: @MainActor () -> Void = { [weak server, settings] in
+            server?.fleetHostSettingsChanged(HostSettingsMapping.settings(from: settings, shepherdVersion: nil, piVersion: nil))
+        }
+        report()
+        settings.observeWrites(report)
         let port = listen(settings.remoteListenerEnabled || settings.fleetEnabled)
         listening.open = port != nil
         return port

@@ -3,159 +3,34 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Settings ▸ Instructions (SettingsInstructions, SettingsInstructionsHosts): the root
-/// instructions Shepherd hands every pi it starts, `AGENTS.md` and `APPEND_SYSTEM.md`, on this
-/// Mac and on each remote host. A wide page: the header, Same on every host, a chip per machine,
-/// then the open file's editor beside a 330pt side column (how pi reads the files; per host, each
-/// host's files and the chosen host's history).
+/// Settings ▸ Instructions (SettingsInstructions): the root instructions Shepherd hands every pi it
+/// starts, `AGENTS.md` and `APPEND_SYSTEM.md`. They are the fleet's: one copy that every Mac holds,
+/// so the page has no host to pick. A wide page: the header, then the open file's editor beside a
+/// 330pt side column (how pi reads the files).
 struct InstructionsSettings: View {
     @Bindable var model: InstructionsModel
 
     static let explanation = "The agent’s root files, read at the start of every session Shepherd starts: `AGENTS.md` for how "
         + "you work, `APPEND_SYSTEM.md` for rules that override everything else. Repos can still add their own AGENTS.md."
-    static let perHostExplanation = "Per host: each machine keeps its own root files."
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppLayout.settingsWideBlockSpacing) {
-            SettingsHeader(title: "Instructions", explanation: model.sameEverywhere ? Self.explanation : Self.perHostExplanation)
+            SettingsHeader(title: "Instructions", explanation: Self.explanation)
                 .frame(maxWidth: AppLayout.settingsWideHeaderWidth, alignment: .leading)
-            SHGroupCard(fill: Color.sh.bgWindow) {
-                SettingsRow(title: "Same on every host",
-                            subtitle: model.sameEverywhere
-                                ? "Save once; Shepherd writes both files to every host. Offline hosts catch up when they're back."
-                                : "Off: each host keeps its own files. Pick a host to edit it.") {
-                    SettingsSwitch(label: "Same on every host", isOn: $model.sameEverywhere)
-                }
+            HStack(alignment: .top, spacing: AppLayout.instructionsColumnSpacing) {
+                InstructionsMainColumn(model: model)
+                InstructionsSideColumn(file: model.file)
+                    .frame(width: AppLayout.instructionsSideWidth)
             }
-            // Ages on the chips ("synced 2m ago") and in the side column move on by themselves.
-            TimelineView(.periodic(from: .now, by: 30)) { context in
-                VStack(alignment: .leading, spacing: AppLayout.settingsWideBlockSpacing) {
-                    InstructionsHostChips(model: model, now: context.date)
-                    HStack(alignment: .top, spacing: AppLayout.instructionsColumnSpacing) {
-                        InstructionsMainColumn(model: model)
-                        InstructionsSideColumn(model: model, now: context.date)
-                            .frame(width: AppLayout.instructionsSideWidth)
-                    }
-                    .frame(maxHeight: .infinity, alignment: .top)
-                }
-            }
+            .frame(maxHeight: .infinity, alignment: .top)
         }
-        .shAnimation(.content, value: model.sameEverywhere)
         .task { await model.refresh() }
-    }
-}
-
-// MARK: Hosts
-
-/// One chip per machine, This Mac first, 8pt apart and wrapping. With Same on every host on they
-/// report the sync, and a host that drifted can be synced now; per host they pick the machine
-/// to edit.
-private struct InstructionsHostChips: View {
-    var model: InstructionsModel
-    let now: Date
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.m) {
-            SHFlowLayout(spacing: SH.Space.m) {
-                chip(.local)
-                ForEach(model.hosts, id: \.id) { host in
-                    chip(.remote(host.id))
-                }
-            }
-            let drifted = model.sameEverywhere ? model.differingHosts : []
-            if !drifted.isEmpty {
-                HStack(spacing: SH.Space.m) {
-                    SettingsNote(text: InstructionsPresentation.drifted(drifted.map { model.name(of: .remote($0)) }))
-                    Button("Sync now") { Task { await model.syncDiffering() } }
-                        .buttonStyle(.sh(.secondary, size: .s))
-                        .disabled(model.busy)
-                        .help("Write This Mac's files there")
-                }
-                .shTransition(.disclosure)
-            }
-        }
-    }
-
-    private func chip(_ machine: InstructionsModel.Machine) -> some View {
-        InstructionsHostChip(
-            name: model.name(of: machine),
-            chip: model.chip(for: machine, now: now),
-            selected: model.machine == machine,
-            select: model.sameEverywhere ? nil : { model.machine = machine }
-        )
-    }
-}
-
-/// A machine's chip: a `desktopcomputer` glyph, the name in mono, a state dot, and the state's
-/// word unless the dot says it all. The chosen machine has a `textPrimary` line on `bgSelected`.
-struct InstructionsHostChip: View {
-    let name: String
-    let chip: InstructionsChip
-    let selected: Bool
-    /// Per host the chip picks the machine to edit; with Same on every host on it only reports.
-    var select: (() -> Void)?
-    @State private var hovering = false
-
-    var body: some View {
-        if let select {
-            Button(action: select) { label }
-                .buttonStyle(.plain)
-                .onHover { hovering = $0 }
-                .shFocusRing(radius: SH.Radius.m)
-                .accessibilityAddTraits(selected ? .isSelected : [])
-                .accessibilityHint("Edits \(name)'s files")
-        } else {
-            label.accessibilityElement(children: .combine)
-        }
-    }
-
-    private var label: some View {
-        let sh = Color.sh
-        let tone = Self.color(chip.tone)
-        let shape = RoundedRectangle(cornerRadius: SH.Radius.m)
-        return HStack(spacing: SH.Space.m) {
-            Image(systemName: "desktopcomputer")
-                .font(.shSans(AppLayout.instructionsChipGlyphSize))
-                .foregroundStyle(sh.textSecondary)
-                .accessibilityHidden(true)
-            Text(name)
-                .font(.shMono(AppLayout.instructionsChipNameSize, selected ? .semibold : .medium))
-                .foregroundStyle(sh.textPrimary)
-                .lineLimit(1)
-            Circle()
-                .fill(tone)
-                .frame(width: AppLayout.instructionsChipDot, height: AppLayout.instructionsChipDot)
-                .accessibilityHidden(true)
-            if let word = chip.word {
-                Text(word)
-                    .font(.shSans(AppLayout.instructionsChipWordSize))
-                    .foregroundStyle(tone)
-                    .lineLimit(1)
-            }
-        }
-        .padding(.horizontal, SH.Space.l)
-        .frame(minHeight: AppLayout.instructionsChipHeight)
-        .background(selected ? sh.bgSelected : hovering && select != nil ? sh.bgHover : .clear, in: shape)
-        .shBorder(selected ? sh.textPrimary : sh.lineStrong, radius: SH.Radius.m)
-        .contentShape(shape)
-        .shAnimation(.hover, value: hovering)
-    }
-
-    @MainActor static func color(_ tone: InstructionsChip.Tone) -> Color {
-        switch tone {
-        case .done: .sh.done
-        case .attention: .sh.lanternText
-        case .quiet: .sh.textTertiary
-        case .working: .sh.running
-        case .failed: .sh.failed
-        }
     }
 }
 
 // MARK: Files
 
-/// The file tabs, the open file's editor (or, per host, its comparison with This Mac), and what
-/// to do about a difference.
+/// The file tabs and the open file's editor.
 private struct InstructionsMainColumn: View {
     @Bindable var model: InstructionsModel
 
@@ -177,9 +52,6 @@ private struct InstructionsMainColumn: View {
             InstructionsEditorCard(model: model)
             if let problem = model.problem {
                 SHInlineProblem(problem).shTransition(.disclosure)
-            }
-            if let hostID = model.comparing {
-                InstructionsResolve(model: model, hostID: hostID).shTransition(.disclosure)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -204,7 +76,7 @@ private struct InstructionsFileTabs: View {
     private func tab(_ file: InstructionFile) -> some View {
         let sh = Color.sh
         let chosen = model.file == file
-        let note = InstructionsPresentation.fileNote(file, text: model.text(file, on: model.machine))
+        let note = InstructionsPresentation.fileNote(file, text: model.text(file))
         return Button { model.file = file } label: {
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(file.fileName)
@@ -230,16 +102,13 @@ private struct InstructionsFileTabs: View {
     }
 }
 
-/// The open file in a card: a header (its path, "● edited", History, Revert and Save; or, for a
-/// host that differs, the comparison and Diff · its file), then the editor, the diff, or why the
-/// file can't be shown.
+/// The open file in a card: a header (its path, "● edited", History, Revert and Save), then the editor.
 private struct InstructionsEditorCard: View {
     @Bindable var model: InstructionsModel
     @State private var showsHistory = false
 
     private var file: InstructionFile { model.file }
-    private var machine: InstructionsModel.Machine { model.machine }
-    private var edited: Bool { model.isEdited(file, on: machine) }
+    private var edited: Bool { model.isEdited(file) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -256,33 +125,17 @@ private struct InstructionsEditorCard: View {
     private var header: some View {
         let sh = Color.sh
         return HStack(spacing: SH.Space.m + SH.Space.xxs) {
-            if let hostID = model.comparing {
-                let name = model.name(of: .remote(hostID))
-                let size = AppLayout.instructionsCompareSize
-                let host = Text(verbatim: name).font(.shMono(size))
-                let between = Text("compared with").foregroundStyle(sh.textTertiary)
-                let mac = Text("This Mac").font(.shMono(size))
-                Text("\(host) \(between) \(mac)")
-                    .font(.shSans(size))
-                    .foregroundStyle(sh.textPrimary)
-                    .lineLimit(1)
-                if !model.showsDiff, edited { editedMark }
-                Spacer(minLength: SH.Space.m)
-                SHSegmentedPicker("Compare", selection: $model.showsDiff, options: [(true, "Diff"), (false, "\(name)'s file")], size: .s)
-                if !model.showsDiff { revertAndSave }
-            } else {
-                let path = model.path(of: file, on: machine) ?? model.name(of: machine)
-                Text(path)
-                    .font(.shMono(AppLayout.instructionsPathSize))
-                    .foregroundStyle(sh.textSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(path)
-                if edited { editedMark }
-                Spacer(minLength: SH.Space.m)
-                if model.sameEverywhere { history }
-                revertAndSave
-            }
+            let path = model.path(of: file) ?? "This Mac"
+            Text(path)
+                .font(.shMono(AppLayout.instructionsPathSize))
+                .foregroundStyle(sh.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(path)
+            if edited { editedMark }
+            Spacer(minLength: SH.Space.m)
+            history
+            revertAndSave
         }
         .padding(.vertical, SH.Space.m)
         .padding(.horizontal, SH.Space.l)
@@ -299,13 +152,13 @@ private struct InstructionsEditorCard: View {
             .shTransition(.disclosure)
     }
 
-    /// This Mac's saves of the open file, each one restorable.
+    /// The open file's saves, each one restorable (a save another Mac made is there too).
     private var history: some View {
         Button("History") { showsHistory.toggle() }
             .buttonStyle(.sh(.ghost, size: .s))
             .popover(isPresented: $showsHistory, arrowEdge: .bottom) {
                 ScrollView(.vertical) {
-                    InstructionsHistoryList(model: model, machine: .local, now: Date())
+                    InstructionsHistoryList(model: model, now: Date())
                         .padding(.horizontal, SH.Space.l)
                         .padding(.vertical, SH.Space.m)
                 }
@@ -317,14 +170,14 @@ private struct InstructionsEditorCard: View {
             }
     }
 
-    /// Revert and the primary Save, which names where it writes; both wait for an edit.
+    /// Revert and the primary Save; both wait for an edit.
     @ViewBuilder private var revertAndSave: some View {
         Button("Revert") { model.revert() }
             .buttonStyle(.sh(.ghost, size: .s))
             .disabled(!edited || model.busy)
         Button { Task { await model.save() } } label: {
             HStack(spacing: SH.Space.s) {
-                Text(model.saveTitle)
+                Text("Save")
                 Text("⌘S")
                     .font(.shMono(AppLayout.instructionsShortcutSize))
                     .opacity(AppLayout.instructionsShortcutOpacity)
@@ -337,189 +190,37 @@ private struct InstructionsEditorCard: View {
     }
 
     @ViewBuilder private var content: some View {
-        if let hostID = model.comparing, model.showsDiff {
-            InstructionsDiffView(lines: InstructionsText.diff(from: model.saved(file, on: .local) ?? "",
-                                                              to: model.saved(file, on: .remote(hostID)) ?? ""))
-        } else if let saved = model.saved(file, on: machine) {
+        if let saved = model.saved(file) {
             let file = file
-            let machine = machine
             InstructionsEditor(
-                text: Binding(get: { model.text(file, on: machine) }, set: { model.setText($0, file: file, on: machine) }),
+                text: Binding(get: { model.text(file) }, set: { model.setText($0, file: file) }),
                 saved: saved,
-                accessibilityLabel: "\(file.fileName) on \(model.name(of: machine))"
+                accessibilityLabel: file.fileName
             )
-            .id(InstructionsModel.DraftKey(machine: machine, file: file))
+            .id(file)
         } else {
-            InstructionsUnavailable(model: model)
-        }
-    }
-}
-
-/// Why a machine's files can't be shown: offline, too old, being read, or it couldn't answer.
-private struct InstructionsUnavailable: View {
-    var model: InstructionsModel
-
-    var body: some View {
-        let sh = Color.sh
-        VStack(spacing: SH.Space.m) {
-            if reading {
+            VStack(spacing: SH.Space.m) {
                 ProgressView().progressViewStyle(.shSpinner).accessibilityHidden(true)
+                Text("Reading This Mac's files…")
+                    .font(.sh(.caption))
+                    .foregroundStyle(Color.sh.textTertiary)
             }
-            Text(message)
-                .font(.sh(.caption))
-                .foregroundStyle(sh.textTertiary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            if case .remote(let hostID) = model.machine, case .failed = model.files(of: hostID) {
-                Button("Try again") { Task { await model.reload(hostID) } }
-                    .buttonStyle(.sh(.secondary, size: .s))
-            }
-        }
-        .padding(SH.Space.xxl)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var reading: Bool {
-        guard case .remote(let hostID) = model.machine else { return true }
-        return model.files(of: hostID) == .checking
-    }
-
-    private var message: String {
-        guard case .remote(let hostID) = model.machine else { return "Reading This Mac's files…" }
-        let name = model.name(of: model.machine)
-        return switch model.files(of: hostID) {
-        case .offline: "\(name) is offline. Its files show here once it's connected."
-        case .unsupported: "\(name) runs a Shepherd from before Instructions. Update it there to edit its files from here."
-        case .failed(let reason): "Couldn't read \(name)'s files: \(reason)"
-        case .checking, .loaded: "Reading \(name)'s files…"
-        }
-    }
-}
-
-/// A host's copy against This Mac's, as review diffs read: mono on 22pt lines, the line's number,
-/// then removed lines `−` on `failedTint`, added lines `+` on `doneTint`, context unmarked.
-private struct InstructionsDiffView: View {
-    let lines: [InstructionsDiffLine]
-
-    var body: some View {
-        ScrollViewReader { reader in
-            ScrollView(.vertical) {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                        InstructionsDiffRow(line: line).id(index)
-                    }
-                }
-                .padding(.vertical, SH.Space.m)
-            }
-            // The first difference in view, with a line of context above it.
-            .onAppear {
-                if let first = lines.firstIndex(where: { $0.kind != .context }) { reader.scrollTo(max(0, first - 1), anchor: .top) }
-            }
-        }
-    }
-}
-
-private struct InstructionsDiffRow: View {
-    let line: InstructionsDiffLine
-
-    var body: some View {
-        let sh = Color.sh
-        HStack(spacing: 0) {
-            Text("\(line.number)")
-                .font(.shMono(AppLayout.instructionsNumberSize))
-                .foregroundStyle(sh.textTertiary)
-                .frame(width: AppLayout.instructionsGutterWidth, alignment: .trailing)
-                .padding(.trailing, SH.Space.m)
-            Text(sign)
-                .font(.shMono(AppLayout.instructionsDiffTextSize))
-                .foregroundStyle(line.kind == .added ? sh.done : sh.failed)
-                .frame(width: AppLayout.instructionsDiffSignWidth, alignment: .leading)
-            Text(line.text)
-                .font(.shMono(AppLayout.instructionsDiffTextSize))
-                .foregroundStyle(sh.textSecondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .help(line.text)
-            Spacer(minLength: SH.Space.l)
-        }
-        .frame(minHeight: AppLayout.instructionsDiffLineHeight)
-        .background(background)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityText)
-    }
-
-    private var sign: String {
-        switch line.kind {
-        case .context: ""
-        case .added: "+"
-        case .removed: "\u{2212}"
-        }
-    }
-
-    private var background: Color {
-        switch line.kind {
-        case .context: .clear
-        case .added: .sh.doneTint
-        case .removed: .sh.failedTint
-        }
-    }
-
-    private var accessibilityText: String {
-        let lead = switch line.kind {
-        case .context: "Line \(line.number)"
-        case .added: "Added line \(line.number)"
-        case .removed: "Removed line \(line.number)"
-        }
-        let text = line.text.trimmingCharacters(in: .whitespaces)
-        return text.isEmpty ? "\(lead), blank" : "\(lead): \(text)"
-    }
-}
-
-/// Per host, for a host whose copy differs: copy either way, or keep it different (remembered,
-/// so the same difference is never flagged again).
-private struct InstructionsResolve: View {
-    var model: InstructionsModel
-    let hostID: UUID
-
-    var body: some View {
-        let name = model.name(of: .remote(hostID))
-        VStack(alignment: .leading, spacing: SH.Space.m) {
-            SHSectionHeader("Resolve", style: .settings).padding(.horizontal, SH.Space.xxs)
-            SHFlowLayout(spacing: SH.Space.m) {
-                Button("Copy This Mac's to \(name)") { Task { await model.copyThisMacs(to: hostID) } }
-                    .buttonStyle(.sh(.secondary))
-                Button("Copy \(name)'s to all hosts") { Task { await model.copyToAllHosts(from: hostID) } }
-                    .buttonStyle(.sh(.secondary))
-                Button("Keep \(name) different") { model.keepDifferent(hostID) }
-                    .buttonStyle(.sh(.ghost))
-            }
-            .disabled(model.busy)
-            SettingsNote(text: "A copy replaces \(model.file.fileName) there; the version it replaces stays in that host's history. "
-                + "Keep a host different when a line only makes sense on it: Shepherd shows the difference once, then stops asking.")
-                .padding(.horizontal, SH.Space.xxs)
+            .padding(SH.Space.xxl)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
 
 // MARK: Side column
 
-/// With Same on every host on, the order pi reads its instructions in; per host, each host's
-/// files, the other file's status, and the chosen host's history.
+/// How pi reads the files.
 private struct InstructionsSideColumn: View {
-    var model: InstructionsModel
-    let now: Date
+    let file: InstructionFile
 
     var body: some View {
         ScrollView(.vertical) {
-            Group {
-                if model.sameEverywhere {
-                    InstructionsReadingOrder(file: model.file)
-                } else {
-                    InstructionsHostsOverview(model: model, now: now)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .shTransition(.content)
+            InstructionsReadingOrder(file: file)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollIndicators(.hidden)
     }
@@ -590,101 +291,18 @@ private struct InstructionsReadingOrder: View {
     }
 }
 
-/// Per host: a row per machine with where its files live and how the open file compares, the
-/// other file's status in a line, and the chosen machine's saves of the open file.
-private struct InstructionsHostsOverview: View {
-    var model: InstructionsModel
-    let now: Date
-
-    var body: some View {
-        let other = InstructionFile.allCases.first { $0 != model.file } ?? .appendSystem
-        VStack(alignment: .leading, spacing: AppLayout.instructionsSideSpacing) {
-            VStack(alignment: .leading, spacing: SH.Space.m) {
-                SHSectionHeader("Files on each host", style: .settings).padding(.horizontal, SH.Space.xxs)
-                VStack(spacing: 0) {
-                    hostRow(.local)
-                    ForEach(model.hosts, id: \.id) { host in
-                        hostRow(.remote(host.id))
-                    }
-                }
-            }
-            if !model.hosts.isEmpty, let line = model.otherFileLine {
-                VStack(alignment: .leading, spacing: SH.Space.m) {
-                    SHSectionHeader(other.fileName, style: .settings).padding(.horizontal, SH.Space.xxs)
-                    Text(line)
-                        .shText(size: AppLayout.instructionsOtherFileSize, lineHeight: AppLayout.settingsFootnoteLineHeight)
-                        .foregroundStyle(Color.sh.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, SH.Space.xxs)
-                }
-            }
-            VStack(alignment: .leading, spacing: SH.Space.m) {
-                SHSectionHeader("History · \(model.name(of: model.machine))", style: .settings).padding(.horizontal, SH.Space.xxs)
-                InstructionsHistoryList(model: model, machine: model.machine, now: now)
-            }
-        }
-    }
-
-    private func hostRow(_ machine: InstructionsModel.Machine) -> some View {
-        let sh = Color.sh
-        let row = model.row(for: machine, now: now)
-        let name = model.name(of: machine)
-        let directory = model.directory(of: machine)
-        return HStack(spacing: SH.Space.m + SH.Space.xxs) {
-            Image(systemName: "desktopcomputer")
-                .font(.shSans(AppLayout.instructionsHostGlyphSize))
-                .foregroundStyle(sh.textSecondary)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(name)
-                    .font(.shMono(AppLayout.instructionsHostNameSize, .semibold))
-                    .foregroundStyle(sh.textPrimary)
-                    .lineLimit(1)
-                if let directory {
-                    Text(directory)
-                        .font(.shMono(AppLayout.instructionsHostDirectorySize))
-                        .foregroundStyle(sh.textTertiary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(directory)
-                }
-            }
-            .layoutPriority(1)
-            Spacer(minLength: SH.Space.m)
-            VStack(alignment: .trailing, spacing: SH.Space.xxs) {
-                Text(row.detail)
-                    .font(.shSans(AppLayout.instructionsHostDetailSize))
-                    .foregroundStyle(sh.textPrimary)
-                    .lineLimit(1)
-                if let note = row.note {
-                    Text(note)
-                        .font(.shSans(AppLayout.instructionsHostNoteSize))
-                        .foregroundStyle(InstructionsHostChip.color(row.noteTone))
-                        .lineLimit(1)
-                }
-            }
-            .fixedSize()
-        }
-        .padding(.vertical, SH.Space.s)
-        .frame(minHeight: AppLayout.instructionsHostRowMinHeight)
-        .overlay(alignment: .top) { SHHairline() }
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// A machine's saves of the open file, newest first: the date, what changed, and Restore (the
-/// newest is the file as it is, so it reads "current" instead).
+/// The open file's saves, newest first: the date, what changed, and Restore (the newest is the
+/// file as it is, so it reads "current" instead).
 private struct InstructionsHistoryList: View {
     var model: InstructionsModel
-    let machine: InstructionsModel.Machine
     let now: Date
 
     var body: some View {
         let sh = Color.sh
-        let entries = model.history(on: machine)
+        let entries = model.history()
         VStack(spacing: 0) {
             if entries.isEmpty {
-                Text(model.saved(model.file, on: machine) == nil ? "Not read yet." : "No saves yet.")
+                Text(model.saved(model.file) == nil ? "Not read yet." : "No saves yet.")
                     .font(.shSans(AppLayout.instructionsHistoryTextSize))
                     .foregroundStyle(sh.textTertiary)
                     .frame(maxWidth: .infinity, minHeight: AppLayout.instructionsHistoryRowMinHeight, alignment: .leading)
@@ -696,19 +314,19 @@ private struct InstructionsHistoryList: View {
                         .font(.shMono(AppLayout.instructionsHistoryTextSize))
                         .foregroundStyle(sh.textTertiary)
                         .frame(width: AppLayout.instructionsHistoryDateWidth, alignment: .leading)
-                    Text(model.summary(of: entry))
+                    Text(entry.summary)
                         .font(.shSans(AppLayout.instructionsHistoryTextSize))
                         .foregroundStyle(sh.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .help(model.summary(of: entry))
+                        .help(entry.summary)
                     Spacer(minLength: SH.Space.m)
                     if index == 0 {
                         Text("current")
                             .font(.shSans(AppLayout.instructionsHistoryTextSize))
                             .foregroundStyle(sh.textTertiary)
                     } else {
-                        Button("Restore") { Task { await model.restore(entry, on: machine) } }
+                        Button("Restore") { Task { await model.restore(entry) } }
                             .buttonStyle(.shLink(font: .shSans(AppLayout.instructionsHistoryTextSize)))
                             .disabled(model.busy)
                             .accessibilityLabel("Restore the version saved \(InstructionsPresentation.historyDate(entry.savedAt, now: now))")
@@ -717,6 +335,74 @@ private struct InstructionsHistoryList: View {
                 .frame(minHeight: AppLayout.instructionsHistoryRowMinHeight)
                 .overlay(alignment: .top) { SHHairline() }
             }
+        }
+    }
+}
+
+
+/// A machine's chip: a `desktopcomputer` glyph, the name in mono, a state dot, and the state's
+/// word unless the dot says it all. The chosen machine has a `textPrimary` line on `bgSelected`.
+/// Projects' host choice draws it (Settings ▸ Instructions no longer has chips: its files are the fleet's).
+struct InstructionsHostChip: View {
+    let name: String
+    let chip: InstructionsChip
+    let selected: Bool
+    /// A chip that picks a machine, or only reports when nil.
+    var select: (() -> Void)?
+    @State private var hovering = false
+
+    var body: some View {
+        if let select {
+            Button(action: select) { label }
+                .buttonStyle(.plain)
+                .onHover { hovering = $0 }
+                .shFocusRing(radius: SH.Radius.m)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+                .accessibilityHint("Edits \(name)'s files")
+        } else {
+            label.accessibilityElement(children: .combine)
+        }
+    }
+
+    private var label: some View {
+        let sh = Color.sh
+        let tone = Self.color(chip.tone)
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.m)
+        return HStack(spacing: SH.Space.m) {
+            Image(systemName: "desktopcomputer")
+                .font(.shSans(AppLayout.instructionsChipGlyphSize))
+                .foregroundStyle(sh.textSecondary)
+                .accessibilityHidden(true)
+            Text(name)
+                .font(.shMono(AppLayout.instructionsChipNameSize, selected ? .semibold : .medium))
+                .foregroundStyle(sh.textPrimary)
+                .lineLimit(1)
+            Circle()
+                .fill(tone)
+                .frame(width: AppLayout.instructionsChipDot, height: AppLayout.instructionsChipDot)
+                .accessibilityHidden(true)
+            if let word = chip.word {
+                Text(word)
+                    .font(.shSans(AppLayout.instructionsChipWordSize))
+                    .foregroundStyle(tone)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, SH.Space.l)
+        .frame(minHeight: AppLayout.instructionsChipHeight)
+        .background(selected ? sh.bgSelected : hovering && select != nil ? sh.bgHover : .clear, in: shape)
+        .shBorder(selected ? sh.textPrimary : sh.lineStrong, radius: SH.Radius.m)
+        .contentShape(shape)
+        .shAnimation(.hover, value: hovering)
+    }
+
+    @MainActor static func color(_ tone: InstructionsChip.Tone) -> Color {
+        switch tone {
+        case .done: .sh.done
+        case .attention: .sh.lanternText
+        case .quiet: .sh.textTertiary
+        case .working: .sh.running
+        case .failed: .sh.failed
         }
     }
 }

@@ -41,11 +41,8 @@ public enum SuggestionsPresentation {
         "Add to \(file.fileName)"
     }
 
-    /// Which hosts an added line reaches: every host while Settings ▸ Instructions keeps them the
-    /// same, else This Mac alone.
-    public static func hostsWord(sameEverywhere: Bool) -> String {
-        sameEverywhere ? "every host" : "This Mac"
-    }
+    /// Which hosts an added line reaches: Settings ▸ Instructions is the fleet's, so every Mac.
+    public static let hostsWord = "every Mac"
 
     /// "just now", "2h ago", "yesterday", then the day ("Sep 19").
     public static func when(_ time: Double, now: Date = Date(), locale: Locale = .current, timeZone: TimeZone = .current) -> String {

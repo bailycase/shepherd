@@ -163,12 +163,14 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
     /// This Mac and each peer with the last pressure sample and readiness report the host holds
     /// (`FleetPressureWire.swift`); a Mac with nothing yet is absent.
     public var macs: [FleetMacState]
+    /// Where sync stands with each Mac (`FleetSyncStatus`); nil while this host doesn't sync.
+    public var sync: FleetSyncStatus?
     /// Phones, iPads and Mac apps paired as clients, and the shared token's state; nil from a host without them.
     public var devices: FleetDevicesSnapshot?
 
     public init(enabled: Bool = false, hostID: UUID? = nil, name: String = "", build: String? = nil, addresses: [String] = [],
                 port: UInt16? = nil, advertising: Bool = false, peers: [FleetPeerStatus] = [], join: FleetJoinStatus? = nil,
-                devices: FleetDevicesSnapshot? = nil, macs: [FleetMacState] = []) {
+                sync: FleetSyncStatus? = nil, devices: FleetDevicesSnapshot? = nil, macs: [FleetMacState] = []) {
         self.devices = devices
         self.enabled = enabled
         self.hostID = hostID
@@ -180,9 +182,10 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         self.peers = peers
         self.join = join
         self.macs = macs
+        self.sync = sync
     }
 
-    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, advertising, peers, join, macs, devices }
+    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, advertising, peers, join, macs, devices, sync }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -198,6 +201,7 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         // A host from before pressure has none.
         macs = try c.decodeIfPresent([FleetMacState].self, forKey: .macs) ?? []
         devices = try c.decodeIfPresent(FleetDevicesSnapshot.self, forKey: .devices)
+        sync = try c.decodeIfPresent(FleetSyncStatus.self, forKey: .sync)
     }
 }
 

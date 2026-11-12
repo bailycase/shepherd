@@ -140,6 +140,33 @@ struct FleetSettingsFlowTests {
         }
     }
 
+    /// What the Mac's app does with sync: a setting changed on one Mac's Settings is applied by the other's own
+    /// `AppSettings` (so its pi files and running agents follow as for a change made there), and the page says where sync stands.
+    @Test func aSettingChangedOnOneMacReachesTheOthersAppSettingsAndThePageSaysSoInSync() async throws {
+        let a = try await FleetApp("MacBook Pro"), b = try await FleetApp("Mac mini")
+        defer { a.stop(); b.stop() }
+        await b.model.startJoin()
+        #expect(await a.model.pair(with: b.found, code: try #require(b.model.join?.code)))
+
+        a.settings.defaultThinking = .high
+        a.settings.worktreeFetchBeforeCreate = false
+        try await Self.waitFor("the mini's settings to follow") { b.settings.defaultThinking == .high && !b.settings.worktreeFetchBeforeCreate }
+        // And the other way, later: the mini's own change wins, on both.
+        b.settings.defaultThinking = .low
+        try await Self.waitFor("the MacBook Pro to follow the mini") { a.settings.defaultThinking == .low }
+        #expect(!a.settings.worktreeFetchBeforeCreate, "nothing else was reverted")
+
+        // The page's sync line: both Macs hold the same.
+        try await Self.waitFor("the sync line to say both are in sync") {
+            await a.model.refresh()
+            return a.model.syncLine == FleetSyncLine(tone: .inSync, lead: "In sync on This Mac and Mac mini")
+        }
+        // Per Mac switches stay per Mac.
+        a.settings.designToolEnabled = true
+        try await Self.waitFor("A's own switch to settle") { a.settings.designToolEnabled }
+        #expect(!b.settings.designToolEnabled && !b.settings.projectsEnabled)
+    }
+
     @Test func aWrongCodeSaysHowManyTriesAreLeftAndKeepsTheSheetOpen() async throws {
         let a = try await FleetApp("MacBook Pro"), b = try await FleetApp("Mac mini")
         defer { a.stop(); b.stop() }

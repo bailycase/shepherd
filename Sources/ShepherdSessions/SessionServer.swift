@@ -1097,7 +1097,7 @@ public final class SessionServer: @unchecked Sendable {
                 && (designsServed && designs || !RemoteProtocol.designCapabilities.contains($0))
                 && (tunnelsServed || ($0 != RemoteProtocol.browserTunnelCapability && $0 != RemoteProtocol.browserDriveCapability))
                 && ($0 != RemoteProtocol.missionsCapability || missionsServed && onRemoteMission != nil)
-                && ($0 != RemoteProtocol.fleetCapability || fleet?.membership == true)
+                && (($0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetSyncCapability) || fleet?.membership == true)
                 && ($0 != RemoteProtocol.fleetDevicesCapability || fleet != nil)
                 && ($0 != RemoteProtocol.fleetPressureCapability || fleet?.membership == true)
         }
@@ -1267,6 +1267,33 @@ public final class SessionServer: @unchecked Sendable {
     private var fleetPressureMaker: (@Sendable (DispatchQueue, @escaping @Sendable () -> FleetLocalFacts) -> FleetPressure)?
     private var fleetClock: (@Sendable () -> Date)?
 
+    /// The app's settings as a fleet syncs them (`FleetHostSettingsSource`); nil until the app says how to apply one.
+    private var fleetHostSettings: FleetHostSettingsSource?
+
+    /// Lets the host settings sync across a fleet: `apply` changes one the way the Mac's own Settings
+    /// would (called from any thread). The app then reports the settings with `fleetHostSettingsChanged`.
+    public func setFleetHostSettings(apply: @escaping @Sendable (HostSettingChange) -> Void) {
+        queue.async { [self] in
+            let source = FleetHostSettingsSource(apply: apply)
+            fleetHostSettings = source
+            fleet?.syncEngine.add(source)
+        }
+    }
+
+    /// The host settings as the app has them now: a change here becomes an op, and a synced
+    /// value the app was told to apply shows up here when it has.
+    public func fleetHostSettingsChanged(_ settings: HostSettings) {
+        queue.async { [self] in
+            fleetHostSettings?.update(settings)
+            fleet?.syncEngine.localChanged()
+        }
+    }
+
+    /// Tests: the saved versions of a unit in this host's fleet store, newest first, and what decides it now.
+    func fleetSyncHistory(_ unit: String) -> [FleetHistoryEntry] { queue.sync { fleet?.syncEngine.store.history(of: unit) ?? [] } }
+    func fleetSyncWinner(_ unit: String) -> FleetOp? { queue.sync { fleet?.syncEngine.store.winner(of: unit) } }
+    var fleetStoreDirectory: URL? { queue.sync { fleet?.syncEngine.store.directory } }
+
     /// Sets `fleetOptions` for the next `setFleetEnabled(true)`.
     public func configureFleet(name: String?, advertises: Bool) {
         queue.sync { fleetOptions = (name, advertises) }
@@ -1338,6 +1365,15 @@ public final class SessionServer: @unchecked Sendable {
                     }
                 }
                 fleet = service
+                // What syncs: the root instructions, pi's own preferences, and (once the app reports
+                // them) the host settings. Each is read and written through the code that owns it.
+                instructions.onChange = { [weak self] _ in self?.queue.async { self?.fleet?.syncEngine.localChanged() } }
+                service.syncEngine.add(FleetInstructionsSource(instructions) { [weak self] in
+                    guard let self else { return }
+                    self.announceInstructions(self.instructions.snapshot())
+                })
+                service.syncEngine.add(FleetPiSettingsSource(settings: pi.files.settings))
+                if let source = fleetHostSettings { service.syncEngine.add(source) }
                 service.listenerChanged(remoteListenPort)
                 service.start()
             } catch {
@@ -1351,7 +1387,7 @@ public final class SessionServer: @unchecked Sendable {
         let id: Int
         switch request {
         case .fleetIdentify(let value), .fleetPair(let value, _, _), .fleetEstablish(let value, _), .fleetIntroduce(let value, _),
-             .fleetRevoke(let value, _, _), .fleetRead(let value), .fleetAction(let value, _),
+             .fleetRevoke(let value, _, _), .fleetRead(let value), .fleetAction(let value, _), .fleetSync(let value, _),
              .fleetPressure(let value, _), .fleetReadiness(let value, _), .fleetPressureNow(let value),
              .fleetPairDevice(let value, _, _), .fleetEnrollDevice(let value, _), .fleetSyncDevices(let value, _):
             id = value
@@ -1863,6 +1899,10 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func stopOnQueue() {
+        // A stopped host holds no links and watches no files: its fleet ends with it.
+        fleet?.stop()
+        fleet = nil
+        instructions.onChange = nil
         if isStarted, store.state.missions.contains(where: { $0.run?.train?.status == .running }) {
             try? mutateState { state in
                 for i in state.missions.indices where state.missions[i].run?.train?.status == .running {
@@ -2686,7 +2726,7 @@ public final class SessionServer: @unchecked Sendable {
         }
 
         switch request {
-        case .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction,
+        case .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
              .fleetPressure, .fleetReadiness, .fleetPressureNow,
              .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
             serveFleet(request, from: client)

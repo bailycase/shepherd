@@ -54,14 +54,9 @@ struct SettingsView: View {
         .transition(SH.Motion.content.transition(reduceMotion: reduceMotion)
             .animation(SH.Motion.sheet.animation(reduceMotion: reduceMotion)))
         .onChange(of: searchText) { Self.showFirstMatch(of: matchingSections, in: vm) }
-        // One host choice for Settings: Instructions' chips and Spaces' filter follow the picker,
-        // and move it when they are used.
+        // One host choice for Settings: Spaces' filter follows the picker, and moves it when it is used.
         .onChange(of: vm.settingsHostID) { vm.followSettingsHost(on: vm.settingsSection, entering: false) }
         .onChange(of: vm.settingsSection) { vm.followSettingsHost(on: vm.settingsSection, entering: true) }
-        .onChange(of: vm.instructions.machine) {
-            guard !vm.instructions.sameEverywhere else { return }
-            if case .remote(let id) = vm.instructions.machine { vm.adoptSettingsHost(id) } else { vm.adoptSettingsHost(nil) }
-        }
         .onChange(of: vm.settingsSection == .projects ? vm.projects.host : nil) { _, host in
             guard let host, host != "all" else { return }
             vm.adoptSettingsHost(UUID(uuidString: host))
@@ -377,7 +372,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .piSlashCommands: ["Search commands", "Extensions", "Prompt templates", "Skills", "Disabled commands"]
         case .apps: ["Add app", "On this Mac", "Run", "Quick action"]
         case .hooks: ["Add hook", "Sources", "Read hooks from Claude Code", "Read hooks from Codex"]
-        case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
+        case .instructions: ["AGENTS.md", "APPEND_SYSTEM.md", "History"]
         case .skills: ["Installed skills", "Browse skills.sh", "Add from repo",
                        "Skills in the / menu", "Same skills on every host", "Update automatically"]
         case .mcp: ["Servers", "Add server", "Import…", "How the agent uses them", "Same servers on every host",
@@ -435,7 +430,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                      "Run": ["stop", "running", "start", "localhost", "port"]]
         case .hooks: ["Add hook": ["PreToolUse", "PostToolUse", "Stop", "SessionStart", "UserPromptSubmit", "matcher", "command", "hooks.json"],
                       "Read hooks from Claude Code": ["claude", "settings.json", ".claude"], "Read hooks from Codex": ["codex", "config.toml", ".codex"]]
-        case .instructions: ["Same on every host": ["sync", "hosts"], "AGENTS.md": ["system prompt", "how you work", "context"],
+        case .instructions: ["AGENTS.md": ["system prompt", "how you work", "context"],
                              "APPEND_SYSTEM.md": ["system prompt", "override"], "History": ["restore", "undo"]]
         case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills", "from your pi", "copied", ".pi", ".shepherd"],
                        "Browse skills.sh": ["directory", "search", "install"],

@@ -7,7 +7,7 @@ import ShepherdSessions
 /// Settings ▸ Experiments ▸ Suggested instructions on the Mac: the
 /// experiment's settings and the lines this Mac's agents suggested, kept by the server's
 /// `SuggestionsStore` (the background host's, as its client). Adding a line, or taking one back, changes This Mac's instructions, which
-/// `InstructionsModel` then sends to every host while Same on every host is on.
+/// the host's sync then carries to every Mac in the fleet.
 @MainActor
 @Observable
 final class SuggestionsModel {
@@ -162,8 +162,7 @@ final class SuggestionsModel {
         targets = targets.filter { waiting.contains($0.key) }
     }
 
-    /// This Mac's files changed: the Instructions page follows, and with Same on every host on
-    /// so does every host.
+    /// This Mac's files changed: the Instructions page follows (the host's sync carries them to every Mac).
     private func instructionsChanged() async {
         await instructions.localFilesChanged()
     }

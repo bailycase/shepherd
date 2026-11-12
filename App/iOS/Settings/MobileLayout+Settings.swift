@@ -56,12 +56,6 @@ extension MobileLayout {
     /// The iPad page's sides, and between its blocks.
     static let instructionsPadSides: CGFloat = 20
     static let instructionsPadSpacing: CGFloat = SH.Space.xl
-    /// Every host | Per host: a 300pt track at radius 9, 30pt segments at radius 7, 13pt.
-    static let instructionsScopeWidth: CGFloat = 300
-    static let instructionsScopeRadius: CGFloat = 9
-    static let instructionsScopeSegmentHeight: CGFloat = 30
-    static let instructionsScopeSegmentRadius: CGFloat = 7
-    static let instructionsScopeTextSize: CGFloat = 13
     /// The files as tabs: 22pt apart, names in mono 13, a 2pt underline.
     static let instructionsTabSpacing: CGFloat = 22
     static let instructionsTabTextSize: CGFloat = 13

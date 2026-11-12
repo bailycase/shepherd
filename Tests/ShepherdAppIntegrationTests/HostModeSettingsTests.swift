@@ -169,14 +169,14 @@ struct HostModeSettingsTests {
 
         // Settings ▸ Instructions saves the host's file, as This Mac's own.
         await vm.instructions.refresh()
-        vm.instructions.setText("- Run acme-web's tests first.\n", file: .agents, on: .local)
+        vm.instructions.setText("- Run acme-web's tests first.\n", file: .agents)
         await vm.instructions.save()
         #expect(host.server.instructions.snapshot().agents == "- Run acme-web's tests first.\n")
         #expect(host.server.instructions.snapshot().history.first?.origin == nil, "This Mac's own save")
         #expect(idle.instructions.snapshot().agents.isEmpty)
         // A paired device's save on the host: the page follows.
         _ = try await phone.instructions(.save(file: .agents, content: "- Ask first.\n", origin: "iPhone", sync: false))
-        try await eventuallyOnMain("the page to follow the host") { vm.instructions.saved(.agents, on: .local) == "- Ask first.\n" }
+        try await eventuallyOnMain("the page to follow the host") { vm.instructions.saved(.agents) == "- Ask first.\n" }
 
         // Suggested instructions: the switch is the host's.
         await vm.suggestions.setEnabled(true)
@@ -193,7 +193,7 @@ struct HostModeSettingsTests {
         #expect(vm.suggestions.problem == nil)
         #expect(host.server.instructions.snapshot().agents.contains("Use the staging database."))
         try await eventuallyOnMain("the Instructions page to follow") {
-            vm.instructions.saved(.agents, on: .local)?.contains("Use the staging database.") == true
+            vm.instructions.saved(.agents)?.contains("Use the staging database.") == true
         }
     }
 
