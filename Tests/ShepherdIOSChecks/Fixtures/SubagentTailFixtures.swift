@@ -12,7 +12,9 @@ import ShepherdUI
 /// pass. After each step it checks the run still ends above its steer field, and over all of them
 /// that no more than `inPassLimit` landings ran inside a layout pass and the run never gave up
 /// following. On the iPhone the run is the screen; beside the thread (iPad, an open Duo) it is the
-/// side pane's, found as the trailing scroll view.
+/// side pane's, found as the trailing scroll view. The run shares the thread's pin, so the counts
+/// are the pin's (`thread.` labels): beside the thread, its pin adds to them, and the ceiling
+/// allows for it, while a stall of either pin fails the check.
 enum SubagentFollowFixture {
     /// Steps the first page holds: more than a screen of them.
     static let firstPage = 8
@@ -68,12 +70,15 @@ enum SubagentFollowFixture {
         SHRenderProbe.start()
         var measured: [String] = []
         var verdicts: [(ok: Bool, line: String)] = []
+        var previous: CGFloat = 0
         for stage in 0...stages {
             if stage > 0 { polls.advance() }
-            await FixtureWindows.wait("the run's step \(stage)", seconds: 20) { polls.served && runScrollView() != nil }
-            // The reply is served before the screen has taken it in.
-            try? await Task.sleep(for: .milliseconds(200))
+            // The reply is served before the screen has taken it in: its step has added content.
+            await FixtureWindows.wait("the run's step \(stage)", seconds: 20) {
+                polls.served && runScrollView().map { $0.contentSize.height > previous } == true
+            }
             await settle()
+            previous = runScrollView()?.contentSize.height ?? previous
             let counts = SHRenderProbe.counts
             let tail = tail()
             let landings = counts["subagent.tailLanding", default: 0] + counts["subagent.tailLandingResized", default: 0]
@@ -86,10 +91,13 @@ enum SubagentFollowFixture {
         let counts = SHRenderProbe.stop()
         let inPass = counts["thread.tailLandingInPass", default: 0]
         let stalled = counts["thread.tailStalled", default: 0]
-        verdicts.append((inPass <= inPassCeiling, "at most \(inPassCeiling) landings inside a layout pass (\(inPass) ran)"))
+        let run = runScrollView()
+        // Beside the thread, its pin counts under the same labels and has its own landings in passes.
+        let ceiling = run != nil && run !== FollowFixture.threadScrollView() ? 2 * inPassCeiling : inPassCeiling
+        verdicts.append((inPass <= ceiling, "at most \(ceiling) landings inside a layout pass (\(inPass) ran)"))
         verdicts.append((stalled == 0, "the run never stopped following (\(stalled) stalls)"))
         // Only where the run is the screen's tallest scroll view does the thread's ink measure read it.
-        if let run = runScrollView(), run === FollowFixture.threadScrollView() {
+        if let run, run === FollowFixture.threadScrollView() {
             let ink = FollowFixture.transcriptInk()
             measured.append("\(Int((ink * 100).rounded()))% ink")
             verdicts.append((ink >= inkFloor, "the run draws"))
