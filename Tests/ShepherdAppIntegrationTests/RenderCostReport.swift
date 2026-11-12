@@ -143,14 +143,16 @@ struct RenderCostReport {
         report.add("thread writing a Swift fence (15 chunks, 100 ms apart)", "tree-sitter renders", "\(renders)")
     }
 
-    /// One 3,000-line Python fence written in 2 KB chunks, 40 ms apart, as a reply writes it: the
-    /// main thread's cost per chunk, the process's CPU and instructions for the whole stream, and
+    /// One 3,000-line Python fence written in 2 KB chunks, 40 ms apart, as a reply writes it, in a
+    /// scroll view that follows its end: the main thread's cost per chunk, the process's CPU and instructions for the whole stream, and
     /// how much heap and footprint the fence takes while it grows and keeps once the reply is done.
     @Test func streamedLongFence() async throws {
         let code = FenceStream.python(lines: 3_000)
         let chunks = stride(from: 0, to: code.utf8.count, by: 2_048).map { String(decoding: code.utf8.prefix(min($0 + 2_048, code.utf8.count)), as: UTF8.self) }
-        let window = OffscreenWindow(size: CGSize(width: 720, height: 800), dark: false,
-                                     HighlightedCodeBlock(code: "", language: "python", writing: true))
+        func fence(_ code: String, writing: Bool) -> some View {
+            ScrollView { HighlightedCodeBlock(code: code, language: "python", writing: writing) }.defaultScrollAnchor(.bottom)
+        }
+        let window = OffscreenWindow(size: CGSize(width: 720, height: 800), dark: false, fence("", writing: true))
         defer { window.close() }
         ListPerf.settle(window)
         try await Task.sleep(for: Self.atRest)
@@ -162,7 +164,7 @@ struct RenderCostReport {
         let instructions = ListPerf.instructions()
         for chunk in chunks {
             costs.append(await cost(window) {
-                window.show(HighlightedCodeBlock(code: chunk, language: "python", writing: true))
+                window.show(fence(chunk, writing: true))
                 try? await Task.sleep(for: .milliseconds(40))
             })
             peakHeap = max(peakHeap, FenceStream.Memory.now().heap)
@@ -171,7 +173,7 @@ struct RenderCostReport {
         let streamInstructions = ListPerf.instructions() - instructions
         let streaming = SHRenderProbe.stop()
         let peak = FenceStream.Memory.now()
-        window.show(HighlightedCodeBlock(code: code, language: "python", writing: false))
+        window.show(fence(code, writing: false))
         let key = CodeHighlightCache.Key(fence: code, language: "python")
         try await eventuallyOnMain("the finished fence to be colored") {
             ListPerf.settle(window)
