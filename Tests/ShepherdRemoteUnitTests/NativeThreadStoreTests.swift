@@ -2070,6 +2070,18 @@ struct NativeThreadStoreTests {
         #expect(!invalidated.value)
     }
 
+    /// Send's enabled state, the toolbar and the failed-send restore read `hasDraft` as keys land:
+    /// more words after the first change what it answers for none of them.
+    @Test func typingMoreProseNotifiesNoReaderOfHasDraft() {
+        let store = manualStore()
+        store.draft = "hello"
+        let fired = Flag()
+        withObservationTracking { _ = store.hasDraft } onChange: { fired.set() }
+        store.draft += " world"
+        #expect(!fired.value)
+        #expect(store.hasDraft)
+    }
+
     // MARK: What the chrome reads
 
     /// The chrome's properties (see `NativeThreadStore.session`) and how to read each.
