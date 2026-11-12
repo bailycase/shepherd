@@ -1301,6 +1301,16 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Before an agent's pi starts: reads this Mac's sign-ins and the newest of every Mac it is connected to, so
+    /// pi never starts with an OAuth token another Mac has already rotated away (`FleetSync.catchUpCredentials`).
+    /// Returns at once with Fleet off or no peer connected, and after a few seconds at most. Any actor.
+    func fleetCredentialFence() async {
+        let engine = await withCheckedContinuation { (continuation: CheckedContinuation<FleetSync?, Never>) in
+            queue.async { [self] in continuation.resume(returning: fleet?.membership == true ? fleet?.syncEngine : nil) }
+        }
+        await engine?.catchUpCredentials()
+    }
+
     /// Tests: the saved versions of a unit in this host's fleet store, newest first, and what decides it now.
     func fleetSyncHistory(_ unit: String) -> [FleetHistoryEntry] { queue.sync { fleet?.syncEngine.store.history(of: unit) ?? [] } }
     func fleetSyncWinner(_ unit: String) -> FleetOp? { queue.sync { fleet?.syncEngine.store.winner(of: unit) } }
@@ -1392,6 +1402,11 @@ public final class SessionServer: @unchecked Sendable {
                 // Skills and extensions: content, a file at a time, through the stores that own them.
                 service.syncEngine.add(FleetSkillsSource(skills) { [weak self] in self?.skillsSyncWrote() })
                 service.syncEngine.add(FleetExtensionsSource(pi.importedState()))
+                // Sign-ins: pi's `auth.json` and `mcp-auth.json`, a provider or a server at a time, under pi's lock.
+                let kept = supportDirectory.appendingPathComponent("fleet/credentials-excluded.json")
+                for (file, kind) in [("auth.json", FleetCredentialsSource.Kind.providers), ("mcp-auth.json", .mcpServers)] {
+                    service.syncEngine.add(FleetCredentialsSource(file: pi.files.directory.appendingPathComponent(file), kind: kind, exclusions: kept))
+                }
                 service.listenerChanged(remoteListenPort)
                 // Which checkouts the content index reads: the spaces' (`fleet.snapshot.v1`).
                 service.index.host = FleetIndexService.Host(spaces: { [weak self] in self?.store.state.spaces ?? [] })

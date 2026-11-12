@@ -101,6 +101,22 @@ struct FleetSyncWireTests {
         #expect(!FleetUnit.isValid("nokind") && !FleetUnit.isValid(":name") && !FleetUnit.isValid("Setting:x") && !FleetUnit.isValid("setting:"))
     }
 
+    @Test func signInsAreUnitsOfTheirOwnKindAndAHelloWithoutFreshDecodes() throws {
+        #expect(FleetUnit.credential("openai-codex") == "credential:openai-codex" && FleetUnit.isCredential("credential:openai-codex"))
+        let key = "mcp__notion|https://mcp.notion.com/mcp"
+        #expect(FleetUnit.mcpAuth(key) == "mcpAuth:" + key && FleetUnit.isValid(FleetUnit.mcpAuth(key)) && FleetUnit.isCredential(FleetUnit.mcpAuth(key)))
+        #expect(!FleetUnit.isCredential("setting:pi.theme") && !FleetUnit.isCredential("mcpServer:notion") && !FleetUnit.isCredential("extension:credentials"))
+
+        // `fresh` is written only when set and a hello from a build that lacks it reads as not fresh.
+        let vector = FleetVersionVector([Self.macA: 2])
+        let plain = try JSONSerialization.jsonObject(with: JSONEncoder().encode(FleetSyncRequest.hello(vector: vector))) as? [String: Any]
+        #expect(plain?["fresh"] == nil)
+        let old = Data(#"{"kind":"hello","vector":{}}"#.utf8)
+        #expect(try JSONDecoder().decode(FleetSyncRequest.self, from: old) == .hello(vector: FleetVersionVector(), fresh: false))
+        let asked = try JSONEncoder().encode(FleetSyncRequest.hello(vector: vector, fresh: true))
+        #expect(try JSONDecoder().decode(FleetSyncRequest.self, from: asked) == .hello(vector: vector, fresh: true))
+    }
+
     @Test func theBlobNameIsTheHashOfItsBytes() {
         // sha256("abc")
         #expect(FleetSyncProtocol.hash(Data("abc".utf8)) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")

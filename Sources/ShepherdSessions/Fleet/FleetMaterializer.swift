@@ -49,6 +49,9 @@ protocol FleetUnitSource: AnyObject {
     /// leaves ("-" for a deletion), so a source can tell a tree is mid sync (some file's winner is not
     /// what is on disk yet) and keep a unit that describes the tree from being read as a local edit.
     func attach(fleetWinners: @escaping (String) -> [String: String])
+    /// Whether its units are sign-ins, which only Macs of the fleet ever hold, and which a Mac about to
+    /// start pi reads first (`FleetSync.catchUpCredentials`).
+    var isCredential: Bool { get }
 }
 
 /// A source can't take a value (one this build doesn't understand): it keeps what it has and the
@@ -77,6 +80,7 @@ extension FleetUnitSource {
     func prepare() {}
     func attach(fleetValue: @escaping (String) -> Data?) {}
     func attach(fleetWinners: @escaping (String) -> [String: String]) {}
+    var isCredential: Bool { false }
 }
 
 /// Keeps this Mac's real state and the store the same, in both directions (docs: Sync engine).
@@ -161,10 +165,10 @@ final class FleetMaterializer {
     /// Appends an op for every unit whose value here differs from what the materializer last saw,
     /// and returns them. The first time a unit is seen with a value worth sharing, the op is a seed.
     @discardableResult
-    func scan(name: String) -> [FleetOp] {
+    func scan(name: String, credentialsOnly: Bool = false) -> [FleetOp] {
         var emitted: [FleetOp] = []
         var changed = false
-        for source in sources where source.isReady {
+        for source in sources where source.isReady && (!credentialsOnly || source.isCredential) {
             source.prepare()
             let present = source.fingerprints()
             for unit in units(of: source, holding: present) {

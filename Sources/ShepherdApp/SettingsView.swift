@@ -191,7 +191,7 @@ struct SettingsView: View {
         case .subagents: SubagentsSettings(model: vm.subagentDefinitions, native: NativeSubagentSettings(pi: vm.pi, settings: vm.settings))
         case .projects: ProjectsSettings(vm: vm, model: vm.projects)
         case .pi: PiSettings(pi: vm.pi, yourPi: vm.yourPi) { vm.settingsSection = .extensions }
-        case .piSignIn: PiSignInSettings(yourPi: vm.yourPi, auth: vm.piAuth)
+        case .piSignIn: PiSignInSettings(yourPi: vm.yourPi, auth: vm.piAuth, inFleet: vm.settings.fleetEnabled)
         case .extensions: ExtensionsSettings(settings: vm.settings)
         case .piSlashCommands: SlashCommandsSettings(model: vm.slashCommands, settings: vm.settings)
         case .apps: AppsSettings(vm: vm, model: vm.apps)

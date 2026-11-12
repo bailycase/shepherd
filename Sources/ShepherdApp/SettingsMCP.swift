@@ -66,6 +66,7 @@ struct MCPSettings: View {
             store.refreshIfStale()
             if expanded == nil { expanded = initiallyExpanded }
         }
+        .onChange(of: vm.settings.fleetEnabled, initial: true) { _, on in store.inFleet = on }
         .sheet(item: $sheet) { sheet in
             switch sheet {
             case .add(let kind):
