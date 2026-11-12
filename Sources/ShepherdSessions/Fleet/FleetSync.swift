@@ -1,4 +1,5 @@
 import Foundation
+import os
 import ShepherdProtocol
 import ShepherdRemote
 
@@ -15,6 +16,10 @@ final class FleetSync: @unchecked Sendable {
     static let noticeLifetime: TimeInterval = 24 * 3600
     /// A write that failed (pi held its lock) is tried again after this.
     static let retryDelay: TimeInterval = 5
+    /// A Mac about to start pi waits at most this long for its peers' newest sign-ins, then starts with what it has.
+    static let fencePatience: TimeInterval = 3
+    /// A peer that didn't catch a Mac up within `fencePatience` is not waited for again for this long.
+    static let fenceBackoff: TimeInterval = 60
 
     let store: FleetStore
     private let queue: DispatchQueue
@@ -28,6 +33,8 @@ final class FleetSync: @unchecked Sendable {
     private var started = false
     private var stopped = false
     private var retrying = false
+    /// peer → when waiting for it at a launch starts again (it failed to catch this Mac up in time).
+    private var fenceSkips: [UUID: Date] = [:]
     private var noticeURL: URL { directory.appendingPathComponent("notice.json") }
     private var notice: (text: String, at: Double)?
 
@@ -152,6 +159,8 @@ final class FleetSync: @unchecked Sendable {
         case "hook": "a hook"
         case "subagent": FleetUnit.name(of: unit) ?? unit
         case "space": "a space"
+        case "credential": "the \(FleetUnit.name(of: unit) ?? unit) sign-in"
+        case "mcpAuth": "an MCP sign-in"
         case "skill", "skillstate": "the \(FleetUnit.skillParts(of: unit)?.name ?? unit) skill"
         case "extension", "extmeta": "the \(FleetUnit.name(of: unit)?.split(separator: "/").first.map(String.init) ?? unit) extension"
         default: "the \(FleetUnit.name(of: unit) ?? unit) setting"
@@ -245,13 +254,78 @@ final class FleetSync: @unchecked Sendable {
         return result
     }
 
+    // MARK: Credential fence (server queue)
+
+    /// Reads this Mac's sign-ins now: a rewrite pi made that the watcher's debounce hasn't reached is an op at once.
+    private func scanCredentials() {
+        guard started, !stopped else { return }
+        let emitted = materializer.scan(name: name(), credentialsOnly: true)
+        if !emitted.isEmpty { pumpAll() }
+    }
+
+    /// Before pi starts: an OAuth refresh token rotates, so a pi started with a token another Mac has already
+    /// rotated away would fail and could take the grant down for the whole fleet. This Mac reads its own
+    /// sign-ins, asks each peer it is connected to for its newest (the peer reads its own first and pushes
+    /// what this Mac lacks), and waits until what the peer held is here and written, at most `patience`.
+    /// With no peer connected, or none ahead, it returns at once. A peer that doesn't catch this Mac up in
+    /// time is not waited for again for a minute; the watcher reconciles whatever arrives later.
+    func catchUpCredentials(patience: TimeInterval = FleetSync.fencePatience) async {
+        let targets = await hop { () -> [Session] in
+            guard self.started, !self.stopped else { return [] }
+            self.scanCredentials()
+            let now = self.clock()
+            return self.sessions.values.filter { self.fenceSkips[$0.peer].map { now >= $0 } ?? true }
+        }
+        guard !targets.isEmpty else { return }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(patience))
+        await withTaskGroup(of: Void.self) { group in
+            for session in targets { group.addTask { await self.catchUp(from: session, until: deadline) } }
+        }
+        await hop { self.applyStore() }
+    }
+
+    private func catchUp(from session: Session, until deadline: ContinuousClock.Instant) async {
+        let ours = await hop { self.store.vector }
+        let theirs = await Self.within(deadline) { try? await session.client.fleetSyncState(.hello(vector: ours, fresh: true)) }
+        guard let theirs else { return await skip(session) }
+        while ContinuousClock.now < deadline {
+            if await hop({ self.store.vector.covers(theirs) || self.sessions[session.peer] !== session }) { return }
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        if await !hop({ self.store.vector.covers(theirs) }) { await skip(session) }
+    }
+
+    private func skip(_ session: Session) async {
+        await hop { self.fenceSkips[session.peer] = self.clock().addingTimeInterval(Self.fenceBackoff) }
+    }
+
+    /// `work`'s answer, or nil once `deadline` passes: a peer that doesn't answer holds nobody up. `work` is
+    /// left to finish on its own.
+    private static func within<T: Sendable>(_ deadline: ContinuousClock.Instant, _ work: @escaping @Sendable () async -> T?) async -> T? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<T?, Never>) in
+            let once = OSAllocatedUnfairLock(initialState: false)
+            @Sendable func finish(_ value: T?) {
+                guard once.withLock({ let first = !$0; $0 = true; return first }) else { return }
+                continuation.resume(returning: value)
+            }
+            Task { finish(await work()) }
+            Task {
+                try? await ContinuousClock().sleep(until: deadline)
+                finish(nil)
+            }
+        }
+    }
+
     // MARK: Serving a peer (server queue)
 
     /// Answers a sync request that arrived from `peer` on a connection authenticated as it.
     func serve(_ request: FleetSyncRequest, from peer: UUID) -> Result<FleetSyncReply, FleetSyncRefusal> {
         guard !stopped else { return .failure(FleetSyncRefusal(code: FleetProtocol.Code.off, message: "Fleet is off.")) }
         switch request {
-        case .hello(let vector):
+        case .hello(let vector, let fresh):
+            // A Mac about to start pi: what pi here rewrote a moment ago (a refreshed token the watcher hasn't
+            // read yet) is an op before the answer, and so on its way to the asker.
+            if fresh { scanCredentials() }
             if let session = sessions[peer] {
                 session.peerVector = Self.merged(session.peerVector, vector)
                 if !store.vector.seqs.allSatisfy({ session.peerVector[$0.key] >= $0.value }) { pump(session) }
