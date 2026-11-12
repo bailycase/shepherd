@@ -394,7 +394,9 @@ final class FixtureHost: @unchecked Sendable {
         case .pushUnregister(let id, _):
             note("pushUnregister")
             return [.ok(id: id)]
-        case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .creationBranches, .agentQuery, .nativeThreadSubscribe, .fleetDigest:
+        case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .creationBranches, .agentQuery, .nativeThreadSubscribe, .fleetDigest,
+             .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices,
+             .fleetRead, .fleetAction:
             return nil
         }
     }

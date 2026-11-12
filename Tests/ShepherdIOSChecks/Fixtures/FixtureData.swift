@@ -16,6 +16,8 @@ struct FixtureScreen {
     var tab: MobileNavigator.Tab = .home
     /// Anything else to set up before the screenshot (a draft, an expanded row).
     var prepare: (@MainActor (MobileApp) async -> Void)? = nil
+    /// Runs before the routes open: seams a screen reads as it appears (the Macs Add a Mac finds).
+    var setup: (@MainActor () -> Void)? = nil
 }
 
 /// A host the harness serves: its state, each agent's thread, and answers for anything else.

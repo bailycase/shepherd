@@ -18,10 +18,7 @@ struct SettingsView: View {
 
     private var query: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-    /// Every page, less Fleet's while the experiment is off.
-    private var availableSections: [SettingsSection] {
-        SettingsSection.allCases.filter { $0 != .fleet || vm.settings.fleetEnabled }
-    }
+    private var availableSections: [SettingsSection] { SettingsSection.allCases }
 
     private var matchingSections: [SettingsSection] {
         guard !query.isEmpty else { return availableSections }
@@ -241,8 +238,16 @@ struct SettingsView: View {
         case .instructions: InstructionsSettings(model: vm.instructions)
         case .skills: SkillsSettings(vm: vm, model: vm.skills)
         case .mcp: MCPSettings(vm: vm, store: vm.mcp, initiallyExpanded: vm.mcpOpenServer)
-        case .remote: RemoteSettings(vm: vm, store: vm.remoteHosts)
-        case .fleet: FleetSettings(model: vm.fleet, serviceKeepsRunning: vm.backgroundServiceStatus?.keepsAgentsRunning)
+        case .fleet:
+            FleetSettings(model: vm.fleet, serviceKeepsRunning: vm.backgroundServiceStatus?.keepsAgentsRunning, enabled: vm.settings.fleetEnabled,
+                          serve: FleetServe(isOn: Binding(get: { vm.remoteListenerEnabled }, set: { vm.setRemoteListenerEnabled($0) }),
+                                            status: vm.remoteListenerStatus, problem: vm.remoteListenerProblem,
+                                            problemDetail: vm.remoteListenerProblemDetail),
+                          clients: vm.remoteHosts.pairedConnections.filter { !vm.settings.fleetEnabled || !$0.config.fleetManaged }.map {
+                              .client(id: $0.id, name: $0.config.name, host: $0.config.host, port: $0.config.port, phase: $0.phase)
+                          },
+                          removeClient: { vm.remoteHosts.removeHost(id: $0) })
+                .task { await vm.refreshRemoteListener() }
         case .keyboard: KeyboardSettings(vm: vm)
         case .advanced: AdvancedSettings(vm: vm)
         case .experiments:
@@ -319,7 +324,7 @@ private struct SettingsSearchHit: View {
 
 enum SettingsSection: String, CaseIterable, Identifiable {
     // The nav's order, as every Settings board draws it.
-    case appearance, terminal, agents, subagents, worktrees, projects, piSignIn, pi, instructions, skills, extensions, piSlashCommands, apps, hooks, mcp, fleet, remote, keyboard, advanced, experiments
+    case appearance, terminal, agents, subagents, worktrees, projects, piSignIn, pi, instructions, skills, extensions, piSlashCommands, apps, hooks, mcp, fleet, keyboard, advanced, experiments
 
     var id: String { rawValue }
 
@@ -341,7 +346,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .skills: return "Skills"
         case .mcp: return "MCP servers"
         case .fleet: return "Fleet"
-        case .remote: return "Remote"
         case .keyboard: return "Keyboard"
         case .advanced: return "Advanced"
         case .experiments: return "Experiments"
@@ -373,8 +377,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                        "Skills in the / menu", "Same skills on every host", "Update automatically"]
         case .mcp: ["Servers", "Add server", "Import…", "How the agent uses them", "Same servers on every host",
                     "Also use a repo’s .mcp.json", "Hosts"]
-        case .fleet: ["Macs", "Add a Mac", "Join a fleet", "Remove"]
-        case .remote: ["Hosts", "Add host", "Listener", "Token"]
+        case .fleet: ["Macs", "Add a Mac", "Join a fleet", "Remove", "Devices", "Add a device", "Revoke", "Listener"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Open files in", "Workspace state", "Extension socket", "Update channel", "Check for updates", "Share diagnostics", "Skipped confirmations", "Reset settings"]
         case .experiments: ["Goals", "Projects", "Fleet", "Suggested instructions", "Learn from", "Can suggest for", "Waiting for you",
@@ -439,8 +442,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                     "How the agent uses them": ["tokens", "prompt", "budget", "search", "direct", "tool search", "exposure", "oauth", "sign in", "login"],
                     "Also use a repo’s .mcp.json": ["project", "repository", ".mcp.json"]]
         case .fleet: ["Macs": ["pair", "code", "bonjour", "peers", "machines", "lan"], "Add a Mac": ["pair", "code", "6 digit"],
-                      "Join a fleet": ["code", "address", "pair"]]
-        case .remote: ["Hosts": ["vpn", "tailscale", "ssh"], "Listener": ["port", "serve"]]
+                      "Join a fleet": ["code", "address", "pair"],
+                      "Devices": ["iphone", "ipad", "phone", "tablet", "client", "token", "remote"], "Add a device": ["qr", "code", "pair", "scan"],
+                      "Listener": ["port", "serve", "remote"]]
         case .keyboard: ["Shortcuts": ["hotkey", "keybinding", "chord", "steer", "queue"]]
         case .advanced: ["Open files in": ["editor", "xcode", "zed", "vs code", "textedit", "links"], "Update channel": ["beta", "nightly", "sparkle"], "Workspace state": ["state.json"], "Skipped confirmations": ["don't ask again", "confirm", "dialog"], "Share diagnostics": ["telemetry", "privacy", "errors", "crash", "performance", "memory"]]
         case .experiments: ["Projects": ["coordinate", "project work", "new project"],
@@ -479,7 +483,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .instructions: .instructions
         case .skills: .skills
         case .mcp: .mcp
-        case .fleet, .remote: .remoteConnection
+        case .fleet: .remoteConnection
         case .keyboard: .keyboard
         case .advanced: .advanced
         case .experiments: .experiments
@@ -503,7 +507,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .instructions: return SHGlyph.document.symbolName
         case .skills: return "graduationcap"
         case .mcp: return "server.rack"
-        case .fleet, .remote: return SHGlyph.remoteConnection.symbolName
+        case .fleet: return SHGlyph.remoteConnection.symbolName
         case .keyboard: return "keyboard"
         case .advanced: return "gearshape"
         case .experiments: return "flask"

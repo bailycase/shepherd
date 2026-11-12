@@ -16,6 +16,17 @@ enum RemoteSamples {
     static let fleetHash = String(repeating: "ab", count: 32)
     static let fleetIntroduction = FleetIntroduction(hostID: fleetHost, name: "MacBook Pro", myTokenHash: fleetHash, port: 7434)
     static let fleetMember = FleetMember(hostID: fleetHost, name: "Mac mini", host: "192.168.1.40", port: 7434)
+    static let fleetDevice = FleetDeviceIntroduction(deviceID: UUID(uuidString: "00000000-0000-0000-0000-0000000000D1")!, name: "iPhone", kind: .iphone, tokenHash: fleetHash)
+    static let fleetDeviceEntries = [
+        FleetDeviceEntry(deviceID: fleetDevice.deviceID, name: "iPhone", kind: .iphone, tokenHash: fleetHash, pairedAt: 1_790_000_000_000),
+        FleetDeviceEntry(deviceID: UUID(uuidString: "00000000-0000-0000-0000-0000000000D2")!, name: "iPad", kind: .ipad, tokenHash: nil,
+                         pairedAt: 1_790_000_000_500, revokedAt: 1_790_000_001_000),
+    ]
+    static let fleetDevicesSnapshot = FleetDevicesSnapshot(
+        devices: [FleetDeviceStatus(deviceID: fleetDevice.deviceID, name: "iPhone", kind: .iphone, pairedAt: 1_790_000_000_000, connected: true, lastSeen: 1_790_000_002_000),
+                  FleetDeviceStatus(deviceID: UUID(uuidString: "00000000-0000-0000-0000-0000000000D3")!, name: "Mac mini", kind: .macApp, pairedAt: 1_790_000_000_100, connected: false)],
+        code: FleetJoinStatus(expiresAt: 1_790_000_300_000, attemptsLeft: 5),
+        sharedToken: FleetSharedTokenStatus(retired: false, waiting: [FleetLegacyClient(id: "Shepherd iOS@192.168.1.31", name: "Shepherd iOS", lastSeen: 1_790_000_002_000)], switched: 2))
     static let fleetSnapshot = FleetSnapshot(
         enabled: true, hostID: fleetHost, name: "MacBook Pro", build: "412", addresses: ["192.168.1.20"], port: 7434, advertising: true,
         peers: [FleetPeerStatus(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F2")!, name: "Mac mini", host: "192.168.1.40", port: 7434,
@@ -425,11 +436,12 @@ struct RemoteRequestTests {
              .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .projectRequest, .startThread, .focusThread, .projectExecutors, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps,
-             .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync:
+             .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
+             .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 62
+    static let caseCount = 65
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -456,6 +468,16 @@ struct RemoteRequestTests {
         .fleetAction(id: 79, action: .pair(host: "192.168.1.40", port: 7434, code: "482913")),
         .fleetAction(id: 80, action: .remove(hostID: RemoteSamples.fleetHost)),
         .fleetAction(id: 81, action: .adopt([FleetLegacyHost(id: RemoteSamples.fleetHost, name: "Mac mini", host: "192.168.1.40", port: 7434, token: "shared")])),
+        .fleetPairDevice(id: 82, code: "482913", device: RemoteSamples.fleetDevice),
+        .fleetEnrollDevice(id: 83, device: RemoteSamples.fleetDevice),
+        .fleetSyncDevices(id: 84, devices: RemoteSamples.fleetDeviceEntries),
+        .fleetSyncDevices(id: 85, devices: []),
+        .fleetAction(id: 86, action: .startDeviceCode),
+        .fleetAction(id: 87, action: .stopDeviceCode),
+        .fleetAction(id: 88, action: .revokeDevice(RemoteSamples.fleetDevice.deviceID)),
+        .fleetAction(id: 89, action: .forgetLegacyClient("Shepherd iOS@192.168.1.31")),
+        .fleetAction(id: 99, action: .retireSharedToken),
+        .fleetAction(id: 100, action: .enrollApp(name: "MacBook Pro")),
         .hostUpdate(id: 90, request: .status),
         .hostUpdate(id: 91, request: .check),
         .hostUpdate(id: 92, request: .install(offerID: S.op, authorized: true)),
@@ -756,11 +778,11 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .fleetIdentity, .fleetPaired, .fleetResult, .fleetSyncReply, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged, .pullRequestLinks:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .fleetIdentity, .fleetPaired, .fleetResult, .fleetSyncReply, .fleetDevices, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged, .pullRequestLinks:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 63
+    static let caseCount = 64
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -783,6 +805,11 @@ struct RemoteReplyTests {
         .fleetSyncReply(id: 11, reply: .state(vector: S.fleetVector)),
         .fleetSyncReply(id: 12, reply: .blob(hash: String(repeating: "cd", count: 32), offset: 0, total: 5, data: Data("hello".utf8))),
         .fleetResult(id: 7, result: FleetResult(snapshot: S.fleetSnapshot)),
+        .fleetResult(id: 11, result: FleetResult(snapshot: { var snapshot = S.fleetSnapshot; snapshot.devices = S.fleetDevicesSnapshot; return snapshot }(),
+                                                 deviceCode: .init(code: "482913", expiresAt: 1_790_000_300_000))),
+        .fleetResult(id: 14, result: FleetResult(snapshot: S.fleetSnapshot, appToken: String(repeating: "cd", count: 32))),
+        .fleetDevices(id: 13, result: FleetDevicesResult(hostID: S.fleetHost, name: "Mac mini", members: [S.fleetMember], devices: S.fleetDeviceEntries)),
+        .fleetDevices(id: 15, result: FleetDevicesResult(hostID: S.fleetHost, name: "Mac mini")),
         .fleetResult(id: 8, result: FleetResult(snapshot: S.fleetSnapshot, join: .init(code: "482913", expiresAt: 1_790_000_300_000))),
         .fleetResult(id: 9, result: FleetResult(snapshot: S.fleetSnapshot, paired: S.fleetSnapshot.peers[0])),
         .fleetResult(id: 10, result: FleetResult(snapshot: S.fleetSnapshot, adopted: [
@@ -1315,6 +1342,9 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.fleetExperimentCapability,
             // Offered only while the host's Fleet experiment is on (SessionServer.setFleetEnabled).
             RemoteProtocol.fleetCapability,
+            RemoteProtocol.fleetSyncCapability,
+            // Offered whenever the host runs, Fleet on or off, and never to a client device (FleetAccess).
+            RemoteProtocol.fleetDevicesCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
             RemoteProtocol.designAgentCapability, RemoteProtocol.designLifecycleCapability, RemoteProtocol.designSystemsCapability,
@@ -1334,6 +1364,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.nativeThreadRevisionsCapability == "native.revisions.v1")
         #expect(RemoteProtocol.nativeFleetDigestCapability == "native.fleetDigest.v1")
         #expect(RemoteProtocol.fleetCapability == "fleet.v1")
+        #expect(RemoteProtocol.fleetDevicesCapability == "fleet.devices.v1")
         #expect(RemoteProtocol.fleetExperimentCapability == "experiments.fleet.v1")
         #expect(RemoteProtocol.logicalProjectsCapability == "logicalProjects.v1")
         #expect(RemoteProtocol.projectMessageImagesCapability == "logicalProjectRuntime.images.v1")

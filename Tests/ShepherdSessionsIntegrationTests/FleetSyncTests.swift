@@ -367,6 +367,57 @@ struct FleetSyncTests {
         await #expect(throws: RemoteHostClientError.self) { _ = try await phone.fleetSyncState(.ops([])) }
     }
 
+    /// A phone's own token makes it a client of the host, not a member: it is offered no sync capability and
+    /// its sync requests are refused, so it can neither read the fleet's store nor write into it.
+    @Test func aDeviceWithATokenOfItsOwnCannotSync() async throws {
+        let (a, b) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        try await a.save(.agents, "kept on the Macs")
+        try await b.waitForText(.agents, "kept on the Macs")
+
+        let token = FleetProtocol.makeToken()
+        let intro = FleetDeviceIntroduction(deviceID: UUID(), name: "iPhone", kind: .iphone, tokenHash: FleetProtocol.hash(token))
+        let code = try #require(try await a.local.fleetAction(.startDeviceCode).deviceCode).code
+        _ = try await RemoteHostClient.fleetPairDevice(host: "127.0.0.1", port: a.port, code: code, device: intro)
+        let phone = RemoteHostClient()
+        defer { phone.disconnect() }
+        _ = try await phone.connect(host: "127.0.0.1", port: a.port, token: token, clientName: "iPhone")
+
+        #expect(!phone.capabilities.contains(RemoteProtocol.fleetSyncCapability), "a device is offered no sync")
+        for attempt: () async throws -> Void in [
+            { _ = try await phone.fleetSyncState(.hello(vector: FleetVersionVector())) },
+            { _ = try await phone.fleetSyncState(.ops([])) },
+            { _ = try await phone.fleetBlob(hash: String(repeating: "0", count: 64), size: 1) },
+        ] {
+            do { try await attempt(); Issue.record("a device synced") }
+            catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetProtocol.Code.forbidden) }
+        }
+        #expect(a.text(.agents) == "kept on the Macs")
+    }
+
+    /// Fleet off is membership off: the engine stops (nothing watched, nothing served), a member that asks is told
+    /// Fleet is off, and turning it on again picks up what changed meanwhile.
+    @Test func syncRunsOnlyWhileFleetIsOn() async throws {
+        let (a, b) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        try await a.save(.agents, "before")
+        try await b.waitForText(.agents, "before")
+
+        b.server.setFleetEnabled(false)
+        try await eventually("B's fleet to be off") { (try? await b.read().enabled) == false }
+        let snapshot = try await b.read()
+        #expect(snapshot.sync == nil && snapshot.peers.isEmpty)
+        try await a.save(.agents, "while B is out")
+        try await b.save(.agents, "B's own edit while out")
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(b.text(.agents) == "B's own edit while out", "an off Mac applies nothing")
+        #expect(a.text(.agents) == "while B is out", "and sends nothing")
+
+        b.server.setFleetEnabled(true)
+        try await eventually("both Macs to settle on one text") { a.text(.agents) == b.text(.agents) }
+        #expect(["B's own edit while out", "while B is out"].contains(a.text(.agents)), "the later edit won, the other is in history")
+    }
+
     @Test func withFleetOffNothingIsKeptAndNoSavesAreWatched() async throws {
         let a = try await Mac("MacBook Pro", enable: false)
         defer { a.stop() }

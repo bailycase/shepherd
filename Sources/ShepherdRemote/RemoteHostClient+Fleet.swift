@@ -67,6 +67,41 @@ extension RemoteHostClient {
         try expectFleetOk(try await request { .fleetRevoke(id: $0, hostID: hostID, at: at) })
     }
 
+    /// Pairs this device with the Mac at `host`:`port` using the code its Add a device screen shows. Like
+    /// `fleetPair`, it asks who answers first and goes on only when that is `expecting` (when given) and
+    /// (Fleet is not required). The answer lists the Macs in its fleet, none with Fleet off. Closes when done.
+    public static func fleetPairDevice(host: String, port: UInt16, code: String, device: FleetDeviceIntroduction,
+                                       expecting: UUID? = nil) async throws -> (result: FleetDevicesResult, identity: FleetPeerIdentity) {
+        let client = RemoteHostClient()
+        defer { client.disconnect() }
+        try await client.openUnauthenticated(host: host, port: port)
+        let identity = try await client.fleetIdentify()
+        // Fleet need not be on: a device pairs with a Mac that serves, whether or not it is in a fleet.
+        if let expecting, identity.hostID != expecting {
+            throw RemoteHostClientError.rejected(code: FleetProtocol.Code.wrongHost, message: "Another Mac answers at this address.")
+        }
+        let reply = try await client.request { .fleetPairDevice(id: $0, code: code, device: device) }
+        return (try Self.devices(from: reply), identity)
+    }
+
+    /// A client on the shared token asks for a token of its own (the host keeps only its hash).
+    public func fleetEnrollDevice(_ device: FleetDeviceIntroduction) async throws -> FleetDevicesResult {
+        try Self.devices(from: try await request { .fleetEnrollDevice(id: $0, device: device) })
+    }
+
+    /// Sends the devices this Mac holds to a member and reads back the ones it holds.
+    public func fleetSyncDevices(_ devices: [FleetDeviceEntry]) async throws -> FleetDevicesResult {
+        try Self.devices(from: try await request { .fleetSyncDevices(id: $0, devices: devices) })
+    }
+
+    private static func devices(from reply: RemoteReply) throws -> FleetDevicesResult {
+        switch reply {
+        case .fleetDevices(_, let result): return result
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected fleet reply")
+        }
+    }
+
     /// The fleet of the host on this Mac, as its app draws it (local socket only).
     public func fleetRead() async throws -> FleetResult {
         try Self.fleetResult(from: try await request { .fleetRead(id: $0) })

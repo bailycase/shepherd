@@ -26,7 +26,7 @@ struct SettingsPreviewTests {
         case .pi: 3000
         case .piSignIn: 1500
         case .keyboard: 2200
-        case .remote, .worktrees, .appearance: 1000
+        case .worktrees, .appearance: 1000
         default: 900
         }
         try await Preview.render("settings-\(section.rawValue)", size: CGSize(width: 1280, height: height)) {
@@ -304,63 +304,6 @@ struct SettingsPreviewTests {
         try await Preview.render("skills-directory-failure", size: CGSize(width: 560, height: 400)) {
             SkillsDirectoryProblem(failure: .unavailable("Shepherd's skills directory answered 503."))
                 .background(Color.sh.bgWindow)
-        }
-    }
-
-    /// Remote with a configured host that cannot be reached.
-    @Test func settingsRemoteWithHosts() async throws {
-        let workspace = try PreviewWorkspace()
-        defer { workspace.stop() }
-        workspace.vm.remoteHosts.addHost(name: "horizon", host: "127.0.0.1", port: 1, token: "x")
-        workspace.vm.settingsSection = .remote
-        try await Preview.render("settings-remote-hosts", size: CGSize(width: 1280, height: 1000)) {
-            SettingsView(vm: workspace.vm)
-        }
-    }
-
-    /// A host for each way a connection fails (nothing listening, a refused token, another
-    /// protocol): the word says which, and the sentence under it says what to do.
-    @Test func settingsRemoteHostFailures() async throws {
-        let failures: [(String, RemoteHostClientError)] = [
-            ("horizon", .system(call: "connect", errno: ECONNREFUSED)),
-            ("studio", .rejected(code: RemoteProtocol.unauthorizedCode, message: "bad token")),
-            ("demo-mac", .rejected(code: RemoteProtocol.versionMismatchCode, message: "host speaks protocol \(RemoteProtocol.version + 1)")),
-        ]
-        let connections = failures.map { name, error in
-            let connection = RemoteHostStore.Connection(config: .init(name: name, host: "\(name).internal", port: 7433, token: "x"))
-            connection.phase = .failed(RemoteHostFailure(error))
-            return connection
-        }
-        let size = CGSize(width: 1440, height: 360)
-        try await Preview.render("settings-remote-host-failures", size: size) {
-            SettingsGroup(title: "Hosts") {
-                ForEach(connections) { connection in
-                    RemoteHostRow(connection: connection, remove: {}, reconnect: {}, edit: {})
-                }
-            }
-            .padding(AppLayout.settingsWideSides)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.sh.bgWindow)
-        }
-    }
-
-    /// The Add host form refusing a port it cannot use: the field's line turns failed and the
-    /// reason sits under it (Controls › Text field, error).
-    @Test func settingsRemotePortRefused() async throws {
-        let size = CGSize(width: 1440, height: 220)
-        try await Preview.render("settings-remote-port-refused", size: size) {
-            SettingsGroup(title: "Add host") {
-                SettingsRow(title: "Address", subtitle: "VPN-reachable IP or hostname.") {
-                    SettingsTextField(label: "Address", prompt: "100.x.y.z", text: .constant("100.64.0.7"), mono: true)
-                }
-                SettingsRow(title: "Port") {
-                    SettingsTextField(label: "Port", prompt: "7433", text: .constant("70000"), mono: true,
-                                      width: AppLayout.settingsPortFieldWidth, error: RemotePortField.problem("70000"))
-                }
-            }
-            .padding(AppLayout.settingsWideSides)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.sh.bgWindow)
         }
     }
 

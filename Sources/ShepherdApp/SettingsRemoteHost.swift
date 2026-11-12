@@ -23,7 +23,7 @@ extension SettingsSection {
     /// Pages that set this Mac's own app, never a host's.
     var isClientLocal: Bool {
         switch self {
-        case .appearance, .terminal, .keyboard, .remote, .advanced: true
+        case .appearance, .terminal, .keyboard, .advanced: true
         default: false
         }
     }

@@ -79,13 +79,16 @@ final class FleetSync: @unchecked Sendable {
     func start() {
         guard !started else { return }
         started = true
+        stopped = false
         let watcher = FleetWatcher(queue: queue) { [weak self] in self?.localChanged() }
         self.watcher = watcher
         for file in materializer.watchedFiles { watcher.watch(file: file) }
         localChanged()
     }
 
+    /// Fleet turned off, or the host is stopping: no scanning, no sessions, nothing served. `start` begins again.
     func stop() {
+        started = false
         stopped = true
         watcher?.stop()
         watcher = nil
