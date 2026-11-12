@@ -86,8 +86,10 @@ public struct FleetWherePicker: Equatable, Sendable {
             if asleep { return card.since.map { "Asleep since \($0) · the thread would wait" } ?? "Not answering · the thread would wait" }
             guard let cpu = card.cpu else { return "Waiting for a reading" }
             let power = card.powerFact.isEmpty ? nil : card.powerFact.replacingOccurrences(of: "battery", with: "on battery")
-            // A Mac without the repository is still a place to run: it clones it first, once.
-            return ["\(cpu.text) CPU", card.memory?.text, power, hasRepo == false ? "Will clone (first time)" : nil].compactMap { $0 }.joined(separator: " · ")
+            // A Mac without the repository is still a place to run: it clones it first, once. That says so in place of the memory and
+            // power facts, which would not fit beside it.
+            if hasRepo == false { return "\(cpu.text) CPU · Will clone (first time)" }
+            return ["\(cpu.text) CPU", card.memory?.text, power].compactMap { $0 }.joined(separator: " · ")
         }
         func word(_ card: FleetMacCard) -> String {
             if card.status == .asleep { return "asleep" }

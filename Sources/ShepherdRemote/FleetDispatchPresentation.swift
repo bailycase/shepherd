@@ -146,14 +146,16 @@ public enum FleetDispatchPresentation {
                 card.sending = sending
                 card.detail = sending.summary
             }
-            // A Mac with no checkout clones it first: that is what the dispatch is doing, so that card replaces the sending one.
+            card.actions = [.cancel]
+            // A Mac with no checkout clones it first: that is what the dispatch is doing, so that card replaces the sending one, and Stop
+            // ends the clone and removes what it made.
             if let cloning = FleetCloningCard.make(record) {
                 card.sending = nil
                 card.cloning = cloning
                 card.pill = cloning.state
                 card.detail = cloning.summary
+                card.actions = [.stop]
             }
-            card.actions = [.cancel]
         case .running:
             card.layout = .row
             (card.pill, card.tone) = ("Working", .active)

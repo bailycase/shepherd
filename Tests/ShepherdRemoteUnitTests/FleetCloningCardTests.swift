@@ -42,7 +42,7 @@ struct FleetCloningCardTests {
     @Test func aCloningDispatchIsACloningStateCardThatCanBeStopped() throws {
         let context = FleetCardContext(snapshot: P.snapshot(), locale: P.en, calendar: P.utc)
         let card = FleetDispatchPresentation.card(Self.record(), among: [], in: context)
-        #expect(card.pill == "Cloning" && card.layout == .state && card.actions == [.cancel] && card.sending == nil)
+        #expect(card.pill == "Cloning" && card.layout == .state && card.actions == [.stop] && card.sending == nil)
         #expect(card.cloning?.progress == "receiving objects" && card.detail.hasPrefix("Cloning orders-svc from github.com/acme/orders-svc"))
     }
 
@@ -76,7 +76,7 @@ struct FleetCloningCardTests {
         let awake = FleetWherePicker.make(snapshot: snapshot, pick: .mac(P.mini), repoKey: FleetDispatchPresentationTests.orders, repoName: "orders-svc",
                                           autoDispatch: true, weight: { _ in .normal }, locale: P.en, calendar: P.utc)
         let mini = try #require(awake.options.first { $0.name == "Mac mini" })
-        #expect(mini.selectable && mini.detail.hasSuffix("Will clone (first time)"))
+        #expect(mini.selectable && mini.detail.hasSuffix("CPU · Will clone (first time)"))
         #expect(awake.note == "Mac mini clones orders-svc first, then runs in a new worktree from its base branch.")
     }
 }
