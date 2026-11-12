@@ -113,6 +113,37 @@ struct FleetSnapshotPlanTests {
         #expect(root == expected.root)
     }
 
+    @Test func theRootTakenFromTheIndexTreeIsStillWhatTheTargetBuildsWithAnExcludedTrackedFileAndASubmodule() {
+        // `dir/kept.txt` is tracked and on disk but left out of the index (an excluded path); `vendor/lib` is a submodule whose folder holds files
+        // the index knows and the receiver never builds; `src/edit.ts` is edited; `notes.md` is new; `gone.txt` was deleted.
+        let commit: [String: FleetTreeEntry] = [
+            "a.txt": Self.tracked("A"), "dir/kept.txt": Self.tracked("K"), "src/edit.ts": Self.tracked("old"), "gone.txt": Self.tracked("G"),
+            "vendor/lib": FleetTreeEntry(kind: .file, gitID: Self.gitID("submodule commit"), isSubmodule: true),
+        ]
+        let working: [String: String] = ["a.txt": "A", "src/edit.ts": "new", "notes.md": "N", "vendor/lib/inner.c": "int x;", "vendor/lib/deeper/more.c": "int y;"]
+        var tree = FleetMerkleTree()
+        var entries: [String: FleetIndexEntry] = [:]
+        for (path, content) in working {
+            entries[path] = Self.entry(content, state: commit[path] == nil ? .untracked : .tracked)
+            tree.set(path, kind: .file, hash: Self.hash(content))
+        }
+        tree.commit()
+        let make = { (directories: Set<String>?) in
+            FleetSnapshotPlan.make(commit: String(repeating: "a", count: 40), tracked: commit, entries: entries, tree: tree, target: nil,
+                                   goneFromDisk: { $0 == "gone.txt" }, unindexedHash: { _ in Self.hash("K") }, trackedDirectories: directories)
+        }
+        let plan = make(nil)
+        // What the receiver builds: the commit's files (never the submodule), with the manifest laid over them.
+        let base: [String: (kind: FleetEntryKind, hash: FleetHash)] = ["a.txt": (.file, Self.hash("A")), "dir/kept.txt": (.file, Self.hash("K")),
+                                                                      "src/edit.ts": (.file, Self.hash("old")), "gone.txt": (.file, Self.hash("G"))]
+        let slow = FleetSnapshotManifest.root(base: base, files: plan.manifest.files, directories: plan.manifest.directories, deletions: plan.manifest.deletions)
+        #expect(plan.manifest.rootHash == slow)
+        #expect(plan.manifest.deletions == ["gone.txt"] && Set(plan.manifest.files.map(\.path)) == ["src/edit.ts", "notes.md"])
+        // The directories above tracked files, worked out once and handed in, change nothing.
+        let known: Set<String> = ["dir", "src"]
+        #expect(make(known).manifest == plan.manifest && make(known).manifest.digest == plan.manifest.digest)
+    }
+
     // MARK: Cap and bytes sent
 
     @Test func theCapCountsBytesActuallySentAfterDedupe() {
