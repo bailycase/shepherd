@@ -155,6 +155,14 @@ public struct HostSettings: Codable, Hashable, Sendable {
     /// The Fleet page's Send work here choice per Mac: the settings `fleet.weight.<hostID>`
     /// (`FleetSendWeight.settingKey`), keyed by that name. A Mac with no entry is Normal.
     public var fleetWeights: [String: FleetSendWeight]
+    /// Settings ▸ Fleet ▸ Threads can send work: a thread may dispatch work to another Mac without being
+    /// asked. The same on every Mac (a synced setting). Off until the person turns it on.
+    public var fleetThreadsCanSend: Bool
+    /// How many dispatches one thread may have in flight (`FleetDispatchState.countsAgainstCap`); more are held.
+    public var fleetThreadCap: Int
+
+    public static let fleetThreadCapDefault = 3
+    public static let fleetThreadCapRange = 1...10
 
     public init(shepherdVersion: String? = nil, piVersion: String? = nil,
                 defaultModel: String? = nil, defaultThinking: ThinkingLevel = .medium,
@@ -170,7 +178,8 @@ public struct HostSettings: Codable, Hashable, Sendable {
                 slashCommands: [NativeCommand] = [], hiddenSlashCommands: [String] = [],
                 bundledExtensions: [BundledExtension] = [], installedExtensions: [String] = [],
                 updatePiDaily: Bool = false, updateExtensionsDaily: Bool = false,
-                fleetWeights: [String: FleetSendWeight] = [:]) {
+                fleetWeights: [String: FleetSendWeight] = [:], fleetThreadsCanSend: Bool = false,
+                fleetThreadCap: Int = HostSettings.fleetThreadCapDefault) {
         self.shepherdVersion = shepherdVersion
         self.piVersion = piVersion
         self.defaultModel = defaultModel
@@ -207,14 +216,18 @@ public struct HostSettings: Codable, Hashable, Sendable {
         self.updatePiDaily = updatePiDaily
         self.updateExtensionsDaily = updateExtensionsDaily
         self.fleetWeights = fleetWeights
+        self.fleetThreadsCanSend = fleetThreadsCanSend
+        self.fleetThreadCap = Self.clampedThreadCap(fleetThreadCap)
     }
+
+    public static func clampedThreadCap(_ cap: Int) -> Int { min(fleetThreadCapRange.upperBound, max(fleetThreadCapRange.lowerBound, cap)) }
 
     private enum CodingKeys: String, CodingKey {
         case shepherdVersion, piVersion, defaultModel, defaultThinking, defaultServiceTier, textGenerationModel, visionModel, compactAtPercent
         case queueDelivery, goalCrossProviderEvaluation, goalsEnabled, projectsEnabled, fleetEnabled
         case worktreeBase, fetchBeforeCreating, commitRemainingWork, generatePRDescriptions
         case deleteLocalBranch, mergePRAutomatically, mergeMethod, closeOnMerge, backgroundService, listenerPort, listenerProblem, listenerProblemDetail, bundledExtensions, installedExtensions
-        case updatePiDaily, updateExtensionsDaily, fleetWeights
+        case updatePiDaily, updateExtensionsDaily, fleetWeights, fleetThreadsCanSend, fleetThreadCap
         case designToolEnabled, missionsEnabled, missionsActive, subagentDefaults, worktreeDeleteAction
         case skillsInSlashMenu, mcpProjectConfig, slashCommands, hiddenSlashCommands
     }
@@ -263,6 +276,8 @@ public struct HostSettings: Codable, Hashable, Sendable {
         // A weight this client doesn't know reads as Normal (it is left out).
         fleetWeights = ((try? c.decodeIfPresent([String: String].self, forKey: .fleetWeights)) ?? nil ?? [:])
             .compactMapValues(FleetSendWeight.init(rawValue:))
+        fleetThreadsCanSend = (try? c.decodeIfPresent(Bool.self, forKey: .fleetThreadsCanSend)) ?? false
+        fleetThreadCap = Self.clampedThreadCap((try? c.decodeIfPresent(Int.self, forKey: .fleetThreadCap)) ?? Self.fleetThreadCapDefault)
     }
 
     /// Applies one change, as the host does.
@@ -292,6 +307,8 @@ public struct HostSettings: Codable, Hashable, Sendable {
         case .updatePiDaily(let on): updatePiDaily = on
         case .updateExtensionsDaily(let on): updateExtensionsDaily = on
         case .fleetWeight(let hostID, let weight): fleetWeights[FleetSendWeight.settingKey(hostID: hostID)] = weight
+        case .fleetThreadsCanSend(let on): fleetThreadsCanSend = on
+        case .fleetThreadCap(let cap): fleetThreadCap = Self.clampedThreadCap(cap)
         case .designToolEnabled(let on): designToolEnabled = on
         case .missionsEnabled(let on):
             // The host refuses Missions off under a live mission; a client shows that at once.
@@ -352,6 +369,10 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
     case updateExtensionsDaily(Bool)
     /// How much auto placed work the Mac `hostID` gets (`RemoteProtocol.fleetPressureCapability`).
     case fleetWeight(hostID: UUID, weight: FleetSendWeight)
+    /// Threads may send work to other Macs on their own (`RemoteProtocol.fleetDispatchCapability`).
+    case fleetThreadsCanSend(Bool)
+    /// How many dispatches one thread may have in flight (`RemoteProtocol.fleetDispatchCapability`).
+    case fleetThreadCap(Int)
     /// `RemoteProtocol.designToolExperimentCapability`: offered while the tool is off too.
     case designToolEnabled(Bool)
     /// `RemoteProtocol.missionsExperimentCapability`. Off is refused while a mission is active
@@ -373,6 +394,7 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
         case .projectsEnabled: RemoteProtocol.projectsExperimentCapability
         case .fleetEnabled: RemoteProtocol.fleetExperimentCapability
         case .fleetWeight: RemoteProtocol.fleetPressureCapability
+        case .fleetThreadsCanSend, .fleetThreadCap: RemoteProtocol.fleetDispatchCapability
         case .defaultServiceTier, .namingModel, .compactAtPercent: RemoteProtocol.hostSettingsAgentDefaultsCapability
         case .textGenerationModel: RemoteProtocol.hostSettingsTextGenerationModelCapability
         case .visionModel: RemoteProtocol.hostSettingsVisionModelCapability

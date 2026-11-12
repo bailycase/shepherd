@@ -133,6 +133,36 @@ extension RemoteHostClient {
         }
     }
 
+    /// Sends work to the Mac this client is linked to (`FleetDispatchCreate`). Answers with that Mac's record:
+    /// `preparing` once it took the work, `waitingRoom` when it is full and kept nothing.
+    public func fleetDispatchCreate(_ create: FleetDispatchCreate) async throws -> FleetDispatchRecord {
+        try Self.dispatchRecord(from: try await request { .fleetDispatchCreate(id: $0, create: create) })
+    }
+
+    /// Asks the Mac a dispatch runs on about it, stops it, or messages its thread. Throws `unknown_dispatch`
+    /// when that Mac holds no such dispatch.
+    public func fleetDispatchControl(_ dispatchID: UUID, _ control: FleetDispatchControl) async throws -> FleetDispatchRecord {
+        try Self.dispatchRecord(from: try await request { .fleetDispatchControl(id: $0, dispatchID: dispatchID, control: control) })
+    }
+
+    /// Tells the Mac that sent a dispatch how it stands.
+    public func fleetDispatchChanged(_ record: FleetDispatchRecord) async throws {
+        try expectFleetOk(try await request { .fleetDispatchChanged(id: $0, record: record) })
+    }
+
+    /// Hands the Mac that sent a dispatch the thread's result.
+    public func fleetDispatchResult(_ dispatchID: UUID, text: String, branchFacts: FleetBranchFacts?) async throws {
+        try expectFleetOk(try await request { .fleetDispatchResult(id: $0, dispatchID: dispatchID, text: text, branchFacts: branchFacts) })
+    }
+
+    private static func dispatchRecord(from reply: RemoteReply) throws -> FleetDispatchRecord {
+        switch reply {
+        case .fleetDispatchAccepted(_, let record), .fleetDispatchState(_, let record): return record
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected fleet reply")
+        }
+    }
+
     /// An action that reaches other Macs takes longer than a read.
     static let fleetActionTimeout: TimeInterval = 60
 

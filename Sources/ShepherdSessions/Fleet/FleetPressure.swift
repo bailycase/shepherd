@@ -125,7 +125,7 @@ final class FleetPressure: @unchecked Sendable {
         taking = true
         let facts = localFacts()
         Task { [weak self, sampler] in
-            let sample = await sampler.sample(activeAgents: facts.activeAgents)
+            let sample = await sampler.sample(activeAgents: facts.activeAgents, reserved: facts.reserved)
             self?.queue.async { self?.took(sample, facts: facts) }
         }
     }
@@ -151,11 +151,11 @@ final class FleetPressure: @unchecked Sendable {
         Task { [weak self, probe, hardware] in
             let commands = facts.mcpConfig.flatMap { try? Data(contentsOf: $0) }.map(FleetReadiness.mcpCommands(in:)) ?? []
             let repos = Set(facts.spaces.map(\.name)).sorted()
-            let key = FleetReadiness.key(commands: commands, repos: repos)
+            let key = FleetReadiness.key(commands: commands, repos: repos, repoKeys: facts.repoKeys)
             var report: FleetReadinessReport?
             if key != known.key || known.at.map({ now.timeIntervalSince($0) > Self.readinessLifetime }) != false {
                 report = await FleetReadiness.report(commands: commands, needsXcode: FleetReadiness.needsXcode(spaces: facts.spaces),
-                                                     spaces: facts.spaces, probe: probe, hardware: hardware)
+                                                     spaces: facts.spaces, repoKeys: facts.repoKeys, probe: probe, hardware: hardware)
             }
             self?.queue.async { self?.remade(report, key: key) }
         }
@@ -176,7 +176,7 @@ final class FleetPressure: @unchecked Sendable {
     /// A sample of this Mac now, for a peer that asked (`fleetPressureNow`).
     func sampleNow() async -> (FleetPressureSample, FleetReadinessReport?) {
         let facts = localFacts()
-        let sample = await sampler.sample(activeAgents: facts.activeAgents)
+        let sample = await sampler.sample(activeAgents: facts.activeAgents, reserved: facts.reserved)
         return await withCheckedContinuation { continuation in
             queue.async {
                 self.local = (sample, self.clock())
@@ -233,7 +233,7 @@ final class FleetPressure: @unchecked Sendable {
         return FleetReadinessReport(
             model: line(report.model), chip: line(report.chip),
             missing: report.missing.prefix(reportLimits.missing).map { FleetMissingTool(kind: $0.kind, name: line($0.name)) },
-            repos: report.repos.prefix(reportLimits.repos).map(line))
+            repos: report.repos.prefix(reportLimits.repos).map(line), repoKeys: report.repoKeys.prefix(reportLimits.repos).map(line))
     }
 
     // MARK: Reading

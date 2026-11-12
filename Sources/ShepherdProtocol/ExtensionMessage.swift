@@ -104,6 +104,22 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// Receipt of a tokenized peer task; the host transfers it into its tracked native queue.
     case peerMessageReceived(agentID: AgentID, deliveryID: Int)
 
+    // MARK: Fleet (request/reply)
+
+    /// The fleet's Macs, for `fleet_hosts`. Answered with `ExtensionReply.fleetHosts`.
+    case fleetListHosts(id: Int, agentID: AgentID)
+    /// `fleet_dispatch`: send `task` to another Mac, which works on a fresh branch at this thread's commit.
+    /// `dispatchID` is the tool call's own id, so a retried call returns the dispatch it already made (the host
+    /// deduplicates on the sending thread and this id). `host` is nil, "auto", or a Mac's name. Answered with
+    /// `ExtensionReply.fleetDispatch`, or an error with the refusal's code.
+    case fleetDispatch(id: Int, agentID: AgentID, dispatchID: String?, task: String, title: String?, host: String?, model: String?, thinking: String?)
+    /// `fleet_read` and `fleet_wait`: where a dispatch this thread sent stands. Answered with `ExtensionReply.fleetDispatch`.
+    case fleetDispatchStatus(id: Int, agentID: AgentID, dispatchID: String)
+    /// `fleet_send`: follow up or steer a dispatched thread. Answered with `ExtensionReply.fleetDispatch`.
+    case fleetDispatchMessage(id: Int, agentID: AgentID, dispatchID: String, text: String, delivery: FleetMessageDelivery)
+    /// `fleet_cancel`: stop a dispatched thread. Answered with `ExtensionReply.fleetDispatch`.
+    case fleetDispatchCancel(id: Int, agentID: AgentID, dispatchID: String)
+
     /// Read, steer, interrupt, or poll another live agent (relayed to the target's panes
     /// extension as `ExtensionReply.agentRequest`, never inferred from saved status), or ask
     /// the user to delete it. Answered with `ExtensionReply.agentResult`.
@@ -237,7 +253,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case paneID, axis, cwd, relativeTo, command, text, submit, reference
         case title, body
         case prompt, enabled, start, deleteAfterRun, settings, automationID, targetAgentID, request, requestID, result, delivery, spaceID, deliveryID
-        case model, thinking
+        case model, thinking, host, dispatchID, task
         case error
         case line, reason, file
         case designID, path, source, baseRevision, changes, commentID, edits, tokens, query, options
@@ -258,6 +274,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case createAutomation, listAutomations, updateAutomation, deleteAutomation
         case startAutomation, stopAutomation
         case listAgents, sendToAgent, spawnAgent, moveAgent, peerMessageReceived, coordinateAgent, agentResponse, cancelAgentRequest
+        case fleetListHosts, fleetDispatch, fleetDispatchStatus, fleetDispatchMessage, fleetDispatchCancel
         case suggestInstruction
         case designList, designRead, designWriteBoard, designEditBoard, designUpdateIndex, designComments, designCommentReply
         case designEditBoards, designSearch, designCheckpoint, designRender, designExport, designExtract
@@ -437,6 +454,24 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 model: try c.decodeIfPresent(String.self, forKey: .model),
                 thinking: try c.decodeIfPresent(String.self, forKey: .thinking)
             )
+        case .fleetListHosts:
+            self = .fleetListHosts(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID))
+        case .fleetDispatch:
+            let id = try c.decode(Int.self, forKey: .id), agentID = try c.decode(AgentID.self, forKey: .agentID)
+            let dispatchID = try c.decodeIfPresent(String.self, forKey: .dispatchID), task = try c.decode(String.self, forKey: .task)
+            let title = try c.decodeIfPresent(String.self, forKey: .title), host = try c.decodeIfPresent(String.self, forKey: .host)
+            let model = try c.decodeIfPresent(String.self, forKey: .model), thinking = try c.decodeIfPresent(String.self, forKey: .thinking)
+            self = .fleetDispatch(id: id, agentID: agentID, dispatchID: dispatchID, task: task, title: title, host: host, model: model, thinking: thinking)
+        case .fleetDispatchStatus:
+            self = .fleetDispatchStatus(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                                        dispatchID: try c.decode(String.self, forKey: .dispatchID))
+        case .fleetDispatchMessage:
+            self = .fleetDispatchMessage(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                                         dispatchID: try c.decode(String.self, forKey: .dispatchID), text: try c.decode(String.self, forKey: .text),
+                                         delivery: (try? c.decodeIfPresent(FleetMessageDelivery.self, forKey: .delivery)) ?? .followUp)
+        case .fleetDispatchCancel:
+            self = .fleetDispatchCancel(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                                        dispatchID: try c.decode(String.self, forKey: .dispatchID))
         case .coordinateAgent:
             self = .coordinateAgent(
                 id: try c.decode(Int.self, forKey: .id),
@@ -817,6 +852,37 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(prompt, forKey: .prompt)
             try c.encodeIfPresent(model, forKey: .model)
             try c.encodeIfPresent(thinking, forKey: .thinking)
+        case .fleetListHosts(let id, let agentID):
+            try c.encode(Kind.fleetListHosts, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+        case .fleetDispatch(let id, let agentID, let dispatchID, let task, let title, let host, let model, let thinking):
+            try c.encode(Kind.fleetDispatch, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encodeIfPresent(dispatchID, forKey: .dispatchID)
+            try c.encode(task, forKey: .task)
+            try c.encodeIfPresent(title, forKey: .title)
+            try c.encodeIfPresent(host, forKey: .host)
+            try c.encodeIfPresent(model, forKey: .model)
+            try c.encodeIfPresent(thinking, forKey: .thinking)
+        case .fleetDispatchStatus(let id, let agentID, let dispatchID):
+            try c.encode(Kind.fleetDispatchStatus, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(dispatchID, forKey: .dispatchID)
+        case .fleetDispatchMessage(let id, let agentID, let dispatchID, let text, let delivery):
+            try c.encode(Kind.fleetDispatchMessage, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(dispatchID, forKey: .dispatchID)
+            try c.encode(text, forKey: .text)
+            try c.encode(delivery, forKey: .delivery)
+        case .fleetDispatchCancel(let id, let agentID, let dispatchID):
+            try c.encode(Kind.fleetDispatchCancel, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(dispatchID, forKey: .dispatchID)
         case .coordinateAgent(let id, let agentID, let targetAgentID, let request):
             try c.encode(Kind.coordinateAgent, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1341,6 +1407,10 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     case automations(id: Int, automations: [AutomationInfo])
     /// The fleet, for agent_list / agent_spawn replies.
     case agents(id: Int, agents: [AgentPeerInfo])
+    /// The Macs of the fleet, for `fleet_hosts` (`ExtensionMessage.fleetListHosts`).
+    case fleetHosts(id: Int, hosts: [FleetHostInfo])
+    /// A dispatch this thread sent, for every other `fleet_*` tool.
+    case fleetDispatch(id: Int, info: FleetDispatchInfo)
     /// Unsolicited push on a helloAgent-registered connection: a peer-thread
     /// message for this agent. Positive IDs track delivery; 0 is the legacy untracked form.
     case message(id: Int, text: String, delivery: AgentMessageDelivery = .task)
@@ -1410,7 +1480,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case listing, system
         case proposals
         case answer, note, project, spaces, models
-        case image, images
+        case image, images, hosts, info
     }
 
     private enum Kind: String, Codable {
@@ -1423,6 +1493,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case designSystems, designSystem, designSystemWritten, designProposals
         case designReference, designNote
         case browserResult, projectRuntime, projectPublish
+        case fleetHosts, fleetDispatch
     }
 
     public init(from decoder: Decoder) throws {
@@ -1504,6 +1575,10 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 agents: try c.decode([AgentPeerInfo].self, forKey: .agents)
             )
+        case .fleetHosts:
+            self = .fleetHosts(id: try c.decode(Int.self, forKey: .id), hosts: try c.decode([FleetHostInfo].self, forKey: .hosts))
+        case .fleetDispatch:
+            self = .fleetDispatch(id: try c.decode(Int.self, forKey: .id), info: try c.decode(FleetDispatchInfo.self, forKey: .info))
         case .message:
             self = .message(
                 id: try c.decodeIfPresent(Int.self, forKey: .id) ?? 0,
@@ -1697,6 +1772,14 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.agents, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(agents, forKey: .agents)
+        case .fleetHosts(let id, let hosts):
+            try c.encode(Kind.fleetHosts, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(hosts, forKey: .hosts)
+        case .fleetDispatch(let id, let info):
+            try c.encode(Kind.fleetDispatch, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(info, forKey: .info)
         case .message(let id, let text, let delivery):
             try c.encode(Kind.message, forKey: .type)
             if delivery != .task { try c.encode(delivery, forKey: .delivery) }

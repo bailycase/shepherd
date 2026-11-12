@@ -167,11 +167,16 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
     public var sync: FleetSyncStatus?
     /// Phones, iPads and Mac apps paired as clients, and the shared token's state; nil from a host without them.
     public var devices: FleetDevicesSnapshot?
+    /// The dispatches this Mac sent, newest first, without their task and result text (the Fleet page's
+    /// Dispatches log); empty from a host that doesn't dispatch.
+    public var dispatches: [FleetDispatchRecord]
 
     public init(enabled: Bool = false, hostID: UUID? = nil, name: String = "", build: String? = nil, addresses: [String] = [],
                 port: UInt16? = nil, advertising: Bool = false, peers: [FleetPeerStatus] = [], join: FleetJoinStatus? = nil,
-                sync: FleetSyncStatus? = nil, devices: FleetDevicesSnapshot? = nil, macs: [FleetMacState] = []) {
+                sync: FleetSyncStatus? = nil, devices: FleetDevicesSnapshot? = nil, macs: [FleetMacState] = [],
+                dispatches: [FleetDispatchRecord] = []) {
         self.devices = devices
+        self.dispatches = dispatches
         self.enabled = enabled
         self.hostID = hostID
         self.name = name
@@ -185,7 +190,7 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         self.sync = sync
     }
 
-    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, advertising, peers, join, macs, devices, sync }
+    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, advertising, peers, join, macs, devices, sync, dispatches }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -202,6 +207,7 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         macs = try c.decodeIfPresent([FleetMacState].self, forKey: .macs) ?? []
         devices = try c.decodeIfPresent(FleetDevicesSnapshot.self, forKey: .devices)
         sync = try c.decodeIfPresent(FleetSyncStatus.self, forKey: .sync)
+        dispatches = (try? c.decodeIfPresent([FleetDispatchRecord].self, forKey: .dispatches)) ?? []
     }
 }
 

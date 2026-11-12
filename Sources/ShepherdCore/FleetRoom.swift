@@ -102,7 +102,7 @@ public enum FleetRoom {
     public static let batteryFactor = 0.5
 
     /// Why a Mac is left out of Auto.
-    public enum Skip: Hashable, Sendable {
+    public enum Skip: String, Hashable, Sendable {
         case stale
         case future
         case cpu
