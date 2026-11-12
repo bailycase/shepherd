@@ -1,6 +1,7 @@
 import CryptoKit
 import Darwin
 import Foundation
+import os
 import ShepherdCore
 import ShepherdProtocol
 
@@ -18,6 +19,10 @@ struct FleetSnapshotSender {
         var root: String
         var bundle: (ref: FleetBlobRef, url: URL)?
         var warning: Bool
+        /// Milliseconds since `build` began at the end of each step, in order (the budget test and the log).
+        var phases: [String] = []
+        /// The git commands the build ran (the first word of each): the listing of the commit's tree unless this Mac had it, the bundle.
+        var git: [String] = []
     }
 
     enum Failure: Error, Equatable {
@@ -42,24 +47,68 @@ struct FleetSnapshotSender {
 
     /// Works out the snapshot. `unpushed` says the checkout has commits no remote ref holds.
     func build(id: UUID, unpushed: Bool) throws -> Built {
-        // Whatever the system already has for this root reaches the index first, so a file written a moment ago is in it; then a
-        // spot check of a sample of what the index holds against the disk (the plan's R13).
-        guard index.stateNow == .ready else { throw Failure.notIndexed(index.stateNow.rawValue) }
+        let began = ContinuousClock.now
+        var phases: [String] = []
+        var git: [String] = []
+        func mark(_ name: String) { phases.append("\(name) \(Int((ContinuousClock.now - began) / .milliseconds(1)))") }
+        // The commit's tree: a commit never changes, so one listed before is kept, and one being listed (the dispatch asked for it when it
+        // pinned the commit) is waited for. A listing this build has to make runs while the index is brought up to date below, not after.
+        let listing = OSAllocatedUnfairLock<FleetTrackedTrees.Tree?>(initialState: nil)
+        let ranGit = OSAllocatedUnfairLock(initialState: false)
+        let listed = DispatchGroup()
+        listed.enter()
+        let (listedRoot, listedCommit) = (root, commit)
+        DispatchQueue.global(qos: .userInitiated).async {
+            if let loaded = FleetTrackedTrees.shared.load(root: listedRoot, commit: listedCommit) {
+                listing.withLock { $0 = loaded.tree }
+                ranGit.withLock { $0 = loaded.ranGit }
+            }
+            listed.leave()
+        }
+        // Whatever the system already has for this root reaches the index first, so a file written a moment ago is in it; then
+        // the check below. The check that the directory hashes still agree with the entries reads nothing and runs beside the rest.
+        guard index.stateNow == .ready else { listed.wait(); throw Failure.notIndexed(index.stateNow.rawValue) }
         index.settle()
-        index.queue.sync { _ = index.verify(sample: 64) }
+        mark("settle")
+        // Then every file and directory the index holds is looked at against the disk, so an edit the system hasn't reported yet is still in it.
+        index.queue.sync { _ = index.catchUp() }
+        mark("catch-up")
         guard let view = index.queue.sync(execute: { index.snapshotView() }) else {
+            listed.wait()
             throw Failure.notIndexed(index.stateNow.rawValue)
         }
-        guard let tree = FleetDispatchGit.run(["ls-tree", "-r", "-z", commit], in: root, timeout: 60), tree.status == 0 else { throw Failure.git("ls-tree") }
-        let tracked = Self.parse(tree: tree.output)
+        let agree = OSAllocatedUnfairLock(initialState: true)
+        let agreed = DispatchGroup()
+        if !view.treeChecked {
+            agreed.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                let consistent = FleetContentIndex.treeAgrees(entries: view.entries, tree: view.tree)
+                agree.withLock { $0 = consistent }
+                if consistent { index.queue.async { index.treeAgreed(at: view.mutations) } }
+                agreed.leave()
+            }
+        }
+        listed.wait()
+        if ranGit.withLock({ $0 }) { git.append("ls-tree") }
+        mark("ls-tree")
+        guard let tracked = listing.withLock({ $0 }) else { agreed.wait(); throw Failure.git("ls-tree") }
         let root = self.root
         let plan = FleetSnapshotPlan.make(
-            commit: commit, tracked: tracked, entries: view.entries, tree: view.tree, target: target,
+            commit: commit, tracked: tracked.entries, entries: view.entries, tree: view.tree, target: target,
             goneFromDisk: { var status = stat(); return lstat(root + "/" + $0, &status) != 0 },
-            unindexedHash: { path in FleetSnapshotBlobs.hash(of: URL(fileURLWithPath: root + "/" + path)) ?? FleetHash(a: 0, b: 0, c: 0, d: 0) })
+            unindexedHash: { path in FleetSnapshotBlobs.hash(of: URL(fileURLWithPath: root + "/" + path)) ?? FleetHash(a: 0, b: 0, c: 0, d: 0) },
+            trackedDirectories: tracked.directories)
+        mark("plan")
+        agreed.wait()
+        // A tree that disagrees with its entries is drift: the index looks again, and this dispatch doesn't go on what it held.
+        guard agree.withLock({ $0 }) else {
+            index.queue.sync { _ = index.verify(sample: 64) }
+            throw Failure.notIndexed(index.stateNow.rawValue)
+        }
+        mark("tree")
         if let problem = plan.manifest.problem { throw Failure.git("manifest: \(problem)") }
         var bundle: (FleetBlobRef, URL)?
-        if unpushed { bundle = try makeBundle(id: id) }
+        if unpushed { bundle = try makeBundle(id: id); git.append("bundle") }
         let total = plan.bytes + (bundle?.0.size ?? 0)
         let verdict = FleetSnapshotCap.verdict(bytes: total, warnAbove: warnAbove, refuseAbove: refuseAbove)
         if verdict == .refuse {
@@ -70,7 +119,8 @@ struct FleetSnapshotSender {
             commit: commit, rootHash: plan.manifest.rootHash, digest: plan.manifest.digest, files: plan.manifest.files.count,
             directories: plan.manifest.directories.count, deletions: plan.manifest.deletions.count, parts: parts.count,
             fileCount: plan.fileCount, bytes: total, bundle: bundle?.0)
-        return Built(id: id, plan: plan, header: header, parts: parts, root: root, bundle: bundle, warning: verdict == .warn)
+        mark("parts")
+        return Built(id: id, plan: plan, header: header, parts: parts, root: root, bundle: bundle, warning: verdict == .warn, phases: phases, git: git)
     }
 
     /// `git ls-tree -r -z`: `<mode> <type> <id>\t<path>\0`.
@@ -155,5 +205,76 @@ struct FleetSnapshotReader {
             try await emit(FleetBlobChunk(hash: hash, size: size, offset: offset, data: data))
             offset += UInt64(data.count)
         }
+    }
+}
+
+/// The trees of commits this Mac has listed lately, by checkout and commit: a commit never changes, so the second dispatch from one
+/// doesn't list it again. A few are kept (a tree of a large repository is tens of megabytes).
+final class FleetTrackedTrees: @unchecked Sendable {
+    /// A commit's files, and every directory above a file that isn't a submodule (what a dispatch needs to know a tracked directory).
+    struct Tree: Sendable {
+        var entries: [String: FleetTreeEntry]
+        var directories: Set<String>
+
+        init(_ entries: [String: FleetTreeEntry]) {
+            self.entries = entries
+            var directories = Set<String>()
+            for (path, entry) in entries where !entry.isSubmodule {
+                var end = path.startIndex
+                while let slash = path[end...].firstIndex(of: "/") {
+                    directories.insert(String(path[..<slash]))
+                    end = path.index(after: slash)
+                }
+            }
+            self.directories = directories
+        }
+    }
+
+    static let shared = FleetTrackedTrees()
+    private static let limit = 4
+    private let lock = NSLock()
+    private var kept: [(key: String, tree: Tree)] = []
+    private var listing: [String: DispatchGroup] = [:]
+
+    private func cached(_ key: String) -> Tree? {
+        guard let position = kept.firstIndex(where: { $0.key == key }) else { return nil }
+        let found = kept.remove(at: position)
+        kept.append(found)
+        return found.tree
+    }
+
+    /// The tree of `commit` in `root`: kept, being listed by someone else (waited for), or listed here (`ranGit`). Blocking. Nil when git can't list it.
+    func load(root: String, commit: String) -> (tree: Tree, ranGit: Bool)? {
+        let key = root + "\0" + commit
+        lock.lock()
+        if let hit = cached(key) { lock.unlock(); return (hit, false) }
+        if let running = listing[key] {
+            lock.unlock()
+            running.wait()
+            return lock.withLock { cached(key) }.map { ($0, false) }
+        }
+        let group = DispatchGroup()
+        group.enter()
+        listing[key] = group
+        lock.unlock()
+        var parsed: Tree?
+        if let out = FleetDispatchGit.run(["ls-tree", "-r", "-z", commit], in: root, timeout: 60), out.status == 0 {
+            parsed = Tree(FleetSnapshotSender.parse(tree: out.output))
+        }
+        lock.withLock {
+            if let parsed {
+                kept.removeAll { $0.key == key }
+                kept.append((key, parsed))
+                if kept.count > Self.limit { kept.removeFirst(kept.count - Self.limit) }
+            }
+            listing[key] = nil
+        }
+        group.leave()
+        return parsed.map { ($0, true) }
+    }
+
+    /// Starts listing `commit` beside whatever comes next (a dispatch that has pinned a commit is about to ask for it).
+    func prefetch(root: String, commit: String) {
+        DispatchQueue.global(qos: .userInitiated).async { _ = self.load(root: root, commit: commit) }
     }
 }

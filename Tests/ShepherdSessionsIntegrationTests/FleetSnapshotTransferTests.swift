@@ -62,6 +62,13 @@ struct FleetSnapshotTransferTests {
         var entries: [String: String] = [:]
     }
 
+    /// The paths two trees differ at, with what each holds there (for a failure message).
+    static func difference(_ built: Tree, _ expected: Tree) -> [String] {
+        Set(built.entries.keys).union(expected.entries.keys).sorted().compactMap { path in
+            built.entries[path] == expected.entries[path] ? nil : "\(path): built \(built.entries[path] ?? "missing"), expected \(expected.entries[path] ?? "missing")"
+        }
+    }
+
     static func tree(of folder: URL, skipping skip: Set<String> = []) throws -> Tree {
         var tree = Tree()
         let manager = FileManager.default
@@ -118,7 +125,8 @@ struct FleetSnapshotTransferTests {
 
         let (_, thread) = try await Self.send(from: a, to: b)
         let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
-        #expect(try Self.tree(of: worktree) == expected, "the worktree is the checkout, byte for byte")
+        let built = try Self.tree(of: worktree)
+        #expect(built == expected, "the worktree is the checkout, byte for byte; differs at \(Self.difference(built, expected))")
         // Git agrees: the same commit, the same edits, the same new files, nothing else.
         #expect(try Self.head(worktree) == Self.head(a.folder))
         #expect(try Self.porcelain(worktree) == Self.porcelain(a.folder))
@@ -235,7 +243,9 @@ struct FleetSnapshotTransferTests {
         let counts = first.current
         #expect(counts.count == 6 && counts.values.filter { $0 > 1 }.count <= 1 && counts.values.max() ?? 0 <= 2)
         let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
-        #expect(try Self.tree(of: worktree) == Self.tree(of: a.folder))
+        let built = try Self.tree(of: worktree)
+        let expected = try Self.tree(of: a.folder)
+        #expect(built == expected, "differs at \(Self.difference(built, expected))")
     }
 
     // MARK: What stays home
@@ -282,6 +292,12 @@ struct FleetSnapshotTransferTests {
     // MARK: The budget
 
     /// A file of `megabytes`, made of one block that differs from every other file's in its first bytes (so each has its own hash).
+    /// The one minute load average, for the measurement lines.
+    static func load() -> String {
+        var loads = [Double](repeating: 0, count: 3)
+        return getloadavg(&loads, 3) > 0 ? String(format: "%.0f", loads[0]) : "?"
+    }
+
     static func writeLarge(_ megabytes: Int, to path: String, in folder: URL, seed: Int) throws {
         let url = folder.appendingPathComponent(path)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -303,7 +319,7 @@ struct FleetSnapshotTransferTests {
         var nodeModulesBytes: UInt64
     }
 
-    static func warm(nodeModulesMegabytes: Int = 0, tracked: Int = 2_000) async throws -> Warm {
+    static func warm(nodeModulesMegabytes: Int = 0, tracked: Int = 2_000, edits: Int = 5) async throws -> Warm {
         var extra: [String: String] = [:]
         for index in 0..<tracked { extra["src/gen/f\(index).ts"] = "export const v\(index) = \(index)\n" }
         let (a, b, _) = try await Self.pair(extra: extra)
@@ -326,7 +342,9 @@ struct FleetSnapshotTransferTests {
             a.server.queue.sync { a.server.fleet?.index.manifest(of: bID, repo: repo)?.contains(hash) } == true
         }
         let canonical = PiHome.canonical(b.folder.path)
-        try await FleetDispatchTests.wait("the target's spare", timeout: .seconds(120)) { (Self.engine(b) { $0.spares.current(repo: canonical) } ?? nil) != nil }
+        try await FleetDispatchTests.wait("the target's spare and its listing", timeout: .seconds(120)) {
+            Self.engine(b) { engine in engine.spares.current(repo: canonical).flatMap { engine.spares.listing(repo: canonical, commit: $0.commit) } } != nil
+        }
         // Let the sender's index settle (on a loaded machine its first pass can still be hashing), so what it hashes for the dispatch is only what changes now.
         let settling = try #require(a.server.queue.sync { a.server.fleet?.index.index(at: a.folder.path) })
         var stableSince = ContinuousClock.now
@@ -338,7 +356,8 @@ struct FleetSnapshotTransferTests {
         }
         try await Task.sleep(for: .seconds(3))
         var sizes: UInt64 = 0
-        let edited = ["src/gen/f1.ts", "src/gen/f2.ts", "README.md", "NOTES.md", "docs/plan.md"]
+        // Five by default: three tracked edits and two new files; more are further tracked edits.
+        let edited = ["src/gen/f1.ts", "src/gen/f2.ts", "README.md", "NOTES.md", "docs/plan.md"] + (5..<max(edits, 5)).map { "src/gen/f\($0 + 10).ts" }
         for (index, path) in edited.enumerated() {
             let text = "changed \(index) in the working tree, with enough text to make it its own content\n"
             try Self.write(text, to: path, in: a.folder)
@@ -366,24 +385,46 @@ struct FleetSnapshotTransferTests {
         #expect(sent.count == fixture.edited.count && sent.reduce(UInt64(0)) { $0 + UInt64($1.data.count) } == fixture.editedBytes)
         // The target cloned every unchanged file and directory (the spare, node_modules, the five), wrote no other content, and ran no checkout.
         let id = try #require(a.sent().first?.id)
+        // The sender ran no git but, at most, the listing of the commit's tree (the dispatch asked for it when it pinned the commit).
+        #expect(try #require(Self.engine(a) { $0.senderLog[id] } ?? nil).git.allSatisfy { $0 == "ls-tree" })
         let stats = try #require(Self.engine(b) { $0.applyStats[id] } ?? nil)
         #expect(stats.usedSpare && stats.copies == 0 && stats.filesWritten == 0 && stats.bytesWritten == 0)
         #expect(stats.clones == 2 + fixture.edited.count, "clones: \(stats.clones)")
         #expect(stats.heldLocally == 1 && stats.receivedFiles == fixture.edited.count)
-        #expect(!stats.git.contains("checkout") && !stats.git.contains("read-tree") && !stats.git.contains("update-index"), "git ran: \(stats.git)")
+        // The receiver ran no git at all: the worktree is written directly (no `worktree add`), the files are cloned (no checkout, no
+        // `read-tree`), the index is written (no `update-index`), the spare is at the commit and its listing is kept (no `ls-tree`, no diff or
+        // `cat-file`), and nothing is read from a held directory.
+        #expect(stats.git.isEmpty, "git ran: \(stats.git)")
         // And the result is the checkout.
         let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
         #expect(try Self.tree(of: worktree) == Self.tree(of: a.folder))
         #expect(try Self.porcelain(worktree) == Self.porcelain(a.folder))
+        // A second dispatch from the same commit lists nothing: the commit's tree is kept.
+        let parent = try await a.parent()
+        try parent.hello()
+        _ = try await parent.dispatch("Again.", key: "again", host: "Mac mini")
+        try await FleetDispatchTests.wait("the second thread on the Mac mini") { b.dispatched.count == 2 }
+        let again = try #require(a.sent().first { $0.id != id }?.id)
+        #expect(try #require(Self.engine(a) { $0.senderLog[again] } ?? nil).git.isEmpty)
         let timing = try #require(Self.engine(a) { $0.timings[id] } ?? nil)
-        let millis = try #require(b.taken().first?.fileMillis)
-        print("FLEET-MEASURE warm: sender \(timing.build) ms, transfer \(timing.transfer) ms, receiver \(millis) ms")
+        let millis = try #require(b.taken().first { $0.id == id }?.fileMillis)
+        let senderPhases = (Self.engine(a) { $0.senderLog[id]?.phases } ?? nil)
+        print("FLEET-MEASURE warm: sender \(timing.build) ms \(String(describing: senderPhases)), transfer \(timing.transfer) ms, receiver \(millis) ms \(stats.phases) load \(Self.load())")
     }
 
-    /// Set from the spike's measurements: the file part (create received to a worktree that passed its digest) of a warm dispatch with a 200 MB
-    /// `node_modules` reference measured 150 to 190 ms in this debug test binary on a Mac whose load average was 160 to 350, so the budget is
-    /// twice the median. The plan's 50 ms is for an idle Mac and a release build; this constant is only ever tightened.
-    static let fileMillisBudget = 300
+    /// Set from measurements of this fixture (a warm 5 file dispatch with a 200 MB `node_modules` held on the target). The receiver's file
+    /// part (create received to a worktree that passed its digest) took a median of 40 ms in a release build with the Mac at load 40 to 90
+    /// and 57 ms in this debug binary at load 250; the sender's snapshot build 35 to 50 ms, plus the catch-up that looks at every indexed
+    /// file and folder (about 3,000 `lstat` calls across the cores, a few ms on a quiet Mac, but 100 to 400 ms when the machine ran at load
+    /// 450 to 600, which is when the last measurements were taken). The budgets are twice the quiet-Mac medians for the receiver, with the
+    /// sender given room for that catch-up. They are only ever tightened.
+    #if DEBUG
+    static let fileMillisBudget = 120
+    static let senderMillisBudget = 250
+    #else
+    static let fileMillisBudget = 100
+    static let senderMillisBudget = 200
+    #endif
 
     @Test(.timingSensitive) func theFilePartOfAWarmDispatchOnTheTargetIsUnderItsBudget() async throws {
         let fixture = try await Self.warm(nodeModulesMegabytes: 200)
@@ -393,8 +434,11 @@ struct FleetSnapshotTransferTests {
         try await FleetDispatchTests.wait("the receiver's record to move past preparing") { b.taken().first?.state != .preparing }
         let millis = try #require(b.taken().first?.fileMillis)
         let id = try #require(a.sent().first?.id)
-        print("FLEET-MEASURE warm 200 MB node_modules: receiver \(millis) ms; \(String(describing: Self.engine(b) { $0.applyStats[id]?.phases } ?? nil))")
+        let timing = Self.engine(a) { $0.timings[id] } ?? nil
+        print("FLEET-MEASURE warm 200 MB node_modules: sender \(timing?.build ?? -1) ms \(String(describing: Self.engine(a) { $0.senderLog[id]?.phases } ?? nil)), transfer \(timing?.transfer ?? -1) ms, receiver \(millis) ms; \(String(describing: Self.engine(b) { $0.applyStats[id]?.phases } ?? nil)) load \(Self.load())")
         #expect(millis < Self.fileMillisBudget, "the file part took \(millis) ms")
+        let sender = try #require(timing?.build)
+        #expect(sender < Self.senderMillisBudget, "the sender's snapshot took \(sender) ms")
     }
 }
 
@@ -402,6 +446,52 @@ struct FleetSnapshotTransferTests {
 @Suite("Fleet snapshot measurements", .integrationTimeLimit, .mainActorExclusive, .enabled(if: ProcessInfo.processInfo.environment["SHEPHERD_FLEET_MEASURE"] == "1", "set SHEPHERD_FLEET_MEASURE=1"))
 @MainActor
 struct FleetSnapshotMeasurementTests {
+    /// The file part of a warm dispatch in numbers: the sender's build, the transfer and the receiver's build, by step.
+    static func report(_ label: String, _ fixture: FleetSnapshotTransferTests.Warm) async throws {
+        let (a, b) = (fixture.a, fixture.b)
+        defer { a.stop(); b.stop() }
+        _ = try await FleetSnapshotTransferTests.send(from: a, to: b, timeout: .seconds(300))
+        try await FleetDispatchTests.wait("the record to move on") { b.taken().first?.state != .preparing }
+        let id = try #require(a.sent().first?.id)
+        let timing = FleetSnapshotTransferTests.engine(a) { $0.timings[id] } ?? nil
+        let sender = FleetSnapshotTransferTests.engine(a) { $0.senderLog[id]?.phases } ?? nil
+        let stats = FleetSnapshotTransferTests.engine(b) { $0.applyStats[id] } ?? nil
+        print("FLEET-MEASURE \(label): sender \(timing?.build ?? -1) ms \(String(describing: sender)), transfer \(timing?.transfer ?? -1) ms, receiver \(b.taken().first?.fileMillis ?? -1) ms \(String(describing: stats?.phases)) git \(String(describing: stats?.git)) load \(FleetSnapshotTransferTests.load())")
+    }
+
+    @Test func aWarmDispatchOfFiveEditedFilesWithA200MBNodeModulesHeldOnTheTarget() async throws {
+        try await Self.report("warm 5 files, 200 MB node_modules held", try await FleetSnapshotTransferTests.warm(nodeModulesMegabytes: 200, edits: 5))
+    }
+
+    @Test func aWarmDispatchOfFiftyEditedFilesWithA200MBNodeModulesHeldOnTheTarget() async throws {
+        try await Self.report("warm 50 files, 200 MB node_modules held", try await FleetSnapshotTransferTests.warm(nodeModulesMegabytes: 200, edits: 50))
+    }
+
+    /// A repository of 20,000 tracked files, dispatched the first time: the target has the repository and no spare, and the sender's index is
+    /// ready (its first scan is a one time background cost, printed apart from the dispatch).
+    @Test func theFirstDispatchOfA20000FileRepo() async throws {
+        var extra: [String: String] = [:]
+        for index in 0..<20_000 { extra["src/gen/d\(index / 200)/f\(index).ts"] = "export const v\(index) = \(index)\n" }
+        let (a, b, _) = try await FleetSnapshotTransferTests.pair(extra: extra)
+        defer { a.stop(); b.stop() }
+        let scanBegan = ContinuousClock.now
+        try await FleetDispatchTests.wait("the sender's index to be ready", timeout: .seconds(900)) {
+            a.server.queue.sync { a.server.fleet?.index.index(at: a.folder.path)?.stateNow == .ready }
+        }
+        let scan = Int((ContinuousClock.now - scanBegan) / .milliseconds(1))
+        // Edits on the sender: three tracked files and two new ones.
+        for (index, path) in ["src/gen/d0/f1.ts", "src/gen/d1/f201.ts", "README.md", "NOTES.md", "docs/plan.md"].enumerated() {
+            try FleetSnapshotTransferTests.write("changed \(index) in the working tree\n", to: path, in: a.folder)
+        }
+        _ = try await FleetSnapshotTransferTests.send(from: a, to: b, timeout: .seconds(900))
+        try await FleetDispatchTests.wait("the record to move on") { b.taken().first?.state != .preparing }
+        let id = try #require(a.sent().first?.id)
+        let timing = FleetSnapshotTransferTests.engine(a) { $0.timings[id] } ?? nil
+        let sender = FleetSnapshotTransferTests.engine(a) { $0.senderLog[id]?.phases } ?? nil
+        let stats = FleetSnapshotTransferTests.engine(b) { $0.applyStats[id] } ?? nil
+        print("FLEET-MEASURE first dispatch, 20,000 tracked files (sender index ready after \(scan) ms): sender \(timing?.build ?? -1) ms \(String(describing: sender)), transfer \(timing?.transfer ?? -1) ms, receiver \(b.taken().first?.fileMillis ?? -1) ms \(String(describing: stats?.phases)) git \(String(describing: stats?.git)) spare \(String(describing: stats?.usedSpare)) load \(FleetSnapshotTransferTests.load())")
+    }
+
     /// A `node_modules` of about 6,000 files and 200 MB that the target holds nothing of.
     @Test func aNodeModulesHeavyDispatchTheTargetHoldsNothingOf() async throws {
         let (a, b, _) = try await FleetSnapshotTransferTests.pair()

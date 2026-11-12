@@ -48,6 +48,14 @@ final class FleetSpares: @unchecked Sendable {
         var commit: String
     }
 
+    /// The tracked files of a spare's commit, parsed once: in git's order (an index file's), and by path. A dispatch that starts from this
+    /// commit, or from one a few files away, builds its own listing from this without asking git for the whole tree.
+    struct Listing: Sendable {
+        var commit: String
+        var ordered: [(String, FleetTreeEntry)]
+        var tree: [String: FleetTreeEntry]
+    }
+
     static let maxTrackedBytes: UInt64 = 2 << 30
 
     let directory: URL
@@ -55,6 +63,8 @@ final class FleetSpares: @unchecked Sendable {
     private var building: Set<String> = []
     /// Tests: how many times a spare was built.
     private(set) var builds = 0
+    private let listingLock = NSLock()
+    private var listings: [String: Listing] = [:]
 
     init(directory: URL) { self.directory = directory }
 
@@ -87,6 +97,20 @@ final class FleetSpares: @unchecked Sendable {
         return FileManager.default.fileExists(atPath: tree) ? Ready(tree: tree, commit: meta.commit) : nil
     }
 
+    /// The spare's commit as a parsed listing, when this Mac has made one for the spare as it stands.
+    func listing(repo: String, commit: String) -> Listing? {
+        listingLock.withLock { listings[repo].flatMap { $0.commit == commit ? $0 : nil } }
+    }
+
+    /// Lists the spare's commit once (a git call), so the next dispatch needs none. Blocking; call off the server queue.
+    func warmListing(repo: String) {
+        guard let ready = current(repo: repo), listing(repo: repo, commit: ready.commit) == nil,
+              let out = FleetDispatchGit.run(["ls-tree", "-r", "-z", ready.commit], in: repo, timeout: 60), out.status == 0 else { return }
+        let ordered = FleetSnapshotSender.parseOrdered(tree: out.output)
+        let listing = Listing(commit: ready.commit, ordered: ordered, tree: Dictionary(ordered) { first, _ in first })
+        listingLock.withLock { listings[repo] = listing }
+    }
+
     /// Runs `body` while no swap can happen; the spare's tree is stable inside it.
     func withTree<T>(repo: String, _ body: (Ready) throws -> T) rethrows -> T? {
         lock.lock()
@@ -100,13 +124,17 @@ final class FleetSpares: @unchecked Sendable {
     @discardableResult
     func refresh(repo: String, base: String?) -> Ready? {
         guard let commit = Self.baseCommit(repo: repo, base: base) else { return current(repo: repo) }
-        if let have = meta(of: repo), have.commit == commit { return current(repo: repo) }
+        if let have = meta(of: repo), have.commit == commit {
+            warmListing(repo: repo)
+            return current(repo: repo)
+        }
         lock.lock()
         let started = building.insert(repo).inserted
         lock.unlock()
         guard started else { return current(repo: repo) }
         defer { lock.lock(); building.remove(repo); lock.unlock() }
         build(repo: repo, commit: commit)
+        warmListing(repo: repo)
         return current(repo: repo)
     }
 
