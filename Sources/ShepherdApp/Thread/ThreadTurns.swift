@@ -373,16 +373,15 @@ struct AgentTurn: View, Equatable {
         let meta = [nativeTurnTimeText(startedAt: startedAt, endedAt: presentation.endedAt),
                     presentation.toolCalls > 0 ? nativeCount(presentation.toolCalls, "tool call") : nil]
             .compactMap { $0 }.joined(separator: " · ")
-        let copy = presentation.copyText
         return TurnFooter(
             hover: hover,
             meta: meta,
             link: subagents.count == 0 || subagentActions == nil ? nil : nativeCount(subagents.count, "subagent"),
             onLink: openFirstRun,
-            onCopy: copy.isEmpty ? nil : {
+            onCopy: presentation.hasCopyText ? {
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(copy, forType: .string)
-            },
+                NSPasteboard.general.setString(presentation.copyText, forType: .string)
+            } : nil,
             onRetry: retry,
             timing: presentation.timing.map(SHResponseTimingModel.init))
     }

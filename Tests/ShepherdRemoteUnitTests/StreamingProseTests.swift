@@ -10,8 +10,10 @@ struct StreamingProseTests {
         let store = manualStore()
         let (gate, release) = AsyncStream<Void>.makeStream()
         store.beforeProseParse = { for await _ in gate {} }
+        // The reply is already past 8 KB when the thread opens: its cold parse is the slow one.
+        var text = "Beginning " + String(repeating: "word ", count: 2_000)
         let host = FakeHost(Fixture.snapshot(running: true, provisional: [
-            Fixture.assistant("Beginning", status: "streaming", id: "reply")
+            Fixture.assistant(text, status: "streaming", id: "reply")
         ]))
         let loop = await start(store, host)
         defer { release.finish(); loop.cancel(); store.stop() }
@@ -20,7 +22,6 @@ struct StreamingProseTests {
             host.snapshot.provisional = [Fixture.assistant(text, status: "streaming", id: "reply")]
             await store.refresh()
         }
-        var text = "Beginning " + String(repeating: "word ", count: 2_000)
         for _ in 0..<100 {
             text += "more "
             await show(text)
@@ -32,6 +33,7 @@ struct StreamingProseTests {
             guard case .prose(_, _, let prose)? = store.rows.last?.presentation?.items.last else { return false }
             return prose.blocks == expected
         }
-        #expect(store.offMainParses == 2, "Skip intermediate snapshots and parse only the newest text next")
+        #expect(store.offMainParses == 1, "The cold parse that landed late is the base: no second one starts")
+        #expect(store.tailParses >= 1, "The newest text arrives as one tail parse on the main actor")
     }
 }

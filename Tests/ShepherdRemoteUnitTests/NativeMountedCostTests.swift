@@ -349,7 +349,7 @@ struct NativeMountedCostTests {
         let items: [NativeTurnPresentation.Item] = [
             .prose(id: "p", text: "", prose: NativeProse([Self.code(100)])), .note(id: "n", text: "note"),
         ]
-        let presentation = NativeTurnPresentation(items: items, changes: nil, toolCalls: 0, copyText: "", endedAt: nil)
+        let presentation = NativeTurnPresentation(items: items, changes: nil, toolCalls: 0, endedAt: nil)
         let turn = NativeTurn(id: "a", isUser: false, messages: [])
         let reply = NativeThreadRow(turn: turn, presentation: presentation, live: false, promptText: nil, startedAt: nil)
         #expect(Cost.row(reply) == Cost.rowBase + Cost.fenceFloor + Cost.line)

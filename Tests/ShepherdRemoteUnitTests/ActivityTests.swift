@@ -778,6 +778,17 @@ struct TurnPresentationTests {
         #expect(presentation.toolCalls == 1)
     }
 
+    /// Copy is offered when the turn has words to copy, and the text is joined when it is asked for.
+    @Test func aTurnOffersCopyWhenItHasProse() {
+        let none = nativeTurnPresentation([tool("read", "r")], live: false)
+        #expect(none.copyText.isEmpty && !none.hasCopyText)
+        let one = nativeTurnPresentation([F.assistant("Done."), tool("read", "r")], live: false)
+        #expect(one.copyText == "Done." && one.hasCopyText)
+        let two = nativeTurnPresentation([F.assistant("One."), tool("read", "r"), F.assistant("Two.")], live: false)
+        #expect(two.copyText == "One.\n\nTwo." && two.hasCopyText)
+        for presentation in [none, one, two] { #expect(presentation.hasCopyText == !presentation.copyText.isEmpty) }
+    }
+
     @Test func proseIsParsedOnceIntoBlocks() {
         let presentation = nativeTurnPresentation([F.assistant("# Title\n\n- a\n- b")], live: false)
         guard case .prose(_, _, let prose) = presentation.items.first else { Issue.record("no prose"); return }

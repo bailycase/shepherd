@@ -483,21 +483,37 @@ public final class NativeThreadStore {
     /// Calls parse their JSON and output once; a finished call never changes.
     @ObservationIgnored private var callCache: [String: (key: NativeThreadMessage, value: NativeActivityCall)] = [:]
     var cachedCallCount: Int { callCache.count }
-    /// Finished thinking is parsed once: a reply streaming under it rebuilds its turn, not it.
-    @ObservationIgnored private var thinkingCache: [ProseKey: (text: String, blocks: [NativeMarkdownBlock])] = [:]
+    /// Finished thinking is parsed once: a reply streaming under it rebuilds its turn, not it. Thinking still
+    /// arriving grows from the state it left (`NativeMarkdownState`).
+    @ObservationIgnored private var thinkingCache: [ProseKey: NativeMarkdownState] = [:]
     var cachedThinkingCount: Int { thinkingCache.count }
     /// How many times thinking was parsed (tests).
     @ObservationIgnored private(set) var thinkingParses = 0
-    /// Only the latest text and mode per prose item: streaming prefixes never accumulate.
-    @ObservationIgnored private var proseCache: [ProseKey: (text: String, streaming: Bool, prose: NativeProse)] = [:]
+    /// Only the latest text and mode per prose item: streaming prefixes never accumulate. The state holds the
+    /// text, the mode and the parse, and a longer text grows it.
+    @ObservationIgnored private var proseCache: [ProseKey: NativeProseState] = [:]
     @ObservationIgnored private(set) var proseParses = 0
-    /// Oversized prose/thinking, including cold loads, replacements and final text, parse off
-    /// main. Keep the prior presentation (or empty blocks) until a text/mode-fenced result lands.
+    /// Growing text advanced from the state it left, on the main actor (tests), and the bytes of
+    /// tail those advances parsed.
+    @ObservationIgnored private(set) var tailParses = 0
+    @ObservationIgnored private(set) var mainParsedBytes = 0
+    /// How many times `derive` ran (tests).
+    @ObservationIgnored private(set) var derivations = 0
+    /// A text this long that no cached state can grow within the tail budget below (a cold load, a
+    /// replacement, a tail past the budget) parses off main. Keep the prior presentation (or empty
+    /// blocks) until a text/mode-fenced result lands.
     nonisolated public static let offMainProseBytes = 8 * 1024
+    /// A growing text whose unfinished tail is within both bounds advances on the main actor; the cost of a
+    /// parse follows its lines more than its bytes (a 22 KB line takes microseconds, a 64 KB fence of 1,600
+    /// lines about a millisecond).
+    nonisolated public static let onMainTailBytes = 64 * 1024
+    nonisolated public static let onMainTailLines = 1024
     /// The desired parse token per item; newer text or final mode supersedes it.
     @ObservationIgnored private var proseParsing: [ProseKey: UUID] = [:]
     @ObservationIgnored private var proseRequests: [ProseKey: ParseRequest] = [:]
     @ObservationIgnored private var proseKeysByTurn: [String: Set<ProseKey>] = [:]
+    /// Moves on when release or a session change cancels all parses: what an older one makes is no base.
+    @ObservationIgnored private var proseEpoch = 0
     @ObservationIgnored private var proseJobs: [ProseKey: (UUID, @Sendable () async -> Void)] = [:]
     @ObservationIgnored private var proseTasks: [ProseKey: (UUID, Task<Void, Never>)] = [:]
     static let maximumProseTasks = 2
@@ -512,6 +528,9 @@ public final class NativeThreadStore {
     private struct ParseRequest: Equatable {
         var text: String
         var streaming: Bool
+        /// The bytes of the text the cached state holds, which the parse grows from: a state that lands
+        /// late is a new base, and a parse wanted of the old one is wanted again.
+        var base: Int
     }
     /// Test gate for deterministic coverage of a slow parser while snapshots keep arriving.
     @ObservationIgnored var beforeProseParse: (@Sendable () async -> Void)?
@@ -639,6 +658,7 @@ public final class NativeThreadStore {
     private func derive() {
         let interval = Self.signposter.beginInterval("Thread derive")
         defer { Self.signposter.endInterval("Thread derive", interval) }
+        derivations += 1
         let provisional = (snapshot?.provisional ?? []).filter {
             messageIndex[$0.entryID] == nil && ($0.toolCallID == nil || toolCounts[$0.toolCallID!] == nil)
         }
@@ -1064,82 +1084,134 @@ public final class NativeThreadStore {
         return value
     }
 
+    /// The blocks of a stretch's thinking, which arrives normalized (`nativeTurnPresentation`). A text that
+    /// extends the cached one grows its state on the main actor when the unfinished tail is small; a large
+    /// tail, or a cold text of 8 KB or more, parses off main; anything else is small enough to parse here.
     private func thinkingBlocks(turn: String, index: Int, text: String) -> [NativeMarkdownBlock] {
         let key = ProseKey(turn: turn, item: "thinking:\(index)")
         if let cached = thinkingCache[key], cached.text == text {
             invalidateParse(key)
             return cached.blocks
         }
+        if let tail = thinkingCache[key]?.tail(of: text), tail.bytes <= Self.onMainTailBytes, tail.lines <= Self.onMainTailLines {
+            invalidateParse(key)
+            // Advanced in the cache, so nothing else holds its arrays while they grow.
+            if thinkingCache[key]?.advance(to: text, streaming: false) == true {
+                tailParses += 1
+                mainParsedBytes += tail.bytes
+                recountThinking(key)
+                return thinkingCache[key]?.blocks ?? []
+            }
+        }
         if text.utf8.count >= Self.offMainProseBytes {
-            parseOffMain(key, text: text, streaming: false, parse: nativeThinkingBlocks) { [weak self] value in
-                self?.cacheThinking(key, text: text, blocks: value)
+            let previous = thinkingCache[key]
+            parseOffMain(key, text: text, streaming: false, base: previous?.text.utf8.count ?? -1,
+                         holdsBase: { [weak self] in self?.thinkingCache[key]?.text == previous?.text },
+                         parse: { newest in
+                if var state = previous, state.advance(to: newest, streaming: false) { return state }
+                return NativeMarkdownState(newest, streaming: false)
+            }) { [weak self] value in
+                self?.cacheThinking(key, value)
             }
             return thinkingCache[key]?.blocks ?? []
         }
         invalidateParse(key)
         thinkingParses += 1
-        let value = nativeThinkingBlocks(text)
-        cacheThinking(key, text: text, blocks: value)
-        return value
+        let state = NativeMarkdownState(text, streaming: false)
+        cacheThinking(key, state)
+        return state.blocks
     }
 
+    /// The prose of a message's text block. Same text and mode: what was cached. A longer text whose unfinished
+    /// tail is small grows the cached state on the main actor, a mode change too (the frozen blocks are the same
+    /// in both). Otherwise, 8 KB or more parses off main, advancing the state the cache held when it was asked
+    /// (a parse that lands after the text moved on is kept as the next base), and less parses here.
     private func prose(turn: String, item: String, text: String, streaming: Bool) -> NativeProse {
         let key = ProseKey(turn: turn, item: item)
-        if let cached = proseCache[key], cached.text == text, cached.streaming == streaming {
+        if let cached = proseCache[key], cached.markdown.text == text, cached.markdown.streaming == streaming {
             invalidateParse(key)
             return cached.prose
         }
+        if let tail = proseCache[key]?.tail(of: text), tail.bytes <= Self.onMainTailBytes, tail.lines <= Self.onMainTailLines {
+            invalidateParse(key)
+            if proseCache[key]?.advance(to: text, streaming: streaming) == true {
+                tailParses += 1
+                mainParsedBytes += tail.bytes
+                recountProse(key)
+                return proseCache[key]?.prose ?? .empty
+            }
+        }
         if text.utf8.count >= Self.offMainProseBytes {
-            let previous = proseCache[key]?.prose
-            parseOffMain(key, text: text, streaming: streaming,
-                         parse: { NativeProse(nativeMarkdownParse($0, streaming: streaming), reusing: previous) }) { [weak self] value in
-                self?.cacheProse(key, text: text, streaming: streaming, prose: value)
+            let previous = proseCache[key]
+            parseOffMain(key, text: text, streaming: streaming, base: previous?.markdown.text.utf8.count ?? -1,
+                         holdsBase: { [weak self] in self?.proseCache[key]?.markdown.text == previous?.markdown.text },
+                         parse: { newest in
+                if var state = previous, state.advance(to: newest, streaming: streaming) { return state }
+                return NativeProseState(newest, streaming: streaming, reusing: previous?.prose)
+            }) { [weak self] value in
+                self?.cacheProse(key, value)
             }
             return proseCache[key]?.prose ?? .empty
         }
         invalidateParse(key)
         proseParses += 1
-        let value = NativeProse(nativeMarkdownParse(text, streaming: streaming), reusing: proseCache[key]?.prose)
-        cacheProse(key, text: text, streaming: streaming, prose: value)
-        return value
+        let state = NativeProseState(text, streaming: streaming, reusing: proseCache[key]?.prose)
+        cacheProse(key, state)
+        return state.prose
     }
 
-    private func cacheThinking(_ key: ProseKey, text: String, blocks: [NativeMarkdownBlock]) {
+    private func cacheThinking(_ key: ProseKey, _ state: NativeMarkdownState) {
         if thinkingCache[key] == nil, thinkingCache.count >= 1024 {
             thinkingCache = [:]
             cacheBytes -= thinkingCosts.values.reduce(0, +)
             thinkingCosts = [:]
         }
-        let cost = text.utf8.count * 3 + blocks.count * 64
-        cacheBytes += cost - (thinkingCosts[key] ?? 0)
-        thinkingCosts[key] = cost
-        thinkingCache[key] = (text, blocks)
+        thinkingCache[key] = state
+        recountThinking(key)
     }
 
-    private func cacheProse(_ key: ProseKey, text: String, streaming: Bool, prose: NativeProse) {
+    private func cacheProse(_ key: ProseKey, _ state: NativeProseState) {
         if proseCache[key] == nil, proseCache.count >= 1024 {
             proseCache = [:]
             cacheBytes -= proseCosts.values.reduce(0, +)
             proseCosts = [:]
         }
-        let cost = text.utf8.count * 3 + prose.blockCount * 64
-        cacheBytes += cost - (proseCosts[key] ?? 0)
-        proseCosts[key] = cost
-        proseCache[key] = (text, streaming, prose)
+        proseCache[key] = state
+        recountProse(key)
     }
 
-    /// At most two detached parses per store, one per item. Queued work is replaced by the
-    /// newest text/mode; stale results never publish, and release/session changes fence all work.
-    private func parseOffMain<Value: Sendable>(_ key: ProseKey, text: String, streaming: Bool,
+    /// What a cached state holds: its text once (shared with the message), and its blocks.
+    private func recountThinking(_ key: ProseKey) {
+        guard let state = thinkingCache[key] else { return }
+        let cost = state.text.utf8.count * 3 + state.blocks.count * 64
+        cacheBytes += cost - (thinkingCosts[key] ?? 0)
+        thinkingCosts[key] = cost
+    }
+
+    private func recountProse(_ key: ProseKey) {
+        guard let state = proseCache[key] else { return }
+        let cost = state.markdown.text.utf8.count * 3 + state.prose.blockCount * 64
+        cacheBytes += cost - (proseCosts[key] ?? 0)
+        proseCosts[key] = cost
+    }
+
+    /// At most two detached parses per store, one per item. Queued work is replaced by the newest text/mode.
+    /// The newest request's result lands. An older one lands too, as the base the newest text is parsed from,
+    /// while a request is outstanding and the cache still holds the text it grew from (`holdsBase`): a text
+    /// that replaced the cache since makes it stale, and release or a session change (`proseEpoch`) fences all work.
+    /// Anything else never publishes.
+    private func parseOffMain<Value: Sendable>(_ key: ProseKey, text: String, streaming: Bool, base: Int,
+                                               holdsBase: @escaping @MainActor @Sendable () -> Bool,
                                                parse: @escaping @Sendable (String) -> Value,
                                                land: @escaping @MainActor @Sendable (Value) -> Void) {
-        let wanted = ParseRequest(text: text, streaming: streaming)
+        let wanted = ParseRequest(text: text, streaming: streaming, base: base)
         guard proseRequests[key] != wanted else { return }
         let token = UUID()
         proseRequests[key] = wanted
         proseParsing[key] = token
         let beforeParse = beforeProseParse
         let duringParse = duringProseParse
+        let epoch = proseEpoch
         proseJobs[key] = (token, { [weak self] in
             await beforeParse?()
             guard !Task.isCancelled else {
@@ -1155,8 +1227,12 @@ public final class NativeThreadStore {
                 guard let self, self.proseTasks[key]?.0 == token else { return }
                 self.proseTasks[key] = nil
                 if onMain { self.mainActorLargeParses += 1 }
-                if self.proseParsing[key] == token {
-                    self.invalidateParse(key)
+                // A text wanted since is not this one, but what this parsed is the nearest base to it: it lands,
+                // and the derive that follows grows it to the newest text, or asks for that off main in turn.
+                // A key invalidated since, a cache replaced since, or any parse that release or a session change
+                // cancelled, is dropped.
+                if self.proseParsing[key] == token || (self.proseRequests[key] != nil && self.proseEpoch == epoch && holdsBase()) {
+                    if self.proseParsing[key] == token { self.invalidateParse(key) }
                     land(value)
                     self.presentationCache[key.turn] = nil
                     self.presentationDirty = self.projection.start(for: key.turn)
@@ -1204,6 +1280,7 @@ public final class NativeThreadStore {
     }
 
     private func cancelProse() {
+        proseEpoch &+= 1
         for (_, task) in proseTasks.values { task.cancel() }
         // Cancellation invalidates publication, not the worker's reservation: a synchronous
         // parse cannot cooperate until it returns. Its completion alone releases this slot.

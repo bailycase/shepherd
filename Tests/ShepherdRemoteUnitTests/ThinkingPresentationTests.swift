@@ -247,4 +247,55 @@ struct ThinkingStoreTests {
         #expect(blocks == [[.paragraph("**Inspecting SSH config**"), .paragraph("Checking ~/.ssh/config.")]])
         #expect(store.thinkingParses == 1)
     }
+
+    enum Shape: String, CaseIterable, CustomTestStringConvertible, Sendable {
+        /// What `think:400` writes: no newline at all, so the whole text is the tail.
+        case oneLine = "22 KB on one line"
+        case paragraphs = "22 KB of paragraphs"
+
+        var testDescription: String { rawValue }
+
+        func text(_ pull: Int) -> String {
+            switch self {
+            case .oneLine: String(repeating: "think ", count: 3_700 + pull * 16)
+            case .paragraphs: (0..<(130 + pull)).map { "Reasoning step \($0) " + String(repeating: "word ", count: 28) }.joined(separator: "\n\n")
+            }
+        }
+    }
+
+    /// Live thinking grows on the main actor, a pull at a time: past its cold start it is never
+    /// parsed off main, and each pull derives once.
+    @Test(arguments: Shape.allCases)
+    func liveThinkingParsesOnlyItsTail(_ shape: Shape) async {
+        let user = F.user("think about it", id: "u")
+        func snapshot(_ pull: Int) -> NativeThreadSnapshot {
+            F.snapshot(revision: UInt64(pull + 1), running: true, messages: [user],
+                       provisional: [F.assistant("", thinking: shape.text(pull), status: "streaming", id: "think")])
+        }
+        func blocks() -> [NativeMarkdownBlock]? {
+            store.rows.last?.presentation?.items.compactMap { item -> [NativeMarkdownBlock]? in
+                if case .thinking(_, _, let blocks, _, true, _) = item { blocks } else { nil }
+            }.last
+        }
+        #expect(shape.text(0).utf8.count >= NativeThreadStore.offMainProseBytes * 2)
+        let host = FakeHost(snapshot(0))
+        let store = manualStore()
+        let task = await start(store, host)
+        defer { task.cancel() }
+        await store.waitForProse()
+        #expect(blocks() == nativeThinkingBlocks(shape.text(0)))
+        let (cold, derived, tails) = (store.offMainParses, store.derivations, store.tailParses)
+        #expect(cold <= 1)
+
+        for pull in 1...100 {
+            host.snapshot = snapshot(pull)
+            await store.refresh()
+        }
+        await store.waitForProse()
+        #expect(store.offMainParses == cold, "no parse leaves the main actor after the cold start")
+        #expect(store.derivations == derived + 100, "one derivation per pull")
+        #expect(store.tailParses == tails + 100 && store.thinkingParses == 0)
+        #expect(blocks() == nativeThinkingBlocks(shape.text(100)))
+        #expect(store.cachedThinkingCount == 1)
+    }
 }

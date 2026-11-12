@@ -228,12 +228,11 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
         let meta = [nativeTurnTimeText(startedAt: startedAt, endedAt: presentation.endedAt),
                     presentation.toolCalls > 0 ? nativeCount(presentation.toolCalls, "tool call") : nil]
             .compactMap { $0 }.joined(separator: " · ")
-        let copy = presentation.copyText
         return SHTurnFooter(
             meta: meta,
             link: runs == 0 || actions.subagents == nil ? nil : nativeCount(runs, "subagent"),
             onLink: actions.subagents,
-            onCopy: copy.isEmpty ? nil : { UIPasteboard.general.string = copy },
+            onCopy: presentation.hasCopyText ? { UIPasteboard.general.string = presentation.copyText } : nil,
             onRetry: actions.retry,
             timing: presentation.timing.map(SHResponseTimingModel.init))
     }
