@@ -957,4 +957,96 @@ struct ChangesTurnTests {
         #expect(repo.read("a.txt") == "one\n")
         #expect(repo.read("README.md") == "# Readme, saved\n", "the person's Save is not the agent's to undo")
     }
+
+    // MARK: Subagents
+
+    /// A subagent run that began a minute ago and is still going, as its publisher reports it:
+    /// `files` are as the child named them, relative to `cwd`.
+    static func runningChild(_ id: String, in repo: ChangesRepo, files: [String]) -> ChildRun {
+        ChildRun(runID: id, label: "helper", state: "running", startedAt: ChangesService.nowMs() - 60_000,
+                 files: files.map { ChildFileChange(path: $0, added: 1, removed: 0) }, cwd: repo.path)
+    }
+
+    /// Another thread's helper writes in the checkout while the agent's turn runs: the turn is
+    /// shared, so the helper's file is not the turn's, and Undo leaves it as the helper left it.
+    @Test func anotherAgentsSubagentMakesATurnSharedAndKeepsItsFilesOut() async throws {
+        let t = try await Self.sharedCheckout(files: ["a.txt": "a\n", "b.txt": "b\n"], prompts: [
+            "edit a": [Self.hold("a-edit"), Self.write("a.txt"), Self.hold("a-end")],
+        ])
+        defer { t.host.stop() }
+        try await t.start(t.a, "edit a")
+        let publisher = try ExtensionClient(path: t.host.socketPath)
+        try publisher.send(.setAgentChildren(agentID: t.b.agent.id, children: [Self.runningChild("helper", in: t.repo, files: ["b.txt"])]))
+        _ = try await t.b.snapshot("the helper to be published") { $0.subagents?.first?.runID == "helper" }
+        try t.repo.write("a.txt", "a edited\n")
+        try t.repo.write("b.txt", "b edited by the other thread's helper\n")
+        t.open("a-edit")
+        try await t.calls(t.a, 1)
+        t.open("a-end")
+
+        let turn = try await t.settled(t.a)
+        #expect(turn.files.map(\.path) == ["a.txt"] && turn.fileCount == 1 && turn.canUndo)
+        #expect(try await t.changes.list(agentID: t.a.agent.id, scope: .lastTurn).summary == ["M a.txt"])
+        _ = try await t.changes.undoTurn(agentID: t.a.agent.id, turnID: turn.id)
+        #expect(t.repo.read("a.txt") == "a\n")
+        #expect(t.repo.read("b.txt") == "b edited by the other thread's helper\n")
+    }
+
+    /// The helper is published a moment after the turn settled (its publisher lags): the card
+    /// drops the helper's file when the run arrives, and Undo leaves it.
+    @Test func aSubagentPublishedAfterTheTurnSettledStillCorrectsIt() async throws {
+        let t = try await Self.sharedCheckout(files: ["a.txt": "a\n", "b.txt": "b\n"], prompts: [
+            "edit a": [Self.hold("a-edit"), Self.write("a.txt"), Self.hold("a-end")],
+        ])
+        defer { t.host.stop() }
+        try await t.start(t.a, "edit a")
+        try t.repo.write("a.txt", "a edited\n")
+        try t.repo.write("b.txt", "b edited by the other thread's helper\n")
+        t.open("a-edit")
+        try await t.calls(t.a, 1)
+        t.open("a-end")
+        let solo = try await t.settled(t.a)
+        #expect(solo.files.map(\.path) == ["a.txt", "b.txt"], "nobody else was known to write: the turn is solo")
+
+        let publisher = try ExtensionClient(path: t.host.socketPath)
+        try publisher.send(.setAgentChildren(agentID: t.b.agent.id, children: [Self.runningChild("helper", in: t.repo, files: ["b.txt"])]))
+        try await eventually("the card to drop b.txt") { t.turns(t.a).last?.files.map(\.path) == ["a.txt"] }
+        let corrected = try #require(t.turns(t.a).last)
+        #expect(corrected.id == solo.id && corrected.fileCount == 1 && corrected.canUndo && corrected.state == .ready)
+        _ = try await t.changes.undoTurn(agentID: t.a.agent.id, turnID: solo.id)
+        #expect(t.repo.read("a.txt") == "a\n")
+        #expect(t.repo.read("b.txt") == "b edited by the other thread's helper\n")
+    }
+
+    /// In a shared turn the agent's own helper's file is the agent's own, and the other agent's
+    /// card leaves it out.
+    @Test func aSubagentsEditsAreItsParentsOwnInASharedTurn() async throws {
+        let t = try await Self.sharedCheckout(files: ["a.txt": "a\n", "b.txt": "b\n", "x.txt": "x\n"], prompts: [
+            "edit a": [Self.hold("a-edit"), Self.write("a.txt"), Self.hold("a-end")],
+            "edit b": [Self.hold("b-edit"), Self.write("b.txt"), Self.hold("b-end")],
+        ])
+        defer { t.host.stop() }
+        try await t.start(t.a, "edit a")
+        try await t.start(t.b, "edit b")
+        let publisher = try ExtensionClient(path: t.host.socketPath)
+        try publisher.send(.setAgentChildren(agentID: t.a.agent.id, children: [Self.runningChild("helper", in: t.repo, files: ["x.txt"])]))
+        _ = try await t.a.snapshot("the helper to be published") { $0.subagents?.first?.runID == "helper" }
+        try t.repo.write("a.txt", "a edited\n")
+        try t.repo.write("b.txt", "b edited\n")
+        try t.repo.write("x.txt", "x edited by a's helper\n")
+        t.open("a-edit")
+        t.open("b-edit")
+        try await t.calls(t.a, 1)
+        try await t.calls(t.b, 1)
+
+        t.open("a-end")
+        let first = try await t.settled(t.a)
+        #expect(first.files.map(\.path) == ["a.txt", "x.txt"] && first.canUndo, "the helper is the agent's own writer")
+        t.open("b-end")
+        let second = try await t.settled(t.b)
+        #expect(second.files.map(\.path) == ["b.txt"], "a helper of another agent is not B's work")
+
+        _ = try await t.changes.undoTurn(agentID: t.a.agent.id, turnID: first.id)
+        #expect(t.repo.read("a.txt") == "a\n" && t.repo.read("x.txt") == "x\n" && t.repo.read("b.txt") == "b edited\n")
+    }
 }
