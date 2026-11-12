@@ -1374,10 +1374,83 @@ public final class SessionServer: @unchecked Sendable {
                 })
                 service.syncEngine.add(FleetPiSettingsSource(settings: pi.files.settings))
                 if let source = fleetHostSettings { service.syncEngine.add(source) }
+                addFleetContentSources(to: service)
                 service.listenerChanged(remoteListenPort)
                 service.start()
             } catch {
                 ShepherdLog.error("fleet could not start: \(error)")
+            }
+        }
+    }
+
+    /// Where this Mac's shared MCP servers are (`~/.config/mcp/mcp.json`). Tests point it at a scratch file.
+    public var mcpConfigFile = MCPConfigFile(url: ShepherdPaths.mcpConfigURL())
+    private var fleetRepoKeys: FleetRepoKeys?
+    private var repoKeysRefreshing = false
+
+    /// The content a fleet syncs beside the settings and instructions: MCP servers, hooks, subagent
+    /// profiles and spaces. Each is read and written through the code that owns it, and each announces
+    /// a synced write the way the person's own save would.
+    private func addFleetContentSources(to service: FleetService) {
+        let directory = supportDirectory.appendingPathComponent("fleet", isDirectory: true)
+        let sync = service.syncEngine
+        sync.add(FleetMCPSource(file: mcpConfigFile) { [weak self] in self?.queue.async { self?.pushSettingsChanged(.mcp) } })
+        sync.add(FleetHooksSource(catalog: { [weak self] in self?.hooks ?? HookCatalog(support: directory) }) { [weak self] in
+            self?.queue.async {
+                guard let self else { return }
+                self.pushSettingsChanged(.hooks)
+                if let handler = self.onHooksChanged { self.hopToMain { handler() } }
+            }
+        })
+        sync.add(FleetSubagentsSource(store: SubagentDefinitionsStore(pi: pi, parserSource: ChildrenExtension.configSource)) { [weak self] in
+            self?.queue.async { self?.pushSettingsChanged(.subagents) }
+        })
+        let keys = FleetRepoKeys(directory: directory)
+        fleetRepoKeys = keys
+        let host = FleetSpacesSource.Host(
+            spaces: { [weak self] in self?.store.state.spaces ?? [] },
+            hasThreads: { [weak self] id in self?.store.state.agents.contains { $0.spaceID == id } ?? false },
+            mutate: { [weak self] change in try self?.mutateState { change(&$0.spaces) } })
+        let spaces = FleetSpacesSource(host: host, directory: directory)
+        fleetSpacesSource = spaces
+        sync.add(spaces)
+        sync.beforeScan = { [weak self] in self?.refreshRepoKeys() }
+        refreshRepoKeys()
+    }
+
+    private var fleetSpacesSource: FleetSpacesSource?
+
+    /// Tests, and a person locating a folder: this Mac's folder for a space the fleet synced.
+    func bindFleetSpace(_ id: SpaceID, to path: String) {
+        queue.sync { fleetSpacesSource?.bind(id, to: path) }
+        queue.async { [self] in fleet?.syncEngine.localChanged() }
+    }
+
+    /// Server queue: the spaces changed, so their repo keys may have, and the fleet may have something to say.
+    func fleetSpacesChanged() {
+        guard let fleet, fleet.membership else { return }
+        refreshRepoKeys()
+        fleet.syncEngine.localChanged()
+    }
+
+    /// Server queue: looks at the checkout of each space whose git config changed (off the queue, since it
+    /// runs git) and records the new `repoKey`s through the usual state mutation.
+    private func refreshRepoKeys() {
+        guard let keys = fleetRepoKeys, !repoKeysRefreshing, fleet?.membership == true else { return }
+        let spaces = store.state.spaces.filter(FleetSpacesSource.syncs).map { (id: $0.id, path: $0.path, key: $0.repoKey) }
+        guard !spaces.isEmpty else { return }
+        repoKeysRefreshing = true
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let changes = keys.changes(for: spaces)
+            self?.queue.async {
+                guard let self else { return }
+                self.repoKeysRefreshing = false
+                guard !changes.isEmpty else { return }
+                try? self.mutateState { state in
+                    for index in state.spaces.indices {
+                        if let key = changes[state.spaces[index].id] { state.spaces[index].repoKey = key }
+                    }
+                }
             }
         }
     }
@@ -6737,6 +6810,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         let oldProjects = ProjectSettingsStore.directories(in: before)
         let newProjects = ProjectSettingsStore.directories(in: state)
+        if before.spaces != state.spaces, fleet != nil { queue.async { [weak self] in self?.fleetSpacesChanged() } }
         if before.spaces != state.spaces || !oldProjects.elementsEqual(newProjects, by: { $0.0 == $1.0 && $0.1 == $1.1 }) {
             projects.remember(before)
             projects.remember(state)

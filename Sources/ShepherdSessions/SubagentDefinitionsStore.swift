@@ -63,7 +63,29 @@ public final class SubagentDefinitionsStore: @unchecked Sendable {
         try lock.withLock { try seed(); return try readSnapshot() }
     }
 
+    /// Every readable subagent file as it is, not parsed and without seeding the defaults: what a
+    /// fleet syncs. A file that can't be read is left out.
+    public func files() throws -> [File] {
+        try lock.withLock {
+            try scanFiles().files.compactMap { row in
+                guard row["error"] == nil, let file = row["file"], let text = row["text"], let fingerprint = row["fingerprint"] else { return nil }
+                return File(file: file, text: text, fingerprint: fingerprint)
+            }
+        }
+    }
+
     private func readSnapshot(adding file: String? = nil) throws -> [Definition] {
+        let scanned = try scanFiles()
+        var folders = scanned.folders
+        if let file {
+            var path = ""
+            for part in file.split(separator: "/").dropLast() { path += part + "/"; folders.insert(path) }
+            guard folders.count <= 512 else { throw Failure("At most 512 subagent folders can be scanned. Choose an existing folder.") }
+        }
+        return try parse(scanned.files).definitions
+    }
+
+    private func scanFiles() throws -> (files: [[String: String]], folders: Set<String>) {
             var files: [[String: String]] = [], folders = Set<String>()
             func scan(_ folder: URL, relative: String, depth: Int) throws {
                 folders.insert(relative)
@@ -90,12 +112,7 @@ public final class SubagentDefinitionsStore: @unchecked Sendable {
             // Opening the folder no-follow before enumeration also rejects a substituted root.
             try withParent("placeholder.md") { _ , _ in }
             try scan(directory, relative: "", depth: 0)
-            if let file {
-                var path = ""
-                for part in file.split(separator: "/").dropLast() { path += part + "/"; folders.insert(path) }
-                guard folders.count <= 512 else { throw Failure("At most 512 subagent folders can be scanned. Choose an existing folder.") }
-            }
-            return try parse(files).definitions
+            return (files, folders)
     }
 
     public func open(_ file: String) throws -> File {
