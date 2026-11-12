@@ -156,6 +156,7 @@ struct SHProseBlocks<Code: View>: View {
         let tone = voice == .reply ? sh.textPrimary : sh.textSecondary
         ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
             let blockPath = path + [index]
+            let _ = SHRenderProbe.tick("prose.block")
             switch block {
             case .heading(_, let text):
                 heading(text).foregroundStyle(tone).textSelection(.enabled)
