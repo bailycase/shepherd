@@ -633,6 +633,30 @@ final class FleetContentIndex: @unchecked Sendable {
 
     private var treeCheckedAt = -1
 
+    /// A directory whose time changed: what is new in it or gone from it. Files it still has are not looked at (their own size and time
+    /// were, in `catchUp`), so a directory of thousands of recently written files isn't hashed again because one name came or went.
+    private func reconcileNames(in path: String) {
+        guard !isUnderExcluded(path) else { return }
+        guard path.isEmpty || tree.names(in: path) != nil else { return scanAfterEvent(path, deep: false) }
+        guard let listing = list(absolute(path)) else { return removePath(path) }
+        dirStamps[path] = listing.modified
+        var seen = Set<String>()
+        let known = tree.names(in: path) ?? [:]
+        for (name, status) in listing.items {
+            seen.insert(name)
+            let child = path.isEmpty ? name : path + "/" + name
+            switch status.st_mode & S_IFMT {
+            case S_IFDIR:
+                if known[name] == nil, excluded[child] == nil { scan(child, deep: false) }
+            case S_IFREG, S_IFLNK:
+                if entries[child] == nil { if exclusions.excludes(file: child) { continue }; upsert(child, status) }
+            default:
+                if known[name] != nil { removePath(child) }
+            }
+        }
+        for name in known.keys where !seen.contains(name) { removePath(path.isEmpty ? name : path + "/" + name) }
+    }
+
     /// What a dispatch relies on: nothing the system hasn't yet told the index about is missing from it. Every file the index holds is
     /// looked at (size and time, across the cores: a few milliseconds for tens of thousands of files) and so is every directory it
     /// scanned (a file made, removed or renamed in one changes its time); what differs is read again here, as an event for it would have
@@ -664,7 +688,7 @@ final class FleetContentIndex: @unchecked Sendable {
         let (changedFiles, changedDirectories) = stale.withLock { $0 }
         guard !changedFiles.isEmpty || !changedDirectories.isEmpty else { return 0 }
         // Directories first (what is new or gone in them), shallowest first, then the files that are still there and differ.
-        for path in changedDirectories.sorted(by: { ($0.split(separator: "/").count, $0) < ($1.split(separator: "/").count, $1) }) { scanAfterEvent(path, deep: false) }
+        for path in changedDirectories.sorted(by: { ($0.split(separator: "/").count, $0) < ($1.split(separator: "/").count, $1) }) { reconcileNames(in: path) }
         for path in changedFiles.sorted() { refreshFile(path) }
         finishBatch(classifyingInBackground: true)
         return changedFiles.count + changedDirectories.count
