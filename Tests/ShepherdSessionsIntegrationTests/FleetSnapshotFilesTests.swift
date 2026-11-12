@@ -145,4 +145,138 @@ struct FleetSnapshotFilesTests {
         #expect((attributes[.modificationDate] as? Date)?.timeIntervalSince1970 == past.timeIntervalSince1970, "the clone keeps the file's time, so a cloned index needs no refresh")
         #expect(try String(contentsOfFile: target + "/sub/file.txt", encoding: .utf8) == "content\n")
     }
+
+    // MARK: The worktree written without git
+
+    /// A scratch repository (one commit) and the folder a worktree would go in.
+    private func worktreeFixture() throws -> (repo: URL, commit: String, destination: String) {
+        let repo = try makeScratchRepo(files: ["README.md": "# acme\n", "src/app.ts": "app\n"])
+        let commit = try git(["rev-parse", "HEAD"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (repo, commit, try makeScratchDirectory("worktrees").appendingPathComponent("acme-web-fleet-fix-test").path)
+    }
+
+    @Test func aWorktreeWrittenDirectlyIsOneGitListsUsesAndRemovesLikeItsOwn() throws {
+        let (repo, commit, destination) = try worktreeFixture()
+        #expect(FleetFastWorktree.add(repo: repo.path, branch: "fleet/fix-test", commit: commit, destination: destination))
+        let folder = URL(fileURLWithPath: destination)
+        // Git lists it, on its branch, at the commit; the branch exists; nothing is wrong with the repository.
+        let listing = try git(["worktree", "list", "--porcelain"], in: repo)
+        #expect(listing.contains("branch refs/heads/fleet/fix-test") && listing.contains(folder.resolvingSymlinksInPath().path) && listing.contains(commit))
+        #expect(try git(["rev-parse", "HEAD"], in: folder).trimmingCharacters(in: .whitespacesAndNewlines) == commit)
+        #expect(try git(["rev-parse", "--abbrev-ref", "HEAD"], in: folder).trimmingCharacters(in: .whitespacesAndNewlines) == "fleet/fix-test")
+        #expect(try git(["branch", "--list", "fleet/*"], in: repo).contains("fleet/fix-test"))
+        _ = try git(["fsck", "--no-dangling"], in: repo)
+        // It is what `--no-checkout` leaves: no files, no index; the checkout git makes next fills it and reads clean.
+        #expect(try FileManager.default.contentsOfDirectory(atPath: destination) == [".git"])
+        try git(["read-tree", "--reset", "-u", "HEAD"], in: folder)
+        #expect(try git(["status", "--porcelain"], in: folder).isEmpty && FileManager.default.fileExists(atPath: destination + "/src/app.ts"))
+        // A commit made there lands on its branch, and the repository's own checkout is untouched.
+        try "more\n".write(to: folder.appendingPathComponent("src/more.ts"), atomically: true, encoding: .utf8)
+        try git(["add", "."], in: folder)
+        try git(["commit", "-qm", "more"], in: folder)
+        #expect(try git(["rev-parse", "main"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines) == commit)
+        // Git takes it away as it would any worktree: the folder, its entry, then the branch.
+        try git(["worktree", "remove", "--force", destination], in: repo)
+        try git(["branch", "-D", "fleet/fix-test"], in: repo)
+        #expect(!FileManager.default.fileExists(atPath: destination))
+        #expect(try git(["worktree", "list", "--porcelain"], in: repo).components(separatedBy: "worktree ").count == 2)
+        #expect(!FileManager.default.fileExists(atPath: repo.appendingPathComponent(".git/worktrees/acme-web-fleet-fix-test").path))
+    }
+
+    @Test func aRepositoryThatKeepsMoreThanThePlainLayoutIsLeftToGitAndNothingIsWritten() throws {
+        func nothingWritten(_ repo: URL, _ destination: String) -> Bool {
+            !FileManager.default.fileExists(atPath: repo.appendingPathComponent(".git/worktrees").path) && !FileManager.default.fileExists(atPath: destination)
+        }
+        // A branch of that name already exists, and so does a folder where the worktree would go.
+        var (repo, commit, destination) = try worktreeFixture()
+        try git(["branch", "fleet/fix-test"], in: repo)
+        #expect(!FleetFastWorktree.add(repo: repo.path, branch: "fleet/fix-test", commit: commit, destination: destination) && nothingWritten(repo, destination))
+        (repo, commit, destination) = try worktreeFixture()
+        try FileManager.default.createDirectory(atPath: destination, withIntermediateDirectories: true)
+        #expect(!FleetFastWorktree.add(repo: repo.path, branch: "fleet/fix-test", commit: commit, destination: destination))
+        // Config git reads for more than the plain layout: an extension, a hooks path, a worktree config.
+        for setting in [["extensions.worktreeConfig", "true"], ["core.hooksPath", "/nonexistent"], ["extensions.refStorage", "files"]] {
+            (repo, commit, destination) = try worktreeFixture()
+            try git(["config", setting[0], setting[1]], in: repo)
+            #expect(!FleetFastWorktree.add(repo: repo.path, branch: "fleet/fix-test", commit: commit, destination: destination) && nothingWritten(repo, destination), "\(setting[0])")
+        }
+        // A reference-transaction hook would have run.
+        (repo, commit, destination) = try worktreeFixture()
+        let hooks = repo.appendingPathComponent(".git/hooks")
+        try FileManager.default.createDirectory(at: hooks, withIntermediateDirectories: true)
+        try "#!/bin/sh\n".write(to: hooks.appendingPathComponent("reference-transaction"), atomically: true, encoding: .utf8)
+        #expect(!FleetFastWorktree.add(repo: repo.path, branch: "fleet/fix-test", commit: commit, destination: destination) && nothingWritten(repo, destination))
+        // A branch name git would refuse, a commit that isn't a SHA-1, and a checkout that is itself a worktree.
+        (repo, commit, destination) = try worktreeFixture()
+        for branch in ["fleet/../x", "fleet/x.lock", "fleet/a b", "-x", "fleet//x", "fleet/x~1", "fleet/.hidden"] {
+            #expect(!FleetFastWorktree.add(repo: repo.path, branch: branch, commit: commit, destination: destination), "\(branch)")
+        }
+        #expect(!FleetFastWorktree.add(repo: repo.path, branch: "fleet/fix-test", commit: String(repeating: "a", count: 64), destination: destination))
+        let linked = try makeScratchDirectory("linked").appendingPathComponent("w")
+        try git(["worktree", "add", "-q", "-b", "other", linked.path], in: repo)
+        #expect(!FleetFastWorktree.add(repo: linked.path, branch: "fleet/fix-test", commit: commit, destination: destination + "2"))
+    }
+
+    @Test func aListingPatchedWithTheDifferenceBetweenTwoCommitsIsTheListingOfTheSecond() throws {
+        let repo = try makeScratchRepo(files: [
+            "a.c": "c\n", "a/b.txt": "b\n", "docs/guide.md": "g\n", "docs/old.md": "o\n", "bin/run.sh": "#!/bin/sh\n", "src/swap": "will become a link\n", "z.txt": "z\n",
+        ])
+        let first = try git(["rev-parse", "HEAD"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
+        func write(_ text: String, _ path: String) throws {
+            let url = repo.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try text.write(to: url, atomically: true, encoding: .utf8)
+        }
+        // An edit, a delete, a mode change, new files that sort before, between and after the old ones (`a.b` and `a/b` are why order matters), a new
+        // directory, a link, and a file that becomes a link.
+        try write("edited\n", "docs/guide.md")
+        try FileManager.default.removeItem(at: repo.appendingPathComponent("docs/old.md"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: repo.appendingPathComponent("z.txt").path)
+        try write("new\n", "a.b"); try write("new\n", "a/aa.txt"); try write("new\n", "a-b/x.txt"); try write("new\n", "zz/deep/er.txt"); try write("new\n", "0.txt")
+        try FileManager.default.createSymbolicLink(atPath: repo.appendingPathComponent("link").path, withDestinationPath: "a.c")
+        try FileManager.default.removeItem(at: repo.appendingPathComponent("src/swap"))
+        try FileManager.default.createSymbolicLink(atPath: repo.appendingPathComponent("src/swap").path, withDestinationPath: "../a.c")
+        try git(["add", "-A"], in: repo)
+        try git(["commit", "-qm", "second"], in: repo)
+        let second = try git(["rev-parse", "HEAD"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
+        func listing(_ commit: String) throws -> [(String, FleetTreeEntry)] { FleetSnapshotSender.parseOrdered(tree: try git(["ls-tree", "-r", "-z", commit], in: repo)) }
+        let base = FleetSpares.Listing(commit: first, ordered: try listing(first), tree: Dictionary(try listing(first)) { first, _ in first })
+        let raw = try git(["diff-tree", "-r", "-z", "--no-renames", "--raw", first, second], in: repo)
+        let patched = FleetSnapshotApply.patched(base, by: FleetSnapshotApply.changes(in: raw))
+        let expected = try listing(second)
+        #expect(patched.ordered.map { $0.0 } == expected.map { $0.0 }, "the same paths in the same order")
+        #expect(patched.ordered.map { $0.1 } == expected.map { $0.1 }, "the same kinds and blob ids")
+        #expect(patched.tree == Dictionary(expected) { first, _ in first })
+        // The difference reported as changes, not as text: what was deleted, and what is there now.
+        let changes = FleetSnapshotApply.changes(in: raw)
+        #expect(changes.filter { $0.deleted }.map { $0.path } == ["docs/old.md"])
+        #expect(changes.first { $0.path == "z.txt" }?.entry?.kind == .executable && changes.first { $0.path == "link" }?.entry?.kind == .symlink)
+        // No difference is the same listing.
+        #expect(FleetSnapshotApply.patched(base, by: []).ordered.map { $0.0 } == base.ordered.map { $0.0 })
+    }
+
+    @Test func aCommitsTreeIsListedOnceHoweverManyAskAtOnceAndKeptForTheNextDispatch() async throws {
+        let repo = try makeScratchRepo(files: ["README.md": "# acme\n", "src/app.ts": "app\n", "src/lib/util.ts": "util\n"])
+        let root = repo.resolvingSymlinksInPath().path
+        let commit = try git(["rev-parse", "HEAD"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
+        let trees = FleetTrackedTrees()
+        // Four ask at once (the dispatch's prefetch and its build): one runs git, the others get the same tree.
+        let loaded = await withTaskGroup(of: (FleetTrackedTrees.Tree, Bool)?.self) { group in
+            for _ in 0..<4 { group.addTask { trees.load(root: root, commit: commit).map { ($0.tree, $0.ranGit) } } }
+            var out: [(FleetTrackedTrees.Tree, Bool)] = []
+            for await result in group { if let result { out.append(result) } }
+            return out
+        }
+        #expect(loaded.count == 4 && loaded.filter { $0.1 }.count == 1)
+        let tree = try #require(loaded.first?.0)
+        #expect(Set(tree.entries.keys) == ["README.md", "src/app.ts", "src/lib/util.ts"] && tree.directories == ["src", "src/lib"])
+        // Later asks are kept; another commit is its own listing; a commit that isn't here lists nothing.
+        #expect(trees.load(root: root, commit: commit)?.ranGit == false)
+        try "more\n".write(to: repo.appendingPathComponent("more.txt"), atomically: true, encoding: .utf8)
+        try git(["add", "."], in: repo)
+        try git(["commit", "-qm", "more"], in: repo)
+        let next = try git(["rev-parse", "HEAD"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(trees.load(root: root, commit: next)?.ranGit == true && trees.load(root: root, commit: next)?.tree.entries["more.txt"] != nil)
+        #expect(trees.load(root: root, commit: String(repeating: "0", count: 40)) == nil)
+    }
 }

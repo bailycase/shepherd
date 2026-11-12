@@ -156,6 +156,42 @@ struct FleetContentIndexTests {
         #expect(checkout.index.queue.sync { checkout.index.state } == .ready)
     }
 
+    @Test func catchingUpReadsAgainWhateverTheEventsHaveNotYetReportedAndNothingElse() throws {
+        let checkout = try Checkout(files: Self.tree)
+        checkout.scan()
+        // Nothing changed: nothing is read again, and the manifest is as it was.
+        #expect(checkout.index.queue.sync { checkout.index.catchUp() } == 0)
+        let before = checkout.manifest
+        // Changes with no event for any: an edit in place (another size), one that only moves the time, a new file, a new folder with files in it, a
+        // deleted file and a deleted folder.
+        let later = Date(timeIntervalSince1970: 1_700_000_500)
+        try checkout.write("README.md", "# acme-web, edited in place\n", modified: later)
+        try checkout.write("src/app.ts", Self.tree["src/app.ts"]!, modified: later)
+        try checkout.write("src/new.ts", "export const fresh = 1\n")
+        try checkout.write("generated/out/a.txt", "a\n")
+        try checkout.write("generated/out/b.txt", "b\n")
+        try checkout.remove("package.json")
+        try checkout.remove("node_modules")
+        let fixed = checkout.index.queue.sync { checkout.index.catchUp() }
+        #expect(fixed > 0)
+        let entries = checkout.entries
+        #expect(entries["README.md"]?.hash == checkout.hash("# acme-web, edited in place\n") && entries["src/new.ts"]?.hash == checkout.hash("export const fresh = 1\n"))
+        #expect(entries["generated/out/a.txt"] != nil && entries["generated/out/b.txt"] != nil)
+        #expect(entries["package.json"] == nil && !entries.keys.contains { $0.hasPrefix("node_modules/") })
+        #expect(entries["src/app.ts"]?.modified == Int64(later.timeIntervalSince1970 * 1_000_000_000))
+        // What is in the index is what a scan from nothing would hold, with the same directory hashes, and the manifest followed.
+        let rescanned = try Checkout(files: [:])
+        try FileManager.default.removeItem(at: rescanned.root)
+        try FileManager.default.copyItem(at: checkout.root, to: rescanned.root)
+        rescanned.scan()
+        #expect(Set(entries.keys) == Set(rescanned.entries.keys))
+        #expect(entries.mapValues(\.hash) == rescanned.entries.mapValues(\.hash))
+        #expect(checkout.index.queue.sync { checkout.index.rootHash } == rescanned.index.queue.sync { rescanned.index.rootHash })
+        #expect(checkout.manifest != before && checkout.manifest.contains(checkout.hash("export const fresh = 1\n")))
+        // And it is quiet again.
+        #expect(checkout.index.queue.sync { checkout.index.catchUp() } == 0)
+    }
+
     @Test func pathBoundCachesAreNotIndexedAndNodeModulesIs() throws {
         let checkout = try Checkout(files: [
             "src/main.swift": "print(1)\n", "Package.swift": "// swift-tools-version: 6.0\n", "Cargo.toml": "[package]\n",
