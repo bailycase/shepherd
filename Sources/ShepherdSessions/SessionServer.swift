@@ -699,6 +699,9 @@ public final class SessionServer: @unchecked Sendable {
     @MainActor var startingTerminals = Set<PaneID>()
     /// Main actor: agents whose pi `spawnAgent` is starting now (a draining host waits for them).
     @MainActor var spawningAgents = 0
+    /// Main actor: new agents `startNewAgent` is still starting, whose pi is its to spawn and bind (a
+    /// client's first poll of the thread must not start a second one: `respawnAgent`).
+    @MainActor var creatingAgents = Set<AgentID>()
     /// Main actor: what every agent's pi start waits for first (`holdStartsForFirstCopy`), and
     /// how many wait for it now.
     @MainActor var firstCopy: Task<Void, Never>?
@@ -6597,6 +6600,13 @@ public final class SessionServer: @unchecked Sendable {
                 if let prompt = kept.openingPrompt, let sessionID, let thread = self.sessions[sessionID]?.thread {
                     thread.sendOpeningPrompt(prompt.text, images: prompt.images, id: prompt.id)
                 }
+            }
+            // A pi that exited before its pane was bound (a refused launch) had no agent to tell this
+            // Mac's app why (`sessionDidExit`): say so now.
+            if let sessionID, let kept = self.keptStarts[sessionID], !kept.retrying, let problem = kept.problem,
+               self.sessions[sessionID]?.isAlive != true, let agent = self.agentID(forSession: sessionID) {
+                self.recordAgentFailure(agentID: agent, problem.title)
+                self.sendToLocalApps(.agentStartProblem(agentID: agent, problem: problem))
             }
             // Revisions pi reached before its pane was bound had no agent to reach.
             if let sessionID, self.sessions[sessionID]?.thread != nil {
