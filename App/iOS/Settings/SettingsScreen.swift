@@ -40,13 +40,13 @@ private struct SettingsList: View {
                 }
                 SettingsSection("Agents") {
                     SHListCard {
-                        row(.defaults, trailing: value(store.defaultsValue(chosenHost: navigator.settingsSelection.chosenHost)))
+                        row(.defaults, trailing: value(store.defaultsValue))
                         row(.instructions, trailing: value(store.instructionsValue))
                         row(.skills, trailing: value(store.skillsValue))
                         if store.showsHooks {
-                            row(.hooks, trailing: value(store.hooksValue(chosenHost: navigator.settingsSelection.hooksHost)))
+                            row(.hooks, trailing: value(store.hooksValue))
                         }
-                        row(.pi, trailing: value(store.extensionsValue(chosenHost: navigator.settingsSelection.chosenHost)))
+                        row(.pi, trailing: value(store.extensionsValue))
                         row(.mcp, trailing: SHListRow.Trailing.none)
                         row(.subagents, trailing: SHListRow.Trailing.none)
                         row(.signIn, trailing: SHListRow.Trailing.none)
@@ -73,7 +73,7 @@ private struct SettingsList: View {
                     row(.diagnostics, trailing: SHListRow.Trailing.none)
                 }
                 SettingsSection("About") {
-                    SHListCard { AboutRow(agent: store.agentVersion(chosenHost: navigator.settingsSelection.chosenHost)) }
+                    SHListCard { AboutRow(agent: store.agentVersion) }
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
@@ -115,7 +115,7 @@ private struct SettingsSplit: View {
                     }
                 }
                 .padding(MobileLayout.settingsListInset)
-                AboutLine(agent: store.listFootVersion(page: selection.page, chosenHost: selection.chosenHost))
+                AboutLine(agent: store.listFootVersion(page: selection.page))
                     .padding(.horizontal, MobileLayout.settingsListInset + SH.Space.l)
                     .padding(.vertical, SH.Space.l)
             }

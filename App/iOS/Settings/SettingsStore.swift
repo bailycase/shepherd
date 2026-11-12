@@ -18,7 +18,7 @@ final class SettingsStore {
     let suggestions = ClientSuggestions()
     let skills: ClientSkills
     let hostConfig = ClientHostConfig()
-    /// Settings › Hooks: one host's hooks at a time, read when the page shows.
+    /// Settings › Hooks: the fleet's hooks through one host, read when the page shows.
     let hooks = ClientHooks()
     /// Settings › Hooks' Add or Edit sheet while it is open.
     var hookEditor: ClientHookEditor?
@@ -73,27 +73,20 @@ final class SettingsStore {
 
     // MARK: Reading
 
-    /// The host Defaults, Worktrees and Extensions show: the one chosen, else the first that
-    /// serves its settings, else the first.
-    func settingsHost(chosenHost: UUID?) -> SettingsHost? {
-        if let chosen = hosts.first(where: { $0.id == chosenHost }) { return chosen }
-        return hosts.first { $0.serves(RemoteProtocol.hostSettingsCapability) } ?? hosts.first
+    /// The host Defaults, Worktrees and Extensions show: the first that serves its settings, else the
+    /// first. A fleet keeps these the same on every Mac, so which one is only which the phone asks.
+    var settingsHost: SettingsHost? {
+        hosts.first { $0.serves(RemoteProtocol.hostSettingsCapability) } ?? hosts.first
     }
 
     /// The settings host's settings, once read.
-    func settings(chosenHost: UUID?) -> HostSettings? {
-        settingsHost(chosenHost: chosenHost).flatMap { hostSettings.settings(of: $0) }
-    }
-
-    var settings: HostSettings? { settings(chosenHost: nil) }
+    var settings: HostSettings? { settingsHost.flatMap { hostSettings.settings(of: $0) } }
 
     /// Defaults' value on the list: the model without its provider ("claude-opus").
-    var defaultsValue: String? { defaultsValue(chosenHost: nil) }
-    func defaultsValue(chosenHost: UUID?) -> String? { settings(chosenHost: chosenHost).map(HostSettingsPresentation.defaultsValue) }
+    var defaultsValue: String? { settings.map(HostSettingsPresentation.defaultsValue) }
 
     /// Extensions' value: how many load ("6").
-    var extensionsValue: String? { extensionsValue(chosenHost: nil) }
-    func extensionsValue(chosenHost: UUID?) -> String? { settings(chosenHost: chosenHost).map(HostSettingsPresentation.extensionsValue) }
+    var extensionsValue: String? { settings.map(HostSettingsPresentation.extensionsValue) }
 
     /// Instructions' value: the files that hold anything ("AGENTS.md, APPEND").
     var instructionsValue: String? {
@@ -135,18 +128,15 @@ final class SettingsStore {
     /// Whether any host has served hooks: older hosts hide Settings › Hooks.
     var showsHooks: Bool { hosts.contains { $0.capabilities.contains(RemoteProtocol.hooksCapability) } }
 
-    /// Hooks' value: how many the page's host has, once read ("8").
-    func hooksValue(chosenHost: UUID?) -> String? {
-        ClientHooks.host(chosen: chosenHost, in: hosts).flatMap { hooks.state(of: $0).page }.map { String($0.hookCount) }
-    }
+    /// Hooks' value: how many there are, once read ("8").
+    var hooksValue: String? { hooks.state.page.map { String($0.hookCount) } }
 
     /// About's agent: "agent 0.87.1", from the settings host.
-    var agentVersion: String? { agentVersion(chosenHost: nil) }
-    func agentVersion(chosenHost: UUID?) -> String? { HostSettingsPresentation.agentVersion(settings(chosenHost: chosenHost)) }
+    var agentVersion: String? { HostSettingsPresentation.agentVersion(settings) }
 
     /// The iPad list's foot names the program beside the Pi page ("pi 0.87.1"), as the Mac's does.
-    func listFootVersion(page: SettingsPage, chosenHost: UUID?) -> String? {
-        HostSettingsPresentation.agentVersion(settings(chosenHost: chosenHost), namingPi: page == .pi)
+    func listFootVersion(page: SettingsPage) -> String? {
+        HostSettingsPresentation.agentVersion(settings, namingPi: page == .pi)
     }
 
     /// The app's host (its thread lists, its models), for a Settings host.
@@ -162,8 +152,8 @@ final class SettingsStore {
         await instructions.refresh(hosts)
         await suggestions.refresh(hosts)
         await skills.refresh(hosts.map(SkillsHost.init))
-        // Hooks' value on the list: the first host that serves them (the page reads its own host).
-        if let host = ClientHooks.hosts(hosts).first { await hooks.refresh(host) }
+        // Hooks' value on the list: through the host the page reads.
+        await hooks.refresh()
     }
 
     /// While a Settings screen shows: reads every host now, and a host again when it connects.
@@ -194,6 +184,7 @@ final class SettingsStore {
         hosts = mobileHosts.hosts.map { host in
             SettingsHost(id: host.id, name: host.name, client: host.connectedClient, capabilities: host.capabilities)
         }
+        hooks.use(hosts)
         if watchers > 0, connected { Task { await refresh() } }
     }
 }

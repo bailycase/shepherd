@@ -116,15 +116,14 @@ enum ClientStateChecks {
     static func selectedHostSummaries(_ app: MobileApp) async {
         let settings = SettingsStore.of(app.hosts)
         await settings.refresh()
-        for host in settings.hosts where host.isConnected {
-            guard let value = settings.hostSettings.settings(of: host) else { check(false, "summary host loaded"); continue }
-            let nav = MobileNavigator()
-            nav.settingsSelection.chosenHost = host.id
-            check(settings.defaultsValue(chosenHost: nav.settingsSelection.chosenHost) == HostSettingsPresentation.defaultsValue(value)
-                  && settings.extensionsValue(chosenHost: nav.settingsSelection.chosenHost) == HostSettingsPresentation.extensionsValue(value)
-                  && settings.agentVersion(chosenHost: nav.settingsSelection.chosenHost) == HostSettingsPresentation.agentVersion(value),
-                  "Settings and More summaries follow the scene-selected host")
+        guard let host = settings.settingsHost, host.isConnected, let value = settings.hostSettings.settings(of: host) else {
+            check(false, "summary host loaded")
+            return
         }
+        check(settings.defaultsValue == HostSettingsPresentation.defaultsValue(value)
+              && settings.extensionsValue == HostSettingsPresentation.extensionsValue(value)
+              && settings.agentVersion == HostSettingsPresentation.agentVersion(value),
+              "Settings and More summaries follow the host the phone reads")
     }
 
     static func commitAndQueueOwnership() async {

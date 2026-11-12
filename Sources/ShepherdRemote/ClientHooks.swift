@@ -2,8 +2,8 @@ import Foundation
 import Observation
 import ShepherdProtocol
 
-// Settings › Hooks on the iPhone and the iPad: one host's hooks at a time, read and changed over
-// `hooks.v1`. The model holds what the pages draw (rows derived once per answer) and every rule
+// Settings › Hooks on the iPhone and the iPad: the fleet's hooks through one Mac, read and changed over
+// `hooks.v1`; a fleet keeps them the same on every Mac. The model holds what the pages draw (rows derived once per answer) and every rule
 // they follow, so the pages only draw.
 
 /// What Settings › Hooks reads and changes a host's hooks through: its `RemoteHostClient`, or a
@@ -50,102 +50,101 @@ public final class ClientHooks {
         public var page: HooksPage? { if case .loaded(let page) = self { page } else { nil } }
     }
 
-    private var states: [UUID: State] = [:]
-    /// The last change that failed, per host, said on the page until the next change or read.
-    public private(set) var problems: [UUID: String] = [:]
+    /// The Mac the page reads and changes: any Mac in the fleet, since its hooks are the same on every one.
+    public private(set) var host: SettingsHost?
+    private var loaded: State?
+    /// The last change that failed, said on the page until the next change or read.
+    public private(set) var problem: String?
 
     public init() {}
 
-    /// Hosts that serve hooks, for the picker: connected ones only.
-    public static func hosts(_ hosts: [SettingsHost]) -> [SettingsHost] {
-        hosts.filter { $0.serves(RemoteProtocol.hooksCapability) }
+    /// The host the page uses among the hosts the app holds: the first that serves hooks, else the first
+    /// (whose state says why it can't). Called whenever the hosts change.
+    public func use(_ hosts: [SettingsHost]) {
+        let next = hosts.first { $0.serves(RemoteProtocol.hooksCapability) } ?? hosts.first
+        if next?.id != host?.id { loaded = nil; problem = nil }
+        host = next
     }
 
-    /// The host the page shows: the one chosen while it serves hooks, else the first that does,
-    /// else the first host (whose state says why it can't).
-    public static func host(chosen: UUID?, in hosts: [SettingsHost]) -> SettingsHost? {
-        let serving = Self.hosts(hosts)
-        return serving.first { $0.id == chosen } ?? serving.first ?? hosts.first { $0.id == chosen } ?? hosts.first
-    }
-
-    public func state(of host: SettingsHost) -> State {
-        guard host.isConnected else { return .offline }
+    public var state: State {
+        guard let host, host.isConnected else { return .offline }
         guard host.capabilities.contains(RemoteProtocol.hooksCapability) else { return .unsupported }
-        return states[host.id] ?? .loading
+        return loaded ?? .loading
     }
 
-    public func problem(of host: SettingsHost) -> String? { problems[host.id] }
-    public func dismissProblem(of host: SettingsHost) { set(problem: nil, for: host.id) }
+    public func dismissProblem() { set(problem: nil) }
 
-    public func forget(host: UUID) {
-        states[host] = nil
-        problems[host] = nil
+    public func forget(host id: UUID) {
+        guard host?.id == id else { return }
+        host = nil
+        loaded = nil
+        problem = nil
     }
 
     /// Reads the host's hooks afresh; a host that can't answer keeps what it showed, with why.
-    public func refresh(_ host: SettingsHost) async {
-        guard let client = host.client as? HooksClient, host.capabilities.contains(RemoteProtocol.hooksCapability) else { return }
+    public func refresh() async {
+        guard let host, let client = host.client as? HooksClient, host.capabilities.contains(RemoteProtocol.hooksCapability) else { return }
         do {
-            apply(try await client.hooks(.fetch), to: host.id)
+            apply(try await client.hooks(.fetch))
         } catch {
-            if states[host.id]?.page == nil { set(.failed(settingsProblem(error)), for: host.id) } else { set(problem: settingsProblem(error), for: host.id) }
+            if loaded?.page == nil { set(.failed(settingsProblem(error))) } else { set(problem: settingsProblem(error)) }
         }
     }
 
     /// The switch: shows at once, then goes to the host; a refusal puts the host's state back.
-    public func setOn(_ row: HookRowValue, _ on: Bool, host: SettingsHost) async {
-        guard !row.locked, var page = states[host.id]?.page else { return }
+    public func setOn(_ row: HookRowValue, _ on: Bool) async {
+        guard !row.locked, var page = loaded?.page else { return }
         for g in page.groups.indices {
             for r in page.groups[g].rows.indices where page.groups[g].rows[r].id == row.id { page.groups[g].rows[r].on = on }
         }
-        set(.loaded(page), for: host.id)
-        await change(.setOn(hash: row.hash, on: on), host: host)
+        set(.loaded(page))
+        await change(.setOn(hash: row.hash, on: on))
     }
 
-    public func setReader(_ format: HookFormat, _ on: Bool, host: SettingsHost) async {
-        if var page = states[host.id]?.page {
+    public func setReader(_ format: HookFormat, _ on: Bool) async {
+        if var page = loaded?.page {
             switch format {
             case .claude: page.snapshot.settings.readers.claude = on
             case .codex: page.snapshot.settings.readers.codex = on
             case .shepherd: break
             }
-            set(.loaded(page), for: host.id)
+            set(.loaded(page))
         }
-        await change(.setReader(format: format, on: on), host: host)
+        await change(.setReader(format: format, on: on))
     }
 
     /// Sends a change; true when the host took it. A refusal is the page's problem, and the host's
     /// state is read again.
     @discardableResult
-    public func change(_ request: RemoteHooksRequest, host: SettingsHost) async -> Bool {
+    public func change(_ request: RemoteHooksRequest) async -> Bool {
         do {
-            _ = try await perform(request, host: host)
-            set(problem: nil, for: host.id)
+            _ = try await perform(request)
+            set(problem: nil)
             return true
         } catch {
-            set(problem: settingsProblem(error), for: host.id)
-            await refresh(host)
+            set(problem: settingsProblem(error))
+            await refresh()
             return false
         }
     }
 
     /// Sends a request, keeping the host's catalog from its answer. Throws the host's refusal.
-    public func perform(_ request: RemoteHooksRequest, host: SettingsHost) async throws -> RemoteHooksResult {
-        guard let client = host.client as? HooksClient else {
-            throw RemoteHostClientError.rejected(code: "offline", message: "\(host.name) is offline. Try again once it's back.")
+    public func perform(_ request: RemoteHooksRequest) async throws -> RemoteHooksResult {
+        guard let host, let client = host.client as? HooksClient else {
+            throw RemoteHostClientError.rejected(code: "offline", message: "The Mac is offline. Try again once it's back.")
         }
         let result = try await client.hooks(request)
-        apply(result, to: host.id)
+        apply(result)
         return result
     }
 
-    private func apply(_ result: RemoteHooksResult, to host: UUID) {
+    private func apply(_ result: RemoteHooksResult) {
         guard case .hooks(let snapshot) = result else { return }
-        set(.loaded(HooksPage(snapshot)), for: host)
+        set(.loaded(HooksPage(snapshot)))
     }
 
-    private func set(_ state: State, for host: UUID) { if states[host] != state { states[host] = state } }
-    private func set(problem: String?, for host: UUID) { if problems[host] != problem { problems[host] = problem } }
+    private func set(_ state: State) { if loaded != state { loaded = state } }
+    private func set(problem: String?) { if self.problem != problem { self.problem = problem } }
 }
 
 /// Settings › Hooks › Add hook and Edit hook on the iPhone and the iPad (MobileHookEdit): Form or
@@ -252,7 +251,7 @@ public final class ClientHookEditor: Identifiable {
     public func remove(_ id: UUID) { if handlers.count > 1 { handlers.removeAll { $0.id == id } } }
 
     /// Writes the hook on the host; true when it did.
-    public func save(with hooks: ClientHooks, host: SettingsHost) async -> Bool {
+    public func save(with hooks: ClientHooks) async -> Bool {
         guard !readOnly, !saving else { return false }
         if pane == .json, !readJSON() { problem = jsonError; return false }
         let drafts: [HookDraft]
@@ -260,8 +259,7 @@ public final class ClientHookEditor: Identifiable {
         saving = true
         defer { saving = false }
         do {
-            _ = try await hooks.perform(.save(drafts: drafts, file: target, replacing: entry.map(HookRef.init), kept: handlers.firstIndex(where: \.original)),
-                                        host: host)
+            _ = try await hooks.perform(.save(drafts: drafts, file: target, replacing: entry.map(HookRef.init), kept: handlers.firstIndex(where: \.original)))
             problem = nil
             return true
         } catch {
@@ -270,12 +268,12 @@ public final class ClientHookEditor: Identifiable {
         }
     }
 
-    public func delete(with hooks: ClientHooks, host: SettingsHost) async -> Bool {
+    public func delete(with hooks: ClientHooks) async -> Bool {
         guard let entry, !readOnly, !saving else { return false }
         saving = true
         defer { saving = false }
         do {
-            _ = try await hooks.perform(.delete(HookRef(entry)), host: host)
+            _ = try await hooks.perform(.delete(HookRef(entry)))
             return true
         } catch {
             problem = settingsProblem(error)
@@ -284,14 +282,14 @@ public final class ClientHookEditor: Identifiable {
     }
 
     /// Runs the first command once on the host against a sample event.
-    public func test(with hooks: ClientHooks, host: SettingsHost) async {
+    public func test(with hooks: ClientHooks) async {
         guard let handler = testable, !testing else { return }
         testing = true
         defer { testing = false }
         let timeout = Double(handler.timeout.trimmingCharacters(in: .whitespaces))
         do {
             if case .tested(let result) = try await hooks.perform(.test(command: handler.command, event: event, matcher: matcher,
-                                                                         timeout: timeout, root: targetRoot), host: host) {
+                                                                         timeout: timeout, root: targetRoot)) {
                 testResult = result
                 problem = nil
             }

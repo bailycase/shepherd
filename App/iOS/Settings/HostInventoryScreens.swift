@@ -605,11 +605,10 @@ private struct HostConfigPage<Content: View>: View {
     let explanation: String?
     @ViewBuilder let content: (SettingsHost) -> Content
     @Environment(\.settingsColumn) private var inColumn
-    @Environment(MobileNavigator.self) private var navigator
     @State private var generation = 0
 
     var body: some View {
-        let host = store.settingsHost(chosenHost: navigator.settingsSelection.chosenHost)
+        let host = store.settingsHost
         let config = store.hostConfig
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
@@ -619,9 +618,6 @@ private struct HostConfigPage<Content: View>: View {
                         .foregroundStyle(Color.sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, SH.Space.xs)
-                }
-                if store.hosts.count > 1 {
-                    HostChooser(store: store)
                 }
                 if let host {
                     if let problem = config.problems[host.id] {
