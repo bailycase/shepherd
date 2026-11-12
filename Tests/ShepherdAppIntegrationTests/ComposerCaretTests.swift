@@ -301,6 +301,23 @@ struct ComposerCaretTests {
         #expect(store.attachedReferences.isEmpty == takesBack)
     }
 
+    /// The composer's body no longer reads the draft; the field's host does, so words that arrive
+    /// from outside (a terminal command's text, a restored draft) still reach the focused editor.
+    @Test func wordsAddedFromOutsideReachTheField() async throws {
+        let thread = ComposerThread(focused: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await eventuallyOnMain("the field to take the keyboard") { thread.focusedEditor?.isFieldEditor == true }
+        let editor = try #require(thread.focusedEditor)
+
+        thread.store.draft = "hello"
+        try await eventuallyOnMain("the field to show the first words") { editor.string == "hello" }
+        try await thread.settle()
+        thread.store.draft = "hello world"
+        try await eventuallyOnMain("the field to show the words added from outside") { editor.string == "hello world" }
+        #expect(editor.selectedRange() == NSRange(location: 11, length: 0), "the caret follows them to the end")
+    }
+
     @Test func aDraftReplacedFromOutsideTheFieldLeavesTheCaretAtItsEnd() async throws {
         let app = try AppHarness()
         defer { app.stop() }

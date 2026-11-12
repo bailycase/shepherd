@@ -96,12 +96,16 @@ final class RemoteHostStore {
         fileprivate(set) var lastSeen: Date?
         var state = ShepherdState() {
             didSet {
+                guard projects else { return }
                 let agentIDs = Set(state.agents.map(\.id))
                 let kept = children.filter { agentIDs.contains($0.key) }
                 if kept.count != children.count { children = kept }
                 onProjectionChanged?()
             }
         }
+        /// Off while `skip` writes `state`: the push behind it projects (`onProjectionChanged`, the child rows' prune)
+        /// for both. Every projection reads the connections whole, so none is owed to a push it skipped.
+        @ObservationIgnored private var projects = true
         fileprivate(set) var children: [AgentID: [ChildRun]] = [:] { didSet { onProjectionChanged?() } }
         @ObservationIgnored fileprivate var onProjectionChanged: (() -> Void)?
         @ObservationIgnored fileprivate var childRefreshTask: Task<Void, Never>?
@@ -118,6 +122,8 @@ final class RemoteHostStore {
             return lastFleetID
         }
         @ObservationIgnored private var lastFleetID: UUID?
+        /// The workspace pushes the host sent that the app has not taken yet (tests, diagnostics).
+        var queuedStateEvents: Int { client?.queuedStateEvents ?? 0 }
         /// Where a forwarded port of this host finds its connection's tunnels (Browser): filled
         /// while there is a client, empty while there is none.
         let hubSlot = BrowserTunnelHubSlot()
@@ -141,6 +147,15 @@ final class RemoteHostStore {
             self.id = config.id
             designs = RemoteDesignLibrary(hostID: config.id, cache: designCache)
             missions = RemoteMissions(hostID: config.id)
+        }
+
+        /// Takes a push that a newer one is queued behind and the app leaves unadopted. `state` holds it at once, so
+        /// no reader sees an older one than the app does, and observers are told as for any push; only the
+        /// projection waits for the push behind it.
+        fileprivate func skip(_ push: ShepherdState) {
+            projects = false
+            state = push
+            projects = true
         }
 
         /// Points the host's missions at `client` (nil: disconnected) and reads them when it offers them.
@@ -221,6 +236,8 @@ final class RemoteHostStore {
         var supportsTerminalControl: Bool { client?.capabilities.contains(RemoteProtocol.terminalControlCapability) == true }
         var supportsTerminalStart: Bool { client?.capabilities.contains(RemoteProtocol.terminalStartCapability) == true }
         var supportsCheckoutRead: Bool { client?.capabilities.contains(RemoteProtocol.checkoutReadCapability) == true }
+        /// This Mac's host takes what the app writes for the person (`changesWriteBegan`).
+        var supportsChangesWrites: Bool { client?.capabilities.contains(RemoteProtocol.changesWritesCapability) == true }
         /// The host takes a new thread's images with its opening prompt.
         var supportsCreateAgentImages: Bool { client?.capabilities.contains(RemoteProtocol.createAgentImagesCapability) == true }
         var supportsWorktreeCreation: Bool {
@@ -272,8 +289,13 @@ final class RemoteHostStore {
     static let defaultsKey = "shepherd.remote.hosts"
 
     @ObservationIgnored var onProjectionChanged: (() -> Void)?
-    /// Each workspace the background host on this Mac pushes, after its connection holds it.
-    @ObservationIgnored var onLocalHostState: ((ShepherdState) -> Void)?
+    /// Whether the app leaves the next workspace the background host on this Mac pushes unadopted when a newer
+    /// one is already queued behind it (`StateAdoption`). Asked before the connection holds the push: a push it
+    /// leaves is held without its projection, which the push behind it runs.
+    @ObservationIgnored var leavesQueuedLocalHostState: (() -> Bool)?
+    /// Each workspace the background host on this Mac pushes, after its connection holds it, and whether a
+    /// newer push is already queued behind it.
+    @ObservationIgnored var onLocalHostState: ((ShepherdState, _ newerQueued: Bool) -> Void)?
     /// An agent's notify tool on the background host on this Mac, for the app to post.
     @ObservationIgnored var onLocalAgentNotify: ((AgentID, String, String) -> Void)?
     /// What a Settings page shows changed on the background host on this Mac.
@@ -554,7 +576,7 @@ final class RemoteHostStore {
                 }
                 if connection.stateGeneration == stateGeneration {
                     connection.state = state
-                    if connection.isLocalHost { self.onLocalHostState?(state) }
+                    if connection.isLocalHost { self.onLocalHostState?(state, false) }
                 }
                 connection.phase = .connected
                 self.rebindPanes(connection, to: client)
@@ -638,16 +660,19 @@ final class RemoteHostStore {
             guard let connection, connection.isLocalHost, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             self?.onLocalAgentNotify?(agentID, title, body)
         }
-        client.onStateChanged = { [weak self, weak connection] state in
+        client.onStateChanged = { [weak self, weak connection, weak client] state in
             guard let connection,
                   connection.client.map(ObjectIdentifier.init) == clientID else { return }
-            defer { if connection.isLocalHost { self?.onLocalHostState?(state) } }
+            // This Mac's host is the app's workspace, which leaves a push unadopted when a newer one is queued behind it.
+            // The connection holds that push without the projection, which the newer one runs, and the app is told so.
+            let skipped = connection.isLocalHost && client?.newerStateQueued == true && self?.leavesQueuedLocalHostState?() == true
+            defer { if connection.isLocalHost { self?.onLocalHostState?(state, skipped || client?.newerStateQueued == true) } }
             let liveSessionIDs = Set(state.tabs.flatMap { $0.layout.leaves.compactMap(\.sessionID) })
             for sessionID in Array(connection.panes.keys) where !liveSessionIDs.contains(sessionID) {
                 connection.panes.removeValue(forKey: sessionID)?.detach()
             }
             connection.stateGeneration &+= 1
-            connection.state = state
+            if skipped { connection.skip(state) } else { connection.state = state }
         }
         client.onOutputConsumed = { [weak connection] sessionID, data, completion in
             guard let connection,

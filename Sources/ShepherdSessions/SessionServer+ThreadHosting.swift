@@ -134,13 +134,13 @@ extension SessionServer {
 
     /// The header's branch chip and recorded worktree branches with no app: each thread's
     /// checkout read after the events the app's view model reads it after (a thread appearing, a
-    /// tool that may write files, a turn starting or ending).
+    /// tool that may write files, a subagent writing files or ending, a turn starting or ending).
     @MainActor
     private func watchCheckouts() {
         let monitor = CheckoutMonitor(read: CheckoutMonitor.git) { [weak self] ids, cwd, checkout in
             await self?.setAgentCheckouts(ids, checkout, directory: cwd)
         }
-        let (onState, onTool, onStatus) = (onStateChanged, onAgentToolFinished, onAgentStatus)
+        let (onState, onTool, onStatus, onChildren) = (onStateChanged, onAgentToolFinished, onAgentStatus, onAgentChildrenTouchedFiles)
         onStateChanged = { state in
             onState?(state)
             MainActor.assumeIsolated { monitor.sync(directories: CheckoutMonitor.directories(state), order: state.agents.map(\.id)) }
@@ -148,6 +148,10 @@ extension SessionServer {
         onAgentToolFinished = { id, tool in
             onTool?(id, tool)
             MainActor.assumeIsolated { if CheckoutMonitor.touchesFiles(tool: tool) { monitor.refresh(id, after: .seconds(1)) } }
+        }
+        onAgentChildrenTouchedFiles = { id in
+            onChildren?(id)
+            MainActor.assumeIsolated { monitor.refresh(id, after: .seconds(1)) }
         }
         onAgentStatus = { id, status, failure in
             onStatus?(id, status, failure)

@@ -15,6 +15,8 @@ import ShepherdRemote
 /// or a selection redraws the rows it changed and nothing else.
 struct SidebarView: View {
     var vm: ShepherdViewModel
+    /// While the window cannot be seen the sidebar rests: its changes land at once and its clocks stop.
+    @Environment(\.mainWindowVisible) private var windowVisible
 
     var body: some View {
         let _ = SHRenderProbe.tick("shell.sidebar")
@@ -41,6 +43,8 @@ struct SidebarView: View {
                 SHSidebarFooter(name: footer.name, detail: footer.detail, settingsShortcut: "⌘,") { vm.showSettings = true }
             }
         }
+        .environment(\.shMotionPaused, !windowVisible)
+        .transaction { if !windowVisible { $0.disablesAnimations = true } }
     }
 }
 
@@ -260,7 +264,7 @@ private extension SidebarItemView {
     func accessory(_ row: SidebarListRow) -> SHSidebarRow.Accessory {
         if row.section == .working, case .local(let id) = row.id {
             if case .shortcut = row.accessory { return row.accessory }
-            return .activity(vm.sidebarActivityBox(id).samples)
+            return .activity(vm.agentLive(id).samples)
         }
         return row.accessory
     }

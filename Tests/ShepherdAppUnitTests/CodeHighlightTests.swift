@@ -180,4 +180,75 @@ struct CodeHighlightTests {
         #expect(CodeHighlightCache.render(key, style: style, isCancelled: { true }) == nil)
         #expect(CodeHighlightCache.render(key, style: style, isCancelled: { false }) != nil)
     }
+
+    /// A fence is drawn again only when its code, language or writing flag changes: what it renders (colors, throttle) is
+    /// state, never an input.
+    @Test func aFenceIsComparedByItsCodeLanguageAndWritingFlag() {
+        let fence = HighlightedCodeBlock(code: "var a = 1", language: "go", writing: false)
+        #expect(fence == HighlightedCodeBlock(code: "var a = 1", language: "go", writing: false))
+        #expect(fence != HighlightedCodeBlock(code: "var a = 1\n", language: "go", writing: false))
+        #expect(fence != HighlightedCodeBlock(code: "var a = 1", language: "python", writing: false))
+        #expect(fence != HighlightedCodeBlock(code: "var a = 1", language: "go", writing: true))
+        #expect(SHCodeBlock("var a = 1", language: "go") == SHCodeBlock("var a = 1", language: "go"))
+        #expect(SHCodeBlock("var a = 1", language: "go") != SHCodeBlock("var a = 1", language: "go", highlighted: AttributedString("var a = 1")))
+    }
+
+    // MARK: What the cache keeps
+
+    private func colored(_ key: CodeHighlightCache.Key) throws -> AttributedString {
+        try #require(CodeHighlightCache.render(key, style: style))
+    }
+
+    /// Each throttled render of a growing fence is a new key; the older render of the same fence is dead weight.
+    @Test func aNewerRenderOfAGrowingFenceReplacesTheOlder() throws {
+        let newer = CodeHighlightCache.Key(code: "var grow1 = 1\nvar grow2 = 2\nvar grow3 = 3", language: "go")
+        let older = newer.prefix(lines: 2)
+        #expect(older.code == "var grow1 = 1\nvar grow2 = 2")
+        CodeHighlightCache.store(try colored(older), for: older)
+        #expect(CodeHighlightCache.cached(older) != nil)
+
+        CodeHighlightCache.store(try colored(newer), for: newer, replacing: older)
+
+        #expect(CodeHighlightCache.cached(older) == nil)
+        #expect(CodeHighlightCache.cached(newer) != nil)
+    }
+
+    @Test func aReplacementThatIsNotAPrefixKeepsBoth() throws {
+        let other = CodeHighlightCache.Key(code: "var other1 = 1\nvar other2 = 2", language: "go")
+        let grown = CodeHighlightCache.Key(code: "var grown1 = 1\nvar grown2 = 2\nvar grown3 = 3", language: "go")
+        let python = CodeHighlightCache.Key(code: grown.prefix(lines: 2).code, language: "python")
+        for key in [other, python] { CodeHighlightCache.store(try colored(key), for: key) }
+
+        CodeHighlightCache.store(try colored(grown), for: grown, replacing: other)
+        CodeHighlightCache.store(try colored(grown), for: grown, replacing: python)
+        CodeHighlightCache.store(try colored(grown), for: grown, replacing: grown)
+
+        #expect(CodeHighlightCache.cached(other) != nil, "a render of other code stays")
+        #expect(CodeHighlightCache.cached(python) != nil, "a render of the same text in another language stays")
+        #expect(CodeHighlightCache.cached(grown) != nil, "a render never replaces itself")
+    }
+
+    /// The cache is limited by what its entries hold, not by how many there are: a fence's code and its colored runs.
+    @Test func anEntryCostsItsCodeAndItsRuns() {
+        let key = CodeHighlightCache.Key(code: "ab\ncd", language: "go")
+        var keyword = AttributedString("cd")
+        keyword.foregroundColor = Self.solid("#8892B5")
+        let value = AttributedString("ab\n") + keyword
+        #expect(value.runs.count == 2)
+        #expect(CodeHighlightCache.cost(of: key, value) == 5 * 2 + 2 * 128)
+        #expect(CodeHighlightCache.cost(of: CodeHighlightCache.Key(code: "🐑", language: nil), AttributedString("🐑")) == 4 * 2 + 128)
+    }
+
+    /// A render larger than the whole budget is not stored: NSCache would evict the others to make room for it.
+    @Test func anEntryLargerThanTheBudgetIsNotStored() {
+        let big = CodeHighlightCache.Key(code: String(repeating: "x", count: CodeHighlightCache.costLimit / 2 + 1), language: "go")
+        let small = CodeHighlightCache.Key(code: "var small1 = 1", language: "go")
+        CodeHighlightCache.store(AttributedString("var small1 = 1"), for: small)
+
+        CodeHighlightCache.store(AttributedString(big.code), for: big)
+
+        #expect(CodeHighlightCache.cached(big) == nil)
+        #expect(CodeHighlightCache.cached(small) != nil)
+        #expect(CodeHighlightCache.costLimit == 16 * 1024 * 1024)
+    }
 }

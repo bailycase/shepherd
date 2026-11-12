@@ -38,6 +38,11 @@ extension AppLayout {
     static let startingSpinner: CGFloat = 10
     static let startingSpacing: CGFloat = 6
 
+    // Resting
+    /// How long the main window stays unseen before the thread on screen rests (`NativeThreadStore.rest`): a Space swipe
+    /// or Mission Control covers it for less, and rests nothing.
+    static let threadRestDelay: Duration = .seconds(1)
+
     // Empty thread
     /// A fresh agent's framed empty state sits this far down, with its path in Geist Mono at
     /// this size ("New agent in ~/path").

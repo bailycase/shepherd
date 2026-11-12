@@ -197,6 +197,9 @@ public final class SessionServer: @unchecked Sendable {
         var unauthenticatedFleetRequests = 0
         /// Terminals whose PTY is not read until this local app catches up (`localOutputHighWaterMark`).
         var heldOutput: Set<SessionID> = []
+        /// What this local app is writing for the person and has not closed (`changesWriteBegan`);
+        /// the Changes engine closes them when the app's connection does.
+        var personWrites: Set<UUID> = []
 
         init(fd: Int32, isRemote: Bool = false, peerPID: pid_t? = nil) {
             self.fd = fd
@@ -332,6 +335,9 @@ public final class SessionServer: @unchecked Sendable {
     /// An agent's pi finished a tool call (its name). The app reads the agent's checkout again
     /// after calls that may have changed files. Delivered on the main actor.
     public var onAgentToolFinished: ((AgentID, String) -> Void)?
+    /// An agent's subagents published rows that may have changed files in its checkout (one
+    /// wrote, or ended: `CheckoutMonitor.childrenTouchedFiles`). Delivered on the main actor.
+    public var onAgentChildrenTouchedFiles: ((AgentID) -> Void)?
     /// A model request failed: the agent, pi's provider id and its error message (each failed
     /// attempt, retries included), for account rotation. Delivered on the main actor.
     public var onAgentProviderError: ((AgentID, String, String) -> Void)?
@@ -1108,7 +1114,7 @@ public final class SessionServer: @unchecked Sendable {
     private func offeredCapabilities(to client: ExtensionConnection) -> [String] {
         offeredCapabilities.filter { ($0 != RemoteProtocol.filesCapability && $0 != RemoteProtocol.missionsCapability) || client.clientCapabilities.contains($0) }
             .filter { client.fleetDeviceID == nil || FleetAccess.device.isOffered($0) }
-            + (client.isLocal ? [RemoteProtocol.localCapability] : [])
+            + (client.isLocal ? [RemoteProtocol.localCapability, RemoteProtocol.changesWritesCapability] : [])
             + (client.isLocal && onDrainRequest != nil ? [RemoteProtocol.hostDrainCapability] : [])
     }
 
@@ -1152,6 +1158,16 @@ public final class SessionServer: @unchecked Sendable {
     private var recoveryAgentIndices: (version: UInt64, indices: [AgentID: Int])?
     private(set) var recoveryAgentIndexBuildCount = 0
     private var projectDeliveries: (version: UInt64, byAgent: [AgentID: UUID?])?
+    /// Whole-state frames encoded for remote clients, one per view per broadcast. Written on the
+    /// server queue; a test reads it from anywhere.
+    private let encodedStateFramesLock = NSLock()
+    private var encodedStateFramesCount = 0
+    var encodedStateFrames: Int { encodedStateFramesLock.withLock { encodedStateFramesCount } }
+    /// Who is owed the workspace as it now stands, because a commit changed it since the last push
+    /// (`scheduleRemoteState`). Server queue.
+    private enum RemoteStateOwed { case wholeWorkspaceClients, everyone }
+    private var remoteStateOwed: RemoteStateOwed?
+    private var remoteStateFlushQueued = false
 
     private var sessions: [SessionID: ServerSession] = [:]
     private var attachedSessions: Set<SessionID> = []
@@ -2394,7 +2410,13 @@ public final class SessionServer: @unchecked Sendable {
         if let sessionID = leaf.sessionID, let kept = keptStarts[sessionID], sessions[sessionID]?.isAlive != true {
             if !kept.retrying, let problem = kept.problem {
                 if case .snapshot = request {
-                    completion(.result(.snapshot(value: Self.startProblemSnapshot(problem, piSessionID: agent.effectivePiSessionID))))
+                    if previews {
+                        // A viewer that reads session files gets the conversation under the problem, so a
+                        // fresh store does not draw an empty thread.
+                        servePreviewSnapshot(agent: agent, cwd: leaf.cwd, startProblem: problem, completion: completion)
+                    } else {
+                        completion(.result(.snapshot(value: Self.startProblemSnapshot(problem, piSessionID: agent.effectivePiSessionID))))
+                    }
                 } else {
                     unavailable(problem.kind == .stopped ? "The agent stopped. Retry to start it again." : "pi stopped before it started.")
                 }
@@ -2527,12 +2549,12 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// What a kept start answers a snapshot with: the problem alone, with no history and no
-    /// actions, so an older client (which ignores the problem) shows a thread it cannot send to.
     /// Server queue: answers a snapshot for an agent whose pi is not running from pi's session file
     /// (`PiSessionPreview`), read off the queue; an agent with no file yet gets an empty thread.
     /// Marked `preview` with no actions: nothing a client can do with it reaches pi (`RemoteProtocol.nativeThreadPreviewCapability`).
-    private func servePreviewSnapshot(agent: Agent, cwd: String, completion: @escaping (NativeOutcome) -> Void) {
+    /// `startProblem`: why pi is not running, for an agent whose pi stopped (`keptStarts`); the client shows it under the history.
+    private func servePreviewSnapshot(agent: Agent, cwd: String, startProblem: NativeStartProblem? = nil,
+                                      completion: @escaping (NativeOutcome) -> Void) {
         let sessionID = agent.effectivePiSessionID
         let root = pi.sessionsRoot
         let origins = originStore.directory
@@ -2543,10 +2565,14 @@ public final class SessionServer: @unchecked Sendable {
                 ?? PiSessionPreview.empty(sessionID: sessionID, model: model, thinking: thinking)
             snapshot.preview = true
             snapshot.supportedActions = []
+            snapshot.startProblem = startProblem
             self?.queue.async { completion(.result(.snapshot(value: snapshot))) }
         }
     }
 
+    /// What a kept start answers a snapshot with for a client that does not read previews: the
+    /// problem alone, with no history and no actions, so an older client (which ignores the
+    /// problem) shows a thread it cannot send to.
     static func startProblemSnapshot(_ problem: NativeStartProblem, piSessionID: String) -> NativeThreadSnapshot {
         NativeThreadSnapshot(piSessionID: piSessionID, generation: startProblemGeneration, revision: 0, running: false,
                              supportedActions: [], dialogsSupported: false, dialogs: [], messages: [], provisional: [],
@@ -2929,6 +2955,8 @@ public final class SessionServer: @unchecked Sendable {
                 sendFinal(.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token"), to: client)
                 return
             }
+            // What the other clients are owed goes out first: the new one reads its state from its fetch.
+            flushRemoteState()
             client.fleetPeerID = peer
             client.fleetDeviceID = device
             client.clientName = clientName
@@ -3190,12 +3218,23 @@ public final class SessionServer: @unchecked Sendable {
                     else { self.send(.agentResult(id: id, result: .ok), to: client) }
                 }
             }
+        case .agentQuery(let id, _, .changesWriteEnded(let span)):
+            guard client.isLocal else {
+                send(.error(id: id, code: "unsupported", message: "Only Shepherd on this Mac reports what it writes."), to: client)
+                return
+            }
+            if client.personWrites.remove(span) != nil { changes.endWrite(span) }
+            send(.agentResult(id: id, result: .ok), to: client)
         case .agentQuery(let id, let agentID, let query) where query.isFiles:
             remoteFiles(id: id, agentID: agentID, query: query, client: client)
         case .agentQuery(let id, let agentID, let query) where query.isChanges:
             // The server owns the engine: answered here, without the GUI, off the queue.
             guard store.state.agents.contains(where: { $0.id == agentID }) else {
                 send(.error(id: id, code: "no_such_agent", message: "Agent no longer exists on the host."), to: client)
+                return
+            }
+            guard !query.isPersonWrite || client.isLocal else {
+                send(.error(id: id, code: "unsupported", message: "Only Shepherd on this Mac reports what it writes."), to: client)
                 return
             }
             // A named folder is the agent's own or the one its `review_diff` asked for, never any path.
@@ -3206,6 +3245,8 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             let changes = changes
+            // Noted before the engine opens it, so an end that overtakes the open still finds it.
+            if case .changesWriteBegan(let span, _) = query { client.personWrites.insert(span) }
             // The connection is only touched back on the server queue.
             let connection = ChangesUnchecked(value: client)
             Task.detached { [weak self] in
@@ -3221,6 +3262,11 @@ public final class SessionServer: @unchecked Sendable {
                     case (.changesList(_, _, nil), .success), (.changesRevertFile, .success), (.changesUndoTurn, .success),
                          (.changesRedoTurn, .success):
                         self.hopToMain { [weak self] in self?.onThreadFocused?(agentID) }
+                    case (.changesWriteBegan(let span, _), .success):
+                        // The app already ended it, or is gone, before the engine opened it: it closes now.
+                        if !client.personWrites.contains(span) { self.changes.endWrite(span) }
+                    case (.changesWriteBegan(let span, _), .failure):
+                        client.personWrites.remove(span)
                     default: break
                     }
                     guard self.clients[client.fd] === client else { return }
@@ -3823,6 +3869,7 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         let root = (folder as NSString).expandingTildeInPath
+        let changes = changes
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let reply: RemoteReply
             switch query {
@@ -3837,6 +3884,9 @@ public final class SessionServer: @unchecked Sendable {
                 case .failure(let error): reply = .error(id: id, code: error.code, message: error.localizedDescription)
                 }
             case .fileWrite(let path, let text, let expected):
+                // The person's Save is not a running turn's: the engine knows the file while it is written.
+                let span = (try? ThreadFileSystem.resolve(path, in: root).get()).map { changes.beginWrite(absolute: [$0]) }
+                defer { if let span { changes.endWrite(span) } }
                 reply = .agentResult(id: id, result: .fileWrite(ThreadFileSystem.save(path, in: root, text: text, expected: expected)))
             default: return
             }
@@ -4990,8 +5040,30 @@ public final class SessionServer: @unchecked Sendable {
         send(reply, to: client)
     }
 
+    /// Server queue, after a commit: remote clients are owed the workspace as it stands. The push
+    /// goes out behind whatever the queue already holds, so the commits of a burst (a run of status
+    /// reports, a flood of thread events) share one encode and one frame per client. A frame to a
+    /// remote client that is not a state sends it first (`enqueuePayload`), so none is sent ahead
+    /// of the state it follows. `wholeOnly`: only this Mac's app, which draws missions from it.
+    private func scheduleRemoteState(wholeOnly: Bool = false) {
+        remoteStateOwed = wholeOnly && remoteStateOwed != .everyone ? .wholeWorkspaceClients : .everyone
+        guard !remoteStateFlushQueued else { return }
+        remoteStateFlushQueued = true
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.remoteStateFlushQueued = false
+            self.flushRemoteState()
+        }
+    }
+
+    /// Server queue: pushes the workspace as it is now to whoever `scheduleRemoteState` owes it.
+    private func flushRemoteState() {
+        guard let owed = remoteStateOwed else { return }
+        remoteStateOwed = nil
+        broadcastRemoteState(store.state, wholeOnly: owed == .wholeWorkspaceClients)
+    }
+
     /// Push a fresh state snapshot to every authenticated remote client.
-    /// Runs on the server queue alongside the mutation that produced it.
     private func broadcastRemoteState(_ full: ShepherdState, wholeOnly: Bool = false) {
         broadcastRemoteState(full, to: clients.values.filter { $0.isRemote && $0.authenticated && $0.fleetPeerID == nil && (!wholeOnly || takesWholeWorkspace($0)) })
     }
@@ -5009,6 +5081,7 @@ public final class SessionServer: @unchecked Sendable {
             let whole = takesWholeWorkspace(client)
             let view = RemoteStateView(designs: designs, legacy: legacy, whole: whole)
             if payloads[view] == nil {
+                encodedStateFramesLock.withLock { encodedStateFramesCount += 1 }
                 let shown = designs ? full : full.withoutDesigns
                 let state = whole ? shown : shown.withoutProjectCoordinators.withoutProjectExecutions.withoutMissions
                 payloads[view] = .some(Self.stateChangedPayload(legacy && !state.usesOnlyLegacyThinkingLevels
@@ -5190,6 +5263,8 @@ public final class SessionServer: @unchecked Sendable {
         hostUpdateRequests[client.fd] = nil
         fleet?.connectionClosed(client.fd)
         clients.removeValue(forKey: client.fd)
+        for span in client.personWrites { changes.endWrite(span) }
+        client.personWrites.removeAll()
         for (token, request) in agentRequests where !request.deletionConfirmed && (request.caller === client || request.target === client) {
             finishAgentRequest(token, result: .init(text: "agent connection closed", code: "disconnected"))
         }
@@ -5394,10 +5469,17 @@ public final class SessionServer: @unchecked Sendable {
         case .setAgentChildren(let agentID, let children):
             // Rows feed both the thread snapshot (cards) and the sidebar (onAgentChildren).
             let active = { (rows: [ChildRun]) in rows.contains { !$0.isTerminal && $0.paused != true } }
-            let wasActive = rpcThread(forAgent: agentID).map { active($0.subagents) } ?? false
+            let before = rpcThread(forAgent: agentID)?.subagents ?? []
+            let wasActive = active(before)
+            // Ahead of the rows: a run anyone can see is one the Changes engine has heard of.
+            changes.noteChildren(agentID: agentID, runs: children)
             rpcThread(forAgent: agentID)?.setSubagents(children)
             if wasActive, !active(children) { noteChildrenSettled(agentID) }
-            hopToMain { [weak self] in self?.onAgentChildren?(agentID, children) }
+            let touchedFiles = CheckoutMonitor.childrenTouchedFiles(from: before, to: children)
+            hopToMain { [weak self] in
+                self?.onAgentChildren?(agentID, children)
+                if touchedFiles { self?.onAgentChildrenTouchedFiles?(agentID) }
+            }
         case .childScope(let id, let agentID, let sessionID, let userTimestamp):
             guard client.childrenAgentID == agentID, client.projectChildScopes else {
                 reply(.error(id: id, code: "child_scope", message: "Scoped child controller is not registered for this agent."), to: client); return
@@ -6606,6 +6688,10 @@ public final class SessionServer: @unchecked Sendable {
     private func enqueuePayload(_ payload: Data, to client: ExtensionConnection, limit: Int? = nil,
                                 revocation: (() -> ExtensionReply?)? = nil, state: Bool = false) {
         guard clients[client.fd] === client else { return }
+        if client.isRemote, client.authenticated, !state, remoteStateOwed != nil {
+            flushRemoteState()
+            guard clients[client.fd] === client else { return }
+        }
         let limit = limit ?? (client.isLocal ? Self.maxQueuedLocalReplyBytes : Self.maxQueuedReplyBytes)
         guard client.queuedReplyBytes + payload.count <= limit else {
             disconnect(client, reason: "reply queue overflow (\(client.queuedReplyBytes) B queued, \(payload.count) B more, limit \(limit) B)")
@@ -6790,7 +6876,7 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         let committedState = store.state
-        broadcastRemoteState(committedState)
+        scheduleRemoteState()
         // A dispatched thread that settled has a result to send back.
         fleet?.dispatch.agentStatusChanged(agentID, status)
         hopToMain { [weak self] in
@@ -6843,7 +6929,7 @@ public final class SessionServer: @unchecked Sendable {
             $0.agents[index].waitingReason = reason
         }
         let committedState = store.state
-        broadcastRemoteState(committedState)
+        scheduleRemoteState()
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
     }
 
@@ -6855,7 +6941,7 @@ public final class SessionServer: @unchecked Sendable {
         let now = Self.nowMilliseconds()
         store.updateLive { $0.agents[index].completedAt = max(now, ($0.agents[index].completedAt ?? 0) + 1) }
         let committedState = store.state
-        broadcastRemoteState(committedState)
+        scheduleRemoteState()
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
     }
 
@@ -6872,7 +6958,7 @@ public final class SessionServer: @unchecked Sendable {
         let now = Self.nowMilliseconds()
         store.updateLive { $0.agents[index].lastActiveAt = now }
         let committedState = store.state
-        broadcastRemoteState(committedState)
+        scheduleRemoteState()
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
     }
 
@@ -7003,6 +7089,12 @@ public final class SessionServer: @unchecked Sendable {
         if before.agents.count != state.agents.count || before.agents.map(\.id) != state.agents.map(\.id) {
             let gone = Set(before.agents.map(\.id)).subtracting(state.agents.map(\.id))
             designReferencePayloads.removeAgents(gone)
+            if !gone.isEmpty {
+                // Their turn records go too, but a deleted design's agents wait out its undo window:
+                // Undo brings them back with their cards.
+                let held = Set(pendingDesignDeletions.values.flatMap { $0.agents.map(\.value.id) })
+                changes.forget(gone.subtracting(held))
+            }
             for agentID in gone {
                 do { try agentRecovery.save(nil, for: agentID) }
                 catch { ShepherdLog.warning("Could not remove agent recovery checkpoint") }
@@ -7014,10 +7106,10 @@ public final class SessionServer: @unchecked Sendable {
         let missionsChanged = before.missions != state.missions
         // Private mission progress has its own hints; the fleet would contain identical data.
         if !missionsChanged || before.withoutMissions != state.withoutMissions {
-            broadcastRemoteState(state)
+            scheduleRemoteState()
         } else {
             // This Mac's app draws missions from the state.
-            broadcastRemoteState(state, wholeOnly: true)
+            scheduleRemoteState(wholeOnly: true)
         }
         if missionsChanged { pushMissionChanges(before: before.missions, after: state.missions) }
         hopToMain { [weak self] in self?.onStateChanged?(state) }
@@ -7629,7 +7721,7 @@ public final class SessionServer: @unchecked Sendable {
                 for index in indices { state.agents[index].checkout = checkout }
             }
             let committedState = self.store.state
-            self.broadcastRemoteState(committedState)
+            self.scheduleRemoteState()
             self.hopToMain { [weak self] in self?.onStateChanged?(committedState) }
         }
     }
@@ -7991,7 +8083,7 @@ public final class SessionServer: @unchecked Sendable {
             throw error
         }
         if !undoable {
-            await enqueueValue { self.pendingDesignDeletions[designID] = nil }
+            await enqueueValue { self.releaseDesignDeletion(designID) }
             try? await designs.finishDeletion(designID)
         }
         return deletion
@@ -8066,9 +8158,15 @@ public final class SessionServer: @unchecked Sendable {
     /// Server queue: the undo window closed on a deletion still held: its folder goes.
     private func finishDesignDeletion(_ designID: DesignID, token: UUID) {
         guard pendingDesignDeletions[designID]?.token == token else { return }
-        pendingDesignDeletions[designID] = nil
+        releaseDesignDeletion(designID)
         let designs = self.designs
         Task { try? await designs.finishDeletion(designID) }
+    }
+
+    /// Server queue: a held deletion can no longer be undone, so its agents' turn records go.
+    private func releaseDesignDeletion(_ designID: DesignID) {
+        guard let pending = pendingDesignDeletions.removeValue(forKey: designID) else { return }
+        changes.forget(Set(pending.agents.map(\.value.id)))
     }
 
     /// Undo (DesignDeleted): a design deleted within the undo window comes back as it was, where
@@ -8953,7 +9051,7 @@ public final class SessionServer: @unchecked Sendable {
             $0.designs[index].lastActiveAt = now
         }
         let committedState = store.state
-        broadcastRemoteState(committedState)
+        scheduleRemoteState()
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
     }
 
@@ -8974,7 +9072,7 @@ public final class SessionServer: @unchecked Sendable {
                     for i in changed { state.designs[i].boardCount = counts[state.designs[i].id] }
                 }
                 let committedState = self.store.state
-                self.broadcastRemoteState(committedState)
+                self.scheduleRemoteState()
                 self.hopToMain { [weak self] in self?.onStateChanged?(committedState) }
             }
         }
@@ -9368,7 +9466,7 @@ public final class SessionServer: @unchecked Sendable {
                 server.applyAgentStatus(agentID: agentID, status: goal?.state == .needsYou || question != nil ? .blocked
                                        : thread?.running == true ? .working : .done)
                 let state = server.store.state
-                server.broadcastRemoteState(state)
+                server.scheduleRemoteState()
                 server.hopToMain { [weak server] in
                     server?.onStateChanged?(state)
                     if previous != nil, previous != goal?.state.rawValue, let goal,
@@ -9951,7 +10049,7 @@ public final class SessionServer: @unchecked Sendable {
         if !store.state.isProjectWorker(agentID), runLog.agentStopped(agentID, failure: problem.title) { changed = true }
         guard changed else { return }
         let committedState = store.state
-        broadcastRemoteState(committedState)
+        scheduleRemoteState()
         hopToMain { [weak self] in
             self?.onAgentStatus?(agentID, .idle, nil)
             self?.onStateChanged?(committedState)

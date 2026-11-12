@@ -12,6 +12,8 @@ extension EnvironmentValues {
     /// starting; a blank one waits no longer than `AppLayout.blankStartingIndicatorDelay`
     /// (previews show it at once).
     @Entry var threadStartingDelay: Duration = AppLayout.startingIndicatorDelay
+    /// How long the window must stay unseen before the thread on screen rests (`ThreadRest`); previews and tests set none.
+    @Entry var threadRestDelay: Duration = AppLayout.threadRestDelay
     /// A design's chat: its comments' cards, which messages carrying a comment draw.
     @Entry var designCommentCards: DesignCommentCards? = nil
     @Entry var threadReaderPins: ThreadReaderPins? = nil
@@ -380,7 +382,9 @@ struct ThreadView: View {
             wheelMonitor = nil
         }
         // Hidden, the thread stops polling and keeps what it shows; shown again, it polls from
-        // there (`NativeThreadStore.suspend`).
+        // there (`NativeThreadStore.suspend`). In a window nobody can see it keeps its loop and pulls
+        // nothing (`ThreadRest`).
+        .modifier(ThreadRest(store: store, owner: storeOwner, active: active, run: loopRun))
         .task(id: LoopKey(active: active, run: loopRun)) {
             guard !Task.isCancelled else { return }
             guard active else {
@@ -813,6 +817,36 @@ private final class ThreadRowMemory {
 private struct LoopKey: Equatable {
     let active: Bool
     let run: Int
+}
+
+/// Rests the thread's store (`NativeThreadStore.rest`) while the main window can't be seen, and wakes it at once when it
+/// can. It reads the window's presence itself, so a window showing or hiding reruns this modifier and no `ThreadView` body.
+private struct ThreadRest: ViewModifier {
+    let store: NativeThreadStore
+    let owner: UUID
+    let active: Bool
+    /// A loop handed back to this view (`ThreadReaderPins`) asks again.
+    let run: Int
+    @Environment(\.mainWindowVisible) private var visible
+    @Environment(\.threadRestDelay) private var delay
+
+    private struct Key: Equatable {
+        let resting: Bool
+        let run: Int
+    }
+
+    func body(content: Content) -> some View {
+        let resting = active && !visible
+        content.task(id: Key(resting: resting, run: run)) {
+            guard resting else {
+                store.rest(false, owner: owner)
+                return
+            }
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            store.rest(true, owner: owner)
+        }
+    }
 }
 
 /// A thread's row IDs, structural: rebuilt only when the store's row structure revision

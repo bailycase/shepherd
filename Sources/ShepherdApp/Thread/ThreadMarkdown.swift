@@ -57,21 +57,6 @@ struct Prose: View, Equatable {
         .frame(maxWidth: maxWidth, alignment: .leading)
     }
 
-    /// The last fenced block's code, in document order: an open fence runs to the end.
-    static func lastCode(_ blocks: [NativeMarkdownBlock]) -> String? {
-        for block in blocks.reversed() {
-            switch block {
-            case .code(let text, _): return text
-            case .list(_, _, let items):
-                if let code = items.reversed().lazy.compactMap({ lastCode($0.children) }).first { return code }
-            case .quote(let inner), .details(_, let inner):
-                if let code = lastCode(inner) { return code }
-            default: break
-            }
-        }
-        return nil
-    }
-
     /// Every inline text `proseBlocks` styles, in document order.
     static func inlineTexts(_ blocks: [NativeMarkdownBlock]) -> [String] {
         var texts: [String] = []
@@ -134,7 +119,7 @@ struct Prose: View, Equatable {
     }
 }
 
-/// One chunk of a reply's prose: the blocks `SHAgentProse` draws, their inline runs gated off the
+/// One chunk of a reply's prose: the blocks `SHProseChunk` draws, their inline runs gated off the
 /// main actor when a large text lands (`ProseInlineGate`). Equatable, so a chunk that did not
 /// change is not drawn again.
 struct ProseChunk: View, Equatable {
@@ -153,9 +138,20 @@ struct ProseChunk: View, Equatable {
         let _ = SHRenderProbe.tick("prose.chunk")
         let _ = landed
         let shown = gate.blocks(for: chunk.blocks) { [$landed] in $landed.wrappedValue &+= 1 }
-        let writing = writingFence ? Prose.lastCode(shown.blocks) : nil
-        SHAgentProse(Prose.proseBlocks(shown.blocks, inline: shown.attributed), maxWidth: maxWidth, writingFence: writingFence) { code, language in
-            HighlightedCodeBlock(code: code, language: language, writing: code == writing)
+        SHProseChunk<HighlightedCodeBlock>(Self.parts(of: chunk, drawing: Prose.proseBlocks(shown.blocks, inline: shown.attributed)),
+                                           writingFence: writingFence)
+            .frame(maxWidth: maxWidth, alignment: .leading)
+    }
+
+    /// `blocks` under the chunk's part ids, by position, so each block keeps its view while the reply grows at its end. Blocks past
+    /// the chunk's last part (a longer text an inline parse still pending keeps drawn) take the ordinals after it.
+    static func parts(of chunk: NativeProseChunk, drawing blocks: [SHProseBlock]) -> [SHProsePart] {
+        let ids = chunk.parts.map(\.id)
+        return blocks.enumerated().map { offset, block in
+            let id = ids.indices.contains(offset)
+                ? SHProsePart.ID(block: ids[offset].block, stretch: ids[offset].stretch)
+                : SHProsePart.ID(block: (ids.last?.block ?? -1) + offset - ids.count + 1, stretch: 0)
+            return SHProsePart(id: id, block: block)
         }
     }
 }
@@ -289,7 +285,7 @@ struct ThinkingRow: View, Equatable {
 /// 250 ms and only up to its last complete line (`CodeHighlightThrottle`): between renders it
 /// keeps its last colors with the new text plain after them, and a render a newer chunk
 /// supersedes is dropped. A finished block is colored once, in full.
-struct HighlightedCodeBlock: View {
+struct HighlightedCodeBlock: SHProseCode {
     let code: String
     let language: String?
     var writing = false
@@ -300,6 +296,11 @@ struct HighlightedCodeBlock: View {
     /// never redraws the block.
     @State private var lastRender = CodeHighlightThrottle.Last()
 
+    /// The state and the throttle are not inputs: a retained block redraws only when its code, language or writing flag changes.
+    nonisolated static func == (lhs: HighlightedCodeBlock, rhs: HighlightedCodeBlock) -> Bool {
+        lhs.code == rhs.code && lhs.language == rhs.language && lhs.writing == rhs.writing
+    }
+
     private var key: CodeHighlightCache.Key { CodeHighlightCache.Key(fence: code, language: language) }
 
     private struct TaskKey: Equatable {
@@ -308,6 +309,7 @@ struct HighlightedCodeBlock: View {
     }
 
     var body: some View {
+        let _ = SHRenderProbe.tick("code.highlighted")
         let key = key
         SHCodeBlock(key.code, language: language,
                     highlighted: CodeHighlightCache.colors(for: key, last: rendered, cached: CodeHighlightCache.cached(key)))
@@ -337,7 +339,7 @@ struct HighlightedCodeBlock: View {
                 let value = await work.value
                 guard lastRender.inFlight == work, let value else { return }
                 lastRender.inFlight = nil
-                CodeHighlightCache.store(value, for: target)
+                CodeHighlightCache.store(value, for: target, replacing: rendered?.key)
                 rendered = CodeHighlightCache.Rendered(key: target, value: value)
             }
     }
@@ -429,10 +431,20 @@ enum CodeHighlightCache {
         init(_ value: AttributedString) { self.value = value }
     }
 
-    /// Each throttled render of a growing fence is a new key: evict the oldest, never everything.
+    /// What the cache may hold, by `cost(of:_:)`.
+    static let costLimit = 16 * 1024 * 1024
+
+    /// What an entry holds: its code twice (the key and the colored text) and its runs, as `SHNativeCodeText`'s cache estimates.
+    static func cost(of key: Key, _ value: AttributedString) -> Int {
+        key.code.utf8.count * 2 + value.runs.count * 128
+    }
+
+    /// Each throttled render of a growing fence is a new key, and each one holds its whole text:
+    /// bounded by cost, and by count so that the oldest go first, never everything.
     @MainActor private static let values: NSCache<NSString, Entry> = {
         let cache = NSCache<NSString, Entry>()
         cache.countLimit = 256
+        cache.totalCostLimit = costLimit
         return cache
     }()
 
@@ -440,8 +452,15 @@ enum CodeHighlightCache {
 
     @MainActor static func cached(_ key: Key) -> AttributedString? { values.object(forKey: name(key))?.value }
 
-    @MainActor static func store(_ value: AttributedString, for key: Key) {
-        values.setObject(Entry(value), forKey: name(key))
+    /// Stores `key`'s colors. `previous` is the block's last render of this fence: it goes when `key` is
+    /// the same fence grown (the same language, its code a prefix of `key`'s), since no block asks for it again.
+    @MainActor static func store(_ value: AttributedString, for key: Key, replacing previous: Key? = nil) {
+        // One entry larger than the whole budget would have NSCache evict the others to hold it.
+        let cost = cost(of: key, value)
+        if cost <= costLimit { values.setObject(Entry(value), forKey: name(key), cost: cost) }
+        if let previous, previous != key, previous.language == key.language, key.code.hasPrefix(previous.code) {
+            values.removeObject(forKey: name(previous))
+        }
     }
 
     /// The block's colors, nil when the language has no grammar (the block stays plain) or the
