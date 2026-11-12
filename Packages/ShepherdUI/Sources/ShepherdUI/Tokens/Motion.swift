@@ -208,7 +208,9 @@ extension SH {
         case numeric(countsDown: Bool = false)
         /// Text interpolates weight and color (a row turning semibold as it is selected).
         case interpolate
-        /// An SF Symbol replaces another (Send ⇄ Stop, a check appearing).
+        /// SF Symbols' own replace effect. It draws through RenderBox, which loads about 258 MB of
+        /// accelerated drawing pool each time it runs: swap glyphs by stacking two images and
+        /// fading them by opacity instead (`DesignRulesTests` fails a renamed symbol under this).
         case symbol
         /// The old content fades out as the new fades in.
         case crossFade

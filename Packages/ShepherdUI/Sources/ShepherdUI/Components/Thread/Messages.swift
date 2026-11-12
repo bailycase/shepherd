@@ -323,17 +323,22 @@ struct SHFenceKind: Equatable {
 }
 
 /// A copy button's glyph (code blocks, the turn footer): `doc.on.doc`, turning into a check
-/// for a moment after each copy, replacing the symbol and popping.
+/// for a moment after each copy, fading in as the other fades out and popping. The check is a
+/// new image, not a renamed symbol: renaming one while animating draws it through RenderBox,
+/// which loads about 258 MB of accelerated drawing pool each time.
 struct SHCopyGlyph: View {
     let copied: Bool
     /// Copies so far: each one pops.
     let copies: Int
 
     var body: some View {
-        Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 12))
-            .shContentTransition(.symbol)
-            .shAnimation(.content, value: copied)
-            .shPop(trigger: copies)
+        ZStack {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 12))
+                .id(copied)
+                .shTransition(.content)
+        }
+        .shAnimation(.content, value: copied)
+        .shPop(trigger: copies)
     }
 }
 
