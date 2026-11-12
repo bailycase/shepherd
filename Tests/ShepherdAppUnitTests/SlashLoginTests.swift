@@ -154,7 +154,7 @@ struct SlashLoginTests {
         #expect(choices.first { $0.id == "deepseek" }?.plan == "DeepSeek API key")
 
         let open = SlashLogin.matches("open", in: choices)
-        #expect(open.first?.id == "openai-codex" && open.contains { $0.id == "openai" } && open.allSatisfy { $0.id.contains("open") })
+        #expect(open.first?.id == "openai-codex" && open.contains { $0.id == "openai" } && open.allSatisfy { ($0.id + PiSignInCatalog.name($0.id).lowercased()).contains("open") })
         let row = SlashLogin.row(choices[0], verb: .login)
         #expect(row.lead == "/login" && row.name == "openai-codex" && row.status?.text == "Expired")
         #expect(SlashLogin.title(.login) == "Sign in to · opens Settings")
