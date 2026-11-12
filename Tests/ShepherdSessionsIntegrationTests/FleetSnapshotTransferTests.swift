@@ -118,7 +118,8 @@ struct FleetSnapshotTransferTests {
 
         let (_, thread) = try await Self.send(from: a, to: b)
         let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
-        #expect(try Self.tree(of: worktree) == expected, "the worktree is the checkout, byte for byte")
+        let built = try Self.tree(of: worktree)
+        #expect(built == expected, "the worktree is the checkout, byte for byte")
         // Git agrees: the same commit, the same edits, the same new files, nothing else.
         #expect(try Self.head(worktree) == Self.head(a.folder))
         #expect(try Self.porcelain(worktree) == Self.porcelain(a.folder))
