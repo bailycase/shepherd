@@ -44,6 +44,16 @@ public enum RemoteHostClientError: Error, CustomStringConvertible, Sendable {
 public final class RemoteHostClient: @unchecked Sendable {
     /// Remote host state pushed after every host-side mutation. Main queue.
     public var onStateChanged: ((ShepherdState) -> Void)?
+    /// The `state` pushes received and not yet given to `onStateChanged` (tests, diagnostics): read inside
+    /// it, those queued behind the push it is delivering. A push an adjacent newer one replaced is not counted.
+    public var queuedStateEvents: Int {
+        queuedStatesLock.lock()
+        defer { queuedStatesLock.unlock() }
+        return storedQueuedStates
+    }
+    /// Read inside `onStateChanged`: another `state` push is already queued behind this one, so a consumer
+    /// that only needs the newest workspace can leave this one for it.
+    public var newerStateQueued: Bool { queuedStateEvents > 0 }
     /// PTY output (replay or live) for an attached session. Main queue.
     public var onNativeThreadChanged: ((AgentID) -> Void)?
     public var onOutput: ((SessionID, Data) -> Void)?
@@ -155,8 +165,9 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// so a flooding host cannot queue a closure per frame behind UI work
     /// (the host side has the same one-delivery rule). Kept as one FIFO for
     /// every event kind so `sessionExited` still follows that session's
-    /// last bytes. A newer whole state replaces one still waiting (only the
-    /// last is adopted). Every event contributes encoded content cost and event count;
+    /// last bytes. A newer whole state replaces one still waiting right before it (other pushes
+    /// between two states keep both, and `newerStateQueued` tells the consumer of the first).
+    /// Every event contributes encoded content cost and event count;
     /// batches have both budgets (one oversized frame may run alone). Socket reads pause
     /// at either high watermark. Output completion includes downstream parsing, not merely
     /// the main callback, so stalled consumers back up the host. Client queue only.
@@ -194,6 +205,11 @@ public final class RemoteHostClient: @unchecked Sendable {
     private var pendingEvents: [QueuedEvent] = []
     /// Encoded content cost of all event kinds among `pendingEvents`.
     private var pendingEventBytes = 0
+    /// `state` pushes received and not yet delivered: waiting in `pendingEvents`, or in the batch on its way
+    /// to the main queue. Written under the lock by the client queue (a push, a teardown) and by main (a
+    /// delivery), which never waits on the client queue.
+    private let queuedStatesLock = NSLock()
+    private var storedQueuedStates = 0
     private var deliveryInFlight = false
     private var deliveryToken: UUID?
     /// The read source is suspended until a delivery drains the backlog.
@@ -1723,10 +1739,14 @@ public final class RemoteHostClient: @unchecked Sendable {
             default: return false
             }
         }
+        var queuedStatesChange = 0
         if let last = pendingEvents.last, replaces(last.event) {
             pendingEventBytes -= last.bytes
             pendingEvents.removeLast()
+            if case .state = last.event { queuedStatesChange -= 1 }
         }
+        if case .state = event { queuedStatesChange += 1 }
+        if queuedStatesChange != 0 { adjustQueuedStates(by: queuedStatesChange) }
         if case .output(let sessionID, let data) = event,
            let last = pendingEvents.last,
            case .output(let previousID, var merged) = last.event,
@@ -1790,7 +1810,9 @@ public final class RemoteHostClient: @unchecked Sendable {
                 guard self.connectionGeneration == generation else { finish(); return }
                 switch queued.event {
                 case .nativeThreadChanged(let agentID): self.onNativeThreadChanged?(agentID)
-                case .state(let state): self.onStateChanged?(state)
+                case .state(let state):
+                    self.adjustQueuedStates(by: -1)
+                    self.onStateChanged?(state)
                 case .output(let sessionID, let data):
                     if let consume = self.onOutputConsumed {
                         consume(sessionID, data, finish)
@@ -1859,6 +1881,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         // view state on disconnect and re-snapshots on reconnect.
         pendingEvents.removeAll()
         pendingEventBytes = 0
+        resetQueuedStates()
         deliveryInFlight = false
         for continuation in pendingReplies.values {
             continuation.resume(throwing: RemoteHostClientError.disconnected)
@@ -1874,6 +1897,19 @@ public final class RemoteHostClient: @unchecked Sendable {
             }
         }
         established = false
+    }
+
+    /// Never below zero: a delivery that was running when a teardown cleared the queue finds it empty.
+    private func adjustQueuedStates(by change: Int) {
+        queuedStatesLock.lock()
+        storedQueuedStates = max(0, storedQueuedStates + change)
+        queuedStatesLock.unlock()
+    }
+
+    private func resetQueuedStates() {
+        queuedStatesLock.lock()
+        storedQueuedStates = 0
+        queuedStatesLock.unlock()
     }
 
     private func hopToMain(_ body: @escaping () -> Void) {
