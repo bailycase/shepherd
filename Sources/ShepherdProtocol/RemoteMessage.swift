@@ -245,6 +245,9 @@ public enum RemoteProtocol {
     /// carries its `hostID`. Offered only while Fleet is on; the other fleet requests are the
     /// app's, on the local socket.
     public static let fleetCapability = "fleet.v1"
+    /// Capabilities a client device is never offered (`FleetAccess`): the ones for taking part in the
+    /// fleet's store. Later fleet units (sync, credentials, dispatch) add theirs here.
+    public static let fleetMemberCapabilities: Set<String> = [fleetCapability]
     /// Settings ▸ Experiments ▸ Design tool switched from a client (`HostSettingChange.designToolEnabled`).
     /// Offered while the tool is off too: it is not one of `designCapabilities`.
     public static let designToolExperimentCapability = "experiments.designTool.v1"
@@ -704,6 +707,15 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// After `hello` with a peer's token: `hostID` was removed from the fleet at `at` (epoch
     /// milliseconds). Answered `ok`.
     case fleetRevoke(id: Int, hostID: UUID, at: Double)
+    /// Before `hello`: a phone, iPad or Mac app pairs with the code Add a device shows (it asked who
+    /// answers first, like `fleetPair`). Answered `fleetDevices` with the Macs it can now reach.
+    case fleetPairDevice(id: Int, code: String, device: FleetDeviceIntroduction)
+    /// After `hello` with the shared token: a client is given a token of its own, made by the client.
+    /// Answered `fleetDevices`.
+    case fleetEnrollDevice(id: Int, device: FleetDeviceIntroduction)
+    /// After `hello` with a peer's token: the devices the sender holds, merged here (a revoked one wins).
+    /// Answered `fleetDevices` with the ones this host holds.
+    case fleetSyncDevices(id: Int, devices: [FleetDeviceEntry])
     /// Local clients only: this Mac's fleet as its app draws it. Answered `fleetResult`.
     case fleetRead(id: Int)
     /// Local clients only: this Mac's app acts on its host's fleet. Answered `fleetResult`.
@@ -854,12 +866,13 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case automationID, initialImages, serviceTier
         case requestToken, outcome, result
         case thread, step, update
-        case code, from, introduction, hostID, at
+        case code, from, introduction, hostID, at, device, devices
     }
 
     private enum Kind: String, Codable {
         case pushRegistration, pushUnregister
         case fleetIdentify, fleetPair, fleetEstablish, fleetIntroduce, fleetRevoke, fleetRead, fleetAction
+        case fleetPairDevice, fleetEnrollDevice, fleetSyncDevices
         case nativeThread, nativeThreadSubscribe, fleetDigest, projectExecution
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
@@ -899,6 +912,13 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case .fleetRevoke:
             self = .fleetRevoke(id: try c.decode(Int.self, forKey: .id), hostID: try c.decode(UUID.self, forKey: .hostID),
                                 at: try c.decode(Double.self, forKey: .at))
+        case .fleetPairDevice:
+            self = .fleetPairDevice(id: try c.decode(Int.self, forKey: .id), code: try c.decode(String.self, forKey: .code),
+                                    device: try c.decode(FleetDeviceIntroduction.self, forKey: .device))
+        case .fleetEnrollDevice:
+            self = .fleetEnrollDevice(id: try c.decode(Int.self, forKey: .id), device: try c.decode(FleetDeviceIntroduction.self, forKey: .device))
+        case .fleetSyncDevices:
+            self = .fleetSyncDevices(id: try c.decode(Int.self, forKey: .id), devices: try c.decode([FleetDeviceEntry].self, forKey: .devices))
         case .fleetRead:
             self = .fleetRead(id: try c.decode(Int.self, forKey: .id))
         case .fleetAction:
@@ -1105,6 +1125,19 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(hostID, forKey: .hostID)
             try c.encode(at, forKey: .at)
+        case .fleetPairDevice(let id, let code, let device):
+            try c.encode(Kind.fleetPairDevice, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(code, forKey: .code)
+            try c.encode(device, forKey: .device)
+        case .fleetEnrollDevice(let id, let device):
+            try c.encode(Kind.fleetEnrollDevice, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(device, forKey: .device)
+        case .fleetSyncDevices(let id, let devices):
+            try c.encode(Kind.fleetSyncDevices, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(devices, forKey: .devices)
         case .fleetRead(let id):
             try c.encode(Kind.fleetRead, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1387,6 +1420,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case fleetPaired(id: Int, hostID: UUID, name: String, myTokenHash: String)
     /// This Mac's fleet, for its app (`RemoteRequest.fleetRead`, `.fleetAction`).
     case fleetResult(id: Int, result: FleetResult)
+    /// A device paired or was given its token, or devices were synced (`fleetPairDevice`, `fleetEnrollDevice`, `fleetSyncDevices`).
+    case fleetDevices(id: Int, result: FleetDevicesResult)
     /// Generic success for acked requests with no payload (paste).
     case agentResult(id: Int, result: RemoteAgentResult)
     case ok(id: Int)
@@ -1542,7 +1577,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
 
     private enum Kind: String, Codable {
         case nativeThread, nativeThreadChanged, fleetDigest, projectExecution, projectExecutionChanged
-        case fleetIdentity, fleetPaired, fleetResult
+        case fleetIdentity, fleetPaired, fleetResult, fleetDevices
         case agentResult, helloOk, ok, paneOpened, error, state, stateChanged, attached, output, sessionExited
         case dirListing, models, spaceAdded, agentCreated, uploadResult, creationOptions
         case automationResult, forgeResult
@@ -1636,6 +1671,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
                                 name: try c.decode(String.self, forKey: .name), myTokenHash: try c.decode(String.self, forKey: .myTokenHash))
         case .fleetResult:
             self = .fleetResult(id: try c.decode(Int.self, forKey: .id), result: try c.decode(FleetResult.self, forKey: .result))
+        case .fleetDevices:
+            self = .fleetDevices(id: try c.decode(Int.self, forKey: .id), result: try c.decode(FleetDevicesResult.self, forKey: .result))
         case .uploadResult:
             self = .uploadResult(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteUploadResult.self, forKey: .result))
         case .creationOptions:
@@ -1793,6 +1830,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(myTokenHash, forKey: .myTokenHash)
         case .fleetResult(let id, let result):
             try c.encode(Kind.fleetResult, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
+        case .fleetDevices(let id, let result):
+            try c.encode(Kind.fleetDevices, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(result, forKey: .result)
         case .uploadResult(let id, let result):
