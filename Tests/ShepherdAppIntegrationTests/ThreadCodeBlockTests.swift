@@ -443,6 +443,33 @@ struct ThreadCodeBlockTests {
         #expect(CodeHighlightCache.cached(rendered(second)) == nil, "a closed fence leaves only its full render")
     }
 
+    @Test func aFenceScrolledBackIntoViewIsColoredOnItsFirstFrame() async throws {
+        let code = "var sheep = 1\nfunc flock() int { return 2 }"
+        let key = CodeHighlightCache.Key(fence: code, language: "go")
+        let window = OffscreenWindow(size: CGSize(width: 480, height: 400), HighlightedCodeBlock(code: code, language: "go"))
+        defer { window.close() }
+        try await eventuallyOnMain("the fence to be colored") {
+            ListPerf.settle(window)
+            return CodeHighlightCache.cached(key) != nil
+        }
+        window.show(EmptyView())
+        ListPerf.settle(window)
+        #expect(codeField(in: window.host, code: key.code) == nil)
+
+        let counts = ListPerf.counting {
+            window.show(HighlightedCodeBlock(code: code, language: "go"))
+            ListPerf.settle(window)
+        }
+
+        let field = try #require(codeField(in: window.host, code: key.code))
+        var colors: Set<NSColor> = []
+        field.attributedStringValue.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: field.attributedStringValue.length)) { value, _, _ in
+            if let color = value as? NSColor { colors.insert(color) }
+        }
+        #expect(colors.count > 1, "the colors come from the cache, not from a render that has yet to land")
+        #expect(counts["highlight.render", default: 0] == 0)
+    }
+
     private func codeField(in view: NSView, code: String) -> NSTextField? {
         codeFields(in: view, code: code).first
     }
