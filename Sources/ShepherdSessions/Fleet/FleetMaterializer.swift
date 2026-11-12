@@ -166,7 +166,11 @@ final class FleetMaterializer {
                 }
                 // A local edit not scanned yet must be an op before it is overwritten.
                 if let current, observed[unit] != Self.fingerprint(current) { continue }
-                let replacedSeed = current != nil && store.lastOwnOp(of: unit)?.seed == true && winner.mac != store.mac
+                // A divergent copy this Mac only seeded, replaced by another's: the sync line says so. A copy
+                // the fleet already held (it made the same seed) replaced nothing.
+                let replacedSeed = current.map { copy in
+                    store.lastOwnOp(of: unit)?.seed == true && winner.mac != store.mac && !store.otherMacsHeld(copy, in: unit)
+                } ?? false
                 // Set before writing: the write may call back into a scan.
                 observed[unit] = Self.fingerprint(target)
                 if source.writesAsynchronously { pending[unit] = (Self.fingerprint(target), clock().addingTimeInterval(Self.pendingPatience)) }
