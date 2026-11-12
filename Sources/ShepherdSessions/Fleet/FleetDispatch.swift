@@ -134,7 +134,11 @@ final class FleetDispatch: @unchecked Sendable {
     var snapshotsIn: [UUID: SnapshotIn] = [:]
     /// Tests: what the receiver did to build each worktree, and a way to change a content on the wire.
     var applyStats: [UUID: FleetSnapshotApply.Stats] = [:]
-    var tamper: (@Sendable (FleetHash, Data) -> Data)?
+    var wire: (@Sendable (FleetBlobChunk) async throws -> FleetBlobChunk)?
+    /// Tests: where a snapshot warns and where it is refused.
+    var caps: (warn: UInt64, refuse: UInt64) = (FleetSnapshotCap.warnAbove, FleetSnapshotCap.refuseAbove)
+    /// How long each snapshot took on this Mac as the sender: working it out and pushing it (milliseconds).
+    var timings: [UUID: (build: Int, transfer: Int)] = [:]
     /// When the sending record was last written for progress (progress is saved at most twice a second).
     var progressSavedAt: Double = 0
     /// The spare of each repository and what dispatches sent this Mac (`<directory>/spares`, `<directory>/snapshot-blobs`).

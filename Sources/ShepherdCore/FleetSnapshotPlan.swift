@@ -84,7 +84,9 @@ public enum FleetSnapshotCap {
 
     public enum Verdict: Equatable, Sendable { case send, warn, refuse }
 
-    public static func verdict(bytes: UInt64) -> Verdict { bytes > refuseAbove ? .refuse : bytes > warnAbove ? .warn : .send }
+    public static func verdict(bytes: UInt64, warnAbove: UInt64 = FleetSnapshotCap.warnAbove, refuseAbove: UInt64 = FleetSnapshotCap.refuseAbove) -> Verdict {
+        bytes > refuseAbove ? .refuse : bytes > warnAbove ? .warn : .send
+    }
 }
 
 /// The difference between a checkout and the commit it is pinned at.

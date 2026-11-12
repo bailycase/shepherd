@@ -548,31 +548,6 @@ struct FleetDispatchTests {
         #expect(b.taken().first?.failure == FleetDispatchCode.commitUnreachable && b.dispatched.isEmpty && b.sent().isEmpty)
     }
 
-    @Test func aSenderWithChangesOnlyASnapshotCarriesIsHeldAndNothingIsSent() async throws {
-        let (a, b, _) = try await Self.pair()
-        defer { a.stop(); b.stop() }
-        let parent = try await a.parent()
-        try parent.hello()
-
-        // An edit, then an untracked file, then a commit origin doesn't have.
-        try "changed\n".write(to: a.folder.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
-        guard case .error(_, FleetDispatchCode.needsBundle, _) = try await parent.dispatch(key: "edit", host: "Mac mini") else { Issue.record("edit sent"); return }
-        try git(["checkout", "--", "README.md"], in: a.folder)
-        try "new\n".write(to: a.folder.appendingPathComponent("NOTES.md"), atomically: true, encoding: .utf8)
-        guard case .error(_, FleetDispatchCode.needsBundle, _) = try await parent.dispatch(key: "untracked", host: "Mac mini") else { Issue.record("untracked sent"); return }
-        try git(["add", "NOTES.md"], in: a.folder)
-        try git(["commit", "-qm", "notes"], in: a.folder)
-        guard case .error(_, FleetDispatchCode.needsBundle, _) = try await parent.dispatch(key: "unpushed", host: "Mac mini") else { Issue.record("unpushed commit sent"); return }
-        #expect(b.dispatched.isEmpty && b.taken().isEmpty)
-
-        // Pushed, and with only an ignored file beside it, it goes.
-        try git(["push", "-q", "origin", "main"], in: a.folder)
-        try "log\n".write(to: a.folder.appendingPathComponent("build.log"), atomically: true, encoding: .utf8)
-        let info = try parent.info(try await parent.dispatch(key: "clean", host: "Mac mini"))
-        #expect(["preparing", "running"].contains(info.state))
-        try await Self.wait("B to run it") { b.dispatched.count == 1 }
-    }
-
     // MARK: Results held for a parent whose pi is away
 
     @Test func aResultForAParentWhosePiIsAwayWaitsAndIsDeliveredOnceWhenItIsBack() async throws {

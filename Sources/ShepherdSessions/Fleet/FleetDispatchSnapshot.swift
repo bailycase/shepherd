@@ -37,6 +37,8 @@ extension FleetDispatch {
         let excludes = spaceID.flatMap { host.settings()?.fleetSnapshotExcludes[FleetSnapshotExcludes.settingKey(spaceID: $0.rawValue)] } ?? FleetSnapshotExcludes()
         let outgoing = directory.appendingPathComponent("outgoing", isDirectory: true)
         let classifier = service.classifier
+        let caps = self.caps
+        let began = ContinuousClock.now
         Task.detached { [weak self] in
             var temporary: FleetContentIndex?
             let index: FleetContentIndex
@@ -60,9 +62,10 @@ extension FleetDispatch {
             }
             defer { if let temporary { temporary.requestStop(); temporary.queue.sync { temporary.erase() } } }
             do {
-                let sender = FleetSnapshotSender(index: index, root: pin.root, commit: commit, target: held, directory: outgoing)
+                let sender = FleetSnapshotSender(index: index, root: pin.root, commit: commit, target: held, directory: outgoing, warnAbove: caps.warn, refuseAbove: caps.refuse)
                 let built = try sender.build(id: id, unpushed: pin.unpushed)
-                self?.queue.async { self?.snapshotBuilt(id, built, done: done) }
+                let millis = Int((ContinuousClock.now - began) / .milliseconds(1))
+                self?.queue.async { self?.timings[id] = (millis, 0); self?.snapshotBuilt(id, built, done: done) }
             } catch let failure as FleetSnapshotSender.Failure {
                 let refusal: FleetDispatchRefusal
                 switch failure {
@@ -148,20 +151,22 @@ extension FleetDispatch {
         guard let built = snapshots[id], let record = outbound[id], let target = record.targetHostID, record.state == .preparing,
               !transferring.contains(id), let link = snapshotLink(id: id, target: target) else { return }
         transferring.insert(id)
-        let tamper = self.tamper
+        let wire = self.wire
+        let began = ContinuousClock.now
         Task.detached { [weak self] in
             do {
-                try await Self.push(built, over: link, tamper: tamper,
+                try await Self.push(built, over: link, wire: wire,
                                     live: { await self?.onQueue { self?.outbound[id]?.state == .preparing } ?? false },
                                     progress: { sent in self?.queue.async { self?.progressed(id, sent) } })
-                self?.queue.async { self?.transferring.remove(id) }
+                let millis = Int((ContinuousClock.now - began) / .milliseconds(1))
+                self?.queue.async { self?.transferring.remove(id); self?.timings[id]?.transfer = millis }
             } catch {
                 self?.queue.async { self?.transferFailed(id, error) }
             }
         }
     }
 
-    static func push(_ built: FleetSnapshotSender.Built, over link: SnapshotLink, tamper: (@Sendable (FleetHash, Data) -> Data)?,
+    static func push(_ built: FleetSnapshotSender.Built, over link: SnapshotLink, wire: (@Sendable (FleetBlobChunk) async throws -> FleetBlobChunk)?,
                      live: @escaping @Sendable () async -> Bool, progress: @escaping @Sendable (UInt64) -> Void) async throws {
         var ack = try await link.part(FleetSnapshotPart(index: -1))
         var next = ack.parts
@@ -183,7 +188,7 @@ extension FleetDispatch {
                 else { throw RemoteHostClientError.rejected(code: FleetDispatchCode.snapshotFailed, message: "The target asked for a content this checkout doesn't have.") }
                 try await FleetSnapshotReader.chunks(path: path, hash: hash, link: links.contains(hash)) { chunk in
                     var chunk = chunk
-                    if let tamper { chunk.data = tamper(hash, chunk.data) }
+                    if let wire { chunk = try await wire(chunk) }
                     _ = try await link.blob(chunk)
                     sent += UInt64(chunk.data.count)
                     progress(sent)

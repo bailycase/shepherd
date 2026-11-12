@@ -62,6 +62,18 @@ enum RemoteSamples {
         dispatchID: dispatchID, task: "Fix the flaky payment test.", title: "Fix flaky payment test", repoKey: "github.com/acme/payments-api",
         commitSHA: String(repeating: "a", count: 40), subdir: "services/api", branch: "fleet/fix-flaky-payment-test", model: "acme/model-a", thinking: "high",
         from: FleetDispatchSender(hostID: fleetHost, hostName: "MacBook Pro", agentID: AgentID(rawValue: "a1"), agentTitle: "Ship checkout"))
+    static let snapshotHash = FleetHash(of: Data("made-up contents".utf8))
+    static let snapshotHeader = FleetSnapshotHeader(commit: String(repeating: "a", count: 40), rootHash: snapshotHash, digest: FleetHash(of: Data("digest".utf8)),
+                                                    files: 3, directories: 1, deletions: 1, parts: 1, fileCount: 6_020, bytes: 2_800_000,
+                                                    bundle: FleetBlobRef(hash: FleetHash(of: Data("bundle".utf8)), size: 4_096))
+    static let dispatchCreateWithSnapshot = FleetDispatchCreate(
+        dispatchID: dispatchID, task: "Fix the flaky payment test.", title: "Fix flaky payment test", repoKey: "github.com/acme/payments-api",
+        commitSHA: String(repeating: "a", count: 40), from: FleetDispatchSender(hostID: fleetHost, hostName: "MacBook Pro", agentTitle: "Ship checkout"),
+        snapshot: snapshotHeader)
+    static let snapshotPart = FleetSnapshotPart(
+        index: 0, files: [FleetSnapshotFile(path: "src/app.ts", kind: .file, hash: snapshotHash, size: 42), FleetSnapshotFile(path: "node_modules/.bin/tool", kind: .symlink, hash: snapshotHash, size: 22)],
+        directories: [FleetSnapshotDirectory(path: "node_modules", hash: snapshotHash, files: 6_000, bytes: 215_715_200)], deletions: ["old.txt"], wantsNeeds: true)
+    static let blobChunk = FleetBlobChunk(hash: snapshotHash, size: 10, offset: 4, data: Data([1, 2, 3, 4, 5, 6]))
     static let dispatchRecord = FleetDispatchRecord(
         id: dispatchID, parentAgentID: AgentID(rawValue: "a1"), parentHostID: fleetHost, parentHostName: "MacBook Pro", parentTitle: "Ship checkout",
         targetHostID: UUID(uuidString: "0B8C1D52-3B5C-4F0A-8F56-1B7C6C9D5E22"), targetHostName: "Mac mini", state: .running, title: "Fix flaky payment test",
@@ -475,7 +487,7 @@ struct RemoteRequestTests {
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design, .mission,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps,
              .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
-             .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetRepoManifest,
+             .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
              .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult,
              .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
             return Wire.caseName(request)
@@ -520,6 +532,10 @@ struct RemoteRequestTests {
         .fleetRepoManifest(id: 108, update: RemoteSamples.fleetManifestDelta),
         .fleetRepoManifest(id: 109, update: RemoteSamples.fleetManifestHead),
         .fleetDispatchCreate(id: 110, create: RemoteSamples.dispatchCreate),
+        .fleetDispatchCreate(id: 118, create: RemoteSamples.dispatchCreateWithSnapshot),
+        .fleetSnapshotPart(id: 119, dispatchID: RemoteSamples.dispatchID, part: RemoteSamples.snapshotPart),
+        .fleetSnapshotPart(id: 120, dispatchID: RemoteSamples.dispatchID, part: FleetSnapshotPart(index: -1, wantsNeeds: true)),
+        .fleetBlobPush(id: 121, dispatchID: RemoteSamples.dispatchID, chunk: RemoteSamples.blobChunk),
         .fleetDispatchCreate(id: 111, create: FleetDispatchCreate(dispatchID: RemoteSamples.dispatchID, kind: .userThread, task: "Look at the logs.", title: "",
                                                                   repoKey: "github.com/acme/web", from: FleetDispatchSender(hostID: RemoteSamples.fleetHost, hostName: "MacBook Pro", agentTitle: ""))),
         .fleetDispatchControl(id: 112, dispatchID: RemoteSamples.dispatchID, control: .status),
@@ -838,7 +854,7 @@ struct RemoteReplyTests {
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .fleetIdentity, .fleetPaired, .fleetResult, .fleetSyncReply, .fleetRepoManifestAck, .fleetDevices, .fleetPressureSample, .fleetDispatchAccepted, .fleetDispatchState, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged, .pullRequestLinks:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .fleetIdentity, .fleetPaired, .fleetResult, .fleetSyncReply, .fleetRepoManifestAck, .fleetSnapshotAck, .fleetDevices, .fleetPressureSample, .fleetDispatchAccepted, .fleetDispatchState, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged, .pullRequestLinks:
             return Wire.caseName(reply)
         }
     }
@@ -879,6 +895,8 @@ struct RemoteReplyTests {
         .fleetPressureSample(id: 13, sample: S.fleetSample, readiness: nil),
         .fleetRepoManifestAck(id: 14, ack: FleetRepoManifestAck(repo: "github.com/acme/web", generation: 7, seq: 3)),
         .fleetRepoManifestAck(id: 16, ack: FleetRepoManifestAck(repo: "space:2F1D", generation: 7, seq: 0, resend: true)),
+        .fleetSnapshotAck(id: 17, ack: FleetSnapshotAck(dispatchID: RemoteSamples.dispatchID, parts: 2, needs: [RemoteSamples.snapshotHash], needsCount: 1)),
+        .fleetSnapshotAck(id: 18, ack: FleetSnapshotAck(dispatchID: RemoteSamples.dispatchID, parts: 2, complete: true)),
         .fleetResult(id: 10, result: FleetResult(snapshot: S.fleetSnapshot, adopted: [
             FleetAdoption(id: S.fleetHost, outcome: .established(hostID: S.fleetHost, name: "Mac mini")),
             FleetAdoption(id: S.fleetHost, outcome: .notFleet), FleetAdoption(id: S.fleetHost, outcome: .unreachable),

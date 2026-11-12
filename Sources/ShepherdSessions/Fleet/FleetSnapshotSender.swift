@@ -36,6 +36,9 @@ struct FleetSnapshotSender {
     /// What the target holds of the repository.
     var target: FleetManifest?
     var directory: URL
+    /// Where a snapshot warns and where it is refused (tests lower them).
+    var warnAbove = FleetSnapshotCap.warnAbove
+    var refuseAbove = FleetSnapshotCap.refuseAbove
 
     /// Works out the snapshot. `unpushed` says the checkout has commits no remote ref holds.
     func build(id: UUID, unpushed: Bool) throws -> Built {
@@ -57,7 +60,7 @@ struct FleetSnapshotSender {
         var bundle: (FleetBlobRef, URL)?
         if unpushed { bundle = try makeBundle(id: id) }
         let total = plan.bytes + (bundle?.0.size ?? 0)
-        let verdict = FleetSnapshotCap.verdict(bytes: total)
+        let verdict = FleetSnapshotCap.verdict(bytes: total, warnAbove: warnAbove, refuseAbove: refuseAbove)
         if verdict == .refuse {
             throw Failure.tooLarge(bytes: total, biggest: plan.biggest.map { "\($0.path):\($0.bytes)" })
         }
