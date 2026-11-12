@@ -835,6 +835,10 @@ public final class SessionServer: @unchecked Sendable {
     private var acceptSource: DispatchSourceRead?
     private var remoteListenFD: Int32 = -1
     private var remoteAcceptSource: DispatchSourceRead?
+    /// Signalled when the remote listener's descriptor is really closed: until then its port is still taken.
+    /// `Closed` belongs to the listener that is open, `Closing` to one that was stopped and is awaited.
+    private var remoteListenerClosed: DispatchSemaphore?
+    private var remoteListenerClosing: DispatchSemaphore?
     private var remoteToken: String?
     /// The local socket (`host.sock`) the app connects to a background host through, and its token.
     private var localAcceptSource: DispatchSourceRead?
@@ -1674,6 +1678,7 @@ public final class SessionServer: @unchecked Sendable {
         // Keep ownership until cleanup is over; a rejected instance cleans up nothing.
         if owned { designs.removeLeftovers() }
         queue.sync { releaseOwnershipOnQueue() }
+        awaitRemoteListenerClosed()
     }
 
     // MARK: - Lifecycle (server queue)
@@ -2557,6 +2562,14 @@ public final class SessionServer: @unchecked Sendable {
     /// connections and sessions are unaffected.
     public func stopRemoteListener() {
         queue.sync { stopRemoteListenerOnQueue() }
+        awaitRemoteListenerClosed()
+    }
+
+    /// A cancelled dispatch source closes its descriptor later, on the queue, so a port is free again only
+    /// once that has happened: a stop is not finished (a relisten on the same port would find it busy) before it.
+    private func awaitRemoteListenerClosed() {
+        guard let closing = queue.sync(execute: { () -> DispatchSemaphore? in defer { remoteListenerClosing = nil }; return remoteListenerClosing }) else { return }
+        _ = closing.wait(timeout: .now() + 5)
     }
 
     private func startRemoteListenerOnQueue(port: UInt16, tokenURL: URL) throws -> UInt16 {
@@ -2613,8 +2626,10 @@ public final class SessionServer: @unchecked Sendable {
 
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
         source.setEventHandler { [weak self] in self?.acceptRemotePending(on: fd) }
-        source.setCancelHandler { close(fd) }
+        let closed = DispatchSemaphore(value: 0)
+        source.setCancelHandler { close(fd); closed.signal() }
         remoteAcceptSource = source
+        remoteListenerClosed = closed
         source.activate()
         ShepherdLog.info("remote listener on port \(boundPort)")
         remoteListenPort = boundPort
@@ -2628,6 +2643,8 @@ public final class SessionServer: @unchecked Sendable {
         }
         remoteAcceptSource?.cancel()
         remoteAcceptSource = nil
+        if let closed = remoteListenerClosed { remoteListenerClosing = closed }
+        remoteListenerClosed = nil
         remoteListenFD = -1
         remoteToken = nil
         remoteListenPort = nil

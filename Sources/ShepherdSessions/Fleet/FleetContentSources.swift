@@ -223,6 +223,9 @@ final class FleetSubagentsSource: FleetUnitSource {
 
     private let lock = NSLock()
     private var inFlight: Set<String> = []
+    /// A write that came while the unit's last one was still running: only the newest is kept, and runs next.
+    private struct Queued { var value: Data? }
+    private var queued: [String: Queued] = [:]
     /// What this Mac's pi refused to load, by unit and the value's hash: not tried again until the value changes.
     private var refused: [String: String] = [:]
 
@@ -231,27 +234,45 @@ final class FleetSubagentsSource: FleetUnitSource {
         let file = String(unit.dropFirst(Self.kind.count))
         guard SubagentDefinitionsStore.acceptsFilename(file) else { throw FleetUnitRefused(description: "\(unit) isn't a subagent file name") }
         let hash = FleetMaterializer.fingerprint(value)
-        let store = self.store
         let alreadyRefused = lock.withLock { refused[unit] == hash }
         if alreadyRefused { throw FleetUnitRefused(description: "this Mac's pi doesn't load \(file)", quiet: true) }
-        guard lock.withLock({ inFlight.insert(unit).inserted }) else { return }
+        // The materializer counts this write as done once it returns, so one that arrives while another is running
+        // (a profile's edit, then its removal) must run after it, not be dropped.
+        let running = lock.withLock { () -> Bool in
+            if inFlight.insert(unit).inserted { return false }
+            queued[unit] = Queued(value: value)
+            return true
+        }
+        if running { return }
+        let store = self.store
         let written = self.written
         DispatchQueue.global(qos: .utility).async { [self] in
-            do {
-                let existing = FileManager.default.fileExists(atPath: store.directory.path) ? try store.files().first { $0.file == file } : nil
-                if let value {
-                    guard let text = String(data: value, encoding: .utf8) else { throw SubagentDefinitionsStore.Failure("\(file) isn't text. The file was not saved.") }
-                    try store.save(file, text: text, expected: existing?.fingerprint)
-                } else if let existing {
-                    try store.delete(file, expected: existing.fingerprint)
+            var next: Data?? = .some(value)
+            while let value = next {
+                perform(unit, file: file, value, store: store)
+                next = lock.withLock {
+                    guard let more = queued.removeValue(forKey: unit) else { inFlight.remove(unit); return nil }
+                    return .some(more.value)
                 }
-            } catch {
-                ShepherdLog.warning("fleet: couldn't write \(unit): \(error)")
-                // A profile that fails its checks stays out; a race with a save elsewhere is tried again at the next change.
-                if "\(error)".contains("was not saved") { lock.withLock { refused[unit] = hash } }
             }
-            lock.withLock { _ = inFlight.remove(unit) }
             written()
+        }
+    }
+
+    private func perform(_ unit: String, file: String, _ value: Data?, store: SubagentDefinitionsStore) {
+        let hash = FleetMaterializer.fingerprint(value)
+        do {
+            let existing = FileManager.default.fileExists(atPath: store.directory.path) ? try store.files().first { $0.file == file } : nil
+            if let value {
+                guard let text = String(data: value, encoding: .utf8) else { throw SubagentDefinitionsStore.Failure("\(file) isn't text. The file was not saved.") }
+                try store.save(file, text: text, expected: existing?.fingerprint)
+            } else if let existing {
+                try store.delete(file, expected: existing.fingerprint)
+            }
+        } catch {
+            ShepherdLog.warning("fleet: couldn't write \(unit): \(error)")
+            // A profile that fails its checks stays out; a race with a save elsewhere is tried again at the next change.
+            if "\(error)".contains("was not saved") { lock.withLock { refused[unit] = hash } }
         }
     }
 }
