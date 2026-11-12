@@ -63,8 +63,16 @@ struct ProseLinkTests {
 
     /// A new opener above a prose view does not redraw what reads the action prose gives its links: the action is made once
     /// per prose view and the opener is only handed to it, so a streaming reply under a conversation that rebuilds its
-    /// opener on every body redraws no link, image chip or task chip.
-    @Test func aNewOpenerAboveProseRedrawsNothingThatReadsItsLinkAction() async throws {
+    /// opener on every body redraws no link, image chip or task chip. Run in its own process: SwiftUI's comparison of
+    /// the environment is what is measured, and one run in a crowded process saw the reader drawn on every pull.
+    @Test func aNewOpenerAboveProseRedrawsNothingThatReadsItsLinkAction() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.readerBesideChangingOpeners() }
+        }
+        expectScenarioCompleted(result)
+    }
+
+    @MainActor private static func readerBesideChangingOpeners() async throws {
         let ticks = OpenerTicks()
         SHRenderProbe.start()
         let window = OffscreenWindow(size: CGSize(width: 400, height: 200), dark: false, OpenerHost(ticks: ticks))
