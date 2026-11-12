@@ -4,6 +4,23 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
+/// The branch names dispatches have chosen and not yet made (`FleetDispatch.claimedBranches`).
+final class FleetBranchClaims: @unchecked Sendable {
+    private let lock = NSLock()
+    private var names: Set<String> = []
+
+    /// Chooses a name with `pick` (given the names already claimed) and claims it, as one step.
+    func claim(_ pick: (Set<String>) -> String) -> String {
+        lock.withLock {
+            let name = pick(names)
+            names.insert(name)
+            return name
+        }
+    }
+
+    func release(_ name: String) { lock.withLock { _ = names.remove(name) } }
+}
+
 /// A number read from any thread.
 final class FleetCounter: @unchecked Sendable {
     private let lock = NSLock()
@@ -93,6 +110,9 @@ final class FleetDispatch: @unchecked Sendable {
     let directory: URL
     var outbound: [UUID: FleetDispatchRecord] = [:]
     var inbound: [UUID: Inbound] = [:]
+    /// Branches chosen for dispatches whose worktree isn't made yet. `prepare` runs off the queue, so two dispatches
+    /// of one title would both see the name free; the claim is made under this lock and held until the thread exists.
+    let claimedBranches = FleetBranchClaims()
     /// Dispatches a create is on its way for (never twice at once).
     var sending: Set<UUID> = []
     var delivering: Set<UUID> = []

@@ -70,13 +70,13 @@ enum FleetDispatchGit {
     }
 
     /// `fleet/<slug of the title>`, with a short suffix of `dispatchID` only when that branch or its
-    /// folder already exists, so retries and repeat tasks never collide.
-    static func branchName(title: String, requested: String?, dispatchID: UUID, repo: String) -> String {
+    /// folder already exists or another dispatch in flight has claimed it, so retries and repeat tasks never collide.
+    static func branchName(title: String, requested: String?, dispatchID: UUID, repo: String, claimed: Set<String> = []) -> String {
         var base = requested.flatMap { $0.hasPrefix("fleet/") && isValidBranch($0, repo: repo) ? $0 : nil }
             ?? "fleet/" + slug(title)
         if !isValidBranch(base, repo: repo) { base = "fleet/dispatch" }
         func taken(_ name: String) -> Bool {
-            run(["show-ref", "--verify", "--quiet", "refs/heads/\(name)"], in: repo)?.status == 0
+            claimed.contains(name) || run(["show-ref", "--verify", "--quiet", "refs/heads/\(name)"], in: repo)?.status == 0
                 || FileManager.default.fileExists(atPath: GitWorktree.destination(repo: repo, branch: name))
         }
         guard taken(base) else { return base }

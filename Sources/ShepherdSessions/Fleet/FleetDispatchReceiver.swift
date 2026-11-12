@@ -82,10 +82,13 @@ extension FleetDispatch {
                 self?.queue.async { self?.failInbound(id, FleetDispatchCode.commitUnreachable, nil) }
                 return
             }
-            let branch = FleetDispatchGit.branchName(title: record.title, requested: requestedBranch, dispatchID: id, repo: repo)
-            // Written before the worktree exists, so a retry agrees on the name.
-            self?.queue.async { self?.named(id, branch: branch) }
             guard let self else { return }
+            let branch = self.claimedBranches.claim {
+                FleetDispatchGit.branchName(title: record.title, requested: requestedBranch, dispatchID: id, repo: repo, claimed: $0)
+            }
+            defer { self.claimedBranches.release(branch) }
+            // Written before the worktree exists, so a retry agrees on the name.
+            self.queue.async { self.named(id, branch: branch) }
             let request = await self.onQueue { self.threadRequest(for: record, branch: branch, space: space) }
             let outcome = await self.host.createThread(request)
             self.queue.async { self.prepared(id, outcome) }

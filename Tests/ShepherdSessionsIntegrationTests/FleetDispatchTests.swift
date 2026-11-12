@@ -19,7 +19,7 @@ struct FleetDispatchTests {
     // MARK: Fixtures
 
     /// Waits for `condition`, which may read from a client.
-    static func wait(_ what: String, timeout: Duration = .seconds(30), _ condition: @MainActor () async throws -> Bool) async throws {
+    static func wait(_ what: String, timeout: Duration = defaultWaitTimeout, _ condition: @MainActor () async throws -> Bool) async throws {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {
             if try await condition() { return }
@@ -297,6 +297,30 @@ struct FleetDispatchTests {
         #expect(other.dispatchID != first.dispatchID, "another call is another dispatch")
         try await Self.wait("B to run both") { b.dispatched.count == 2 }
         #expect(a.sent().count == 2 && b.taken().count == 2)
+        // Two dispatches of one task arrive together: each gets its own branch and worktree, neither fails on the other's name.
+        #expect(Set(b.dispatched.compactMap(\.worktreeBranch)).count == 2 && Set(b.dispatched.compactMap(\.worktreePath)).count == 2)
+    }
+
+    /// Two creates of one title arriving together (a worktree takes a while, so the second arrives before the first has
+    /// made its branch): each must get its own branch and worktree, and neither may fail on the other's name.
+    @Test func twoCreatesOfOneTitleArrivingTogetherGetTheirOwnBranchesAndBothStart() async throws {
+        let (a, b, origin) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let aID = try await a.hostID()
+        let viaA = try await b.connectAsPeer(a)
+        defer { viaA.disconnect() }
+        func create() -> FleetDispatchCreate {
+            FleetDispatchCreate(dispatchID: UUID(), task: "Fix the flaky payment test.", title: "Fix flaky payment test", repoKey: Self.repoKey, commitSHA: origin.sha,
+                                from: FleetDispatchSender(hostID: aID, hostName: "MacBook Pro", agentTitle: "Ship checkout"))
+        }
+        let (one, two) = (create(), create())
+        async let first = viaA.fleetDispatchCreate(one)
+        async let second = viaA.fleetDispatchCreate(two)
+        _ = try await (first, second)
+        try await Self.wait("both threads to start") { b.dispatched.count == 2 }
+        #expect(Set(b.dispatched.compactMap(\.worktreeBranch)).count == 2 && Set(b.dispatched.compactMap(\.worktreePath)).count == 2)
+        try await Self.wait("both records to run") { b.taken().count == 2 && b.taken().allSatisfy { $0.state == .running } }
+        #expect(b.taken().allSatisfy { $0.failure == nil })
     }
 
     @Test func aCreateThatArrivesAgainReturnsTheThreadItStartedAndAnotherMacCannotTakeItOver() async throws {
