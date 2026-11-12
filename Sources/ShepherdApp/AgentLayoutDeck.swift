@@ -113,11 +113,13 @@ struct AgentLayoutDeck: View, Equatable {
                         if entry.host.frame != container.bounds { entry.host.frame = container.bounds }
                         entry.host.needsLayout = true
                         entry.host.isHidden = false
-                        // Laid out in this pass, not a later one: a thread whose rows were let go (`NativeThreadStores`)
-                        // builds them now. Left to a later pass, the running app committed a frame with the layout and an
-                        // empty transcript for as long as the rows took to build.
-                        entry.host.layoutSubtreeIfNeeded()
-                        SHRenderProbe.tick("deck.flipLayout")
+                        // A thread whose rows were let go (`NativeThreadStores`) builds them in this pass, not a later one: left
+                        // to a later pass, the running app committed a frame with the layout and an empty transcript for as
+                        // long as the rows took to build. A layout that kept its rows has none to build and takes its usual pass.
+                        if let thread = model.thread, vm.threadStores.existing(for: thread.agentID)?.transcriptReleased == true {
+                            entry.host.layoutSubtreeIfNeeded()
+                            SHRenderProbe.tick("deck.flipLayout")
+                        }
                         container.needsLayout = true
                     } else if !model.isVisible, !entry.host.isHidden {
                         hiding.append(entry.host)

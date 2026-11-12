@@ -291,39 +291,25 @@ struct MountedBudgetTests {
         #expect(frame.longestBlankBand <= ThreadBlankScreenTests.blankBandLimit, "no blank stretch of \(frame.longestBlankBand) points")
     }
 
-    /// The window is driven by its own run loop here, no pass of the test's: the layout is never visible with its rows
-    /// still to be built, in any run-loop turn between the selection and the rows.
-    @Test func aReleasedLayoutIsNeverShownBeforeItsRows() async throws {
+    /// Laying the host out in the flip is for a thread that let its rows go, which builds them there: a thread that kept
+    /// its rows takes the pass it always did.
+    @Test func aFlipLaysTheHostOutOnlyForAThreadThatLetItsRowsGo() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let work = try await Workspace.open(2, replies: 6, cycles: 15, in: app)
+        let work = try await Workspace.open(3, replies: 4, cycles: 8, in: app)
         defer { work.window.close() }
-        for index in [1, 0] { try await work.show(index) }
-        let fences = try work.fields(1)
-        #expect(fences > 0)
+        for index in [1, 2, 0] { try await work.show(index) }
+        // The newest hidden thread (2) is never taken: only the older one (1) is.
+        #expect(work.stores.enforceMountedBudget(budget: 0, keep: 1, keepPinned: 0, limit: .max).threads == 1)
+        #expect(work.store(1).transcriptReleased && !work.store(2).transcriptReleased)
 
-        var blank: [Int] = []
-        for round in 0..<4 {
-            work.releaseHidden()
-            try await eventuallyOnMain("agent 1's layout to hold no code field") {
-                ListPerf.settle(work.window)
-                return try work.fields(1) == 0
-            }
-            try await Task.sleep(for: .milliseconds(200))
-            work.vm.selectAgent(work.agents[1].agent.id)
-            var turns = 0, blankTurns = 0
-            let start = ContinuousClock.now
-            while ContinuousClock.now - start < .seconds(10) {
-                try await Task.sleep(for: .milliseconds(1))
-                turns += 1
-                guard try work.host(1)?.isHidden == false else { continue }
-                if try work.fields(1) == 0 { blankTurns += 1 } else { break }
-            }
-            if blankTurns > 0 { blank.append(round) }
-            #expect(try work.fields(1) == fences, "round \(round): the rows are back after \(turns) turns")
-            try await work.show(0)
-        }
-        #expect(blank.isEmpty, "rounds that showed the layout before its rows: \(blank)")
+        SHRenderProbe.start()
+        defer { SHRenderProbe.stop() }
+        try await work.show(2)
+        #expect(SHRenderProbe.count("deck.flipLayout") == 0, "a thread that kept its rows is shown by the pass that always showed it")
+        try await work.show(1)
+        #expect(SHRenderProbe.count("deck.flipLayout") == 1, "the thread that let them go is laid out as it is shown")
+        #expect(SHRenderProbe.count("deck.mount") == 0 && SHRenderProbe.count("deck.unmount") == 0)
     }
 
     // MARK: Readers
@@ -425,6 +411,7 @@ struct MountedBudgetTests {
         for index in 0..<3 { #expect(try deck.pages[rig.refs[index]]?.host === hosts[index], "page \(index) is the same host") }
 
         _ = try await rig.show(0)
+        #expect(SHRenderProbe.count("remoteDeck.flipLayout") == 1, "the page that let its rows go is laid out as it is shown")
         try await eventuallyOnMain("page 0 to draw its fences again") {
             ListPerf.settle(rig.window)
             return try fields(0) > 0
