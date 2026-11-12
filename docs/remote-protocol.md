@@ -561,6 +561,20 @@
   it for Add a Mac and hands the address to the host. Fleet needs the listener, so it opens it even with Serve this Mac
   off. Shepherd adds no TLS: the fleet runs over the user's own network. A paired Mac the app reached with the shared
   token is marked `fleetManaged` in `RemoteHostStore` (its address and token are the fleet's), keeping its `bindingID`.
+- **Fleet pressure and readiness** (`fleet.pressure.v1`, offered with `fleet.v1`): each Mac pushes `fleetPressure` (a
+  `FleetPressureSample`: CPU share, core count, total and available memory, thermal state, power, threads working,
+  reserved places) every 5 s to the Macs it holds a link to, `fleetReadiness` (a `FleetReadinessReport`: model, chip, the
+  programs it lacks, the projects it has folders for) when that changes and daily, and answers `fleetPressureNow` with
+  `fleetPressureSample` when a peer needs a fresh reading. Only a connection that authenticated with a peer's token may
+  send them, and a sample is filed under that peer, never one it names; the receiver clamps what it keeps and stamps the
+  arrival with its own clock, so a sample carries no time and a sender's clock never matters. A host samples (no
+  subprocess: `host_statistics`, `host_statistics64`, `ProcessInfo.thermalState`, IOPowerSources) only while a link to a
+  peer is up or its app said `FleetAction.watching(true)` (the Fleet page is on screen; it ends with that connection),
+  and pushes `RemoteSettingsPage.fleetPressure` to its app, coalesced, only while one watches. `FleetSnapshot.macs`
+  carries this Mac's and each peer's last sample (with its age on the host's clock) and report to the app; a sample older
+  than 15 s is stale and counts for nothing. `FleetAction.reconnect(hostID:)` is the Fleet page's Retry. The Send work
+  here choice is the host setting `fleet.weight.<hostID>` (`HostSettings.fleetWeights`, `HostSettingChange.fleetWeight`),
+  Prefer 1.5, Normal 1, Less often 0.5, Manual only (never picked by Auto).
 - **Protocol changes** touch the request and reply enums with every Codable arm, `RemoteProtocol`
   capabilities where relevant, server handling, `RemoteHostClient` (Mac and iOS), and the
   round-trip and listener tests.

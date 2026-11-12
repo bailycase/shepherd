@@ -208,10 +208,10 @@ struct FleetPressureTests {
     }
 
     @Test func aRecheckHappensOnlyWhenWhatTheReportIsMadeOfChanges() {
-        let base = FleetReadiness.key(commands: ["npx"], needsXcode: false, repos: ["acme-web"])
-        #expect(base == FleetReadiness.key(commands: ["npx"], needsXcode: false, repos: ["acme-web"]))
-        #expect(base != FleetReadiness.key(commands: ["npx", "muse"], needsXcode: false, repos: ["acme-web"]))
-        #expect(base != FleetReadiness.key(commands: ["npx"], needsXcode: true, repos: ["acme-web"]))
-        #expect(base != FleetReadiness.key(commands: ["npx"], needsXcode: false, repos: []))
+        let base = FleetReadiness.key(commands: ["npx"], repos: ["acme-web"])
+        #expect(base == FleetReadiness.key(commands: ["npx"], repos: ["acme-web"]))
+        #expect(base != FleetReadiness.key(commands: ["npx", "muse"], repos: ["acme-web"]))
+        #expect(base != FleetReadiness.key(commands: ["npx"], repos: []))
+        #expect(FleetReadiness.key(commands: ["a"], repos: []) != FleetReadiness.key(commands: [], repos: ["a"]), "a command is not a project")
     }
 }

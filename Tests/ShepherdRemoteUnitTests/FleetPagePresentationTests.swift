@@ -57,6 +57,19 @@ struct FleetPagePresentationTests {
         #expect(here.room.fraction > 0 && here.room.fraction < 0.3, "its share of the best: \(here.room.fraction)")
     }
 
+    @Test func aMacCountedAloneIsJudgedOnItsOwnNotAgainstNobody() {
+        var snapshot = Self.snapshot()
+        snapshot.peers = []
+        snapshot.macs = [snapshot.macs[0]]
+        // 28% of the CPU and 26% of the memory free: 7% of the Mac.
+        #expect(Self.card(Self.here, Self.page(snapshot)).room.text == "Little room")
+        snapshot.macs[0].sample?.cpuUtilization = 0.1
+        snapshot.macs[0].sample?.availableMemoryBytes = 30 * Self.gib
+        let roomy = Self.card(Self.here, Self.page(snapshot))
+        #expect(roomy.room.text == "Room to spare" && roomy.room.tone == .good)
+        #expect(Self.page(snapshot).nextGoesTo == "This Mac")
+    }
+
     @Test func readingsAreWordedAsTheBoardDrawsThem() {
         let page = Self.page()
         let here = Self.card(Self.here, page), mini = Self.card(Self.mini, page)

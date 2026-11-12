@@ -51,6 +51,7 @@ final class FleetPressure: @unchecked Sendable {
     private var watchers: Set<Int32> = []
     private var timer: DispatchSourceTimer?
     private var taking = false
+    private var makingReport = false
     private var notifying = false
     private var stopped = false
 
@@ -109,45 +110,58 @@ final class FleetPressure: @unchecked Sendable {
 
     // MARK: Taking samples
 
-    /// Takes a sample and, when what the readiness report is made of changed, a report; keeps
-    /// them and pushes them to the peers. A tick that finds the last one still running does nothing.
+    /// Takes a sample, keeps it and pushes it to the peers; then, if what the readiness report is
+    /// made of changed, makes a report apart from it (the login shell can take a while, and the
+    /// samples must not wait for it). A tick that finds the last one still running does nothing.
     func tick() {
         guard !stopped, !taking else { return }
         taking = true
         let facts = localFacts()
-        let known = (key: readinessKey, at: readinessAt)
-        let now = clock()
-        Task { [weak self, sampler, probe, hardware] in
+        Task { [weak self, sampler] in
             let sample = await sampler.sample(activeAgents: facts.activeAgents)
-            // Readiness is made again when its inputs changed, and daily.
-            let commands = facts.mcpConfig.flatMap { try? Data(contentsOf: $0) }.map(FleetReadiness.mcpCommands(in:)) ?? []
-            let needsXcode = FleetReadiness.needsXcode(spaces: facts.spaces)
-            let repos = Set(facts.spaces.map(\.name)).sorted()
-            let key = FleetReadiness.key(commands: commands, needsXcode: needsXcode, repos: repos)
-            var report: FleetReadinessReport?
-            if key != known.key || known.at.map({ now.timeIntervalSince($0) > Self.readinessLifetime }) != false {
-                report = await FleetReadiness.report(commands: commands, needsXcode: needsXcode, spaces: facts.spaces,
-                                                     probe: probe, hardware: hardware)
-            }
-            self?.queue.async { self?.took(sample, report: report, key: key) }
+            self?.queue.async { self?.took(sample, facts: facts) }
         }
     }
 
-    private func took(_ sample: FleetPressureSample, report: FleetReadinessReport?, key: String) {
+    private func took(_ sample: FleetPressureSample, facts: FleetLocalFacts) {
         taking = false
         guard !stopped else { return }
         local = (sample, clock())
-        let clients = pushTargets()
-        for client in clients where client.capabilities.contains(RemoteProtocol.fleetPressureCapability) {
+        for client in pushTargets() where client.capabilities.contains(RemoteProtocol.fleetPressureCapability) {
             Task { try? await client.fleetPressure(sample) }
         }
-        if let report {
-            localReadiness = report
-            readinessKey = key
-            readinessAt = clock()
-            for client in clients where client.capabilities.contains(RemoteProtocol.fleetPressureCapability) {
-                Task { try? await client.fleetReadiness(report) }
+        remakeReadiness(facts)
+        notify()
+    }
+
+    /// Makes the readiness report again when its inputs changed (pi's MCP commands, the projects)
+    /// and daily, and pushes it to the peers.
+    private func remakeReadiness(_ facts: FleetLocalFacts) {
+        guard !makingReport else { return }
+        makingReport = true
+        let known = (key: readinessKey, at: readinessAt)
+        let now = clock()
+        Task { [weak self, probe, hardware] in
+            let commands = facts.mcpConfig.flatMap { try? Data(contentsOf: $0) }.map(FleetReadiness.mcpCommands(in:)) ?? []
+            let repos = Set(facts.spaces.map(\.name)).sorted()
+            let key = FleetReadiness.key(commands: commands, repos: repos)
+            var report: FleetReadinessReport?
+            if key != known.key || known.at.map({ now.timeIntervalSince($0) > Self.readinessLifetime }) != false {
+                report = await FleetReadiness.report(commands: commands, needsXcode: FleetReadiness.needsXcode(spaces: facts.spaces),
+                                                     spaces: facts.spaces, probe: probe, hardware: hardware)
             }
+            self?.queue.async { self?.remade(report, key: key) }
+        }
+    }
+
+    private func remade(_ report: FleetReadinessReport?, key: String) {
+        makingReport = false
+        guard !stopped, let report else { return }
+        localReadiness = report
+        readinessKey = key
+        readinessAt = clock()
+        for client in pushTargets() where client.capabilities.contains(RemoteProtocol.fleetPressureCapability) {
+            Task { try? await client.fleetReadiness(report) }
         }
         notify()
     }

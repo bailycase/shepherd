@@ -58,7 +58,9 @@ struct FleetPressureIntegrationTests {
         var server: SessionServer { host.server }
         var peersFile: URL { host.dir.appendingPathComponent("fleet/peers.json") }
 
-        init(_ name: String, busy: UInt64, clock: TestClock = TestClock()) async throws {
+        /// `mcpConfig` stands in for pi's MCP file, and `probe` for the login shell.
+        init(_ name: String, busy: UInt64, clock: TestClock = TestClock(), mcpConfig: URL? = nil,
+             probe: @escaping FleetReadiness.Probe = { _ in FleetProbeResult(noGit: true) }) async throws {
             self.name = name
             self.meter = Meter(busy: busy)
             self.clock = clock
@@ -66,10 +68,12 @@ struct FleetPressureIntegrationTests {
             let server = host.server
             server.configureFleet(name: name, advertises: false)
             let meter = meter
+            let ownFacts: (@Sendable () -> FleetLocalFacts)? = mcpConfig.map { url in { @Sendable in FleetLocalFacts(mcpConfig: url) } }
             server.configureFleet(clock: { clock.now }, pressure: { queue, facts in
                 // An hour between ticks: the timer's first tick is the only one that fires; the tests ask for the rest.
-                FleetPressure(queue: queue, clock: { clock.now }, sampler: FleetPressureSampler(sources: meter.sources), localFacts: facts,
-                              probe: { _ in FleetProbeResult(noGit: true) }, hardware: { (name, "M4 Pro") }, interval: 3_600)
+                FleetPressure(queue: queue, clock: { clock.now }, sampler: FleetPressureSampler(sources: meter.sources),
+                              localFacts: ownFacts ?? facts,
+                              probe: probe, hardware: { (name, "M4 Pro") }, interval: 3_600)
             })
             let tokenURL = host.dir.appendingPathComponent("remote-token")
             let socket = host.dir.appendingPathComponent("h.sock").path
@@ -214,6 +218,56 @@ struct FleetPressureIntegrationTests {
         try await eventually("B to hold A's sample") { try await b.state(of: aID)?.sample != nil }
         #expect(try await b.state(of: aID)?.sampleAge == 0)
         #expect(FleetRoom.skip(try #require(try await b.state(of: aID)?.sample), age: 0) == nil)
+    }
+
+    // MARK: Readiness follows what it is made of
+
+    @Test func aNewMCPServerWhoseCommandIsMissingShowsUpAtTheNextSampleAndNotBefore() async throws {
+        let dir = try makeScratchDirectory("mcp")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let config = dir.appendingPathComponent("mcp.json")
+        try Data(#"{"mcpServers": {"fetch": {"command": "npx"}}}"#.utf8).write(to: config)
+        let probes = Locked(0)
+        let a = try await Mac("MacBook Pro", busy: 30, mcpConfig: config, probe: { commands in
+            probes.withValue { $0 += 1 }
+            // The fake login shell finds every command but muse.
+            return FleetProbeResult(missingCommands: Set(commands).intersection(["muse"]))
+        })
+        let b = try await Mac("Mac mini", busy: 60)
+        defer { a.stop(); b.stop() }
+        try await Self.pair(a, b)
+        let (aID, bID) = (try await a.hostID(), try await b.hostID())
+        try await eventually("B to hold A's report") { try await b.state(of: aID)?.readiness != nil }
+        #expect(try await b.state(of: aID)?.readiness?.missing == [])
+
+        // Nothing changed: the next samples don't ask the shell again.
+        let before = probes.current
+        a.tick()
+        try await eventually("a second sample") { a.meter.cpuReads >= 4 }
+        #expect(probes.current == before, "the report is made again only when its inputs change, and daily")
+
+        try Data(#"{"mcpServers": {"fetch": {"command": "npx"}, "muse": {"command": "muse"}}}"#.utf8).write(to: config)
+        a.tick()
+        try await eventually("the new server's missing command to reach B") {
+            try await b.state(of: aID)?.readiness?.missing == [FleetMissingTool(kind: .binary, name: "muse")]
+        }
+        _ = bID
+        let page = FleetPagePresentation.make(snapshot: try await b.read(), weight: { _ in .normal })
+        #expect(page.cards.first { $0.id == aID }?.ready.text == "muse CLI isn’t installed")
+    }
+
+    @Test func aDailyRecheckRemakesTheReportEvenWithNothingChanged() async throws {
+        let probes = Locked(0)
+        let a = try await Mac("MacBook Pro", busy: 30, probe: { _ in probes.withValue { $0 += 1 }; return FleetProbeResult() })
+        defer { a.stop() }
+        _ = try await a.local.fleetAction(.watching(true))
+        try await eventually("the first report") { probes.current == 1 }
+        a.tick()
+        try await eventually("a second sample") { a.meter.cpuReads >= 4 }
+        #expect(probes.current == 1)
+        a.clock.advance(FleetPressure.readinessLifetime + 1)
+        a.tick()
+        try await eventually("the daily recheck") { probes.current == 2 }
     }
 
     // MARK: Who may speak, and what they may say

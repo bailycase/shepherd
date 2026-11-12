@@ -24,12 +24,23 @@ public struct FleetMetric: Equatable, Sendable {
     public var fraction: Double
     public var text: String
     public var tone: FleetTone
+
+    public init(fraction: Double, text: String, tone: FleetTone) {
+        self.fraction = fraction
+        self.text = text
+        self.tone = tone
+    }
 }
 
 /// A line of text and its tone.
 public struct FleetLine: Equatable, Sendable {
     public var text: String
     public var tone: FleetTone
+
+    public init(text: String, tone: FleetTone) {
+        self.text = text
+        self.tone = tone
+    }
 }
 
 /// One Mac's card.
@@ -148,11 +159,13 @@ public enum FleetPagePresentation {
             entry.sample != nil && entry.skip == nil ? FleetRoom.score(entry.sample!, weight: entry.weight, batteryCountsHalf: batteryCountsHalf) : 0
         }
         let best = scores.max() ?? 0
+        // With one Mac counted there is nothing to compare it with: its room is its own.
+        let compared = scores.filter { $0 > 0 }.count > 1
 
         var cards: [FleetMacCard] = []
         for (index, entry) in entries.enumerated() {
             cards.append(card(entry.id, name: entry.name, status: entry.status, lastSeen: entry.lastSeen, state: entry.state,
-                              sample: entry.sample, skip: entry.skip, weight: entry.weight, score: scores[index], best: best,
+                              sample: entry.sample, skip: entry.skip, weight: entry.weight, score: scores[index], best: best, compared: compared,
                               batteryCountsHalf: batteryCountsHalf, locale: locale, calendar: calendar))
         }
 
@@ -187,7 +200,7 @@ public enum FleetPagePresentation {
     }
 
     private static func card(_ id: UUID, name: String, status: FleetMacCard.Status, lastSeen: Double?, state: FleetMacState?,
-                             sample: FleetPressureSample?, skip: FleetRoom.Skip?, weight: FleetSendWeight, score: Double, best: Double,
+                             sample: FleetPressureSample?, skip: FleetRoom.Skip?, weight: FleetSendWeight, score: Double, best: Double, compared: Bool,
                              batteryCountsHalf: Bool, locale: Locale, calendar: Calendar) -> FleetMacCard {
         let readiness = state?.readiness
         let asleep = status == .asleep
@@ -206,9 +219,16 @@ public enum FleetPagePresentation {
             case .cpu?, .memory?, .thermal?:
                 room = FleetMetric(fraction: 0, text: "No room", tone: .bad)
             case nil:
-                let share = best > 0 ? min(1, score / best) : 0
-                let text = score >= best ? "Most room" : share >= 0.5 ? "Some room" : "Little room"
-                room = FleetMetric(fraction: max(0.04, share), text: text, tone: score >= best ? .good : .warn)
+                if compared {
+                    let share = best > 0 ? min(1, score / best) : 0
+                    let text = score >= best ? "Most room" : share >= 0.5 ? "Some room" : "Little room"
+                    room = FleetMetric(fraction: max(0.04, share), text: text, tone: score >= best ? .good : .warn)
+                } else {
+                    // What is free of the CPU and of the memory.
+                    let share = (1 - min(1, max(0, sample?.cpuUtilization ?? 0))) * (sample?.availableShare ?? 0)
+                    let text = share >= 0.5 ? "Room to spare" : share >= 0.2 ? "Some room" : "Little room"
+                    room = FleetMetric(fraction: max(0.04, share), text: text, tone: share >= 0.5 ? .good : .warn)
+                }
             }
         }
 

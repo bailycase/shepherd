@@ -38,9 +38,11 @@ enum FleetReadiness {
     /// Names the shell may be asked about: no quoting, no expansion.
     private static let safeCommand = try! NSRegularExpression(pattern: #"^[A-Za-z0-9._+@-]+$"#)
 
-    /// What a recheck of the facts would compare: the same key means the same report.
-    static func key(commands: [String], needsXcode: Bool, repos: [String]) -> String {
-        (commands + [needsXcode ? "xcode" : "-"] + repos).joined(separator: "\u{1}")
+    /// What a recheck compares: the same key means the same report. Cheap to make (no disk read
+    /// beyond the MCP file), since it is made every sample; whether a project needs Xcode is
+    /// read only when a report is made, which a new project or a daily recheck brings about.
+    static func key(commands: [String], repos: [String]) -> String {
+        (commands + ["\u{2}"] + repos).joined(separator: "\u{1}")
     }
 
     /// The commands of the local (stdio) servers in `config`, each once, sorted: `npx`, `uvx`,
