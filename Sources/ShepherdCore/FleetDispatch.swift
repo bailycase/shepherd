@@ -80,8 +80,6 @@ public enum FleetDispatchCode {
     /// The target refused with a code this build doesn't know (`failureDetail` holds it).
     public static let refused = "refused"
     public static let peerGone = "peer_gone"
-    /// The sender has changes only a snapshot carries (slice 4c); it can't send them yet.
-    public static let needsBundle = "needs_bundle"
     public static let invalid = "invalid"
 }
 
@@ -186,6 +184,13 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
     public var activity: String?
     public var resultText: String?
     public var resultBranchFacts: FleetBranchFacts?
+    /// The snapshot that went with the work (`FleetSnapshotHeader`): bytes to send, bytes sent so far, the files it names, whether it
+    /// was above the warning size, and how long the file part took on the target (create received to a worktree that passed its digest).
+    public var snapshotBytes: UInt64?
+    public var snapshotProgress: UInt64?
+    public var snapshotFiles: Int?
+    public var sendWarning: Bool
+    public var fileMillis: Int?
     /// Epoch milliseconds.
     public var createdAt: Double
     public var updatedAt: Double
@@ -195,7 +200,8 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
                 state: FleetDispatchState = .placing, failure: String? = nil, failureDetail: String? = nil, title: String, task: String,
                 repoKey: String, commitSHA: String? = nil, subdir: String? = nil, branch: String? = nil, model: String? = nil,
                 thinking: String? = nil, reasonCodes: [FleetPlacementReason] = [], remoteAgentID: AgentID? = nil, activity: String? = nil,
-                resultText: String? = nil, resultBranchFacts: FleetBranchFacts? = nil, createdAt: Double, updatedAt: Double? = nil) {
+                resultText: String? = nil, resultBranchFacts: FleetBranchFacts? = nil, snapshotBytes: UInt64? = nil, snapshotProgress: UInt64? = nil,
+                snapshotFiles: Int? = nil, sendWarning: Bool = false, fileMillis: Int? = nil, createdAt: Double, updatedAt: Double? = nil) {
         self.id = id
         self.kind = kind
         self.parentAgentID = parentAgentID
@@ -221,6 +227,11 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         self.activity = activity
         self.resultText = resultText
         self.resultBranchFacts = resultBranchFacts
+        self.snapshotBytes = snapshotBytes
+        self.snapshotProgress = snapshotProgress
+        self.snapshotFiles = snapshotFiles
+        self.sendWarning = sendWarning
+        self.fileMillis = fileMillis
         self.createdAt = createdAt
         self.updatedAt = updatedAt ?? createdAt
     }
@@ -229,6 +240,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         case id, kind, parentAgentID, parentHostID, parentHostName, parentTitle, targetHostID, targetHostName, requestedHost, state
         case failure, failureDetail, title, task, repoKey, commitSHA, subdir, branch, model, thinking, reasonCodes, remoteAgentID
         case activity, resultText, resultBranchFacts, createdAt, updatedAt
+        case snapshotBytes, snapshotProgress, snapshotFiles, sendWarning, fileMillis
     }
 
     public init(from decoder: Decoder) throws {
@@ -259,6 +271,11 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         activity = try c.decodeIfPresent(String.self, forKey: .activity)
         resultText = try c.decodeIfPresent(String.self, forKey: .resultText)
         resultBranchFacts = try c.decodeIfPresent(FleetBranchFacts.self, forKey: .resultBranchFacts)
+        snapshotBytes = try c.decodeIfPresent(UInt64.self, forKey: .snapshotBytes)
+        snapshotProgress = try c.decodeIfPresent(UInt64.self, forKey: .snapshotProgress)
+        snapshotFiles = try c.decodeIfPresent(Int.self, forKey: .snapshotFiles)
+        sendWarning = try c.decodeIfPresent(Bool.self, forKey: .sendWarning) ?? false
+        fileMillis = try c.decodeIfPresent(Int.self, forKey: .fileMillis)
         createdAt = try c.decodeIfPresent(Double.self, forKey: .createdAt) ?? 0
         updatedAt = try c.decodeIfPresent(Double.self, forKey: .updatedAt) ?? createdAt
     }
@@ -290,6 +307,11 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(activity, forKey: .activity)
         try c.encodeIfPresent(resultText, forKey: .resultText)
         try c.encodeIfPresent(resultBranchFacts, forKey: .resultBranchFacts)
+        try c.encodeIfPresent(snapshotBytes, forKey: .snapshotBytes)
+        try c.encodeIfPresent(snapshotProgress, forKey: .snapshotProgress)
+        try c.encodeIfPresent(snapshotFiles, forKey: .snapshotFiles)
+        if sendWarning { try c.encode(sendWarning, forKey: .sendWarning) }
+        try c.encodeIfPresent(fileMillis, forKey: .fileMillis)
         try c.encode(createdAt, forKey: .createdAt)
         try c.encode(updatedAt, forKey: .updatedAt)
     }

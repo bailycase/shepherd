@@ -41,10 +41,13 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
     public var model: String?
     public var thinking: String?
     public var from: FleetDispatchSender
+    /// What the work carries beyond its commit (slice 4c): edits, untracked and ignored files, and the unpushed commits. The
+    /// parts and contents follow (`fleetSnapshotPart`, `fleetBlobPush`); the receiver starts the thread once they check out.
+    public var snapshot: FleetSnapshotHeader?
 
     public init(dispatchID: UUID, kind: FleetDispatchRecord.Kind = .agentDispatch, task: String, title: String, repoKey: String,
                 commitSHA: String? = nil, subdir: String? = nil, branch: String? = nil, model: String? = nil, thinking: String? = nil,
-                from: FleetDispatchSender) {
+                from: FleetDispatchSender, snapshot: FleetSnapshotHeader? = nil) {
         self.dispatchID = dispatchID
         self.kind = kind
         self.task = task
@@ -56,9 +59,10 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         self.model = model
         self.thinking = thinking
         self.from = from
+        self.snapshot = snapshot
     }
 
-    private enum CodingKeys: String, CodingKey { case dispatchID, kind, task, title, repoKey, commitSHA, subdir, branch, model, thinking, from }
+    private enum CodingKeys: String, CodingKey { case dispatchID, kind, task, title, repoKey, commitSHA, subdir, branch, model, thinking, from, snapshot }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -73,6 +77,7 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         model = try c.decodeIfPresent(String.self, forKey: .model)
         thinking = try c.decodeIfPresent(String.self, forKey: .thinking)
         from = try c.decode(FleetDispatchSender.self, forKey: .from)
+        snapshot = try c.decodeIfPresent(FleetSnapshotHeader.self, forKey: .snapshot)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -88,6 +93,7 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         try c.encodeIfPresent(model, forKey: .model)
         try c.encodeIfPresent(thinking, forKey: .thinking)
         try c.encode(from, forKey: .from)
+        try c.encodeIfPresent(snapshot, forKey: .snapshot)
     }
 }
 

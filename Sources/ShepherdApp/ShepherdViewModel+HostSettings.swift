@@ -107,7 +107,9 @@ enum HostSettingsMapping {
             updateExtensionsDaily: false,
             fleetWeights: app.fleetWeights,
             fleetThreadsCanSend: app.fleetThreadsCanSend,
-            fleetThreadCap: app.fleetThreadCap
+            fleetThreadCap: app.fleetThreadCap,
+            fleetUncommitted: app.fleetUncommitted,
+            fleetSnapshotExcludes: app.fleetSnapshotExcludes
         )
     }
 
@@ -141,6 +143,8 @@ enum HostSettingsMapping {
         case .fleetWeight(let hostID, let weight): app.setFleetWeight(weight, of: hostID)
         case .fleetThreadsCanSend(let on): app.fleetThreadsCanSend = on
         case .fleetThreadCap(let cap): app.fleetThreadCap = cap
+        case .fleetUncommitted(let choice): app.fleetUncommitted = choice
+        case .fleetSnapshotExcludes(let spaceID, let excludes): app.setFleetExcludes(excludes, of: SpaceID(rawValue: spaceID))
         case .updatePiDaily, .updateExtensionsDaily:
             // An older client's switches: Shepherd's pi updates only with Shepherd.
             break

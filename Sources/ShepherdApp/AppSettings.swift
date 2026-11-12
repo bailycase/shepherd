@@ -129,6 +129,8 @@ final class AppSettings {
         static let fleetWeights = "shepherd.fleet.weights"
         static let fleetThreadsCanSend = "shepherd.fleet.threadsCanSend"
         static let fleetThreadCap = "shepherd.fleet.threadCap"
+        static let fleetUncommitted = "shepherd.fleet.uncommitted"
+        static let fleetSnapshotExcludes = "shepherd.fleet.snapshotExcludes"
         static let missionsEnabled = "shepherd.experiments.missions"
         static let implementOpensThread = "shepherd.designs.implementOpensThread"
 
@@ -144,7 +146,7 @@ final class AppSettings {
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeGeneratePRDescription, worktreeDeleteAction, worktreeCloseOnMerge, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
             mcpProjectConfig,
-            goalsEnabled, projectsEnabled, designToolEnabled, fleetEnabled, fleetWeights, fleetThreadsCanSend, fleetThreadCap, missionsEnabled, implementOpensThread,
+            goalsEnabled, projectsEnabled, designToolEnabled, fleetEnabled, fleetWeights, fleetThreadsCanSend, fleetThreadCap, fleetUncommitted, fleetSnapshotExcludes, missionsEnabled, implementOpensThread,
             filesWordWrap, filesMarkdownPreview,
         ]
 
@@ -556,6 +558,27 @@ final class AppSettings {
         }
     }
 
+    /// Settings ▸ Fleet ▸ Code ▸ Uncommitted changes (`HostSettings.fleetUncommitted`). Synced across the fleet.
+    var fleetUncommitted: FleetUncommittedChanges {
+        didSet { store.set(fleetUncommitted.rawValue, forKey: Key.fleetUncommitted) }
+    }
+
+    /// Settings ▸ Fleet ▸ Code ▸ Ignored files ▸ Per space, under the setting keys `fleet.snapshotExcludes.<spaceID>`. Synced across the fleet.
+    var fleetSnapshotExcludes: [String: FleetSnapshotExcludes] {
+        didSet {
+            if let data = try? JSONEncoder().encode(fleetSnapshotExcludes) { store.set(data, forKey: Key.fleetSnapshotExcludes) }
+        }
+    }
+
+    func fleetExcludes(of spaceID: SpaceID) -> FleetSnapshotExcludes {
+        fleetSnapshotExcludes[FleetSnapshotExcludes.settingKey(spaceID: spaceID.rawValue)] ?? FleetSnapshotExcludes()
+    }
+
+    func setFleetExcludes(_ excludes: FleetSnapshotExcludes, of spaceID: SpaceID) {
+        let key = FleetSnapshotExcludes.settingKey(spaceID: spaceID.rawValue)
+        if excludes.isEmpty { fleetSnapshotExcludes[key] = nil } else { fleetSnapshotExcludes[key] = excludes }
+    }
+
     func fleetWeight(of hostID: UUID) -> FleetSendWeight {
         fleetWeights[FleetSendWeight.settingKey(hostID: hostID)] ?? .normal
     }
@@ -610,6 +633,8 @@ final class AppSettings {
         fleetWeights = (store.dictionary(forKey: Key.fleetWeights) as? [String: String] ?? [:]).compactMapValues(FleetSendWeight.init(rawValue:))
         fleetThreadsCanSend = store.object(forKey: Key.fleetThreadsCanSend) as? Bool ?? false
         fleetThreadCap = HostSettings.clampedThreadCap(store.object(forKey: Key.fleetThreadCap) as? Int ?? HostSettings.fleetThreadCapDefault)
+        fleetUncommitted = store.string(forKey: Key.fleetUncommitted).flatMap(FleetUncommittedChanges.init(rawValue:)) ?? .sendThem
+        fleetSnapshotExcludes = (store.data(forKey: Key.fleetSnapshotExcludes).flatMap { try? JSONDecoder().decode([String: FleetSnapshotExcludes].self, from: $0) }) ?? [:]
         // Naming is always on now; only its model is a setting.
         store.removeObject(forKey: "shepherd.agent.autoName")
         // The session naming model became the text generation model: move its stored choice to
@@ -738,6 +763,8 @@ final class AppSettings {
         fleetWeights = [:]
         fleetThreadsCanSend = false
         fleetThreadCap = HostSettings.fleetThreadCapDefault
+        fleetUncommitted = .sendThem
+        fleetSnapshotExcludes = [:]
         shareDiagnostics = false
         textGenerationModel = ""
         visionModel = ""

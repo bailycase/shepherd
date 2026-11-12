@@ -344,6 +344,23 @@ public struct FleetMerkleTree: Sendable {
         markDirty(from: parent)
     }
 
+    /// Records a whole directory by its hash, with nothing beneath it (a snapshot that says "your `node_modules` is the one I
+    /// have"). The tree's hash comes out the same as if every file under it had been set.
+    public mutating func setDirectory(_ path: String, hash: FleetHash) {
+        let (parent, name) = Self.split(path)
+        var current = parent
+        while !current.isEmpty {
+            let (up, directory) = Self.split(current)
+            if children[current] == nil { children[current] = [:] }
+            if children[up]?[directory] != nil { break }
+            children[up, default: [:]][directory] = Node(kind: .directory, hash: FleetHash(a: 0, b: 0, c: 0, d: 0))
+            current = up
+        }
+        if children[parent]?[name]?.kind == .directory, children[path] != nil { dropDirectory(path) }
+        children[parent, default: [:]][name] = Node(kind: .directory, hash: hash)
+        markDirty(from: parent)
+    }
+
     /// Removes the file or link at `path`, or the whole directory there.
     public mutating func remove(_ path: String) {
         let (parent, name) = Self.split(path)

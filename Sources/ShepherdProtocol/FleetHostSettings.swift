@@ -9,7 +9,7 @@ public enum FleetHostSetting: String, CaseIterable, Sendable {
     case defaultModel, defaultThinking, defaultServiceTier, textGenerationModel, visionModel, compactAtPercent, queueDelivery
     case worktreeBase, fetchBeforeCreating, generatePRDescriptions, closeOnMerge, worktreeDeleteAction
     /// Fleet policy: the same on every Mac (`HostSettings.fleetThreadsCanSend`, `fleetThreadCap`).
-    case fleetThreadsCanSend, fleetThreadCap
+    case fleetThreadsCanSend, fleetThreadCap, fleetUncommitted
 
     /// The unit's key: "host.defaultModel".
     public var key: String { "host." + rawValue }
@@ -38,6 +38,7 @@ public enum FleetHostSetting: String, CaseIterable, Sendable {
         case .worktreeDeleteAction: Self.encode(settings.worktreeDeleteAction)
         case .fleetThreadsCanSend: Self.encode(settings.fleetThreadsCanSend)
         case .fleetThreadCap: Self.encode(settings.fleetThreadCap)
+        case .fleetUncommitted: Self.encode(settings.fleetUncommitted)
         }
     }
 
@@ -62,6 +63,7 @@ public enum FleetHostSetting: String, CaseIterable, Sendable {
         case .worktreeDeleteAction: return decode(HostSettings.WorktreeDeleteAction.self).map { .worktreeDeleteAction($0) }
         case .fleetThreadsCanSend: return decode(Bool.self).map { .fleetThreadsCanSend($0) }
         case .fleetThreadCap: return decode(Int.self).map { .fleetThreadCap($0) }
+        case .fleetUncommitted: return decode(FleetUncommittedChanges.self).map { .fleetUncommitted($0) }
         }
     }
 
@@ -109,5 +111,36 @@ public enum FleetWeightSetting {
     /// The change a unit's value makes; nil when the text isn't a weight.
     public static func change(hostID: UUID, fromJSON json: String) -> HostSettingChange? {
         (try? JSONDecoder().decode(String.self, from: Data(json.utf8))).flatMap(FleetSendWeight.init(rawValue:)).map { .fleetWeight(hostID: hostID, weight: $0) }
+    }
+}
+
+/// `setting:fleet.snapshotExcludes.<spaceID>`: what a space keeps home or sends against the defaults when its checkout is sent
+/// (`FleetSnapshotExcludes`), the same on every Mac. One unit per space; the value is the lists as JSON. No entry is the defaults.
+public enum FleetSnapshotExcludeSetting {
+    public static func unit(spaceID: String) -> String { FleetUnit.setting(FleetSnapshotExcludes.settingKey(spaceID: spaceID)) }
+
+    /// The space a unit names the excludes of; nil for any other unit.
+    public static func spaceID(unit: String) -> String? {
+        guard FleetUnit.kind(of: unit) == "setting", let name = FleetUnit.name(of: unit), name.hasPrefix("fleet.snapshotExcludes.") else { return nil }
+        let id = String(name.dropFirst("fleet.snapshotExcludes.".count))
+        return !id.isEmpty && unit == Self.unit(spaceID: id) ? id : nil
+    }
+
+    /// Every list `settings` holds: unit to JSON.
+    public static func values(in settings: HostSettings) -> [String: String] {
+        var out: [String: String] = [:]
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        for (key, excludes) in settings.fleetSnapshotExcludes where !excludes.isEmpty {
+            let id = String(key.dropFirst("fleet.snapshotExcludes.".count))
+            guard key.hasPrefix("fleet.snapshotExcludes."), let data = try? encoder.encode(excludes) else { continue }
+            out[unit(spaceID: id)] = String(decoding: data, as: UTF8.self)
+        }
+        return out
+    }
+
+    /// The change a unit's value makes; nil when the text isn't a pair of lists.
+    public static func change(spaceID: String, fromJSON json: String) -> HostSettingChange? {
+        (try? JSONDecoder().decode(FleetSnapshotExcludes.self, from: Data(json.utf8))).map { .fleetSnapshotExcludes(spaceID: spaceID, excludes: $0) }
     }
 }
