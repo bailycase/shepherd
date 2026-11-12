@@ -400,6 +400,7 @@ extension CodeHighlight {
             while start > 0, units[start - 1] != 10 { start -= 1 }
             let length = units.count
             work.colored += length - start
+            SHRenderProbe.add("highlight.units", length - start)
             var roles = [UInt8](repeating: 0, count: length - start)
             let cursor = grammar.query.execute(in: parsed)
             cursor.setByteRange(range: UInt32(start * 2)..<UInt32(length * 2))
