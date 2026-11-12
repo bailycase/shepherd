@@ -85,12 +85,16 @@ final class RemoteHostStore {
         fileprivate(set) var lastSeen: Date?
         var state = ShepherdState() {
             didSet {
+                guard projects else { return }
                 let agentIDs = Set(state.agents.map(\.id))
                 let kept = children.filter { agentIDs.contains($0.key) }
                 if kept.count != children.count { children = kept }
                 onProjectionChanged?()
             }
         }
+        /// Off while `skip` writes `state`: the push behind it projects (`onProjectionChanged`, the child rows' prune)
+        /// for both. Every projection reads the connections whole, so none is owed to a push it skipped.
+        @ObservationIgnored private var projects = true
         fileprivate(set) var children: [AgentID: [ChildRun]] = [:] { didSet { onProjectionChanged?() } }
         @ObservationIgnored fileprivate var onProjectionChanged: (() -> Void)?
         @ObservationIgnored fileprivate var childRefreshTask: Task<Void, Never>?
@@ -125,6 +129,15 @@ final class RemoteHostStore {
             self.id = config.id
             designs = RemoteDesignLibrary(hostID: config.id, cache: designCache)
             missions = RemoteMissions(hostID: config.id)
+        }
+
+        /// Takes a push that a newer one is queued behind and the app leaves unadopted. `state` holds it at once, so
+        /// no reader sees an older one than the app does, and observers are told as for any push; only the
+        /// projection waits for the push behind it.
+        fileprivate func skip(_ push: ShepherdState) {
+            projects = false
+            state = push
+            projects = true
         }
 
         /// Points the host's missions at `client` (nil: disconnected) and reads them when it offers them.
@@ -258,6 +271,10 @@ final class RemoteHostStore {
     static let defaultsKey = "shepherd.remote.hosts"
 
     @ObservationIgnored var onProjectionChanged: (() -> Void)?
+    /// Whether the app leaves the next workspace the background host on this Mac pushes unadopted when a newer
+    /// one is already queued behind it (`StateAdoption`). Asked before the connection holds the push: a push it
+    /// leaves is held without its projection, which the push behind it runs.
+    @ObservationIgnored var leavesQueuedLocalHostState: (() -> Bool)?
     /// Each workspace the background host on this Mac pushes, after its connection holds it, and whether a
     /// newer push is already queued behind it.
     @ObservationIgnored var onLocalHostState: ((ShepherdState, _ newerQueued: Bool) -> Void)?
@@ -589,13 +606,16 @@ final class RemoteHostStore {
         client.onStateChanged = { [weak self, weak connection, weak client] state in
             guard let connection,
                   connection.client.map(ObjectIdentifier.init) == clientID else { return }
-            defer { if connection.isLocalHost { self?.onLocalHostState?(state, client?.newerStateQueued ?? false) } }
+            // This Mac's host is the app's workspace, which leaves a push unadopted when a newer one is queued behind it.
+            // The connection holds that push without the projection, which the newer one runs, and the app is told so.
+            let skipped = connection.isLocalHost && client?.newerStateQueued == true && self?.leavesQueuedLocalHostState?() == true
+            defer { if connection.isLocalHost { self?.onLocalHostState?(state, skipped || client?.newerStateQueued == true) } }
             let liveSessionIDs = Set(state.tabs.flatMap { $0.layout.leaves.compactMap(\.sessionID) })
             for sessionID in Array(connection.panes.keys) where !liveSessionIDs.contains(sessionID) {
                 connection.panes.removeValue(forKey: sessionID)?.detach()
             }
             connection.stateGeneration &+= 1
-            connection.state = state
+            if skipped { connection.skip(state) } else { connection.state = state }
         }
         client.onOutputConsumed = { [weak connection] sessionID, data, completion in
             guard let connection,

@@ -52,6 +52,22 @@ struct StateAdoptionTests {
         #expect(name(adoption.latest(snapshot("three"))) == "three")
     }
 
+    @Test func aPushIsLeftQueuedUntilMaxSkipsOfThemAreInARow() {
+        var adoption = StateAdoption()
+        #expect(adoption.leavesQueued)
+        for index in 1...StateAdoption.maxSkips { _ = adoption.received(snapshot("s\(index)"), newerQueued: true) }
+        #expect(!adoption.leavesQueued, "the next one is adopted though a newer one waits behind it")
+        #expect(adoption.received(snapshot("next"), newerQueued: true) != nil)
+        #expect(adoption.leavesQueued)
+    }
+
+    @Test func aDirectAdoptionStartsTheCountOfLeftPushesAgain() {
+        var adoption = StateAdoption()
+        for index in 1...StateAdoption.maxSkips { _ = adoption.received(snapshot("s\(index)"), newerQueued: true) }
+        adoption.adoptedDirectly()
+        #expect(adoption.leavesQueued)
+    }
+
     @Test func aSteadyStreamIsAdoptedEveryMaxSkips() {
         var adoption = StateAdoption()
         var adoptedAt: [Int] = []
