@@ -17,7 +17,15 @@ typealias Tab = ShepherdCore.Tab
 @MainActor
 @Observable
 final class ShepherdViewModel {
-    var state: ShepherdState
+    var state: ShepherdState {
+        didSet { syncWorkspaceStructure() }
+    }
+    /// `state` with each agent's live fields cleared (`ShepherdState.withoutLiveAgentFields`), written
+    /// only when the rest of it changes. What decides which layouts exist and what each shows reads this
+    /// and not `state`, so a status report, a send or a question reruns none of the workspace around the
+    /// thread. Read it for structure alone: an agent's status, `lastActiveAt`, `waitingOn`,
+    /// `waitingReason`, `completedAt` and `seenCompletedAt` are idle or nil here.
+    private(set) var workspaceStructure = ShepherdState()
     /// Issues & PRs, read through this Mac's host (`SessionServer.forge`).
     @ObservationIgnored lazy var forgeStore = ForgeStore(transport: { [weak self] in
         await self?.forge($0) ?? .failure(ForgeError(.unreachable, "Shepherd is closing."))
@@ -1028,6 +1036,12 @@ final class ShepherdViewModel {
             guard !Task.isCancelled else { return }
             self?.showAgentShortcutBadges = true
         }
+    }
+
+    /// Brings `workspaceStructure` to `state`'s structure, writing it (and so redrawing what reads it) only when that changed.
+    private func syncWorkspaceStructure() {
+        let structure = state.withoutLiveAgentFields
+        if structure != workspaceStructure { workspaceStructure = structure }
     }
 
     /// The thread stores follow the owner's state on every adoption, equal snapshot or not: a store is

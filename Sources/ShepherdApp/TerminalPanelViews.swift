@@ -113,6 +113,22 @@ struct TerminalPanelChrome: View {
     }
 }
 
+/// The local thread's folded line: `TerminalPanelChrome` with the status read from the agent's own box, only
+/// while the panel is folded. A status report reruns this view and not the layout around it.
+struct LocalFoldedThreadChrome: View {
+    let geometry: TerminalPanelGeometry
+    let threadTitle: String
+    let live: AgentLive
+    let restore: () -> Void
+
+    var body: some View {
+        if geometry.fold != nil {
+            let _ = SHRenderProbe.tick("terminal.foldedThread")
+            TerminalPanelChrome(geometry: geometry, threadTitle: threadTitle, threadState: AgentState(live.status), restore: restore)
+        }
+    }
+}
+
 /// The menu on a tab (NewTerminalMenu), hanging under the strip from + or the tab that was
 /// right-clicked: a new terminal in the thread's folder, and for the tab, Rename tab and Kill
 /// process. A click anywhere else or esc closes it. Its own view, so opening it re-renders only

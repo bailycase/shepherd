@@ -109,7 +109,7 @@ extension ShepherdViewModel {
     /// The side pane of the thread on screen.
     var sidePaneOwner: SidePaneOwner? {
         if let remote = selectedRemoteAgent { return .remote(remote) }
-        guard let agent = selectedAgent, activeTabID == agent.tabID else { return nil }
+        guard let agent = structuralAgent(selectedAgentID), activeTabID == agent.tabID else { return nil }
         return .local(agent.id)
     }
 

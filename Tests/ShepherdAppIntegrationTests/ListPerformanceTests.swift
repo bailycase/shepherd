@@ -1812,6 +1812,115 @@ struct ListPerformanceTests {
         #expect(rows["layout.paneTreeGeo", default: 0] == 0, "\(rows)")
     }
 
+    /// A hidden agent starting a turn, asking a question and ending it changes only what the sidebar shows of it: the
+    /// root view, the workspace, the layouts' resolver and every thread read the workspace's structure, so none of them
+    /// runs again. Each edge redraws its sidebar row and the headers whose counts it moves. Renaming a thread is
+    /// structure, and reruns the workspace and that one layout.
+    @Test func aStatusReportAmongMountedAgentsRunsNoShellBody() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, agents) = try await MountedWorkspace.start(8, in: app)
+        let window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        // Measure after every stub has served and the hidden threads have stopped updating, not while they boot.
+        for agent in agents { _ = try await app.readyThread(agent.agent.id) }
+        func settled() async throws {
+            var quiet = 0
+            try await eventuallyOnMain("the mounted workspace to settle", timeout: .seconds(60)) {
+                ListPerf.settle(window)
+                guard vm.mountedTabs.count == agents.count, vm.threadStores.store(for: agents[0].agent.id).ready,
+                      IdleCostTests.spinners(in: window.host).all == 0 else { return false }
+                let counts = ListPerf.counting { ListPerf.settle(window) }
+                quiet = ["shell.root", "shell.workspace", "thread.view", "deck.hiddenLayout"].allSatisfy { counts[$0, default: 0] == 0 } ? quiet + 1 : 0
+                return quiet >= 10
+            }
+        }
+        try await settled()
+        // The first adoption that changes anything reruns every mounted thread once, whatever it changed: take it before counting.
+        var first = vm.state
+        first.agents[0].lastActiveAt = 1
+        vm.adopt(first)
+        try await settled()
+        let hidden = agents.dropFirst()
+        let stamp = 1_800_000_000_000.0
+
+        func report(_ who: ArraySlice<AgentFixture>? = nil, _ change: (inout Agent) -> Void) -> [String: Int] {
+            ListPerf.counting {
+                for agent in who ?? hidden {
+                    var next = vm.state
+                    guard let index = next.agents.firstIndex(where: { $0.id == agent.agent.id }) else { continue }
+                    change(&next.agents[index])
+                    ListPerf.time(window) { vm.adopt(next) }
+                }
+            }
+        }
+        let edges: [(String, [String: Int])] = [
+            ("a turn starting", report { $0.status = .working; $0.lastActiveAt = stamp + 1 }),
+            ("a question", report { $0.status = .blocked; $0.waitingOn = "Which database?"; $0.waitingReason = "database?" }),
+            ("a turn ending", report {
+                $0.status = .done; $0.waitingOn = nil; $0.waitingReason = nil; $0.lastActiveAt = stamp + 2; $0.completedAt = stamp + 2
+            }),
+        ]
+        #expect(vm.state.agents.filter { $0.status == .done }.count == hidden.count)
+        for (edge, rows) in edges {
+            for key in ["shell.root", "shell.workspace", "layout.agentLayout", "thread.view", "deck.update"] {
+                #expect(rows[key, default: 0] == 0, "\(edge), \(key): \(rows)")
+            }
+            #expect(rows["sidebar.row", default: 0] <= hidden.count * 2, "\(edge): \(rows)")
+            #expect(rows["sidebar.header", default: 0] <= hidden.count * 2, "\(edge): \(rows)")
+        }
+
+        // Control: a name is structure.
+        let renamed = report(hidden.prefix(1)) { $0.name = "Checkout funnel v2" }
+        #expect(renamed["shell.workspace", default: 0] >= 1, "\(renamed)")
+        #expect(renamed["layout.agentLayout", default: 0] == 1, "\(renamed)")
+    }
+
+    /// The same through the host, as the app receives it: its pushes set the connection's state and are adopted
+    /// (`receiveLocalHostState`), and a hidden agent's reports redraw neither the shell nor a thread.
+    @Test func aReportThroughTheHostRunsNoShellBody() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, agents) = try await MountedWorkspace.start(6, in: app)
+        let window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        for agent in agents { _ = try await app.readyThread(agent.agent.id) }
+        let reporter = try ExtensionClient(path: app.scratch.socketPath)
+        func report(_ agent: AgentFixture, _ status: AgentStatus) async throws {
+            try reporter.send(.setAgentStatus(agentID: agent.agent.id, status: status))
+            try await eventuallyOnMain("the host's \(status) report for \(agent.agent.name)", timeout: .seconds(30)) {
+                ListPerf.settle(window)
+                return vm.state.agents.first { $0.id == agent.agent.id }?.status == status
+            }
+        }
+        func settled() async throws {
+            var quiet = 0
+            try await eventuallyOnMain("the mounted workspace to settle", timeout: .seconds(60)) {
+                ListPerf.settle(window)
+                guard vm.mountedTabs.count == agents.count, vm.threadStores.store(for: agents[0].agent.id).ready,
+                      IdleCostTests.spinners(in: window.host).all == 0 else { return false }
+                let counts = ListPerf.counting { ListPerf.settle(window) }
+                quiet = ["shell.root", "shell.workspace", "thread.view", "deck.hiddenLayout"].allSatisfy { counts[$0, default: 0] == 0 } ? quiet + 1 : 0
+                return quiet >= 10
+            }
+        }
+        try await settled()
+        // The first adoption that changes anything reruns every mounted thread once, whatever it changed: take it before counting.
+        try await report(agents[0], .working)
+        try await settled()
+
+        SHRenderProbe.start()
+        for agent in agents.dropFirst() {
+            try await report(agent, .working)
+            try await report(agent, .done)
+        }
+        let rows = SHRenderProbe.stop()
+        for key in ["shell.root", "shell.workspace", "layout.agentLayout", "thread.view", "deck.update"] {
+            #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
+        }
+        #expect(rows["sidebar.row", default: 0] > 0, "the sidebar showed the reports: \(rows)")
+    }
+
     /// One checkout read writes every thread that shares the checkout. The count it carries is
     /// not in a layout's model, so a change of it reruns no layout, thread or composer, hidden or
     /// not; only the card on screen is asked to read again.
