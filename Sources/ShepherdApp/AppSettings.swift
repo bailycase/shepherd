@@ -129,6 +129,8 @@ final class AppSettings {
         static let fleetWeights = "shepherd.fleet.weights"
         static let fleetThreadsCanSend = "shepherd.fleet.threadsCanSend"
         static let fleetThreadCap = "shepherd.fleet.threadCap"
+        static let fleetAutoDispatch = "shepherd.fleet.autoDispatch"
+        static let fleetBatteryCountsHalf = "shepherd.fleet.batteryCountsHalf"
         static let missionsEnabled = "shepherd.experiments.missions"
         static let implementOpensThread = "shepherd.designs.implementOpensThread"
 
@@ -144,7 +146,7 @@ final class AppSettings {
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeGeneratePRDescription, worktreeDeleteAction, worktreeCloseOnMerge, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
             mcpProjectConfig,
-            goalsEnabled, projectsEnabled, designToolEnabled, fleetEnabled, fleetWeights, fleetThreadsCanSend, fleetThreadCap, missionsEnabled, implementOpensThread,
+            goalsEnabled, projectsEnabled, designToolEnabled, fleetEnabled, fleetWeights, fleetThreadsCanSend, fleetThreadCap, fleetAutoDispatch, fleetBatteryCountsHalf, missionsEnabled, implementOpensThread,
             filesWordWrap, filesMarkdownPreview,
         ]
 
@@ -556,6 +558,27 @@ final class AppSettings {
         }
     }
 
+    /// Settings ▸ Fleet ▸ Auto dispatch (`HostSettings.fleetAutoDispatch`): New thread's Auto place sends the work to the Mac with
+    /// the most room. Nil until the person chooses; it then reads as on once a second Mac is paired (`autoDispatch(pairedMacs:)`).
+    /// Synced across the fleet.
+    var fleetAutoDispatch: Bool? {
+        didSet {
+            if let fleetAutoDispatch { store.set(fleetAutoDispatch, forKey: Key.fleetAutoDispatch) } else { store.removeObject(forKey: Key.fleetAutoDispatch) }
+            if fleetAutoDispatch != oldValue { onFleetWeightsChange?() }
+        }
+    }
+
+    /// Settings ▸ Fleet ▸ On battery (`HostSettings.fleetBatteryCountsHalf`): a Mac on battery counts half when Auto picks one. Synced.
+    var fleetBatteryCountsHalf: Bool {
+        didSet {
+            store.set(fleetBatteryCountsHalf, forKey: Key.fleetBatteryCountsHalf)
+            if fleetBatteryCountsHalf != oldValue { onFleetWeightsChange?() }
+        }
+    }
+
+    /// Whether Auto places New thread's work: the person's choice, else on while this Mac is paired with another.
+    func autoDispatch(pairedMacs: Int) -> Bool { fleetAutoDispatch ?? (pairedMacs > 0) }
+
     func fleetWeight(of hostID: UUID) -> FleetSendWeight {
         fleetWeights[FleetSendWeight.settingKey(hostID: hostID)] ?? .normal
     }
@@ -610,6 +633,8 @@ final class AppSettings {
         fleetWeights = (store.dictionary(forKey: Key.fleetWeights) as? [String: String] ?? [:]).compactMapValues(FleetSendWeight.init(rawValue:))
         fleetThreadsCanSend = store.object(forKey: Key.fleetThreadsCanSend) as? Bool ?? false
         fleetThreadCap = HostSettings.clampedThreadCap(store.object(forKey: Key.fleetThreadCap) as? Int ?? HostSettings.fleetThreadCapDefault)
+        fleetAutoDispatch = store.object(forKey: Key.fleetAutoDispatch) as? Bool
+        fleetBatteryCountsHalf = store.object(forKey: Key.fleetBatteryCountsHalf) as? Bool ?? true
         // Naming is always on now; only its model is a setting.
         store.removeObject(forKey: "shepherd.agent.autoName")
         // The session naming model became the text generation model: move its stored choice to
@@ -738,6 +763,8 @@ final class AppSettings {
         fleetWeights = [:]
         fleetThreadsCanSend = false
         fleetThreadCap = HostSettings.fleetThreadCapDefault
+        fleetAutoDispatch = nil
+        fleetBatteryCountsHalf = true
         shareDiagnostics = false
         textGenerationModel = ""
         visionModel = ""

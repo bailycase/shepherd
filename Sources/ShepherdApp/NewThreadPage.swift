@@ -32,7 +32,7 @@ struct NewThreadPage: View {
     @State private var dismissedQuery: String?
     @State private var slash = SlashMatchCache()
 
-    private enum Menu: Equatable { case place, base, models, settings, branch }
+    private enum Menu: Equatable { case place, base, models, settings, branch, whereRuns }
     /// The Branch picker's New branch…: the name being typed, while its prompt is up.
     @State private var namingBranch = false
     @State private var newBranchName = ""
@@ -99,6 +99,12 @@ struct NewThreadPage: View {
                 }
                 .frame(maxWidth: AppLayout.newThreadComposerWidth)
                 .zIndex(1)
+                if let note = draft.fleetPicker(vm).note, draft.notice(vm) == nil {
+                    // "Runs on Mac mini in a new worktree from origin/main. It shows here as sent by you."
+                    Text(note).font(.sh(.caption, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
+                        .frame(maxWidth: AppLayout.newThreadComposerWidth, alignment: .leading)
+                        .shTransition(.content)
+                }
                 if let notice = draft.notice(vm) {
                     Text(notice).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
                         .frame(maxWidth: AppLayout.newThreadComposerWidth, alignment: .leading)
@@ -328,10 +334,19 @@ struct NewThreadPage: View {
             .accessibilityLabel("Model settings: \(draft.model.isEmpty ? "default model" : draft.model)")
             .accessibilityValue(summary.value)
             Spacer(minLength: SH.Space.m)
-            Button { toggle(.place) } label: { SHPlaceChipLabel(project: chip.project, host: chip.host) }
+            // Fleet on and another Mac paired: the Mac is its own chip, after the project (FleetNewThread).
+            let fleet = draft.fleetPicker(vm)
+            let withMac = !fleet.options.isEmpty
+            Button { toggle(.place) } label: { SHPlaceChipLabel(project: chip.project, host: withMac ? nil : chip.host) }
                 .buttonStyle(.shComposerChip(active: menu == .place || menu == .base || menu == .branch))
                 .background { ComposerMenuRegion(dismissal: dismissal) }
-                .help(draft.worktree ? "In a new worktree of \(chip.project) on \(chip.host)" : "\(chip.project) on \(chip.host)")
+                .help(withMac ? chip.project : draft.worktree ? "In a new worktree of \(chip.project) on \(chip.host)" : "\(chip.project) on \(chip.host)")
+            if withMac {
+                Button { toggle(.whereRuns) } label: { SHFleetPlaceChipLabel(fleet.chip) }
+                    .buttonStyle(.shComposerChip(active: menu == .whereRuns))
+                    .background { ComposerMenuRegion(dismissal: dismissal) }
+                    .help("Where it runs: \(fleet.chip)")
+            }
         }
     }
 
@@ -344,6 +359,8 @@ struct NewThreadPage: View {
             switch menu {
             case .place:
                 placeMenu.shTransition(.overlay, anchor: .topLeading)
+            case .whereRuns:
+                whereMenu.shTransition(.overlay, anchor: .topLeading)
             case .base:
                 if let space = draft.place.flatMap({ place in vm.state.spaces.first { $0.id == place.space } }) {
                     WorktreeBasePicker(vm: vm, space: space.id, repo: space.path, selected: draft.worktreeBase ?? space.worktreeBase) { base in
@@ -444,6 +461,30 @@ struct NewThreadPage: View {
         ) { option in
             ProjectMenu(vm: vm, place: NewThreadPlaces.place(option))
         }
+    }
+
+    private static func row(_ option: FleetPlaceOption) -> SHFleetPlaceRow {
+        let tone: SHFleetPlaceRow.Tone = switch option.tone {
+        case .good: .good
+        case .warn: .warn
+        case .bad: .bad
+        default: .quiet
+        }
+        return SHFleetPlaceRow(id: option.id, title: option.name, detail: option.detail, room: option.room, roomWord: option.roomWord,
+                               tone: tone, isCurrent: option.chosen, isEnabled: option.selectable)
+    }
+
+    /// FleetNewThread's popover: Auto and every Mac ranked by room.
+    private var whereMenu: some View {
+        let picker = draft.fleetPicker(vm)
+        return SHFleetPlaceMenu(
+            rows: picker.options.map(Self.row), footnote: picker.footnote,
+            onChoose: { row in
+                draft.wherePick = picker.options.first { $0.id == row.id }?.pick
+                menu = nil
+                composing = true
+            },
+            onClose: { menu = nil; composing = true })
     }
 
     private func toggle(_ next: Menu) {

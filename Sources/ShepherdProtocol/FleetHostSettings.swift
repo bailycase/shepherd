@@ -8,8 +8,9 @@ import ShepherdCore
 public enum FleetHostSetting: String, CaseIterable, Sendable {
     case defaultModel, defaultThinking, defaultServiceTier, textGenerationModel, visionModel, compactAtPercent, queueDelivery
     case worktreeBase, fetchBeforeCreating, generatePRDescriptions, closeOnMerge, worktreeDeleteAction
-    /// Fleet policy: the same on every Mac (`HostSettings.fleetThreadsCanSend`, `fleetThreadCap`).
-    case fleetThreadsCanSend, fleetThreadCap
+    /// Fleet policy: the same on every Mac (`HostSettings.fleetThreadsCanSend`, `fleetThreadCap`, `fleetAutoDispatch`,
+    /// `fleetBatteryCountsHalf`).
+    case fleetThreadsCanSend, fleetThreadCap, fleetAutoDispatch, fleetBatteryCountsHalf
 
     /// The unit's key: "host.defaultModel".
     public var key: String { "host." + rawValue }
@@ -38,6 +39,8 @@ public enum FleetHostSetting: String, CaseIterable, Sendable {
         case .worktreeDeleteAction: Self.encode(settings.worktreeDeleteAction)
         case .fleetThreadsCanSend: Self.encode(settings.fleetThreadsCanSend)
         case .fleetThreadCap: Self.encode(settings.fleetThreadCap)
+        case .fleetAutoDispatch: Self.encode(settings.fleetAutoDispatch)
+        case .fleetBatteryCountsHalf: Self.encode(settings.fleetBatteryCountsHalf)
         }
     }
 
@@ -62,6 +65,8 @@ public enum FleetHostSetting: String, CaseIterable, Sendable {
         case .worktreeDeleteAction: return decode(HostSettings.WorktreeDeleteAction.self).map { .worktreeDeleteAction($0) }
         case .fleetThreadsCanSend: return decode(Bool.self).map { .fleetThreadsCanSend($0) }
         case .fleetThreadCap: return decode(Int.self).map { .fleetThreadCap($0) }
+        case .fleetAutoDispatch: return decode(Bool.self).map { .fleetAutoDispatch($0) }
+        case .fleetBatteryCountsHalf: return decode(Bool.self).map { .fleetBatteryCountsHalf($0) }
         }
     }
 

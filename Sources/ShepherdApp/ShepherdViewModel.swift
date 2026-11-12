@@ -346,6 +346,8 @@ final class ShepherdViewModel {
     let fleet = FleetSettingsModel()
     /// The Fleet page and the sidebar's Fleet row: the cards derived from `fleet`'s snapshot.
     let fleetPage = FleetPageModel()
+    /// What the buttons on dispatch cards do (`configureFleetThreadActions`).
+    let fleetThreadActions = FleetThreadActions()
     /// The thread whose Browser waits for each app's address.
     @ObservationIgnored var appPageWaits: [AppKey: AgentID] = [:]
     /// Settings ▸ Skills: every host's agent skills, This Mac's through its host.
@@ -827,6 +829,10 @@ final class ShepherdViewModel {
         self.fleet.host = { [weak self] in try self?.remoteHosts.thisMacHost() }
         self.fleetPage.weight = { [weak self] in self?.settings.fleetWeight(of: $0) ?? .normal }
         self.fleetPage.setWeight = { [weak self] in self?.settings.setFleetWeight($0, of: $1) }
+        self.configureFleetThreadActions()
+        self.fleetPage.autoDispatch = { [weak self] in self?.settings.autoDispatch(pairedMacs: $0) ?? ($0 > 0) }
+        self.fleetPage.batteryCountsHalf = { [weak self] in self?.settings.fleetBatteryCountsHalf ?? true }
+        self.fleetPage.threadCap = { [weak self] in self?.settings.fleetThreadCap ?? HostSettings.fleetThreadCapDefault }
         self.fleet.onSnapshot = { [fleetPage] in fleetPage.update($0) }
         self.settings.onFleetWeightsChange = { [fleetPage] in fleetPage.recompute() }
         self.fleet.pairClient = { [weak self] host, port, code in try await self?.remoteHosts.pairAsClient(host: host, port: port, code: code) }
