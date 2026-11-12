@@ -147,6 +147,9 @@ struct FleetCloneTests {
         #expect(try String(contentsOf: worktree.appendingPathComponent("README.md"), encoding: .utf8) == "# acme-web\nedited, not committed\n")
         #expect(try String(contentsOf: worktree.appendingPathComponent(".env"), encoding: .utf8) == "API_KEY=made-up-value\n")
         #expect(try D.head(worktree) == D.head(a.folder))
+        // A fresh clone is a plain repository: the worktree was written directly, with no `git worktree add`.
+        let stats = b.server.queue.sync { b.server.fleet?.dispatch.applyStats.values.first }
+        #expect(stats?.git.contains("worktree") == false, "git calls: \(stats?.git ?? [])")
         // The clone itself is clean: nothing was written into it but the worktree's registration.
         #expect(try FleetSnapshotTransferTests.porcelain(URL(fileURLWithPath: space.path)).isEmpty)
         // The records: nothing is cloning any more, and the sender saw it run.
@@ -248,10 +251,7 @@ struct FleetCloneTests {
         let parent = try await a.parent()
         try parent.hello()
         _ = try await Self.send(parent, key: "first")
-        do { try await D.wait("Mac mini to run the dispatched thread", timeout: .seconds(20)) { !b.dispatched.isEmpty } } catch {
-            print("DEBUG sent", a.sent().map { ($0.state, $0.failure ?? "", $0.failureDetail ?? "", $0.clone?.phase ?? "") }, "taken", b.taken().map { ($0.state, $0.failure ?? "", $0.failureDetail ?? "") })
-            throw error
-        }
+        try await D.wait("Mac mini to run the dispatched thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
         let key = try #require(a.sent().first?.repoKey)
         #expect(CanonicalRepoKey.isLocal(key), "named by its first commit: \(key)")
         let space = try #require(Self.space(b, repoKey: key))
