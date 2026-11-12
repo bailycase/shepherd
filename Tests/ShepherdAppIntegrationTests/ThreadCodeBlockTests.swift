@@ -3,6 +3,7 @@ import SwiftUI
 import ShepherdUI
 import ShepherdTestSupport
 import Testing
+@testable import ShepherdApp
 
 @Suite("Thread code blocks", .mainActorExclusive)
 @MainActor
@@ -288,6 +289,37 @@ struct ThreadCodeBlockTests {
                     "scale=\(multiplier), field=\(current.frame), host=\(window.host.frame), scroll=\(String(describing: scroll?.frame))")
             #expect(current.isSelectable && current.attributedStringValue.string == short)
         }
+    }
+
+    @Test func aGrowingFenceKeepsOnlyItsNewestColors() async throws {
+        func lines(_ count: Int) -> String { (0..<count).map { "var sheep\($0) = \($0)" }.joined(separator: "\n") }
+        /// The key a block being written colors: its code up to its last complete line.
+        func rendered(_ code: String) -> CodeHighlightCache.Key {
+            let key = CodeHighlightCache.Key(fence: code, language: "go")
+            return key.prefix(lines: code.utf8.count { $0 == UInt8(ascii: "\n") })
+        }
+        let first = lines(8), second = lines(16), full = CodeHighlightCache.Key(fence: lines(17), language: "go")
+        #expect(rendered(first) != rendered(second))
+        let window = OffscreenWindow(size: CGSize(width: 480, height: 800),
+                                     HighlightedCodeBlock(code: first, language: "go", writing: true))
+        defer { window.close() }
+        try await eventuallyOnMain("the first lines to be colored") {
+            ListPerf.settle(window)
+            return CodeHighlightCache.cached(rendered(first)) != nil
+        }
+        window.show(HighlightedCodeBlock(code: second, language: "go", writing: true))
+        try await eventuallyOnMain("the next render to be colored") {
+            ListPerf.settle(window)
+            return CodeHighlightCache.cached(rendered(second)) != nil
+        }
+        #expect(CodeHighlightCache.cached(rendered(first)) == nil, "the older render of the same fence is gone")
+
+        window.show(HighlightedCodeBlock(code: lines(17), language: "go", writing: false))
+        try await eventuallyOnMain("the finished fence to be colored") {
+            ListPerf.settle(window)
+            return CodeHighlightCache.cached(full) != nil
+        }
+        #expect(CodeHighlightCache.cached(rendered(second)) == nil, "a closed fence leaves only its full render")
     }
 
     private func codeField(in view: NSView, code: String) -> NSTextField? {

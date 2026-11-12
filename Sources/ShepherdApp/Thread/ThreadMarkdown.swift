@@ -339,7 +339,7 @@ struct HighlightedCodeBlock: SHProseCode {
                 let value = await work.value
                 guard lastRender.inFlight == work, let value else { return }
                 lastRender.inFlight = nil
-                CodeHighlightCache.store(value, for: target)
+                CodeHighlightCache.store(value, for: target, replacing: rendered?.key)
                 rendered = CodeHighlightCache.Rendered(key: target, value: value)
             }
     }
@@ -431,10 +431,20 @@ enum CodeHighlightCache {
         init(_ value: AttributedString) { self.value = value }
     }
 
-    /// Each throttled render of a growing fence is a new key: evict the oldest, never everything.
+    /// What the cache may hold, by `cost(of:_:)`.
+    static let costLimit = 16 * 1024 * 1024
+
+    /// What an entry holds: its code twice (the key and the colored text) and its runs, as `SHNativeCodeText`'s cache estimates.
+    static func cost(of key: Key, _ value: AttributedString) -> Int {
+        key.code.utf8.count * 2 + value.runs.count * 128
+    }
+
+    /// Each throttled render of a growing fence is a new key, and each one holds its whole text:
+    /// bounded by cost, and by count so that the oldest go first, never everything.
     @MainActor private static let values: NSCache<NSString, Entry> = {
         let cache = NSCache<NSString, Entry>()
         cache.countLimit = 256
+        cache.totalCostLimit = costLimit
         return cache
     }()
 
@@ -442,8 +452,15 @@ enum CodeHighlightCache {
 
     @MainActor static func cached(_ key: Key) -> AttributedString? { values.object(forKey: name(key))?.value }
 
-    @MainActor static func store(_ value: AttributedString, for key: Key) {
-        values.setObject(Entry(value), forKey: name(key))
+    /// Stores `key`'s colors. `previous` is the block's last render of this fence: it goes when `key` is
+    /// the same fence grown (the same language, its code a prefix of `key`'s), since no block asks for it again.
+    @MainActor static func store(_ value: AttributedString, for key: Key, replacing previous: Key? = nil) {
+        // One entry larger than the whole budget would have NSCache evict the others to hold it.
+        let cost = cost(of: key, value)
+        if cost <= costLimit { values.setObject(Entry(value), forKey: name(key), cost: cost) }
+        if let previous, previous != key, previous.language == key.language, key.code.hasPrefix(previous.code) {
+            values.removeObject(forKey: name(previous))
+        }
     }
 
     /// The block's colors, nil when the language has no grammar (the block stays plain) or the
