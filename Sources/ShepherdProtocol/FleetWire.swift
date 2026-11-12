@@ -205,6 +205,18 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
     }
 }
 
+extension FleetSnapshot {
+    /// What a client (a phone or an iPad) may read: the Macs, whether each is reachable, and their load and
+    /// readiness. Not where any Mac listens, a code window, the devices, the sync state or the build.
+    public var clientView: FleetSnapshot {
+        FleetSnapshot(enabled: enabled, hostID: hostID, name: name,
+                      peers: peers.map {
+                          FleetPeerStatus(hostID: $0.hostID, name: $0.name, kind: $0.kind, pairedAt: $0.pairedAt, link: $0.link, lastSeen: $0.lastSeen)
+                      },
+                      macs: macs)
+    }
+}
+
 /// A host this Mac's app already knew by address and the shared token (`RemoteHostStore`),
 /// handed to its host to become a fleet peer without pairing again.
 public struct FleetLegacyHost: Codable, Hashable, Sendable {
@@ -469,6 +481,10 @@ public enum FleetAccess: Sendable, Hashable {
 
     /// Sync, credential and dispatch units, and the requests that pair or remove Macs.
     public var takesPartInFleet: Bool { self == .local || self == .member }
+
+    /// May read the fleet's Macs, load and readiness (`FleetSnapshot.clientView`) and ask for it to be
+    /// sampled while it looks. A device and a client on the shared token do; nothing else of the fleet.
+    public var mayViewFleet: Bool { self == .device || self == .shared }
 
     /// Whether `capability` is offered to a connection with this access. A device is offered no
     /// fleet capability; the shared token still is, so an old client can be given its own token.

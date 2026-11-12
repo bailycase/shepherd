@@ -474,4 +474,15 @@ struct FleetTests {
         #expect(off.recents.map(\.ref.agent.rawValue) == ["plain"])
         #expect(off.running.isEmpty && off.needsYou.isEmpty)
     }
+
+    /// A reading rides a host for the Fleet screens; Home's derivations never read it.
+    @Test func aHostsPressureAndReadinessDefaultToNothingAndDoNotChangeHome() {
+        let bare = Self.host(Self.studio, "Studio", agents: [Self.agent("one", .working)])
+        #expect(bare.pressure == nil && bare.readiness == nil)
+        var read = bare
+        read.pressure = FleetPressureSample(cpuUtilization: 0.9, cpuCount: 8, totalMemoryBytes: 1 << 34, availableMemoryBytes: 1 << 30)
+        read.readiness = FleetReadinessReport(model: "Mac mini", missing: [FleetMissingTool(kind: .xcode)])
+        #expect(read != bare)
+        #expect(FleetModel(hosts: [read], digests: [:]) == FleetModel(hosts: [bare], digests: [:]))
+    }
 }

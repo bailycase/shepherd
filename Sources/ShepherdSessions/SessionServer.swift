@@ -1099,7 +1099,7 @@ public final class SessionServer: @unchecked Sendable {
                 && ($0 != RemoteProtocol.missionsCapability || missionsServed && onRemoteMission != nil)
                 && (($0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetSyncCapability) || fleet?.membership == true)
                 && ($0 != RemoteProtocol.fleetDevicesCapability || fleet != nil)
-                && ($0 != RemoteProtocol.fleetPressureCapability || fleet?.membership == true)
+                && (($0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetViewCapability) || fleet?.membership == true)
         }
     }
 

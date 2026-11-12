@@ -253,4 +253,84 @@ struct FleetPagePresentationTests {
     func memoryIsInBinaryGigabytesWithADecimalUnderTen(bytes: UInt64, text: String) {
         #expect(FleetPagePresentation.memory(bytes) == text)
     }
+
+    // MARK: A phone or an iPad reads the page (`FleetViewer.client`)
+
+    static func clientPage(_ snapshot: FleetSnapshot = snapshot(), weights: [UUID: FleetSendWeight] = [:]) -> FleetPage {
+        FleetPagePresentation.make(snapshot: snapshot, weight: { weights[$0] ?? .normal }, viewer: .client, locale: en, calendar: utc)
+    }
+
+    @Test func aClientNamesTheMacItAskedAndHasNoThisMac() {
+        let page = Self.clientPage()
+        #expect(page.cards.map(\.name) == ["MacBook Pro", "Mac mini", "Mac Studio"])
+        #expect(page.cards.map(\.statusText) == ["Connected", "Connected", "Asleep"])
+        #expect(page.cards.allSatisfy { !$0.isThisMac })
+        // The same derivations: nothing about room, readings or the next Mac changes for a client.
+        let mac = Self.page()
+        #expect(page.nextGoesTo == mac.nextGoesTo && page.summary == mac.summary)
+        #expect(zip(page.cards, mac.cards).allSatisfy { $0.0.room == $0.1.room && $0.0.cpu == $0.1.cpu && $0.0.power == $0.1.power })
+        #expect(page.cards[0].weightLabel == "Send work to MacBook Pro")
+    }
+
+    @Test func aClientsFooterNeverSaysThisMac() {
+        #expect(Self.clientPage().footer.detail == "1 asleep" && Self.clientPage().footer.label == "Fleet: 3 Macs, Mac Studio asleep")
+        var alone = Self.snapshot()
+        alone.peers = []
+        #expect(Self.clientPage(alone).footer.detail == "One Mac")
+        #expect(Self.clientPage(Self.snapshot(studioLink: .connected)).footer.detail == "All awake")
+    }
+
+    @Test func aMacWithNoNameIsStillNamedForAClient() {
+        var snapshot = Self.snapshot()
+        snapshot.name = ""
+        #expect(Self.clientPage(snapshot).cards[0].name == "Mac")
+    }
+
+    @Test func aClientTakesTheWeightsItIsGiven() {
+        let page = Self.clientPage(weights: [Self.mini: .prefer, Self.studio: .manualOnly])
+        #expect(page.cards.map(\.weight) == [.normal, .prefer, .manualOnly])
+    }
+
+    // MARK: Compact rows (FleetA-phone, DuoOpenFleet, DuoClosedFleet)
+
+    @Test func theFactsLineOfARowIsWhatEachBoardDraws() {
+        let page = Self.clientPage()
+        let here = page.cards[0], mini = page.cards[1], studio = page.cards[2]
+        #expect(here.facts(.phone) == "CPU 72% · 9.4 GB free · battery 41% · warm")
+        #expect(mini.facts(.phone) == "CPU 18% · 41 GB free · plugged in")
+        #expect(here.facts(.duo) == "CPU 72% · 9.4 GB free · battery 41% · warm · 3 working")
+        #expect(mini.facts(.duo) == "CPU 18% · 41 GB free · plugged in · 3 working")
+        #expect(here.facts(.compact) == "CPU 72% · battery 41% · warm")
+        #expect(mini.facts(.compact) == "CPU 18% · 41 GB free")
+        for style in [FleetFactsStyle.phone, .duo, .compact] { #expect(studio.facts(style) == "since 22:42") }
+    }
+
+    @Test func aRowSaysWhatItKnowsOfAMacThatHasNoReadingOrWasNeverReached() {
+        var snapshot = Self.snapshot(miniLink: .connecting)
+        snapshot.macs.removeAll { $0.hostID == Self.mini }
+        snapshot.peers[1].lastSeen = nil
+        let page = Self.clientPage(snapshot)
+        #expect(page.cards[1].facts(.phone) == "Waiting for a reading")
+        #expect(page.cards[2].facts(.phone) == "not reached yet")
+    }
+
+    @Test func aRowDropsTheThreadsWorkingWhenNoneWorks() {
+        var snapshot = Self.snapshot()
+        snapshot.macs[1].sample?.activeAgents = 0
+        #expect(Self.clientPage(snapshot).cards[1].facts(.duo) == "CPU 18% · 41 GB free · plugged in")
+    }
+
+    @Test func aRowsRoomWordAndLabelFollowTheMacsState() {
+        let page = Self.clientPage()
+        #expect(page.cards.map(\.rowRoom) == ["Little room", "Most room", "Asleep"])
+        #expect(page.cards.map(\.rowLabel) == ["MacBook Pro, little room", "Mac mini, most room", "Mac Studio, asleep"])
+    }
+
+    @Test func aBatteryMacWithNoPercentSaysOnBattery() {
+        var snapshot = Self.snapshot()
+        snapshot.macs[0].sample?.batteryPercent = nil
+        snapshot.macs[0].sample?.thermal = .nominal
+        let here = Self.clientPage(snapshot).cards[0]
+        #expect(here.powerFact == "on battery" && here.facts(.compact) == "CPU 72% · on battery")
+    }
 }
