@@ -18,7 +18,8 @@ import ShepherdUI
 enum SubagentFollowFixture {
     /// Steps the first page holds: more than a screen of them.
     static let firstPage = 8
-    /// Steps after the first page, each served to the next poll.
+    /// Steps after the first page, each served to the next poll. Keep `stages + 1` above `inPassCeiling`:
+    /// the base lands about once per step inside the layout pass, so with fewer steps it passes the check.
     static let stages = 12
     /// A pin lands inside a layout pass at most `inPassLimit` times per thread it shows.
     static let inPassCeiling = NativeTailRepin.inPassLimit
@@ -92,7 +93,9 @@ enum SubagentFollowFixture {
         let inPass = counts["thread.tailLandingInPass", default: 0]
         let stalled = counts["thread.tailStalled", default: 0]
         let run = runScrollView()
-        // Beside the thread, its pin counts under the same labels and has its own landings in passes.
+        // Beside the thread, its pin counts under the same labels and has its own landings in passes,
+        // so there the ceiling only guards against a loop: the base lands about once per step and
+        // passes it. The iPhone check, where the run is the screen, is the one the base fails.
         let ceiling = run != nil && run !== FollowFixture.threadScrollView() ? 2 * inPassCeiling : inPassCeiling
         verdicts.append((inPass <= ceiling, "at most \(ceiling) landings inside a layout pass (\(inPass) ran)"))
         verdicts.append((stalled == 0, "the run never stopped following (\(stalled) stalls)"))
@@ -124,7 +127,8 @@ enum SubagentFollowFixture {
         }
     }
 
-    /// The run's scroll view: beside the thread it is the one furthest to the trailing edge.
+    /// The run's scroll view: beside the thread it is the one furthest to the trailing edge, then the
+    /// tallest. Another pick would not grow with the steps, and the wait on its content fails the fixture.
     @MainActor private static func runScrollView() -> UIScrollView? {
         var found: [UIScrollView] = []
         func walk(_ view: UIView) {
