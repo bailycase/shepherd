@@ -123,12 +123,13 @@ herdr workspaces and pi sessions.
 
 ## Remote access
 
-1. **On the Mac that runs the agents (the host):** turn on Settings ▸ Remote ▸ Serve this Mac.
-   It listens on TCP port 7433 on all interfaces (Shepherd Nightly: 7434). The Token row reveals
-   the `remote-token` file; copy its contents.
-2. **On the other Mac:** in Settings ▸ Remote ▸ Add host, enter a name, the host's VPN-reachable
-   address, the port, and the token. The host's agents appear as their own section in the
-   sidebar, with the same rows and threads.
+1. **On the Mac that runs the agents (the host):** turn on Settings ▸ Experiments ▸ Fleet. The host
+   listens on TCP port 7433 on all interfaces (Shepherd Nightly: 7434).
+2. **On a Mac:** Settings ▸ Fleet ▸ Join a fleet shows a 6 digit code, and on a Mac already in the fleet
+   Add a Mac takes it. **On an iPhone or iPad:** Settings ▸ Fleet ▸ Add a device on a Mac shows a code (and a
+   QR for a phone), and Add a Mac in the app takes it. Both Macs and devices need to be on the same local
+   network. There is no address or token to type: each device gets a token of its own, which any Mac in the
+   fleet can revoke from Settings ▸ Fleet ▸ Devices.
 
 A connected Mac can:
 
