@@ -37,6 +37,8 @@ struct FleetDispatchTests {
 
     static func makeOrigin(extra: [String: String] = [:]) throws -> Origin {
         let seed = try makeScratchRepo(files: ["README.md": "# acme-web\n", "apps/web/index.js": "console.log('hi')\n", ".gitignore": "*.log\n"].merging(extra) { $1 })
+        // A seed of thousands of loose objects is packed first: a local clone copies them one by one.
+        if extra.count > 100 { try git(["repack", "-a", "-d", "-q"], in: seed) }
         let origin = try makeScratchDirectory("origin").appendingPathComponent("origin.git")
         try git(["clone", "-q", "--bare", seed.path, origin.path], in: seed)
         return Origin(url: origin, sha: try git(["rev-parse", "HEAD"], in: seed).trimmingCharacters(in: .whitespacesAndNewlines))

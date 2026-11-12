@@ -380,6 +380,15 @@ extension FleetDispatch {
         }
     }
 
+    /// A snapshot that ended before a thread started: what was kept for it goes, and the branch name it claimed is free again.
+    func dropSnapshot(_ id: UUID) {
+        guard let snap = snapshotsIn.removeValue(forKey: id) else { return }
+        if let task = snap.branch {
+            let claims = claimedBranches
+            Task { claims.release(await task.value) }
+        }
+    }
+
     /// Everything is in: build the worktree (once).
     func startBuild(_ id: UUID) {
         guard let snap = snapshotsIn[id], !snap.building, inbound[id]?.record.state == .preparing else { return }

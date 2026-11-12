@@ -98,12 +98,20 @@ enum FleetGitIndexFile {
         var status: stat?
     }
 
-    static func data(_ entries: [Entry]) -> Data {
-        var out = Data("DIRC".utf8)
-        func put32(_ value: UInt32) { withUnsafeBytes(of: value.bigEndian) { out.append(contentsOf: $0) } }
+    /// `ordered`: the entries already are in path order (the order of `git ls-tree -r`), so they aren't sorted again.
+    static func data(_ entries: [Entry], ordered: Bool = false) -> Data {
+        var out = [UInt8]()
+        out.reserveCapacity(entries.count * 96 + 32)
+        out.append(contentsOf: [0x44, 0x49, 0x52, 0x43])
+        func put32(_ value: UInt32) {
+            out.append(UInt8(truncatingIfNeeded: value >> 24)); out.append(UInt8(truncatingIfNeeded: value >> 16))
+            out.append(UInt8(truncatingIfNeeded: value >> 8)); out.append(UInt8(truncatingIfNeeded: value))
+        }
         put32(2)
         put32(UInt32(entries.count))
-        for entry in entries.sorted(by: { Array($0.path.utf8).lexicographicallyPrecedes(Array($1.path.utf8)) }) {
+        var names = entries.map { (entry: $0, name: Array($0.path.utf8)) }
+        if !ordered { names.sort { $0.name.lexicographicallyPrecedes($1.name) } }
+        for (entry, name) in names {
             let start = out.count
             let s = entry.status
             put32(UInt32(truncatingIfNeeded: s?.st_ctimespec.tv_sec ?? 0))
@@ -116,8 +124,7 @@ enum FleetGitIndexFile {
             put32(UInt32(truncatingIfNeeded: s?.st_uid ?? 0))
             put32(UInt32(truncatingIfNeeded: s?.st_gid ?? 0))
             put32(UInt32(truncatingIfNeeded: s?.st_size ?? 0))
-            out.append(contentsOf: bytes(of: entry.id))
-            let name = Array(entry.path.utf8)
+            out.append(contentsOf: entry.id.bytes)
             out.append(contentsOf: [UInt8(min(name.count, 0xFFF) >> 8), UInt8(min(name.count, 0xFFF) & 0xFF)])
             out.append(contentsOf: name)
             // 1 to 8 NULs, so the entry's length is a multiple of 8.
@@ -125,11 +132,6 @@ enum FleetGitIndexFile {
             out.append(contentsOf: [UInt8](repeating: 0, count: 8 - length % 8))
         }
         out.append(contentsOf: Insecure.SHA1.hash(data: out))
-        return out
-    }
-
-    private static func bytes(of id: FleetGitBlobID) -> [UInt8] {
-        let hex = Array(id.hex.utf8)
-        return stride(from: 0, to: hex.count, by: 2).map { i in UInt8(String(decoding: hex[i..<i + 2], as: UTF8.self), radix: 16) ?? 0 }
+        return Data(out)
     }
 }

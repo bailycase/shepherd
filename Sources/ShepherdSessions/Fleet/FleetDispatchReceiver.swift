@@ -72,7 +72,10 @@ extension FleetDispatch {
             record.snapshotProgress = 0
             record.snapshotFiles = header.files + header.directories
             // The pieces come over the link next (`fleetSnapshotPart`, `fleetBlobPush`); the worktree is built when they are all here.
-            snapshotsIn[record.id] = SnapshotIn(header: header, space: space, requestedBranch: create.branch)
+            let snap = SnapshotIn(header: header, space: space, requestedBranch: create.branch)
+            let (id, title, repo, requested, claims) = (record.id, record.title, space.path, create.branch, claimedBranches)
+            snap.branch = Task.detached { claims.claim { FleetDispatchGit.branchName(title: title, requested: requested, dispatchID: id, repo: repo, claimed: $0) } }
+            snapshotsIn[record.id] = snap
             inbound[record.id] = Inbound(record: record, acceptedAt: now)
             save()
             return reply(.success(record))
@@ -97,8 +100,13 @@ extension FleetDispatch {
                 return
             }
             guard let self else { return }
-            let branch = self.claimedBranches.claim {
-                FleetDispatchGit.branchName(title: record.title, requested: requestedBranch, dispatchID: id, repo: repo, claimed: $0)
+            let branch: String
+            if let early = snapshot?.branch {
+                branch = await early.value
+            } else {
+                branch = self.claimedBranches.claim {
+                    FleetDispatchGit.branchName(title: record.title, requested: requestedBranch, dispatchID: id, repo: repo, claimed: $0)
+                }
             }
             defer { self.claimedBranches.release(branch) }
             // Written before the worktree exists, so a retry agrees on the name.
@@ -193,7 +201,7 @@ extension FleetDispatch {
     }
 
     func failInbound(_ id: UUID, _ code: String, _ detail: String?) {
-        snapshotsIn[id] = nil
+        dropSnapshot(id)
         guard var entry = inbound[id], entry.record.state == .preparing else { return }
         entry.record.state = .failed
         entry.record.failure = code
@@ -231,7 +239,7 @@ extension FleetDispatch {
             entry.expectsResult = false
             entry.unsent = true
             inbound[id] = entry
-            snapshotsIn[id] = nil
+            dropSnapshot(id)
             if let agent = entry.record.remoteAgentID { host.stopThread(agent) }
             save()
             reply(.success(entry.record))

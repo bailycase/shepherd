@@ -180,6 +180,8 @@ final class FleetDispatch: @unchecked Sendable {
         var needOrder: [FleetHash] = []
         var computing = false
         var building = false
+        /// The branch name, chosen while the snapshot is still arriving (its git calls then overlap the transfer).
+        var branch: Task<String, Never>?
         init(header: FleetSnapshotHeader, space: Space, requestedBranch: String?) { (self.header, self.space, self.requestedBranch) = (header, space, requestedBranch) }
 
         /// Parts held, counted from the first with none missing.

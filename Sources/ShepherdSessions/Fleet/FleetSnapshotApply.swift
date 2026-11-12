@@ -43,6 +43,8 @@ struct FleetSnapshotApply {
         /// The first word of each git command run, in order.
         var git: [String] = []
         var usedSpare = false
+        /// Milliseconds since the create arrived at the end of each step, in order.
+        var phases: [String] = []
         /// Files and directories of the manifest that came from this Mac's own checkouts.
         var heldLocally = 0
         var receivedFiles = 0
@@ -109,19 +111,46 @@ struct FleetSnapshotApply {
 
     // MARK: Build
 
+    private mutating func mark(_ name: String) {
+        stats.phases.append("\(name) \(Int((ContinuousClock.now - input.began) / .milliseconds(1)))")
+    }
+
     private mutating func build(_ created: inout Created) throws -> String {
         let commit = input.manifest.commit
-        try makeCommitPresent(commit, created: &created)
+        mark("start")
         let destination = GitWorktree.destination(repo: input.repo, branch: input.branch)
-        do { _ = try GitWorktree.add(repo: input.repo, branch: input.branch, from: commit, checkout: false) } catch {
-            throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "worktree: \(String(String(describing: error).prefix(160)))")
+        // The worktree is added and the commit's tree listed at once (two git processes that don't need each other). A commit this
+        // repository lacks fails both, and is made present (origin, then the bundle) before they are tried again.
+        let (repo, branch) = (input.repo, input.branch)
+        func attempt() -> (added: Bool, listing: (status: Int32, output: String)?, failure: String?) {
+            let group = DispatchGroup()
+            var listing: (status: Int32, output: String)?
+            group.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                listing = FleetDispatchGit.run(["ls-tree", "-r", "-z", commit], in: repo, timeout: 60)
+                group.leave()
+            }
+            var failure: String?
+            var added = false
+            do { _ = try GitWorktree.add(repo: repo, branch: branch, from: commit, checkout: false); added = true } catch { failure = String(String(describing: error).prefix(160)) }
+            group.wait()
+            return (added, listing, failure)
         }
-        stats.git.append("worktree")
+        stats.git += ["worktree", "ls-tree"]
+        var result = attempt()
+        if !result.added {
+            try makeCommitPresent(commit, created: &created)
+            mark("commit")
+            result = attempt()
+            stats.git += ["worktree", "ls-tree"]
+        }
+        guard result.added else { throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "worktree: \(result.failure ?? "")") }
         created.worktree = destination
-        guard let listing = git(["ls-tree", "-r", "-z", commit], timeout: 60), listing.status == 0 else {
-            throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "ls-tree")
-        }
-        let tree = FleetSnapshotSender.parse(tree: listing.output)
+        mark("worktree")
+        guard let listing = result.listing, listing.status == 0 else { throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "ls-tree") }
+        let ordered = FleetSnapshotSender.parseOrdered(tree: listing.output)
+        let tree = Dictionary(ordered) { first, _ in first }
+        mark("ls-tree")
         var touched = Set<String>()
         // The files of the commit's tree.
         if let spare = input.spares.refresh(ifBuilt: PiHome.canonical(input.repo)) {
@@ -131,9 +160,13 @@ struct FleetSnapshotApply {
                 throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "checkout")
             }
         }
+        mark("tree")
         try applySnapshot(into: destination, touched: &touched)
-        if stats.usedSpare { try writeIndex(into: destination, tree: tree, touched: touched) }
+        mark("snapshot")
+        if stats.usedSpare { try writeIndex(into: destination, ordered: ordered, touched: touched) }
+        mark("index")
         try verify(destination: destination, tree: tree)
+        mark("verify")
         return destination
     }
 
@@ -342,11 +375,11 @@ struct FleetSnapshotApply {
 
     // MARK: The index file
 
-    private mutating func writeIndex(into destination: String, tree: [String: FleetTreeEntry], touched: Set<String>) throws {
+    private mutating func writeIndex(into destination: String, ordered: [(String, FleetTreeEntry)], touched: Set<String>) throws {
         guard let gitDirectory = Self.gitDirectory(of: destination) else { throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "gitdir") }
         var entries: [FleetGitIndexFile.Entry] = []
-        entries.reserveCapacity(tree.count)
-        for (path, entry) in tree {
+        entries.reserveCapacity(ordered.count)
+        for (path, entry) in ordered {
             let mode: UInt32 = entry.isSubmodule ? 0o160000 : entry.kind == .executable ? 0o100755 : entry.kind == .symlink ? 0o120000 : 0o100644
             var status: stat?
             if !touched.contains(path) && !entry.isSubmodule {
@@ -355,7 +388,7 @@ struct FleetSnapshotApply {
             }
             entries.append(FleetGitIndexFile.Entry(path: path, mode: mode, id: entry.gitID, status: status))
         }
-        let data = FleetGitIndexFile.data(entries)
+        let data = FleetGitIndexFile.data(entries, ordered: true)
         guard FileManager.default.createFile(atPath: gitDirectory + "/index", contents: data, attributes: [.posixPermissions: 0o644]) else {
             throw Failure(code: FleetDispatchCode.snapshotFailed, detail: "index")
         }

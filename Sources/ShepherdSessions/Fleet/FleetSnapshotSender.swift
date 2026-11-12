@@ -74,17 +74,23 @@ struct FleetSnapshotSender {
 
     /// `git ls-tree -r -z`: `<mode> <type> <id>\t<path>\0`.
     static func parse(tree output: String) -> [String: FleetTreeEntry] {
-        var out: [String: FleetTreeEntry] = [:]
+        Dictionary(parseOrdered(tree: output)) { first, _ in first }
+    }
+
+    /// The same, in git's own order (which is the order of an index file).
+    static func parseOrdered(tree output: String) -> [(String, FleetTreeEntry)] {
+        var out: [(String, FleetTreeEntry)] = []
+        out.reserveCapacity(output.utf8.count / 64)
         for record in output.split(separator: "\0") {
             guard let tab = record.firstIndex(of: "\t") else { continue }
             let fields = record[..<tab].split(separator: " ")
             guard fields.count == 3, let id = FleetGitBlobID(hex: String(fields[2])) else { continue }
             let path = String(record[record.index(after: tab)...])
             switch fields[0] {
-            case "100644": out[path] = FleetTreeEntry(kind: .file, gitID: id)
-            case "100755": out[path] = FleetTreeEntry(kind: .executable, gitID: id)
-            case "120000": out[path] = FleetTreeEntry(kind: .symlink, gitID: id)
-            case "160000": out[path] = FleetTreeEntry(kind: .file, gitID: id, isSubmodule: true)
+            case "100644": out.append((path, FleetTreeEntry(kind: .file, gitID: id)))
+            case "100755": out.append((path, FleetTreeEntry(kind: .executable, gitID: id)))
+            case "120000": out.append((path, FleetTreeEntry(kind: .symlink, gitID: id)))
+            case "160000": out.append((path, FleetTreeEntry(kind: .file, gitID: id, isSubmodule: true)))
             default: continue
             }
         }

@@ -35,8 +35,15 @@ public struct FleetSendingCard: Equatable, Sendable, Identifiable {
         return FleetSendingCard(
             id: record.id, title: record.title.isEmpty ? "Untitled" : record.title, host: host, state: "Starting", summary: words,
             fraction: bytes == 0 ? 1 : Double(sent) / Double(bytes),
-            progress: bytes == 0 ? "nothing to send" : "\(size(sent)) of \(size(bytes))",
+            progress: bytes == 0 ? "nothing to send" : Self.progress(sent, of: bytes),
             warning: record.sendWarning ? "Over \(size(FleetSnapshotCap.warnAbove)), so this will take a while." : nil)
+    }
+
+    /// "1.8 of 2.8 MB": the unit once when both share it.
+    static func progress(_ sent: UInt64, of total: UInt64) -> String {
+        let (a, b) = (size(sent), size(total))
+        guard let unit = b.split(separator: " ").last, a.hasSuffix(" " + unit) else { return "\(a) of \(b)" }
+        return "\(a.dropLast(unit.count + 1)) of \(b)"
     }
 
     /// "1.8 MB": decimal units, one digit.

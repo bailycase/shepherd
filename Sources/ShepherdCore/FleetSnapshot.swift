@@ -175,6 +175,16 @@ public struct FleetGitBlobID: Hashable, Sendable, Codable, CustomStringConvertib
     public var hex: String { String(format: "%016llx%016llx%08x", a, b, c) }
     public var description: String { hex }
 
+    /// The 20 bytes, in order.
+    public var bytes: [UInt8] {
+        var out = [UInt8]()
+        out.reserveCapacity(20)
+        for shift in stride(from: 56, through: 0, by: -8) { out.append(UInt8(truncatingIfNeeded: a >> UInt64(shift))) }
+        for shift in stride(from: 56, through: 0, by: -8) { out.append(UInt8(truncatingIfNeeded: b >> UInt64(shift))) }
+        for shift in stride(from: 24, through: 0, by: -8) { out.append(UInt8(truncatingIfNeeded: c >> UInt32(shift))) }
+        return out
+    }
+
     /// The id git gives `content` as a blob: SHA-1 of "blob <size>\0" and the content.
     public static func of(_ content: some DataProtocol) -> FleetGitBlobID {
         var hasher = Insecure.SHA1()
