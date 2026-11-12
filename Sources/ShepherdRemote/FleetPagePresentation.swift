@@ -280,7 +280,7 @@ public enum FleetPagePresentation {
         }
     }
 
-    /// "muse CLI isn't installed", "git and Xcode aren't installed", "a, b and 2 more aren't installed".
+    /// "muse CLI isn’t installed", "git and Xcode aren’t installed", "a, b and 2 more aren’t installed".
     public static func missingText(_ missing: [FleetMissingTool]) -> String {
         let names = missing.map { tool -> String in
             switch tool.kind {
@@ -291,14 +291,14 @@ public enum FleetPagePresentation {
         }
         switch names.count {
         case 0: return ""
-        case 1: return "\(names[0]) isn't installed"
-        case 2: return "\(names[0]) and \(names[1]) aren't installed"
-        case 3: return "\(names[0]), \(names[1]) and \(names[2]) aren't installed"
-        default: return "\(names[0]), \(names[1]) and \(names.count - 2) more aren't installed"
+        case 1: return "\(names[0]) isn’t installed"
+        case 2: return "\(names[0]) and \(names[1]) aren’t installed"
+        case 3: return "\(names[0]), \(names[1]) and \(names[2]) aren’t installed"
+        default: return "\(names[0]), \(names[1]) and \(names.count - 2) more aren’t installed"
         }
     }
 
     private static func time(_ milliseconds: Double, locale: Locale, calendar: Calendar) -> String {
-        Date(timeIntervalSince1970: milliseconds / 1000).formatted(Date.FormatStyle(locale: locale, calendar: calendar).hour().minute())
+        Date(timeIntervalSince1970: milliseconds / 1000).formatted(Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone).hour().minute())
     }
 }
