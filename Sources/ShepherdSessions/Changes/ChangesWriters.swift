@@ -42,6 +42,21 @@ struct WriterLog {
         var ok: Bool?
     }
 
+    /// A subagent run of an agent, as its publisher last reported it: a writer that outlives the
+    /// turn that started it, and whose files arrive up to seconds after it wrote them.
+    struct Run: Equatable {
+        /// The run's id and its attempt: a resume is a new stretch of the same run.
+        var key: String
+        var agent: AgentID
+        /// Where it ran, or the agent's own directory for a publisher that names none.
+        var cwd: String
+        /// As the publisher stamped it, with no lead: open while the run lives.
+        var interval: TurnAttribution.Interval
+        /// The files it edited or wrote, as it named them (`runFiles` at most), resolved against
+        /// `cwd` only when classified.
+        var files: [String]
+    }
+
     /// Shepherd writing files for the person: an Undo, a Redo, a Revert, a Save. Or, as a tree
     /// event, running something that rewrites a whole working tree under them: a branch switch,
     /// an update from the base, a commit that runs hooks.
@@ -57,6 +72,9 @@ struct WriterLog {
     static let windowCap = 256
     static let callCap = 4_096
     static let spanCap = 512
+    static let runCap = 512
+    /// Most files a publisher lists for one run.
+    static let runFiles = 32
     static let lostCap = 64
     /// How long a closed item stays when nothing open or undoable could still be judged by it, ms.
     static let keep: Double = 3_600_000
@@ -64,6 +82,7 @@ struct WriterLog {
     private(set) var windows: [Window] = []
     private(set) var calls: [Call] = []
     private(set) var spans: [Span] = []
+    private(set) var runs: [Run] = []
     /// Stretches an eviction forced out of the log while a turn could still need them.
     private(set) var lost: [TurnAttribution.Interval] = []
     private(set) var sequence = 0
@@ -119,6 +138,45 @@ struct WriterLog {
         spans[index].interval.end = max(time, spans[index].interval.start)
     }
 
+    /// `agent` published its subagent rows, all of them. `parent` is the agent's own directory,
+    /// for a row that names none. Returns the intervals of the runs that are new or now reach
+    /// further than before: a settled turn they overlap may have to be re-cut. A row that
+    /// dropped out of the publication while open ended when it was published without it.
+    @discardableResult
+    mutating func noteRuns(_ agent: AgentID, rows: [ChildRun], parent: String?, at time: Double) -> [TurnAttribution.Interval] {
+        var known: [String: Int] = [:]
+        for index in runs.indices where runs[index].agent == agent { known[runs[index].key] = index }
+        var seen: Set<String> = []
+        var arrived: [TurnAttribution.Interval] = []
+        for row in rows {
+            let key = row.id + "@" + (row.attempt ?? "")
+            seen.insert(key)
+            guard let cwd = row.cwd ?? parent else { continue }
+            let before = known[key].map { runs[$0] }
+            let start = row.startedAt ?? before?.interval.start ?? time - TurnAttribution.lead
+            let end = row.isTerminal ? max(row.endedAt ?? before?.interval.end ?? time, start) : nil
+            let run = Run(key: key, agent: agent, cwd: cwd, interval: .init(start: start, end: end),
+                          files: (row.files ?? []).prefix(Self.runFiles).map(\.path))
+            if let index = known[key] {
+                runs[index] = run
+            } else {
+                known[key] = runs.count
+                runs.append(run)
+            }
+            if let before, before.files == run.files, before.cwd == run.cwd, before.interval.start == start,
+               before.interval.end == nil || end != nil {
+                continue
+            }
+            arrived.append(run.interval)
+        }
+        for index in runs.indices where runs[index].agent == agent && runs[index].interval.end == nil && !seen.contains(runs[index].key) {
+            runs[index].interval.end = max(time, runs[index].interval.start)
+        }
+        if !arrived.isEmpty { sequence += 1 }
+        trim()
+        return arrived
+    }
+
     /// The turn's end capture finished (or it never began): the window closes, and so does any
     /// call of the turn that never reported its end.
     mutating func closeWindow(turn: UUID, at time: Double) {
@@ -132,8 +190,8 @@ struct WriterLog {
         }
     }
 
-    /// The agent is gone, or its pi exited: whatever it had open ends now. Windows and calls
-    /// stay in the log: a deleted agent's leftover edits keep another agent's overlapping turn shared.
+    /// The agent is gone, or its pi exited: whatever it had open ends now. Windows, calls and
+    /// runs stay in the log: a deleted agent's leftover edits keep another agent's overlapping turn shared.
     mutating func agentEnded(_ agent: AgentID, at time: Double) {
         prompts[agent] = nil
         for i in windows.indices where windows[i].agent == agent && windows[i].interval.end == nil {
@@ -142,6 +200,9 @@ struct WriterLog {
         }
         for i in calls.indices where calls[i].agent == agent && calls[i].interval.end == nil {
             calls[i].interval.end = max(time, calls[i].interval.start)
+        }
+        for i in runs.indices where runs[i].agent == agent && runs[i].interval.end == nil {
+            runs[i].interval.end = max(time, runs[i].interval.start)
         }
     }
 
@@ -197,11 +258,12 @@ struct WriterLog {
     }
 
     private mutating func trim() {
-        guard windows.count > Self.windowCap || calls.count > Self.callCap || spans.count > Self.spanCap else { return }
+        guard windows.count > Self.windowCap || calls.count > Self.callCap || spans.count > Self.spanCap || runs.count > Self.runCap else { return }
         let protected = protected()
         Self.evict(&windows, cap: Self.windowCap, protected: protected, lost: &lost) { $0.interval }
         Self.evict(&calls, cap: Self.callCap, protected: protected, lost: &lost) { $0.interval }
         Self.evict(&spans, cap: Self.spanCap, protected: protected, lost: &lost) { $0.interval }
+        Self.evict(&runs, cap: Self.runCap, protected: protected, lost: &lost) { $0.interval }
     }
 
     /// Drops what ended over an hour ago and before every open and undoable turn began.
@@ -212,6 +274,7 @@ struct WriterLog {
         windows.removeAll { stale($0.interval) }
         calls.removeAll { stale($0.interval) }
         spans.removeAll { stale($0.interval) }
+        runs.removeAll { stale($0.interval) }
         lost.removeAll { stale($0) }
     }
 }
@@ -247,6 +310,16 @@ extension ChangesService {
     /// Server queue: the agent's pi exited, or the agent was deleted. Its log entries stay.
     func agentEnded(_ agentID: AgentID, at time: Double = ChangesService.nowMs()) {
         writers.withValue { $0.agentEnded(agentID, at: time) }
+    }
+
+    /// Server queue: `agentID` published its subagent runs (a full replacement). A run is a writer
+    /// that outlives the turn that started it and is published seconds after it wrote, so one that
+    /// reaches a turn other agents already settled re-cuts it.
+    func noteChildren(agentID: AgentID, runs: [ChildRun], at time: Double = ChangesService.nowMs()) {
+        let parent = agentContext(agentID)?.cwd
+        for interval in writers.withValue({ $0.noteRuns(agentID, rows: runs, parent: parent, at: time) }) {
+            reclassifyAffected(by: interval, excluding: agentID, now: time)
+        }
     }
 
     /// Shepherd is about to write `paths` (relative to `repository`) for the person; close the

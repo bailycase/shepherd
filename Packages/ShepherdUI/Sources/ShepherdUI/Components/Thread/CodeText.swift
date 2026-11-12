@@ -63,9 +63,56 @@ struct SHNativeCodeText: NSViewRepresentable {
         }
     }
 
+    /// The TextKit views fields draw ASCII code through.
+    ///
+    /// AppKit never frees an `NSTextView`, and the view keeps its text container, layout manager and
+    /// text storage alive with it: one a field drops after drawing a fence holds that fence's whole
+    /// layout for good. A field that lets go of its renderer hands it back here emptied, and the next
+    /// field to draw takes one, so the views AppKit keeps are as many as are shown at once.
+    @MainActor final class RendererPool {
+        static let shared = RendererPool(limit: 64)
+
+        private let limit: Int
+        private var idle: [NSTextView] = []
+        var idleCount: Int { idle.count }
+
+        init(limit: Int) { self.limit = limit }
+
+        /// A renderer holding no text, sized to `frame`.
+        func take(frame: NSRect, inset: NSSize) -> NSTextView {
+            let text: NSTextView
+            if let reused = idle.popLast() {
+                text = reused
+                text.frame = frame
+            } else {
+                SHRenderProbe.tick("code.rendererAllocated")
+                text = NSTextView(frame: frame)
+                text.isEditable = false
+                text.isSelectable = false
+                text.drawsBackground = false
+                text.isHorizontallyResizable = true
+                text.isVerticallyResizable = true
+                text.textContainer?.lineFragmentPadding = 0
+                text.textContainer?.widthTracksTextView = false
+                text.textContainer?.heightTracksTextView = false
+                text.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            }
+            text.textContainerInset = inset
+            return text
+        }
+
+        /// Keeps `text` for the next field without its text; past the limit, lets the text system go,
+        /// which the container's hold on its view would otherwise keep.
+        func give(_ text: NSTextView) {
+            text.textStorage?.setAttributedString(NSAttributedString())
+            if idle.count < limit { idle.append(text) } else { text.textContainer?.textView = nil }
+        }
+    }
+
     final class Field: NSTextField {
         // NSTextField redraws/layouts the entire string, including offscreen lines. Keep its
         // native editor/accessibility, but let TextKit retain glyph layout for viewport drawing.
+        // The retained layout covers the whole fence, so the field keeps it only while it is shown.
         private var renderer: NSTextView?
         private var requiresNativeDrawing = false
         var measuredSize: CGSize?
@@ -87,23 +134,32 @@ struct SHNativeCodeText: NSViewRepresentable {
             needsDisplay = true
         }
 
+        override func viewDidHide() {
+            super.viewDidHide()
+            releaseRenderer()
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window == nil { releaseRenderer() }
+        }
+
+        /// The next draw takes one again and lays the field's text out in it.
+        private func releaseRenderer() {
+            guard let text = renderer else { return }
+            renderer = nil
+            RendererPool.shared.give(text)
+            SHRenderProbe.tick("code.rendererReleased")
+        }
+
         override func draw(_ dirtyRect: NSRect) {
             guard currentEditor() == nil, !requiresNativeDrawing else { super.draw(dirtyRect); return }
             let text: NSTextView
             if let renderer { text = renderer }
             else {
-                text = NSTextView(frame: bounds)
-                text.isEditable = false
-                text.isSelectable = false
-                text.drawsBackground = false
-                text.isHorizontallyResizable = true
-                text.isVerticallyResizable = true
-                text.textContainerInset = NSSize(width: alignmentRectInsets.left, height: alignmentRectInsets.top)
-                text.textContainer?.lineFragmentPadding = 0
-                text.textContainer?.widthTracksTextView = false
-                text.textContainer?.heightTracksTextView = false
-                text.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+                text = RendererPool.shared.take(frame: bounds, inset: NSSize(width: alignmentRectInsets.left, height: alignmentRectInsets.top))
                 text.textStorage?.setAttributedString(attributedStringValue)
+                SHRenderProbe.tick("code.rendererCreated")
                 renderer = text
             }
             if text.frame != bounds { text.frame = bounds }
