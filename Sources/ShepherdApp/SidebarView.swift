@@ -56,7 +56,7 @@ private struct SidebarDestinations: View {
 
     var body: some View {
         let rows = SidebarDerivation.destinations(shown: vm.shownDestination, newThreadChord: vm.keybindings.display(.newAgent),
-                                                  designs: vm.designToolEnabled, missions: vm.settings.missionsEnabled,
+                                                  designs: vm.designToolEnabled,
                                                   automations: SidebarDerivation.automationsTrailing(
                                                     runs: vm.localAutomationRuns, statuses: vm.automationTriggerStatuses,
                                                     allPaused: vm.automationTriggersAllPaused),
@@ -64,8 +64,6 @@ private struct SidebarDestinations: View {
         VStack(alignment: .leading, spacing: SHSidebarMetrics.rowSpacing) {
             ForEach(rows) { row in
                 SHSidebarDestination(row.title, icon: row.icon, selected: row.selected, child: row.child, trailing: row.trailing) {
-                    // The Missions row opens the list; a mission's own row (its section) opens that mission.
-                    if row.target == .page(.missions) { vm.thisMacMissions?.selectedID = nil; vm.missionsHost = nil }
                     vm.openSidebarDestination(row.target)
                 }
                 .equatable()
@@ -93,10 +91,7 @@ private struct SidebarListsView: View {
                     switch vm.sidebarStyle {
                     case .activity: SidebarActivityList(vm: vm)
                     case .projects:
-                        VStack(alignment: .leading, spacing: 0) {
-                            SidebarMissionsSection(vm: vm)
-                            SidebarProjectsList(vm: vm)
-                        }
+                        SidebarProjectsList(vm: vm)
                     }
                 }
                 .padding(.horizontal, AppLayout.sidebarPadding)
@@ -153,12 +148,9 @@ private struct SidebarItemView: View, Equatable {
                                        attention: section == .needsYou, pulse: section == .working,
                                        toggle: { vm.toggleActivitySection(section) },
                                        markAllSeen: section == .done ? { vm.markAllSidebarDoneSeen() } : nil,
-                                       chip: section == .projects ? ("New project", { vm.showNewProject() })
-                                           : section == .missions ? ("New mission", { vm.openNewMission() }) : nil)
+                                       chip: section == .projects ? ("New project", { vm.showNewProject() }) : nil)
             case .project(let project):
                 LogicalProjectSidebarRow(vm: vm, project: project)
-            case .mission(let mission):
-                SidebarMissionRow(vm: vm, mission: mission)
             case .forgePin(let pin):
                 SidebarForgePinRow(vm: vm, pin: pin)
             case .automation(let automation, let expanded):
@@ -223,40 +215,6 @@ struct SidebarAutomationRow: View {
                     Button("Edit…") { vm.editAutomation(key) }
                 }
             }
-    }
-}
-
-/// A mission's row, in every sidebar style: its state dot, name, and "needs you" or its phase.
-struct SidebarMissionRow: View {
-    var vm: ShepherdViewModel
-    let mission: SidebarMission
-
-    var body: some View {
-        // As a design's or a project's row: the collection's glyph, the name, one compact word.
-        SHSidebarRow(mission.title, leading: .glyph(SHGlyph.mission.symbolName, attention: mission.needsYou), selected: mission.selected,
-                     accessory: .text(mission.word, tone: mission.needsYou ? .attention : nil))
-            .help(mission.title)
-            .sidebarTapRow { vm.openMission(mission.mission, host: mission.host) }
-            .accessibilityLabel("\(mission.title), mission, \(mission.word)\(mission.needsYou && mission.word != "needs you" ? ", needs you" : "")")
-            .accessibilityAddTraits(mission.selected ? .isSelected : [])
-    }
-}
-
-/// The Missions section as one block, for the Spaces style (the Activity style lists the same rows
-/// in its flat stack, `SidebarLists.items`).
-struct SidebarMissionsSection: View {
-    var vm: ShepherdViewModel
-
-    var body: some View {
-        let missions = vm.sidebarMissions
-        if vm.settings.missionsEnabled {
-            let collapsed = vm.collapsedActivitySections.contains(.missions)
-            VStack(alignment: .leading, spacing: 0) {
-                SHSidebarSectionHeader(SidebarActivitySection.missions.title, count: missions.count, isExpanded: !collapsed,
-                                       toggle: { vm.toggleActivitySection(.missions) }, chip: ("New mission", { vm.openNewMission() }))
-                if !collapsed { ForEach(missions) { SidebarMissionRow(vm: vm, mission: $0) } }
-            }
-        }
     }
 }
 

@@ -102,18 +102,18 @@ struct RemoteClientBackpressureCheck {
         check(names.last == "three", "the final state arrived (\(names))")
 
         // IO-06: small non-output-only events must hit the count bound even below the byte cap.
-        client.onMissionChanged = { _, _ in received.mission() }
-        let a = MissionID(), b = MissionID()
+        client.onNativeThreadChanged = { _ in received.hint() }
+        let a = AgentID(), b = AgentID()
         for large in [false, true] {
             let blocker = DispatchSemaphore(value: 0)
             DispatchQueue.main.async { blocker.wait() }
             host.written = 0
             let events = large ? 256 : 10_000
-            let before = received.missions
+            let before = received.hints
             Thread {
                 for index in 0..<events {
                     if large { host.push(.stateChanged(state: Self.state(String(repeating: "x", count: 32 * 1024)))) }
-                    host.push(.missionChanged(missionID: index.isMultiple(of: 2) ? a : b, revision: UInt64(index)))
+                    host.push(.nativeThreadChanged(agentID: index.isMultiple(of: 2) ? a : b))
                     host.written = index + 1
                 }
             }.start()
@@ -124,7 +124,7 @@ struct RemoteClientBackpressureCheck {
                 }
                 Self.check(stalled && host.written < events, "nonterminal backlog is bounded by content and count")
             }.value
-            check(try await eventually("nonterminal flood drains") { received.missions == before + events }, "all ordered nonterminal events drained")
+            check(try await eventually("nonterminal flood drains") { received.hints == before + events }, "all ordered nonterminal events drained")
             check(received.largestEventBatch <= RemoteHostClient.deliveryBudgetEvents,
                   "nonterminal delivery batches respect the event count budget")
         }
@@ -257,13 +257,13 @@ final class Received: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }; designHints.append((id, revision, comments))
     }
     func control(_ push: BrowserDrivePush) { lock.lock(); defer { lock.unlock() }; controlPushes.append(push) }
-    private var missionCount = 0
+    private var hintCount = 0
     private var eventBatch = 0
     private var largestBatch = 0
-    var missions: Int { lock.lock(); defer { lock.unlock() }; return missionCount }
+    var hints: Int { lock.lock(); defer { lock.unlock() }; return hintCount }
     var largestEventBatch: Int { lock.lock(); defer { lock.unlock() }; return largestBatch }
-    func mission() {
-        lock.lock(); missionCount += 1; lock.unlock()
+    func hint() {
+        lock.lock(); hintCount += 1; lock.unlock()
         event()
     }
     private func event() {

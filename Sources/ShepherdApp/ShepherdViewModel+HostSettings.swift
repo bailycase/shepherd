@@ -37,9 +37,8 @@ enum HostSettingsMapping {
                     completion(.failure(RemoteCreateAgentError("Host is shutting down")))
                     return
                 }
-                let missionsActive = server.state.missions.contains { $0.run?.phase.active == true }
                 if case .change(let change) = request,
-                   let refusal = apply(change, to: app, missionsActive: missionsActive) {
+                   let refusal = apply(change, to: app) {
                     completion(.failure(RemoteCreateAgentError(refusal)))
                     return
                 }
@@ -47,7 +46,6 @@ enum HostSettingsMapping {
                     from: app,
                     shepherdVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
                     piVersion: server.pi.engine.version,
-                    missionsActive: missionsActive,
                     slashCommands: server.slashCommandCatalog
                 )
                 answer.backgroundService = backgroundService()
@@ -66,11 +64,8 @@ enum HostSettingsMapping {
         }
     }
 
-    /// Why a client may not turn Missions off now.
-    static let missionsLocked = "Pause or stop running missions before turning Missions off."
-
     static func settings(from app: AppSettings, shepherdVersion: String?, piVersion: String?,
-                         missionsActive: Bool = false, slashCommands: [NativeCommand] = []) -> HostSettings {
+                         slashCommands: [NativeCommand] = []) -> HostSettings {
         HostSettings(
             shepherdVersion: shepherdVersion,
             piVersion: piVersion,
@@ -89,8 +84,6 @@ enum HostSettingsMapping {
             generatePRDescriptions: app.worktreeGeneratePRDescription,
             closeOnMerge: app.worktreeCloseOnMerge,
             designToolEnabled: app.designToolEnabled,
-            missionsEnabled: app.missionsEnabled,
-            missionsActive: missionsActive,
             subagentDefaults: HostSettings.SubagentDefaults(
                 concurrency: app.childConcurrency,
                 model: app.childModel.isEmpty ? nil : app.childModel,
@@ -117,7 +110,7 @@ enum HostSettingsMapping {
 
     /// Applies `change` as the Mac's own Settings would; returns why it was refused, or nil.
     @discardableResult
-    static func apply(_ change: HostSettingChange, to app: AppSettings, missionsActive: Bool = false) -> String? {
+    static func apply(_ change: HostSettingChange, to app: AppSettings) -> String? {
         switch change {
         case .defaultModel(let model): app.defaultModel = model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         case .defaultThinking(let level): app.defaultThinking = level
@@ -153,10 +146,6 @@ enum HostSettingsMapping {
             // An older client's switches: Shepherd's pi updates only with Shepherd.
             break
         case .designToolEnabled(let on): app.designToolEnabled = on
-        case .missionsEnabled(let on):
-            // The Mac's card locks the switch under a live mission; a client is refused the same.
-            if !on, app.missionsEnabled, missionsActive { return missionsLocked }
-            app.missionsEnabled = on
         case .subagentDefaults(let defaults):
             let range = HostSettings.SubagentDefaults.concurrencyRange
             app.childConcurrency = min(range.upperBound, max(range.lowerBound, defaults.concurrency))

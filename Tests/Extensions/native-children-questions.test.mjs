@@ -10,7 +10,6 @@ import * as path from "node:path";
 import * as http from "node:http";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-process.env.SHEPHERD_MISSIONS = "1"; // These tests cover mission records and the mission parameters, which are off unless this is set.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const pkg = process.env.PI_PACKAGE_DIR;
 if (!pkg) throw Error("Set PI_PACKAGE_DIR to pi's package");
@@ -128,7 +127,7 @@ test("a child is told to ask its parent and never the user, in its prompt and in
   assert.match(mod.CHILD_ASK_RULE, /never the user/);
   assert.match(mod.CHILD_ASK_RULE, /shepherd_parent_message with needsReply: true/);
   assert.match(mod.CHILD_ASK_RULE, /finish your turn/);
-  const child = await h.call("start", { task: "ASK_PARENT:alias", role: "scout", mission: false });
+  const child = await h.call("start", { task: "ASK_PARENT:alias", role: "scout" });
   const prompt = fs.readFileSync(path.join(path.dirname(child.sessionFile), "prompt.md"), "utf8");
   assert(prompt.includes(mod.CHILD_ASK_RULE), "the injected prompt carries the rule");
   await askingState(child.id);
@@ -144,7 +143,7 @@ test("a child is told to ask its parent and never the user, in its prompt and in
 
 test("a child's question reaches its parent as a hidden notice that says what to do, and wakes an idle parent", async () => {
   h.messages.length = 0;
-  const child = await h.call("start", { task: "ASK_PARENT:alias", role: "scout", mission: false });
+  const child = await h.call("start", { task: "ASK_PARENT:alias", role: "scout" });
   await until(() => noticesAbout(child.id).length === 1);
   const [{ message, options }] = noticesAbout(child.id);
   assert.equal(message.display, false, "a coordination notice, not a chat message");
@@ -167,7 +166,7 @@ test("a child's question reaches its parent as a hidden notice that says what to
 });
 
 test("result hands the parent the question, its questionID and the call that answers it", async () => {
-  const child = await h.call("start", { task: "ASK_PARENT:cache", role: "scout", mission: false });
+  const child = await h.call("start", { task: "ASK_PARENT:cache", role: "scout" });
   const asked = await askingState(child.id);
   assert.equal(asked.needsReply, true);
   assert.match(asked.parentAction, /asked its parent \(you\) a question and waits on you; it never reaches the user/);
@@ -181,13 +180,13 @@ test("result hands the parent the question, its questionID and the call that ans
   assert.deepEqual([row.needsReply, row.questionID, row.question], [true, asked.questionID, "Which cache should I use?"],
     "the list names who still waits, so a question outlives its notice");
   // A child that did not ask has nothing to answer.
-  const quiet = await h.call("start", { task: "just work", role: "scout", mission: false });
+  const quiet = await h.call("start", { task: "just work", role: "scout" });
   const done = await askingState(quiet.id);
   assert.equal(done.parentAction, undefined); assert.equal(done.needsReply, false);
 });
 
 test("the parent answers with the questionID and the child continues; an obsolete question is refused", async () => {
-  const child = await h.call("start", { task: "ASK_PARENT:index", role: "scout", mission: false });
+  const child = await h.call("start", { task: "ASK_PARENT:index", role: "scout" });
   const asked = await askingState(child.id);
   await assert.rejects(h.call("resume", { id: child.id, message: "wrong", questionID: "old-attempt/question" }), /Child question changed/);
   await assert.rejects(h.call("message", { id: child.id, message: "wrong", questionID: "old-attempt/question" }), /Child question changed/);
@@ -204,7 +203,7 @@ test("the parent answers with the questionID and the child continues; an obsolet
   // The same questionID answers nothing twice.
   await assert.rejects(h.call("resume", { id: child.id, message: "again", questionID: asked.questionID }), /Child question changed/);
   // shepherd_child_message takes the answer as well: it resumes a child that finished its turn to wait for it.
-  const second = await h.call("start", { task: "ASK_PARENT:index2", role: "scout", mission: false });
+  const second = await h.call("start", { task: "ASK_PARENT:index2", role: "scout" });
   const secondAsked = await askingState(second.id);
   const receipt = await h.call("message", { id: second.id, message: "Rename new ones", questionID: secondAsked.questionID });
   assert.equal(receipt.id, second.id);
@@ -214,7 +213,7 @@ test("the parent answers with the questionID and the child continues; an obsolet
 });
 
 test("an answer that comes while the child is still finishing the turn it asked in waits for it, and is not lost with it", async () => {
-  const child = await h.call("start", { task: "ASK_PARENT:race ASK_SLOW", role: "scout", mission: false });
+  const child = await h.call("start", { task: "ASK_PARENT:race ASK_SLOW", role: "scout" });
   const dir = path.dirname(child.sessionFile), status = () => JSON.parse(fs.readFileSync(path.join(dir, "status.json")));
   await until(() => status().needsReply === true);
   assert.equal(status().state, "running", "the child asked and is still writing its last words");
@@ -229,7 +228,7 @@ test("an answer that comes while the child is still finishing the turn it asked 
 });
 
 test("a user's own steer closes the question, and the parent's later answer to it is refused as obsolete", async () => {
-  const child = await h.call("start", { task: "ASK_PARENT:steer", role: "scout", mission: false });
+  const child = await h.call("start", { task: "ASK_PARENT:steer", role: "scout" });
   const asked = await askingState(child.id);
   const dir = path.dirname(asked.sessionFile), status = () => JSON.parse(fs.readFileSync(path.join(dir, "status.json")));
   // The inspector's Steer (and an older client's Answer) is a message to the child, still accepted.
@@ -251,7 +250,7 @@ test("a user's own steer closes the question, and the parent's later answer to i
 });
 
 test("Stop on a child waiting for its parent closes the question instead of leaving it to wait", async () => {
-  const child = await h.call("start", { task: "ASK_PARENT:stop", role: "scout", mission: false });
+  const child = await h.call("start", { task: "ASK_PARENT:stop", role: "scout" });
   const asked = await askingState(child.id);
   assert.equal(asked.needsReply, true);
   const stopped = await h.call("cancel", { id: child.id });
@@ -263,11 +262,11 @@ test("Stop on a child waiting for its parent closes the question instead of leav
 
 test("a question wakes the parent in report delivery too, while a report completion does not", async () => {
   h.messages.length = 0;
-  const report = await h.call("start", { task: "ASK_PARENT:report", role: "scout", mission: false, delivery: "report" });
+  const report = await h.call("start", { task: "ASK_PARENT:report", role: "scout", delivery: "report" });
   await until(() => noticesAbout(report.id).length === 1);
   assert.equal(noticesAbout(report.id)[0].options.triggerTurn, true, "a blocking question notifies in either mode");
   assert(noticesAbout(report.id)[0].message.content.includes(mod.PARENT_QUESTION_GUIDE));
-  const quiet = await h.call("start", { task: "just report", role: "scout", mission: false, delivery: "report" });
+  const quiet = await h.call("start", { task: "just report", role: "scout", delivery: "report" });
   await until(() => noticesAbout(quiet.id).length === 1);
   assert.equal(noticesAbout(quiet.id)[0].options.triggerTurn, false, "a report completion only adds context");
   assert(!noticesAbout(quiet.id)[0].message.content.includes(mod.PARENT_QUESTION_GUIDE));
@@ -278,7 +277,7 @@ test("a working parent gets the question at its settlement boundary, several chi
   h.events.get("agent_start")();
   const ids = [], files = {}, questionIDs = {};
   for (const topic of ["port", "name", "scope"]) {
-    const child = await h.call("start", { task: `ASK_PARENT:${topic}`, role: "scout", mission: false });
+    const child = await h.call("start", { task: `ASK_PARENT:${topic}`, role: "scout" });
     ids.push(child.id); files[child.id] = path.join(path.dirname(child.sessionFile), "status.json");
   }
   await until(() => ids.every((id) => h.card(id)?.needsAttention === true && h.card(id).state === "complete"));
@@ -311,8 +310,8 @@ test("a working parent gets the question at its settlement boundary, several chi
 
 test("a question wakes the parent without waiting for another child's completion", async () => {
   h.messages.length = 0;
-  const slow = await h.call("start", { task: "SLOWER work", role: "scout", mission: false });
-  const asking = await h.call("start", { task: "ASK_PARENT:async", role: "scout", mission: false });
+  const slow = await h.call("start", { task: "SLOWER work", role: "scout" });
+  const asking = await h.call("start", { task: "ASK_PARENT:async", role: "scout" });
   await until(() => noticesAbout(asking.id).length === 1);
   assert.equal(noticesAbout(asking.id)[0].options.triggerTurn, true);
   const asked = await h.call("result", { id: asking.id });
@@ -327,7 +326,7 @@ test("a question wakes the parent without waiting for another child's completion
 test("a workflow's child that asks reaches the parent with its questionID, once the workflow ends", async () => {
   h.messages.length = 0;
   const script = 'const [a, b] = await runs.all([{ key: "asks", agent: "scout", task: "ASK_PARENT:flow" }, { key: "works", agent: "scout", task: "just work" }]); return { asked: a.needsReply === true, question: a.question, other: b.ok };';
-  const sync = await h.tool("shepherd_workflow", { async: false, mission: false, workflowScript: script });
+  const sync = await h.tool("shepherd_workflow", { async: false, workflowScript: script });
   assert.equal(sync.state, "complete", sync.error);
   assert.deepEqual([sync.output.asked, sync.output.question, sync.output.other], [true, "Which flow should I use?", true],
     "runs.all marks the child that asked, so a script never takes its question for a result");
@@ -343,7 +342,7 @@ test("a workflow's child that asks reaches the parent with its questionID, once 
 
   // Asynchronously the question rides the workflow's completion notice, and wakes the parent even in report delivery.
   h.messages.length = 0;
-  const started = await h.tool("shepherd_workflow", { mission: false, delivery: "report",
+  const started = await h.tool("shepherd_workflow", { delivery: "report",
     workflowScript: 'return await runs.run("asks", { agent: "scout", task: "ASK_PARENT:async" });' });
   await until(() => noticesAbout(started.id).length === 1);
   const [{ message, options }] = noticesAbout(started.id);
@@ -356,7 +355,7 @@ test("a workflow's child that asks reaches the parent with its questionID, once 
 });
 
 test("a child that tries to open a human dialog is stopped and told to ask its parent", async () => {
-  const child = await h.call("start", { task: "ASK_UI", agent: "asker", mission: false });
+  const child = await h.call("start", { task: "ASK_UI", agent: "asker" });
   const failed = await askingState(child.id);
   assert(["failed", "stopped"].includes(failed.state), failed.state);
   assert.match(failed.error, /unsupported human interaction \(select\): Which retention\?/);

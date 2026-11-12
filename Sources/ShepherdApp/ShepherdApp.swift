@@ -364,7 +364,7 @@ public enum ShepherdHost {
     }
 
     /// Everything the host serves on its server beside the server's own: Settings, its stores,
-    /// threads, worktrees, automations, Missions and Projects, pull request links and banners,
+    /// threads, worktrees, automations and Projects, pull request links and banners,
     /// each with the app's settings. `main` runs it; app tests serve their in-process host with it.
     @MainActor final class Services {
         let settings: AppSettings
@@ -374,8 +374,8 @@ public enum ShepherdHost {
         let mcp: AgentSpawn.MCP
         /// The shell a client's terminal starts.
         var shell: () -> SessionCommand
-        /// Missions and the Project runtime, served for the life of the host.
-        private(set) var runtime: (missions: MissionController, coordinator: ProjectCoordinatorController,
+        /// The Project runtime, served for the life of the host.
+        private(set) var runtime: (coordinator: ProjectCoordinatorController,
                                    execution: ProjectExecutionController)?
         /// Worktree requests and commits from review, served for the life of the host.
         private(set) var worktrees: WorktreeQueries?
@@ -426,7 +426,7 @@ public enum ShepherdHost {
                 let worktrees = server.serveAgentQueries(WorktreeHosting(defaults: { settings.worktreeHostingDefaults },
                                                                          deleteAgent: { id, _ in try await server.deleteAgent(id) }))
                 self.worktrees = worktrees
-                // Missions and Projects run here, where their agents run: they keep acting with the app quit.
+                // Projects run here, where their agents run: they keep acting with the app quit.
                 runtime = RuntimeHosting.headless(server: server, settings: settings, worktrees: worktrees, mcp: mcp) { [notifications] in
                     notifications.post(AgentBanners.automation(title: $0, body: $1))
                 }.serve()

@@ -11,33 +11,18 @@ enum PushButtons {
     static let reply = "reply"
     static let open = "open"
     static let review = "review"
-    static let approve = "approve"
-    static let openReview = "openReview"
-    static let openMission = "openMission"
-    /// Retry with hint: the stuck lane's text field (NotifPhoneRich).
-    static let retry = "retry"
     /// A question's option, by its index in `shepherd.detail.options`: "option:0".
     static let option = "option:"
 
     /// The buttons a long press shows for a push the content extension draws, in place of its
     /// category's: a question's options before Reply… and Open (NotifPhoneRich's per-question
-    /// buttons), or for a blocked mission Retry with hint (when a lane is `stuck`) and Open mission.
-    /// Nil keeps the category's.
-    static func actions(kind: String, options: [String]?, mission: Bool, stuck: String? = nil) -> [UNNotificationAction]? {
+    /// buttons). Nil keeps the category's.
+    static func actions(kind: String, options: [String]?) -> [UNNotificationAction]? {
         if kind == "needsAnswer", let options, !options.isEmpty {
             let buttons = options.enumerated().map { index, title in
                 UNNotificationAction(identifier: option + String(index), title: title, options: [.authenticationRequired])
             }
             return buttons + Array(categories.first { $0.identifier == kind }?.actions ?? [])
-        }
-        if kind == "error", mission {
-            let open = UNNotificationAction(identifier: openMission, title: "Open mission", options: [.foreground],
-                                            icon: UNNotificationActionIcon(systemImageName: "chevron.right"))
-            guard let stuck else { return [open] }
-            let retry = UNTextInputNotificationAction(identifier: retry, title: "Retry with hint", options: [.authenticationRequired],
-                                                      icon: UNNotificationActionIcon(systemImageName: "arrow.clockwise"),
-                                                      textInputButtonTitle: "Retry", textInputPlaceholder: "A hint for \(stuck)")
-            return [retry, open]
         }
         return nil
     }
@@ -48,14 +33,6 @@ enum PushButtons {
               let options = ((userInfo["shepherd"] as? [String: Any])?["detail"] as? [String: Any])?["options"] as? [String],
               options.indices.contains(index) else { return nil }
         return options[index]
-    }
-
-    /// What Retry with hint names: the mission (its `mission:<id>` stack) and the stuck count the push showed.
-    static func retryTarget(userInfo: [AnyHashable: Any], thread: String) -> (mission: String, attempts: Int)? {
-        guard thread.hasPrefix("mission:"),
-              let stuck = ((userInfo["shepherd"] as? [String: Any])?["detail"] as? [String: Any])?["stuck"] as? [String: Any],
-              let attempts = stuck["count"] as? Int else { return nil }
-        return (String(thread.dropFirst("mission:".count)), attempts)
     }
 
     static var categories: Set<UNNotificationCategory> {
@@ -73,15 +50,6 @@ enum PushButtons {
             category("error", [open]),
             category("done", [UNNotificationAction(identifier: review, title: "Review", options: [.foreground],
                                                    icon: UNNotificationActionIcon(systemImageName: "chevron.right"))]),
-            // Approving starts the merge train: it opens Shepherd, which asks for Face ID even on
-            // an unlocked phone before it publishes.
-            category("review", [
-                UNNotificationAction(identifier: approve, title: "Approve · start train",
-                                     options: [.foreground, .authenticationRequired],
-                                     icon: UNNotificationActionIcon(systemImageName: "faceid")),
-                UNNotificationAction(identifier: openReview, title: "Open review", options: [.foreground],
-                                     icon: UNNotificationActionIcon(systemImageName: "chevron.right")),
-            ]),
         ]
     }
 }

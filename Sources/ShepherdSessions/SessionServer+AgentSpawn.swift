@@ -23,8 +23,6 @@ public struct AgentSpawn {
     public var problem: PiHomeProblem?
     /// A resumed pi that doesn't find its conversation is stopped (`createSession(params:resuming:)`).
     public var checksResume = true
-    /// Missions' spec-kit launch (a new agent's start, not a respawn).
-    public var specKit = false
     public var cols = 80
     public var rows = 24
     public var mcp: MCP = { _, _, _, _, _ in nil }
@@ -57,15 +55,13 @@ public struct PaneBindingFailed: Error, CustomStringConvertible {
 
 extension SessionServer {
     /// Respawns an agent's pi into its own pane after a launch, and binds it there. Nil, with
-    /// nothing spawned, for a mission attempt (its dispatch starts attempts), when its pane no longer
-    /// holds it or is already bound to a live session, or when `stillWanted` says no. A folder that
-    /// is gone keeps the agent's place with a start problem. `spawn.cwd` is ignored: the pane's
-    /// folder is the agent's.
+    /// nothing spawned, when its pane no longer holds it or is already bound to a live session,
+    /// or when `stillWanted` says no. A folder that is gone keeps the agent's place with a start
+    /// problem. `spawn.cwd` is ignored: the pane's folder is the agent's.
     @MainActor
     public func respawnAgent(_ spawn: AgentSpawn) async throws -> SessionInfo? {
         let agentID = spawn.agent.id, state = self.state
-        guard !state.isMissionAgent(agentID),
-              let agent = state.agents.first(where: { $0.id == agentID }), let paneID = agent.paneID,
+        guard let agent = state.agents.first(where: { $0.id == agentID }), let paneID = agent.paneID,
               let tab = state.tabs.first(where: { $0.id == agent.tabID }),
               let pane = tab.layout.leaf(withID: paneID), pane.agentID == agentID else { return nil }
         var spawn = spawn
@@ -156,7 +152,6 @@ extension SessionServer {
                                       worktreeOwningSpace: owningSpace,
                                       suggestFiles: suggestions.snapshot().settings.files(for: spawn.isAutomation ? .automation : .thread),
                                       modelOverride: spawn.takeModelOverride(),
-                                      specKit: spawn.specKit ? state.specKitLaunch(for: agent.id, cwd: cwd) : nil,
                                       inherited: inherited,
                                       mcp: {
                                           // Parent skills and commands come through the same extension, so a child space gets them with MCP off too.

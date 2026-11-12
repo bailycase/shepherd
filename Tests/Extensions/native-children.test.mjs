@@ -10,7 +10,6 @@ import * as net from "node:net";
 import { createRequire, syncBuiltinESMExports } from "node:module";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-process.env.SHEPHERD_MISSIONS = "1"; // These tests cover mission records and the mission parameters, which are off unless this is set.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 // pi's package, named: never a `pi` looked up on PATH.
 const pkg = process.env.PI_PACKAGE_DIR;
@@ -187,7 +186,7 @@ function fixtureServer() {
       res.end(`data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: finish }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\ndata: [DONE]\n\n`);
     };
     if (last.role === "user" && text === "BOUNDARY_PARENT") {
-      say({ tool_calls: [{ index: 0, id: "boundary-child", type: "function", function: { name: "shepherd_child_start", arguments: JSON.stringify({ task: "BOUNDARY_RESULT", role: "scout", mission: false }) } }] }, "tool_calls");
+      say({ tool_calls: [{ index: 0, id: "boundary-child", type: "function", function: { name: "shepherd_child_start", arguments: JSON.stringify({ task: "BOUNDARY_RESULT", role: "scout" }) } }] }, "tool_calls");
     } else if (last.role === "user" && text.includes("SHELL:")) {
       const command = text.slice(text.indexOf("SHELL:") + 6);
       say({ tool_calls: [{ index: 0, id: "shell-call", type: "function", function: { name: "bash", arguments: JSON.stringify({ command }) } }] }, "tool_calls");
@@ -361,30 +360,6 @@ test("unchanged children are deduplicated but heartbeat until the list clears", 
   }
 });
 
-// Direct starts past the limit fail; a workflow's items wait for a slot instead (runs.all must not fail one).
-test("an older workflow ending leaves a newer workflow's mission lifecycle alone", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-mission-overlap-")), saved = { ...process.env };
-  let h;
-  try {
-    Object.assign(process.env, { HOME: dir, PI_CODING_AGENT_DIR: path.join(dir, "config"), PI_OFFLINE: "1", SHEPHERD_NATIVE_CHILDREN: "1",
-      SHEPHERD_AGENT_ID: "fixture", SHEPHERD_SOCKET: path.join(dir, "s.sock"), SHEPHERD_EXT_CHILDREN: source });
-    h = await harness(dir);
-    const mission = await h.tool("shepherd_mission", { action: "create", title: "shared" });
-    const older = await h.tool("shepherd_workflow", { missionId: mission.id, workflowScript: "await new Promise(() => {});" });
-    const newer = await h.tool("shepherd_workflow", { missionId: mission.id, workflowScript: "await new Promise(() => {});" });
-    await h.tool("shepherd_workflow", { action: "cancel", id: older.id });
-    const during = await h.tool("shepherd_mission", { action: "show", id: mission.id });
-    assert.deepEqual([during.workflow, during.status], [{ id: newer.id, state: "running" }, "planned"]);
-    await h.tool("shepherd_workflow", { action: "cancel", id: newer.id });
-    const after = await h.tool("shepherd_mission", { action: "show", id: mission.id });
-    assert.deepEqual([after.workflow.id, after.workflow.state, after.status], [newer.id, "stopped", "needs_decision"]);
-  } finally {
-    await h?.shutdown();
-    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
-    Object.assign(process.env, saved); fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
 test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, result, cancellation, continuation, inspector and late callbacks", { timeout: 120000 }, async (t) => {
   watches = [];
   t.after(() => { watches = undefined; });
@@ -439,7 +414,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     new ProjectTrustStore(process.env.PI_CODING_AGENT_DIR).set(fs.realpathSync(alternate), true);
     fs.mkdirSync(path.join(process.env.PI_CODING_AGENT_DIR, "agents"), { recursive: true });
     fs.writeFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "agents", "migration.md"), "---\nname: migration\ndescription: migration fixture\ntools: read\nskills: migrated\n---\nRead only.\n");
-    const migrated = await h.call("start", { agent: "migration", cwd: alternate, task: "migrated skill", mission: false });
+    const migrated = await h.call("start", { agent: "migration", cwd: alternate, task: "migrated skill" });
     assert.equal((await h.settled(migrated.id)).state, "complete");
     const migratedRun = h.entries.find((entry) => entry.customType === "shepherd-child" && entry.data.id === migrated.id).data;
     assert.deepEqual(migratedRun.skills, [path.join(fs.realpathSync(alternate), ".pi", "skills", "migrated", "SKILL.md")], "Pi skills must be discovered without a migration copy");
@@ -583,7 +558,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     assert(queuedInput.entries[0].content.includes(background.id));
     h.events.get("agent_settled")();
     h.events.get("agent_start")();
-    const workflowWait = h.tools.get("shepherd_workflow").execute("workflow", { async: false, mission: false,
+    const workflowWait = h.tools.get("shepherd_workflow").execute("workflow", { async: false,
       workflowScript: 'return runs.run("background", {agent:"scout", task:"SLOW workflow during chat"});' }, undefined, undefined, h.ctx);
     h.events.get("input")({ text: "user followup", source: "rpc", streamingBehavior: "followUp" });
     const yieldedWorkflow = await workflowWait;
@@ -917,9 +892,8 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     fs.writeFileSync(explicitExtension, "export default function() {}\n");
     fs.writeFileSync(profilePath, `---\nname: minimal\ndescription: minimal profile\nmodel: inherit\nextensions: ${explicitExtension}\n---\nPROFILE_MARKER\n`);
     h.activeTools.push("terminal_open");
-    const minimal = await h.call("start", { task: "minimal profile test", agent: "minimal", mission: false });
+    const minimal = await h.call("start", { task: "minimal profile test", agent: "minimal" });
     await h.settled(minimal.id);
-    assert.equal(minimal.missionId, undefined);
     assert.deepEqual(minimal.tools, ["read", "bash", "edit", "write"]);
     fs.unlinkSync(explicitExtension);
     await assert.rejects(h.call("resume", { id: minimal.id, message: "missing explicit extension" }), /ENOENT/);
@@ -931,7 +905,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     assert.match(retried.output, /reply:retry restored extension/);
     h.activeTools.splice(h.activeTools.indexOf("terminal_open"), 1);
     fs.writeFileSync(profilePath, '---\nname: minimal\ndescription: minimal profile\nmodel: fixture:high\nthinking: low\ntools: read\ndefaultContext: fresh\n---\nPROFILE_MARKER\n');
-    const custom = await h.call("start", { task: "profile precedence", agent: "minimal", thinking: "off", mission: false });
+    const custom = await h.call("start", { task: "profile precedence", agent: "minimal", thinking: "off" });
     assert.equal(custom.thinking, "off"); assert.equal(custom.model, "fixture/fixture");
     await h.settled(custom.id);
     fs.writeFileSync(profilePath, '---\nname: minimal\ndescription: changed profile\ntools: read, bash, edit, write\n---\nnew role\n');
@@ -943,20 +917,19 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     process.env.SHEPHERD_CHILD_CONCURRENCY = "2"; process.env.SHEPHERD_CHILD_THINKING = "high";
     process.env.SHEPHERD_CHILD_MODEL = "fixture/fixture"; process.env.SHEPHERD_CHILD_CONTEXT = "fork";
     h = await harness(dir, h.entries, undefined, outsideShepherd);
-    const defaultsRun = await h.call("start", { task: "configured defaults", role: "scout", mission: false });
+    const defaultsRun = await h.call("start", { task: "configured defaults", role: "scout" });
     assert.equal(defaultsRun.thinking, "high"); assert.equal(defaultsRun.context, "fork"); assert.equal(defaultsRun.model, "fixture/fixture");
     await h.settled(defaultsRun.id);
-    const configuredProfile = await h.call("start", { task: "profile overrides defaults", agent: "minimal", mission: false });
+    const configuredProfile = await h.call("start", { task: "profile overrides defaults", agent: "minimal" });
     await h.settled(configuredProfile.id);
     const continued = await h.call("resume", { id: custom.id, message: "must not regain tools after reload" });
     assert.deepEqual(continued.tools, []);
     await h.settled(custom.id);
     const workflow = await h.tool("shepherd_workflow", { async: false, task: "fixture workflow", workflowScript: `
       const scan = await runs.run("scan", { agent: "scout", task: "workflow scan" });
-      await state.set("scan", scan.output);
       if (!scan.output.includes("scan")) throw Error("missing scan");
       const pair = await runs.all([{ key: "a", agent: "reviewer", task: scan.output }, { key: "b", agent: "scout", task: "parallel review" }]);
-      return { outputs: pair.map(r => r.output), stored: await state.get("scan") };
+      return { outputs: pair.map(r => r.output), stored: scan.output };
     ` });
     assert.equal(workflow.state, "complete", JSON.stringify(workflow));
     assert.equal(workflow.output.outputs.length, 2);
@@ -965,12 +938,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     assert.equal(scanRun.stepIndex, 1); assert.equal(scanRun.toolCallID, "call");
     assert.equal((await h.call("result", { id: workflow.children.find((k) => k.key === "b").id })).stepIndex, 3);
     assert.match(workflow.output.stored, /workflow scan/);
-    const mission = await h.tool("shepherd_mission", { action: "show", id: workflow.missionId });
-    assert.equal(mission.runs.length, 3); assert.equal(mission.status, "waiting");
-    await h.tool("shepherd_mission", { action: "attachment", id: mission.id, attachment: { title: "proof", uri: "https://example.invalid/proof" } });
-    await h.tool("shepherd_mission", { action: "close", id: mission.id, summary: "verified" });
-    assert.equal((await h.tool("shepherd_mission", { action: "show", id: mission.id })).attachments.length, 1);
-    const steering = await h.tool("shepherd_workflow", { async: false, mission: false, workflowScript: `
+    const steering = await h.tool("shepherd_workflow", { async: false, workflowScript: `
       const writer = runs.run("writer", {agent:"worker",task:"SHELL:sleep 2"});
       await runs.run("evidence", {agent:"scout",task:"steering evidence"});
       const receipt = await runs.steer("writer", "apply steering evidence", {mode:"follow_up"});
@@ -978,16 +946,16 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     ` });
     assert.equal(steering.state, "complete", JSON.stringify(steering));
     assert.match(steering.output.receipt.delivery, /accepted/);
-    const unawaited = await h.tool("shepherd_workflow", { async: false, mission: false, workflowScript: 'runs.run("loose", {agent:"worker",task:"SHELL:sleep 30"}); return 1;' });
+    const unawaited = await h.tool("shepherd_workflow", { async: false, workflowScript: 'runs.run("loose", {agent:"worker",task:"SHELL:sleep 30"}); return 1;' });
     assert.equal(unawaited.state, "failed"); assert.match(unawaited.error, /pending|unfinished/);
     assert(unawaited.children.every((c) => !["running", "queued"].includes(c.state)));
-    const ephemeral = await h.tool("shepherd_workflow", { async: false, mission: false, workflowScript: 'return typeof state;' });
-    assert.equal(ephemeral.output, "undefined"); assert.equal(ephemeral.missionId, undefined);
-    const invalid = await h.tool("shepherd_workflow", { async: false, mission: false, workflowScript: 'return runs.run("bad", {agent:"worker", task:"never", worktree:true});' });
+    const ephemeral = await h.tool("shepherd_workflow", { async: false, workflowScript: 'return typeof state;' });
+    assert.equal(ephemeral.output, "undefined");
+    const invalid = await h.tool("shepherd_workflow", { async: false, workflowScript: 'return runs.run("bad", {agent:"worker", task:"never", worktree:true});' });
     assert.equal(invalid.state, "failed"); assert.match(invalid.error, /Validation/);
-    const scriptFailure = await h.tool("shepherd_workflow", { async: false, mission: false, workflowScript: 'throw Error("intentional");' });
+    const scriptFailure = await h.tool("shepherd_workflow", { async: false, workflowScript: 'throw Error("intentional");' });
     assert.equal(scriptFailure.state, "failed"); assert.match(scriptFailure.error, /intentional/);
-    const slowWorkflow = await h.tool("shepherd_workflow", { mission: false, workflowScript: `return runs.run("slow", {agent:"worker", task:"SHELL:sleep 30"});` });
+    const slowWorkflow = await h.tool("shepherd_workflow", { workflowScript: `return runs.run("slow", {agent:"worker", task:"SHELL:sleep 30"});` });
     await until(() => h.projections.at(-1).children.some((c) => c.label.includes("SHELL:sleep 30") && c.state === "running"));
     const owned = h.projections.at(-1).children.find((c) => c.label.includes("SHELL:sleep 30") && c.state === "running");
     assert.equal(owned.context, "async"); assert.deepEqual(owned.step, { index: 1, total: 1 });
@@ -1001,7 +969,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     assert.equal(stoppedWorkflow.state, "stopped");
     const stoppedChild = await h.call("result", { id: owned.runID });
     assert.equal(stoppedChild.state, "stopped");
-    const siblings = await h.tool("shepherd_workflow", { mission: false, workflowScript: `return await Promise.all([
+    const siblings = await h.tool("shepherd_workflow", { workflowScript: `return await Promise.all([
       runs.run("one", {agent:"worker",task:"SHELL:sleep 30"}), runs.run("two", {agent:"worker",task:"SHELL:sleep 30"})]);` });
     let siblingStatus;
     await until(() => { siblingStatus = h.entries.filter((e) => e.customType === "shepherd-child" && e.data.workflowId === siblings.id); return siblingStatus.length === 2; });
@@ -1022,29 +990,13 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     }
     assert.equal(endedSiblings.state,"failed"); assert.equal(endedSiblings.children.length,2);
     assert(endedSiblings.children.every((c)=>c.state==="stopped"), JSON.stringify(endedSiblings));
-    const interrupted = await h.call("start", { task: "restore interrupted ledger", role: "scout" });
+    const interrupted = await h.call("start", { task: "restore interrupted run", role: "scout" });
     await h.settled(interrupted.id);
     await h.shutdown();
     const statusFile = path.join(path.dirname(interrupted.sessionFile), "status.json");
     const interruptedStatus = JSON.parse(fs.readFileSync(statusFile)); interruptedStatus.state = "running";
     fs.writeFileSync(statusFile, JSON.stringify(interruptedStatus));
     h = await harness(dir, h.entries);
-    const restoredMission = await h.tool("shepherd_mission", { action: "show", id: interrupted.missionId });
-    assert.equal(restoredMission.runs.find((r) => r.id === interrupted.id).state, "stopped");
-    assert.equal(restoredMission.status, "needs_decision");
-    for (const withChild of [false, true]) {
-      const ledger = await h.tool("shepherd_mission", { action: "create", title: withChild ? "last child finished" : "no child yet" });
-      if (withChild) {
-        const completedChild = await h.call("start", { task: "finished before script return", role: "scout", missionId: ledger.id });
-        await h.settled(completedChild.id);
-      }
-      const { missionStore } = await jiti.import(path.join(root, "Extensions/shepherd-missions.ts"));
-      missionStore(path.join(dir, "shepherd-native"), dir).update(ledger.id, (m) => { m.workflow = { id: `workflow-interrupted-${withChild}`, state: "running" }; });
-      h.entries.push({ type: "custom", customType: "shepherd-workflow", data: { owner: "parent-fixture", ownerPID: process.pid, id: `workflow-interrupted-${withChild}`, missionId: ledger.id } });
-      await h.shutdown(); h = await harness(dir, h.entries);
-      const recovered = await h.tool("shepherd_mission", { action: "show", id: ledger.id });
-      assert.equal(recovered.workflow.state, "stopped"); assert.equal(recovered.status, "needs_decision");
-    }
     const last = await h.call("start", { task: "SLOW late completion", role: "scout" });
     const count = h.messages.length; await h.shutdown(); await sleep(900); assert.equal(h.messages.length, count);
     assert.equal((await h.call("result", { id: last.id })).state, "stopped");

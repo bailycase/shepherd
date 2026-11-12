@@ -10,7 +10,6 @@
 			<array>
 				<string>error</string>
 				<string>needsAnswer</string>
-				<string>review</string>
 			</array>
 			<key>UNNotificationExtensionDefaultContentHidden</key>
 			<true/>

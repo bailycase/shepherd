@@ -41,11 +41,6 @@ final class ShepherdViewModel {
     var pullRequestLinks: [AgentID: ThreadPullRequest] = [:]
     /// Why a merged pull request's thread was kept open (`PullRequestLinks.closeNotes`), as pushed.
     var pullRequestCloseNotes: [AgentID: String] = [:]
-    /// The sidebar's "New mission" was pressed; the Missions page opens its start page and clears it.
-    var missionStartRequested = false
-    /// The host whose missions the Missions page shows; nil is This Mac.
-    var missionsHost: UUID?
-    @ObservationIgnored var remoteMissionDrivers: [UUID: RemoteMissionDriver] = [:]
     var selectedSpaceID: SpaceID?
     /// This Mac's spaces whose folder is gone (`checkMissingSpaces`): the sidebar marks them and
     /// no thread starts in them. Live state, never persisted.
@@ -1062,7 +1057,7 @@ final class ShepherdViewModel {
         // A Project's coordinator ID is recorded before its agent is registered, while its page already holds the store: keep it.
         threadStores.prune(live: Set(state.agents.map(\.id)).union(state.projects.compactMap(\.coordinatorAgentID)))
         // The owner's state, not a page's lifetime, says whether a coordinator's pi is held off on purpose: every adoption restates it.
-        for agent in state.projects.compactMap(\.coordinatorAgentID) + state.missions.flatMap({ $0.run?.attempts.compactMap(\.agentID) ?? [] }) {
+        for agent in state.projects.compactMap(\.coordinatorAgentID) {
             guard let store = threadStores.existing(for: agent) else { continue }
             let held = coordinatorHeldOff(agent)
             if store.offline != held { store.offline = held }

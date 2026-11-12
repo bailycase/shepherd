@@ -87,7 +87,6 @@ extension SessionServer {
         try await addAgent(agent, withTab: tab)
         var spawn = AgentSpawn(agent: agent, cwd: AgentLaunch.resolvedCwd(pane.cwd), settings: launch)
         spawn.isAutomation = config.isAutomation
-        spawn.specKit = true
         spawn.mcp = mcp
         guard let info = try await spawnAgent(spawn) else { throw AgentStartFailure(message: "session failed: pane unavailable") }
         if let opening = OpeningPrompt(config.initialPrompt, images: config.initialImages, agentID: id) {

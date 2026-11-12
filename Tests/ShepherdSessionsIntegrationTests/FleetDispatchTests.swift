@@ -371,7 +371,7 @@ struct FleetDispatchTests {
         }
     }
 
-    @Test func aDispatchedThreadAndAMissionWorkerCannotSendWork() async throws {
+    @Test func aDispatchedThreadCannotSendWork() async throws {
         let (a, b, origin) = try await Self.pair()
         defer { a.stop(); b.stop() }
         // A thread sent from A: its pi (here, a panes connection on B) is refused, whatever B's own settings say.
@@ -392,14 +392,7 @@ struct FleetDispatchTests {
             return
         }
 
-        // A mission's worker is refused the same way (the rest of the table is `FleetDispatchScopeTests`).
-        let worker = try await a.parent("Station")
-        let mission = try await a.server.createMission(draft: .init(title: "Retained", goal: "Keep worker ownership"))
-        _ = try await a.server.setMissionRun(id: mission.id, expectedRevision: mission.revision,
-                                             run: MissionRun(model: "test/model", phase: .stopped, attempts: [MissionAttempt(agentID: worker.agent.id, status: .running)]))
-        try worker.hello()
-        guard case .error(_, FleetDispatchCode.fleetScope, _) = try await worker.dispatch(key: "mission") else { Issue.record("a mission worker sent work"); return }
-
+        // The rest of the table (a project worker, a coordinator, a design's agent, an automation run) is `FleetDispatchScopeTests`.
         #expect(a.sent().isEmpty && b.dispatched.count == 1)
     }
 

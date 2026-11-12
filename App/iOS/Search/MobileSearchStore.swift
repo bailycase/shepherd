@@ -371,7 +371,7 @@ final class MobileSearchStore {
             let online = host.phase.isConnected
             let searchable = online && host.supports(RemoteProtocol.agentInspectionCapability)
             let spaces = Dictionary(host.state.spaces.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
-            // A design's agent is no thread: its design is found under Designs. A mission's is its mission's.
+            // A design's agent is no thread: its design is found under Designs.
             let state = host.threadState
             let threads = state.agents.filter { !state.isDesignAgent($0) }
             for agent in threads {

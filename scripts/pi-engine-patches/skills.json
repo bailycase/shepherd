@@ -79,7 +79,7 @@
     {
       "path": "dist/bundle/chunks/chunk-ZKNSXGL5.js",
       "before": "e02bd440900e422cab0848686902be6d777dc2222ebe4803d98b272173bc083c",
-      "after": "62ac71b2c47eb6e04e62e0fec8fd06d5db945226d147b4882c836ecb582ec94b",
+      "after": "43d262cf498ab80c2772058d550a3783266f6c6548936e9e2664cdb52751b7bb",
       "edits": [
         {
           "old": "projectBaseDir=join3(this.cwd,CONFIG_DIR_NAME)",
@@ -232,6 +232,14 @@
         {
           "old": "setThinkingLevel(level,options={}){let availableLevels=",
           "new": "setThinkingLevel(level,options={}){invalidateRecoveryGeneration(this);let availableLevels="
+        },
+        {
+          "old": "import { createRequire as __piCreateRequire } from \"node:module\";",
+          "new": "import { withStreamIdleTimeout } from \"./shepherd-stream-idle.js\";\nimport { createRequire as __piCreateRequire } from \"node:module\";"
+        },
+        {
+          "old": "modelRuntime.streamSimple(model2,context,requestOptions)}",
+          "new": "withStreamIdleTimeout(model2,requestOptions,options3=>modelRuntime.streamSimple(model2,context,options3))}"
         }
       ]
     },
@@ -907,6 +915,33 @@
           "new": "// Shepherd: a space's MCP server signs in for that space alone (SHEPHERD_MCP_SPACE), so two spaces can name the same server and URL with different accounts. Servers in the agent directory's mcp.json stay shared, and a space takes over the unscoped sign-in it used before.\nfunction shepherdMcpSpace(name) {\n    const space = process.env.SHEPHERD_MCP_SPACE;\n    if (!space) return undefined;\n    try {\n        const file = process.getBuiltinModule(\"node:path\").join(getAgentDir(), \"mcp.json\");\n        const servers = JSON.parse(process.getBuiltinModule(\"node:fs\").readFileSync(file, \"utf8\"))?.mcpServers;\n        if (servers && Object.hasOwn(servers, name)) return undefined;\n    } catch { /* No global mcp.json: the server is the space's. */ }\n    return space;\n}\nfunction storeKeys(name,serverUrl){let legacyKey=String(new URL(serverUrl));let space=shepherdMcpSpace(name);if(space)return{key:`${mcpNamespace(name)}@${space}|${legacyKey}`,legacyKey:`${mcpNamespace(name)}|${legacyKey}`};return{key:`${mcpNamespace(name)}|${legacyKey}`,legacyKey}}"
         }
       ]
+    },
+    {
+      "path": "dist/core/sdk.js",
+      "before": "c43e4e1d49ac3ec4b9f48465bf2081bc5980b55f23d44040d02e9046dea45725",
+      "after": "8ea46bccbd04ff9c3223404043d273eaf85bc53219ca69f7033b125dbb15d635",
+      "edits": [
+        {
+          "old": "import { getBranchSelection } from \"./virtual-models.js\";",
+          "new": "import { getBranchSelection } from \"./virtual-models.js\";\nimport { withStreamIdleTimeout } from \"./shepherd-stream-idle.js\";"
+        },
+        {
+          "old": "            return modelRuntime.streamSimple(model, context, requestOptions);",
+          "new": "            return withStreamIdleTimeout(model, requestOptions, (options) => modelRuntime.streamSimple(model, context, options));"
+        }
+      ]
+    },
+    {
+      "path": "dist/core/shepherd-stream-idle.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "af9d2916f8ebdc4b66450d53c8a8c9d9f5877861bba6ba6b9fd526b67705f2aa",
+      "source": "stream-idle.js"
+    },
+    {
+      "path": "dist/bundle/chunks/shepherd-stream-idle.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "af9d2916f8ebdc4b66450d53c8a8c9d9f5877861bba6ba6b9fd526b67705f2aa",
+      "source": "stream-idle.js"
     }
   ]
 }

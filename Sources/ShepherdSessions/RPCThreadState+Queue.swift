@@ -792,8 +792,6 @@ extension RPCThreadState {
         }
         guard let item = items.first(where: { $0.entry.id == id }) else { done(nil); return }
         if let failure = goalCommandFailure(item.promptText) { done(failure); return }
-        // What pi will echo as the user message is the prompt text, not the composer's words.
-        if oneShotSteers[id] != nil { oneShotSteers[id] = item.promptText }
         unboundSteers.append(id)
         steersInFlight += 1
         let commandDone = beginCommandWindow(for: item.promptText)
@@ -872,7 +870,6 @@ extension RPCThreadState {
         let wasRunning: Bool
         var items: [QueueItem]
         let dispatches: [Dispatch]
-        let oneShotSteers: [UUID: String]
 
         init(_ thread: RPCThreadState) {
             generation = thread.generation
@@ -880,7 +877,6 @@ extension RPCThreadState {
             wasRunning = thread.running
             items = thread.items
             dispatches = thread.dispatches
-            oneShotSteers = thread.oneShotSteers
         }
 
         func isCurrent(_ thread: RPCThreadState) -> Bool {
@@ -1028,7 +1024,7 @@ extension RPCThreadState {
         let origin = origin ?? QueueRestoration(self)
         let sameGeneration = origin.generation == generation
         var remaining = steering
-        var back: [QueueItem] = [], dropped: Set<UUID> = []
+        var back: [QueueItem] = []
         // A boundary batch already belongs to pi but still has its original host parts and images.
         // Reclaim those records, not a newly adopted text-only copy.
         for dispatch in origin.dispatches where dispatch.delivery == .steer {
@@ -1040,8 +1036,6 @@ extension RPCThreadState {
         for item in origin.items where item.entry.state == .steering {
             guard let index = remaining.firstIndex(of: item.piText ?? item.promptText) else { continue }
             remaining.remove(at: index)
-            // A one-shot steer pi never read ends with its run: never a new turn of its own.
-            if origin.oneShotSteers[item.entry.id] != nil { dropped.insert(item.entry.id); continue }
             var returned = item
             returned.piText = nil
             back.append(returned)
@@ -1049,19 +1043,7 @@ extension RPCThreadState {
         if sameGeneration {
             // Already-queued records may have been edited while clear_queue was pending.
             // Keep them; insert below also leaves a newer generation's reused IDs alone.
-            items.removeAll { item in dropped.contains(item.entry.id)
-                || (item.entry.state == .steering && back.contains { $0.entry.id == item.entry.id }) }
-        }
-        // pi can answer a steer before its queue_update binds the text, which retires the item early; its text is
-        // still pi's here. A one-shot steer is still not adopted as a message for a later turn.
-        for (id, text) in origin.oneShotSteers where !dropped.contains(id) {
-            guard let index = remaining.firstIndex(of: text) else { continue }
-            remaining.remove(at: index)
-            dropped.insert(id)
-        }
-        if sameGeneration {
-            for id in dropped { oneShotSteers[id] = nil }
-            undeliveredSteers.formUnion(dropped)
+            items.removeAll { item in item.entry.state == .steering && back.contains { $0.entry.id == item.entry.id } }
         }
         let now = Date().timeIntervalSince1970 * 1000
         let adopted = (remaining + followUp).map {
@@ -1074,7 +1056,7 @@ extension RPCThreadState {
         NativeQueueRules.insert(back.filter { !ownedByDispatch.contains($0.entry.id)
             && (sameGeneration || currentIDs.contains($0.entry.id)) } + adopted, atQueuedIndex: 0, into: &items)
         if sameGeneration {
-            let originalIDs = Set(origin.items.map(\.entry.id)).union(origin.oneShotSteers.keys)
+            let originalIDs = Set(origin.items.map(\.entry.id))
             unboundSteers.removeAll { originalIDs.contains($0) }
         }
     }
@@ -1273,12 +1255,7 @@ extension RPCThreadState {
             operationID = dispatch.id
             kept = dispatch.designPayloads
             typed = Self.typedCommand(dispatch.text, expandedTo: text)
-        } else if let steer = oneShotSteers.first(where: { $0.value == text })?.key {
-            // Its item retired before pi's queue_update bound it (pi answered first): it is still this read.
-            origin = .steered
-            operationID = steer
         }
-        if let operationID { oneShotSteers[operationID] = nil }
         let id = liveEntryID(for: message)
         let sentReferences = Self.sentReferences(in: text, kept: kept)
         var value = Self.project(entryID: id, message: message, sentReferences: sentReferences)
