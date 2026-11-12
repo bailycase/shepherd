@@ -536,8 +536,6 @@ final class ShepherdViewModel {
     @ObservationIgnored var madeSubagentDefinitions: SubagentDefinitionsModel?
     /// Sign-ins remote clients drive on this Mac (`RemoteRequest.hostConfig`).
     @ObservationIgnored let remoteSignIns = RemoteSignIns()
-    /// Skills' host picker, until Skills is the fleet's one copy (slice 2b-i): the remote host it shows; nil for this Mac.
-    var settingsHostID: UUID?
     /// The background host's launchd job, when this launch may use it (`BackgroundService.prepare`);
     /// nil has the app supervise its own host, with no Settings line. Set at launch.
     @ObservationIgnored var backgroundService: BackgroundService?
