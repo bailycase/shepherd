@@ -254,7 +254,23 @@ final class NewThreadState {
             snapshot: snapshot, pick: wherePick, repoKey: space.repoKey, repoName: space.name,
             autoDispatch: vm.settings.autoDispatch(pairedMacs: snapshot.peers.count), weight: { vm.settings.fleetWeight(of: $0) },
             batteryCountsHalf: vm.settings.fleetBatteryCountsHalf, snapshotAge: max(0, Date().timeIntervalSince(vm.fleetPage.snapshotAt)),
-            baseBranch: (worktreeBase ?? projectBase(vm)).map(BranchCardGitReader.baseName))
+            baseBranch: workplaceBase(vm), startsInCheckout: !(worktree && offersWorktree(vm)))
+    }
+
+    /// The workplace choice of the form, as the Mac that runs the thread takes it (`FleetThreadStart`). The base a new worktree starts from is
+    /// the one picked, else the project's, else what Settings ▸ Worktrees resolves (without fetching: the Mac that runs it does that).
+    func fleetStart(_ vm: ShepherdViewModel, spaceID: SpaceID, worktree useWorktree: Bool, base picked: String?, branch: NewThreadBranch?) async -> FleetThreadStart {
+        guard useWorktree else { return FleetThreadStart(place: .checkout) }
+        if case .existing(let name)? = branch { return FleetThreadStart(place: .existingBranch, branch: name) }
+        var named: String?
+        if case .named(let name)? = branch { named = name }
+        if let base = picked ?? projectBase(vm) { return FleetThreadStart(place: .newWorktree, base: base, branch: named) }
+        guard let repo = vm.state.spaces.first(where: { $0.id == spaceID })?.path else { return FleetThreadStart(place: .newWorktree, branch: named) }
+        let mode = vm.settings.worktreeBaseMode
+        let resolved = await Task.detached(priority: .userInitiated) {
+            GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: false, projectBase: nil).startPoint
+        }.value
+        return FleetThreadStart(place: .newWorktree, base: resolved, branch: named)
     }
 
     /// A project from the chip's menu.
@@ -265,6 +281,12 @@ final class NewThreadState {
         error = nil
         useProjectDefaults(vm)
         loadDefaults(vm)
+    }
+
+    /// What the line under the picker says the thread starts from: the branch picked, the base picked, else the project's.
+    func workplaceBase(_ vm: ShepherdViewModel) -> String? {
+        if case .existing(let name)? = worktreeBranch { return name }
+        return worktreeBase ?? projectBase(vm)
     }
 
     /// The chosen project's default base (`Space.worktreeBase`), on this Mac or its host.
@@ -485,8 +507,10 @@ final class NewThreadState {
             do {
                 if picker.dispatches, let spaceID = place.space {
                     let named: String? = if case .mac(let id)? = wherePick { id.uuidString } else { nil }
+                    // Where the form would have started it here: a new worktree from a base, a new worktree on a branch, or the checkout.
+                    let start = await fleetStart(vm, spaceID: spaceID, worktree: useWorktree, base: submittedBase, branch: submittedBranch)
                     let user = FleetUserThread(spaceID: spaceID, task: text, host: named, model: chosenModel.isEmpty ? nil : chosenModel,
-                                               thinking: level.rawValue)
+                                               thinking: level.rawValue, start: start)
                     if try await vm.fleet.sendThread(user) != nil {
                         if prompt == submittedPrompt { prompt = "" }
                         return

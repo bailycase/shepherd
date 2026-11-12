@@ -21,8 +21,19 @@ struct FleetDispatchRecordTests {
         record.failureDetail = "newer_build"
         record.activity = "working"
         record.subdir = "apps/web"
+        record.start = FleetThreadStart(place: .existingBranch, base: "origin/main", branch: "feat/orders")
         let decoded = try JSONDecoder().decode(FleetDispatchRecord.self, from: JSONEncoder().encode(record))
         #expect(decoded == record)
+    }
+
+    @Test func aThreadStartDecodesWithDefaultsAndIsWrittenOnlyWhenSet() throws {
+        let plain = Self.record(.running)
+        let written = String(decoding: try JSONEncoder().encode(plain), as: UTF8.self)
+        #expect(plain.start == nil && !written.contains("\"start\""))
+        let start = try JSONDecoder().decode(FleetThreadStart.self, from: Data("{}".utf8))
+        #expect(start == FleetThreadStart(place: .newWorktree), "nothing said is a new worktree from the base")
+        let unknown = try JSONDecoder().decode(FleetThreadStart.self, from: Data(#"{"place":"a-place-from-a-newer-build","base":"origin/main"}"#.utf8))
+        #expect(unknown.place == .newWorktree && unknown.base == "origin/main")
     }
 
     @Test func anOlderOrBareFileDecodesWithDefaults() throws {

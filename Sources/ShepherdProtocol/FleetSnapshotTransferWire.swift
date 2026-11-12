@@ -50,16 +50,25 @@ public struct FleetSnapshotHeader: Codable, Hashable, Sendable {
     /// Files the snapshot covers (the ones under directories named by hash included), for the sending card.
     public var fileCount: Int
     public var bytes: UInt64
-    /// The unpushed commits of the sender's checkout (`git bundle` of `HEAD --not --remotes`), when it has any.
+    /// The unpushed commits of the sender's checkout (`git bundle` of `HEAD --not --remotes`), when it has any; with `repoBundle`, the
+    /// whole repository instead.
     public var bundle: FleetBlobRef?
+    /// `bundle` is the repository itself (`git bundle` of every ref), because the receiver has no checkout and couldn't clone it from
+    /// origin (slice 4f): it clones from the bundle, then builds the worktree as for any snapshot.
+    public var repoBundle: Bool
+    /// The bundle is all there is to send: no manifest, no digest and no edits, because this dispatch carries none (Settings ▸ Fleet ▸
+    /// Uncommitted changes leaves them behind, or a thread started on a base or a branch starts clean). With `repoBundle` it is the whole
+    /// repository, for a Mac with no checkout to clone from; without it, only the commits the Mac lacks, for one that has the repository.
+    /// The receiver gets the commit from it, then makes the worktree at the commit as for a dispatch with no snapshot.
+    public var repoOnly: Bool
 
     public init(commit: String, rootHash: FleetHash, digest: FleetHash, files: Int, directories: Int, deletions: Int, parts: Int,
-                fileCount: Int, bytes: UInt64, bundle: FleetBlobRef? = nil) {
+                fileCount: Int, bytes: UInt64, bundle: FleetBlobRef? = nil, repoBundle: Bool = false, repoOnly: Bool = false) {
         (self.commit, self.rootHash, self.digest, self.files, self.directories, self.deletions, self.parts) = (commit, rootHash, digest, files, directories, deletions, parts)
-        (self.fileCount, self.bytes, self.bundle) = (fileCount, bytes, bundle)
+        (self.fileCount, self.bytes, self.bundle, self.repoBundle, self.repoOnly) = (fileCount, bytes, bundle, repoBundle, repoOnly)
     }
 
-    private enum CodingKeys: String, CodingKey { case commit, rootHash, digest, files, directories, deletions, parts, fileCount, bytes, bundle }
+    private enum CodingKeys: String, CodingKey { case commit, rootHash, digest, files, directories, deletions, parts, fileCount, bytes, bundle, repoBundle, repoOnly }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -73,6 +82,8 @@ public struct FleetSnapshotHeader: Codable, Hashable, Sendable {
         fileCount = try c.decodeIfPresent(Int.self, forKey: .fileCount) ?? 0
         bytes = try c.decodeIfPresent(UInt64.self, forKey: .bytes) ?? 0
         bundle = try c.decodeIfPresent(FleetBlobRef.self, forKey: .bundle)
+        repoBundle = try c.decodeIfPresent(Bool.self, forKey: .repoBundle) ?? false
+        repoOnly = try c.decodeIfPresent(Bool.self, forKey: .repoOnly) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -87,13 +98,16 @@ public struct FleetSnapshotHeader: Codable, Hashable, Sendable {
         try c.encode(fileCount, forKey: .fileCount)
         try c.encode(bytes, forKey: .bytes)
         try c.encodeIfPresent(bundle, forKey: .bundle)
+        if repoBundle { try c.encode(repoBundle, forKey: .repoBundle) }
+        if repoOnly { try c.encode(repoOnly, forKey: .repoOnly) }
     }
 
     /// Whether the numbers are ones a receiver will work with.
     public var isValid: Bool {
         FleetGitBlobID(hex: commit) != nil && files >= 0 && directories >= 0 && deletions >= 0 && parts >= 0 && parts <= FleetSnapshotTransfer.maxEntries
             && files + directories + deletions <= FleetSnapshotTransfer.maxEntries
-            && (bundle.map { $0.size <= FleetSnapshotTransfer.maxBlobBytes } ?? true)
+            && (bundle.map { $0.size <= FleetSnapshotTransfer.maxBlobBytes } ?? true) && (!repoBundle || bundle != nil)
+            && (!repoOnly || (bundle != nil && files == 0 && directories == 0 && deletions == 0 && parts == 0))
     }
 }
 

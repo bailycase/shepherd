@@ -221,6 +221,11 @@ public struct FleetSnapshotPlan: Sendable {
     /// Files the snapshot covers, the ones under directories named by hash included.
     public var fileCount: Int
 
+    /// A snapshot that carries nothing: for a dispatch that sends only the repository (`FleetSnapshotHeader.repoOnly`).
+    public static func empty(commit: String) -> FleetSnapshotPlan {
+        FleetSnapshotPlan(manifest: FleetSnapshotManifest(commit: commit, rootHash: FleetHash(a: 0, b: 0, c: 0, d: 0)), missing: [], sources: [:], bytes: 0, biggest: [], fileCount: 0)
+    }
+
     /// Works out the snapshot of a checkout.
     /// - tracked: the commit's tree. - entries, tree: the checkout's content index.
     /// - target: what the target holds of this repository (the 128 bit prefixes), nil when unknown.

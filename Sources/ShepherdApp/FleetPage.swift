@@ -302,6 +302,18 @@ struct FleetMacCardView: View, Equatable {
                         .shBorder(Color.sh.lineStrong, radius: SH.Radius.xs)
                         .fixedSize()
                 }
+                // A repository this Mac is cloning for work sent to it: a chip in the running colors until it is a space here.
+                ForEach(card.cloning, id: \.self) { repo in
+                    Text("\(repo) · cloning")
+                        .font(.sh(.micro, weight: .regular))
+                        .foregroundStyle(Color.sh.running)
+                        .lineLimit(1)
+                        .padding(.horizontal, SH.Space.xs)
+                        .frame(height: AppLayout.fleetTagHeight)
+                        .background(Color.sh.runningTint, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+                        .fixedSize()
+                        .accessibilityLabel("Cloning \(repo)")
+                }
             }
             Spacer(minLength: 0)
             if card.canRetry {

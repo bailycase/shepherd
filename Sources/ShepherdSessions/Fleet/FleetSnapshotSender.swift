@@ -45,8 +45,9 @@ struct FleetSnapshotSender {
     var warnAbove = FleetSnapshotCap.warnAbove
     var refuseAbove = FleetSnapshotCap.refuseAbove
 
-    /// Works out the snapshot. `unpushed` says the checkout has commits no remote ref holds.
-    func build(id: UUID, unpushed: Bool) throws -> Built {
+    /// Works out the snapshot. `unpushed` says the checkout has commits no remote ref holds; `wholeRepository` says the bundle is the
+    /// repository itself (every ref), for a target that has no checkout and couldn't clone it from origin.
+    func build(id: UUID, unpushed: Bool, wholeRepository: Bool = false) throws -> Built {
         let began = ContinuousClock.now
         var phases: [String] = []
         var git: [String] = []
@@ -108,7 +109,7 @@ struct FleetSnapshotSender {
         mark("tree")
         if let problem = plan.manifest.problem { throw Failure.git("manifest: \(problem)") }
         var bundle: (FleetBlobRef, URL)?
-        if unpushed { bundle = try makeBundle(id: id); git.append("bundle") }
+        if wholeRepository || unpushed { bundle = try makeBundle(id: id, wholeRepository: wholeRepository); git.append("bundle") }
         let total = plan.bytes + (bundle?.0.size ?? 0)
         let verdict = FleetSnapshotCap.verdict(bytes: total, warnAbove: warnAbove, refuseAbove: refuseAbove)
         if verdict == .refuse {
@@ -118,7 +119,7 @@ struct FleetSnapshotSender {
         let header = FleetSnapshotHeader(
             commit: commit, rootHash: plan.manifest.rootHash, digest: plan.manifest.digest, files: plan.manifest.files.count,
             directories: plan.manifest.directories.count, deletions: plan.manifest.deletions.count, parts: parts.count,
-            fileCount: plan.fileCount, bytes: total, bundle: bundle?.0)
+            fileCount: plan.fileCount, bytes: total, bundle: bundle?.0, repoBundle: wholeRepository)
         mark("parts")
         return Built(id: id, plan: plan, header: header, parts: parts, root: root, bundle: bundle, warning: verdict == .warn, phases: phases, git: git)
     }
@@ -165,12 +166,31 @@ struct FleetSnapshotSender {
         return parts
     }
 
-    /// `git bundle` of what no remote ref holds, written under the fleet's own directory.
-    private func makeBundle(id: UUID) throws -> (FleetBlobRef, URL) {
+    /// The repository and nothing else, for a dispatch that carries no edits (Settings ▸ Fleet ▸ Uncommitted changes leaves them behind) to a
+    /// Mac that has no checkout and couldn't clone one: a bundle of every ref, under the cap. It needs no index.
+    static func repositoryOnly(id: UUID, root: String, commit: String, rev: String? = nil, directory: URL, warnAbove: UInt64 = FleetSnapshotCap.warnAbove,
+                               refuseAbove: UInt64 = FleetSnapshotCap.refuseAbove) throws -> Built {
+        let zero = FleetHash(a: 0, b: 0, c: 0, d: 0)
+        // With `rev`: only what no remote ref holds up to it (a Mac that has the repository lacks just that); without: every ref.
+        let bundle = try makeBundle(id: id, root: root, directory: directory, wholeRepository: rev == nil, rev: rev ?? "HEAD")
+        let verdict = FleetSnapshotCap.verdict(bytes: bundle.0.size, warnAbove: warnAbove, refuseAbove: refuseAbove)
+        if verdict == .refuse { throw Failure.tooLarge(bytes: bundle.0.size, biggest: ["the repository's history:\(bundle.0.size)"]) }
+        let header = FleetSnapshotHeader(commit: commit, rootHash: zero, digest: zero, files: 0, directories: 0, deletions: 0, parts: 0, fileCount: 0,
+                                         bytes: bundle.0.size, bundle: bundle.0, repoBundle: rev == nil, repoOnly: true)
+        return Built(id: id, plan: .empty(commit: commit), header: header, parts: [], root: root, bundle: bundle, warning: verdict == .warn, git: ["bundle"])
+    }
+
+    private func makeBundle(id: UUID, wholeRepository: Bool = false) throws -> (FleetBlobRef, URL) {
+        try Self.makeBundle(id: id, root: root, directory: directory, wholeRepository: wholeRepository)
+    }
+
+    /// `git bundle` of what no remote ref holds (or, for `wholeRepository`, of every ref), written under the fleet's own directory.
+    private static func makeBundle(id: UUID, root: String, directory: URL, wholeRepository: Bool, rev: String = "HEAD") throws -> (FleetBlobRef, URL) {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let url = directory.appendingPathComponent("\(id.uuidString.lowercased()).bundle")
         try? FileManager.default.removeItem(at: url)
-        guard let made = FleetDispatchGit.run(["bundle", "create", url.path, "HEAD", "--not", "--remotes"], in: root, timeout: 300), made.status == 0,
+        let arguments = wholeRepository ? ["bundle", "create", url.path, "--all"] : ["bundle", "create", url.path, rev, "--not", "--remotes"]
+        guard let made = FleetDispatchGit.run(arguments, in: root, timeout: wholeRepository ? 3_600 : 300), made.status == 0,
               let hash = FleetSnapshotBlobs.hash(of: url),
               let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.uint64Value else { throw Failure.git("bundle") }
         return (FleetBlobRef(hash: hash, size: size), url)

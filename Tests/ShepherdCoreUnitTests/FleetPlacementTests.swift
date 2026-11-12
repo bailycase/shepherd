@@ -92,11 +92,32 @@ struct FleetPlacementTests {
         #expect(try #require(Self.placed(FleetPlacement.place(host: nil, macs: peers))).0 == Self.mini)
     }
 
-    @Test func aMacWithoutTheRepoOrWithAMissingToolIsNeverCandidate() throws {
-        let macs = [Self.mac(Self.mini, "Mac mini", repo: false), Self.mac(Self.studio, "Mac Studio", problems: ["muse"]),
-                    Self.mac(Self.here, "MacBook Pro", local: true, sample: Self.busy())]
+    @Test func aMacWithAMissingToolIsNeverCandidate() throws {
+        let macs = [Self.mac(Self.studio, "Mac Studio", problems: ["muse"]), Self.mac(Self.here, "MacBook Pro", local: true, sample: Self.busy())]
         #expect(try #require(Self.placed(FleetPlacement.place(host: nil, macs: macs))).0 == Self.here)
-        #expect(FleetPlacement.place(host: nil, macs: [Self.mac(Self.mini, "Mac mini", repo: false)]) == .refuse(code: FleetDispatchCode.repoMissing, detail: nil))
+    }
+
+    @Test func aMacWithoutTheRepoClonesItFirstAndIsChosenOnlyByTheCloneMargin() throws {
+        #expect(FleetPlacement.cloneMargin == FleetRoom.moveMargin, "the cost of a clone is the same clear margin work needs to leave this Mac")
+        // This Mac scores 4.5, the Mac without the repo 9: twice the room, but the clone counts for 1.5x of it, so 6 is not 1.5x of 4.5.
+        let close = [Self.mac(Self.here, "MacBook Pro", local: true, sample: FleetRoomTests.sample(agents: 1)), Self.mac(Self.mini, "Mac mini", repo: false)]
+        let (stayed, why) = try #require(Self.placed(FleetPlacement.place(host: nil, macs: close)))
+        #expect(stayed == Self.here && why == [FleetPlacementReason(.keptLocal, ratio: 2.0)])
+        // This Mac at 2.25: 4x the room, so the clone is worth it, and the reason says it clones.
+        let busy = [Self.mac(Self.here, "MacBook Pro", local: true, sample: FleetRoomTests.sample(agents: 3)), Self.mac(Self.mini, "Mac mini", repo: false)]
+        let (sent, reasons) = try #require(Self.placed(FleetPlacement.place(host: nil, macs: busy)))
+        #expect(sent == Self.mini && reasons == [FleetPlacementReason(.mostRoom, ratio: 4.0), FleetPlacementReason(.willClone)])
+    }
+
+    @Test func autoPrefersAMacThatHasTheRepoOverOneThatWouldCloneItAtTheSameRoom() throws {
+        let macs = [Self.mac(Self.mini, "Mac mini", repo: false), Self.mac(Self.studio, "Mac Studio", repo: true)]
+        let (id, reasons) = try #require(Self.placed(FleetPlacement.place(host: nil, macs: macs)))
+        #expect(id == Self.studio && !reasons.contains(FleetPlacementReason(.willClone)))
+        // Alone, a Mac without the repo is still a place to run it.
+        #expect(Self.placed(FleetPlacement.place(host: nil, macs: [Self.mac(Self.mini, "Mac mini", repo: false)]))?.1
+                == [FleetPlacementReason(.onlyChoice), FleetPlacementReason(.willClone)])
+        // Only a fleet no Mac has said anything about has nowhere to look.
+        #expect(FleetPlacement.place(host: nil, macs: [Self.mac(Self.mini, "Mac mini", repo: nil)]) == .refuse(code: FleetDispatchCode.repoMissing, detail: nil))
     }
 
     @Test func everyMacThatHasTheRepoLackingTheSameToolIsRefusedNotWaited() {
@@ -116,8 +137,9 @@ struct FleetPlacementTests {
         let overloaded = Self.mac(Self.mini, "Mac mini", sample: Self.busy(0.99), weight: .manualOnly)
         let (id, reasons) = try #require(Self.placed(FleetPlacement.place(host: "mac MINI", macs: [overloaded, Self.mac(Self.studio, "Mac Studio")])))
         #expect(id == Self.mini && reasons == [FleetPlacementReason(.named)], "even a busy, Manual only Mac can be named")
+        // A named Mac without the repo is never refused for it and never rerouted: it clones it first.
         #expect(FleetPlacement.place(host: "Mac mini", macs: [Self.mac(Self.mini, "Mac mini", repo: false), Self.mac(Self.studio, "Mac Studio")])
-                == .refuse(code: FleetDispatchCode.repoMissing, detail: "Mac mini"), "never rerouted to the Studio")
+                == .place(hostID: Self.mini, reasons: [FleetPlacementReason(.named), FleetPlacementReason(.willClone)]))
         #expect(FleetPlacement.place(host: "Mac mini", macs: [Self.mac(Self.mini, "Mac mini", problems: ["Xcode"])])
                 == .refuse(code: FleetDispatchCode.hostNotReady, detail: "Xcode"))
         #expect(FleetPlacement.place(host: "Mac mini", macs: [Self.mac(Self.mini, "Mac mini", repo: nil)])
@@ -138,5 +160,17 @@ struct FleetPlacementTests {
 
     @Test func autoIsNothingOrTheWord() {
         #expect(FleetPlacement.isAuto(nil) && FleetPlacement.isAuto("") && FleetPlacement.isAuto(" Auto ") && !FleetPlacement.isAuto("Mac mini"))
+    }
+}
+
+/// A repository with no origin is named by its first commit, the same on every Mac that has a copy.
+@Suite("Local repo keys")
+struct LocalRepoKeyTests {
+    @Test func aFirstCommitNamesTheRepoAndAnythingElseDoesNot() {
+        let key = CanonicalRepoKey.local(rootCommit: "4E1C9A2F0B7D3A55B8C1E94D0A6F2B7733AA1C90\n")
+        #expect(key == "local/4e1c9a2f0b7d" && key.map(CanonicalRepoKey.isLocal) == true)
+        #expect(CanonicalRepoKey.local(rootCommit: "") == nil && CanonicalRepoKey.local(rootCommit: "not a commit") == nil && CanonicalRepoKey.local(rootCommit: "abc") == nil)
+        #expect(!CanonicalRepoKey.isLocal("github.com/acme/web"))
+        #expect(CanonicalRepoKey(remote: "/Users/dev/web") == nil, "a path is no origin another Mac can use")
     }
 }

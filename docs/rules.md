@@ -222,6 +222,14 @@ from origin or from the sender's bundle with the one `refs/fleet/<dispatchID>` r
 the plain spare directory under `<support>/fleet/spares/` (the tracked files at the base tip, built with a
 private `GIT_INDEX_FILE` and `--work-tree`, registering nothing in the repository). A failed dispatch removes
 its worktree, branch and ref; a worktree is never made in, or applied to, the sender's checkout. Nothing else.
+Fleet's clone on demand (`FleetRepoClone.swift`, `FleetDispatchClone.swift`; only with Fleet on, on the Mac that receives
+work for a repository it has no checkout of) creates a new checkout only at a folder that did not exist: it makes the empty
+folder itself (`mkdir`, which fails when the path is there), `~/Developer/<repo>` when `~/Developer` exists and that path
+doesn't, otherwise under `<support>/fleet/repos/`, then runs `git clone` into it (from the origin the sender reported with
+this Mac's own git sign-in and no prompt, or from a bundle the sender made when origin can't be reached) and binds a space to
+it. It never writes into an existing checkout, and a clone that is stopped, fails or is cut off by a restart removes the
+folder it made and registers nothing. Binding a checkout this Mac already has (`FleetRepoFinder`, from places Shepherd
+already knows, never a walk of the disk) only reads it. Nothing else.
 Shepherd may remove or prune worktrees it created.
 
 ## Reviews dock; they don't split

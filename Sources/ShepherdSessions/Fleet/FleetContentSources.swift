@@ -324,6 +324,9 @@ final class FleetSpacesSource: FleetUnitSource {
         var hasThreads: (SpaceID) -> Bool
         /// Applies `change` to the spaces through the server's own state mutation.
         var mutate: (@escaping (inout [Space]) -> Void) throws -> Void
+        /// A checkout this Mac already has of the repository (`FleetRepoFinder`, from what it last saw; memory only): where an unbound space
+        /// binds itself.
+        var locate: (String) -> String? = { _ in nil }
     }
 
     private let host: Host
@@ -343,6 +346,9 @@ final class FleetSpacesSource: FleetUnitSource {
     func bind(_ space: SpaceID, to path: String) {
         if bindings.bind(space, to: path) { written() }
     }
+
+    /// The folders spaces were bound to here: places a checkout may be (`FleetRepoFinder`).
+    var boundPaths: [String] { Array(bindings.paths.values) }
 
     var units: [String] { present }
     func owns(_ unit: String) -> Bool { unit.hasPrefix(Self.kind) }
@@ -426,10 +432,23 @@ final class FleetSpacesSource: FleetUnitSource {
             return
         }
         // Not here yet: it is added once a folder is bound to it, and only if the folder is there.
-        var isDirectory: ObjCBool = false
-        guard let path = bindings.paths[id], FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
+        func bound() -> String? {
+            var isDirectory: ObjCBool = false
+            guard let path = bindings.paths[id], FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
+            return path
+        }
+        var found = bound()
+        // A checkout of the same repository this Mac already has binds itself: no "locate folder" step (slice 4f).
+        if found == nil, let key = fields.repoKey, let path = host.locate(key) {
+            bindings.bind(id, to: path)
+            found = bound()
+        }
+        guard let path = found else {
             throw FleetUnitRefused(description: "\(fields.name) has no folder on this Mac", quiet: true)
         }
+        // A space here already is that folder: it stands for the repository, and a second row for one folder would only confuse.
+        let canonical = PiHome.canonical(path)
+        if host.spaces().contains(where: { !$0.hidden && PiHome.canonical($0.path) == canonical }) { return }
         try host.mutate { spaces in
             guard !spaces.contains(where: { $0.id == id }) else { return }
             spaces.append(Space(id: id, name: fields.name, path: path, sidebarHidden: fields.sidebarHidden, parentID: fields.parentID,

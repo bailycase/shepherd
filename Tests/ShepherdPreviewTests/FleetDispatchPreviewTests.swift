@@ -208,6 +208,13 @@ struct FleetDispatchPreviewTests {
         let vm = workspace.vm
         var space = Space(name: "orders-svc", path: workspace.dir.path)
         space.repoKey = "github.com/acme/orders-svc"
+        // The usual case: a git project with a base of its own, so a thread starts in a new worktree from it.
+        space.worktreeBase = "origin/main"
+        let git = Process()
+        git.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        git.arguments = ["-C", workspace.dir.path, "init", "-q"]
+        try git.run()
+        git.waitUntilExit()
         try await workspace.seed(ShepherdState(spaces: [space]))
         P.seedFleet(workspace)
         var snapshot = P.snapshot

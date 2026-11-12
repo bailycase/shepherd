@@ -27,7 +27,7 @@ public struct FleetSendingCard: Equatable, Sendable, Identifiable {
         guard record.state == .preparing, let bytes = record.snapshotBytes else { return nil }
         let host = record.targetHostName ?? "the other Mac"
         let sent = min(record.snapshotProgress ?? 0, bytes)
-        let repo = record.repoKey.split(separator: "/").last.map(String.init) ?? record.repoKey
+        let repo = FleetDispatchPresentation.repoName(record.repoKey)
         var words = "Sent \(repo)"
         if let sha = record.commitSHA { words += " at \(sha.prefix(7))" }
         if let files = record.snapshotFiles, files > 0 { words += " plus \(files) uncommitted \(files == 1 ? "file" : "files")" }

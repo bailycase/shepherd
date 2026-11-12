@@ -61,4 +61,17 @@ public struct CanonicalRepoKey: Hashable, Sendable, CustomStringConvertible {
     }
 
     public var description: String { value }
+
+    /// A repository with no origin, named by its first commit: `local/<12 hex digits>`. It is the same on every Mac that holds a clone of
+    /// the repository, and it is only ever used to match a dispatch's repository (never stored as a space's `repoKey` by the host's
+    /// own refresh): a thread can send work from a repository that has no remote, whose other Macs are then sent the repository itself.
+    public static let localPrefix = "local/"
+
+    public static func local(rootCommit: String) -> String? {
+        let digits = rootCommit.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard digits.count >= 12, digits.allSatisfy(\.isHexDigit) else { return nil }
+        return localPrefix + digits.prefix(12)
+    }
+
+    public static func isLocal(_ key: String) -> Bool { key.hasPrefix(localPrefix) }
 }
