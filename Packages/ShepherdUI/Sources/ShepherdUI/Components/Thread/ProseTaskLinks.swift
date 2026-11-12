@@ -167,7 +167,7 @@ struct SHTaskChipRenderer: TextRenderer {
 /// separate controls to an assistive client. Pressing hands the reference's URL to the conversation's `openURL`.
 struct SHTaskChipPressTargets: ViewModifier {
     let halfLeading: CGFloat
-    @Environment(\.openURL) private var openURL
+    @Environment(\.shProseLinkRouter) private var router
 
     func body(content: Content) -> some View {
         content.overlayPreferenceValue(Text.LayoutKey.self) { anchored in
@@ -176,7 +176,7 @@ struct SHTaskChipPressTargets: ViewModifier {
                     let origin = proxy[item.origin]
                     ForEach(SHTaskChipBox.boxes(in: item.layout, halfLeading: halfLeading)) { box in
                         let height = max(box.rect.height, SHLeadMetrics.chipPressHeight)
-                        Button { if let url = URL(string: box.url) { openURL(url) } } label: { Color.clear.contentShape(Rectangle()) }
+                        Button { if let url = URL(string: box.url) { router?.open(url) } } label: { Color.clear.contentShape(Rectangle()) }
                             .buttonStyle(.plain)
                             .frame(width: box.rect.width, height: height)
                             .position(x: origin.x + box.rect.midX, y: origin.y + box.rect.midY)

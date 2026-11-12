@@ -155,7 +155,7 @@ struct ProseChunk: View, Equatable {
         let shown = gate.blocks(for: chunk.blocks) { [$landed] in $landed.wrappedValue &+= 1 }
         let writing = writingFence ? Prose.lastCode(shown.blocks) : nil
         SHAgentProse(Prose.proseBlocks(shown.blocks, inline: shown.attributed), maxWidth: maxWidth, writingFence: writingFence) { code, language in
-            HighlightedCodeBlock(code: code, language: language, writing: code == writing)
+            HighlightedCodeBlock(code: code, language: language, writing: code == writing).equatable()
         }
     }
 }
@@ -289,7 +289,7 @@ struct ThinkingRow: View, Equatable {
 /// 250 ms and only up to its last complete line (`CodeHighlightThrottle`): between renders it
 /// keeps its last colors with the new text plain after them, and a render a newer chunk
 /// supersedes is dropped. A finished block is colored once, in full.
-struct HighlightedCodeBlock: View {
+struct HighlightedCodeBlock: View, Equatable {
     let code: String
     let language: String?
     var writing = false
@@ -300,6 +300,11 @@ struct HighlightedCodeBlock: View {
     /// never redraws the block.
     @State private var lastRender = CodeHighlightThrottle.Last()
 
+    /// The state and the throttle are not inputs: a retained block redraws only when its code, language or writing flag changes.
+    nonisolated static func == (lhs: HighlightedCodeBlock, rhs: HighlightedCodeBlock) -> Bool {
+        lhs.code == rhs.code && lhs.language == rhs.language && lhs.writing == rhs.writing
+    }
+
     private var key: CodeHighlightCache.Key { CodeHighlightCache.Key(fence: code, language: language) }
 
     private struct TaskKey: Equatable {
@@ -308,6 +313,7 @@ struct HighlightedCodeBlock: View {
     }
 
     var body: some View {
+        let _ = SHRenderProbe.tick("code.highlighted")
         let key = key
         SHCodeBlock(key.code, language: language,
                     highlighted: CodeHighlightCache.colors(for: key, last: rendered, cached: CodeHighlightCache.cached(key)))
