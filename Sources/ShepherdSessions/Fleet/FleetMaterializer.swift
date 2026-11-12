@@ -57,8 +57,8 @@ final class FleetMaterializer {
     private var sources: [FleetUnitSource] = []
     /// unit → hash of the value this Mac last held there that the store knows about ("-" unset).
     private var observed: [String: String]
-    /// unit → what an asynchronous write will leave, until it lands or `pendingPatience` passes.
-    private var pending: [String: (hash: String, deadline: Date)] = [:]
+    /// unit → an asynchronous write in flight: what it will leave, what was there, and when to stop waiting.
+    private var pending: [String: (hash: String, previous: String, deadline: Date)] = [:]
 
     /// How long a scan waits for an asynchronous write to show.
     static let pendingPatience: TimeInterval = 10
@@ -92,7 +92,17 @@ final class FleetMaterializer {
                 let value = present[unit]
                 let hash = Self.fingerprint(value)
                 if let waiting = pending[unit] {
-                    if waiting.hash == hash || clock() >= waiting.deadline { pending[unit] = nil } else { continue }
+                    if waiting.hash == hash {
+                        pending[unit] = nil
+                    } else if hash == waiting.previous {
+                        // Still the old value: the write hasn't landed. Past the deadline it never will (the app
+                        // refused it): leave the unit as it was, and the next pass writes again.
+                        if clock() >= waiting.deadline { pending[unit] = nil; observed[unit] = hash; changed = true }
+                        continue
+                    } else {
+                        // Neither: a person changed it meanwhile, and that is an edit like any other.
+                        pending[unit] = nil
+                    }
                 }
                 let seen = observed[unit]
                 guard seen != hash else { continue }
@@ -173,7 +183,9 @@ final class FleetMaterializer {
                 } ?? false
                 // Set before writing: the write may call back into a scan.
                 observed[unit] = Self.fingerprint(target)
-                if source.writesAsynchronously { pending[unit] = (Self.fingerprint(target), clock().addingTimeInterval(Self.pendingPatience)) }
+                if source.writesAsynchronously {
+                    pending[unit] = (Self.fingerprint(target), Self.fingerprint(current), clock().addingTimeInterval(Self.pendingPatience))
+                }
                 do {
                     try source.write(unit, target, origin: winner.macName.isEmpty ? "another Mac" : winner.macName)
                     changed = true

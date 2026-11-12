@@ -347,7 +347,7 @@ struct InstructionsHostChip: View {
     let name: String
     let chip: InstructionsChip
     let selected: Bool
-    /// Per host the chip picks the machine to edit; with Same on every host on it only reports.
+    /// A chip that picks a machine, or only reports when nil.
     var select: (() -> Void)?
     @State private var hovering = false
 

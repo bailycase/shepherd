@@ -368,7 +368,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .piSlashCommands: ["Search commands", "Extensions", "Prompt templates", "Skills", "Disabled commands"]
         case .apps: ["Add app", "On this Mac", "Run", "Quick action"]
         case .hooks: ["Add hook", "Sources", "Read hooks from Claude Code", "Read hooks from Codex"]
-        case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
+        case .instructions: ["AGENTS.md", "APPEND_SYSTEM.md", "History"]
         case .skills: ["Installed skills", "Browse skills.sh", "Add from repo",
                        "Skills in the / menu", "Same skills on every host", "Update automatically"]
         case .mcp: ["Servers", "Add server", "Import…", "How the agent uses them", "Same servers on every host",
@@ -427,7 +427,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                      "Run": ["stop", "running", "start", "localhost", "port"]]
         case .hooks: ["Add hook": ["PreToolUse", "PostToolUse", "Stop", "SessionStart", "UserPromptSubmit", "matcher", "command", "hooks.json"],
                       "Read hooks from Claude Code": ["claude", "settings.json", ".claude"], "Read hooks from Codex": ["codex", "config.toml", ".codex"]]
-        case .instructions: ["Same on every host": ["sync", "hosts"], "AGENTS.md": ["system prompt", "how you work", "context"],
+        case .instructions: ["AGENTS.md": ["system prompt", "how you work", "context"],
                              "APPEND_SYSTEM.md": ["system prompt", "override"], "History": ["restore", "undo"]]
         case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills", "from your pi", "copied", ".pi", ".shepherd"],
                        "Browse skills.sh": ["directory", "search", "install"],

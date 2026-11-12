@@ -132,6 +132,16 @@ struct FleetSyncTests {
         #expect(a.server.fleetSyncHistory(Self.agents).isEmpty && b.server.fleetSyncHistory(Self.agents).isEmpty, "nothing was superseded")
     }
 
+    /// The Mac's own Settings page (and any client showing the files) hears of a synced write, as it does of any save.
+    @Test func aSyncedWriteIsAnnouncedLikeAnySave() async throws {
+        let (a, b) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let heard = Locked<[String]>([])
+        b.server.onInstructionsChanged = { snapshot in heard.withValue { $0.append(snapshot.agents) } }
+        try await a.save(.agents, "from the MacBook Pro")
+        try await eventually("B's Settings to hear of it") { heard.current.contains("from the MacBook Pro") }
+    }
+
     @Test func aLargeFileTravelsAsABlobInChunks() async throws {
         let (a, b) = try await Self.pair()
         defer { a.stop(); b.stop() }

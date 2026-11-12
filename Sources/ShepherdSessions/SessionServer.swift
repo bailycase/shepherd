@@ -1317,7 +1317,10 @@ public final class SessionServer: @unchecked Sendable {
                 // What syncs: the root instructions, pi's own preferences, and (once the app reports
                 // them) the host settings. Each is read and written through the code that owns it.
                 instructions.onChange = { [weak self] _ in self?.queue.async { self?.fleet?.syncEngine.localChanged() } }
-                service.syncEngine.add(FleetInstructionsSource(instructions))
+                service.syncEngine.add(FleetInstructionsSource(instructions) { [weak self] in
+                    guard let self else { return }
+                    self.announceInstructions(self.instructions.snapshot())
+                })
                 service.syncEngine.add(FleetPiSettingsSource(settings: pi.files.settings))
                 if let source = fleetHostSettings { service.syncEngine.add(source) }
                 service.listenerChanged(remoteListenPort)

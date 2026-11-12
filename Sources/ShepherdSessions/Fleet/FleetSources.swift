@@ -6,9 +6,14 @@ import ShepherdProtocol
 /// Mac mini") like any other save.
 final class FleetInstructionsSource: FleetUnitSource {
     private let store: InstructionsStore
+    /// Told after a synced copy is written, so Settings and the clients showing the files follow.
+    private let written: () -> Void
     let units = InstructionFile.allCases.map(FleetUnit.instruction)
 
-    init(_ store: InstructionsStore) { self.store = store }
+    init(_ store: InstructionsStore, written: @escaping () -> Void = {}) {
+        self.store = store
+        self.written = written
+    }
 
     private func file(_ unit: String) -> InstructionFile? {
         FleetUnit.name(of: unit).flatMap(InstructionFile.init(rawValue:))
@@ -28,6 +33,7 @@ final class FleetInstructionsSource: FleetUnitSource {
     func write(_ unit: String, _ value: Data?, origin: String) throws {
         guard let file = file(unit) else { return }
         try store.save(file, content: value.map { String(decoding: $0, as: UTF8.self) } ?? "", origin: origin, sync: true)
+        written()
     }
 }
 

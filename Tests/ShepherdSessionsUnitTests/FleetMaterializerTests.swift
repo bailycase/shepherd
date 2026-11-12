@@ -249,4 +249,44 @@ struct FleetMaterializerTests {
         b.source.values[Self.setting] = Data("\"edited again\"".utf8)
         #expect(b.scan().count == 1, "and once it landed, edits count again")
     }
+
+    @Test func aPersonsEditWhileAnAsynchronousWriteIsInFlightIsStillTheirEdit() async throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let a = try Mac(Self.macA, dir: dir, values: [Self.setting: "\"a\""])
+        let b = try Mac(Self.macB, dir: dir, values: [Self.setting: "\"b\""])
+        a.scan()
+        b.source.asynchronous = true
+        b.clock.now = b.clock.now.addingTimeInterval(100)
+        b.scan()
+        a.clock.now = a.clock.now.addingTimeInterval(500)
+        a.source.values[Self.setting] = Data("\"newer\"".utf8)
+        a.scan()
+        a.send(to: b)
+        _ = b.apply()
+        // Before the app applied "newer", the person picked a third value.
+        b.clock.now = b.clock.now.addingTimeInterval(1)
+        b.source.values[Self.setting] = Data("\"mine\"".utf8)
+        let edit = try #require(b.scan().first)
+        #expect(edit.change == .value("\"mine\"") && !edit.seed, "it is not mistaken for the write in flight")
+    }
+
+    @Test func anAsynchronousWriteThatNeverLandsIsGivenUpOnNotRevertedFleetWide() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let a = try Mac(Self.macA, dir: dir, values: [Self.setting: "\"a\""])
+        let b = try Mac(Self.macB, dir: dir, values: [Self.setting: "\"b\""])
+        a.scan()
+        b.source.asynchronous = true
+        b.clock.now = b.clock.now.addingTimeInterval(100)
+        b.scan()
+        a.clock.now = a.clock.now.addingTimeInterval(500)
+        a.source.values[Self.setting] = Data("\"newer\"".utf8)
+        a.scan()
+        a.send(to: b)
+        _ = b.apply()
+        b.clock.now = b.clock.now.addingTimeInterval(FleetMaterializer.pendingPatience + 1)
+        let before = b.store.vector
+        #expect(b.scan().isEmpty && b.store.vector == before, "the app never applied it: the old value is not an edit")
+    }
 }
