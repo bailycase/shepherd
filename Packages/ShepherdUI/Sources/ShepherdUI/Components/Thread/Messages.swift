@@ -187,8 +187,8 @@ public struct SHCodeBlock: View, Equatable {
     @State private var copies = 0
     @FocusState private var copyFocused: Bool
 
-    /// `colors` are those of a fence a reply is writing: the Mac draws it by changing its end (the other
-    /// platforms ignore them), and `highlighted` is for a fence that is done.
+    /// `colors` are those of the first lines of a fence a reply is writing: the Mac draws it by changing
+    /// its end (the other platforms ignore them), and `highlighted` is for a fence that is done.
     public init(_ code: String, language: String?, highlighted: AttributedString? = nil, colors: SHCodeColors? = nil) {
         self.code = code
         self.language = language
