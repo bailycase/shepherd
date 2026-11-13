@@ -120,6 +120,56 @@ extension SidebarLists {
     }
 }
 
+/// When each agent's sparkline may next be published: at most every `interval`, the first sample at once, and a
+/// sample that comes early held until the interval is up so the newest always lands. It keeps no clock: the times
+/// are the events' own (`ShepherdViewModel.recordSidebarActivity`), so a burst of tool finishes draws a row a few
+/// times a second, not once per tool.
+struct ActivityPacing {
+    static let interval: TimeInterval = 0.25
+    /// How long past its deadline a flush waits, so the agents whose deadlines fall a few milliseconds apart publish
+    /// in one pass of the sidebar, not one pass each.
+    static let coalescing: TimeInterval = 0.025
+
+    private var published: [AgentID: Date] = [:]
+    private var held: [AgentID: [Double]] = [:]
+
+    /// The samples to publish now, or nil while they wait for `due`.
+    mutating func record(_ id: AgentID, samples: [Double], at now: Date) -> [Double]? {
+        if let last = published[id], now.timeIntervalSince(last) < Self.interval {
+            held[id] = samples
+            return nil
+        }
+        published[id] = now
+        held[id] = nil
+        return samples
+    }
+
+    /// The held samples whose interval is up at `now`, now published, and when the next held ones are due.
+    mutating func due(at now: Date) -> (publish: [AgentID: [Double]], next: Date?) {
+        var publish: [AgentID: [Double]] = [:]
+        for (id, samples) in held {
+            guard let last = published[id], now.timeIntervalSince(last) >= Self.interval else { continue }
+            publish[id] = samples
+        }
+        for id in publish.keys {
+            held[id] = nil
+            published[id] = now
+        }
+        return (publish, nextDue)
+    }
+
+    /// When the earliest held samples are due, or nil with none held.
+    var nextDue: Date? {
+        held.keys.compactMap { published[$0]?.addingTimeInterval(Self.interval) }.min()
+    }
+
+    /// Starts the agent over: its next sample is its first.
+    mutating func forget(_ id: AgentID) {
+        published[id] = nil
+        held[id] = nil
+    }
+}
+
 @MainActor
 extension ShepherdViewModel {
     var sidebarActivityItems: [SidebarActivityItem] {
@@ -167,12 +217,60 @@ extension ShepherdViewModel {
         }
     }
 
+    /// A tool finished. The rate since the last one joins the agent's tail at once; the box its row reads is
+    /// written when `ActivityPacing` says, so a burst of tools redraws the row a few times a second.
     func recordSidebarActivity(_ id: AgentID, at now: Date = Date()) {
         let previous = sidebarActivityLast[id] ?? statusSince[id]
         sidebarActivityLast[id] = now
         guard let previous, now > previous else { return }
-        let live = agentLive(id)
-        live.samples = Array((live.samples + [1 / now.timeIntervalSince(previous)]).suffix(10))
+        let tail = Array((sidebarActivityTail[id, default: []] + [1 / now.timeIntervalSince(previous)]).suffix(10))
+        sidebarActivityTail[id] = tail
+        if let samples = sidebarActivityPacing.record(id, samples: tail, at: now) {
+            agentLive(id).samples = samples
+        } else {
+            armSidebarActivityFlush(after: now)
+        }
+    }
+
+    /// One short-lived wait for the earliest held samples, on the events' own clock: it sleeps what is left of
+    /// their interval and a little more (`ActivityPacing.coalescing`), then publishes every sample due by then.
+    private func armSidebarActivityFlush(after now: Date) {
+        guard let next = sidebarActivityPacing.nextDue else { return }
+        let at = next.addingTimeInterval(ActivityPacing.coalescing)
+        if let armed = sidebarActivityFlush, armed.due <= at { return }
+        sidebarActivityFlush?.task.cancel()
+        let wait = min(max(at.timeIntervalSince(now), 0), ActivityPacing.interval + ActivityPacing.coalescing)
+        let task = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(wait))
+            guard !Task.isCancelled else { return }
+            self?.flushSidebarActivity(at: at)
+        }
+        sidebarActivityFlush = (task, at)
+    }
+
+    func flushSidebarActivity(at now: Date) {
+        sidebarActivityFlush?.task.cancel()
+        sidebarActivityFlush = nil
+        let due = sidebarActivityPacing.due(at: now)
+        for (id, samples) in due.publish { agentLives[id]?.samples = samples }
+        if due.next != nil { armSidebarActivityFlush(after: now) }
+    }
+
+    /// A turn starting begins the sparkline again: no samples, and none held to land after it.
+    func resetSidebarActivity(_ id: AgentID) {
+        agentLives[id]?.samples = []
+        sidebarActivityLast[id] = Date()
+        forgetSidebarActivity(id)
+    }
+
+    /// Drops the agent's tail and its pacing; the wait ends when nothing is left to publish.
+    func forgetSidebarActivity(_ id: AgentID) {
+        sidebarActivityTail[id] = nil
+        sidebarActivityPacing.forget(id)
+        if sidebarActivityPacing.nextDue == nil {
+            sidebarActivityFlush?.task.cancel()
+            sidebarActivityFlush = nil
+        }
     }
 
     /// Leaving for a page does not clear Done. Only opening another thread marks the current

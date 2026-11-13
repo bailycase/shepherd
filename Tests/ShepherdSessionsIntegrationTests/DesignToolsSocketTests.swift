@@ -77,6 +77,30 @@ struct DesignToolsSocketTests {
         #expect(rendered.current == ["A.dc.html"])
     }
 
+    @Test func aBatchOfTwoHundredBoardsAnswersWithItsRevisionBeforeTheExtensionGivesUp() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let (design, drawer, _) = try await workspace(h)
+        let paths = (0..<200).map { "Screen\($0).dc.html" }
+        _ = try await h.server.writeDesignBoards(design, sources: Dictionary(uniqueKeysWithValues: paths.map { (try! DesignPath.validate($0), T.chips()) }))
+        // A renderer as slow as a real one: the lint of every board would take far longer than the reply may.
+        h.server.onDesignRender = { _, respond in
+            DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
+                respond(.success(.init(image: BrowserImage(data: "iVBORw0KGgo=", mimeType: "image/png"), text: "rendered", diagnostics: [])))
+            }
+        }
+        let agent = try ExtensionClient(path: h.socketPath)
+        let started = Date()
+        try agent.send(.designEditBoards(id: 1, agentID: drawer, designID: design, request: DesignBatchEditRequest(
+            boards: paths.map { .init(path: $0) }, edits: [DesignBoardEdit(find: "Pay now", replace: "Buy now", all: true)])))
+        guard case .designBatchEdited(1, let batch) = try await agent.reply(timeout: .seconds(90)) else { Issue.record("no batch result"); return }
+        // The extension's BATCH_TIMEOUT_MS is 60 s: the reply, with the revision it wrote, comes well inside it.
+        #expect(Date().timeIntervalSince(started) < 40)
+        #expect(batch.boards.count == 200 && batch.boards.allSatisfy { $0.status == .edited })
+        let current = try await h.server.designSnapshot(design).revision
+        #expect(batch.result.changed && batch.result.revision == current)
+    }
+
     @Test func theWriteToolsTakeATokensModeAndAnswerWithAReport() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

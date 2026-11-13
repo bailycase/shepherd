@@ -48,6 +48,7 @@ final class ThreadTailPin {
     func reading(distance: Double, wants: Bool, resized: Bool, land: @escaping Land) {
         self.land = land
         lastSeen = ContinuousClock.now
+        guard !repin.held else { return }
         self.resized = self.resized || resized
         repin.reading(distance: distance, wants: wants, resized: resized)
         let stalled = repin.stalled
@@ -94,10 +95,27 @@ final class ThreadTailPin {
         forget(refillingPass: true)
     }
 
+    /// The tail guard starts or ends a walk of the scroll view (`NativeTailRepin.hold`): its landings are dropped, so the pin
+    /// neither lands nor counts meanwhile.
+    func standAside(_ aside: Bool) {
+        if aside {
+            repin.hold()
+            turn?.cancel()
+            quiet?.cancel()
+            turn = nil
+            quiet = nil
+            resized = false
+        } else {
+            repin.release()
+            watch()
+        }
+    }
+
     /// The transcript left the screen: nothing lands through a proxy that may outlive it. Its landings
     /// in passes stay spent: whatever hides and shows the view again is not a new thread.
     func stop() {
         forget(refillingPass: false)
+        repin.release()
         repin.reader(scrolling: false, touching: false)
         land = nil
         scrolling = false

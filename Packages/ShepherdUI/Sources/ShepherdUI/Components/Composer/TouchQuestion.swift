@@ -149,7 +149,7 @@ private struct SHQuestionCardToggle: View {
     var body: some View {
         let label = hidden ? "Show the question" : "Hide the question"
         Button(action: action) {
-            Image(systemName: hidden ? "chevron.up" : "chevron.down")
+            SHTurningChevron(isOpen: !hidden, closed: .up, open: .down)
                 .font(.system(size: SHTouchQuestionMetrics.hideGlyph, weight: .medium))
         }
         .buttonStyle(.shIcon(size: SHTouchQuestionMetrics.hideButton))

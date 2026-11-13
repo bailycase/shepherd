@@ -175,6 +175,7 @@ public struct SHCodeBlock: View, Equatable {
     let code: String
     let language: String?
     let highlighted: AttributedString?
+    let colors: SHCodeColors?
     #if os(macOS)
     @State private var nativeCode = SHNativeCodeText.Cache()
     @State private var availableCodeWidth: CGFloat?
@@ -186,14 +187,17 @@ public struct SHCodeBlock: View, Equatable {
     @State private var copies = 0
     @FocusState private var copyFocused: Bool
 
-    public init(_ code: String, language: String?, highlighted: AttributedString? = nil) {
+    /// `colors` are those of the first lines of a fence a reply is writing: the Mac draws it by changing
+    /// its end (the other platforms ignore them), and `highlighted` is for a fence that is done.
+    public init(_ code: String, language: String?, highlighted: AttributedString? = nil, colors: SHCodeColors? = nil) {
         self.code = code
         self.language = language
         self.highlighted = highlighted
+        self.colors = colors
     }
 
     nonisolated public static func == (lhs: SHCodeBlock, rhs: SHCodeBlock) -> Bool {
-        lhs.code == rhs.code && lhs.language == rhs.language && lhs.highlighted == rhs.highlighted
+        lhs.code == rhs.code && lhs.language == rhs.language && lhs.highlighted == rhs.highlighted && lhs.colors == rhs.colors
     }
 
     public var body: some View {
@@ -264,7 +268,7 @@ public struct SHCodeBlock: View, Equatable {
     private var codeText: some View {
         Group {
             #if os(macOS)
-            SHNativeCodeText(code: code, highlighted: highlighted, scale: ThemeStore.shared.textScale,
+            SHNativeCodeText(code: code, highlighted: highlighted, colors: colors, scale: ThemeStore.shared.textScale,
                              lineSpacing: SHTextStyle.code.lineSpacing + 0.6, cache: nativeCode)
             #else
             if let highlighted { Text(highlighted) } else { Text(code) }
@@ -319,17 +323,22 @@ struct SHFenceKind: Equatable {
 }
 
 /// A copy button's glyph (code blocks, the turn footer): `doc.on.doc`, turning into a check
-/// for a moment after each copy, replacing the symbol and popping.
+/// for a moment after each copy, fading in as the other fades out and popping. The check is a
+/// new image, not a renamed symbol: renaming one while animating draws it through RenderBox,
+/// which loads about 258 MB of accelerated drawing pool each time.
 struct SHCopyGlyph: View {
     let copied: Bool
     /// Copies so far: each one pops.
     let copies: Int
 
     var body: some View {
-        Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 12))
-            .shContentTransition(.symbol)
-            .shAnimation(.content, value: copied)
-            .shPop(trigger: copies)
+        ZStack {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 12))
+                .id(copied)
+                .shTransition(.content)
+        }
+        .shAnimation(.content, value: copied)
+        .shPop(trigger: copies)
     }
 }
 

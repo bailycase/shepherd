@@ -320,7 +320,7 @@ public struct SHTurnError: View {
             } label: {
                 HStack(spacing: 5) {
                     Text("Details").font(.shSans(SHTurnErrorMetrics.detailsSize)).foregroundStyle(Color.sh.textSecondary)
-                    Image(systemName: detailsOpen ? "chevron.down" : "chevron.right")
+                    SHTurningChevron(isOpen: detailsOpen)
                         .font(.system(size: SHThreadMetrics.chevron - 1, weight: .semibold))
                         .foregroundStyle(Color.sh.textTertiary)
                         .frame(width: SHThreadMetrics.chevron)

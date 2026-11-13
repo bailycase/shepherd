@@ -80,6 +80,10 @@ final class ShepherdViewModel {
         return live
     }
     @ObservationIgnored var sidebarActivityLast: [AgentID: Date] = [:]
+    /// The rates behind each sparkline, current to the last tool, and when its box may be written next.
+    @ObservationIgnored var sidebarActivityTail: [AgentID: [Double]] = [:]
+    @ObservationIgnored var sidebarActivityPacing = ActivityPacing()
+    @ObservationIgnored var sidebarActivityFlush: (task: Task<Void, Never>, due: Date)?
     var sidebarSeenCompletions: [SidebarRowID: Int] = [:]
     /// Last opened thread, even while a destination covers it.
     @ObservationIgnored var sidebarReadingThread: SidebarRowID?
@@ -1209,10 +1213,7 @@ final class ShepherdViewModel {
         if status != .idle, sidebarOpeningTurns.contains(id) { sidebarOpeningTurns.remove(id) }
         statusSince[id] = Date()
         agentLive(id).report(status)
-        if old != .blocked, status == .working {
-            agentLives[id]?.samples = []
-            sidebarActivityLast[id] = Date()
-        }
+        if old != .blocked, status == .working { resetSidebarActivity(id) }
         // A turn ending reads the branch card again (commits, a push, the PR's checks).
         if old == .working, status != .working { branchCardStores[id]?.requestRefresh() }
         // A session (re)start reports idle; the server still remembers the failure until a turn starts, so the row keeps reading failed.

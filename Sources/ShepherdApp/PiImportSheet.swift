@@ -341,7 +341,7 @@ struct PiImportSheet: View {
                             .foregroundStyle(Color.sh.lanternText).accessibilityHidden(true)
                         Text(PiImportSheetState.problemsTitle(problems: state.report.problems.count, skipped: state.report.skipped.count))
                             .font(.shSans(SHPiSignInMetrics.smallPrintSize)).foregroundStyle(Color.sh.textSecondary)
-                        Image(systemName: showsProblems ? "chevron.down" : "chevron.right")
+                        SHTurningChevron(isOpen: showsProblems)
                             .font(.shSans(SHPiSignInMetrics.smallPrintSize, .semibold)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
                     }
                     .contentShape(Rectangle())

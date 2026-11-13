@@ -145,7 +145,7 @@ public struct MCPServerRow: View, Equatable {
                 .foregroundStyle(model.tools == nil ? sh.textTertiary : sh.textSecondary)
                 .frame(width: M.toolsColumn, alignment: .trailing)
                 .opacity(model.enabled ? 1 : SHMCPMetrics.offOpacity)
-            Image(systemName: open ? "chevron.down" : "chevron.right")
+            SHTurningChevron(isOpen: open)
                 .font(.shSans(M.cellSize - 1, .semibold))
                 .foregroundStyle(sh.textTertiary)
                 .frame(width: M.chevronColumn)
