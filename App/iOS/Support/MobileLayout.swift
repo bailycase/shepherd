@@ -48,3 +48,13 @@ enum MobileLayout {
     /// A card's corner (the boards' 12pt).
     static let cardRadius: CGFloat = SH.Radius.l
 }
+
+// MARK: Pairing (Add a Mac)
+
+extension MobileLayout {
+    /// A box of the pairing code: the display size in mono, a touch target tall.
+    static let pairDigitWidth: CGFloat = 44
+    static let pairDigitHeight: CGFloat = 56
+    /// The gap between the code's two groups of three.
+    static let pairDigitGroupGap: CGFloat = SH.Space.l
+}

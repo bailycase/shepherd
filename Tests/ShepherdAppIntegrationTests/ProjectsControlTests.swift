@@ -39,7 +39,7 @@ struct ProjectsControlTests {
                                    themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
                                    remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in })
         try await connectAsHost(vm, to: scratch)
-        #expect(vm.hooks.catalog?.home == TestProcess.hooksHome.path, "a default view model's hooks never read this machine's home")
+        #expect(vm.hooks.catalog.home == TestProcess.hooksHome.path, "a default view model's hooks never read this machine's home")
         var openedFile: String?
         vm.madeProjects = ProjectsModel { _, request in
             if case .open(_, let file) = request { openedFile = file; return .opened }
@@ -199,11 +199,6 @@ struct ProjectsControlTests {
         try await eventuallyOnMain("the project list") { model.selected == nil }
         #expect(try String(contentsOf: root.appendingPathComponent("AGENTS.md"), encoding: .utf8) == "# Changed instructions\n")
         window.layout()
-        let host = try ControlPress.press("This Mac", role: ControlRole.radioButton, under: window.host)
-        #expect(ControlPress.undersized([host], minimum: .desktop).isEmpty)
-        #expect(model.host == "local")
-        try ControlPress.press("All hosts", role: ControlRole.radioButton, under: window.host)
-        #expect(model.host == "all")
         let filterNodes = AccessibilityNode.all(under: window.host)
         let filterNode = filterNodes.first { $0.label == "Filter spaces" && $0.role == "AXTextField" }
         let filter = try #require(filterNode)

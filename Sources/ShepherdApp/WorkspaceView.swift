@@ -132,10 +132,12 @@ struct AgentLayoutModel: Equatable {
         /// writes every thread in it, and the count changing must rerun no layout. The card on
         /// screen is asked to read again instead (`ShepherdViewModel.adopt`).
         var branch: String? = nil
+        /// What it draws of dispatches: where it came from, and the cards of what it sent (`ShepherdViewModel.fleetSurface`).
+        var fleet: FleetThreadSurface? = nil
 
         static func == (a: Thread, b: Thread) -> Bool {
             a.agentID == b.agentID && a.paneID == b.paneID && a.agentName == b.agentName && a.piSessionID == b.piSessionID
-                && a.live === b.live && a.authNotice == b.authNotice && a.branch == b.branch
+                && a.live === b.live && a.authNotice == b.authNotice && a.branch == b.branch && a.fleet == b.fleet
         }
     }
 
@@ -188,8 +190,10 @@ struct AgentLayoutModel: Equatable {
         private let notSignedIn: [AgentID: NotSignedIn]
         private let yourLogins: Set<String>
         private let defaultModel: String?
+        private let fleet: (Agent) -> FleetThreadSurface?
 
         init(vm: ShepherdViewModel, visibleTabID: TabID?) {
+            fleet = { [vm] in vm.fleetSurface(for: $0) }
             self.vm = vm
             terminals = vm.terminalPanels
             // The workspace's structure, not its state: a status report reruns no layout (an agent's live fields read idle here).
@@ -222,7 +226,8 @@ struct AgentLayoutModel: Equatable {
                 tab.layout.leaves.first { primaryAgent(in: tab, pane: $0, agents: [agent]) != nil }
                     .map { Thread(agentID: agent.id, paneID: $0.id, agentName: agent.name, piSessionID: agent.effectivePiSessionID,
                                   live: vm.agentLive(agent.id), authNotice: notice(agent),
-                                  branch: agent.designID == nil ? AgentBranchLabel(agent: agent)?.branch : nil) }
+                                  branch: agent.designID == nil ? AgentBranchLabel(agent: agent)?.branch : nil,
+                                  fleet: agent.designID == nil ? fleet(agent) : nil) }
             }
             let owner = thread.map { SidePaneOwner.local($0.agentID) }
             let terminal = terminals.panel(TerminalPanelKey(host: nil, tab: tab.id))
@@ -512,7 +517,7 @@ struct PaneTreeView: View {
             agentName: thread?.agentName ?? "",
             piSessionID: thread?.piSessionID,
             authNotice: thread?.authNotice,
-            branch: thread?.branch,
+            branch: thread?.branch, fleet: thread?.fleet,
             inspectingRunID: thread == nil ? nil : model.inspectingRunID,
             threadAgentID: thread == nil ? model.thread?.agentID : nil
         )
@@ -535,6 +540,8 @@ struct PaneLeafModel: Equatable {
     var authNotice: ThreadAuthNotice? = nil
     /// The branch the card names (`AgentLayoutModel.Thread.branch`).
     var branch: String? = nil
+    /// Dispatches the thread draws (`AgentLayoutModel.Thread.fleet`).
+    var fleet: FleetThreadSurface? = nil
     /// The subagent the right pane inspects (`AgentLayoutView`): the thread yields keyboard focus.
     let inspectingRunID: String?
     /// For a terminal pane, the agent whose thread its selection can be added to.
@@ -589,6 +596,8 @@ struct PaneLeafView: View, Equatable {
                 )
                 // Design references reach an ordinary thread only.
                 .environment(\.designReferences, vm.designReferenceChips(for: agentID))
+                // Dispatches: what this thread sent, or where it came from (nil outside Fleet).
+                .environment(\.fleetThread, model.fleet)
                 // A login that no longer works: the error card's Sign in again opens the provider's sign-in.
                 .environment(\.turnErrorSignIn, { [vm] in vm.openSignIn(vm.provider(of: agentID), origin: .agentCard) })
                 // The branch card's column at the thread's right; the transcript keeps its identity.
@@ -657,6 +666,8 @@ struct RemoteLayoutModel: Equatable {
         let agentName: String
         /// The thread's folder on the host: the hook glyph counts that host's hooks there.
         let cwd: String
+        /// What it draws of where it came from, when another Mac's thread or the person sent it (`ShepherdViewModel.fleetSurface`).
+        var fleet: FleetThreadSurface? = nil
     }
 
     let ref: RemoteAgentRef
@@ -693,6 +704,8 @@ struct RemoteLayoutModel: Equatable {
     var supportsChanges = false
     /// References to the host's designs, by identity; nil where the host or the thread has none.
     let designReferences: DesignReferenceChips?
+    /// A dispatched thread whose Mac stopped answering: the thread stays, dimmed, under this banner (FleetRemote's `offline`).
+    var offline: FleetOfflineBanner?
 
     static func == (a: RemoteLayoutModel, b: RemoteLayoutModel) -> Bool {
         let same = a.ref == b.ref && a.connection === b.connection && a.hostName == b.hostName && a.isVisible == b.isVisible
@@ -702,6 +715,7 @@ struct RemoteLayoutModel: Equatable {
         let panel = a.terminal == b.terminal && a.terminalHeight == b.terminalHeight && a.foldedState == b.foldedState
             && a.terminalStart == b.terminalStart
         return same && side && panel && a.supportsChanges == b.supportsChanges && a.designReferences === b.designReferences
+            && a.offline == b.offline
     }
 }
 
@@ -758,6 +772,8 @@ extension RemoteLayoutModel {
         var panel: (TabID) -> TerminalPanels.Panel = { _ in TerminalPanels.Panel() }
         var terminalHeight: CGFloat = AppLayout.terminalPanelHeight
         var designReferences: DesignReferenceChips?
+        /// A dispatched thread's own surface (`FleetThreadSurface`).
+        var fleet: FleetThreadSurface?
     }
 
     /// What the pane of `ref` draws. A hidden layout keeps its place whatever its host does: the
@@ -766,7 +782,13 @@ extension RemoteLayoutModel {
     static func presentation(ref: RemoteAgentRef, host: Host, screen: Screen) -> RemotePresentation {
         let phase = host.phase.kind
         let visible = screen.isVisible
-        if visible {
+        // A thread another Mac's thread sent keeps its place while that Mac is away, dimmed under a banner; the host's other threads
+        // give way to the reconnecting banner or a placeholder.
+        let dispatchedAway: Bool = {
+            guard host.phase != .connected, host.lastSeen != nil else { return false }
+            return host.state.agents.first { $0.id == ref.agentID }?.dispatchedFrom != nil
+        }()
+        if visible, !dispatchedAway {
             if HostAway.reconnecting(host.phase, lastSeen: host.lastSeen), let lastSeen = host.lastSeen {
                 return .away(host: host.name, hostID: host.connection.id, lastSeen: lastSeen, phase: phase)
             }
@@ -788,7 +810,8 @@ extension RemoteLayoutModel {
         let own = host.state.agents.filter { $0.tabID == tab.id }
         let thread = tab.layout.leaves.lazy.compactMap { leaf in
             primaryAgent(in: tab, pane: leaf, agents: own).map {
-                Thread(paneID: leaf.id, agentName: $0.name, cwd: leaf.cwd)
+                Thread(paneID: leaf.id, agentName: $0.name, cwd: leaf.cwd,
+                       fleet: screen.fleet.map { var fleet = $0; fleet.offline = dispatchedAway; return fleet })
             }
         }.first
         let panel = screen.panel(tab.id)
@@ -806,7 +829,8 @@ extension RemoteLayoutModel {
             terminal: panel, terminalHeight: screen.terminalHeight,
             foldedState: visible && panel.shown && panel.maximized ? AgentState(agent.status) : nil,
             terminalStart: visible && !screen.settingsShown && host.phase == .connected ? host.terminalTransport : nil,
-            supportsChanges: host.supportsChanges, designReferences: screen.designReferences))
+            supportsChanges: host.supportsChanges, designReferences: screen.designReferences,
+            offline: dispatchedAway ? host.lastSeen.map { FleetOfflineBanner(host: host.name, lastSeen: $0.timeIntervalSince1970 * 1000) } : nil))
     }
 
     /// Gathers the view model's values once per body, and resolves a pane's presentation from them.
@@ -863,7 +887,8 @@ extension RemoteLayoutModel {
                 inspectingRunID: panes.remoteRuns[ref], sideTab: sideTab, sideNews: panes.news[owner] ?? [],
                 sideMaximized: panes.maximized.contains(owner), review: reviews[ref],
                 panel: { terminals.panel(TerminalPanelKey(host: ref.hostID, tab: $0)) }, terminalHeight: terminals.height,
-                designReferences: vm.remoteDesignReferenceChips(for: ref))
+                designReferences: vm.remoteDesignReferenceChips(for: ref),
+                fleet: connection.state.agents.first { $0.id == ref.agentID }.flatMap { vm.fleetSurface(for: $0, onRemote: connection.config.name) })
             return RemoteLayoutModel.presentation(ref: ref, host: host, screen: screen)
         }
     }
@@ -941,10 +966,14 @@ private struct RemoteAgentLayoutView: View, Equatable {
         let owner = SidePaneOwner.remote(ref)
         let inspecting = model.inspectingRunID
         let sideTab = model.sideTab
-        RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || sideTab != nil,
-                       maximized: inspecting == nil && model.sideMaximized) {
-            RemotePaneTreeView(vm: vm, model: model)
-        } pane: {
+        VStack(spacing: 0) {
+            if let offline = model.offline {
+                FleetOfflineBannerView(banner: offline) { [vm, ref] in vm.remoteHosts.reconnect(id: ref.hostID) }
+            }
+            RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || sideTab != nil,
+                           maximized: inspecting == nil && model.sideMaximized) {
+                RemotePaneTreeView(vm: vm, model: model)
+            } pane: {
             if let thread = model.thread {
                 let store = vm.remoteThreadStores.store(for: ref)
                 RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) } ?? .tab(sideTab ?? .changes, (sideTab ?? .changes) == .changes ? model.review?.id : nil)) {
@@ -964,6 +993,7 @@ private struct RemoteAgentLayoutView: View, Equatable {
                     }
                 }
                 .simultaneousGesture(TapGesture().onEnded { [vm] in vm.remoteFocusedPaneID = thread.paneID })
+            }
             }
         }
     }
@@ -1101,7 +1131,7 @@ private struct RemotePaneLeafView: View {
                                       isFocused: shown && model.focusedPaneID == leaf.id,
                                       active: model.isVisible && shown, cwd: thread.cwd,
                                       inspectingRunID: model.inspectingRunID, supportsChanges: model.supportsChanges,
-                                      designReferences: model.designReferences)
+                                      designReferences: model.designReferences, fleet: thread.fleet)
             } else if let target = reviewTarget {
                 if let review {
                     ReviewPane(session: review, actions: vm.reviewActions(for: review, remote: true), chrome: .header)
@@ -1160,6 +1190,8 @@ struct RemoteAgentThreadPane: View {
     var supportsChanges = false
     /// References to the host's designs, where it takes them; nil for a design's own chat.
     var designReferences: DesignReferenceChips? = nil
+    /// Where the thread came from, when it was sent (`FleetThreadSurface`).
+    var fleet: FleetThreadSurface? = nil
 
     var body: some View {
         ThreadView(
@@ -1195,8 +1227,9 @@ struct RemoteAgentThreadPane: View {
         )
         // References to the host's own designs, where it takes them.
         .environment(\.designReferences, designReferences)
+        .environment(\.fleetThread, fleet)
         // Its hook rows, proposals and glyph open and count the host's hooks.
-        .environment(\.hookPresenter, HookPresenter(model: vm, host: ref.hostID))
+        .environment(\.hookPresenter, HookPresenter(model: vm))
     }
 }
 

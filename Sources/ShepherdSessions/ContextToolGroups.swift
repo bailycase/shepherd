@@ -9,7 +9,7 @@ import Foundation
 /// such as a tool one of the user's extensions registers, is "other tools".
 enum ContextToolGroups {
     static let labels: [String: String] = [
-        "pi": "pi tools", "terminal": "terminal tools", "agent": "agent tools", "automation": "automation tools",
+        "pi": "pi tools", "terminal": "terminal tools", "agent": "agent tools", "fleet": "fleet tools", "automation": "automation tools",
         "review": "review tool", "subagents": "subagent tools", "browser": "browser tools", "mcp": "MCP", "design": "design tools",
         "instructions": "instruction suggestions", "other": "other tools",
     ]
@@ -27,6 +27,7 @@ enum ContextToolGroups {
         if piTools.contains(name) { return "pi" }
         if name.hasPrefix("terminal_") || name.hasPrefix("app_") { return "terminal" }
         if name.hasPrefix("agent_") || name == "goal_finish" { return "agent" }
+        if name.hasPrefix("fleet_") { return "fleet" }
         if name.hasPrefix("automation_") || name == "notify" { return "automation" }
         if name == "review_diff" { return "review" }
         if name.hasPrefix("shepherd_child_") || name == "shepherd_workflow" || name == "shepherd_parent_message" { return "subagents" }

@@ -30,10 +30,19 @@ final class RemoteHostStore {
         /// The background host on this Mac (`host.sock`), in place of `host` and `port`. Never
         /// persisted: each launch finds it again.
         var localSocket: String?
+        /// This Mac's host holds this one as a fleet peer (`FleetService`): its address and
+        /// token are the fleet's now, not hand editable. The app keeps this direct connection for
+        /// drawing the Mac's threads; `bindingID` stays, so Project executor references survive.
+        var fleetManaged: Bool
+        /// `token` is this app's own (a fleet device token its host gave it), not the Mac's shared one,
+        /// which a Mac can stop accepting.
+        var ownToken: Bool
 
         init(id: UUID = UUID(), name: String, host: String, port: UInt16, token: String,
-             bindingID: UUID = UUID(), localSocket: String? = nil) {
+             bindingID: UUID = UUID(), localSocket: String? = nil, fleetManaged: Bool = false, ownToken: Bool = false) {
             self.localSocket = localSocket
+            self.fleetManaged = fleetManaged
+            self.ownToken = ownToken
             self.id = id
             self.bindingID = bindingID
             self.name = name
@@ -42,7 +51,7 @@ final class RemoteHostStore {
             self.token = token
         }
 
-        private enum CodingKeys: String, CodingKey { case id, bindingID, name, host, port, token }
+        private enum CodingKeys: String, CodingKey { case id, bindingID, name, host, port, token, fleetManaged, ownToken }
 
         init(from decoder: Decoder) throws {
             let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -53,6 +62,8 @@ final class RemoteHostStore {
             host = try values.decode(String.self, forKey: .host)
             port = try values.decode(UInt16.self, forKey: .port)
             token = try values.decode(String.self, forKey: .token)
+            fleetManaged = try values.decodeIfPresent(Bool.self, forKey: .fleetManaged) ?? false
+            ownToken = try values.decodeIfPresent(Bool.self, forKey: .ownToken) ?? false
         }
     }
 
@@ -104,6 +115,13 @@ final class RemoteHostStore {
         @ObservationIgnored fileprivate var client: RemoteHostClient? {
             didSet { hubSlot.hub = client?.tunnels }
         }
+        /// The host's fleet identity (`helloOk.hostID`), kept after the link drops so a thread it sent still nests under its sender
+        /// while that Mac is away. Nil until it has answered once, and for a host without Fleet.
+        var fleetID: UUID? {
+            if let id = client?.hostID { lastFleetID = id }
+            return lastFleetID
+        }
+        @ObservationIgnored private var lastFleetID: UUID?
         /// The workspace pushes the host sent that the app has not taken yet (tests, diagnostics).
         var queuedStateEvents: Int { client?.queuedStateEvents ?? 0 }
         /// Where a forwarded port of this host finds its connection's tunnels (Browser): filled
@@ -408,12 +426,34 @@ final class RemoteHostStore {
         return connection
     }
 
-    func addHost(name: String, host: String, port: UInt16, token: String) {
-        let config = HostConfig(name: name, host: host, port: port, token: token)
+    @discardableResult
+    func addHost(name: String, host: String, port: UInt16, token: String, ownToken: Bool = false) -> UUID {
+        let config = HostConfig(name: name, host: host, port: port, token: token, ownToken: ownToken)
         let connection = Connection(config: config, designCache: designCache)
         allConnections.append(connection)
         persist()
         connect(connection)
+        return config.id
+    }
+
+    /// Pairs this app as a device (a client) of the Mac at `host`:`port` with the code its Settings ▸ Fleet ▸
+    /// Add a device shows, and connects to it with a token of its own that the Mac keeps only the hash of.
+    /// Nothing is typed but the code, and the Mac need not be in a fleet. A Mac already held at that address
+    /// is given the new token instead of being added twice. Returns the host's id.
+    @discardableResult
+    func pairAsClient(host: String, port: UInt16, code: String) async throws -> UUID {
+        let token = FleetProtocol.makeToken()
+        let device = FleetDeviceIntroduction(deviceID: UUID(), name: Host.current().localizedName ?? "Mac", kind: .macApp,
+                                             tokenHash: FleetProtocol.hash(token))
+        let answered = try await RemoteHostClient.fleetPairDevice(host: host, port: port, code: code, device: device).result
+        if let held = pairedConnections.first(where: { $0.config.host == host && $0.config.port == port }) {
+            held.config.token = token
+            held.config.ownToken = true
+            persist()
+            reconnect(id: held.id)
+            return held.id
+        }
+        return addHost(name: answered.name, host: host, port: port, token: token, ownToken: true)
     }
 
     /// Update a host's config and reconnect with the new values.
@@ -429,6 +469,23 @@ final class RemoteHostStore {
         config.port = port
         config.token = token
         connection.config = config
+        persist()
+        reconnect(id: id)
+    }
+
+    /// This host became a fleet peer: its configuration stops being hand editable.
+    func markFleetManaged(id: UUID) {
+        guard let connection = allConnections.first(where: { $0.id == id }), !connection.config.fleetManaged else { return }
+        connection.config.fleetManaged = true
+        persist()
+    }
+
+    /// This app was given a token of its own for this fleet Mac: it replaces the shared one, and the
+    /// binding stays (the Mac is the same).
+    func useOwnToken(id: UUID, token: String) {
+        guard let connection = allConnections.first(where: { $0.id == id }), connection.config.fleetManaged else { return }
+        connection.config.token = token
+        connection.config.ownToken = true
         persist()
         reconnect(id: id)
     }

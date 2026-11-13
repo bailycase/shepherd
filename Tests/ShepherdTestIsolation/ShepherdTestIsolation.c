@@ -44,6 +44,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -115,6 +116,15 @@ static void next_agent_variable(char *name, size_t size) {
 
 __attribute__((constructor))
 static void shepherd_test_isolation_install(void) {
+    // Every scratch host holds dozens of descriptors (listeners, links, watchers, subprocess pipes) and a process runs many
+    // at once: a shell's default soft limit (256 to 2560) is passed by the fleet suites ("Too many open files"), which a
+    // person's Mac, with the limit a running app gets, never sees.
+    struct rlimit files;
+    if (getrlimit(RLIMIT_NOFILE, &files) == 0 && files.rlim_cur < 10240) {
+        files.rlim_cur = files.rlim_max < 10240 ? files.rlim_max : 10240;
+        setrlimit(RLIMIT_NOFILE, &files);
+    }
+
     char name[256];
     for (next_agent_variable(name, sizeof name); name[0] != '\0'; next_agent_variable(name, sizeof name)) {
         if (unsetenv(name) != 0) fail("unsetenv");

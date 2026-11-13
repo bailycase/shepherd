@@ -152,7 +152,7 @@ final class FixtureHost: @unchecked Sendable {
                 return [.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token")]
             }
             let capabilities = (data.capabilities ?? data.defaultCapabilities).filter { $0 != RemoteProtocol.projectMessageImagesCapability && $0 != RemoteProtocol.logicalProjectsCapability && $0 != RemoteProtocol.projectWorkerCapability && $0 != RemoteProtocol.logicalProjectFilesCapability && $0 != RemoteProtocol.projectExecutionCapability }
-            return [.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: capabilities)]
+            return [.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: capabilities, hostID: data.fleetID)]
         case .stateFetch(let id):
             note("stateFetch")
             return [.state(id: id, state: data.state)]
@@ -189,6 +189,13 @@ final class FixtureHost: @unchecked Sendable {
             note("listModels")
             return [.models(id: id, models: data.models, defaultModel: data.models.first, withoutThinking: data.withoutThinking,
                             thinkingLevels: data.thinkingLevels)]
+        case .fleetRead(let id) where data.fleet != nil:
+            note("fleetRead")
+            return [.fleetResult(id: id, result: FleetResult(snapshot: data.fleet!))]
+        case .fleetAction(let id, .watching) where data.fleet != nil:
+            // The page asks the host to sample while it is on screen, and reads the answer.
+            note("fleetWatching")
+            return [.fleetResult(id: id, result: FleetResult(snapshot: data.fleet!))]
         case .hostSettings(let id, .fetch) where data.hostSettings != nil:
             note("hostSettings.fetch")
             return [.hostSettings(id: id, settings: data.hostSettings!)]
@@ -368,7 +375,13 @@ final class FixtureHost: @unchecked Sendable {
         case .designRelayAnswer, .appRelayAnswer:
             // Only the Mac app answers a background host's drawing; a phone never sends it.
             return []
-        case .drain(let id):
+        case .fleetRead where data.fleet != nil, .fleetAction(_, .watching) where data.fleet != nil:
+            // A read the host serves a phone (`fleet.view.v1`).
+            return nil
+        case .drain(let id), .fleetIdentify(let id), .fleetPair(let id, _, _), .fleetEstablish(let id, _), .fleetIntroduce(let id, _),
+             .fleetRevoke(let id, _, _), .fleetSync(let id, _), .fleetRead(let id), .fleetAction(let id, _),
+             .fleetPressure(let id, _), .fleetReadiness(let id, _), .fleetPressureNow(let id), .fleetRepoManifest(let id, _),
+             .fleetSnapshotPart(let id, _, _), .fleetBlobPush(let id, _, _):
             return [.error(id: id, code: "unsupported", message: refused)]
         case .pushRegistration(let id, _):
             note("pushRegistration")
@@ -376,7 +389,8 @@ final class FixtureHost: @unchecked Sendable {
         case .pushUnregister(let id, _):
             note("pushUnregister")
             return [.ok(id: id)]
-        case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .creationBranches, .agentQuery, .nativeThreadSubscribe, .fleetDigest:
+        case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .creationBranches, .agentQuery, .nativeThreadSubscribe, .fleetDigest,
+             .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
             return nil
         }
     }

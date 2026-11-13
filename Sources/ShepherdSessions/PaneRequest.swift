@@ -22,6 +22,9 @@ public struct RemoteCreateAgentRequest: Sendable {
     public var agentID: AgentID?
     public var worktreePath: String?
     public var standalone = false
+    /// A thread Fleet started for another Mac's work: where it came from, and the folder of the checkout it works in.
+    public var dispatchedFrom: DispatchedFrom?
+    public var subdirectory: String?
 
     public init(
         spaceID: SpaceID,

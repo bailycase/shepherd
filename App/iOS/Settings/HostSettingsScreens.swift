@@ -323,10 +323,9 @@ private struct HostSettingsPage<Content: View>: View {
     let explanation: String
     @ViewBuilder let content: (HostSettings, SettingsHost) -> Content
     @Environment(\.settingsColumn) private var inColumn
-    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        let host = store.settingsHost(chosenHost: navigator.settingsSelection.chosenHost)
+        let host = store.settingsHost
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 Text(explanation)
@@ -334,9 +333,6 @@ private struct HostSettingsPage<Content: View>: View {
                     .foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, SH.Space.xs)
-                if store.hosts.count > 1 {
-                    HostChooser(store: store)
-                }
                 if let problem = store.hostSettings.problem {
                     SHBanner(.failed, title: problem) {
                         Button("OK") { store.hostSettings.dismissProblem() }.buttonStyle(.sh(.secondary))
@@ -357,7 +353,7 @@ private struct HostSettingsPage<Content: View>: View {
                         SettingsFootnote(reason, tone: .failed)
                     }
                 } else {
-                    SettingsFootnote("Add a host in Settings ▸ Hosts to change its settings here.")
+                    SettingsFootnote("Add a host in Settings ▸ Fleet to change its settings here.")
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
@@ -372,38 +368,6 @@ private struct HostSettingsPage<Content: View>: View {
         .navigationTitle(inColumn ? page.listTitle : page.title)
         .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
         .task { if !inColumn { await store.watch() } }
-    }
-}
-
-/// Which host the page changes, when there are several.
-struct HostChooser: View {
-    let store: SettingsStore
-    @Environment(MobileNavigator.self) private var navigator
-    private var host: SettingsHost? { store.settingsHost(chosenHost: navigator.settingsSelection.chosenHost) }
-
-    var body: some View {
-        SHListCard {
-            SettingsControlRow("Host") {
-                Menu {
-                    ForEach(store.hosts) { host in
-                        Button { navigator.settingsSelection.chosenHost = host.id } label: {
-                            if host.id == self.host?.id {
-                                Label(Self.title(host), systemImage: "checkmark")
-                            } else {
-                                Text(Self.title(host))
-                            }
-                        }
-                    }
-                } label: {
-                    SettingsMenuLabel(host?.name ?? "None", mono: true)
-                }
-                .accessibilityLabel("Host")
-            }
-        }
-    }
-
-    private static func title(_ host: SettingsHost) -> String {
-        host.isConnected ? host.name : "\(host.name) · offline"
     }
 }
 

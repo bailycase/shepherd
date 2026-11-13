@@ -140,30 +140,6 @@ struct RemoteHostConfigFlowTests {
                 "the host kept its own value: \(kept ?? "none")")
     }
 
-    /// Settings' one host choice reaches Instructions per host, and leaves Same on every host alone.
-    @Test func instructionsFollowTheSettingsHostPerHostOnly() async throws {
-        let app = try AppHarness()
-        defer { app.stop() }
-        let vm = try await app.start()
-        let host = UUID()
-        vm.instructions.sameEverywhere = true
-        vm.settingsHostID = host
-        vm.followSettingsHost(on: .instructions, entering: true)
-        #expect(vm.instructions.machine == .local)
-        vm.instructions.sameEverywhere = false
-        vm.followSettingsHost(on: .instructions, entering: true)
-        #expect(vm.instructions.machine == .remote(host))
-        vm.settingsHostID = nil
-        vm.followSettingsHost(on: .instructions, entering: false)
-        #expect(vm.instructions.machine == .local)
-        // Spaces keeps All hosts when its page opens, and follows a choice made with it open.
-        vm.projects.host = "all"
-        vm.followSettingsHost(on: .projects, entering: true)
-        #expect(vm.projects.host == "all")
-        vm.followSettingsHost(on: .projects, entering: false)
-        #expect(vm.projects.host == "local")
-    }
-
     /// A client's MCP sign-in runs pi's login without this Mac's browser; the Mac's own Sign in
     /// still opens it.
     @Test func onlyARemoteMCPSignInSkipsTheHostsBrowser() async throws {

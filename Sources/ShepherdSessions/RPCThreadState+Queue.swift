@@ -1125,6 +1125,7 @@ extension RPCThreadState {
     func stop(afterProjectChildren helpersUnknown: Bool? = nil, ifCurrent: @escaping () -> Bool = { true },
               _ done: @escaping (Result<RPCResponse, RPCError>) -> Void) {
         guard ifCurrent() else { done(.failure(.inputRejected)); return }
+        onStopRequested?()
         refuseDialogs()
         goalYieldGeneration = nil
         // pi's abort signal does not reach a nested pre-settlement model call. Cancel the

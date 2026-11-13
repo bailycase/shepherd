@@ -7,19 +7,16 @@ import ShepherdUI
 // Hooks in a thread (HookThreadScene board): each hook's row, the proposal card an agent's
 // `hook_propose` asks with, and the panel a hook's `ask` puts in the composer's place.
 
-/// What a thread's hook pieces open in Settings › Hooks, on the host the thread runs on (nil:
-/// this Mac). Weak, so a row never keeps the model.
+/// What a thread's hook pieces open in Settings › Hooks. Weak, so a row never keeps the model.
 struct HookPresenter: Equatable {
     weak var model: ShepherdViewModel?
-    var host: UUID? = nil
 
-    static func == (a: Self, b: Self) -> Bool { a.model === b.model && a.host == b.host }
+    static func == (a: Self, b: Self) -> Bool { a.model === b.model }
 
-    @MainActor private var hooks: HooksModel? { model?.hooks(for: host) }
+    @MainActor private var hooks: HooksModel? { model?.hooks }
 
     @MainActor private func show(_ body: (HooksModel) -> Void) {
         guard let model, let hooks else { return }
-        model.adoptSettingsHost(host)
         model.settingsSection = .hooks
         model.showSettings = true
         hooks.tab = .hooks

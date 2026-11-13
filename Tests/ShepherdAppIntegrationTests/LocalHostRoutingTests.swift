@@ -269,12 +269,15 @@ struct LocalHostRoutingTests {
         }
         let terminal = try #require(s.vm.state.tabs.first { $0.id == agent.tabID }?.layout.leaves.first { $0.id != agent.paneID })
         #expect(s.host.server.state.tabs.first { $0.id == agent.tabID }?.layout.contains(terminal.id) == true)
+        // The host adds the pane to the layout, then starts its shell and answers the open. Closing before that
+        // answer makes the open fail ("unknown pane"), which is a different thing from closing a terminal.
+        try await eventuallyOnMain("the open to be answered") { s.vm.focusedPaneID == terminal.id }
 
         #expect(s.vm.closeLocalPane(terminal.id))
         try await eventuallyOnMain("the host to close it") {
             s.host.server.state.tabs.first { $0.id == agent.tabID }?.layout.leaves.count == 1
         }
-        #expect(s.vm.actionError == nil)
+        #expect(s.vm.actionError == nil, "\(String(describing: s.vm.actionError))")
     }
 
     @Test func deletingAWorktreeThreadIsThisMacsDelete() async throws {
@@ -337,7 +340,9 @@ struct LocalHostRoutingTests {
         let agent = try #require(s.host.server.state.agents.first)
         #expect(s.host.server.state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd == canonical)
         try await eventuallyOnMain("the app to show the new folder") { s.vm.state.spaces.first?.path == canonical }
-        #expect(s.vm.actionError == nil && !s.vm.missingSpaces.contains(s.space.id))
+        // The folder check runs off the main thread after a state change, so the mark it put on the moved folder clears a moment later.
+        try await eventuallyOnMain("the moved space to stop reading as missing") { !s.vm.missingSpaces.contains(s.space.id) }
+        #expect(s.vm.actionError == nil)
     }
 
     /// The notify tool's banner reaches the app (which posts it, so its click opens the thread

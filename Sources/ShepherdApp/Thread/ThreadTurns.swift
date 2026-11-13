@@ -184,6 +184,8 @@ struct AgentTurn: View, Equatable {
     var cards: [ProjectActionResolver.Card?] = []
     @Environment(\.projectActionCards) private var projectCards
     @Environment(\.projectWorkerThread) private var workerStyle
+    /// The dispatches this thread sent, drawn where their `fleet_dispatch` calls are (FleetDispatch).
+    @Environment(\.fleetThread) private var fleet
     @State private var openThinking: Set<String> = []
     @State private var shown = TurnShown()
     @State private var hover: MessageHover
@@ -245,6 +247,12 @@ struct AgentTurn: View, Equatable {
                 switch item {
                 case .activity(_, let bursts):
                     ActivityLinesView(bursts: bursts, review: review, entering: entering, cards: projectCards, planCallID: planCallID).equatable()
+                    if let fleet {
+                        // The cards of the dispatches the burst's `fleet_dispatch` calls made.
+                        ForEach(bursts.flatMap(\.calls).filter { $0.name == "fleet_dispatch" }.compactMap { fleet.card(forToolCall: $0.toolCallID) }) { card in
+                            FleetDispatchCardView(card: card, actions: fleet.actions).equatable()
+                        }
+                    }
                 case .thinking(_, _, _, _, true, _):
                     itemView(item, planCallID: planCallID)
                 default:

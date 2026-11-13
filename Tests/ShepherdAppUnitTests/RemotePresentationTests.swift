@@ -65,7 +65,7 @@ struct RemotePresentationTests {
 
     @Test(arguments: [
         (RemoteHostStore.Phase.connecting, "connecting to build-01…"),
-        (.failed(RemoteHostFailure(kind: .tokenRefused, detail: "refused")), "build-01 refused the token. Edit the host to paste its current token."),
+        (.failed(RemoteHostFailure(kind: .tokenRefused, detail: "refused")), "build-01 refused the token. This device may have been revoked, or the Mac may have stopped accepting its old token. Pair it again with a code."),
         (.disconnected, "build-01 disconnected"),
     ])
     func aHostNeverSeenGivesItsPlaceholder(phase: RemoteHostStore.Phase, text: String) {

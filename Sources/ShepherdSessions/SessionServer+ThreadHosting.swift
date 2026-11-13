@@ -253,6 +253,12 @@ extension SessionServer {
             config.worktreeBase = base
             config.worktreePath = path
         }
+        config.dispatchedFrom = request.dispatchedFrom
+        // A thread Fleet started for work in a folder of the repository starts in that folder of its fresh checkout.
+        if let subdirectory = request.subdirectory, config.worktreePath != nil {
+            let folder = URL(fileURLWithPath: config.workingDirectory).appendingPathComponent(subdirectory).path
+            if Self.folderExists(folder) { config.workingDirectory = folder }
+        }
         return try await startNewAgent(config, launch: hosting.launch(), defaultServiceTier: defaults.serviceTier, mcp: hosting.mcp)
     }
 

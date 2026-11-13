@@ -240,7 +240,7 @@ private struct PalettePreviewPane: View {
         case .move(_, let direction): [SHHighlightRun("Moves this thread one place \(direction == .up ? "up" : "down") in its space on every device.")]
         case .delete: [SHHighlightRun("Stops the agent and closes its thread. You confirm on the next screen.")]
         case .newThread: [SHHighlightRun("Start an agent on any connected host.")]
-        case .settings: [SHHighlightRun("Hosts, instructions, skills, experiments, and each host’s settings.")]
+        case .settings: [SHHighlightRun("Fleet, instructions, skills, experiments, and each host’s settings.")]
         case .openDesign: entry.detail
         case .newDesign: [SHHighlightRun("A design agent draws it as boards on the host.")]
         }

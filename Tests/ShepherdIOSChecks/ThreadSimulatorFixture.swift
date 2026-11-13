@@ -191,6 +191,9 @@ final class FixtureRunner {
         let seen = Date().addingTimeInterval(-3 * 3_600).timeIntervalSince1970
         defaults.set(Dictionary(uniqueKeysWithValues: hosts.filter { !$0.data.online }.map { ($0.data.id.uuidString, seen) }),
                      forKey: MobileHosts.lastSeenKey)
+        // A Mac's fleet id is kept from its last connection, so an offline one is still found among the fleet's Macs.
+        defaults.set(Dictionary(uniqueKeysWithValues: hosts.compactMap { host in host.data.fleetID.map { (host.data.id.uuidString, $0.uuidString) } }),
+                     forKey: MobileHosts.fleetIDKey)
         let tokens = HostTokens.memory(Dictionary(uniqueKeysWithValues: records.map { ($0.id, FixtureHostData.token) }))
         let appearance = MobileAppearance(defaults: defaults)
         appearance.mode = environment["FIXTURE_SCHEME"] == "light" ? .light : .dark
@@ -219,6 +222,7 @@ final class FixtureRunner {
             online.allSatisfy { app.hosts.host($0)?.phase.isConnected == true }
         }
         app.navigator.tab = screen.tab
+        screen.setup?()
         for route in screen.routes { app.navigator.open(route) }
         if let presented = screen.presented { app.navigator.present(presented) }
         if environment["FIXTURE_SIDEBAR"] == "shown" { app.navigator.padColumns = .all }

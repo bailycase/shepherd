@@ -26,7 +26,7 @@ struct SettingsPreviewTests {
         case .pi: 3000
         case .piSignIn: 1500
         case .keyboard: 2200
-        case .remote, .worktrees, .appearance: 1000
+        case .worktrees, .appearance: 1000
         default: 900
         }
         try await Preview.render("settings-\(section.rawValue)", size: CGSize(width: 1280, height: height)) {
@@ -141,6 +141,32 @@ struct SettingsPreviewTests {
         try await Preview.render("settings-skills-installed", size: CGSize(width: 1440, height: 900),
                                  ready: { vm.skills.row("pdf", in: vm.skillsHosts)?.skill.update != nil }) {
             SettingsView(vm: vm)
+        }
+    }
+
+    /// An open skill row (SkillsStates, Detail): how the agent uses it and its version, with no per host
+    /// section, and the files with Open SKILL.md, Show folder and Remove.
+    @Test func settingsSkillDetail() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let repo = try makeScratchRepo(files: [
+            "skills/pdf/SKILL.md": "---\nname: pdf\ndescription: Read, fill, merge and split PDFs.\n---\n# PDF\n",
+            "skills/pdf/reference.md": "# Reference\n",
+            "skills/pdf/scripts/fill.py": "print('fill')\n",
+        ])
+        let store = workspace.server.skills
+        try store.install(repo: "file://" + repo.path, paths: ["skills/pdf"], commit: nil, invocation: nil)
+        try "---\nname: pdf\ndescription: Read, fill, merge and split PDFs.\n---\n# PDF\n\nFill forms first.\n"
+            .write(to: repo.appendingPathComponent("skills/pdf/SKILL.md"), atomically: true, encoding: .utf8)
+        try git(["commit", "-qam", "Fill forms first"], in: repo)
+        try store.checkUpdates()
+        try await workspace.seed(ShepherdState())
+        let vm = workspace.vm
+        try await Preview.render("settings-skill-detail", size: CGSize(width: 1180, height: 560),
+                                 ready: { vm.skills.row("pdf", in: vm.skillsHosts)?.skill.update != nil }) {
+            SkillsSettings(vm: vm, model: vm.skills, open: "pdf")
+                .padding(SH.Space.xxl)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -307,63 +333,6 @@ struct SettingsPreviewTests {
         }
     }
 
-    /// Remote with a configured host that cannot be reached.
-    @Test func settingsRemoteWithHosts() async throws {
-        let workspace = try PreviewWorkspace()
-        defer { workspace.stop() }
-        workspace.vm.remoteHosts.addHost(name: "horizon", host: "127.0.0.1", port: 1, token: "x")
-        workspace.vm.settingsSection = .remote
-        try await Preview.render("settings-remote-hosts", size: CGSize(width: 1280, height: 1000)) {
-            SettingsView(vm: workspace.vm)
-        }
-    }
-
-    /// A host for each way a connection fails (nothing listening, a refused token, another
-    /// protocol): the word says which, and the sentence under it says what to do.
-    @Test func settingsRemoteHostFailures() async throws {
-        let failures: [(String, RemoteHostClientError)] = [
-            ("horizon", .system(call: "connect", errno: ECONNREFUSED)),
-            ("studio", .rejected(code: RemoteProtocol.unauthorizedCode, message: "bad token")),
-            ("demo-mac", .rejected(code: RemoteProtocol.versionMismatchCode, message: "host speaks protocol \(RemoteProtocol.version + 1)")),
-        ]
-        let connections = failures.map { name, error in
-            let connection = RemoteHostStore.Connection(config: .init(name: name, host: "\(name).internal", port: 7433, token: "x"))
-            connection.phase = .failed(RemoteHostFailure(error))
-            return connection
-        }
-        let size = CGSize(width: 1440, height: 360)
-        try await Preview.render("settings-remote-host-failures", size: size) {
-            SettingsGroup(title: "Hosts") {
-                ForEach(connections) { connection in
-                    RemoteHostRow(connection: connection, remove: {}, reconnect: {}, edit: {})
-                }
-            }
-            .padding(AppLayout.settingsWideSides)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.sh.bgWindow)
-        }
-    }
-
-    /// The Add host form refusing a port it cannot use: the field's line turns failed and the
-    /// reason sits under it (Controls › Text field, error).
-    @Test func settingsRemotePortRefused() async throws {
-        let size = CGSize(width: 1440, height: 220)
-        try await Preview.render("settings-remote-port-refused", size: size) {
-            SettingsGroup(title: "Add host") {
-                SettingsRow(title: "Address", subtitle: "VPN-reachable IP or hostname.") {
-                    SettingsTextField(label: "Address", prompt: "100.x.y.z", text: .constant("100.64.0.7"), mono: true)
-                }
-                SettingsRow(title: "Port") {
-                    SettingsTextField(label: "Port", prompt: "7433", text: .constant("70000"), mono: true,
-                                      width: AppLayout.settingsPortFieldWidth, error: RemotePortField.problem("70000"))
-                }
-            }
-            .padding(AppLayout.settingsWideSides)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.sh.bgWindow)
-        }
-    }
-
     nonisolated static let instructionsSample = """
         # How I work
 
@@ -384,10 +353,11 @@ struct SettingsPreviewTests {
         defer { workspace.stop() }
         try workspace.server.instructions.save(.agents, content: Self.instructionsSample)
         try workspace.server.instructions.save(.appendSystem, content: "Never force-push to main.\n")
+        try await workspace.seed(workspace.server.state)
         let model = workspace.vm.instructions
         await model.refresh()
         model.setText(Self.instructionsSample.replacingOccurrences(of: "passes.", with: "passes and `swiftformat --lint .` is clean."),
-                      file: .agents, on: .local)
+                      file: .agents)
         workspace.vm.settingsSection = .instructions
         try await Preview.render("settings-instructions-edited", size: CGSize(width: 1440, height: 900)) {
             SettingsView(vm: workspace.vm)
@@ -402,6 +372,7 @@ struct SettingsPreviewTests {
         let home = workspace.server.pi.home
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         try Self.instructionsSample.write(to: home.appendingPathComponent("AGENTS.md"), atomically: true, encoding: .utf8)
+        try await workspace.seed(workspace.server.state)
         let model = workspace.vm.instructions
         model.piHome = workspace.server.pi.home
         await model.refresh()

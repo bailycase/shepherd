@@ -11,7 +11,7 @@
   "tokens": {
     "pi.prompt": 713,
     "pi.builtin_tools": 564,
-    "shepherd.prompt": 517,
+    "shepherd.prompt": 594,
     "tools.terminal": 590,
     "tools.automation": 105,
     "tools.children": 1005,
@@ -22,6 +22,6 @@
     "ctx.append_system": 88,
     "ctx.global_agents": 891
   },
-  "total": 6695,
+  "total": 6772,
   "toolCount": 27
 }

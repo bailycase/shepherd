@@ -55,6 +55,13 @@ public enum ShepherdPaths {
         supportDirectory(environment: environment).appendingPathComponent("remote-token")
     }
 
+    /// Fleet's own files (identity, peers; mode 0600 inside a 0700 folder). Never synced: they say who this Mac is.
+    public static func fleetDirectory(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        supportDirectory(environment: environment).appendingPathComponent("fleet", isDirectory: true)
+    }
+
     /// Shepherd's root instructions for pi (Settings ▸ Instructions): `AGENTS.md`,
     /// `APPEND_SYSTEM.md` and their history. The instructions extension reads them from here, so
     /// pi's own `~/.pi/agent` is never written.

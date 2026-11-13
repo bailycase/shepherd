@@ -372,7 +372,7 @@ struct FleetTests {
         (.failed(RemoteHostFailure(kind: .unreachable, detail: "connect failed: Connection refused (errno 61)")), [],
          "Shepherd isn't running on Studio, or it can't be reached.", true),
         (.failed(RemoteHostFailure(kind: .tokenRefused, detail: "unauthorized: bad token")), [],
-         "Studio refused the token. Edit the host to paste its current token.", true),
+         "Studio refused the token. This device may have been revoked, or the Mac may have stopped accepting its old token. Pair it again with a code.", true),
         (.disconnected, [], "Not connected", true),
     ] as [(RemoteHostPhase, [Agent], String, Bool)])
     func aHostCardSummarizesItsThreadsOrWhyItIsOffline(phase: RemoteHostPhase, agents: [Agent], summary: String, retry: Bool) throws {
@@ -473,5 +473,16 @@ struct FleetTests {
         let off = FleetModel(hosts: [host], digests: digests)
         #expect(off.recents.map(\.ref.agent.rawValue) == ["plain"])
         #expect(off.running.isEmpty && off.needsYou.isEmpty)
+    }
+
+    /// A reading rides a host for the Fleet screens; Home's derivations never read it.
+    @Test func aHostsPressureAndReadinessDefaultToNothingAndDoNotChangeHome() {
+        let bare = Self.host(Self.studio, "Studio", agents: [Self.agent("one", .working)])
+        #expect(bare.pressure == nil && bare.readiness == nil)
+        var read = bare
+        read.pressure = FleetPressureSample(cpuUtilization: 0.9, cpuCount: 8, totalMemoryBytes: 1 << 34, availableMemoryBytes: 1 << 30)
+        read.readiness = FleetReadinessReport(model: "Mac mini", missing: [FleetMissingTool(kind: .xcode)])
+        #expect(read != bare)
+        #expect(FleetModel(hosts: [read], digests: [:]) == FleetModel(hosts: [bare], digests: [:]))
     }
 }
