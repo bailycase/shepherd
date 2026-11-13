@@ -230,7 +230,7 @@ struct MountedBudgetTests {
         #expect(SHRenderProbe.count("deck.unmount") == 0 && SHRenderProbe.count("deck.mount") == 0, "no layout was removed or mounted")
     }
 
-    /// Shown again halfway through its release, a thread draws every row it had, from what the store kept.
+    /// Shown again halfway through its release, a thread draws the rows it still had at once and every row it had after that, from what the store kept.
     @Test func aThreadLeftHalfwayReleasedDrawsEverythingWhenShown() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -259,8 +259,9 @@ struct MountedBudgetTests {
             passes += 1
         }
         #expect(SHRenderProbe.count("deck.flipLayout") == 1, "a thread that let some rows go is laid out as it is shown too")
-        let drawn = try work.fields(1)
-        #expect(drawn == fences, "every fence is drawn in the first frame the layout is shown: \(drawn) of \(fences)")
+        let first = try work.fields(1)
+        #expect(first > 0 && first < fences, "the first frame draws the rows it still had: \(first) of \(fences)")
+        try await eventuallyOnMain("every fence to be drawn again") { ListPerf.settle(work.window); return try work.fields(1) == fences }
         try await eventuallyOnMain("the thread to run again") { ListPerf.settle(work.window); return !store.transcriptReleased }
         #expect(SHRenderProbe.count("deck.mount") == 0 && SHRenderProbe.count("deck.unmount") == 0)
     }

@@ -43,6 +43,16 @@ extension AppLayout {
     /// or Mission Control covers it for less, and rests nothing.
     static let threadRestDelay: Duration = .seconds(1)
 
+    // Restoring a thread's rows (`ThreadRestore`)
+    /// How long a restore waits after the update that drew a step before it draws the next: the frame goes out, and the person's
+    /// keys and scrolls are read, between steps.
+    static let restorePause: Duration = .milliseconds(1)
+    /// How long a restore waits to look again while the reader scrolls or is away from the tail.
+    static let restoreRetry: Duration = .milliseconds(100)
+    /// The estimated bytes (`NativeThreadStore.restoreStep`) of rows one step draws, at most; a row larger than it goes whole.
+    /// About a code-heavy reply, whose views take tens of milliseconds to build.
+    static let restoreStepBytes = 4 << 20
+
     // Empty thread
     /// A fresh agent's framed empty state sits this far down, with its path in Geist Mono at
     /// this size ("New agent in ~/path").
