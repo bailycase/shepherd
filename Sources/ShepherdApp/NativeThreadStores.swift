@@ -231,8 +231,8 @@ final class NativeThreadStores<Key: Hashable> {
 
     /// Lets the rows of the hidden threads go while their estimated views (`mountedCost`) add up to more than the budget:
     /// `step` bytes of at most `limit` threads (`releaseStep` unless given), then the next pass `releaseSpacing` later while it is
-    /// still over, so that no one pass tears down much. Threads on screen, selected, released already or holding nothing are
-    /// not asked. Costs are read here, in a pass, never in a view body. Returns the threads it took from and the bytes it took.
+    /// still over, so that no one pass tears down much. Threads on screen, selected or holding nothing (released whole already)
+    /// are not asked. Costs are read here, in a pass, never in a view body. Returns the threads it took from and the bytes it took.
     @discardableResult
     func enforceMountedBudget(budget: Int? = nil, keep: Int = 1, keepPinned: Int? = nil, limit: Int = 1, step: Int? = nil) -> (threads: Int, bytes: Int) {
         guard let mounted = mounted?() else { return (0, 0) }
