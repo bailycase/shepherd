@@ -6,10 +6,20 @@ import SwiftUI
 struct SHNativeCodeText: NSViewRepresentable {
     let code: String
     let highlighted: AttributedString?
+    /// The colors of a fence a reply is writing: its text then changes at its end, and the field takes
+    /// only what changed, in the text, its layout and its size. The Cache is not used.
+    let colors: SHCodeColors?
     let scale: CGFloat
     let lineSpacing: CGFloat
     let cache: Cache
     @Environment(\.colorScheme) private var colorScheme
+
+    /// How a fence is drawn, apart from its text and colors.
+    struct Styling: Equatable {
+        let font: NSFont
+        let lineSpacing: CGFloat
+        let foreground: Color
+    }
 
     struct Content: Equatable {
         let code: String
@@ -46,6 +56,9 @@ struct SHNativeCodeText: NSViewRepresentable {
             get { cached?.size }
             set { cached?.size = newValue }
         }
+
+        /// Lets go of the text it holds, for a block that now draws a fence as it is written.
+        func forgetContent() { cached = nil }
 
         func value(for content: Content) -> NSAttributedString {
             if let cached, cached.content == content { return cached.value }
@@ -116,22 +129,116 @@ struct SHNativeCodeText: NSViewRepresentable {
         private var renderer: NSTextView?
         private var requiresNativeDrawing = false
         var measuredSize: CGSize?
+        private var growth: Growth?
 
         func setCode(_ value: NSAttributedString) {
+            growth = nil
             // Setting field.font can update its attributes before this call, but not the renderer.
             guard attributedStringValue != value || renderer?.textStorage?.isEqual(to: value) == false else { return }
             attributedStringValue = value
-            // Fallback fonts use different line metrics in TextKit and the field's typesetter.
-            // Keep native drawing for non-ASCII text rather than shifting its baselines.
-            requiresNativeDrawing = !value.string.utf8.allSatisfy { $0 < 128 }
+            requiresNativeDrawing = Self.needsNativeDrawing(value)
+            if let storage = renderer?.textStorage {
+                SHRenderProbe.add("code.laidOutUnits", value.length)
+                storage.setAttributedString(value)
+            }
+            needsDisplay = true
+        }
+
+        /// Fallback fonts use different line metrics in TextKit and the field's typesetter. Keep native
+        /// drawing for non-ASCII text rather than shifting its baselines.
+        private static func needsNativeDrawing(_ value: NSAttributedString) -> Bool {
+            if !value.string.utf8.allSatisfy({ $0 < 128 }) { return true }
+            var linked = false
             value.enumerateAttribute(.link, in: NSRange(location: 0, length: value.length)) { link, _, stop in
                 if link != nil {
-                    requiresNativeDrawing = true
+                    linked = true
                     stop.pointee = true
                 }
             }
-            renderer?.textStorage?.setAttributedString(value)
+            return linked
+        }
+
+        // MARK: A fence being written
+
+        /// What the field shows of a fence a reply is writing, and the colors' revision it applied, so
+        /// the next call changes only what differs.
+        private struct Growth {
+            var code: String
+            var lineage: UUID
+            var revision: Int
+            var styling: Styling
+            /// The field's text, edited in place; the cell keeps a copy of its own.
+            var text: NSMutableAttributedString
+        }
+
+        /// Shows `code` colored by `colors`. Code that only grew at its end since the last call replaces the
+        /// text from the first unit that differs, in the field and in its TextKit renderer, which lays out
+        /// only that part again and gives the new size; anything else starts the text over.
+        func showGrowing(_ code: String, colors: SHCodeColors, styling: Styling) {
+            guard var current = growth, current.styling == styling, current.lineage == colors.lineage,
+                  colors.revision == current.revision || colors.revision == current.revision + 1 else {
+                let whole = SHNativeCodeText.styled(code, from: 0, spans: colors.spans(from: 0), styling: styling)
+                setCode(whole)
+                growth = Growth(code: code, lineage: colors.lineage, revision: colors.revision, styling: styling,
+                                text: NSMutableAttributedString(attributedString: whole))
+                measuredSize = nil
+                return
+            }
+            if colors.revision == current.revision, code == current.code { return }
+            var from = Self.sharedPrefixLength(current.code, code)
+            if colors.revision != current.revision { from = min(from, colors.changedFrom) }
+            let tail = SHNativeCodeText.styled(code, from: from, spans: colors.spans(from: from), styling: styling)
+            replaceCode(from: from, with: tail, in: current.text)
+            current.code = code
+            current.revision = colors.revision
+            growth = current
+        }
+
+        private func replaceCode(from location: Int, with tail: NSAttributedString, in text: NSMutableAttributedString) {
+            let range = NSRange(location: location, length: text.length - location)
+            text.replaceCharacters(in: range, with: tail)
+            attributedStringValue = text
+            if !requiresNativeDrawing, Self.needsNativeDrawing(tail) {
+                requiresNativeDrawing = true
+                releaseRenderer()
+            }
+            if let storage = renderer?.textStorage {
+                SHRenderProbe.add("code.laidOutUnits", tail.length)
+                storage.replaceCharacters(in: range, with: tail)
+            }
+            // Without a renderer the cell measures the text when it is asked.
+            measuredSize = renderer.flatMap(Self.layoutSize)
             needsDisplay = true
+        }
+
+        /// The size of the text `text` lays out, which brings its layout up to date from where it changed.
+        static func layoutSize(of text: NSTextView) -> CGSize? {
+            guard let container = text.textContainer, let layout = text.layoutManager,
+                  (text.textStorage?.length ?? 0) > 0 else { return nil }
+            layout.ensureLayout(for: container)
+            let used = layout.usedRect(for: container)
+            return CGSize(width: ceil(used.width), height: ceil(used.height))
+        }
+
+        /// The length in UTF-16 units of the text `a` and `b` begin with.
+        static func sharedPrefixLength(_ a: String, _ b: String) -> Int {
+            var a = a, b = b
+            let ascii = a.utf8.count == a.utf16.count
+            return a.withUTF8 { x -> Int in
+                b.withUTF8 { y -> Int in
+                    var count = min(x.count, y.count)
+                    guard count > 0 else { return 0 }
+                    if memcmp(x.baseAddress, y.baseAddress, count) != 0 {
+                        count = 0
+                        while x[count] == y[count] { count += 1 }
+                    }
+                    if ascii { return count }
+                    // Back to where the scalar both texts share ends.
+                    func continues(_ bytes: UnsafeBufferPointer<UInt8>) -> Bool { count < bytes.count && bytes[count] & 0xC0 == 0x80 }
+                    while count > 0, continues(x) || continues(y) { count -= 1 }
+                    return String(decoding: UnsafeBufferPointer(rebasing: x[0..<count]), as: UTF8.self).utf16.count
+                }
+            }
         }
 
         override func viewDidHide() {
@@ -158,6 +265,7 @@ struct SHNativeCodeText: NSViewRepresentable {
             if let renderer { text = renderer }
             else {
                 text = RendererPool.shared.take(frame: bounds, inset: NSSize(width: alignmentRectInsets.left, height: alignmentRectInsets.top))
+                SHRenderProbe.add("code.laidOutUnits", attributedStringValue.length)
                 text.textStorage?.setAttributedString(attributedStringValue)
                 SHRenderProbe.tick("code.rendererCreated")
                 renderer = text
@@ -221,6 +329,14 @@ struct SHNativeCodeText: NSViewRepresentable {
         let points = SHTextStyle.code.size * scale
         let font = NSFont(name: SHFonts.postScriptName(mono: true, weight: .regular), size: points)
             ?? .monospacedSystemFont(ofSize: points, weight: .regular)
+        if let colors {
+            cache.forgetContent()
+            let appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
+            if field.appearance != appearance { field.appearance = appearance }
+            if field.font != font { field.font = font }
+            field.showGrowing(code, colors: colors, styling: Styling(font: font, lineSpacing: lineSpacing, foreground: Color.sh.textPrimary))
+            return
+        }
         // Resize and hover updates keep the same text. Read the theme before comparing so a
         // palette change still invalidates the native attributes; appearance is dynamic.
         let content = Content(code: code, highlighted: highlighted, font: font, lineSpacing: lineSpacing,
@@ -246,11 +362,8 @@ struct SHNativeCodeText: NSViewRepresentable {
     static func attributedCode(_ code: String, highlighted: AttributedString?, font: NSFont,
                                lineSpacing: CGFloat) -> NSAttributedString {
         SHRenderProbe.tick("thread.codeAttributes")
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = lineSpacing
-        paragraph.lineBreakMode = .byClipping
-        let base: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor(Color.sh.textPrimary),
-                                                  .paragraphStyle: paragraph]
+        SHRenderProbe.add("code.styledUnits", code.utf16.count)
+        let base = baseAttributes(font: font, lineSpacing: lineSpacing, foreground: Color.sh.textPrimary)
         if let highlighted, let text = syntaxCode(highlighted, base: base) { return text }
         let text = highlighted.map { NSMutableAttributedString(attributedString: NSAttributedString($0)) }
             ?? NSMutableAttributedString(string: code)
@@ -265,6 +378,31 @@ struct SHNativeCodeText: NSViewRepresentable {
             text.addAttribute(.foregroundColor, value: native, range: run)
         }
         text.removeAttribute(key, range: range)
+        return text
+    }
+
+    private static func baseAttributes(font: NSFont, lineSpacing: CGFloat, foreground: Color) -> [NSAttributedString.Key: Any] {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = lineSpacing
+        paragraph.lineBreakMode = .byClipping
+        return [.font: font, .foregroundColor: NSColor(foreground), .paragraphStyle: paragraph]
+    }
+
+    /// `code` from the UTF-16 unit `from` on, colored by `spans`, the attributes `attributedCode` gives.
+    static func styled(_ code: String, from: Int, spans: ArraySlice<SHCodeColors.Span>, styling: Styling) -> NSAttributedString {
+        SHRenderProbe.tick("thread.codeAttributes")
+        let tail = String(code[String.Index(utf16Offset: from, in: code)...])
+        let text = NSMutableAttributedString(string: tail, attributes: baseAttributes(font: styling.font, lineSpacing: styling.lineSpacing,
+                                                                                      foreground: styling.foreground))
+        SHRenderProbe.add("code.styledUnits", text.length)
+        var natives: [Color: NSColor] = [:]
+        for span in spans {
+            let low = max(span.range.lowerBound, from) - from, high = min(span.range.upperBound - from, text.length)
+            guard low < high else { continue }
+            let native = natives[span.color] ?? NSColor(span.color)
+            natives[span.color] = native
+            text.addAttribute(.foregroundColor, value: native, range: NSRange(location: low, length: high - low))
+        }
         return text
     }
 

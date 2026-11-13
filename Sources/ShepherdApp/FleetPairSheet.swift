@@ -113,9 +113,11 @@ struct FleetPairSheet: View {
 
     private func row(_ yes: Bool, _ text: String) -> some View {
         GridRow(alignment: .firstTextBaseline) {
-            Image(systemName: yes ? "checkmark" : "xmark")
+            Group {
+                if yes { Image(systemName: "checkmark").foregroundStyle(Color.sh.done) }
+                else { Image(systemName: "xmark").foregroundStyle(Color.sh.textTertiary) }
+            }
                 .font(.shSans(AppLayout.fleetGetsGlyphSize, .semibold))
-                .foregroundStyle(yes ? Color.sh.done : Color.sh.textTertiary)
                 .frame(width: AppLayout.fleetGetsColumn)
                 .accessibilityHidden(true)
             Text(text).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)

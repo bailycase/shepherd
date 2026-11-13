@@ -151,7 +151,7 @@ the only shadow. **Focus**: `.shFocusRing()`, a 2pt `running` ring for keyboard 
 symbol and fill variant the design shows (`bolt` is not `bolt.fill`). Where a board draws its
 own outline (Settings' nav), it ships as a vector in `SHGlyph.Settings`. A glyph more than one
 view draws is an `SHGlyph` case. `DesignRulesTests` fails on a literal font size, a tinted
-status color, a raw color, or a raw glyph name.
+status color, a raw color, a raw glyph name, or a symbol renamed where an animation can reach it.
 
 **Motion** uses `SH.Motion` anchors, never a literal duration or curve:
 
@@ -163,6 +163,12 @@ status color, a raw color, or a raw glyph name.
 - Switching agents, keyboard navigation, selection, streaming text and terminal resizes land at
   once (`.shInstant()`). Under Reduce Motion nothing travels: cross-fade in 120ms or stand still.
 - Spinners and glows are Core Animation layers, never a view redrawn every frame.
+- A glyph that swaps for another (Send and Stop, copy and its check) is two fixed images
+  cross-faded by opacity, or one image keyed on its state; a disclosure chevron is one
+  `SHTurningChevron` that turns. Renaming one symbol under any animation (a content transition,
+  an ancestor's `shAnimation`, a `withSHAnimation`) draws it through RenderBox, which loads about
+  258 MB of drawing pool for 1.2 to 1.6 s on every change. `DesignRulesTests` fails a name that
+  follows state; a menu item, or a symbol fixed for its row, is allowlisted with why.
 
 **Density**: Settings ▸ Appearance sets sidebar row height (22 · 28 · 36) and a Density of 80 to
 150 that scales row heights, never controls. Text size scales type only.

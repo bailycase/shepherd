@@ -577,4 +577,97 @@ struct ScrollFollowerRepinTests {
         repin.reader(scrolling: false, touching: false)
         #expect(take())
     }
+
+    // MARK: The tail guard's walk
+
+    /// The guard drops what the pin lands while it walks the view, so a pin that counted those landings would spend its passes
+    /// and its misses on nothing and stall. Held, it asks for nothing and counts nothing, however the view moves under the walk.
+    @Test func aHeldPinLandsAndCountsNothing() {
+        var repin = NativeTailRepin()
+        func takeInPass() -> Bool { repin.takeInPass() }
+        func take() -> Bool { repin.take() }
+        repin.reading(distance: 0, wants: true, resized: false)
+        #expect(takeInPass())
+        let landed = repin.landings
+        repin.hold()
+        for i in 0..<200 {
+            repin.reading(distance: i.isMultiple(of: 2) ? 3_000 : 3_200, wants: true, resized: i.isMultiple(of: 3))
+            repin.outputArrived()
+            repin.asked()
+            #expect(!takeInPass())
+            #expect(!take())
+        }
+        #expect(repin.landings == landed)
+        #expect(repin.misses == 0)
+        #expect(!repin.stalled)
+        #expect(!repin.pending)
+        #expect(!repin.wantsTurn)
+    }
+
+    /// What it wanted before the walk is not landed after it: the guard lands the tail itself.
+    @Test func holdingForgetsALandingNotYetMade() {
+        var repin = NativeTailRepin()
+        func takeInPass() -> Bool { repin.takeInPass() }
+        func take() -> Bool { repin.take() }
+        repin.reading(distance: 600, wants: true, resized: true)
+        repin.asked()
+        repin.outputArrived()
+        repin.hold()
+        repin.release()
+        #expect(!repin.pending)
+        #expect(!repin.wantsTurn)
+        #expect(!takeInPass())
+        #expect(!take())
+    }
+
+    /// After the walk the pin starts over with the passes it had left, and judges the next landing against its own reading.
+    @Test func aReleasedPinLandsAgainWithItsBudget() {
+        var repin = NativeTailRepin()
+        func takeInPass() -> Bool { repin.takeInPass() }
+        func take() -> Bool { repin.take() }
+        repin.reading(distance: 3_000, wants: true, resized: false)
+        #expect(takeInPass())
+        repin.hold()
+        for gap in [40_000.0, 3_100, 90_000, 3_000, 130_000] {
+            repin.reading(distance: gap, wants: true, resized: false)
+            #expect(!takeInPass())
+        }
+        repin.release()
+        #expect(repin.landings == 1)
+        repin.reading(distance: 700, wants: true, resized: false)
+        #expect(takeInPass())
+        #expect(repin.landings == 2)
+        repin.reading(distance: 600, wants: true, resized: false)
+        #expect(take())
+        #expect(repin.misses == 0)
+    }
+
+    /// A stall from before the walk stays until the tail is seen at rest, as it would without one.
+    @Test func aWalkLeavesAStallAsItWas() {
+        var repin = Self.stalled()
+        #expect(repin.stalled)
+        let misses = repin.misses
+        repin.hold()
+        repin.reading(distance: 0, wants: true, resized: false)
+        #expect(repin.stalled)
+        repin.release()
+        #expect(repin.stalled)
+        #expect(repin.misses == misses)
+        repin.reading(distance: 0, wants: false, resized: false)
+        #expect(!repin.stalled)
+    }
+
+    /// A reused view that shows another thread mid-walk is still being walked.
+    @Test func aNewThreadMidWalkStaysHeld() {
+        var repin = NativeTailRepin()
+        func takeInPass() -> Bool { repin.takeInPass() }
+        repin.hold()
+        repin.newThread(refillingPass: true)
+        #expect(repin.held)
+        repin.reading(distance: 600, wants: true, resized: false)
+        #expect(!takeInPass())
+        repin.release()
+        repin.reading(distance: 600, wants: true, resized: false)
+        #expect(takeInPass())
+    }
 }

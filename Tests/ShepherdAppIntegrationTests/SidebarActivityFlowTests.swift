@@ -310,6 +310,113 @@ struct SidebarActivityFlowTests {
         #expect(vm.sidebarActivitySamples[id] == Array(repeating: 0.5, count: 10))
     }
 
+    /// Event times in sixteenths of a second, which a Date holds exactly: 62.5 ms apart is 16 a second, and a quarter
+    /// second is four gaps.
+    private static let toolGap = 0.0625
+
+    @Test func aBurstOfToolFinishesPublishesAtMostEveryQuarterSecondAndEndsOnTheNewestSamples() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space("workspace", path: app.dir.path)
+        let worker = Fixture.agent("worker", in: space, status: .working)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [worker]))
+        let id = worker.agent.id
+        let live = vm.agentLive(id)
+        let start = Date(timeIntervalSince1970: 0)
+        vm.sidebarActivityLast[id] = start
+        for index in 1...8 { vm.recordSidebarActivity(id, at: start.addingTimeInterval(Double(index) * Self.toolGap)) }
+        #expect(live.samples == Array(repeating: 16, count: 5), "the first sample landed, then the fifth, a quarter second after it: \(live.samples)")
+        try await eventuallyOnMain("the burst's last samples") { live.samples.count == 8 }
+        #expect(live.samples == Array(repeating: 16, count: 8))
+    }
+
+    /// Agents whose held samples fall due a few milliseconds apart publish in one pass of the sidebar, as one wait
+    /// ends: a pass for each would cost more than the redraws it saves.
+    @Test func samplesDueAFewMillisecondsApartPublishTogether() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start()
+        let ids = (0..<3).map { _ in AgentID() }
+        let start = Date(timeIntervalSince1970: 0)
+        for (index, id) in ids.enumerated() {
+            let first = start.addingTimeInterval(Self.toolGap + Double(index) * 0.005)
+            vm.sidebarActivityLast[id] = first.addingTimeInterval(-Self.toolGap)
+            vm.recordSidebarActivity(id, at: first)
+            vm.recordSidebarActivity(id, at: start.addingTimeInterval(0.2))
+            #expect(vm.agentLive(id).samples.count == 1, "the first sample landed, the second is held")
+        }
+        let wake = try #require(vm.sidebarActivityFlush?.due)
+        #expect(wake == start.addingTimeInterval(Self.toolGap + ActivityPacing.interval + ActivityPacing.coalescing))
+        vm.flushSidebarActivity(at: wake)
+        #expect(ids.map { vm.agentLive($0).samples.count } == [2, 2, 2])
+        #expect(vm.sidebarActivityFlush == nil)
+    }
+
+    /// Eight working threads finishing a tool every 62.5 to 125 ms for three seconds, each at a different rate than
+    /// the last (a tail of equal rates would draw the same row again): a row is drawn when its sparkline is published,
+    /// not for every tool.
+    @Test func toolFinishesAmongEightWorkingThreadsRedrawEachRowAtMostEveryQuarterSecond() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space("workspace", path: app.dir.path)
+        let workers = (0..<8).map { Fixture.agent("worker \($0)", in: space, order: $0, status: .working) }
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: workers))
+        let window = OffscreenWindow(size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 800), dark: true, SidebarView(vm: vm))
+        defer { window.close() }
+        ListPerf.settle(window)
+        let ids = workers.map(\.agent.id)
+        #expect(Set(vm.sidebarLists.working.map(\.id)) == Set(ids.map { SidebarRowID.local($0) }))
+        let start = Date(timeIntervalSince1970: 0)
+        for id in ids { vm.sidebarActivityLast[id] = start }
+        var at = start
+        let finishes = 32
+        let rows = ListPerf.counting {
+            for index in 0..<finishes {
+                at = at.addingTimeInterval(Self.toolGap * Double(1 + index % 2))
+                for id in ids { ListPerf.time(window) { vm.recordSidebarActivity(id, at: at) } }
+            }
+        }
+        let span = at.timeIntervalSince(start)
+        let publishes = Int(span / 0.25) + 2
+        #expect(rows["sidebar.row", default: 0] >= ids.count, "the rows showed their sparklines: \(rows)")
+        #expect(rows["sidebar.row", default: 0] <= ids.count * publishes, "\(finishes) tool finishes in \(span) s, at most \(publishes) draws a row: \(rows)")
+        try await eventuallyOnMain("every row's newest samples") { ids.allSatisfy { vm.agentLive($0).samples.count == 10 } }
+    }
+
+    @Test func aNewTurnStartsTheSparklineOverAndAGoneAgentLeavesNothingToPublish() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space("workspace", path: app.dir.path)
+        let worker = Fixture.agent("worker", in: space, status: .working)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [worker]))
+        let id = worker.agent.id
+        let live = vm.agentLive(id)
+        // Event times ahead of now, so each sample after the first is held. Nothing here yields before the checks.
+        let start = Date().addingTimeInterval(5)
+        func finish(_ gaps: Double) { vm.recordSidebarActivity(id, at: start.addingTimeInterval(gaps * Self.toolGap)) }
+        vm.sidebarActivityLast[id] = start
+        finish(1)
+        finish(2)
+        #expect(live.samples.count == 1 && vm.sidebarActivityTail[id]?.count == 2 && vm.sidebarActivityFlush != nil)
+
+        var next = vm.state
+        let index = try #require(next.agents.firstIndex { $0.id == id })
+        for status in [AgentStatus.done, .working] {
+            next.agents[index].status = status
+            vm.adopt(next)
+        }
+        #expect(live.samples.isEmpty && vm.sidebarActivityTail[id] == nil && vm.sidebarActivityFlush == nil, "a new turn drops what the last one held")
+        finish(3)
+        #expect(live.samples.count == 1 && vm.sidebarActivityFlush == nil, "its first sample lands at once, not behind the last turn's")
+
+        finish(4)
+        #expect(vm.sidebarActivityFlush != nil)
+        next.agents.remove(at: index)
+        next.tabs.removeAll { $0.id == worker.tab.id }
+        vm.adopt(next)
+        #expect(vm.sidebarActivityTail[id] == nil && vm.sidebarActivityFlush == nil && vm.agentLives[id] == nil, "a deleted agent keeps no wait")
+    }
+
     @Test func disclosuresAndMarkAllSeenTakeRealAccessibilityPresses() async {
         await #expect(processExitsWith: .success) {
             await recordingErrors {

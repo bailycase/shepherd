@@ -282,19 +282,23 @@ struct ThinkingRow: View, Equatable {
 /// A fenced block, plain on its first frame and syntax colored once tree-sitter has run off the
 /// main actor in the block's task. Results are cached, so a block that scrolls back in is
 /// colored at once. A block a reply is still writing (`writing`) is colored again at most every
-/// 250 ms and only up to its last complete line (`CodeHighlightThrottle`): between renders it
-/// keeps its last colors with the new text plain after them, and a render a newer chunk
-/// supersedes is dropped. A finished block is colored once, in full.
+/// 250 ms and only up to its last complete line (`CodeHighlightThrottle`), by a stream that gives
+/// tree-sitter the lines added since: the block keeps its colors, with the new text plain after
+/// them, and draws by changing the end of its text. A finished block is colored once, in full.
 struct HighlightedCodeBlock: SHProseCode {
     let code: String
     let language: String?
     var writing = false
-    /// The last colors this block rendered, with the code they color: the block keeps its
-    /// identity while a reply streams into it.
+    /// The colors of the finished block, with the code they color: the block keeps its identity
+    /// while a reply streams into it.
     @State private var rendered: CodeHighlightCache.Rendered?
     /// When the block was last colored, while it is being written. A reference: noting it
     /// never redraws the block.
     @State private var lastRender = CodeHighlightThrottle.Last()
+    /// The colors of the lines written so far.
+    @State private var stream = CodeHighlightStream()
+    /// The renders of `stream` that have landed: reading it draws the block again.
+    @State private var landed = 0
 
     /// The state and the throttle are not inputs: a retained block redraws only when its code, language or writing flag changes.
     nonisolated static func == (lhs: HighlightedCodeBlock, rhs: HighlightedCodeBlock) -> Bool {
@@ -310,11 +314,16 @@ struct HighlightedCodeBlock: SHProseCode {
 
     var body: some View {
         let _ = SHRenderProbe.tick("code.highlighted")
+        let _ = landed
         let key = key
-        SHCodeBlock(key.code, language: language,
-                    highlighted: CodeHighlightCache.colors(for: key, last: rendered, cached: CodeHighlightCache.cached(key)))
+        // A fence being colored line by line is in no cache until it is done.
+        let highlighted = writing && stream.isColoring ? nil
+            : CodeHighlightCache.colors(for: key, last: rendered, cached: CodeHighlightCache.cached(key))
+        SHCodeBlock(key.code, language: language, highlighted: highlighted,
+                    colors: highlighted == nil && (writing || stream.isColoring) ? stream.colors(for: key.code) : nil)
             .task(id: TaskKey(key: key, writing: writing)) {
-                guard CodeHighlightCache.cached(key) == nil, CodeHighlight.path(forFenceLanguage: key.language) != nil else { return }
+                guard let path = CodeHighlight.path(forFenceLanguage: key.language) else { return }
+                if !(stream.isColoring && writing), CodeHighlightCache.cached(key) != nil { return }
                 var decision = CodeHighlightThrottle.decide(code: key.code, writing: writing, last: lastRender.value, now: .now)
                 if case .wait(let delay) = decision {
                     // A newer chunk cancels this and decides again, with less of the wait left.
@@ -323,24 +332,23 @@ struct HighlightedCodeBlock: SHProseCode {
                     decision = CodeHighlightThrottle.decide(code: key.code, writing: writing, last: lastRender.value, now: .now)
                 }
                 guard case .render(let lines) = decision else { return }
-                let target = lines.map { key.prefix(lines: $0) } ?? key
-                if let cached = CodeHighlightCache.cached(target) {
-                    rendered = CodeHighlightCache.Rendered(key: target, value: cached)
+                if let lines {
+                    lastRender.value = CodeHighlightThrottle.Render(at: .now, lines: lines)
+                    SHRenderProbe.tick("highlight.render")
+                    stream.request(code: key.code, lines: lines, path: path) { [$landed] in $landed.wrappedValue &+= 1 }
                     return
                 }
-                if let lines { lastRender.value = CodeHighlightThrottle.Render(at: .now, lines: lines) }
-                // A newer chunk leaves this render running (the lines it colors are still the
-                // block's first lines); only a newer render supersedes it, and it is dropped.
                 lastRender.inFlight?.cancel()
                 SHRenderProbe.tick("highlight.render")
                 let style = CodeHighlight.Style.theme
-                let work = Task.detached(priority: .userInitiated) { CodeHighlightCache.render(target, style: style) }
+                let work = Task.detached(priority: .userInitiated) { CodeHighlightCache.render(key, style: style) }
                 lastRender.inFlight = work
                 let value = await work.value
                 guard lastRender.inFlight == work, let value else { return }
                 lastRender.inFlight = nil
-                CodeHighlightCache.store(value, for: target, replacing: rendered?.key)
-                rendered = CodeHighlightCache.Rendered(key: target, value: value)
+                CodeHighlightCache.store(value, for: key)
+                rendered = CodeHighlightCache.Rendered(key: key, value: value)
+                stream.finish()
             }
     }
 }
@@ -356,7 +364,7 @@ enum CodeHighlightThrottle {
         let lines: Int
     }
 
-    /// The block's last render, kept by reference, and the render still running.
+    /// The block's last render, kept by reference, and the full render still running.
     @MainActor final class Last {
         var value: Render?
         var inFlight: Task<AttributedString?, Never>?
@@ -396,17 +404,10 @@ enum CodeHighlightCache {
 
         /// A fence's code as the block draws it: without its leading and trailing newlines.
         init(fence code: String, language: String?) {
-            self.init(code: code.trimmingCharacters(in: .newlines), language: language)
-        }
-
-        /// The same code's first `lines` lines.
-        func prefix(lines: Int) -> Key {
-            var seen = 0
-            for index in code.utf8.indices where code.utf8[index] == UInt8(ascii: "\n") {
-                seen += 1
-                if seen == lines { return Key(code: String(code[..<index]), language: language) }
-            }
-            return self
+            // A fence being written almost never starts or ends with one: then it is the code itself, not a copy.
+            let newlines = CharacterSet.newlines
+            let trimmed = (code.unicodeScalars.first.map(newlines.contains) ?? false) || (code.unicodeScalars.last.map(newlines.contains) ?? false)
+            self.init(code: trimmed ? code.trimmingCharacters(in: newlines) : code, language: language)
         }
     }
 
@@ -434,13 +435,15 @@ enum CodeHighlightCache {
     /// What the cache may hold, by `cost(of:_:)`.
     static let costLimit = 16 * 1024 * 1024
 
-    /// What an entry holds: its code twice (the key and the colored text) and its runs, as `SHNativeCodeText`'s cache estimates.
+    /// What a run of a colored `AttributedString` holds, measured on a 3,000-line fence: 15,750 runs took 5.7 MB.
+    static let runCost = 384
+
+    /// What an entry holds: its code twice (the key and the colored text) and its runs.
     static func cost(of key: Key, _ value: AttributedString) -> Int {
-        key.code.utf8.count * 2 + value.runs.count * 128
+        key.code.utf8.count * 2 + value.runs.count * runCost
     }
 
-    /// Each throttled render of a growing fence is a new key, and each one holds its whole text:
-    /// bounded by cost, and by count so that the oldest go first, never everything.
+    /// Bounded by cost, and by count so that the oldest go first, never everything.
     @MainActor private static let values: NSCache<NSString, Entry> = {
         let cache = NSCache<NSString, Entry>()
         cache.countLimit = 256
@@ -452,15 +455,10 @@ enum CodeHighlightCache {
 
     @MainActor static func cached(_ key: Key) -> AttributedString? { values.object(forKey: name(key))?.value }
 
-    /// Stores `key`'s colors. `previous` is the block's last render of this fence: it goes when `key` is
-    /// the same fence grown (the same language, its code a prefix of `key`'s), since no block asks for it again.
-    @MainActor static func store(_ value: AttributedString, for key: Key, replacing previous: Key? = nil) {
+    @MainActor static func store(_ value: AttributedString, for key: Key) {
         // One entry larger than the whole budget would have NSCache evict the others to hold it.
         let cost = cost(of: key, value)
         if cost <= costLimit { values.setObject(Entry(value), forKey: name(key), cost: cost) }
-        if let previous, previous != key, previous.language == key.language, key.code.hasPrefix(previous.code) {
-            values.removeObject(forKey: name(previous))
-        }
     }
 
     /// The block's colors, nil when the language has no grammar (the block stays plain) or the
@@ -469,6 +467,7 @@ enum CodeHighlightCache {
     static func render(_ key: Key, style: CodeHighlight.Style,
                        isCancelled: @Sendable () -> Bool = { Task.isCancelled }) -> AttributedString? {
         guard let path = CodeHighlight.path(forFenceLanguage: key.language), !isCancelled() else { return nil }
+        SHRenderProbe.add("highlight.units", key.code.utf16.count)
         let lines = key.code.components(separatedBy: "\n")
         let colored = CodeHighlight.highlightLines(lines, path: path, style: style, isCancelled: isCancelled)
         guard colored.count == lines.count, !isCancelled() else { return nil }

@@ -329,8 +329,14 @@ private struct ChangesToolbar: View, Equatable {
                     .disabled(session.isLoading)
                     .help("Refresh")
                     .accessibilityLabel("Refresh")
+                // These two toolbar glyphs sit under the pane's content animation, so each is keyed on its
+                // state (a new image, fading) rather than a renamed symbol, which would load the drawing pool.
                 Button { model.toggleAllFolded() } label: {
-                    Image(systemName: model.allFolded ? "arrow.up.and.line.horizontal.and.arrow.down" : "arrow.down.and.line.horizontal.and.arrow.up")
+                    ZStack {
+                        Image(systemName: model.allFolded ? "arrow.up.and.line.horizontal.and.arrow.down" : "arrow.down.and.line.horizontal.and.arrow.up")
+                            .id(model.allFolded)
+                            .shTransition(.content)
+                    }
                 }
                 .buttonStyle(.shIcon(size: SHChangesMetrics.toolbarIcon))
                 .disabled(files == 0)
@@ -338,7 +344,11 @@ private struct ChangesToolbar: View, Equatable {
                 .accessibilityLabel(model.allFolded ? "Expand all files" : "Collapse all files")
                 // The toggle shows the layout it switches to.
                 Button { model.toggleLayout() } label: {
-                    Image(systemName: model.layout == .split ? "rectangle" : "rectangle.split.2x1")
+                    ZStack {
+                        Image(systemName: model.layout == .split ? "rectangle" : "rectangle.split.2x1")
+                            .id(model.layout == .split)
+                            .shTransition(.content)
+                    }
                 }
                 .buttonStyle(.shIcon(size: SHChangesMetrics.toolbarIcon))
                 .help(model.layout == .split ? "Switch to unified diff (⌥U)" : "Switch to split diff (⌥U)")

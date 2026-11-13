@@ -126,9 +126,11 @@ struct PairForm: View {
 
     private func getsRow(_ yes: Bool, _ text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
-            Image(systemName: yes ? "checkmark" : "xmark")
-                .foregroundStyle(yes ? Color.sh.done : Color.sh.textTertiary)
-                .accessibilityHidden(true)
+            Group {
+                if yes { Image(systemName: "checkmark").foregroundStyle(Color.sh.done) }
+                else { Image(systemName: "xmark").foregroundStyle(Color.sh.textTertiary) }
+            }
+            .accessibilityHidden(true)
             Text(text).fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
