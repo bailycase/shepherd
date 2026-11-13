@@ -150,13 +150,12 @@ struct FleetContentSyncTests {
         #expect(Self.text(Self.folder(studio, "pdf").appendingPathComponent("SKILL.md")) == Self.pdf, "the files came from the mini, the ops are the MacBook Pro's")
     }
 
-    @Test func skillsThePiLoadsFromElsewhereAndOnesFleetIsOffForNeverTravel() async throws {
+    @Test func skillsThePiLoadsFromElsewhereNeverTravel() async throws {
         let a = try await Mac("MacBook Pro", enable: false)
         defer { a.stop() }
         try Self.makeLocal("kept-home", in: a, skill: "---\nname: kept-home\ndescription: Not yet shared.\n---\n")
-        #expect(!FileManager.default.fileExists(atPath: a.host.dir.appendingPathComponent("fleet/store").path), "with Fleet off nothing is read or kept")
         a.enable()
-        try await eventually("the skill to be seeded once Fleet is on") { a.server.fleetSyncWinner(FleetUnit.skill("kept-home")) != nil }
+        try await eventually("the skill to be seeded once the fleet starts") { a.server.fleetSyncWinner(FleetUnit.skill("kept-home")) != nil }
         // A name that would leave the skill's folder is refused, never written.
         #expect(!FleetUnit.isValid("skill:pdf/../../x") && FleetFileTree.isSafe("scripts/run.sh") && !FleetFileTree.isSafe("../x") && !FleetFileTree.isSafe("/etc/hosts"))
     }
@@ -318,20 +317,6 @@ struct FleetContentSyncTests {
         // It does still read the skills the way a client always did: its own list, from the host.
         let listed = try await phone.skills(.fetch)
         if case .skills(let snapshot) = listed { #expect(snapshot.skills.map(\.name) == ["pdf"]) } else { Issue.record("no skills answer") }
-    }
-
-    /// Fleet off is membership off: nothing of the skills or extensions is watched, kept or applied.
-    @Test func withFleetOffSkillsAndExtensionsAreAsTheyWereBefore() async throws {
-        let a = try await Mac("MacBook Pro", enable: false)
-        defer { a.stop() }
-        let repo = try Repo()
-        try await repo.install(on: a)
-        try await a.local.skills(.setOn(name: "pdf", on: false))
-        try await a.local.skills(.setOn(name: "pdf", on: true))
-        #expect(Self.skill("pdf", on: a)?.isOn == true)
-        _ = try YourPiFixture().importAndSwitchOn(on: a)
-        #expect(!FileManager.default.fileExists(atPath: a.host.dir.appendingPathComponent("fleet/store").path), "no store until Fleet is on")
-        #expect(!(try await a.read()).enabled)
     }
 
     // MARK: Helpers

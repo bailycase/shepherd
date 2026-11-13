@@ -6,8 +6,9 @@ import ShepherdProtocol
 import ShepherdSessions
 import ShepherdRemote
 
-/// Configured remote Shepherd hosts (persisted in UserDefaults as JSON) and
-/// one live connection per host. The remote host runs the full Shepherd app;
+/// The Macs of this Mac's fleet, each with one live connection (their configs persisted in UserDefaults as JSON), and
+/// this Mac's own background host. A Mac connects to another only by joining its fleet: `ShepherdViewModel.syncFleetConnections`
+/// adds and removes these as the fleet changes. The other Mac runs the full Shepherd app;
 /// this store is the MacBook-side viewer: it adopts pushed state for the
 /// sidebar, serves remote agents' native threads, and bridges auxiliary
 /// shell panes' terminals over the wire.
@@ -31,8 +32,9 @@ final class RemoteHostStore {
         /// persisted: each launch finds it again.
         var localSocket: String?
         /// This Mac's host holds this one as a fleet peer (`FleetService`): its address and
-        /// token are the fleet's now, not hand editable. The app keeps this direct connection for
-        /// drawing the Mac's threads; `bindingID` stays, so Project executor references survive.
+        /// token are the fleet's. The app keeps this direct connection for drawing the Mac's threads;
+        /// `bindingID` stays, so Project executor references survive. Every connection is one now; a saved
+        /// config without it is a Mac this app was a client of before Fleet was how Macs connect (`notInFleet`).
         var fleetManaged: Bool
         /// `token` is this app's own (a fleet device token its host gave it), not the Mac's shared one,
         /// which a Mac can stop accepting.
@@ -277,6 +279,11 @@ final class RemoteHostStore {
     }
 
     static let defaultsKey = "shepherd.remote.hosts"
+    static let notInFleetKey = "shepherd.remote.hosts.notInFleet"
+
+    /// Macs this app was a client of before Fleet was how Macs connect: not connected any more, listed under Settings ▸ Fleet ▸ Macs
+    /// until each is added to the fleet (its saved address is a route to it) or dismissed.
+    private(set) var notInFleet: [HostConfig] = []
 
     @ObservationIgnored var onProjectionChanged: (() -> Void)?
     /// Whether the app leaves the next workspace the background host on this Mac pushes unadopted when a newer
@@ -404,10 +411,12 @@ final class RemoteHostStore {
         self.defaults = defaults
         self.childRefreshInterval = childRefreshInterval
         self.connects = connects
-        if let data = defaults.data(forKey: Self.defaultsKey),
-           let configs = try? JSONDecoder().decode([HostConfig].self, from: data) {
-            allConnections = configs.map { Connection(config: $0, designCache: designCache) }
-        }
+        let saved = defaults.data(forKey: Self.defaultsKey).flatMap { try? JSONDecoder().decode([HostConfig].self, from: $0) } ?? []
+        allConnections = saved.filter(\.fleetManaged).map { Connection(config: $0, designCache: designCache) }
+        // A client-only Mac is kept as a row to add or dismiss, once: its saved address is the one thing the person would retype.
+        let moved = saved.filter { !$0.fleetManaged }
+        notInFleet = (defaults.data(forKey: Self.notInFleetKey).flatMap { try? JSONDecoder().decode([HostConfig].self, from: $0) } ?? []) + moved
+        if !moved.isEmpty { persist() }
         for connection in allConnections {
             connect(connection)
         }
@@ -426,35 +435,15 @@ final class RemoteHostStore {
         return connection
     }
 
+    /// Connects a Mac of the fleet (`id` is its fleet id when it has one).
     @discardableResult
-    func addHost(name: String, host: String, port: UInt16, token: String, ownToken: Bool = false) -> UUID {
-        let config = HostConfig(name: name, host: host, port: port, token: token, ownToken: ownToken)
+    func addHost(id: UUID = UUID(), name: String, host: String, port: UInt16, token: String, ownToken: Bool = false) -> UUID {
+        let config = HostConfig(id: id, name: name, host: host, port: port, token: token, fleetManaged: true, ownToken: ownToken)
         let connection = Connection(config: config, designCache: designCache)
         allConnections.append(connection)
         persist()
         connect(connection)
         return config.id
-    }
-
-    /// Pairs this app as a device (a client) of the Mac at `host`:`port` with the code its Settings ▸ Fleet ▸
-    /// Add a device shows, and connects to it with a token of its own that the Mac keeps only the hash of.
-    /// Nothing is typed but the code, and the Mac need not be in a fleet. A Mac already held at that address
-    /// is given the new token instead of being added twice. `expecting` is the id of the Mac a pairing link named: another Mac answering
-    /// there is refused before the code is sent. Returns the host's id.
-    @discardableResult
-    func pairAsClient(host: String, port: UInt16, code: String, expecting: UUID? = nil) async throws -> UUID {
-        let token = FleetProtocol.makeToken()
-        let device = FleetDeviceIntroduction(deviceID: UUID(), name: Host.current().localizedName ?? "Mac", kind: .macApp,
-                                             tokenHash: FleetProtocol.hash(token))
-        let answered = try await RemoteHostClient.fleetPairDevice(host: host, port: port, code: code, device: device, expecting: expecting).result
-        if let held = pairedConnections.first(where: { $0.config.host == host && $0.config.port == port }) {
-            held.config.token = token
-            held.config.ownToken = true
-            persist()
-            reconnect(id: held.id)
-            return held.id
-        }
-        return addHost(name: answered.name, host: host, port: port, token: token, ownToken: true)
     }
 
     /// Update a host's config and reconnect with the new values.
@@ -474,19 +463,24 @@ final class RemoteHostStore {
         reconnect(id: id)
     }
 
-    /// This host became a fleet peer: its configuration stops being hand editable.
-    func markFleetManaged(id: UUID) {
-        guard let connection = allConnections.first(where: { $0.id == id }), !connection.config.fleetManaged else { return }
-        connection.config.fleetManaged = true
-        persist()
-    }
-
     /// This app was given a token of its own for this fleet Mac: it replaces the shared one, and the
     /// binding stays (the Mac is the same).
     func useOwnToken(id: UUID, token: String) {
-        guard let connection = allConnections.first(where: { $0.id == id }), connection.config.fleetManaged else { return }
+        guard let connection = allConnections.first(where: { $0.id == id }) else { return }
         connection.config.token = token
         connection.config.ownToken = true
+        persist()
+        reconnect(id: id)
+    }
+
+    /// The fleet says this Mac is now at `host`:`port`, or has another name: its connection follows, and keeps its binding (the Mac is
+    /// the same).
+    func follow(id: UUID, name: String, host: String, port: UInt16) {
+        guard let connection = allConnections.first(where: { $0.id == id }) else { return }
+        connection.endpointID = UUID()
+        connection.config.name = name
+        connection.config.host = host
+        connection.config.port = port
         persist()
         reconnect(id: id)
     }
@@ -524,10 +518,17 @@ final class RemoteHostStore {
         connect(connection)
     }
 
+    /// A row of Settings ▸ Fleet ▸ Macs for a Mac that was a client: added to the fleet (it is no longer a row) or dismissed.
+    func dismissNotInFleet(id: UUID) {
+        notInFleet.removeAll { $0.id == id }
+        persist()
+    }
+
     private func persist() {
         if let data = try? JSONEncoder().encode(allConnections.map(\.config).filter { $0.localSocket == nil }) {
             defaults.set(data, forKey: Self.defaultsKey)
         }
+        if let data = try? JSONEncoder().encode(notInFleet) { defaults.set(data, forKey: Self.notInFleetKey) }
     }
 
     // MARK: - Connection lifecycle

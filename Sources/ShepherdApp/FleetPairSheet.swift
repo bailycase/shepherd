@@ -9,16 +9,20 @@ import ShepherdRemote
 /// only proof: it is checked by the same handshake, over a direct connection, after the answering Mac's id matches.
 struct FleetPairSheet: View {
     var model: FleetSettingsModel
-    /// Fleet is off: the Mac is added as one this app is a client of (what it shows is Add a device), not into a fleet.
-    var asClient = false
+    /// A Mac this app was a client of (`RemoteHostStore.notInFleet`), picked already with its saved address as its route.
+    var candidate: FoundMac?
+    /// Called once it is added, before the sheet closes.
+    var onAdded: () -> Void = {}
     let dismiss: () -> Void
 
     @State private var picked: String?
     @State private var code: String
 
-    init(model: FleetSettingsModel, asClient: Bool = false, code: String = "", dismiss: @escaping () -> Void) {
+    init(model: FleetSettingsModel, candidate: FoundMac? = nil, code: String = "", onAdded: @escaping () -> Void = {},
+         dismiss: @escaping () -> Void) {
         self.model = model
-        self.asClient = asClient
+        self.candidate = candidate
+        self.onAdded = onAdded
         self.dismiss = dismiss
         _code = State(initialValue: code)
     }
@@ -26,18 +30,18 @@ struct FleetPairSheet: View {
     /// The Mac a link or an SSH find named, else the one picked from the Macs found.
     private var target: FleetSettingsModel.PairTarget? { model.target }
     private var mac: FoundMac? {
-        target != nil ? nil : model.found.first { $0.id == picked } ?? (model.found.count == 1 ? model.found.first : nil)
+        target != nil ? nil : candidate ?? model.found.first { $0.id == picked } ?? (model.found.count == 1 ? model.found.first : nil)
     }
     /// No Mac is picked and the host can look the code up in iCloud, so the code alone is enough.
-    private var findsByCode: Bool { mac == nil && target == nil && !asClient && model.findsByCode }
+    private var findsByCode: Bool { mac == nil && target == nil && model.findsByCode }
     private var ready: Bool { (mac != nil || target != nil || findsByCode) && code.count == FleetProtocol.codeLength && model.pairing != .working }
     private var theirName: String { target?.name ?? mac?.name ?? "the other Mac" }
     /// Nothing is found nearby, or the person is using one of the other ways.
-    private var offersOtherWays: Bool { model.found.isEmpty || target != nil || !model.linkText.isEmpty || !model.sshTarget.isEmpty }
+    private var offersOtherWays: Bool { (model.found.isEmpty && candidate == nil) || target != nil || !model.linkText.isEmpty || !model.sshTarget.isEmpty }
 
     var body: some View {
-        SHDialog(asClient ? "Add a Mac" : "Add a Mac to your fleet",
-                 message: "Open Shepherd on the other Mac and choose \(asClient ? "Add a device" : "Join a fleet").",
+        SHDialog("Add a Mac to your fleet",
+                 message: "Open Shepherd on the other Mac and choose Join a fleet.",
                  width: AppLayout.fleetPairWidth) {
             VStack(alignment: .leading, spacing: 0) {
                 section("1 · Find the Mac", first: true) {
@@ -53,14 +57,14 @@ struct FleetPairSheet: View {
                         .disabled(model.pairing == .working)
                 }
                 SHHairline()
-                section(asClient ? "What this Mac gets" : "What \(target?.name ?? mac?.name ?? "it") gets") { asClient ? AnyView(clientGets) : AnyView(gets) }
+                section("What \(target?.name ?? mac?.name ?? "it") gets") { gets }
                 SHHairline()
             }
         } status: {
             switch model.pairing {
             case .failed(let message): SHDialogStatus(message, isError: true)
             case .working: SHDialogStatus(mac == nil && target == nil ? "Looking for the Mac…" : "Adding \(theirName)…")
-            case .idle: SHDialogStatus(asClient ? "The Mac can revoke this one any time." : "The code proves it's your Mac, whichever way you found it.")
+            case .idle: SHDialogStatus("The code proves it's your Mac, whichever way you found it.")
             }
         } actions: {
             Button("Cancel") { dismiss() }
@@ -69,13 +73,13 @@ struct FleetPairSheet: View {
                 Task {
                     let added: Bool
                     if let target {
-                        added = await model.pair(at: target, code: code, asClient: asClient)
+                        added = await model.pair(at: target, code: code)
                     } else if let mac {
-                        added = asClient ? await model.pairAsClient(with: mac, code: code) : await model.pair(with: mac, code: code)
+                        added = await model.pair(with: mac, code: code)
                     } else {
                         added = await model.pairByCode(code)
                     }
-                    if added { dismiss() }
+                    if added { onAdded(); dismiss() }
                 }
             }
             .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
@@ -95,18 +99,7 @@ struct FleetPairSheet: View {
     private func takeIncomingLink() {
         guard let text = model.incomingLink else { return }
         model.incomingLink = nil
-        model.readLink(text, asClient: asClient)
-    }
-
-    /// A client of a Mac outside a fleet: its threads, and nothing of its settings.
-    private var clientGets: some View {
-        let sh = Color.sh
-        return Grid(alignment: .topLeading, horizontalSpacing: SH.Space.m, verticalSpacing: SH.Space.s) {
-            row(true, "Its threads in your sidebar: read them, send, start new ones and answer questions")
-            row(false, "Not a fleet. Its settings, sign-ins and checkouts stay on it, and this Mac keeps its own.")
-        }
-        .font(.sh(.ui))
-        .foregroundStyle(sh.textSecondary)
+        model.readLink(text)
     }
 
     private func section<Content: View>(_ title: String, first: Bool = false, @ViewBuilder content: () -> Content) -> some View {
@@ -119,8 +112,10 @@ struct FleetPairSheet: View {
     }
 
     @ViewBuilder private var macs: some View {
-        if model.found.isEmpty {
-            FleetNothingNearby(findsByCode: !asClient && model.findsByCode)
+        if let candidate {
+            FleetFoundRow(mac: candidate, selected: mac?.id == candidate.id) {}
+        } else if model.found.isEmpty {
+            FleetNothingNearby(findsByCode: model.findsByCode)
         } else {
             ForEach(model.found) { found in
                 FleetFoundRow(mac: found, selected: mac?.id == found.id) { picked = found.id }
@@ -130,7 +125,7 @@ struct FleetPairSheet: View {
 
     /// Open a pairing link: the field and Paste. A link the other Mac shared fills in where it is and its code.
     private var linkWay: some View {
-        let link = Binding(get: { model.linkText }, set: { model.readLink($0, asClient: asClient) })
+        let link = Binding(get: { model.linkText }, set: { model.readLink($0) })
         return FleetWayBox(glyph: Image(systemName: "link"), title: "Open a pairing link",
                            detail: "The other Mac's Join screen can send one by AirDrop or Messages. Opening it fills in where to find it and its code.",
                            on: model.link != nil) {
@@ -139,7 +134,7 @@ struct FleetPairSheet: View {
                     .textFieldStyle(.sh(mono: true, error: model.linkProblem != nil))
                     .disabled(model.pairing == .working)
                     .accessibilityLabel("Pairing link")
-                Button("Paste") { if let text = NSPasteboard.general.string(forType: .string) { model.readLink(text, asClient: asClient) } }
+                Button("Paste") { if let text = NSPasteboard.general.string(forType: .string) { model.readLink(text) } }
                     .buttonStyle(.sh(.secondary))
             }
             if let problem = model.linkProblem {

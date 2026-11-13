@@ -167,15 +167,14 @@ struct FleetCredentialsSyncTests {
         #expect(second < .seconds(3), "a Mac that failed to catch this one up is not waited for again at once")
     }
 
-    @Test func withFleetOffNoSignInIsReadAndNothingWaits() async throws {
-        let a = try await Mac("MacBook Pro", enable: false)
+    @Test func withNoMacPairedNothingWaitsForASignIn() async throws {
+        let a = try await Mac("MacBook Pro")
         defer { a.stop() }
         try Self.piWrites(Self.acme, Self.oauth(1), in: Self.auth(a))
         let before = try Data(contentsOf: Self.auth(a))
         let took = await ContinuousClock().measure { await a.server.fleetCredentialFence() }
         #expect(took < .seconds(FleetSync.fencePatience / 2), "it doesn't wait out the fence's patience")
         #expect(try Data(contentsOf: Self.auth(a)) == before)
-        #expect(!FileManager.default.fileExists(atPath: a.host.dir.appendingPathComponent("fleet/store").path), "no store until Fleet is on")
     }
 
     // MARK: pi's own writes are never clobbered

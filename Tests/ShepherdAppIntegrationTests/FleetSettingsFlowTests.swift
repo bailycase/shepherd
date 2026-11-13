@@ -7,9 +7,9 @@ import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
-/// Settings ▸ Fleet as the host's client: the Experiments switch starts and stops the host's
-/// fleet, the page's model pairs and removes Macs through the host, and a Mac the app already
-/// reached with the shared token becomes a peer. Each `FleetApp` is a scratch host served as
+/// Settings ▸ Fleet as the host's client: a fresh host listens on nothing and opens its listener as a Mac pairs or a code shows, the
+/// page's model pairs and removes Macs through the host, the app's connections follow the fleet, and a Mac this app was a client of
+/// is a row to add to the fleet. Each `FleetApp` is a scratch host served as
 /// `Shepherd --host` serves it (`ShepherdHost.serveSettings`) with its app's model on `host.sock`.
 @Suite("Settings ▸ Fleet", .mainActorExclusive)
 @MainActor
@@ -36,28 +36,28 @@ struct FleetSettingsFlowTests {
         let client: RemoteHostClient
         let model = FleetSettingsModel()
         let token: String
-        let port: UInt16?
         var server: SessionServer { host.server }
+        /// The port the host's listener is bound to now: nil on a fresh host, which listens on nothing until the fleet needs it.
+        var port: UInt16? { host.server.remoteListenerPort }
 
-        /// `fleet: false` leaves Fleet off, as a fresh install is; `serving` turns Settings ▸ Remote's Serve this Mac on.
-        init(_ name: String, fleet: Bool = true, serving: Bool = false, dir: URL? = nil, configure: (SessionServer) -> Void = { _ in }) async throws {
+        /// `serving` turns Serve this Mac on.
+        init(_ name: String, serving: Bool = false, dir: URL? = nil, configure: (SessionServer) -> Void = { _ in }) async throws {
             let host = try ScratchServer(dir: dir)
             host.server.configureFleet(name: name, advertises: false)
             configure(host.server)
             let settings = AppSettings(store: ScratchDefaults())
             // Ephemeral: never the edition's own port, which a running Shepherd may hold.
             settings.remoteListenerPort = 0
-            settings.fleetEnabled = fleet
             settings.remoteListenerEnabled = serving
             HostSettingsMapping.serve(on: host.server, settings: settings)
-            let port = ShepherdHost.serveSettings(settings, on: host.server)
+            ShepherdHost.serveSettings(settings, on: host.server)
             let tokenURL = host.dir.appendingPathComponent("remote-token")
             let socket = host.dir.appendingPathComponent("h.sock").path
             try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
             let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             let client = RemoteHostClient(localSocket: socket)
             _ = try await client.connect(host: "", port: 0, token: token, clientName: "Shepherd")
-            (self.host, self.settings, self.client, self.token, self.port) = (host, settings, client, token, port)
+            (self.host, self.settings, self.client, self.token) = (host, settings, client, token)
             model.host = { client }
         }
 
@@ -70,50 +70,46 @@ struct FleetSettingsFlowTests {
         var name: String { host.dir.lastPathComponent }
     }
 
-    @Test func theExperimentSwitchStartsTheHostsFleetAndOpensItsListenerWithRemoteOff() async throws {
-        let app = try await FleetApp("MacBook Pro", fleet: false)
-        defer { app.stop() }
-        #expect(app.port == nil && !app.settings.remoteListenerEnabled)
-        await app.model.refresh()
-        #expect(!app.model.snapshot.enabled && app.model.rows.isEmpty, "Fleet is off: the page has nothing")
+    @Test func aFreshHostListensOnNothingAndOpensItsListenerForACodeAndForAPairedMac() async throws {
+        let a = try await FleetApp("MacBook Pro"), b = try await FleetApp("Mac mini")
+        defer { a.stop(); b.stop() }
+        await a.model.refresh()
+        // Fleet needs no switch: the page has the Mac, and nothing listens until a Mac, a device or a code needs it.
+        #expect(a.model.snapshot.enabled && a.model.loaded && a.model.rows.map(\.title) == ["This Mac"])
+        #expect(a.port == nil && a.model.snapshot.port == nil && !a.settings.remoteListenerEnabled)
 
-        app.settings.fleetEnabled = true
-        try await Self.waitFor("the host's fleet to start and its listener to open") {
-            await app.model.refresh()
-            return app.model.snapshot.enabled && app.model.snapshot.port != nil
-        }
-        let id = try #require(app.model.snapshot.hostID)
-        #expect(app.model.snapshot.name == "MacBook Pro" && app.model.rows.map(\.title) == ["This Mac"])
-        #expect(!app.settings.remoteListenerEnabled, "Serve this Mac's own switch stays off")
+        // A code showing opens it, with Serve this Mac's own switch still off; closing the screen closes it.
+        await b.model.startJoin()
+        let code = try #require(b.model.join?.code)
+        let port = try #require(b.port, "the code is shown once the listener it is entered against is open")
+        #expect(b.model.snapshot.port == port && !b.settings.remoteListenerEnabled)
         let phone = RemoteHostClient()
-        _ = try await phone.connect(host: "127.0.0.1", port: try #require(app.model.snapshot.port), token: app.token, clientName: "peer")
-        #expect(phone.capabilities.contains(RemoteProtocol.fleetCapability) && phone.hostID == id)
+        _ = try await phone.connect(host: "127.0.0.1", port: port, token: b.token, clientName: "peer")
+        #expect(phone.capabilities.contains(RemoteProtocol.fleetCapability) && phone.hostID == b.model.snapshot.hostID)
         phone.disconnect()
 
-        // Off again: the links and the listener end, the pairing file stays, and on again it is the same Mac.
-        app.settings.fleetEnabled = false
-        try await Self.waitFor("the host's fleet to stop") {
-            await app.model.refresh()
-            return !app.model.snapshot.enabled
+        // A Mac that pairs keeps it open on both sides, though the code is spent, and the one that entered it opens its own.
+        #expect(await a.model.pair(with: b.found, code: code))
+        try await Self.waitFor("both Macs to listen and list each other") {
+            await a.model.refresh(); await b.model.refresh()
+            return a.port != nil && b.port != nil && a.model.rows.count == 2 && b.model.rows.count == 2
         }
-        app.settings.fleetEnabled = true
-        try await Self.waitFor("the same fleet to come back") {
-            await app.model.refresh()
-            return app.model.snapshot.hostID == id
-        }
+
+        // Removing the last Mac closes what only the fleet held open.
+        await a.model.remove(try #require(a.model.rows[1].hostID))
+        try await Self.waitFor("both Macs to stop listening") { a.port == nil && b.port == nil }
+        #expect(!a.settings.remoteListenerEnabled && !b.settings.remoteListenerEnabled)
     }
 
-    @Test func aClientTurnsFleetOnAndOffThroughTheHostsSettings() async throws {
-        let app = try await FleetApp("MacBook Pro", fleet: false)
+    @Test func serveThisMacKeepsTheListenerOpenWithNoMacPairedAndANeedEndingLeavesItOpen() async throws {
+        let app = try await FleetApp("MacBook Pro", serving: true)
         defer { app.stop() }
-        #expect(try await app.client.hostSettings().fleetEnabled == false)
-        let on = try await app.client.hostSettings(.change(.fleetEnabled(true)))
-        #expect(on.fleetEnabled && app.settings.fleetEnabled)
-        try await Self.waitFor("the host's fleet to start") {
-            await app.model.refresh()
-            return app.model.snapshot.enabled
-        }
-        #expect(app.client.capabilities.contains(RemoteProtocol.fleetExperimentCapability))
+        let port = try #require(app.port, "Serve this Mac opens it")
+        await app.model.startJoin()
+        #expect(app.port == port)
+        await app.model.stopJoin()
+        try await Self.waitFor("the host to hear the code window end") { await app.model.refresh(); return app.model.snapshot.join == nil }
+        #expect(app.port == port, "the switch is the person's own reason to listen")
     }
 
     @Test func twoAppsPairThroughTheirModelsAndEachListsTheOther() async throws {
@@ -249,33 +245,6 @@ struct FleetSettingsFlowTests {
         try await Self.waitFor("the paired Mac to leave the list") { a.model.found == [imac] }
         a.model.stopFinding()
         #expect(a.model.found.isEmpty)
-    }
-
-    @Test func aMacTheAppAlreadyReachedWithTheSharedTokenBecomesAPeerAndIsMarkedFleetManaged() async throws {
-        let a = try await FleetApp("MacBook Pro"), b = try await FleetApp("Mac mini")
-        defer { a.stop(); b.stop() }
-        let defaults = ScratchDefaults()
-        let store = RemoteHostStore(defaults: defaults, connects: false)
-        store.addHost(name: "mini", host: "127.0.0.1", port: try #require(b.port), token: b.token)
-        let config = try #require(store.hosts.first)
-        let off = try await FleetApp("Mac Studio", fleet: false, serving: true)
-        defer { off.stop() }
-        store.addHost(name: "studio", host: "127.0.0.1", port: try #require(off.port), token: off.token)
-
-        let legacy = store.hosts.map { FleetLegacyHost(id: $0.id, name: $0.name, host: $0.host, port: $0.port, token: $0.token) }
-        let outcomes = await a.model.adopt(legacy)
-        let established = outcomes.compactMap { adoption -> UUID? in if case .established = adoption.outcome { adoption.id } else { nil } }
-        #expect(established == [config.id])
-        #expect(outcomes.contains { $0.outcome == .notFleet }, "a Mac with Fleet off is left as it was")
-        for id in established { store.markFleetManaged(id: id) }
-
-        #expect(store.hosts.map(\.fleetManaged) == [true, false])
-        let reloaded = RemoteHostStore(defaults: defaults, connects: false)
-        #expect(reloaded.hosts.first?.fleetManaged == true && reloaded.hosts.first?.bindingID == config.bindingID, "the binding survives")
-        try await Self.waitFor("the peer to connect") {
-            await a.model.refresh()
-            return a.model.rows.map(\.state) == [.thisMac, .connected]
-        }
     }
 
     // MARK: The Fleet page

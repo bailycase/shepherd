@@ -18,7 +18,7 @@ struct RemoteListenerTests {
         try client.send(.hello(id: 7, token: r.token, clientName: "test", protocolVersion: RemoteProtocol.version))
         // Designs (and Pencil markup and Delete with them) only while the host's Design tool is
         // on, and it starts off.
-        // Fleet is offered only while the host's Fleet experiment is on (it starts off).
+        // Fleet is offered only by a host whose fleet has started (`SessionServer.startFleet`); a bare server has none.
         // A bare server also has no owner Project launcher/controller installed, and Files goes
         // only to a client that lists it (this one lists nothing).
         let offered = RemoteProtocol.capabilities.filter {

@@ -89,19 +89,19 @@ extension FleetSnapshotIndexTests {
         defer { a.stop() }
         try await a.server.addSpace(Space(name: "acme-web", path: repo.path))
         a.enable()
-        // Fleet is on and nobody is paired: no index, no manifest, nothing on disk, nothing reported.
+        // Nobody is paired: no index, no manifest, nothing on disk, nothing reported.
         #expect(a.service?.isActive == false && a.index(repo) == nil)
         #expect(try await a.read().index == nil)
         #expect(!FileManager.default.fileExists(atPath: a.host.dir.appendingPathComponent("fleet/index/roots").path))
 
         let b = try await Mac("Mac mini")
         defer { b.stop() }
-        try await a.pair(with: b)
+        let paired = try await a.pair(with: b)
         try await eventually("the index to start and finish its first scan") { try await a.read().index?.repos.first?.ready == true }
         let status = try #require(try await a.read().index)
         #expect(status.indexing == false && status.repos.first?.name == "acme-web" && status.repos.first?.files == Self.files.count + Self.ignored.count)
-        // Fleet off again: the index stops reading, and says nothing.
-        a.server.setFleetEnabledAndWait(false)
+        // The last Mac leaves the fleet: the index stops reading, and says nothing.
+        _ = try await a.local.fleetAction(.remove(hostID: paired.hostID))
         try await eventually("the index to stop") { a.service?.isActive == false }
         #expect(try await a.read().index == nil)
     }
@@ -348,7 +348,7 @@ extension FleetSnapshotIndexTests {
         catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetProtocol.Code.forbidden) }
     }
 
-    @Test func aMacInTheFleetMaySendAndAMalformedStepIsRefusedAndFleetOffTakesNothing() async throws {
+    @Test func aMacInTheFleetMaySendAndAMalformedStepIsRefused() async throws {
         let repo = try Self.checkout()
         defer { try? FileManager.default.removeItem(at: repo) }
         let (a, b, _) = try await Self.pair(repo: repo)
@@ -359,11 +359,6 @@ extension FleetSnapshotIndexTests {
         #expect(ack.resend, "B holds nothing under that name: send it all")
         do { _ = try await asA.fleetRepoManifest(FleetRepoManifestUpdate(repo: "", kind: .head, generation: 1, seq: 0, digest: .empty)); Issue.record("an empty repo name was accepted") }
         catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetSnapshotProtocol.Code.invalid) }
-        // Fleet off: no peer connection survives, the index stops, and the manifests of the peers are not served or kept up.
-        b.server.setFleetEnabledAndWait(false)
-        try await eventually("B to leave the fleet") { b.service?.isActive == false }
-        let status = try await b.read()
-        #expect(status.index == nil)
     }
 }
 

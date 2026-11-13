@@ -80,7 +80,7 @@ struct FleetPressureIntegrationTests {
             let port = try server.startRemoteListener(port: 0, tokenURL: tokenURL)
             let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             try server.startLocalListener(path: socket, tokenURL: tokenURL)
-            server.setFleetEnabledAndWait(true)
+            server.startFleetAndWait()
             let local = RemoteHostClient(localSocket: socket)
             _ = try await local.connect(host: "", port: 0, token: token, clientName: "Shepherd")
             (self.host, self.port, self.sharedToken, self.local) = (host, port, token, local)
@@ -420,21 +420,17 @@ struct FleetPressureIntegrationTests {
         #expect(local.macs.isEmpty)
     }
 
-    /// Fleet off: the host lives on for devices, but nobody is sampled for and the page isn't served.
-    @Test func withFleetOffNothingIsSampledAndEveryPressureRequestIsRefused() async throws {
+    /// A Mac nobody is sampled for takes no sample: none before a Mac is paired, and none once the last one is removed.
+    @Test func aMacWithNoPeerSamplesNothing() async throws {
         let a = try await Mac("MacBook Pro", busy: 30), b = try await Mac("Mac mini", busy: 60)
         defer { a.stop(); b.stop() }
+        #expect(!a.isSampling, "a fresh host never samples")
         try await Self.pair(a, b)
-        let (aID, bID) = (try await a.hostID(), try await b.hostID())
+        let bID = try await b.hostID()
         try await eventually("A to sample for its peer") { a.isSampling }
-        try await eventually("B to hold A's sample") { try await b.state(of: aID)?.sample != nil }
 
-        a.server.setFleetEnabledAndWait(false)
+        _ = try await a.local.fleetAction(.remove(hostID: bID))
         try await eventually("A to stop sampling") { !a.isSampling }
-        #expect(try await a.read().macs.isEmpty && a.server.queue.sync { a.server.fleet?.pressure.isWatched } == false)
-        do { _ = try await a.local.fleetAction(.watching(true)); Issue.record("the page was served with Fleet off") }
-        catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetProtocol.Code.off) }
-        #expect(!a.isSampling)
-        _ = bID
+        #expect(a.server.queue.sync { a.server.fleet?.pressure.isWatched } == false)
     }
 }

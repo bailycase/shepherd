@@ -88,8 +88,8 @@ struct FleetDevices: Codable, Equatable, Sendable {
         return try JSONDecoder().decode(FleetDevices.self, from: data)
     }
 
-    /// Whether the shared token was retired here, read without a `FleetService`: retiring it holds while
-    /// Fleet is off, so turning Fleet off never opens the old token again.
+    /// Whether the shared token was retired here, read without a `FleetService`: retiring it holds before
+    /// the service exists, so the old token is never open again.
     static func sharedTokenRetired(in directory: URL) -> Bool {
         (try? load(from: directory))?.sharedTokenRetired ?? false
     }

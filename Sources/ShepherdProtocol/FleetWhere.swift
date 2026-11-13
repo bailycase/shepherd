@@ -26,7 +26,7 @@ public struct FleetWhere: Codable, Hashable, Sendable {
 
     /// Why a Mac has nothing to say.
     public enum Unavailable: Error, Equatable, Sendable {
-        /// The host answered but isn't listening (Settings ▸ Remote and Fleet are both off).
+        /// The host answered but isn't listening (no Mac or device is paired, no code is showing and Serve this Mac is off).
         case notServing
     }
 

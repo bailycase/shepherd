@@ -50,8 +50,8 @@ struct FleetRendezvousTests {
 
     /// A host that shares `cloud` and says its listener is at `127.0.0.1` (after `extra`, routes that lead nowhere).
     static func mac(_ name: String, cloud: FleetRendezvousStore, extra: [FleetRoute] = [], dir: URL? = nil, joinLifetime: TimeInterval? = nil,
-                    fleet: Bool = true, dials: Bool = true) async throws -> Mac {
-        try await Mac(name, dir: dir, fleet: fleet) {
+                    dials: Bool = true) async throws -> Mac {
+        try await Mac(name, dir: dir) {
             // A Mac that doesn't dial leaves the link to the other Mac's own connection (a Mac's connection to the one that dialed it
             // carries the link as well, so a test of one Mac finding the other by a route needs the other not to dial first).
             if !dials {
@@ -245,9 +245,9 @@ struct FleetRendezvousTests {
         #expect(cloud.records(.presence).isEmpty, "a Mac with no peer has nothing to be found by")
         try await a.pair(with: b, code: try await b.startJoin())
         try await eventually("a's presence record") { cloud.records(.presence).count == 2 }
-        let bID = try #require(try await b.read().hostID)
+        let (aID, bID) = (try #require(try await a.read().hostID), try #require(try await b.read().hostID))
         _ = try await a.local.fleetAction(.remove(hostID: bID))
-        try await eventually("a's presence record to go") { cloud.records(.presence).count == 1 }
+        try await eventually("a's presence record to go") { cloud.record(.presence(of: aID)) == nil }
     }
 
     // MARK: No iCloud
@@ -279,19 +279,5 @@ struct FleetRendezvousTests {
         let refused = await Self.refusal { _ = try await Self.findAndPair(a, code: "482913") }
         #expect(refused?.code == FleetProtocol.Code.icloudUnavailable)
         #expect(try await a.read().enabled, "Fleet itself is untouched")
-    }
-
-    @Test func aHostWithFleetOffRefusesTheLookup() async throws {
-        let a = try await Self.mac("MacBook Pro", cloud: FakeCloud(), fleet: false)
-        defer { a.stop() }
-        let refused = await Self.refusal { _ = try await Self.findAndPair(a, code: "482913") }
-        #expect(refused?.code == FleetProtocol.Code.off)
-    }
-
-    @Test func theCapabilityIsOfferedToTheAppOnlyWhileFleetIsOn() async throws {
-        let on = try await Self.mac("MacBook Pro", cloud: FakeCloud()), off = try await Self.mac("Mac mini", cloud: FakeCloud(), fleet: false)
-        defer { on.stop(); off.stop() }
-        #expect(on.local.capabilities.contains(RemoteProtocol.fleetRendezvousCapability))
-        #expect(!off.local.capabilities.contains(RemoteProtocol.fleetRendezvousCapability))
     }
 }

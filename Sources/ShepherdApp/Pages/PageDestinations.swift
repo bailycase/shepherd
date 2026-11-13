@@ -54,33 +54,3 @@ struct AutomationsDestination: View {
             openURL: { NSWorkspace.shared.open($0) })
     }
 }
-
-/// The Hosts page in the main column, and the confirmation before a host is removed.
-struct HostsDestination: View {
-    var vm: ShepherdViewModel
-    var chrome = PageHeaderChrome()
-    @State private var removing: UUID?
-
-    var body: some View {
-        let _ = SHRenderProbe.tick("page.hosts")
-        HostsPage(model: vm.hostsPage(agentVersion: vm.pi.engine.version), actions: HostsPageActions(
-            retry: { vm.remoteHosts.reconnect(id: $0) },
-            remove: { id in
-                if vm.settings.skipped(.removeHost) != nil { vm.remoteHosts.removeHost(id: id) } else { removing = id }
-            },
-            addHost: { vm.showAddHost() }), chrome: chrome)
-            .sheet(item: Binding(get: { removing.map(SheetItem.init) }, set: { removing = $0?.value })) { item in
-                let name = vm.remoteHosts.allConnections.first { $0.id == item.value }?.config.name ?? "this host"
-                DialogSheet(title: "Remove \(name)?",
-                            subtitle: "Its threads keep running there; they leave Recents on this Mac. Add it again with its token to bring them back.",
-                            actions: [
-                                DialogAction("Cancel", kind: .cancel) { removing = nil },
-                                DialogAction("Remove host", kind: .destructive) {
-                                    removing = nil
-                                    vm.remoteHosts.removeHost(id: item.value)
-                                },
-                            ],
-                            dontAskAgain: .removeHost, settings: vm.settings)
-            }
-    }
-}

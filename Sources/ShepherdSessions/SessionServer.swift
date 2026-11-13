@@ -840,8 +840,18 @@ public final class SessionServer: @unchecked Sendable {
     private var localAcceptSource: DispatchSourceRead?
     private var localSocketPath: String?
     private var localToken: String?
-    /// This host's fleet (`FleetService`), present only while Settings ▸ Experiments ▸ Fleet is on. Server queue.
+    /// This host's fleet (`FleetService`), present from `startFleet` on. Server queue.
     var fleet: FleetService?
+    /// Told, once the fleet is started and then on each change, whether this host needs its listener for the fleet: a Mac or a
+    /// device is paired, or a code window is open (`FleetService.needsListener`). The host opens or closes the listener to match,
+    /// keeping it open while Serve this Mac is on. Called on the server queue.
+    /// Set before `startFleet`.
+    public func onFleetListenerNeed(_ handler: @escaping @Sendable (Bool) -> Void) {
+        queue.async { [self] in fleetListenerNeed = handler }
+    }
+    private var fleetListenerNeed: (@Sendable (Bool) -> Void)?
+    /// Tests: the port the remote listener is bound to now, nil while it is closed.
+    var remoteListenerPort: UInt16? { queue.sync { remoteListenPort } }
     /// The port the remote listener is bound to, nil while it isn't open. Server queue.
     private var remoteListenPort: UInt16?
     /// This host's build, said in `helloOk` (nil: none to say, as in tests).
@@ -1092,11 +1102,7 @@ public final class SessionServer: @unchecked Sendable {
                 && ($0 != RemoteProtocol.hostUpdateCapability || onRemoteHostUpdate != nil)
                 && (designsServed && designs || !RemoteProtocol.designCapabilities.contains($0))
                 && (tunnelsServed || ($0 != RemoteProtocol.browserTunnelCapability && $0 != RemoteProtocol.browserDriveCapability))
-                && (($0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetSyncCapability) || fleet?.membership == true)
-                && ($0 != RemoteProtocol.fleetDevicesCapability || fleet != nil)
-                && (($0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetViewCapability && $0 != RemoteProtocol.fleetDispatchCapability
-                     && $0 != RemoteProtocol.fleetRendezvousCapability && $0 != RemoteProtocol.fleetPairLinkCapability) || fleet?.membership == true)
-                && (($0 != RemoteProtocol.fleetSnapshotCapability && $0 != RemoteProtocol.fleetLinkCapability) || fleet?.membership == true)
+                && (!RemoteProtocol.fleetServiceCapabilities.contains($0) || fleet != nil)
         }
     }
 
@@ -1312,7 +1318,7 @@ public final class SessionServer: @unchecked Sendable {
     /// Returns at once with Fleet off or no peer connected, and after a few seconds at most. Any actor.
     func fleetCredentialFence() async {
         let engine = await withCheckedContinuation { (continuation: CheckedContinuation<FleetSync?, Never>) in
-            queue.async { [self] in continuation.resume(returning: fleet?.membership == true ? fleet?.syncEngine : nil) }
+            queue.async { [self] in continuation.resume(returning: fleet?.syncEngine) }
         }
         await engine?.catchUpCredentials()
     }
@@ -1323,13 +1329,13 @@ public final class SessionServer: @unchecked Sendable {
     func fleetSyncUnits() -> [String] { queue.sync { fleet?.syncEngine.store.units ?? [] } }
     var fleetStoreDirectory: URL? { queue.sync { fleet?.syncEngine.store.directory } }
 
-    /// Sets `fleetOptions` for the next `setFleetEnabled(true)`.
+    /// Sets `fleetOptions` for the next `startFleet()`.
     public func configureFleet(name: String?, advertises: Bool) {
         queue.sync { fleetOptions = (name, advertises) }
     }
 
     /// Tests: sets the clock and how the next fleet's pressure is made (`FleetPressure`'s
-    /// providers get this host's facts), for `setFleetEnabled(true)`.
+    /// providers get this host's facts), for `startFleet()`.
     func configureFleet(clock: (@Sendable () -> Date)?,
                         pressure: (@Sendable (DispatchQueue, @escaping @Sendable () -> FleetLocalFacts) -> FleetPressure)?) {
         queue.sync {
@@ -1352,7 +1358,7 @@ public final class SessionServer: @unchecked Sendable {
         set { queue.sync { storedFleetLinkOptions = newValue } }
     }
     private var storedFleetLinkOptions = FleetLinkOptions()
-    /// Tests: stands `store` in for iCloud for the next `setFleetEnabled(true)`, with the routes this host says it has, how long a
+    /// Tests: stands `store` in for iCloud for the next `startFleet()`, with the routes this host says it has, how long a
     /// join code lasts and how often a peer's presence is looked up.
     func configureFleetRendezvous(store: FleetRendezvousStore, routes: (@Sendable (UInt16) -> [FleetRoute])? = nil,
                                   joinLifetime: TimeInterval? = nil, lookupInterval: TimeInterval? = nil) {
@@ -1380,25 +1386,12 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// Takes part in a fleet while `enabled` (Settings ▸ Experiments ▸ Fleet): this host's
-    /// identity, its links to the Macs it is paired with, its Bonjour advertisement and the fleet
-    /// requests (`FleetService`). Off ends the links and refuses every fleet message with "Enable
-    /// Fleet in Settings ▸ Experiments"; saved pairings stay and come back when it is turned on.
-    /// `name` is what other Macs call this one (the Mac's own name unless a test names it).
-    public func setFleetEnabled(_ enabled: Bool) {
+    /// Starts this host's fleet (`FleetService`): its identity, its links to the Macs it is paired with, its Bonjour advertisement,
+    /// the pairing of Macs and devices and the fleet requests. There is no off state. It opens no port by itself: it says when it
+    /// needs the listener (`onFleetListenerNeed`). `name` is what other Macs call this one (the Mac's own name unless a test names it).
+    public func startFleet() {
         queue.async { [self] in
-            // The service lives as long as the host (client devices pair with it whether or not Fleet is on);
-            // membership is what Fleet switches.
-            if let service = fleet {
-                guard service.membership != enabled else { return }
-                service.setMembership(enabled)
-                if !enabled {
-                    for client in Array(clients.values) where client.fleetPeerID != nil { disconnect(client, reason: "fleet turned off") }
-                }
-                pushSettingsChanged(.fleet)
-                announceFleetCapabilities()
-                return
-            }
+            guard fleet == nil else { return }
             do {
                 let clock = fleetClock ?? Date.init
                 let facts = fleetLocalFacts
@@ -1408,7 +1401,7 @@ public final class SessionServer: @unchecked Sendable {
                 let rendezvous: FleetRendezvousStore? = fleetRendezvousSetup?.store ?? (fleetOptions.advertises ? FleetCloudKitStore.forThisBuild : nil)
                 let service = try FleetService(queue: queue, directory: supportDirectory.appendingPathComponent("fleet", isDirectory: true),
                                                name: fleetOptions.name ?? Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
-                                               build: hostBuild, advertises: fleetOptions.advertises, membership: enabled, clock: clock, pressure: pressure,
+                                               build: hostBuild, advertises: fleetOptions.advertises, clock: clock, pressure: pressure,
                                                network: storedFleetLinkOptions.network ?? .system,
                                                rendezvous: rendezvous.map { FleetRendezvous(store: $0) })
                 if let dialer = storedFleetLinkOptions.dialer { service.dialer = dialer }
@@ -1481,8 +1474,9 @@ public final class SessionServer: @unchecked Sendable {
                         return FleetExclusions.Overrides(excluded: excludes.excluded, included: excludes.included)
                     },
                     worktrees: { [weak self] in self?.store.state.agents.compactMap { agent in agent.worktreePath.map { (agent.spaceID, $0) } } ?? [] })
+                service.onListenerNeed = { [weak self] need in self?.fleetListenerNeed?(need) }
                 service.start()
-                if enabled { announceFleetCapabilities() }
+                announceFleetCapabilities()
             } catch {
                 ShepherdLog.error("fleet could not start: \(error)")
             }
@@ -1589,8 +1583,8 @@ public final class SessionServer: @unchecked Sendable {
             (id, agentID) = (value, agent)
         default: return
         }
-        guard let fleet, fleet.membership else {
-            return reply(.error(id: id, code: FleetDispatchCode.fleetOff, message: "Fleet is off. Turn it on in Settings ▸ Experiments."), to: client)
+        guard let fleet else {
+            return reply(.error(id: id, code: FleetDispatchCode.fleetOff, message: "Fleet isn't running on this Mac."), to: client)
         }
         if let refusal = FleetDispatch.scopeProblem(for: agentID, in: store.state, unattended: Self.unattendedAgentIDs(in: store.state)) {
             return reply(.error(id: id, code: refusal.code, message: refusal.message), to: client)
@@ -1666,7 +1660,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Server queue: the spaces changed, so their repo keys may have, and the fleet may have something to say.
     func fleetSpacesChanged() {
-        guard let fleet, fleet.membership else { return }
+        guard let fleet else { return }
         refreshRepoKeys()
         fleet.index.reconcile()
         fleet.syncEngine.localChanged()
@@ -1676,7 +1670,7 @@ public final class SessionServer: @unchecked Sendable {
     /// runs git) and records the new `repoKey`s through the usual state mutation.
     private func refreshRepoKeys() {
         refreshRepoCandidates()
-        guard let keys = fleetRepoKeys, !repoKeysRefreshing, fleet?.membership == true else { return }
+        guard let keys = fleetRepoKeys, !repoKeysRefreshing, fleet != nil else { return }
         let spaces = store.state.spaces.filter(FleetSpacesSource.syncs).map { (id: $0.id, path: $0.path, key: $0.repoKey) }
         guard !spaces.isEmpty else { return }
         repoKeysRefreshing = true
@@ -1702,7 +1696,7 @@ public final class SessionServer: @unchecked Sendable {
     /// space with no folder here binds to a checkout this Mac already has. Says so to the sync when what can be found changed. A place
     /// that appears while a look is under way is looked at when it ends.
     private func refreshRepoCandidates() {
-        guard let finder = fleet?.dispatch.finder, fleet?.membership == true else { return }
+        guard let finder = fleet?.dispatch.finder else { return }
         guard !repoCandidatesRefreshing else { repoCandidatesAgain = true; return }
         let places = fleetRepoPlaces()
         guard !places.isEmpty else { return }
@@ -1729,11 +1723,11 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// Hands a fleet request to `FleetService`, or refuses it while Fleet is off.
+    /// Hands a fleet request to `FleetService`.
     private func serveFleet(_ request: RemoteRequest, from client: ExtensionConnection) {
         let id: Int
         switch request {
-        case .fleetIdentify(let value), .fleetPair(let value, _, _), .fleetEstablish(let value, _), .fleetIntroduce(let value, _),
+        case .fleetIdentify(let value), .fleetPair(let value, _, _), .fleetIntroduce(let value, _),
              .fleetRevoke(let value, _, _), .fleetRead(let value), .fleetAction(let value, _), .fleetSync(let value, _),
              .fleetPressure(let value, _), .fleetReadiness(let value, _), .fleetPressureNow(let value), .fleetRepoManifest(let value, _),
              .fleetSnapshotPart(let value, _, _), .fleetBlobPush(let value, _, _),
@@ -3019,7 +3013,7 @@ public final class SessionServer: @unchecked Sendable {
                 protocolVersion: RemoteProtocol.version,
                 capabilities: offeredCapabilities(to: client),
                 hostBuild: hostBuild,
-                hostID: fleet?.membership == true ? fleet?.hostID : nil
+                hostID: fleet?.hostID
             ), to: client)
             sendStartProblems(to: client)
             sendAppProcesses(to: client)
@@ -3032,7 +3026,7 @@ public final class SessionServer: @unchecked Sendable {
         }
 
         switch request {
-        case .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
+        case .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
              .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
              .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult, .fleetRoutes,
              .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:

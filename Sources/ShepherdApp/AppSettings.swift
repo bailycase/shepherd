@@ -19,7 +19,7 @@ enum WorktreeDeleteAction: String, CaseIterable {
 /// `WorktreeDeleteAction`). The raw value is the stored key: never rename one. A request an
 /// agent or another process makes is confirmed whatever is stored here.
 enum SkippableConfirmation: String, CaseIterable {
-    case removeSpace, deleteAgent, deleteDesign, deleteDesignSystem, revertFile, stopAll, quit, removeHost,
+    case removeSpace, deleteAgent, deleteDesign, deleteDesignSystem, revertFile, stopAll, quit,
          removeMCPServer, removeSpaceMCPServer, deleteProject, updateHost,
          discardSubagentEdits, restoreSubagents, deleteSubagent
 
@@ -33,7 +33,6 @@ enum SkippableConfirmation: String, CaseIterable {
         case .revertFile: "Revert file"
         case .stopAll: "Stop with subagents running"
         case .quit: "Quit while agents work"
-        case .removeHost: "Remove host"
         case .removeMCPServer: "Remove MCP server"
         case .removeSpaceMCPServer: "Remove a space's MCP server"
         case .deleteProject: "Delete project"
@@ -125,7 +124,6 @@ final class AppSettings {
         static let goalsEnabled = "shepherd.experiments.goals"
         static let projectsEnabled = "shepherd.experiments.projects"
         static let designToolEnabled = "shepherd.experiments.designTool"
-        static let fleetEnabled = "shepherd.experiments.fleet"
         static let fleetWeights = "shepherd.fleet.weights"
         static let fleetThreadsCanSend = "shepherd.fleet.threadsCanSend"
         static let fleetThreadCap = "shepherd.fleet.threadCap"
@@ -147,7 +145,7 @@ final class AppSettings {
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeGeneratePRDescription, worktreeDeleteAction, worktreeCloseOnMerge, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
             mcpProjectConfig,
-            goalsEnabled, projectsEnabled, designToolEnabled, fleetEnabled, fleetWeights, fleetThreadsCanSend, fleetThreadCap, fleetAutoDispatch, fleetBatteryCountsHalf, fleetUncommitted, fleetSnapshotExcludes, implementOpensThread,
+            goalsEnabled, projectsEnabled, designToolEnabled, fleetWeights, fleetThreadsCanSend, fleetThreadCap, fleetAutoDispatch, fleetBatteryCountsHalf, fleetUncommitted, fleetSnapshotExcludes, implementOpensThread,
             filesWordWrap, filesMarkdownPreview,
         ]
 
@@ -524,16 +522,6 @@ final class AppSettings {
     }
     @ObservationIgnored var onProjectsChange: ((Bool) -> Void)?
 
-    /// Settings ▸ Experiments ▸ Fleet: this Mac's host pairs with other Macs and holds links to
-    /// them (Settings ▸ Fleet). Off by default; off ends the links and leaves what was paired saved.
-    var fleetEnabled: Bool {
-        didSet {
-            store.set(fleetEnabled, forKey: Key.fleetEnabled)
-            if fleetEnabled != oldValue { onFleetChange?(fleetEnabled) }
-        }
-    }
-    @ObservationIgnored var onFleetChange: ((Bool) -> Void)?
-
     /// The Fleet page's Send work here choice per Mac, under the setting keys `fleet.weight.<hostID>`
     /// (`FleetSendWeight.settingKey`). A Mac with no entry is Normal.
     var fleetWeights: [String: FleetSendWeight] {
@@ -644,7 +632,6 @@ final class AppSettings {
             .flatMap(ServiceTier.init(rawValue:)) ?? Defaults.serviceTier
         goalsEnabled = store.object(forKey: Key.goalsEnabled) as? Bool ?? false
         projectsEnabled = store.object(forKey: Key.projectsEnabled) as? Bool ?? false
-        fleetEnabled = store.object(forKey: Key.fleetEnabled) as? Bool ?? false
         fleetWeights = (store.dictionary(forKey: Key.fleetWeights) as? [String: String] ?? [:]).compactMapValues(FleetSendWeight.init(rawValue:))
         fleetThreadsCanSend = store.object(forKey: Key.fleetThreadsCanSend) as? Bool ?? false
         fleetThreadCap = HostSettings.clampedThreadCap(store.object(forKey: Key.fleetThreadCap) as? Int ?? HostSettings.fleetThreadCapDefault)
@@ -775,7 +762,6 @@ final class AppSettings {
         defaultServiceTier = Defaults.serviceTier
         goalsEnabled = false
         projectsEnabled = false
-        fleetEnabled = false
         fleetWeights = [:]
         fleetThreadsCanSend = false
         fleetThreadCap = HostSettings.fleetThreadCapDefault
@@ -941,7 +927,7 @@ final class AppSettings {
     /// Every setting `Key.resettable` stores, as `resetToDefaults` lists them, and Serve this Mac's switch.
     private static let followed: [(AppSettings, AppSettings) -> Void] = [
         take(\.terminalFontFamily), take(\.terminalFontSize), take(\.defaultModel), take(\.defaultThinking),
-        take(\.defaultServiceTier), take(\.goalsEnabled), take(\.projectsEnabled), take(\.fleetEnabled), take(\.shareDiagnostics),
+        take(\.defaultServiceTier), take(\.goalsEnabled), take(\.projectsEnabled), take(\.shareDiagnostics),
         take(\.textGenerationModel), take(\.visionModel), take(\.skillsInSlashMenu), take(\.hiddenSlashCommands), take(\.mcpProjectConfig),
         take(\.queueDelivery), take(\.trimToolOutput), take(\.notifyOnTurnFinished),
         take(\.deferTools), take(\.codemode), take(\.compactAtPercent), take(\.uiDensity), take(\.uiTextScale),

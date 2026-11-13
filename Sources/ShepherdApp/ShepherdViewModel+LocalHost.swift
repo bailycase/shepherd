@@ -69,10 +69,7 @@ extension ShepherdViewModel {
         let connected = remoteHosts.onHostConnected
         remoteHosts.onHostConnected = { [weak self] hostID in
             connected?(hostID)
-            guard let self else { return }
-            // A paired Mac that answers again may have turned Fleet on since: ask it again.
-            if hostID != self.localHost?.id { Task { await self.adoptLegacyFleetHosts(only: hostID) } }
-            guard hostID == self.localHost?.id else { return }
+            guard let self, hostID == self.localHost?.id else { return }
             Task { for page in RemoteSettingsPage.allCases { await self.localHostSettingsChanged(page) } }
             self.refreshAutomationTriggers()
             // A host that started again knows no focus: tell it.
@@ -88,42 +85,6 @@ extension ShepherdViewModel {
             guard let self, ref.hostID == self.localHost?.id else { remoteChanged?(ref); return }
             self.threadStores.existing(for: ref.agentID)?.revisionAvailable()
             self.reconcileSidebarOpeningTurn(ref.agentID)
-        }
-    }
-
-    /// Fleet: the paired Macs this app reached with the shared token (`RemoteHostStore`) become fleet peers
-    /// of its host, which pairs with each over the same token and no code. Each one that does is
-    /// marked fleet managed here; one that doesn't speak Fleet is left exactly as it was. `only` is one
-    /// host that just connected, asked again even if it said before that it isn't a fleet Mac.
-    func adoptLegacyFleetHosts(only: UUID? = nil) async {
-        guard settings.fleetEnabled else { return }
-        let hosts = remoteHosts.pairedConnections
-            .filter { !$0.config.fleetManaged && (only == nil || $0.id == only) }
-            .map { FleetLegacyHost(id: $0.config.id, name: $0.config.name, host: $0.config.host, port: $0.config.port, token: $0.config.token) }
-        for adoption in await fleet.adopt(hosts, retrying: only != nil) {
-            if case .established = adoption.outcome { remoteHosts.markFleetManaged(id: adoption.id) }
-        }
-        await switchFleetHostsToOwnToken()
-    }
-
-    /// Fleet: the Macs this app reached with the shared token and that are fleet peers now are reached
-    /// with a token of this app's own instead, so a Mac can stop accepting the shared one. The host makes
-    /// the token and every Mac in the fleet takes it in; each Mac is asked once with it before it replaces
-    /// the shared token, so a Mac that didn't hear of it keeps working until it does.
-    func switchFleetHostsToOwnToken() async {
-        guard settings.fleetEnabled else { return }
-        let pending = remoteHosts.pairedConnections.filter { $0.config.fleetManaged && !$0.config.ownToken }
-        guard !pending.isEmpty else { return }
-        var made = remoteHosts.pairedConnections.first { $0.config.ownToken }?.config.token
-        if made == nil { made = await fleet.enrollApp(name: Host.current().localizedName ?? "Mac") }
-        guard let token = made else { return }
-        for connection in pending {
-            let config = connection.config
-            let probe = RemoteHostClient()
-            defer { probe.disconnect() }
-            guard (try? await probe.connect(host: config.host, port: config.port, token: token, clientName: Host.current().localizedName ?? "shepherd",
-                                            capabilities: [], fetchesState: false)) != nil else { continue }
-            remoteHosts.useOwnToken(id: config.id, token: token)
         }
     }
 
@@ -148,8 +109,6 @@ extension ShepherdViewModel {
             await fleet.refresh()
             // A host that started again (or this app's connection to it) forgot the page is on screen.
             if fleet.wantsWatch { await fleet.watch(true) }
-            // Fleet came up, or its listener did: a host this Mac already reached becomes a peer.
-            await adoptLegacyFleetHosts()
         }
     }
 

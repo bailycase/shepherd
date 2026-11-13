@@ -329,19 +329,6 @@ extension PreviewTests {
         }
     }
 
-    /// More open with Hosts selected (NavHosts): Hosts says how many hosts are offline, and
-    /// Extensions follows.
-    @Test func sidebarMoreHosts() async throws {
-        let (workspace, _) = try await populatedWorkspace()
-        defer { workspace.stop() }
-        let vm = workspace.vm
-        vm.openDestination(.hosts)
-        try await Preview.render("sidebar-more-hosts", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 520),
-                                 ready: { vm.offlineHostCount == 1 }) {
-            SidebarView(vm: vm)
-        }
-    }
-
     /// Pinned comes first, in pin order, including the thread waiting on the user.
     @Test func sidebarPinned() async throws {
         let (workspace, agents) = try await populatedWorkspace()

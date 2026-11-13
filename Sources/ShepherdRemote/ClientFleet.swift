@@ -29,7 +29,7 @@ public final class ClientFleet {
         /// Nothing read yet.
         case idle
         case loaded
-        /// The Mac the page reads from has Fleet off.
+        /// The Mac the page reads from refuses: an older Shepherd with Fleet off.
         case off
         /// The last read failed; the page keeps what it had.
         case failed(String)

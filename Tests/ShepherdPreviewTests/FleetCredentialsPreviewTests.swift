@@ -14,7 +14,6 @@ struct FleetCredentialsPreviewTests {
     @Test func signInPageInAFleet() async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
-        workspace.settings.fleetEnabled = true
         workspace.vm.settingsSection = .piSignIn
         workspace.vm.showSettings = true
         try await Preview.renderMatrix("fleet-sign-in", size: CGSize(width: 1180, height: 900), ready: { true }) {

@@ -33,8 +33,8 @@ struct SidebarView: View {
                 }
             }
         } footer: {
-            if vm.settings.fleetEnabled, !vm.fleetPage.page.cards.isEmpty {
-                // FleetSidebar: with Fleet on, the footer is the Fleet row and Settings.
+            if !vm.fleetPage.page.cards.isEmpty {
+                // FleetSidebar: with a Mac paired, the footer is the Fleet row and Settings.
                 SidebarFleetFooter(footer: vm.fleetPage.page.footer, selected: vm.shownDestination == .fleet,
                                    open: { vm.openDestination(.fleet) }, settings: { vm.showSettings = true })
                     .equatable()

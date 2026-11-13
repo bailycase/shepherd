@@ -194,7 +194,7 @@ struct SidebarPinnedFlowTests {
         let vm = try await app.start(with: state)
         vm.selectAgent(agents[1].agent.id)
         #expect(vm.pinTarget == .local(agents[1].agent.id))
-        vm.openDestination(.hosts)
+        vm.openDestination(.fleet)
         #expect(vm.pinTarget == nil)
     }
 

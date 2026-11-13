@@ -141,7 +141,6 @@ struct FleetDevicesIntegrationTests {
             ("fleetAction", { _ = try await client.fleetAction(.retireSharedToken) }),
             ("fleetRevoke", { try await client.fleetRevoke(hostID: UUID(), at: 1) }),
             ("fleetSyncDevices", { _ = try await client.fleetSyncDevices([]) }),
-            ("fleetEstablish", { _ = try await client.fleetEstablish(from: FleetIntroduction(hostID: UUID(), name: "x", myTokenHash: FleetProtocol.hash("t"), port: 7434)) }),
             ("fleetIntroduce", { _ = try await client.fleetIntroduce(FleetIntroduce(member: FleetMember(hostID: UUID(), name: "x", host: "127.0.0.1", port: 7434), theirTokenHash: nil)) }),
             ("fleetEnrollDevice", { _ = try await client.fleetEnrollDevice(Device("other").intro) }),
         ]
@@ -329,18 +328,6 @@ struct FleetDevicesIntegrationTests {
         try await phone.connect(to: mac)
     }
 
-    @Test func aRetiredSharedTokenStaysRetiredWhenFleetIsTurnedOffAndOn() async throws {
-        let mac = try await Mac("MacBook Pro")
-        defer { mac.stop() }
-        _ = try await mac.local.fleetAction(.retireSharedToken)
-        mac.server.setFleetEnabledAndWait(false)
-        try await eventually("Fleet to be off") { try await mac.read().enabled == false }
-        let whileOff = await Self.refused(mac.sharedToken, by: mac)
-        #expect(whileOff, "turning Fleet off does not open the old token again")
-        mac.server.setFleetEnabledAndWait(true)
-        try await eventually("Fleet to be on") { try await mac.read().devices?.sharedToken.retired == true }
-    }
-
     @Test func aClientThatConnectsWithItsOwnTokenIsNoLongerWaitedFor() async throws {
         let a = try await Mac("MacBook Pro"), b = try await Mac("Mac mini")
         defer { a.stop(); b.stop() }
@@ -399,15 +386,15 @@ struct FleetDevicesIntegrationTests {
         catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetProtocol.Code.forbidden) }
     }
 
-    // MARK: Fleet off
+    // MARK: A Mac with no other Mac
 
-    /// Devices don't need fleet membership: with Fleet off a Mac that serves still takes a phone by code,
-    /// lists it, revokes it and retires the shared token; only what is a member's stays refused.
-    @Test func withFleetOffAPhonePairsByCodeAndMembershipStaysRefused() async throws {
-        let mac = try await Mac("MacBook Pro", fleet: false)
+    /// A device needs no other Mac: a Mac that has none still takes a phone by code, lists it, revokes it and retires the shared
+    /// token, and its fleet is there for the Macs that come.
+    @Test func aPhonePairsByCodeWithAMacThatHasNoOtherMac() async throws {
+        let mac = try await Mac("MacBook Pro")
         defer { mac.stop() }
         let snapshot = try await mac.read()
-        #expect(!snapshot.enabled && snapshot.peers.isEmpty && snapshot.port == mac.port && snapshot.devices?.devices.isEmpty == true)
+        #expect(snapshot.enabled && snapshot.peers.isEmpty && snapshot.port == mac.port && snapshot.devices?.devices.isEmpty == true)
 
         let phone = Device()
         defer { phone.stop() }
@@ -419,19 +406,10 @@ struct FleetDevicesIntegrationTests {
         let listed = try await Self.devices(mac)
         #expect(listed.map(\.name) == ["iPhone"] && listed.first?.connected == true)
 
-        // What is a member's is refused as it always was.
-        for attempt: () async throws -> Void in [
-            { _ = try await mac.local.fleetAction(.startJoin) },
-            { _ = try await mac.local.fleetAction(.remove(hostID: UUID())) },
-            { _ = try await mac.local.fleetAction(.adopt([])) },
-        ] {
-            do { try await attempt(); Issue.record("a member's action worked with Fleet off") }
-            catch RemoteHostClientError.rejected(let refused, _) { #expect(refused == FleetProtocol.Code.off) }
-        }
         let identity = try await RemoteHostClient.connected(to: mac)
         defer { identity.disconnect() }
-        #expect(!identity.capabilities.contains(RemoteProtocol.fleetCapability), "fleet.v1 is offered only while Fleet is on")
-        #expect(try await identity.fleetIdentify().fleetEnabled == false)
+        #expect(identity.capabilities.contains(RemoteProtocol.fleetCapability), "fleet.v1 is offered by every host")
+        #expect(try await identity.fleetIdentify().fleetEnabled)
 
         // Revoke works, and ends the connection.
         _ = try await mac.local.fleetAction(.revokeDevice(phone.intro.deviceID))
@@ -440,10 +418,9 @@ struct FleetDevicesIntegrationTests {
         #expect(refusedAfter)
     }
 
-    /// An older phone on the shared token is offered its own token with Fleet off too, and the shared token
-    /// can be retired there.
-    @Test func withFleetOffAClientOnTheSharedTokenIsOfferedItsOwnAndTheSharedTokenRetires() async throws {
-        let mac = try await Mac("MacBook Pro", fleet: false)
+    /// An older phone on the shared token is offered its own token, and the shared token can be retired.
+    @Test func aClientOnTheSharedTokenIsOfferedItsOwnAndTheSharedTokenRetires() async throws {
+        let mac = try await Mac("MacBook Pro")
         defer { mac.stop() }
         let old = try await RemoteHostClient.connected(to: mac)
         defer { old.disconnect() }
@@ -456,22 +433,5 @@ struct FleetDevicesIntegrationTests {
         let refusedShared = await Self.refused(mac.sharedToken, by: mac)
         #expect(refusedShared)
         try await eventually("the phone to stay") { !phone.disconnected.current }
-    }
-
-    /// Turning Fleet off keeps its devices connected (only Macs' links end), and on again is the same fleet.
-    @Test func switchingFleetOffAndOnLeavesDevicesConnected() async throws {
-        let mac = try await Mac("MacBook Pro")
-        defer { mac.stop() }
-        let phone = Device()
-        defer { phone.stop() }
-        _ = try await phone.pair(with: mac, code: try #require(try await mac.local.fleetAction(.startDeviceCode).deviceCode).code)
-        try await phone.connect(to: mac)
-        mac.server.setFleetEnabledAndWait(false)
-        try await eventually("Fleet to be off") { try await mac.read().enabled == false }
-        #expect(!phone.disconnected.current)
-        #expect(try await Self.devices(mac).map(\.name) == ["iPhone"])
-        mac.server.setFleetEnabledAndWait(true)
-        try await eventually("Fleet to be on") { try await mac.read().enabled }
-        #expect(!phone.disconnected.current)
     }
 }

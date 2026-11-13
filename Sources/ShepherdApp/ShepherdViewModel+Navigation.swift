@@ -84,7 +84,7 @@ extension ShepherdViewModel {
             hosts: remoteHosts.connections.map {
                 SidebarSource.Host(id: $0.id, name: $0.config.name,
                     state: SidebarSource.presentationState($0.state, children: $0.children), offline: $0.phase != .connected,
-                    fleetID: settings.fleetEnabled ? $0.fleetID : nil)
+                    fleetID: $0.fleetID)
             }, designs: designToolEnabled, missingSpaces: missingSpaces, pullRequests: sidebarPullRequests)
     }
 
@@ -133,18 +133,13 @@ extension ShepherdViewModel {
         }.first
     }
 
-    /// Hosts neither connected nor connecting, as the Hosts page counts them: the palette's "Open Hosts" says how many.
-    var offlineHostCount: Int {
-        remoteHosts.connections.count { HostsPageModel.isOffline($0.phase) }
-    }
-
     // MARK: Destinations
 
     /// The page the main column shows: the one picked, else New thread when no thread is on
     /// screen (nothing selected, or nothing left to select).
     var shownDestination: MainDestination? {
         // A page whose experiment is off is not shown; what was under it shows instead.
-        if let destination, projectsEnabled || !isProjectDestination, destination != .fleet || settings.fleetEnabled { return destination }
+        if let destination, projectsEnabled || !isProjectDestination { return destination }
         guard selectedRemoteAgent == nil else { return nil }
         return activeTabID == nil ? .newThread : nil
     }
@@ -162,7 +157,6 @@ extension ShepherdViewModel {
     func openDestination(_ page: MainDestination) {
         // The Design tool's pages exist only while its experiment is on.
         if page == .designs || page == .newDesign || page == .designSystem, !designToolEnabled { return }
-        if page == .fleet, !settings.fleetEnabled { return }
         // New thread opens in the project of the thread on screen, remote ones included.
         if page == .newThread { newThread.prepare(for: self) }
         // A project's page needs one picked; `openLogicalProject` sets it before this runs.

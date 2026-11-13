@@ -351,7 +351,6 @@ extension FleetDispatch {
     }
 
     private func arriving(_ id: UUID, from sender: UUID) -> Result<SnapshotIn, FleetDispatchRefusal> {
-        guard membership() else { return .failure(Self.refusal(FleetDispatchCode.fleetOff, nil)) }
         guard let entry = inbound[id], entry.record.parentHostID == sender, let snap = snapshotsIn[id] else {
             return .failure(.init(code: FleetDispatchProtocol.Code.unknownDispatch, message: "That Mac has no snapshot arriving for that dispatch."))
         }
@@ -515,7 +514,7 @@ extension FleetDispatch {
         prepare(id, space: space, requestedBranch: snap.requestedBranch)
     }
 
-    /// Fleet is on and the spaces may have changed: each repository's spare is brought to its base tip in the background.
+    /// The spaces may have changed: each repository's spare is brought to its base tip in the background.
     func refreshSpares(_ spaces: [Space]) {
         var seen = Set<String>()
         let repos = spaces.compactMap { space -> (String, String?)? in

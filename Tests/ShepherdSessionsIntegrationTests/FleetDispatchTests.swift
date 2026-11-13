@@ -114,7 +114,7 @@ struct FleetDispatchTests {
                 server?.fleetHostSettingsChanged(now)
             }
             server.fleetHostSettingsChanged(settings.current)
-            server.setFleetEnabledAndWait(true)
+            server.startFleetAndWait()
             let local = RemoteHostClient(localSocket: socket)
             _ = try await local.connect(host: "", port: 0, token: token, clientName: "Shepherd")
             (self.host, self.port, self.local) = (host, port, local)
@@ -361,7 +361,7 @@ struct FleetDispatchTests {
 
     // MARK: Guardrails
 
-    @Test func threadsMaySendOnlyWhenTheSettingIsOnAndFleetIsOn() async throws {
+    @Test func threadsMaySendOnlyWhenTheSettingIsOn() async throws {
         let (a, b, _) = try await Self.pair(sendWork: false)
         defer { a.stop(); b.stop() }
         let parent = try await a.parent()
@@ -374,14 +374,6 @@ struct FleetDispatchTests {
         a.settings.withValue { $0.apply(.fleetThreadsCanSend(true)) }
         a.server.fleetHostSettingsChanged(a.settings.current)
         _ = try parent.info(try await parent.dispatch(key: "on", host: "Mac mini"))
-
-        a.server.setFleetEnabledAndWait(false)
-        try await Self.wait("Fleet to be off") { try await a.local.fleetRead().snapshot.enabled == false }
-        guard case .error(_, FleetDispatchCode.fleetOff, _) = try await parent.dispatch(key: "fleet-off") else { Issue.record("sent with Fleet off"); return }
-        guard case .error(_, FleetDispatchCode.fleetOff, _) = try await parent.call({ .fleetListHosts(id: $0, agentID: parent.agent.id) }) else {
-            Issue.record("listed hosts with Fleet off")
-            return
-        }
     }
 
     @Test func aDispatchedThreadCannotSendWork() async throws {

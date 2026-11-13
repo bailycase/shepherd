@@ -511,13 +511,11 @@ struct LocalClientTests {
         let ref = RemoteAgentRef(hostID: connection.id, agentID: try #require(vm.selectedAgentID))
         let row = try #require((vm.sidebarLists.needsYou + vm.sidebarLists.working + vm.sidebarLists.done + vm.sidebarLists.recents)
             .first { $0.id == .local(ref.agentID) })
-        // The host on this Mac is This Mac itself: a local row, one This Mac to start threads on,
-        // the Hosts page's This Mac card counts its threads, and it isn't a host to remove.
+        // The host on this Mac is This Mac itself: a local row, one This Mac to start threads on, and it isn't a host to remove.
         if case .tag = row.accessory { Issue.record("a thread of this Mac's host wears a host tag") }
         #expect(NewThreadState.hosts(vm).map(\.name) == ["This Mac"])
         #expect(hosts.connections.isEmpty, "This Mac is no host the UI lists")
         try await eventuallyOnMain("the host to leave its threads' banners to the app") { host.server.localAppConnected }
-        #expect(vm.hostsPageModel(agentVersion: nil).cards.count == 1)
         #expect(hosts.pairedConnections.isEmpty)
 
         // A send, as the composer sends it.

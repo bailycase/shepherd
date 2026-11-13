@@ -96,7 +96,6 @@ final class ShepherdViewModel {
     @ObservationIgnored var sidebarFooterIdentity: (name: String, detail: String)?
     /// The Automations and Hosts pages, derived again only when what they read changed.
     @ObservationIgnored var automationsPageCache: (inputs: AutomationsPageInputs, model: AutomationsPageModel)?
-    @ObservationIgnored var hostsPageCache: (inputs: HostsPageInputs, model: HostsPageModel)?
     /// The New thread page's draft: what to do, where, and how. Kept while the page is away.
     let newThread = NewThreadState()
     /// The New design page's brief, images and project. Kept while the page is away.
@@ -356,6 +355,8 @@ final class ShepherdViewModel {
     let fleetPage = FleetPageModel()
     /// What the buttons on dispatch cards do (`configureFleetThreadActions`).
     let fleetThreadActions = FleetThreadActions()
+    /// This app's connections to the Macs of the fleet (`FleetConnections`).
+    @ObservationIgnored lazy var fleetConnections = FleetConnections(hosts: remoteHosts, fleet: fleet)
     /// The thread whose Browser waits for each app's address.
     @ObservationIgnored var appPageWaits: [AppKey: AgentID] = [:]
     /// Settings ▸ Skills: every host's agent skills, This Mac's through its host.
@@ -858,9 +859,11 @@ final class ShepherdViewModel {
         self.fleetPage.autoDispatch = { [weak self] in self?.settings.autoDispatch(pairedMacs: $0) ?? ($0 > 0) }
         self.fleetPage.batteryCountsHalf = { [weak self] in self?.settings.fleetBatteryCountsHalf ?? true }
         self.fleetPage.threadCap = { [weak self] in self?.settings.fleetThreadCap ?? HostSettings.fleetThreadCapDefault }
-        self.fleet.onSnapshot = { [fleetPage] in fleetPage.update($0) }
+        self.fleet.onSnapshot = { [weak self] in
+            self?.fleetPage.update($0)
+            self?.fleetConnections.snapshotChanged($0)
+        }
         self.settings.onFleetWeightsChange = { [fleetPage] in fleetPage.recompute() }
-        self.fleet.pairClient = { [weak self] host, port, code, expecting in try await self?.remoteHosts.pairAsClient(host: host, port: port, code: code, expecting: expecting) }
         self.fleet.browse = { update in
             let browser = FleetBrowser()
             browser.start(update)

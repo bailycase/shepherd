@@ -19,8 +19,8 @@ struct RemoteHostBindingTests {
         #expect(try JSONDecoder().decode(RemoteHostStore.HostConfig.self, from: saved) == first)
     }
 
-    /// A configuration saved before Fleet is not fleet managed; marking one keeps its binding and survives a reload.
-    @Test func aHostConfigurationFromBeforeFleetIsNotFleetManaged() throws {
+    /// A configuration saved before Fleet was how Macs connect is no connection any more: it waits as a row, whole, at every launch.
+    @Test func aHostConfigurationFromBeforeFleetWaitsAsARowAndKeepsWhatItHeld() throws {
         let data = Data("""
         {"id":"00000000-0000-0000-0000-000000000001","name":"Builder",\
         "host":"builder.test","port":7433,"token":"fixture"}
@@ -28,12 +28,12 @@ struct RemoteHostBindingTests {
         let config = try JSONDecoder().decode(RemoteHostStore.HostConfig.self, from: data)
         #expect(!config.fleetManaged)
         let defaults = ScratchDefaults()
+        defaults.set(try JSONEncoder().encode([config]), forKey: RemoteHostStore.defaultsKey)
         let store = RemoteHostStore(defaults: defaults, connects: false)
-        store.addHost(name: "Builder", host: "builder.test", port: 7433, token: "fixture")
-        let before = try #require(store.hosts.first)
-        store.markFleetManaged(id: before.id)
-        let reloaded = try #require(RemoteHostStore(defaults: defaults, connects: false).hosts.first)
-        #expect(reloaded.fleetManaged && reloaded.bindingID == before.bindingID && reloaded.token == before.token)
+        #expect(store.hosts.isEmpty && store.notInFleet == [config])
+        #expect(RemoteHostStore(defaults: defaults, connects: false).notInFleet == [config])
+        store.dismissNotInFleet(id: config.id)
+        #expect(RemoteHostStore(defaults: defaults, connects: false).notInFleet.isEmpty)
     }
 
     @Test(arguments: ["address", "port", "credential"])

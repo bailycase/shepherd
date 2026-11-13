@@ -46,7 +46,7 @@ struct FleetPairAnywherePreviewTests {
         let mini = Self.mini()
         let link = mini.pairingLink(for: mini.join!)!
         let model = macBook()
-        model.readLink(link.url(scheme: model.linkScheme).absoluteString, asClient: false)
+        model.readLink(link.url(scheme: model.linkScheme).absoluteString)
         return (model, link.code)
     }
 
@@ -73,7 +73,7 @@ struct FleetPairAnywherePreviewTests {
         let model = macBook()
         model.sshTarget = "me@mini.example.internal"
         model.ssh = .failed(FleetSSHFinder.Failure.connection(FleetSSHFinder.connectionFailure("me@mini: Permission denied (publickey).", target: "me@mini.example.internal")).message)
-        model.readLink("shepherd-nightly://fleet/join?v=1", asClient: false)
+        model.readLink("shepherd-nightly://fleet/join?v=1")
         return model
     }
 
