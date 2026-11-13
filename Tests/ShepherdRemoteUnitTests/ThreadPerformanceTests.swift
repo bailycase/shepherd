@@ -482,6 +482,19 @@ struct ThreadPerformanceTests {
         #expect(store.restoreStep(drawn: count + 5, bytes: .max) == 0)
     }
 
+    /// What a restore owes is the cost of the rows between the ones drawn and the eager tail, counted from the end.
+    @Test func aRestoreOwesTheRowsBetweenTheOnesDrawnAndTheEagerTail() async {
+        let history = (0..<10).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant(NativeMountedCostTests.bigReply(cycles: 2), id: "a\($0)")] }
+        let store = manualStore()
+        let loop = await start(store, FakeHost(F.snapshot(messages: history)))
+        defer { loop.cancel(); store.stop() }
+        let costs = store.rows.map { NativeMountedCost.row($0) }
+        let count = costs.count
+        #expect(store.restoreCost(drawn: 2, upTo: 5) == costs[(count - 5)..<(count - 2)].reduce(0, +), "the three rows before the last two")
+        #expect(store.restoreCost(drawn: 0, upTo: count) == costs.reduce(0, +) && store.restoreCost(drawn: 2, upTo: count + 9) == costs.dropLast(2).reduce(0, +), "to the first row at most")
+        #expect(store.restoreCost(drawn: 5, upTo: 5) == 0 && store.restoreCost(drawn: 6, upTo: 5) == 0 && store.restoreCost(drawn: count, upTo: count + 1) == 0, "none when nothing is between")
+    }
+
     @Test func childProgressInvalidatesItsOwningSuffixRatherThanAllHistory() async {
         var history = (0..<500).flatMap { [F.user(id: "u\($0)"), F.assistant("answer", id: "a\($0)")] }
         history[999] = F.tool("shepherd_child_start", output: "started", id: "spawn", callID: "spawn")

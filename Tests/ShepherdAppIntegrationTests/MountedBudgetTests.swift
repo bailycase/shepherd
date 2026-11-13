@@ -18,12 +18,14 @@ struct MountedBudgetTests {
     private static let base = 1_733_000_000_000.0
 
     /// pi's own message JSON: `replies` question and answer pairs, each answer `cycles` cycles of a paragraph, a Swift
-    /// fence, a table and a list, so a thread that keeps its rows shows up as native code fields.
-    private static func seed(replies: Int, cycles: Int) -> Data {
+    /// fence, a table and a list, so a thread that keeps its rows shows up as native code fields. The last `shortTail` answers
+    /// are one line: a thread whose last screen is shorter than its window.
+    private static func seed(replies: Int, cycles: Int, shortTail: Int = 0) -> Data {
         let out: [[String: Any]] = (0..<replies).flatMap { i -> [[String: Any]] in
-            [["role": "user", "content": "Question \(i)", "timestamp": base + Double(i) * 10_000],
-             ["role": "assistant", "stopReason": "stop", "timestamp": base + Double(i) * 10_000 + 5000,
-              "content": [["type": "text", "text": MarkdownFixtures.longReply(cycles: cycles, from: i * cycles)]]]]
+            let text = i >= replies - shortTail ? "Done." : MarkdownFixtures.longReply(cycles: cycles, from: i * cycles)
+            return [["role": "user", "content": "Question \(i)", "timestamp": base + Double(i) * 10_000],
+                    ["role": "assistant", "stopReason": "stop", "timestamp": base + Double(i) * 10_000 + 5000,
+                     "content": [["type": "text", "text": text]]]]
         }
         return try! JSONSerialization.data(withJSONObject: out)
     }
@@ -54,10 +56,10 @@ struct MountedBudgetTests {
 
         var stores: NativeThreadStores<AgentID> { vm.threadStores }
 
-        static func open(_ count: Int, replies: Int, cycles: Int, in app: AppHarness) async throws -> Workspace {
+        static func open(_ count: Int, replies: Int, cycles: Int, shortTail: Int = 0, in app: AppHarness) async throws -> Workspace {
             let files = try (0..<count).map { index -> URL in
                 let file = app.dir.appendingPathComponent("history-\(index).json")
-                try MountedBudgetTests.seed(replies: replies, cycles: cycles).write(to: file)
+                try MountedBudgetTests.seed(replies: replies, cycles: cycles, shortTail: shortTail).write(to: file)
                 return file
             }
             // As the root view hangs the workspace: readers left scrolled up pin their thread's history.

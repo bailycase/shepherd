@@ -15,11 +15,11 @@ struct ReleasedThreadBottomFirstTests {
     typealias Workspace = MountedBudgetTests.Workspace
 
     /// What the thread drawn in `scroll` shows above its composer, from one capture of the window.
-    private static func drawing(_ window: OffscreenWindow, in scroll: NSScrollView) -> (ink: Int, longestBlankBand: Int) {
+    private static func drawing(_ window: OffscreenWindow, in scroll: NSScrollView) -> (ink: Int, longestBlankBand: Int, inkBottom: Int) {
         var region = scroll.convert(scroll.bounds, to: window.host)
         region.size.height = max(1, region.height - scroll.contentInsets.bottom - 24)
         let capture = FrameTimer.capture(window, region)
-        return (capture.ink, capture.longestBlankBand)
+        return (capture.ink, capture.longestBlankBand, capture.inkBottom)
     }
 
     /// The code fields of agent `index`'s layout once its thread let its rows go (to its last screen, or to none), waiting for them to go.
@@ -114,6 +114,58 @@ struct ReleasedThreadBottomFirstTests {
         // A step is a row (about 4 MiB of views at most, here a reply of 4 fields and a table or two), whatever else the frame redraws.
         #expect(built.max() ?? 0 <= 8, "no frame built more than a step of rows: \(built.prefix(40))")
         #expect(built.first == 0, "the first frame built no code field")
+    }
+
+    /// A last screen shorter than the window, above long replies: the rows it kept are the thread's end, which sits at the bottom of the
+    /// window in every frame back, from the first one, with nothing under it and no jump when the rest arrives above it. The first frame
+    /// has nothing above that screen yet (what comes back above it is not built before the first frame, so as not to hold the main
+    /// thread); the frame after has the rest there, and no frame has a blank stretch anywhere else.
+    @Test func aLastScreenShorterThanTheWindowStaysAtTheBottomInEveryFrameBack() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let work = try await Workspace.open(2, replies: 18, cycles: 4, shortTail: 2, in: app)
+        defer { work.window.close() }
+        try await work.show(1)
+        // What the thread shows when nothing was ever released: the gaps between one-line rows are blank stretches of their own.
+        let natural = Self.drawing(work.window, in: try #require(try work.transcript(1))).longestBlankBand
+        try await work.show(0)
+        let store = work.store(1)
+        let fences = try work.fields(1)
+        #expect(fences > 0 && store.rows.count == 36)
+        _ = try await Self.release(work, 1, from: fences)
+        #expect(store.transcriptDrawn == store.keptRows && store.keptRows == 4, "the four one-line rows are all it kept: \(store.keptRows)")
+
+        var series: [Int] = [], tails: [CGFloat] = [], bands: [Int] = [], inks: [Int] = [], bottoms: [Int] = []
+        func sample() throws {
+            ListPerf.settle(work.window)
+            guard try work.host(1)?.isHidden == false, let scroll = try work.transcript(1) else { return }
+            series.append(try work.fields(1))
+            tails.append(try work.distanceFromTail(1) ?? .infinity)
+            let frame = Self.drawing(work.window, in: scroll)
+            bands.append(frame.longestBlankBand)
+            inks.append(frame.ink)
+            bottoms.append(frame.inkBottom)
+        }
+        work.vm.selectAgent(work.agents[1].agent.id)
+        var still = 0
+        do {
+            try await eventuallyOnMain("the rest of the thread to be drawn again", timeout: .seconds(60)) {
+                try sample()
+                still = series.count > 1 && series.last == series.dropLast().last ? still + 1 : 0
+                return !series.isEmpty && !store.transcriptReleased && still >= 8
+            }
+        } catch {
+            Issue.record("\(error): \(fences) fences, drawn \(series.suffix(40)), released \(store.transcriptReleased)")
+        }
+        #expect(series.count >= 4, "the thread was seen over several frames: \(series.count)")
+        #expect(series.last.map { $0 >= fences * 9 / 10 } == true, "and all of it came back: \(series.last ?? 0) of \(fences)")
+        let limit = max(ThreadBlankScreenTests.blankBandLimit, natural)
+        #expect(bands.dropFirst().allSatisfy { $0 <= limit }, "no frame after the first had a blank stretch, beyond the \(natural) of the whole thread: \(bands)")
+        #expect(inks.allSatisfy { $0 > 0 }, "every frame drew something")
+        #expect(tails.allSatisfy { abs($0) <= 1 }, "the scroll view stayed at the end of the thread in every frame: \(tails.map { ($0 * 10).rounded() / 10 })")
+        // Where the scroll view rests is not where the rows are, when they do not fill it: the lowest thing drawn is the end of the thread.
+        let bottom = bottoms.last ?? -1
+        #expect(bottom > 0 && bottoms.allSatisfy { abs($0 - bottom) <= 1 }, "and the end of the thread never moved in the window: \(bottoms)")
     }
 
     /// A reader who scrolls up while the rest is coming back keeps the place they scrolled to: the rows stop joining the tail above

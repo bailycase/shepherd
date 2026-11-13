@@ -180,9 +180,11 @@ good): unpinned ones first, then readers left scrolled up beyond the two most re
 keeps its last screen built (`NativeThreadStore.keptRows`: at most four rows within 16 MiB, or a last
 row of up to 64 MiB alone; a larger reply goes with the rest), which still counts against the budget. Showing one draws that last screen in the pass that shows it and
 builds nothing there (the deck lays the host out as it unhides one that let rows go, so no frame
-has the layout without them); the rows above come back after that frame, newest first, a step of
+has the layout without them; a thread whose rest costs no more than a step draws it all there instead);
+the rows above come back after that frame, newest first, a step of
 rows at a time (`ThreadRestore`, which also waits for keystrokes and for a reader away from the tail,
-and starts again from the last screen if a pass lets its rows go again meanwhile), and a reader taken
+and starts again from the last screen if a pass lets its rows go again meanwhile), with the thread
+at the bottom of its window while it does (`ThreadTailAnchor`), and a reader taken
 this way comes back at its tail. The pass
 loads, sends and resumes nothing. Each of the local and the remote thread stores has its own budget.
 

@@ -1611,7 +1611,8 @@ public final class NativeThreadStore {
     /// `keepingLastScreen`): its last screen, the last row if it costs at most `NativeMountedCost.lastRow` and the rows before it
     /// while all of them cost at most `NativeMountedCost.lastScreen`, and no more than `NativeMountedCost.lastScreenRows`. They stay
     /// built, so showing the thread again draws them with nothing to build, and the rows above them come back after the first
-    /// frame (`ThreadView`). None when the last row alone costs more: there is nothing to keep that the budget could spare.
+    /// frame (`ThreadView`). None when the last row alone costs more: there is nothing to keep that the budget could spare. It counts
+    /// the store's rows, as `restoreStep` does.
     public var keptRows: Int {
         let count = min(rows.count, rowCosts.count)
         var kept = 0, cost = 0
@@ -1655,7 +1656,8 @@ public final class NativeThreadStore {
 
     /// How many more rows a thread that draws its last `drawn` draws in its next restore step (`ThreadView`): the rows before
     /// them, as many as fit in `bytes` of what `mountedCost` estimates for them, and at least one; none once the thread has no
-    /// more. Read from the view's task, never from a body.
+    /// more. Read from the view's task, never from a body. It counts the store's rows: a Project's view hides some (its runtime's
+    /// wake-ups), so there the step is off by the number of those rows, and a step always takes one.
     public func restoreStep(drawn: Int, bytes: Int) -> Int {
         let count = min(rows.count, rowCosts.count)
         var more = 0, cost = 0
@@ -1666,6 +1668,15 @@ public final class NativeThreadStore {
             more += 1
         }
         return more
+    }
+
+    /// The estimated bytes (`mountedCost`) of the rows between the last `drawn` and the last `upTo` rows: what a restore that has
+    /// drawn `drawn` rows still owes the eager tail of `upTo`. Read once as a thread comes back, from the view that decides whether it
+    /// restores at all (`ThreadRestore`).
+    public func restoreCost(drawn: Int, upTo: Int) -> Int {
+        let count = min(rows.count, rowCosts.count)
+        guard drawn < min(upTo, count) else { return 0 }
+        return (drawn..<min(upTo, count)).reduce(0) { $0 + rowCosts[count - 1 - $1] }
     }
 
     /// An estimate of what the views of this thread hold while it is mounted, in bytes (`NativeMountedCost`): the last

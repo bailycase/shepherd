@@ -136,7 +136,9 @@ struct ThreadView: View {
         let dormant = kept != nil
         // Shown again, such a thread draws the rows it kept at once (they never went), and the rest after that frame, a step at a time
         // from the newest (`ThreadRestore`): the eager tail grows over the lazy stack's rows, which the second frame brings back.
-        let restored = restore.plan(active: active, hiddenKept: kept, rows: rows, eagerRows: Self.eagerRows)
+        let restored = restore.plan(active: active, hiddenKept: kept, rows: rows, eagerRows: Self.eagerRows) { [store] drawn in
+            store.restoreCost(drawn: drawn, upTo: Self.eagerRows)
+        }
         let restoreStepping = restore.restoring
         let drawn = rows.suffix(kept ?? restored.map { $0.history ? rows.count : $0.eager } ?? rows.count)
         // A Project's accepted messages the transcript has not taken in: waiting ones go to the composer's Up next, outcomes stay here.
@@ -271,7 +273,7 @@ struct ThreadView: View {
                     historyAnchor.cancel()
                     loadVisibleHistory()
                 }
-                .modifier(ThreadTailAnchor(sticky: follower.sticky, native: nativeTail))
+                .modifier(ThreadTailAnchor(sticky: follower.sticky, native: nativeTail, restoring: restored != nil))
                 .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
                     // Intent is a wheel tick (350 ms window) or a live drag phase.
                     let gesture = input.hasWheelIntent(movingUp: new.distance > old.distance) || follower.userScrolling
@@ -440,9 +442,9 @@ struct ThreadView: View {
 
     /// Draws the rows a restore still owes (`ThreadRestore`) a step at a time, each after the frame of the one before it. It waits while
     /// the reader's hand is on the scroll view, and for keystrokes: a step takes tens of milliseconds, which a key pressed in it feels.
-    /// Both end within `AppLayout.inputRecentWindow`, so it looks again every `restoreRetry` for no longer than that. It runs only while the
-    /// reader is at the tail (the task's key): the rows that join the eager tail change height above them, which only a view held to the
-    /// tail (`ThreadTailAnchor`) takes without moving.
+    /// It looks again every `restoreRetry` while either lasts, and a key or a scroll lasts `AppLayout.inputRecentWindow` past its event. It
+    /// runs only while the reader is at the tail (the task's key): the rows that join the eager tail change height above them, which only a
+    /// view held to the tail (`ThreadTailAnchor`) takes without moving.
     private func restoreRows() async {
         func waiting() -> Bool { follower.userScrolling || !follower.sticky || userActivity?.inputRecent == true }
         while !Task.isCancelled {
@@ -915,7 +917,8 @@ final class ThreadRowIndex {
 /// would be shown its estimates, before the scroll view has been held to the tail, and would build them. The next frame brings the lazy
 /// stack back with the rows older than the eager tail, and the rows between join the eager tail a step at a time, newest first, each
 /// leaving the lazy stack for the eager stack once. The end of the thread, where the reader is, never moves: the scroll view keeps it
-/// while the content above it grows. No update builds more than a step of rows.
+/// while the content above it grows, at the bottom of the window even where the rows drawn so far do not fill it (`ThreadTailAnchor`).
+/// No update builds more than a step of rows, and a thread whose rest costs no more than a step draws it all in its first frame.
 ///
 /// Read in `body`, which it changes only through `steps`: the rest is a reference's, so keeping it current never draws the view.
 @MainActor
@@ -944,8 +947,11 @@ final class ThreadRestore {
 
     /// What the thread draws in this update; nil for all of it. `hiddenKept` is what the hidden view draws
     /// (`NativeThreadStore.transcriptDrawn`, read only while hidden, so that the thread on screen is not drawn again by the store
-    /// clearing it), and `rows` all the rows once the thread is shown.
-    func plan<Rows: BidirectionalCollection>(active: Bool, hiddenKept: Int?, rows: Rows, eagerRows: Int) -> Plan?
+    /// clearing it), and `rows` all the rows once the thread is shown. `owed` is the estimated bytes of the rows between the last
+    /// `hiddenKept` and the eager tail (`NativeThreadStore.restoreCost`), read once as it comes back: a thread that owes no more than
+    /// a step (`AppLayout.restoreStepBytes`) draws them all in its first frame, as it would after any release, because there is nothing
+    /// to spread, and a last screen that is all it drew might not fill its window (`ThreadTailAnchor`).
+    func plan<Rows: BidirectionalCollection>(active: Bool, hiddenKept: Int?, rows: Rows, eagerRows: Int, owed: (Int) -> Int) -> Plan?
     where Rows.Element == NativeThreadRow, Rows.Index == Int {
         _ = steps
         guard active else {
@@ -963,7 +969,7 @@ final class ThreadRestore {
         if !begun {
             begun = true
             // At least one row, so that the first frame is not blank.
-            if let kept = self.hiddenKept.map({ max(1, $0) }), kept < min(rows.count, eagerRows) {
+            if let kept = self.hiddenKept.map({ max(1, $0) }), kept < min(rows.count, eagerRows), owed(kept) > AppLayout.restoreStepBytes {
                 first = rows[rows.endIndex - kept].id
                 restoring = true
                 history = false
@@ -1108,6 +1114,9 @@ final class ThreadFinder {
 struct ThreadTailAnchor: ViewModifier {
     let sticky: Bool
     let native: Bool
+    /// A released thread's rows are coming back (`ThreadRestore`): the first frame draws only its last screen, which may be shorter
+    /// than the window, and the rows above it join over the frames after.
+    var restoring = false
 
     /// The scroll view keeps the tail itself, as the follower's `nativeAnchor` says.
     static let isNative = true
@@ -1119,6 +1128,10 @@ struct ThreadTailAnchor: ViewModifier {
                 // While stuck, growth keeps the tail pinned without any scrollTo; detaching only
                 // ever happens on user scroll intent.
                 .defaultScrollAnchor(sticky ? .bottom : nil, for: .sizeChanges)
+                // Content shorter than the window rests at the bottom of it while the rows above come back, not at the top with
+                // a blank band under it that the rest then pushes the end of the thread out of. A thread whose rows are all
+                // drawn rests where it always did.
+                .defaultScrollAnchor(restoring ? .bottom : nil, for: .alignment)
         } else {
             content
                 // Detached, a shrinking live reply must not move the reader beyond its rows.
