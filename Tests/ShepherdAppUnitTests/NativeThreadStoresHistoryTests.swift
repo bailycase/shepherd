@@ -179,6 +179,16 @@ struct NativeThreadStoresHistoryTests {
         #expect(b.transcriptDrawn == b.keptRows, "once it is quiet, it runs")
     }
 
+    @Test func theThreadOnScreenStreamsWhenItsVersionMovesBetweenTwoLooks() {
+        let stream = UserActivity.Stream()
+        #expect(!stream.changed(nil), "nothing is shown")
+        #expect(!stream.changed(7), "the first look has nothing to compare with")
+        #expect(!stream.changed(7), "unchanged between two looks")
+        #expect(stream.changed(8), "a chunk came in")
+        #expect(!stream.changed(8))
+        #expect(!stream.changed(nil) && !stream.changed(9), "a thread shown after another is a first look again")
+    }
+
     /// A pass lets go of rows a step at a time, and a step is a row or the bytes the stores give it, whichever is more.
     @Test func aPassTakesNoMoreThanAStepOfRows() {
         let pauses = Pauses()
