@@ -280,6 +280,22 @@ private final class ThreadHarness {
         }
     }
 
+    /// Steps back through the turns until the first row, the only one with a history marker, is on screen.
+    @discardableResult
+    func reachTheFirstRow() async throws -> ThreadHistoryAnchor.Marker {
+        func visibleMarker(in view: NSView) -> ThreadHistoryAnchor.Marker? {
+            if let marker = view as? ThreadHistoryAnchor.Marker,
+               let top = marker.viewportTop, top >= 0, top < scrollView.contentView.bounds.height { return marker }
+            return view.subviews.lazy.compactMap(visibleMarker).first
+        }
+        for _ in 0..<26 {
+            if visibleMarker(in: window.host) != nil { break }
+            command(.previousTurn)
+            try await settle()
+        }
+        return try #require(visibleMarker(in: window.host))
+    }
+
     func waitUntilReady() async throws {
         try await eventuallyOnMain("the thread to load") { store.ready }
         try await eventuallyOnMain("the thread to open at its tail") { isPinned }
@@ -750,6 +766,49 @@ struct ThreadScrollingTests {
             print("Paging before/after: label=\(before)/\(String(describing: drawn)), clip=\(beforeClip)/\(thread.scrollView.contentView.bounds), document=\(String(describing: beforeDocument))/\(String(describing: thread.scrollView.documentView?.bounds))")
         }
         let after = try #require(drawn)
+        #expect(abs(after - before) < 2, "prepending moved the visible turn from \(before) to \(after)")
+    }
+
+    @Test func scrollingTheTopWithNoPageLoadingMovesNoHistoryAnchor() async throws {
+        let thread = ThreadHarness(messages: 24, paragraphs: 4)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await thread.reachTheFirstRow()
+
+        let counts = ListPerf.counting { _ = ListPerf.scroll(thread.window, thread.scrollView, step: 20, steps: 5) }
+
+        // The boundary row is realized the whole way; only an engaged anchor hears the scroll.
+        #expect(counts["thread.historyMove", default: 0] <= 1, "idle scrolling moved the history anchor: \(counts)")
+    }
+
+    @Test func whileAPageLoadsScrollReadingsStillMoveTheAnchor() async throws {
+        let thread = ThreadHarness(messages: 24, paragraphs: 4)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let marker = try await thread.reachTheFirstRow()
+        let anchor = try #require(marker.anchor)
+        let first = try #require(thread.store.rows.first?.id)
+        // Engaged by hand, as `loadVisibleHistory` does: a window the system calls occluded never
+        // delivers the top sentinel's visibility, and a page that loads on its own would race this.
+        let token = anchor.begin(first, session: thread.store.sessionKey)
+
+        let counts = ListPerf.counting { _ = ListPerf.scroll(thread.window, thread.scrollView, step: 12, steps: 5) }
+        #expect(counts["thread.historyMove", default: 0] >= 5, "a waiting anchor missed scroll readings: \(counts)")
+
+        let before = try #require(try thread.position(of: "Question 2", diagnoseMissing: true))
+        var page = ThreadHarness.snapshot(count: 12, running: false, prefix: "older", paragraphs: 7)
+        for index in page.messages.indices where page.messages[index].role == "user" {
+            page.messages[index].blocks = [NativeThreadBlock(kind: .text, text: "Older question \(index)")]
+        }
+        var next = thread.snapshot
+        next.revision += 1
+        next.messages = page.messages + next.messages
+        await thread.publish(next)
+        try await eventuallyOnMain("the older page to become the first row") { thread.store.rows.first?.id != first }
+        anchor.finished(token, firstID: thread.store.rows.first?.id)
+        try await thread.settle()
+
+        let after = try #require(try thread.position(of: "Question 2", diagnoseMissing: true))
         #expect(abs(after - before) < 2, "prepending moved the visible turn from \(before) to \(after)")
     }
 

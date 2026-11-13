@@ -743,7 +743,11 @@ public struct NativeScrollFollower: Equatable, Sendable {
     }
 
     /// The pill shows while detached and something is happening or already happened below.
-    public func showsJump(running: Bool) -> Bool { !sticky && (running || unseen) }
+    public func showsJump(running: Bool) -> Bool { Self.showsJump(sticky: sticky, unseen: unseen, running: running) }
+
+    /// The pill's rule over the parts of the follower a view draws, for a view that mirrors them
+    /// instead of observing the whole follower.
+    public static func showsJump(sticky: Bool, unseen: Bool, running: Bool) -> Bool { !sticky && (running || unseen) }
 
     /// A stuck view this far above its tail after a layout change is moved back onto it.
     public static let repinSlack: Double = 4

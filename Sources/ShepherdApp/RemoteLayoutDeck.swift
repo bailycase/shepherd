@@ -168,6 +168,11 @@ struct RemoteLayoutDeck: View, Equatable {
                         if entry.host.frame != container.bounds { entry.host.frame = container.bounds }
                         entry.host.needsLayout = true
                         entry.host.isHidden = false
+                        // As the local deck's: the rows of a thread that let them go are built in this pass.
+                        if vm.remoteThreadStores.existing(for: model.ref)?.transcriptReleased == true {
+                            entry.host.layoutSubtreeIfNeeded()
+                            SHRenderProbe.tick("remoteDeck.flipLayout")
+                        }
                         container.needsLayout = true
                     } else if !model.isVisible, !entry.host.isHidden {
                         hiding.append(entry.host)

@@ -735,6 +735,9 @@ final class ShepherdViewModel {
         // The selected thread keeps its history whatever its recency (`NativeThreadStores`).
         threadStores.protected = { [weak self] in self?.selectedAgentID.map { [$0] } ?? [] }
         remoteThreadStores.protected = { [weak self] in self?.selectedRemoteAgent.map { [$0] } ?? [] }
+        // The threads whose hidden layouts hold row views, which the stores keep within a budget (`NativeThreadStores`).
+        threadStores.mounted = { [weak self] in self?.mountedThreadAgents() ?? [] }
+        remoteThreadStores.mounted = { [weak self] in self?.mountedRemoteThreads() ?? [] }
         // A sign-in or sign-out: Settings reads both sides again.
         self.piAuth.onChanged = { [weak yourPi = self.yourPi] in
             Task { await yourPi?.refresh() }

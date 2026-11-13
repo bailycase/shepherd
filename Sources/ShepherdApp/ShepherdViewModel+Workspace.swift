@@ -93,6 +93,30 @@ extension ShepherdViewModel {
     /// Every layout the workspace keeps mounted (see `WorkspaceSelection`).
     var mountedTabs: [Tab] { resolvedMountedTabs }
 
+    /// The agents whose thread a mounted layout draws, the visible one and the hidden: the threads holding row views
+    /// (`NativeThreadStores.mounted`). A layout cold parking or a Project took out, or nobody has shown, holds none. A tab's
+    /// thread is the one the deck draws (`AgentLayoutModel.Resolver`): its first agent's, when that agent owns a pane of it.
+    func mountedThreadAgents() -> Set<AgentID> {
+        var agentsByTab: [TabID: Agent] = [:]
+        for agent in state.agents where agentsByTab[agent.tabID] == nil { agentsByTab[agent.tabID] = agent }
+        var mounted = Set<AgentID>()
+        for tab in mountedTabs {
+            guard let agent = agentsByTab[tab.id],
+                  tab.layout.leaves.contains(where: { primaryAgent(in: tab, pane: $0, agents: [agent]) != nil }) else { continue }
+            mounted.insert(agent.id)
+        }
+        return mounted
+    }
+
+    /// The remote threads that are pages of the remote deck (`RemoteDeckPages`): the ones holding row views, hidden or not.
+    func mountedRemoteThreads() -> Set<RemoteAgentRef> {
+        var states: [UUID: ShepherdState] = [:]
+        for ref in remoteDeckRefs where states[ref.hostID] == nil {
+            states[ref.hostID] = remoteHosts.allConnections.first { $0.id == ref.hostID }?.state
+        }
+        return Set(RemoteDeckPages.pages(shown: remoteDeckRefs, selected: nil, inspecting: nil, states: states).pages)
+    }
+
     /// The visible layout's id, without copying a `Tab`.
     var activeTabID: TabID? { workspaceSelection.activeTabID }
 
