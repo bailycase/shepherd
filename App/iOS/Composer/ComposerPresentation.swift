@@ -39,8 +39,10 @@ final class ComposerPresentation {
     /// Whether a following transcript mounts at its tail and leans on SwiftUI's bottom anchors: before iOS 27.1. From 27.1 a bottom
     /// anchor can retain a lazy stack's estimated height after a fold, so the transcript follows by scrolling alone and behaves as it
     /// did before a following transcript mounted at its tail: it keeps the turn it is on whether it follows or not, opens with no
-    /// initial anchor, and draws again from every change of the follower (`followerChanges`). No iPhone Duo has measured a mount at the
-    /// tail there (a long reply under a bottom initial anchor); lift it here once one has.
+    /// initial anchor, and draws again from every change of the follower (`followerChanges`). A Duo measured this path forced on at 27.1:
+    /// a stream of a long reply rests on the tail either way (no landings, against about 320), but a re-open of the long thread mounts the
+    /// stack at the end of its estimated height and draws nothing for 26 frames (about 840 ms) until the tail guard repairs it, where this
+    /// path draws a row in its second frame. Lift it where `thread-remount-tail` passes on a Duo with it forced on.
     static var nativeTail: Bool {
         if #available(iOS 27.1, *) { false } else { true }
     }
