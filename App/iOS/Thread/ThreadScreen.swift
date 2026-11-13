@@ -420,6 +420,7 @@ struct ThreadTranscript: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .onAppear {
+                tailHold.resume()
                 guard !appeared else { return }
                 appeared = true
                 presentation.mount(tail: tail)

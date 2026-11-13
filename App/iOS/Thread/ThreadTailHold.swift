@@ -10,10 +10,12 @@ import Foundation
 @MainActor
 final class ThreadTailHold {
     private var wait: Task<Void, Never>?
+    /// The transcript is off the screen: a landing asked for before it left starts no wait.
+    private var stopped = false
 
     /// A landing was made: the marker is held again after the wait, once however many landings come meanwhile.
     func landed(hold: @escaping @MainActor () -> Void) {
-        guard wait == nil else { return }
+        guard wait == nil, !stopped else { return }
         wait = Task { @MainActor [weak self] in
             try? await Task.sleep(for: MobileLayout.tailHoldWait)
             guard !Task.isCancelled, let self else { return }
@@ -24,7 +26,11 @@ final class ThreadTailHold {
 
     /// The transcript left the screen: nothing is held for a view that may be gone.
     func stop() {
+        stopped = true
         wait?.cancel()
         wait = nil
     }
+
+    /// The transcript is on the screen again: a screen pushed over the thread was popped.
+    func resume() { stopped = false }
 }
