@@ -274,6 +274,22 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
     ephemeral keychain handling are deliberate. Tests use
     fake GitHub states, scratch packages/keychains and the existing fake publication shell;
     local tests cannot establish GitHub's live cancellation or cross-run artifact semantics.
+- **iCloud rendezvous (Fleet).** Macs on one Apple ID find each other through the user's own CloudKit private database, container
+  `iCloud.com.bailycase.shepherd` (`FleetCloudKitStore`; no Shepherd server). That needs the iCloud/CloudKit entitlements, which
+  macOS honors only with a provisioning profile embedded in the app. The Nightly and Release configurations sign with
+  `App/Shepherd.icloud.entitlements`; Dev keeps `App/Shepherd.entitlements` and Xcode's automatic signing. In the release build,
+  `release.py embed-profile` takes the Developer ID profile from the base64 secret `DEVELOPER_ID_PROFILE_NIGHTLY` or
+  `DEVELOPER_ID_PROFILE_STABLE`, checks it names the app's id, the container and CloudKit (or `*`) and hasn't expired, embeds it as
+  `Contents/embedded.provisionprofile` and signs with the icloud entitlements plus the app id and team from the profile. With no
+  secret, an ad-hoc build, or a profile that doesn't fit, it signs with the plain entitlements and says so in the job log (a
+  notice for no secret, a warning for a bad one): a release never fails on iCloud, and Fleet simply finds Macs the other ways.
+  `release.py verify-icloud` then fails a signed app that asks for iCloud without a profile that grants it, which macOS would
+  refuse to open. A local ad-hoc Nightly or Release build from Xcode inherits the iCloud entitlements and won't open: pass
+  `CODE_SIGN_ENTITLEMENTS=App/Shepherd.entitlements`. Importing the schema is a one time step per container: in the CloudKit Console
+  (Development environment) import `scripts/fleet-rendezvous.ckdb`, check the two record types `FleetJoin` and `FleetPresence`, then
+  Deploy Schema Changes to Production, since Developer ID builds talk to Production. Every field is encrypted, so there are no
+  indexes to add. The real CloudKit path is not exercised by tests (`Tests/Release/test_icloud.py` covers the release side, the
+  Fleet suites cover the rest with a fake store); verify it by hand once the schema is deployed.
 - **Building Shepherd Nightly locally:** the `Shepherd (Nightly)` scheme, or
   `xcodebuild -scheme 'Shepherd (Nightly)' -configuration Nightly …` as the workflow does.
 - **Enhanced Security** is set on the Mac target only, because at project level it would push

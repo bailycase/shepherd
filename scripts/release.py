@@ -36,6 +36,12 @@ usage:
   release.py verify-app <app> <app-key> [version]  check a built app is the app it claims to be,
                                         is arm64 only, and carries the pinned pi engine
                                         (scripts/pi_engine.py)
+  release.py embed-profile <app-key> <app> <entitlements-out>
+                                        embed the Developer ID provisioning profile (secret in $PROFILE_NIGHTLY or
+                                        $PROFILE_STABLE, base64) as Contents/embedded.provisionprofile and write the
+                                        entitlements to sign with, iCloud ones included, as entitlements=<path>
+                                        for $GITHUB_OUTPUT; without a usable profile, the app's plain entitlements
+  release.py verify-icloud <app>        check a signed app's iCloud entitlements are backed by its embedded profile
   release.py verify-ios <app> <build>   check an archived iOS app before it is uploaded
   release.py prepare-ios-signing <app> ad-hoc seal push and app group entitlements for cloud export
   release.py ensure-ios-push --key-id <id> --issuer-id <id> --key <p8>
@@ -57,6 +63,7 @@ import json
 import os
 import plistlib
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -68,7 +75,7 @@ import urllib.request
 import xml.etree.ElementTree as ElementTree
 from xml.parsers.expat import ExpatError
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pi_engine  # noqa: E402  (beside this file; the tests load this one by path)
@@ -548,6 +555,135 @@ def verify_app(path: str, key: str, version: str | None = None) -> list[str]:
     problems += extension_problems(path)
     problems += launch_agent_problems(path, app.bundle_id, executable)
     return problems
+
+
+# Fleet finds Macs through the user's own iCloud (CloudKit, the container below). CloudKit needs entitlements macOS only honors
+# when a provisioning profile that grants them is embedded in the app, so a Developer ID build gets them only when the
+# profile secret exists. Without it (or with one that doesn't fit) the app is built without them, and Fleet goes on without
+# iCloud: a release never fails on it. docs/releases.md, "iCloud rendezvous".
+ICLOUD_CONTAINER = "iCloud.com.bailycase.shepherd"
+APP_ENTITLEMENTS = "App/Shepherd.entitlements"
+ICLOUD_ENTITLEMENTS = "App/Shepherd.icloud.entitlements"
+PROFILE_ENV = {"nightly": "PROFILE_NIGHTLY", "main": "PROFILE_STABLE"}
+EMBEDDED_PROFILE = os.path.join("Contents", "embedded.provisionprofile")
+KEY_APP_ID = "com.apple.application-identifier"
+KEY_TEAM = "com.apple.developer.team-identifier"
+KEY_CONTAINERS = "com.apple.developer.icloud-container-identifiers"
+KEY_SERVICES = "com.apple.developer.icloud-services"
+KEY_ENVIRONMENT = "com.apple.developer.icloud-container-environment"
+
+
+def decode_profile(path: str, run=subprocess.run) -> dict:
+    """The plist inside a .provisionprofile (a CMS envelope)."""
+    result = run(["security", "cms", "-D", "-i", path], capture_output=True, timeout=120)
+    if result.returncode != 0:
+        raise ValueError("the provisioning profile can't be decoded")
+    try:
+        value = plistlib.loads(result.stdout)
+    except (ValueError, ExpatError, plistlib.InvalidFileException):
+        raise ValueError("the provisioning profile isn't a property list") from None
+    if not isinstance(value, dict):
+        raise ValueError("the provisioning profile isn't a property list")
+    return value
+
+
+def _listed(value) -> list:
+    return list(value) if isinstance(value, (list, tuple)) else [value]
+
+
+def _grants(granted, wanted) -> bool:
+    """Whether a profile's value covers every one of `wanted`: listed, or "*" (a profile may grant all the iCloud services)."""
+    have = _listed(granted)
+    return "*" in have or set(_listed(wanted)) <= set(have)
+
+
+def profile_problems(profile: dict, app: App, now: datetime | None = None) -> list[str]:
+    """Why `profile` can't back the iCloud entitlements of `app`: another app or container, no CloudKit, or expired."""
+    granted = profile.get("Entitlements")
+    if not isinstance(granted, dict):
+        return ["the profile lists no entitlements"]
+    problems = []
+    team = _listed(profile.get("TeamIdentifier", []))
+    if not team or granted.get(KEY_TEAM) != team[0]:
+        problems.append(f"the profile's team is {granted.get(KEY_TEAM)!r}, not its TeamIdentifier")
+    elif granted.get(KEY_APP_ID) != f"{team[0]}.{app.bundle_id}":
+        problems.append(f"the profile is for {granted.get(KEY_APP_ID)!r}, expected {team[0]}.{app.bundle_id}")
+    if not _grants(granted.get(KEY_CONTAINERS, []), ICLOUD_CONTAINER):
+        problems.append(f"the profile doesn't grant the container {ICLOUD_CONTAINER}")
+    if not _grants(granted.get(KEY_SERVICES, []), "CloudKit"):
+        problems.append("the profile doesn't grant CloudKit")
+    expires = profile.get("ExpirationDate")
+    if isinstance(expires, datetime) and expires.replace(tzinfo=None) <= (now or datetime.now(timezone.utc)).replace(tzinfo=None):
+        problems.append(f"the profile expired on {expires:%Y-%m-%d}")
+    return problems
+
+
+def icloud_entitlements(profile: dict, root: str) -> dict:
+    """The entitlements to sign with when `profile` backs iCloud: the app's with the container and CloudKit
+    (App/Shepherd.icloud.entitlements) and the app id and team the profile names. The environment is Production
+    when the profile allows it, which is what a Developer ID build talks to."""
+    with open(os.path.join(root, ICLOUD_ENTITLEMENTS), "rb") as f:
+        entitlements = plistlib.load(f)
+    granted = profile["Entitlements"]
+    entitlements[KEY_APP_ID] = granted[KEY_APP_ID]
+    entitlements[KEY_TEAM] = granted[KEY_TEAM]
+    if _grants(granted.get(KEY_ENVIRONMENT, []), "Production") and KEY_ENVIRONMENT in granted:
+        entitlements[KEY_ENVIRONMENT] = "Production"
+    return entitlements
+
+
+def embed_profile(app_key: str, app_path: str, out: str, secrets: dict, identity: str, root: str,
+                  decode=decode_profile, now: datetime | None = None) -> tuple[str, list[str]]:
+    """Embeds the profile in `app_path` when there is a usable one and writes the entitlements to sign with to `out`.
+    Returns the entitlements file to sign with and the log lines (GitHub annotations). Never raises over the profile:
+    without a Developer ID, a secret, or a profile that fits, the answer is the app's plain entitlements."""
+    plain = os.path.join(root, APP_ENTITLEMENTS)
+    app = APPS[app_key]
+    secret = "".join(secrets.get(PROFILE_ENV[app_key], "").split())
+    if identity in ("", "-"):
+        return plain, ["::notice title=iCloud::Ad-hoc build: no provisioning profile; building without the iCloud entitlements."]
+    if not secret:
+        return plain, [f"::notice title=iCloud::No {PROFILE_ENV[app_key]} secret; building {app.name} without the iCloud "
+                       "entitlements. Fleet finds Macs without iCloud in this build."]
+    staged = os.path.join(os.path.dirname(out) or ".", "embedded.provisionprofile")
+    try:
+        with open(staged, "wb") as f:
+            f.write(base64.b64decode(secret, validate=True))
+        profile = decode(staged)
+        problems = profile_problems(profile, app, now)
+        if problems:
+            raise ValueError("; ".join(problems))
+        entitlements = icloud_entitlements(profile, root)
+    except (ValueError, OSError) as error:
+        # Binascii errors are ValueErrors. A secret that is set but wrong is loud, and the release still ships.
+        return plain, [f"::warning title=iCloud::The {PROFILE_ENV[app_key]} secret can't be used ({error}); building "
+                       f"{app.name} without the iCloud entitlements."]
+    with open(out, "wb") as f:
+        plistlib.dump(entitlements, f)
+    shutil.copyfile(staged, os.path.join(app_path, EMBEDDED_PROFILE))
+    return out, [f"::notice title=iCloud::Embedded the provisioning profile and signing {app.name} with the iCloud entitlements."]
+
+
+def icloud_problems(app: str, run=subprocess.run, decode=decode_profile) -> list[str]:
+    """A signed app that asks for iCloud without a profile that grants it won't launch; one that carries a profile
+    it doesn't use is only noise. Empty when the entitlements and the embedded profile agree."""
+    result = run(["codesign", "-d", "--entitlements", ":-", app], capture_output=True, timeout=120)
+    try:
+        signed = plistlib.loads(result.stdout) if result.stdout.strip() else {}
+    except (ValueError, ExpatError, plistlib.InvalidFileException):
+        return ["codesign's entitlements aren't a property list"]
+    asked = [key for key in (KEY_CONTAINERS, KEY_SERVICES, KEY_APP_ID, KEY_TEAM) if key in signed]
+    profile_path = os.path.join(app, EMBEDDED_PROFILE)
+    if not asked:
+        return [f"{EMBEDDED_PROFILE} is embedded but the app is signed without the iCloud entitlements"] if os.path.exists(profile_path) else []
+    if not os.path.exists(profile_path):
+        return [f"the app is signed with {', '.join(asked)} but has no {EMBEDDED_PROFILE}: macOS would refuse to open it"]
+    try:
+        granted = decode(profile_path).get("Entitlements", {})
+    except ValueError as error:
+        return [str(error)]
+    return [f"{key} is {signed[key]!r} but the profile grants {granted.get(key)!r}" for key in asked
+            if not _grants(granted.get(key, []), signed[key])]
 
 
 def launch_agent_plist(bundle_id: str) -> str:
@@ -1277,6 +1413,19 @@ def main(argv: list[str]) -> int:
         if problems:
             return 1
         print(f"{args[0]} is {APPS[args[1]].name} ({APPS[args[1]].bundle_id})")
+    elif command == "embed-profile" and len(args) == 3:
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        chosen, lines = embed_profile(args[0], args[1], args[2], dict(os.environ), os.environ.get("IDENTITY", ""), root)
+        for line in lines:
+            print(line, file=sys.stderr)
+        print(f"entitlements={os.path.relpath(chosen, root) if chosen.startswith(root) else chosen}")
+    elif command == "verify-icloud" and len(args) == 1:
+        problems = icloud_problems(args[0])
+        for problem in problems:
+            print(f"::error::{args[0]}: {problem}", file=sys.stderr)
+        if problems:
+            return 1
+        print(f"{args[0]}: iCloud entitlements and profile agree")
     elif command == "verify-ios" and len(args) == 2:
         problems = verify_ios(*args)
         for problem in problems:

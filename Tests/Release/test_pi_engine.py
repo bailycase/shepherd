@@ -1007,7 +1007,8 @@ class ReleaseWorkflowTests(unittest.TestCase):
 
     def test_signing_passes_the_engine_entitlements(self):
         sign = self.step("Sign")
-        self.assertIn("App/Shepherd.entitlements \\\n            App/Engine.entitlements\n", sign)
+        # The app's own entitlements come from the embed step (the iCloud ones only with a profile); the engine's are fixed.
+        self.assertIn("${{ steps.icloud.outputs.entitlements }}' \\\n            App/Engine.entitlements\n", sign)
         self.assertNotIn("x86_64", sign)
 
 
