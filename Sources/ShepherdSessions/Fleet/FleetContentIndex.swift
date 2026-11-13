@@ -164,9 +164,6 @@ final class FleetContentIndex: @unchecked Sendable {
             // Without events the index would drift unseen: the periodic check rescans instead.
             onDrift?("events unavailable")
         }
-        // The system's history of events is not always complete up to the moment the host stopped (it is written behind the events), so a
-        // change made while the host was down is also looked for directly: size and time of what the index holds, as a dispatch does.
-        if loadedFromDisk { catchUp() }
     }
 
     /// Asks a scan in progress to end. Safe from any thread; `stop()` then runs on the queue.
