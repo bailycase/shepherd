@@ -346,8 +346,11 @@ struct ThreadTranscript: View {
                 if old != nil { presentation.noteVisibleTurn(nil) }
                 loadVisibleHistory()
             }
-            // A reused view (the design pane's chat has no identity of its own) shows another thread.
-            .onChange(of: ref) { _, _ in tailPin.reset() }
+            // A reused view (the design pane's chat has no identity of its own) shows another thread, which mounts as a new transcript does.
+            .onChange(of: ref) { _, _ in
+                tailPin.reset()
+                presentation.mount()
+            }
             .defaultScrollAnchor(nativeTail ? (presentation.restoresTurn ? .top : .bottom) : nil, for: .initialOffset)
             .defaultScrollAnchor(nativeTail ? (presentation.follows ? .bottom : nil) : (presentation.follows ? nil : .top), for: .sizeChanges)
             .onScrollGeometryChange(for: TailReading.self, of: Self.reading) { old, new in
