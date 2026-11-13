@@ -31,6 +31,15 @@ enum ComposerFieldFixture {
         return field
     }
 
+    /// The field has the caret, so keys typed into it are edits (a field without it takes them without a sound).
+    @MainActor static func focus(_ field: UITextView) async {
+        await FixtureWindows.wait("the composer field to take focus", seconds: 20) {
+            if !field.isFirstResponder { field.becomeFirstResponder() }
+            return field.isFirstResponder
+        }
+        try? await Task.sleep(for: .seconds(1))
+    }
+
     @MainActor static func settle() async {
         for _ in 0..<2 { try? await Task.sleep(for: .milliseconds(150)) }
     }
@@ -39,13 +48,13 @@ enum ComposerFieldFixture {
     @MainActor static func work(_ app: MobileApp) async {
         let store = app.threads.store(for: FixtureData.ref(FixtureData.preview))
         let field = await field()
-        FollowFixture.focusComposer()
-        try? await Task.sleep(for: .seconds(1))
+        await focus(field)
         var failures: [String] = []
         for size in [0, 6_000, 40_000] {
             store.draft = String(repeating: sentence, count: size / sentence.count)
             await settle()
             field.selectedRange = NSRange(location: (field.text as NSString).length, length: 0)
+            let length = (field.text as NSString).length
             SHRenderProbe.start()
             for index in 0..<keys {
                 field.insertText(index % 12 == 11 ? " " : "k")
@@ -54,8 +63,10 @@ enum ComposerFieldFixture {
             let counts = SHRenderProbe.stop()
             let probed = counts["layout.composerFieldProbed", default: 0]
             let measured = counts["layout.composerFieldMeasured", default: 0]
-            let held = probed > 0 && measured <= keys * measuresPerEdit
-            if !held { failures.append("\(size / 1000) KB: \(measured) layouts") }
+            let typed = (field.text as NSString).length - length
+            let published = store.draft.utf16.count == (field.text as NSString).length
+            let held = typed == keys && published && probed > 0 && measured <= keys * measuresPerEdit
+            if !held { failures.append("\(size / 1000) KB: \(typed) of \(keys) keys typed\(published ? "" : ", not in the draft"), \(measured) layouts") }
             print("FIXTURE CHECK \(held ? "ok" : "not ok"): \(keys) keys into a \(size / 1000) KB draft: the field was asked its size \(probed) times and laid its text out \(measured) times (at most \(keys * measuresPerEdit))")
         }
         // The text and the width stay as they are while SwiftUI is asked for the field's size again.
@@ -112,8 +123,7 @@ enum ComposerFieldFixture {
     @MainActor static func looks(_ app: MobileApp) async {
         let store = app.threads.store(for: FixtureData.ref(FixtureData.preview))
         let field = await field()
-        FollowFixture.focusComposer()
-        try? await Task.sleep(for: .seconds(1.5))
+        await focus(field)
         let lineHeight = ceil((field.typingAttributes[.font] as? UIFont ?? .preferredFont(forTextStyle: .body)).lineHeight)
         let most = ceil(lineHeight * CGFloat(SHComposerMetrics.fieldMaxLines))
         var failures: [String] = []
