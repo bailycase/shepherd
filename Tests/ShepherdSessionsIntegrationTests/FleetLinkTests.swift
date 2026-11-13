@@ -81,10 +81,10 @@ final class LinkRouting: @unchecked Sendable {
         self.legacy = legacy
     }
 
-    func refuse(port: UInt16) { state.withValue { $0.refusedPorts.insert(port) } }
-    func allow(port: UInt16) { state.withValue { $0.refusedPorts.remove(port) } }
-    func refuse(host: String) { state.withValue { $0.refusedHosts.insert(host) } }
-    func allow(host: String) { state.withValue { $0.refusedHosts.remove(host) } }
+    func refuse(port: UInt16) { _ = state.withValue { $0.refusedPorts.insert(port) } }
+    func allow(port: UInt16) { _ = state.withValue { $0.refusedPorts.remove(port) } }
+    func refuse(host: String) { _ = state.withValue { $0.refusedHosts.insert(host) } }
+    func allow(host: String) { _ = state.withValue { $0.refusedHosts.remove(host) } }
     func name(_ host: String, is port: UInt16) { state.withValue { $0.names[host] = port } }
     var tried: [FleetRoute] { state.current.tried }
 
@@ -442,6 +442,50 @@ struct FleetLinkTests {
         // The old Mac's connection stayed: nothing closed a link it relies on.
         let (bSees, aSees) = (try await Self.peerStatus(b, a), try await Self.peerStatus(a, b))
         #expect(bSees.link == .connected && aSees.lastSeen == nil)
+    }
+
+    /// A host that is not this build, as the wire shows it: it answers `hello` without `fleet.link.v1`, and records every request it is
+    /// sent. A Mac that links to it pushes over its own connection as it always did, and is never sent a request that host doesn't know.
+    @Test func aHostThatDoesNotOfferLinksIsSentNothingItDoesNotKnow() async throws {
+        let (oldID, oldToken) = (UUID(), FleetProtocol.makeToken())
+        let heard = Locked<[(type: String, capabilities: [String]?)]>([])
+        let presented = Locked<String?>(nil)
+        let offered = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.fleetLinkCapability }
+        let oldHost = try LoopbackServer { fd in
+            func reply(_ reply: RemoteReply) { LoopbackServer.writeAll(fd, (try? NDJSON.encode(reply)) ?? Data()) }
+            while let line = FleetPairingTests.readLine(fd) {
+                guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any], let type = object["type"] as? String,
+                      let request = try? NDJSON.decode(RemoteRequest.self, from: line) else { continue }
+                heard.withValue { $0.append((type, object["capabilities"] as? [String])) }
+                switch request {
+                case .fleetIdentify(let id): reply(.fleetIdentity(id: id, hostID: oldID, name: "Mac mini", build: "old", fleetEnabled: true))
+                case .fleetPair(let id, _, let from):
+                    presented.withValue { $0 = from.myTokenHash }
+                    reply(.fleetPaired(id: id, hostID: oldID, name: "Mac mini", myTokenHash: FleetProtocol.hash(oldToken)))
+                case .hello(let id, let token, _, _, _):
+                    guard FleetProtocol.hash(token) == presented.current else { return reply(.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token")) }
+                    reply(.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: offered, hostBuild: "old", hostID: oldID))
+                case .fleetPressure(let id, _), .fleetReadiness(let id, _): reply(.ok(id: id))
+                default: reply(.error(id: 0, code: "unsupported", message: "The host does not take this request."))
+                }
+            }
+        }
+        defer { oldHost.stop() }
+        let a = try await FleetPairingTests.Mac("MacBook Pro")
+        defer { a.stop() }
+
+        _ = try await a.local.fleetAction(.pair(host: "127.0.0.1", port: oldHost.port, code: "482913"))
+        try await FleetDispatchTests.wait("the old host to be pushed A's load") { heard.current.contains { $0.type == "fleetPressure" } }
+        let peers = try await a.peers()
+        #expect(peers.first?.link == .connected && peers.first?.reach == FleetPeerReach(host: "127.0.0.1", kind: .lan, viaItsLink: false))
+
+        // It was told what it always was, and said hello with what a Mac that links lists; no report of routes, no answer to a call.
+        let kinds = Set(heard.current.map(\.type))
+        #expect(kinds.isSuperset(of: ["fleetIdentify", "fleetPair", "hello", "fleetPressure"]))
+        #expect(kinds.isDisjoint(with: ["fleetRoutes", "fleetPeerAnswer"]), "sent \(kinds)")
+        #expect(heard.current.first { $0.type == "hello" }?.capabilities == RemoteProtocol.fleetLinkClientCapabilities)
+        let record = try a.record(of: "Mac mini")
+        #expect(record["learned"] == nil || (record["learned"] as? [Any])?.isEmpty == true)
     }
 
     /// Reporting routes and answering calls are a member's: a client on the shared token is refused, and a report that no Mac could have

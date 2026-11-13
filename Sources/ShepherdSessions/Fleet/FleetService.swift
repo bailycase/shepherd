@@ -112,7 +112,7 @@ final class FleetService: @unchecked Sendable {
     static let unauthenticatedRequestLimit = 12
 
     /// The link to one peer. Two connections can carry it, one this host dialed and one the peer did (`FleetService.reassess`).
-    private final class Link {
+    private final class Link: @unchecked Sendable {
         let hostID: UUID
         /// The connection this host dialed, while it holds one, and the route it is on.
         var client: RemoteHostClient?

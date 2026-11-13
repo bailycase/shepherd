@@ -56,22 +56,31 @@ struct RemotePeerChannelTests {
         await client.waitUntilIdle()
     }
 
-    @Test func eachCallHasItsOwnIdAndAnAnswerForAnotherIsNotTaken() async throws {
+    @Test func eachCallHasItsOwnIdAndAnAnswerGoesToTheRequestItNames() async throws {
         let channel = Channel()
         let client = RemoteHostClient(peerChannel: channel, hostID: Self.mini, capabilities: Self.capabilities)
-        let first = Task { try await client.fleetPressureNow() }
-        let second = Task { try await client.fleetPressureNow() }
+        let pressure = Task { try await client.fleetPressureNow() }
+        let sync = Task { try await client.fleetSyncState(.hello(vector: FleetVersionVector([:]))) }
         var calls = channel.calls.makeAsyncIterator()
-        let one = try #require(await calls.next()).0, two = try #require(await calls.next()).0
-        #expect(one != two)
-        // Answered out of order, each goes to the request it names.
-        var other = Self.sample()
-        other.activeAgents = 5
-        client.receivePeerAnswer(id: two, reply: .fleetPressureSample(id: two, sample: other, readiness: nil))
-        client.receivePeerAnswer(id: one, reply: .fleetPressureSample(id: one, sample: Self.sample(), readiness: nil))
-        let (a, b) = (try await first.value, try await second.value)
-        let (firstAnswer, secondAnswer) = one < two ? (a, b) : (b, a)
-        #expect(firstAnswer.sample.activeAgents == 1 && secondAnswer.sample.activeAgents == 5)
+        var ids: [String: Int] = [:]
+        for _ in 0..<2 {
+            let (id, request) = try #require(await calls.next())
+            switch request {
+            case .fleetPressureNow: ids["pressure"] = id
+            case .fleetSync: ids["sync"] = id
+            default: Issue.record("sent \(request)")
+            }
+        }
+        let (pressureID, syncID) = (try #require(ids["pressure"]), try #require(ids["sync"]))
+        #expect(pressureID != syncID)
+        // Answered in the other order: each answer reaches the request whose id it carries (a mix-up would be an unexpected reply).
+        client.receivePeerAnswer(id: syncID, reply: .fleetSyncReply(id: syncID, reply: .state(vector: FleetVersionVector([:]))))
+        client.receivePeerAnswer(id: pressureID, reply: .fleetPressureSample(id: pressureID, sample: Self.sample(), readiness: nil))
+        let (answered, vector) = (try await pressure.value, try await sync.value)
+        #expect(answered.sample == Self.sample() && vector == FleetVersionVector([:]))
+        // And one for no request is dropped, not taken for another's.
+        client.receivePeerAnswer(id: 9_999, reply: .ok(id: 9_999))
+        await client.waitUntilIdle()
     }
 
     @Test func aConnectionThatClosesFailsEveryRequestWaitingAndRefusesTheNext() async throws {
