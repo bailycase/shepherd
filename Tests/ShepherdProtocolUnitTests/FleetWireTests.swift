@@ -49,7 +49,16 @@ struct FleetWireTests {
     @Test func aReadinessReportWithMissingFieldsDecodesWithDefaults() throws {
         let report = try JSONDecoder().decode(FleetReadinessReport.self, from: Data("{}".utf8))
         #expect(report == FleetReadinessReport())
-        #expect(report.model == "Mac" && report.missing.isEmpty && report.repos.isEmpty)
+        #expect(report.model == "Mac" && report.missing.isEmpty && report.repos.isEmpty && !report.noXcode)
+    }
+
+    @Test func aReportSaysWhatPlacementWeighsAndAnMCPCommandIsNeverNeeded() {
+        let report = FleetReadinessReport(missing: [FleetMissingTool(kind: .binary, name: "bearcli"), FleetMissingTool(kind: .git)])
+        #expect(report.lacks == [.mcpCommand("bearcli"), .git])
+        // Xcode is named once, whether the report says it as a missing tool (an older Mac) or as the fact.
+        #expect(FleetReadinessReport(noXcode: true).lacks == [.xcode])
+        #expect(FleetReadinessReport(missing: [FleetMissingTool(kind: .xcode)], noXcode: true).lacks == [.xcode])
+        #expect(FleetReadinessReport(missing: [FleetMissingTool(kind: .xcode)]).lacks == [.xcode])
     }
 
     @Test func hostSettingsFromAnOlderHostHoldNoWeightsAndAnUnknownWeightIsDropped() throws {

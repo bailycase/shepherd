@@ -180,6 +180,21 @@ test("fleet_dispatch sends the exact message, omits what is unset, and reports t
   } finally { await unplaced.close(); }
 });
 
+test("fleet_dispatch and fleet_read say which MCP servers' commands the Mac lacked, and fleet_hosts lists them apart from what blocks work", async () => {
+  const h = await harness({ onFrame: answer(() => info({ state: "preparing", host: "Mac mini", without: ["bearcli"] })) });
+  try {
+    assert.equal(output(await h.tools.get("fleet_dispatch").execute("c", { task: "t", host: "Mac mini" })),
+      "dispatched d1: preparing, to Mac mini. Started on Mac mini without: bearcli (MCP)");
+    assert.match(output(await h.tools.get("fleet_read").execute("c", { dispatch: "d1" })), /\nStarted on Mac mini without: bearcli \(MCP\)\n/);
+  } finally { await h.close(); }
+  const hosts = [{ name: "Mac mini", isThisMac: false, room: "most room", connected: true, problems: [], without: ["bearcli", "muse"], hasRepo: true, weight: "Normal" }];
+  const listed = await harness({ onFrame: (frame, write) => write({ type: "fleetHosts", id: frame.id, hosts }) });
+  try {
+    assert.equal(output(await listed.tools.get("fleet_hosts").execute("c", {})),
+      "Mac mini  room: most room  ready  without: bearcli (MCP), muse (MCP)  has this repo  weight: Normal");
+  } finally { await listed.close(); }
+});
+
 test("fleet_dispatch derives a stable dispatch id from the tool call id, so a retried call is deduplicated", async () => {
   const h = await harness({ onFrame: answer(() => info()) });
   try {

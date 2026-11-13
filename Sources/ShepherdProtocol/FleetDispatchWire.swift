@@ -249,19 +249,22 @@ public struct FleetHostInfo: Codable, Hashable, Sendable {
     /// "most room", "some room", "little room", "no room" or "not counted": the Fleet page's words, lowercased.
     public var room: String
     public var connected: Bool
-    /// What it lacks (a program), if anything; empty when it is ready.
+    /// What it lacks that stops work (git, and Xcode when this thread's repository has an Xcode project); empty when it is ready.
     public var problems: [String]
+    /// The commands of MCP servers it lacks: a thread sent there starts without those servers. Nil when it lacks none.
+    public var without: [String]?
     /// Whether it has this thread's repository; nil when it hasn't said.
     public var hasRepo: Bool?
     /// "Prefer", "Normal", "Less often" or "Manual only".
     public var weight: String
 
-    public init(name: String, isThisMac: Bool, room: String, connected: Bool, problems: [String] = [], hasRepo: Bool? = nil, weight: String) {
+    public init(name: String, isThisMac: Bool, room: String, connected: Bool, problems: [String] = [], without: [String]? = nil, hasRepo: Bool? = nil, weight: String) {
         self.name = name
         self.isThisMac = isThisMac
         self.room = room
         self.connected = connected
         self.problems = problems
+        self.without = without
         self.hasRepo = hasRepo
         self.weight = weight
     }
@@ -283,9 +286,12 @@ public struct FleetDispatchInfo: Codable, Hashable, Sendable {
     /// A `FleetDispatchCode` when it failed or was refused.
     public var failure: String?
     public var detail: String?
+    /// The MCP server commands the Mac lacked: the thread started without those servers. Nil when none.
+    public var without: [String]?
 
     public init(dispatchID: String, state: String, host: String? = nil, title: String = "", branch: String? = nil, activity: String? = nil,
-                resultText: String? = nil, branchFacts: FleetBranchFacts? = nil, failure: String? = nil, detail: String? = nil) {
+                resultText: String? = nil, branchFacts: FleetBranchFacts? = nil, failure: String? = nil, detail: String? = nil,
+                without: [String]? = nil) {
         self.dispatchID = dispatchID
         self.state = state
         self.host = host
@@ -296,12 +302,13 @@ public struct FleetDispatchInfo: Codable, Hashable, Sendable {
         self.branchFacts = branchFacts
         self.failure = failure
         self.detail = detail
+        self.without = without
     }
 
     public init(_ record: FleetDispatchRecord) {
         self.init(dispatchID: record.id.uuidString.lowercased(), state: record.state.rawValue, host: record.targetHostName, title: record.title,
                   branch: record.branch, activity: record.activity, resultText: record.resultText, branchFacts: record.resultBranchFacts,
-                  failure: record.failure, detail: record.failureDetail)
+                  failure: record.failure, detail: record.failureDetail, without: record.without.isEmpty ? nil : record.without)
     }
 }
 

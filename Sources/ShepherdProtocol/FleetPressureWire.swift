@@ -37,16 +37,21 @@ public struct FleetReadinessReport: Codable, Hashable, Sendable {
     /// The repositories those projects are, by canonical key (`CanonicalRepoKey`), sorted: what a dispatch
     /// is matched against. Empty from an older Mac, which no dispatch is placed on.
     public var repoKeys: [String]
+    /// Xcode isn't installed, whether or not a project here needs it (`missing` names it only when one does): a dispatch of a
+    /// repository with an Xcode project is refused there. False from an older Mac, which `missing` speaks for.
+    public var noXcode: Bool
 
-    public init(model: String = "Mac", chip: String = "", missing: [FleetMissingTool] = [], repos: [String] = [], repoKeys: [String] = []) {
+    public init(model: String = "Mac", chip: String = "", missing: [FleetMissingTool] = [], repos: [String] = [], repoKeys: [String] = [],
+                noXcode: Bool = false) {
         self.model = model
         self.chip = chip
         self.missing = missing
         self.repos = repos
         self.repoKeys = repoKeys
+        self.noXcode = noXcode
     }
 
-    private enum CodingKeys: String, CodingKey { case model, chip, missing, repos, repoKeys }
+    private enum CodingKeys: String, CodingKey { case model, chip, missing, repos, repoKeys, noXcode }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -55,6 +60,21 @@ public struct FleetReadinessReport: Codable, Hashable, Sendable {
         missing = try c.decodeIfPresent([FleetMissingTool].self, forKey: .missing) ?? []
         repos = try c.decodeIfPresent([String].self, forKey: .repos) ?? []
         repoKeys = try c.decodeIfPresent([String].self, forKey: .repoKeys) ?? []
+        noXcode = try c.decodeIfPresent(Bool.self, forKey: .noXcode) ?? false
+    }
+
+    /// What this Mac lacks, as placement weighs it: git and Xcode decide where work goes for the dispatches that need them, and an
+    /// MCP server's command never does.
+    public var lacks: [FleetPlacement.Lack] {
+        var lacks = missing.map { tool -> FleetPlacement.Lack in
+            switch tool.kind {
+            case .binary: .mcpCommand(tool.name)
+            case .git: .git
+            case .xcode: .xcode
+            }
+        }
+        if noXcode, !lacks.contains(.xcode) { lacks.append(.xcode) }
+        return lacks
     }
 }
 

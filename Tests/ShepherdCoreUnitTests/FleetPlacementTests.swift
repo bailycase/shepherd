@@ -7,10 +7,10 @@ import ShepherdCore
 struct FleetPlacementTests {
     static let here = UUID(), mini = UUID(), studio = UUID()
 
-    static func mac(_ id: UUID, _ name: String, local: Bool = false, connected: Bool = true, repo: Bool? = true, problems: [String] = [],
+    static func mac(_ id: UUID, _ name: String, local: Bool = false, connected: Bool = true, repo: Bool? = true, lacks: [FleetPlacement.Lack] = [],
                     sample: FleetPressureSample? = FleetRoomTests.sample(), age: TimeInterval? = 1, weight: FleetSendWeight = .normal,
                     inFlight: Int = 0) -> FleetPlacement.Mac {
-        FleetPlacement.Mac(hostID: id, name: name, isLocal: local, connected: connected, hasRepo: repo, problems: problems,
+        FleetPlacement.Mac(hostID: id, name: name, isLocal: local, connected: connected, hasRepo: repo, lacks: lacks,
                            sample: sample, sampleAge: sample == nil ? nil : age, weight: weight, inFlight: inFlight)
     }
 
@@ -93,8 +93,38 @@ struct FleetPlacementTests {
     }
 
     @Test func aMacWithAMissingToolIsNeverCandidate() throws {
-        let macs = [Self.mac(Self.studio, "Mac Studio", problems: ["muse"]), Self.mac(Self.here, "MacBook Pro", local: true, sample: Self.busy())]
+        let macs = [Self.mac(Self.studio, "Mac Studio", lacks: [.git]), Self.mac(Self.here, "MacBook Pro", local: true, sample: Self.busy())]
         #expect(try #require(Self.placed(FleetPlacement.place(host: nil, macs: macs))).0 == Self.here)
+    }
+
+    @Test func aMacMissingOnlyAnMCPServersCommandStillTakesTheWorkNamedOrAuto() throws {
+        let bear = Self.mac(Self.mini, "Mac mini", lacks: [.mcpCommand("bearcli")])
+        #expect(bear.withoutCommands == ["bearcli"] && bear.problems(needsXcode: true).isEmpty)
+        #expect(FleetPlacement.place(host: "Mac mini", macs: [bear]) == .place(hostID: Self.mini, reasons: [FleetPlacementReason(.named)]))
+        // Auto counts it like any other Mac: with the most room, it wins.
+        let macs = [Self.mac(Self.here, "MacBook Pro", local: true, sample: Self.busy()), bear]
+        #expect(try #require(Self.placed(FleetPlacement.place(host: nil, macs: macs))).0 == Self.mini)
+        // And it is the only choice when it is the only Mac.
+        #expect(Self.placed(FleetPlacement.place(host: nil, macs: [bear]))?.0 == Self.mini)
+    }
+
+    @Test func aMacWithoutGitIsRefusedForEveryDispatch() {
+        let noGit = Self.mac(Self.mini, "Mac mini", lacks: [.mcpCommand("bearcli"), .git])
+        for needsXcode in [false, true] {
+            #expect(FleetPlacement.place(host: "Mac mini", macs: [noGit], needsXcode: needsXcode) == .refuse(code: FleetDispatchCode.hostNotReady, detail: "git"))
+            #expect(FleetPlacement.place(host: nil, macs: [noGit], needsXcode: needsXcode) == .refuse(code: FleetDispatchCode.hostNotReady, detail: "git"))
+        }
+    }
+
+    @Test func aMacWithoutXcodeIsRefusedOnlyForARepositoryWithAnXcodeProject() throws {
+        let noXcode = Self.mac(Self.mini, "Mac mini", lacks: [.xcode])
+        #expect(FleetPlacement.place(host: "Mac mini", macs: [noXcode], needsXcode: false) == .place(hostID: Self.mini, reasons: [FleetPlacementReason(.named)]))
+        #expect(Self.placed(FleetPlacement.place(host: nil, macs: [noXcode], needsXcode: false))?.0 == Self.mini)
+        #expect(FleetPlacement.place(host: "Mac mini", macs: [noXcode], needsXcode: true) == .refuse(code: FleetDispatchCode.hostNotReady, detail: "Xcode"))
+        // Auto leaves it out for the Xcode project and keeps the Mac that has Xcode.
+        let macs = [noXcode, Self.mac(Self.studio, "Mac Studio", sample: Self.busy())]
+        #expect(try #require(Self.placed(FleetPlacement.place(host: nil, macs: macs, needsXcode: true))).0 == Self.studio)
+        #expect(try #require(Self.placed(FleetPlacement.place(host: nil, macs: macs, needsXcode: false))).0 == Self.mini)
     }
 
     @Test func aMacWithoutTheRepoClonesItFirstAndIsChosenOnlyByTheCloneMargin() throws {
@@ -121,8 +151,8 @@ struct FleetPlacementTests {
     }
 
     @Test func everyMacThatHasTheRepoLackingTheSameToolIsRefusedNotWaited() {
-        let macs = [Self.mac(Self.here, "MacBook Pro", local: true, problems: ["muse"]), Self.mac(Self.mini, "Mac mini", problems: ["muse"])]
-        #expect(FleetPlacement.place(host: nil, macs: macs) == .refuse(code: FleetDispatchCode.hostNotReady, detail: "muse"))
+        let macs = [Self.mac(Self.here, "MacBook Pro", local: true, lacks: [.git]), Self.mac(Self.mini, "Mac mini", lacks: [.git])]
+        #expect(FleetPlacement.place(host: nil, macs: macs) == .refuse(code: FleetDispatchCode.hostNotReady, detail: "git"))
     }
 
     @Test func aMacThatIsAsleepIsNotCountedAndNobodyHavingRoomWaits() {
@@ -140,7 +170,7 @@ struct FleetPlacementTests {
         // A named Mac without the repo is never refused for it and never rerouted: it clones it first.
         #expect(FleetPlacement.place(host: "Mac mini", macs: [Self.mac(Self.mini, "Mac mini", repo: false), Self.mac(Self.studio, "Mac Studio")])
                 == .place(hostID: Self.mini, reasons: [FleetPlacementReason(.named), FleetPlacementReason(.willClone)]))
-        #expect(FleetPlacement.place(host: "Mac mini", macs: [Self.mac(Self.mini, "Mac mini", problems: ["Xcode"])])
+        #expect(FleetPlacement.place(host: "Mac mini", macs: [Self.mac(Self.mini, "Mac mini", lacks: [.xcode])], needsXcode: true)
                 == .refuse(code: FleetDispatchCode.hostNotReady, detail: "Xcode"))
         #expect(FleetPlacement.place(host: "Mac mini", macs: [Self.mac(Self.mini, "Mac mini", repo: nil)])
                 == .refuse(code: FleetDispatchCode.hostNotReady, detail: "unknown"))

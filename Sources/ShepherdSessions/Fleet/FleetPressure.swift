@@ -23,6 +23,8 @@ final class FleetPressure: @unchecked Sendable {
     static let defaultInterval: TimeInterval = 5
     /// A readiness report is made again after this long even if nothing it is made of changed.
     static let readinessLifetime: TimeInterval = 24 * 60 * 60
+    /// While a report lists a missing tool, it is looked at again this often: installing the tool changes nothing the report is keyed by.
+    static let missingRecheckInterval: TimeInterval = 60
     /// A burst of changes reaches the app as one.
     static let notifyDelay: TimeInterval = 0.3
     /// What a peer's report is cut to.
@@ -141,45 +143,64 @@ final class FleetPressure: @unchecked Sendable {
         notify()
     }
 
-    /// Makes the readiness report again when its inputs changed (pi's MCP commands, the projects)
-    /// and daily, and pushes it to the peers.
+    /// Makes the readiness report again when its inputs changed (pi's MCP commands, the projects), daily, and
+    /// every `missingRecheckInterval` while it lists a missing tool, and pushes it to the peers when it differs.
     private func remakeReadiness(_ facts: FleetLocalFacts) {
         guard !makingReport else { return }
         makingReport = true
-        let known = (key: readinessKey, at: readinessAt)
         let now = clock()
-        Task { [weak self, probe, hardware] in
-            let commands = facts.mcpConfig.flatMap { try? Data(contentsOf: $0) }.map(FleetReadiness.mcpCommands(in:)) ?? []
-            let repos = Set(facts.spaces.map(\.name)).sorted()
-            let key = FleetReadiness.key(commands: commands, repos: repos, repoKeys: facts.repoKeys)
-            var report: FleetReadinessReport?
-            if key != known.key || known.at.map({ now.timeIntervalSince($0) > Self.readinessLifetime }) != false {
-                report = await FleetReadiness.report(commands: commands, needsXcode: FleetReadiness.needsXcode(spaces: facts.spaces),
-                                                     spaces: facts.spaces, repoKeys: facts.repoKeys, probe: probe, hardware: hardware)
-            }
-            self?.queue.async { self?.remade(report, key: key) }
+        let recheck = (localReadiness?.missing.isEmpty == false) && readinessAt.map { now.timeIntervalSince($0) >= Self.missingRecheckInterval } == true
+        let known = (key: readinessKey, at: readinessAt)
+        Task { [weak self] in
+            let made = await self?.makeReadiness(facts, known: known, now: now, force: recheck)
+            self?.queue.async { self?.remade(made?.report, key: made?.key ?? "") }
         }
+    }
+
+    /// The report for `facts`: nil while the last one still stands (nothing it is made of changed, it is not a day old and `force` is off).
+    private func makeReadiness(_ facts: FleetLocalFacts, known: (key: String?, at: Date?), now: Date, force: Bool) async -> (report: FleetReadinessReport?, key: String) {
+        let commands = facts.mcpConfig.flatMap { try? Data(contentsOf: $0) }.map(FleetReadiness.mcpCommands(in:)) ?? []
+        let repos = Set(facts.spaces.map(\.name)).sorted()
+        let key = FleetReadiness.key(commands: commands, repos: repos, repoKeys: facts.repoKeys)
+        guard force || key != known.key || known.at.map({ now.timeIntervalSince($0) > Self.readinessLifetime }) != false else { return (nil, key) }
+        return (await FleetReadiness.report(commands: commands, needsXcode: FleetReadiness.needsXcode(spaces: facts.spaces),
+                                            spaces: facts.spaces, repoKeys: facts.repoKeys, probe: probe, hardware: hardware), key)
     }
 
     private func remade(_ report: FleetReadinessReport?, key: String) {
         makingReport = false
+        apply(report, key: key)
+    }
+
+    /// Keeps a report; the peers hear of it, and the Fleet page reads again, only when it differs from the one held.
+    private func apply(_ report: FleetReadinessReport?, key: String) {
         guard !stopped, let report else { return }
+        let changed = report != localReadiness
         localReadiness = report
         readinessKey = key
         readinessAt = clock()
+        guard changed else { return }
         for client in pushTargets() where client.capabilities.contains(RemoteProtocol.fleetPressureCapability) {
             Task { try? await client.fleetReadiness(report) }
         }
         notify()
     }
 
-    /// A sample of this Mac now, for a peer that asked (`fleetPressureNow`).
+    /// A sample of this Mac now, for a peer that asked (`fleetPressureNow`). A report that lists a missing tool is looked at again
+    /// first: a placement is about to rely on it, and installing the tool changes nothing it is keyed by.
     func sampleNow() async -> (FleetPressureSample, FleetReadinessReport?) {
         let facts = localFacts()
         let sample = await sampler.sample(activeAgents: facts.activeAgents, reserved: facts.reserved)
-        return await withCheckedContinuation { continuation in
+        let known: (key: String?, at: Date?, lacking: Bool) = await withCheckedContinuation { continuation in
             queue.async {
                 self.local = (sample, self.clock())
+                continuation.resume(returning: (self.readinessKey, self.readinessAt, self.localReadiness.map { !$0.missing.isEmpty || $0.noXcode } ?? false))
+            }
+        }
+        let fresh = known.lacking ? await makeReadiness(facts, known: (known.key, known.at), now: clock(), force: true) : nil
+        return await withCheckedContinuation { continuation in
+            queue.async {
+                self.apply(fresh?.report, key: fresh?.key ?? "")
                 continuation.resume(returning: (sample, self.localReadiness))
             }
         }
@@ -233,7 +254,8 @@ final class FleetPressure: @unchecked Sendable {
         return FleetReadinessReport(
             model: line(report.model), chip: line(report.chip),
             missing: report.missing.prefix(reportLimits.missing).map { FleetMissingTool(kind: $0.kind, name: line($0.name)) },
-            repos: report.repos.prefix(reportLimits.repos).map(line), repoKeys: report.repoKeys.prefix(reportLimits.repos).map(line))
+            repos: report.repos.prefix(reportLimits.repos).map(line), repoKeys: report.repoKeys.prefix(reportLimits.repos).map(line),
+            noXcode: report.noXcode)
     }
 
     // MARK: Reading
