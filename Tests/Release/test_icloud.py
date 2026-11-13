@@ -210,15 +210,15 @@ class ReleaseFilesTests(unittest.TestCase):
         self.assertEqual(release.ICLOUD_CONTAINER, CONTAINER)
         self.assertIn(f'"{CONTAINER}"', read("Sources", "ShepherdSessions", "Fleet", "FleetCloudKitStore.swift"))
 
-    def test_nightly_and_stable_configurations_carry_the_icloud_entitlements_and_dev_does_not(self):
+    def test_every_xcode_configuration_keeps_the_plain_entitlements_so_local_builds_open(self):
         project = read("Shepherd.xcodeproj", "project.pbxproj")
-        for name, entitlements in (("Debug", "Shepherd.entitlements"), ("Release", "Shepherd.icloud.entitlements"),
-                                   ("Nightly", "Shepherd.icloud.entitlements")):
+        self.assertNotIn("CODE_SIGN_ENTITLEMENTS = App/Shepherd.icloud.entitlements", project)
+        for name in ("Debug", "Release", "Nightly"):
             with self.subTest(configuration=name):
                 blocks = re.findall(r"/\* %s \*/ = \{\n\t\t\tisa = XCBuildConfiguration;\n(.*?)\n\t\t\};" % name, project, re.S)
                 mac = [b for b in blocks if "INFOPLIST_FILE = App/Info.plist;" in b]
                 self.assertEqual(len(mac), 1)
-                self.assertIn(f"CODE_SIGN_ENTITLEMENTS = App/{entitlements};", mac[0])
+                self.assertIn("CODE_SIGN_ENTITLEMENTS = App/Shepherd.entitlements;", mac[0])
 
     def test_the_profile_is_embedded_before_signing_and_the_agreement_is_checked_after(self):
         workflow = read(".github", "workflows", "release-build.yml")
