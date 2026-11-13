@@ -56,3 +56,84 @@ struct ComposerFitTests {
         #expect(height == 3 * text.lineHeight)
     }
 }
+
+/// What a composer field measures again (`SHComposerFitCache`): the same text at the same width is measured once, however often layout asks.
+@Suite("Composer fit cache")
+struct ComposerFitCacheTests {
+    /// A field that counts how often its text is laid out.
+    final class Field {
+        struct Key: Equatable {
+            var revision = 0
+            var style = "body"
+        }
+
+        var cache = SHComposerFitCache<Key, CGFloat>()
+        var key = Key()
+        private(set) var measured = 0
+
+        func ask(_ width: CGFloat) -> CGFloat {
+            cache.answer(width: width, key: key) {
+                measured += 1
+                return width / 10 + CGFloat(key.revision)
+            }
+        }
+    }
+
+    @Test func repeatedAsksForTheSameTextAndWidthMeasureOnce() {
+        let field = Field()
+        let first = field.ask(300)
+        for _ in 0..<20 { #expect(field.ask(300) == first) }
+        #expect(field.measured == 1)
+    }
+
+    @Test func eachEditMeasuresAgain() {
+        let field = Field()
+        for edit in 1...5 {
+            field.key.revision = edit
+            #expect(field.ask(300) == 30 + CGFloat(edit))
+            _ = field.ask(300)
+        }
+        #expect(field.measured == 5)
+    }
+
+    @Test func aNewWidthIsMeasuredOnceAndTheOldOneIsKept() {
+        let field = Field()
+        _ = field.ask(300)
+        _ = field.ask(400)
+        for _ in 0..<5 {
+            #expect(field.ask(300) == 30)
+            #expect(field.ask(400) == 40)
+        }
+        #expect(field.measured == 2)
+    }
+
+    @Test func aNewStyleIsMeasuredAgain() {
+        let field = Field()
+        _ = field.ask(300)
+        field.key.style = "title"
+        _ = field.ask(300)
+        _ = field.ask(300)
+        #expect(field.measured == 2)
+    }
+
+    @Test func anEditForgetsEveryWidth() {
+        let field = Field()
+        _ = field.ask(300)
+        _ = field.ask(400)
+        field.key.revision = 1
+        _ = field.ask(400)
+        _ = field.ask(300)
+        #expect(field.measured == 4)
+    }
+
+    @Test func moreWidthsThanItKeepsStillAnswerEveryAsk() {
+        let field = Field()
+        let widths = (1...(SHComposerFitCache<Field.Key, CGFloat>.widths + 3)).map { CGFloat($0) * 100 }
+        for width in widths { #expect(field.ask(width) == width / 10) }
+        let measured = field.measured
+        #expect(measured == widths.count)
+        // The latest width is still known.
+        #expect(field.ask(widths.last ?? 0) == (widths.last ?? 0) / 10)
+        #expect(field.measured == measured)
+    }
+}
