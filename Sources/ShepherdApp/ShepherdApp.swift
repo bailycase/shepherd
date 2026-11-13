@@ -55,6 +55,19 @@ struct MainWindowRoutes: ViewModifier {
     }
 }
 
+/// A pairing link opened before the workspace was ready: kept until the main window can show Add a Mac.
+@MainActor
+enum FleetLinkInbox {
+    private static var held: URL?
+
+    static func hold(_ url: URL) { held = url }
+
+    static func take() -> URL? {
+        defer { held = nil }
+        return held
+    }
+}
+
 /// The Mac app, exposed as a library so an Xcode app target can provide the
 /// entry point. Launch it with `ShepherdMacApp.main()` — SwiftUI must own the
 /// instance for the delegate adaptor and state objects to be managed.
@@ -130,6 +143,7 @@ public struct ShepherdMacApp: App {
                     // was acquired before the view model was constructed.
                     .task {
                         AppSignposts.launch.emitEvent("root view task")
+                        if let held = FleetLinkInbox.take() { vm.openFleetLink(held) }
                         vm.applyRemoteListenerSetting()
                     }
                 } else {
@@ -137,6 +151,11 @@ public struct ShepherdMacApp: App {
                 }
             }
             .modifier(MainWindowRoutes())
+            // A pairing link (`shepherd://fleet/join?…`, this edition's scheme) opens Add a Mac. One that arrives before the
+            // workspace is ready waits for it.
+            .onOpenURL { url in
+                if let vm = launch.model { vm.openFleetLink(url) } else { FleetLinkInbox.hold(url) }
+            }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: AppLayout.windowDefaultWidth, height: AppLayout.windowDefaultHeight)

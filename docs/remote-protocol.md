@@ -547,7 +547,11 @@
   everywhere (a tombstone, so a stale pairing never undoes a newer one). `fleetRead` and `fleetAction` (pair, start and
   stop a join window, remove, hand over legacy hosts) are for this Mac's own app over `host.sock`. The host
   advertises `_shepherd._tcp` (TXT: `v`, a hash of its id, name, build; never the id) while Fleet is on; the app browses
-  it for Add a Mac and hands the address to the host. Fleet needs the listener, so it opens it even with Serve this Mac
+  it for Add a Mac and hands the address to the host. Where a router's mDNS reflector passes Apple's own types but not
+  `_shepherd._tcp`, Add a Mac (Mac and iOS) also browses `_ssh._tcp`, `_companion-link._tcp` and `_device-info._tcp` (each is in
+  `NSBonjourServices`), resolves each device to an IPv4 address without connecting to it, and probes each address once, four at
+  a time, with an unauthenticated `fleetIdentify` on the edition's default ports (7434, 7433); a Mac that answers is listed
+  like a Bonjour one and pairs by code as ever. It adds no wire message: an older build answers the same request. Fleet needs the listener, so it opens it even with Serve this Mac
   off. Shepherd adds no TLS: the fleet runs over the user's own network. A paired Mac the app reached with the shared
   token is marked `fleetManaged` in `RemoteHostStore` (its address and token are the fleet's), keeping its `bindingID`.
   **Devices** (phones, iPads and Macs' apps) are clients: `FleetAccess` is `local`, `member` (a peer Mac), `device` or
@@ -597,13 +601,63 @@
   seq held}`), `ops` and `op` (ops the receiver lacks, in order per origin, batches under 512 KiB; a skipped `seq` is
   stored never and the sender resends from the vector in the answer; every op is validated for shape and size) and
   `blob(hash, offset)` (a blob in 256 KiB chunks, answered `FleetSyncReply.blob`; the fetcher checks the whole against its
-  hash). Each Mac pushes what its peers lack over its own outbound link and relays ops verbatim, so a Mac that was asleep
+  hash). Each Mac pushes what its peers lack over the link to each (one connection per pair, whichever Mac opened it: Fleet links, below) and relays ops verbatim, so a Mac that was asleep
   catches up from any Mac awake. Nothing is applied by the receiver: the materializer writes through the code that owns
   each unit (`InstructionsStore.save`, per key under pi's lock for `settings.json`, the app's own setting setters), keeps
   a hash of what it wrote so its own writes never return as ops, and never writes a blob it doesn't hold. `FleetSnapshot.sync`
   (`FleetSyncStatus`: each peer in sync, catching up or offline, and a one line notice of what the first sync replaced)
   rides `fleetRead` for Settings ▸ Fleet.
   Slice 2c adds sign-ins, units only a Mac of the fleet ever holds (`FleetUnit.isCredential`; the access check above is the whole gate, and a device or the shared token is refused `forbidden` for every request, a credential included): `credential:<provider>` (inline JSON: one provider's entry in pi's `auth.json`, as pi stores it, sorted keys) and `mcpAuth:<key>` (one MCP server's sign-in in `mcp-auth.json`, pi's key `mcp__<name>|<url>`; only an entry with `tokens`, so a sign-in under way is not shared). Each is applied one key at a time under pi's own lock (`PiSettingsFile`), so a provider pi wrote meanwhile is never overwritten, and pi's rewrites (a sign-in, a token refresh, an account switch, a sign-out) are read back by the watcher as ops. There is no sealing, no fleet key and no Keychain: a sign-in that lives only in a Mac's Keychain is not in either file and does not sync, and the op log, blobs and history stay mode 0600 like `auth.json`. Each op of a unit is a new generation of that sign-in, ordered by the clock like any unit. An OAuth refresh token rotates, so before an agent's pi starts the host runs a fence (`FleetSync.catchUpCredentials`): it reads its own sign-ins, sends each connected peer `hello(vector, fresh: true)` (`fresh` is written only when set), the peer reads its own sign-ins before answering and pushes what the asker lacks, and the launch waits until the answer's vector is held and written, at most 3 s (a peer that doesn't catch it up in time is not waited for again for 60 s). With no peer connected, or none ahead, it returns at once. A host keeps a provider (or MCP server) out of the sync with a JSON array of names in `<support>/fleet/credentials-excluded.json` (read at each pass; there is no Settings row for it yet).
+- **Fleet links and routes** (`fleet.link.v1`, offered with `fleet.v1`, `FleetRoutesWire.swift`): a pair of Macs holds one authenticated
+  connection whichever of them opened it, so a pair where only one can dial the other (a router that blocks one direction between VLANs)
+  works in both directions. A Mac that dials lists `RemoteProtocol.fleetLinkClientCapabilities` in `hello`; a host that offers
+  `fleet.link.v1` and hears it in a peer's `hello` sends that peer its own requests back over the peer's connection as
+  `RemoteReply.fleetPeerCall(id, request)`, which the peer serves as it would a request of that Mac (the caller is the Mac it dialed, a
+  member, checked as for any request) and answers `RemoteRequest.fleetPeerAnswer(id, reply)`. Only the requests one Mac sends
+  another go that way (`fleetIntroduce`, `fleetRevoke`, `fleetSync`, `fleetPressure`, `fleetReadiness`, `fleetPressureNow`,
+  `fleetRepoManifest`, `fleetSnapshotPart`, `fleetBlobPush`, the dispatch requests, `fleetSyncDevices`, `fleetRoutes`); anything else is refused
+  `forbidden`, and an answer is taken only from the Mac the call went to, on the connection it went over. A call that times out ends
+  its connection, as a request does. When both Macs dial, each works out the same winner, the connection the Mac with the lower
+  `hostID` opened, and the other is let go: the Mac that opened it closes it once nothing is in flight on it (its own requests and the
+  peer's calls) and a grace of 10 s, and not at all if the winner went meanwhile and it carries the link again. The Mac with the higher id doesn't dial while the connection the lower
+  one opened to it is up, and dials again when it goes. A peer without the capability is dealt with as before: each Mac pushes over the
+  connection it dialed, nothing is sent that it doesn't know, and a connection it opened is never used for calls.
+  **Routes**: a peer keeps the addresses it was given (`FleetPeerRecord.addresses`, in `peers.json` as before) and, in `learned`, the
+  routes the Mac last reported (a missing `learned` decodes to none). A linked Mac reports every way it can be reached
+  (`RemoteRequest.fleetRoutes`, `FleetRouteReport`, answered `ok`, members only, at most 32, each host a bare address or name) when its link
+  comes up and whenever its interfaces change (the system configuration's notice, settled for 0.5 s, nothing polled): the LAN IPv4 addresses
+  of its interfaces that are up, its `.local` name and DNS name, a Tailscale address (100.64.0.0/10 on a tunnel interface), other
+  tunnel addresses and global IPv6 addresses, never loopback, link-local or the interfaces of guests and AirDrop. Each report replaces the
+  last, so a route the Mac stops reporting goes (nobody removes one by hand); an address the host was given is never dropped by one. A host
+  dials a peer's routes in order, the first that answers carries the link, a route that fails is tried again after the others; while the
+  link is on a later route it tries the earlier ones every 60 s and when the network changes, and moves to the first that answers (the old
+  connection is let go as above). `FleetPeerStatus.reach` (`FleetPeerReach`: the route and its kind, or `viaItsLink` when only the other Mac
+  dials) is for this Mac's app and is left out of a client's view; the Fleet page's Mac card says "via 10.77.20.10 · LAN" or "via its link to you".
+  **iCloud records** (`fleet.rendezvous.v1`) carry the same routes: a Join and a presence record hold this Mac's own routes (`FleetRoute`: host,
+  port, kind, learned; a record an older build wrote holds bare addresses, which read as given routes of the kind their form says), and
+  the network change that reports routes to linked peers also rewrites the presence record. A peer whose routes all failed reads the
+  presence record and keeps its routes in `FleetPeerRecord.presence` (replaced by each look), tried after the addresses it was
+  given and the routes the Mac reported.
+- **Fleet pairing links and SSH** (`fleet.pairlink.v1`, offered with `fleet.v1`, `FleetPairingLink.swift`, `FleetWhere.swift`): for a network where
+  Bonjour doesn't reach the other Mac. Nothing new crosses between Macs: the Mac that adds another asks `fleetIdentify` and sends `fleetPair`
+  (or `fleetPairDevice`) as for a typed code, so a Mac without the capability is paired with as before. The capability is between an app and
+  its own host: `FleetAction.pairAt(hostID, port, routes, code, expiresAt)` pairs with the Mac `hostID` over its routes in order (a route
+  that doesn't answer is skipped; the one that answers must say it is `hostID`, or the code is never sent, `wrong_host`); a code that has
+  expired by `expiresAt` is refused `link_expired` without a connection, and the Mac that showed the code is the judge of everything else
+  (`not_joining`, `code_expired`, `bad_code`). `FleetSnapshot.routes` is this Mac's own list (`FleetReportedRoute`, in the order it would
+  have them tried) and is never in a client's view.
+  A **pairing link** is `<scheme>://fleet/join?v=1&id=<hostID>&n=<name>&p=<port>&r=<host>,<kind>…&c=<code>&x=<expiry ms>` (`use=device` for an Add a
+  device code). It says where, never more than the code says: it is read as untrusted text (a UUID, a port, at most 32 routes of address
+  characters, a six digit code, an expiry; a repeated part, a missing one or an unknown version is malformed, a route of a kind this build
+  doesn't know is skipped), and it works only while the code does. Each app edition has its own scheme so one never opens another's: Shepherd
+  `shepherd`, Nightly `shepherd-nightly`, a Dev build `shepherd-dev` (`SHEPHERD_URL_SCHEME` in `Shepherd.xcodeproj`, `CFBundleURLTypes` in
+  `App/Info.plist`); an iPhone or iPad registers all three, as it pairs with whichever Mac shared the link, and takes only `use=device` links.
+  **SSH**: Add a Mac runs the user's own `ssh -T -o BatchMode=yes -o ConnectTimeout=… -o ClearAllForwardings=yes -- user@host …` (nothing prompts,
+  `~/.ssh/config` and the agent apply, 15 s at most, killed at the limit) to run `shepherd-cli fleet-where` from the Shepherd of its edition in
+  `/Applications` or `~/Applications` on that Mac. The CLI hands over to the app's executable beside it (`Shepherd --fleet-where`, handled before
+  any UI like `--host`), which reads its host over `host.sock` and prints one line of JSON (`FleetWhere`: host id, name, app, build, port, routes;
+  exit 3 when no host answers, 4 when it isn't listening). It reads and writes nothing else; a CLI from before refuses the argument, which is how
+  an older Shepherd is told apart from a missing one. SSH only finds: the code is typed and `pairAt` does the rest.
 - **Fleet pressure and readiness** (`fleet.pressure.v1`, offered with `fleet.v1`): each Mac pushes `fleetPressure` (a
   `FleetPressureSample`: CPU share, core count, total and available memory, thermal state, power, threads working,
   reserved places) every 5 s to the Macs it holds a link to, `fleetReadiness` (a `FleetReadinessReport`: model, chip, the
@@ -634,7 +688,7 @@
   and a checkout over 500,000 files is left out (`FleetIndexStatus.Repo.tooLarge`).
   What a Mac holds of a repository is a **manifest**: the 128 bit prefixes of every content hash and directory hash across its
   checkouts of the repository, named by the canonical repo key (`space:<id>` while a space has no origin) and kept with a running
-  digest (count and XOR of the prefixes). A Mac pushes `fleetRepoManifest` steps over its own link to each peer, and the peer
+  digest (count and XOR of the prefixes). A Mac pushes `fleetRepoManifest` steps over its link to each peer, and the peer
   answers `fleetRepoManifestAck`: a `full` set in batches (`part` of `parts`, as of step `seq`), `delta`s (each one `seq` more
   than the last, add and remove batches) and `head`s (where the sender stands, no data, sent as a link comes up). The receiver keeps one copy per peer per
   repository (`<support>/fleet/index/peers/<hostID>/`, so a restarted host knows what its peers hold before any link is up),

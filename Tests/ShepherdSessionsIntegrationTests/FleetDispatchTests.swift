@@ -70,7 +70,7 @@ struct FleetDispatchTests {
         /// `Developer` folder (made by a test that wants it there), never the real one.
         init(_ name: String, origin: Origin, busy: UInt64 = 20, repoKey: String? = FleetDispatchTests.repoKey, dir: URL? = nil, port: UInt16 = 0,
              sendWork: Bool = true, cap: Int = HostSettings.fleetThreadCapDefault, checkout: Bool = true,
-             uncommitted: FleetUncommittedChanges = .sendThem) async throws {
+             uncommitted: FleetUncommittedChanges = .sendThem, links: SessionServer.FleetLinkOptions? = nil, gate: FleetTestGate? = nil) async throws {
             self.name = name
             meter = FleetPressureIntegrationTests.Meter(busy: busy)
             settings = Locked(HostSettings(fleetThreadsCanSend: sendWork, fleetThreadCap: cap, fleetUncommitted: uncommitted))
@@ -79,8 +79,13 @@ struct FleetDispatchTests {
             let server = host.server
             server.configureFleet(name: name, advertises: false)
             let (meter, clock) = (meter, clock)
+            var sources = meter.sources
+            // A test that holds this Mac's readings back holds back its answer to `fleetPressureNow`.
+            if let gate { sources.pause = { _ in await gate.pass() } }
+            let held = sources
+            if let links { server.fleetLinkOptions = links }
             server.configureFleet(clock: { clock.now }, pressure: { queue, facts in
-                FleetPressure(queue: queue, clock: { clock.now }, sampler: FleetPressureSampler(sources: meter.sources), localFacts: facts,
+                FleetPressure(queue: queue, clock: { clock.now }, sampler: FleetPressureSampler(sources: held), localFacts: facts,
                               probe: { _ in FleetProbeResult() }, hardware: { (name, "M4 Pro") }, interval: 3_600)
             })
             let folder = scratch.appendingPathComponent("web", isDirectory: true)

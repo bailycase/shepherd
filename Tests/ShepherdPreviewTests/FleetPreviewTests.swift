@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 import ShepherdProtocol
-import ShepherdRemote
+@testable import ShepherdRemote
 import ShepherdUI
 import ShepherdTestSupport
 import SwiftUI
@@ -67,8 +67,9 @@ struct FleetPreviewTests {
     }
 
     /// A new model per drawing: closing a sheet stops its browsing and its code, which would empty the next theme's.
-    static func pairing(found: [FoundMac], failure: String? = nil, code: String = "") -> FleetPairSheet {
+    static func pairing(found: [FoundMac], failure: String? = nil, code: String = "", findsByCode: Bool = false) -> FleetPairSheet {
         let model = Self.model(peers: [])
+        model.findsByCode = findsByCode
         model.browse = { update in update(found); return {} }
         if let failure { model.pairing = .failed(failure) }
         return FleetPairSheet(model: model, code: code) {}
@@ -77,6 +78,18 @@ struct FleetPreviewTests {
     @Test func addAMac() async throws {
         try await Preview.render("fleet-pair", size: CGSize(width: 640, height: 760)) {
             Self.pairing(found: Self.found).padding(SH.Space.xxl).frame(width: 640, height: 760).background(Color.sh.scrim)
+        }
+    }
+
+    /// The Mac mini sits on another subnet, where only Apple's own Bonjour types arrive: it is listed because Shepherd
+    /// answered a probe at its address, in the same row as the Mac Studio Bonjour found.
+    @Test func addAMacWithOneFoundThroughAppleServices() async throws {
+        let mini = RemoteHostClient.FleetPeerIdentity(hostID: UUID(), name: "Mac mini", build: "1.9", fleetEnabled: true)
+        let list = FleetNeighbors.merged(bonjour: [Self.found[1]],
+                                         probed: [FleetNeighbors.found(mini, address: "192.168.20.5", port: 7434)])
+        #expect(list.map(\.name) == ["Mac Studio", "Mac mini"])
+        try await Preview.render("fleet-pair-found-by-probe", size: CGSize(width: 640, height: 760)) {
+            Self.pairing(found: list).padding(SH.Space.xxl).frame(width: 640, height: 760).background(Color.sh.scrim)
         }
     }
 
@@ -91,6 +104,21 @@ struct FleetPreviewTests {
         try await Preview.render("fleet-pair-none", size: CGSize(width: 640, height: 640)) {
             Self.pairing(found: [], failure: "That code isn't right. 4 tries left.").padding(SH.Space.xxl)
                 .frame(width: 640, height: 640).background(Color.sh.scrim)
+        }
+    }
+
+    /// Nobody Bonjour or a probe could find, the whole code typed: Add Mac is enabled and the host looks the code up in iCloud.
+    @Test func addAMacByCodeThroughICloudWithNobodyFound() async throws {
+        try await Preview.renderMatrix("fleet-pair-icloud", size: CGSize(width: 640, height: 640)) {
+            Self.pairing(found: [], code: "482913", findsByCode: true).padding(SH.Space.xxl)
+                .frame(width: 640, height: 640).background(Color.sh.scrim)
+        }
+    }
+
+    @Test func addAMacByCodeWithNoICloudAccount() async throws {
+        try await Preview.renderMatrix("fleet-pair-icloud-signed-out", size: CGSize(width: 640, height: 640)) {
+            Self.pairing(found: [], failure: "Not signed in to iCloud: use a pairing link", code: "482913", findsByCode: true)
+                .padding(SH.Space.xxl).frame(width: 640, height: 640).background(Color.sh.scrim)
         }
     }
 

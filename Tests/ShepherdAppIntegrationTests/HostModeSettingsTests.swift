@@ -57,6 +57,25 @@ struct HostModeSettingsTests {
         }
     }
 
+    /// A settings write never waits for the main queue. The host's main queue runs off the main thread
+    /// (`dispatchMain`), so a write made on it that waited for a main-queue observer waited for itself.
+    @Test func aSettingsWriteNeverWaitsForTheMainQueue() async throws {
+        let defaults = ScratchDefaults()
+        let settings = AppSettings(store: defaults)
+        var reports = 0
+        settings.observeWrites(settling: .milliseconds(10)) { reports += 1 }
+        let written = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            defaults.set(true, forKey: AppSettings.Key.goalsEnabled)
+            written.signal()
+        }
+        // The main queue is held here, as the host's is by the block that writes.
+        #expect(Self.held(until: written), "the write waited for the main queue")
+        try await eventuallyOnMain("the settled write to be reported") { reports == 1 }
+    }
+
+    private static func held(until signal: DispatchSemaphore) -> Bool { signal.wait(timeout: .now() + 5) == .success }
+
     /// The app's Settings change the host's settings, each `on…Change` firing on the host, and a
     /// paired device's change on the host reaches the app's Settings.
     @Test func theAppsSettingsReachTheHostAndTheHostsReachTheApp() async throws {

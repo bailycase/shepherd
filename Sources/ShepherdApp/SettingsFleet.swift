@@ -59,7 +59,12 @@ struct FleetSettings: View {
         .shAnimation(.disclosure, value: model.problem)
         .shAnimation(.disclosure, value: model.deviceProblem)
         .shAnimation(.disclosure, value: model.snapshot.devices?.sharedToken)
-        .task { await model.refresh() }
+        .task {
+            await model.refresh()
+            if model.incomingLink != nil { adding = true }
+        }
+        // A pairing link opened from outside the app: Add a Mac opens with it filled in (`FleetPairSheet`).
+        .onChange(of: model.incomingLink) { if model.incomingLink != nil { adding = true } }
         .sheet(isPresented: $adding) {
             FleetPairSheet(model: model, asClient: !enabled) { adding = false }
         }

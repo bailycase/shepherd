@@ -48,6 +48,13 @@ public enum FleetProtocol {
         public static let busy = "busy"
         /// A device pairs with an id that was revoked: it makes a new one and pairs again.
         public static let deviceRevoked = "device_revoked"
+        /// Nobody is showing that code (`FleetAction.findAndPair`): the code finds no Join record.
+        public static let notFound = "not_found"
+        /// iCloud can't be used to look for a Mac (`FleetAction.findAndPair`): no account, a different Apple ID, or no
+        /// access from this build. Pairing goes on the other ways.
+        public static let icloudUnavailable = "icloud_unavailable"
+        /// A pairing link's code has stopped working (`FleetAction.pairAt`): refused without a connection.
+        public static let linkExpired = "link_expired"
     }
 }
 
@@ -118,10 +125,13 @@ public struct FleetPeerStatus: Codable, Hashable, Identifiable, Sendable {
     public var link: Link
     /// Epoch milliseconds of the link's last drop; nil while connected or never connected.
     public var lastSeen: Double?
+    /// How the host reaches it now while linked (`FleetPeerReach`); nil from a host before links ran both ways, and to a client.
+    public var reach: FleetPeerReach?
     public var id: UUID { hostID }
 
     public init(hostID: UUID, name: String, kind: FleetPeerKind = .mac, host: String? = nil, port: UInt16? = nil,
-                pairedAt: Double, link: Link, lastSeen: Double? = nil) {
+                pairedAt: Double, link: Link, lastSeen: Double? = nil, reach: FleetPeerReach? = nil) {
+        self.reach = reach
         self.hostID = hostID
         self.name = name
         self.kind = kind
@@ -157,6 +167,9 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
     public var addresses: [String]
     /// The port the host's listener is bound to; nil while it isn't serving.
     public var port: UInt16?
+    /// Every way this Mac can be reached now, most useful first (`FleetRouteReport`), with the kind of each: what a pairing link
+    /// carries and Join a fleet lists. Empty from a host that doesn't say, and never sent to a client (`clientView`).
+    public var routes: [FleetReportedRoute]
     /// The host advertises itself over Bonjour now.
     public var advertising: Bool
     public var peers: [FleetPeerStatus]
@@ -175,9 +188,10 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
     public var index: FleetIndexStatus?
 
     public init(enabled: Bool = false, hostID: UUID? = nil, name: String = "", build: String? = nil, addresses: [String] = [],
-                port: UInt16? = nil, advertising: Bool = false, peers: [FleetPeerStatus] = [], join: FleetJoinStatus? = nil,
+                port: UInt16? = nil, routes: [FleetReportedRoute] = [], advertising: Bool = false, peers: [FleetPeerStatus] = [], join: FleetJoinStatus? = nil,
                 sync: FleetSyncStatus? = nil, devices: FleetDevicesSnapshot? = nil, macs: [FleetMacState] = [],
                 dispatches: [FleetDispatchRecord] = [], index: FleetIndexStatus? = nil) {
+        self.routes = routes
         self.index = index
         self.devices = devices
         self.dispatches = dispatches
@@ -194,7 +208,7 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         self.sync = sync
     }
 
-    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, advertising, peers, join, macs, devices, sync, dispatches, index }
+    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, routes, advertising, peers, join, macs, devices, sync, dispatches, index }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -204,6 +218,8 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         build = try c.decodeIfPresent(String.self, forKey: .build)
         addresses = try c.decode([String].self, forKey: .addresses)
         port = try c.decodeIfPresent(UInt16.self, forKey: .port)
+        // A host from before pairing links has none.
+        routes = (try? c.decodeIfPresent([FleetReportedRoute].self, forKey: .routes)) ?? []
         advertising = try c.decode(Bool.self, forKey: .advertising)
         peers = try c.decode([FleetPeerStatus].self, forKey: .peers)
         join = try c.decodeIfPresent(FleetJoinStatus.self, forKey: .join)
@@ -309,12 +325,21 @@ public enum FleetAction: Codable, Hashable, Sendable {
     case retryDispatch(id: UUID, host: UUID?)
     /// Stop a dispatch this Mac sent, and its thread on the other Mac.
     case cancelDispatch(id: UUID)
+    /// Pair with the Mac showing `code` without knowing where it is: the host asks the person's own iCloud
+    /// (`RemoteProtocol.fleetRendezvousCapability`) where that code was shown, then pairs over the routes it
+    /// finds exactly as `pair` does. The code is still the only proof. Answered with the Mac (`FleetResult.paired`).
+    case findAndPair(code: String)
+    /// Pair with the Mac `hostID` over `routes` (tried in order, each on `port`) using the code its screen shows, as a pairing link or a
+    /// Mac found over SSH says (`RemoteProtocol.fleetPairLinkCapability`). The Mac that answers must be `hostID`, or nothing is sent to it:
+    /// the code is still the only proof. `expiresAt` (epoch milliseconds) is when the code stops working; an expired one is refused
+    /// without a connection. Answered with the Mac (`FleetResult.paired`).
+    case pairAt(hostID: UUID, port: UInt16, routes: [FleetReportedRoute], code: String, expiresAt: Double?)
 
     /// The actions about client devices, which work with Fleet off; the others are a member's.
     public var isDeviceAction: Bool {
         switch self {
         case .startDeviceCode, .stopDeviceCode, .revokeDevice, .forgetLegacyClient, .retireSharedToken, .enrollApp: true
-        case .startJoin, .stopJoin, .pair, .remove, .adopt, .watching, .reconnect, .sendThread, .retryDispatch, .cancelDispatch: false
+        case .startJoin, .stopJoin, .pair, .remove, .adopt, .watching, .reconnect, .sendThread, .retryDispatch, .cancelDispatch, .findAndPair, .pairAt: false
         }
     }
 }

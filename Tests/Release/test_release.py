@@ -923,6 +923,19 @@ class ContractTests(unittest.TestCase):
                 self.assertEqual(self.setting(block, "PRODUCT_NAME"), app.name)
                 self.assertEqual(self.setting(block, "SHEPHERD_APPCAST"), app.appcast)
 
+    def test_each_mac_edition_opens_only_its_own_pairing_links(self):
+        # `FleetPairingLink.scheme(bundleIdentifier:)` names the scheme each edition's links carry; the app registers the same one.
+        expected = {"Debug": "shepherd-dev", "Release": "shepherd", "Nightly": "shepherd-nightly"}
+        plist = plistlib.loads(self.read("App", "Info.plist").encode())
+        self.assertEqual(plist["CFBundleURLTypes"][0]["CFBundleURLSchemes"], ["$(SHEPHERD_URL_SCHEME)"])
+        for name, scheme in expected.items():
+            with self.subTest(configuration=name):
+                self.assertEqual(self.setting(self.target_configuration(name), "SHEPHERD_URL_SCHEME"), scheme)
+        self.assertEqual(len(set(expected.values())), 3, "no two editions share a scheme")
+        link = self.read("Sources", "ShepherdProtocol", "FleetPairingLink.swift")
+        for scheme in expected.values():
+            self.assertIn(f'"{scheme}"', link)
+
     def test_every_mac_configuration_builds_arm64_only(self):
         for name in ("Debug", "Release", "Nightly"):
             with self.subTest(configuration=name):
@@ -1065,9 +1078,17 @@ class ContractTests(unittest.TestCase):
 
     def test_ios_info_plist_allows_only_local_networking(self):
         # The Browser loads a host's dev server at http://localhost through the device's loopback;
-        # nothing broader than the local-networking exception.
+        # nothing broader than the local-networking exception. Finding a Mac adds the Bonjour types it browses
+        # (Shepherd's own and the ones Apple's reflector carries across subnets) and the camera string for the
+        # pairing QR scanner: all local network or on device, nothing that reaches beyond it.
         info = plistlib.loads(self.read("App", "iOS", "Info.plist").encode())
         self.assertEqual(info, {"NSAppTransportSecurity": {"NSAllowsLocalNetworking": True},
+                                "NSBonjourServices": ["_shepherd._tcp", "_ssh._tcp", "_companion-link._tcp", "_device-info._tcp"],
+                                # Pairing links (`shepherd://fleet/join`) from Messages and AirDrop: an iPhone pairs with whichever
+                                # edition of the Mac shared one, so it takes all three editions' schemes.
+                                "CFBundleURLTypes": [{"CFBundleTypeRole": "Viewer", "CFBundleURLName": "com.bailycase.shepherd.ios.pairing",
+                                                      "CFBundleURLSchemes": ["shepherd", "shepherd-nightly", "shepherd-dev"]}],
+                                "NSCameraUsageDescription": "Scan the code a Shepherd Mac shows to pair this device with it.",
                                 # Empty unless the TestFlight job supplies the public DSN.
                                 "ShepherdSentryDSN": "$(SHEPHERD_SENTRY_DSN)"})
 

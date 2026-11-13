@@ -439,13 +439,14 @@ final class RemoteHostStore {
     /// Pairs this app as a device (a client) of the Mac at `host`:`port` with the code its Settings ▸ Fleet ▸
     /// Add a device shows, and connects to it with a token of its own that the Mac keeps only the hash of.
     /// Nothing is typed but the code, and the Mac need not be in a fleet. A Mac already held at that address
-    /// is given the new token instead of being added twice. Returns the host's id.
+    /// is given the new token instead of being added twice. `expecting` is the id of the Mac a pairing link named: another Mac answering
+    /// there is refused before the code is sent. Returns the host's id.
     @discardableResult
-    func pairAsClient(host: String, port: UInt16, code: String) async throws -> UUID {
+    func pairAsClient(host: String, port: UInt16, code: String, expecting: UUID? = nil) async throws -> UUID {
         let token = FleetProtocol.makeToken()
         let device = FleetDeviceIntroduction(deviceID: UUID(), name: Host.current().localizedName ?? "Mac", kind: .macApp,
                                              tokenHash: FleetProtocol.hash(token))
-        let answered = try await RemoteHostClient.fleetPairDevice(host: host, port: port, code: code, device: device).result
+        let answered = try await RemoteHostClient.fleetPairDevice(host: host, port: port, code: code, device: device, expecting: expecting).result
         if let held = pairedConnections.first(where: { $0.config.host == host && $0.config.port == port }) {
             held.config.token = token
             held.config.ownToken = true

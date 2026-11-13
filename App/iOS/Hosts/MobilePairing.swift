@@ -27,6 +27,10 @@ final class MobilePairing {
         }
     }
     var phase: Phase = .idle
+    /// A pairing link (opened from Messages or AirDrop, or pasted): the text in its field, the Mac and code it names, and why it can't be used.
+    var linkText = ""
+    private(set) var link: FleetPairingLink?
+    private(set) var linkProblem: String?
 
     @ObservationIgnored private let hosts: MobileHosts
     @ObservationIgnored private let browse: @MainActor (@escaping @Sendable ([FoundMac]) -> Void) -> () -> Void
@@ -68,6 +72,9 @@ final class MobilePairing {
         stopBrowsing = nil
         every = []
         found = []
+        link = nil
+        linkText = ""
+        linkProblem = nil
     }
 
     /// Macs this device already holds (same address and port) aren't offered again.
@@ -81,7 +88,40 @@ final class MobilePairing {
     /// The Mac the code will go to: the one chosen, or the only one found.
     var mac: FoundMac? { found.first { $0.id == picked } ?? (found.count == 1 ? found.first : nil) }
 
-    var ready: Bool { mac != nil && code.count == FleetProtocol.codeLength && phase != .working }
+    var ready: Bool { (link != nil || mac != nil) && code.count == FleetProtocol.codeLength && phase != .working }
+
+    /// The Mac's name for "Add …": the link's, else the one chosen.
+    var macName: String? { link?.name ?? mac?.name }
+
+    /// A link opened from outside the app fills in the link field.
+    func takeIncomingLink() {
+        guard let text = hosts.incomingPairingLink else { return }
+        hosts.incomingPairingLink = nil
+        read(link: text)
+    }
+
+    /// Reads the text of the link field. A pairing link for a device (Add a device on a Mac) of any edition names the Mac and its code;
+    /// anything else says why it can't be used.
+    func read(link text: String) {
+        linkText = text
+        link = nil
+        linkProblem = nil
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        switch FleetPairingLink.readAnyEdition(text) {
+        case .link(let read):
+            if read.isExpired(at: Date()) {
+                linkProblem = "That link has expired. Open Add a device on the Mac for a new one."
+            } else if read.purpose == .join {
+                linkProblem = "That link adds a Mac to a fleet. On this device, use the link under Add a device on the Mac."
+            } else {
+                link = read
+                code = read.code
+                picked = nil
+            }
+        case .malformed: linkProblem = "That isn't a pairing link Shepherd can read. Ask the Mac for a new one."
+        case .otherEdition, .notALink: linkProblem = "That isn't a pairing link. It starts with shepherd://fleet/join."
+        }
+    }
 
     /// A scanned QR: its code is entered and the Mac it names is chosen. False for any other QR.
     @discardableResult
@@ -94,15 +134,41 @@ final class MobilePairing {
     }
 
     func pair() async {
-        guard let mac, let address = mac.address, let port = mac.port, ready else { return }
+        guard ready else { return }
         phase = .working
         do {
-            let ids = try await hosts.pair(address: address, port: port, code: code, expecting: expecting)
+            let ids: [UUID]
+            if let link {
+                ids = try await pair(over: link)
+            } else if let mac, let address = mac.address, let port = mac.port {
+                ids = try await hosts.pair(address: address, port: port, code: code, expecting: expecting)
+            } else {
+                phase = .idle
+                return
+            }
             phase = .paired(ids.compactMap { hosts.host($0)?.name })
             code = ""
+            link = nil
+            linkText = ""
         } catch {
             phase = .failed(Self.words(error))
         }
+    }
+
+    /// Pairs over the first of the link's routes that answers as the Mac it names (checked before the code is sent). A Mac that answers
+    /// and says no (a wrong code, an expired one) ends it: another route says the same.
+    private func pair(over link: FleetPairingLink) async throws -> [UUID] {
+        var failure: Error = RemoteHostClientError.timeout
+        for route in link.routes {
+            do {
+                return try await hosts.pair(address: route.host, port: link.port, code: code, expectingID: link.hostID)
+            } catch RemoteHostClientError.rejected(let reason, let message) where reason != FleetProtocol.Code.wrongHost {
+                throw RemoteHostClientError.rejected(code: reason, message: message)
+            } catch {
+                failure = error
+            }
+        }
+        throw failure
     }
 
     /// A refusal's own sentence (a Mac writes them for people), or why nothing answered.

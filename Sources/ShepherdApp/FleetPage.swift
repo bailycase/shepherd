@@ -270,6 +270,9 @@ struct FleetMacCardView: View, Equatable {
                 }
             }
             FleetFact("Agents") { Text(card.agents).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary) }
+            if let reach = card.reach {
+                FleetFact("Link") { Text(reach).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.middle) }
+            }
         }
         .padding(.vertical, SH.Space.l)
         .padding(.horizontal, SH.Space.xl)

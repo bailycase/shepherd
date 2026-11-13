@@ -130,6 +130,14 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
     private var storedHostID: UUID?
 
+    /// A request the Mac at the other end of this connection sent over it (`RemoteReply.fleetPeerCall`, `fleetLinkCapability`): serve it and
+    /// call `reply` with the answer, from any thread. Called on the client's own queue, never main. Set before `connect`.
+    public var onPeerCall: (@Sendable (RemoteRequest, @escaping @Sendable (RemoteReply) -> Void) -> Void)?
+    /// The calls of the other Mac this client has not answered yet. Client queue.
+    private var peerCallsInFlight = 0
+    /// Tasks waiting for this connection to have nothing in flight (`waitUntilIdle`). Client queue.
+    private var idleWaiters: [CheckedContinuation<Void, Never>] = []
+
     private let queue = DispatchQueue(label: "shepherd.remote.client")
     // Written on the client queue; main checks it before invoking a captured delivery batch.
     private let generationLock = NSLock()
@@ -144,6 +152,10 @@ public final class RemoteHostClient: @unchecked Sendable {
     private var readSource: DispatchSourceRead?
     private var writeSource: DispatchSourceWrite?
     private var lineBuffer = LineBuffer()
+    /// The connection of a Mac that opened one to this host, used to send it requests (`init(peerChannel:)`); nil for a client that
+    /// opened its own socket.
+    private let peerChannel: RemoteHostClientPeerChannel?
+    private var peerChannelOpen = false
     /// Connected to the host on this Mac through its local socket (`init(localSocket:)`). Only
     /// the socket closing ends this link: a slow reply or a full write queue fails one request,
     /// since a busy host here is not a dead one, and frames may be as large as `localMaxPayloadBytes`.
@@ -235,8 +247,23 @@ public final class RemoteHostClient: @unchecked Sendable {
     public init() {
         socketOpen = nil
         isLocal = false
+        peerChannel = nil
         tunnels = BrowserTunnelHub(queue: queue)
         tunnels.link = self
+    }
+
+    /// A client of a Mac that opened a connection to this host: its requests go back over that connection as calls
+    /// (`RemoteReply.fleetPeerCall`) and its answers come in with `receivePeerAnswer`. `capabilities` is what that Mac listed in `hello`.
+    /// A request that times out ends the connection, as on a socket this client opened (`RemoteHostClientPeerChannel.close`).
+    public init(peerChannel: RemoteHostClientPeerChannel, hostID: UUID, capabilities: Set<String>) {
+        socketOpen = nil
+        isLocal = false
+        self.peerChannel = peerChannel
+        tunnels = BrowserTunnelHub(queue: queue)
+        tunnels.link = self
+        storedCapabilities = capabilities
+        storedHostID = hostID
+        peerChannelOpen = true
     }
 
     /// A client of the host on this Mac, through its local socket (`host.sock`) at `path`: the
@@ -283,6 +310,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     init(socketOpen: @escaping @Sendable (String, UInt16) throws -> Int32, local: Bool = false) {
         self.socketOpen = socketOpen
         isLocal = local
+        peerChannel = nil
         tunnels = BrowserTunnelHub(queue: queue)
         tunnels.link = self
     }
@@ -420,7 +448,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// one (`fleetIdentify`, `fleetPair`): a Mac pairing with another by code. Nothing is sent
     /// but those, so no token ever goes to an address that has not said who it is. Close it with
     /// `disconnect()`.
-    func openUnauthenticated(host: String, port: UInt16) async throws {
+    func openUnauthenticated(host: String, port: UInt16, timeout: TimeInterval = 10) async throws {
         let opening = RemoteSocketOpen()
         let attempt = try queue.sync {
             guard self.fd < 0 else {
@@ -434,7 +462,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         try await withTaskCancellationHandler {
             let fd: Int32
             do {
-                fd = try await opening.open(host: host, port: port, override: socketOpen)
+                fd = try await opening.open(host: host, port: port, timeout: timeout, override: socketOpen)
             } catch {
                 queue.sync { if connectionGeneration == attempt { pendingOpen = nil } }
                 throw error
@@ -1545,7 +1573,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                         continuation.resume(throwing: CancellationError())
                         return
                     }
-                    guard self.fd >= 0, connectionGeneration == nil || self.connectionGeneration == connectionGeneration else {
+                    guard self.isOpen, connectionGeneration == nil || self.connectionGeneration == connectionGeneration else {
                         continuation.resume(throwing: RemoteHostClientError.rejected(code: "not_sent", message: "Connection closed before the request was sent"))
                         return
                     }
@@ -1553,7 +1581,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                     self.nextRequestID += 1
                     ticket.id = id
                     self.pendingReplies[id] = continuation
-                    guard self.sendRequest(make(id)) else {
+                    guard self.transmit(id: id, make(id)) else {
                         // A remote client was torn down, which already failed it; a local one fails just this.
                         self.pendingReplies.removeValue(forKey: id)?.resume(throwing: RemoteHostClientError.rejected(
                             code: "not_sent", message: "The host isn't reading requests right now. Try again."))
@@ -1565,6 +1593,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                         if self.cancelledReplies.remove(id) != nil { return }
                         guard let pending = self.pendingReplies.removeValue(forKey: id) else { return }
                         pending.resume(throwing: RemoteHostClientError.timeout)
+                        self.notifyIdle()
                         guard self.isLocal else {
                             self.teardown(reason: "request \(id) timed out after \(timeout) s")
                             return
@@ -1583,6 +1612,63 @@ public final class RemoteHostClient: @unchecked Sendable {
                 guard let id = ticket.id, let pending = self.pendingReplies.removeValue(forKey: id) else { return }
                 self.cancelledReplies.insert(id)
                 pending.resume(throwing: CancellationError())
+                self.notifyIdle()
+            }
+        }
+    }
+
+    /// Whether a request can be sent now: the socket this client opened is up, or the other Mac's connection is.
+    private var isOpen: Bool { fd >= 0 || peerChannelOpen }
+
+    /// Sends request `id` over the socket, or as a call over the connection of the Mac that opened one.
+    private func transmit(id: Int, _ request: RemoteRequest) -> Bool {
+        if let peerChannel { return peerChannelOpen && peerChannel.send(callID: id, request: request) }
+        return sendRequest(request)
+    }
+
+    /// The Mac whose connection this client sends over answered call `id`. Any thread.
+    public func receivePeerAnswer(id: Int, reply: RemoteReply) {
+        queue.async { self.resumePending(id: id, with: reply) }
+    }
+
+    /// The connection this client sends over closed: every request waiting for an answer fails. Any thread.
+    public func peerChannelClosed(reason: String) {
+        queue.async { self.teardown(reason: reason) }
+    }
+
+    /// Returns when nothing is in flight on this connection: no request of this client awaits its answer, and every call of the
+    /// other Mac has been answered. A connection that is being let go waits for this before it closes, so nothing sent on it is lost.
+    public func waitUntilIdle() async {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                if self.isIdle { continuation.resume() } else { self.idleWaiters.append(continuation) }
+            }
+        }
+    }
+
+    private var isIdle: Bool { pendingReplies.isEmpty && peerCallsInFlight == 0 }
+
+    private func notifyIdle() {
+        guard isIdle, !idleWaiters.isEmpty else { return }
+        let waiters = idleWaiters
+        idleWaiters = []
+        for waiter in waiters { waiter.resume() }
+    }
+
+    /// Serves a request the other Mac sent over this connection.
+    private func servePeerCall(id: Int, request: RemoteRequest) {
+        guard let handler = onPeerCall else {
+            sendRequest(.fleetPeerAnswer(id: id, reply: .error(id: id, code: "unsupported", message: "This Mac does not take calls over this link.")))
+            return
+        }
+        peerCallsInFlight += 1
+        let generation = connectionGeneration
+        handler(request) { [weak self] reply in
+            self?.queue.async {
+                guard let self else { return }
+                self.peerCallsInFlight = max(0, self.peerCallsInFlight - 1)
+                if self.connectionGeneration == generation { self.sendRequest(.fleetPeerAnswer(id: id, reply: reply)) }
+                self.notifyIdle()
             }
         }
     }
@@ -1723,6 +1809,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             resumePending(id: id, with: reply)
         case .error(let id, _, _):
             resumePending(id: id, with: reply)
+        case .fleetPeerCall(let id, let request):
+            servePeerCall(id: id, request: request)
         case .nativeThreadChanged(let agentID):
             push(.nativeThreadChanged(agentID))
         case .stateChanged(let state):
@@ -1923,12 +2011,25 @@ public final class RemoteHostClient: @unchecked Sendable {
             return
         }
         continuation.resume(returning: reply)
+        notifyIdle()
     }
 
     private func teardown(reason: String) {
         connectionGeneration = UUID()
         pendingOpen?.cancel()
         pendingOpen = nil
+        if let peerChannel {
+            guard peerChannelOpen else { return }
+            peerChannelOpen = false
+            ShepherdLog.connection("link of a Mac that opened it ended: \(reason) (\(pendingReplies.count) replies awaited)")
+            for continuation in pendingReplies.values { continuation.resume(throwing: RemoteHostClientError.disconnected) }
+            pendingReplies.removeAll()
+            cancelledReplies.removeAll()
+            peerCallsInFlight = 0
+            notifyIdle()
+            peerChannel.close(reason: reason)
+            return
+        }
         guard fd >= 0 else { return }
         ShepherdLog.connection("\(isLocal ? "local host" : "host") connection ended: \(reason) (\(established ? "established" : "connecting"); "
             + "\(pendingReplies.count) replies awaited, \(pendingWriteBytes) B unwritten, \(pendingEventBytes) B undelivered)")
@@ -1958,6 +2059,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
         pendingReplies.removeAll()
         cancelledReplies.removeAll()
+        peerCallsInFlight = 0
+        notifyIdle()
         if established, !disconnectNotified {
             disconnectNotified = true
             let generation = connectionGeneration
@@ -1997,4 +2100,12 @@ extension RemoteHostClient: BrowserTunnelLink {
     public var tunnelBacklogBytes: Int { pendingWriteBytes }
 
     public var tunnelsAvailable: Bool { fd >= 0 && capabilities.contains(RemoteProtocol.browserTunnelCapability) }
+}
+
+/// The connection of a Mac that opened one to this host, as a client of that Mac sends over it (`RemoteHostClient.init(peerChannel:)`).
+public protocol RemoteHostClientPeerChannel: AnyObject, Sendable {
+    /// Sends `request` to the Mac as call `callID` (`RemoteReply.fleetPeerCall`); false when it cannot be sent now. Any thread.
+    func send(callID: Int, request: RemoteRequest) -> Bool
+    /// The client gave up on the connection (a request timed out): close it. Any thread.
+    func close(reason: String)
 }

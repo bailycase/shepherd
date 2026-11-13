@@ -34,6 +34,26 @@ struct FleetPagePresentationTests {
             ])
     }
 
+    /// The Mac card says how the Mac is reached: its address and the kind of route, or that only the other Mac can dial.
+    @Test func aConnectedMacSaysHowItIsReached() {
+        var snapshot = Self.snapshot(studioLink: .connected)
+        snapshot.peers[0].reach = FleetPeerReach(host: "10.77.20.10", kind: .lan)
+        snapshot.peers[1].reach = FleetPeerReach(viaItsLink: true)
+        let cards = Self.page(snapshot).cards
+        #expect(cards.map(\.reach) == [nil, "via 10.77.20.10 · LAN", "via its link to you"])
+        for (reach, words) in [(FleetPeerReach(host: "100.101.102.103", kind: .tailscale), "via 100.101.102.103 · Tailscale"),
+                               (FleetPeerReach(host: "mac-mini.local", kind: .hostname), "via mac-mini.local · name"),
+                               (FleetPeerReach(host: "10.8.0.4", kind: .vpn), "via 10.8.0.4 · VPN"), (FleetPeerReach(host: "10.0.0.2"), "via 10.0.0.2"),
+                               (FleetPeerReach(), nil)] {
+            #expect(FleetPagePresentation.reachWords(reach) == words)
+        }
+    }
+
+    @Test func aMacThatIsNotLinkedOrNotAskedSaysNothingOfHowItIsReached() {
+        #expect(Self.page().cards.allSatisfy { $0.reach == nil }, "a snapshot with no reach, as a client's view is")
+        #expect(FleetPagePresentation.reachWords(nil) == nil)
+    }
+
     static func page(_ snapshot: FleetSnapshot = snapshot(), weights: [UUID: FleetSendWeight] = [:], snapshotAge: TimeInterval = 0) -> FleetPage {
         FleetPagePresentation.make(snapshot: snapshot, weight: { weights[$0] ?? .normal }, snapshotAge: snapshotAge, locale: en, calendar: utc)
     }

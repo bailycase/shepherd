@@ -50,6 +50,10 @@ on:
         required: false
       DEVELOPER_ID_P12_PASSWORD:
         required: false
+      DEVELOPER_ID_PROFILE_NIGHTLY:
+        required: false
+      DEVELOPER_ID_PROFILE_STABLE:
+        required: false
       NOTARY_KEY_ID:
         required: false
       NOTARY_ISSUER_ID:
@@ -244,13 +248,31 @@ jobs:
       - name: Strip debug symbols
         run: xcrun strip -S -x "$PRODUCTS/$PRODUCT/Contents/MacOS/"*
 
+      # Fleet finds Macs through the user's iCloud (CloudKit), which macOS allows only with a provisioning
+      # profile embedded in the app. The Developer ID profile comes from a secret (base64); without a usable
+      # one the app is built without the iCloud entitlements, so a release never breaks on it.
+      # scripts/release.py embed-profile says which in the job log.
+      - name: Embed the iCloud provisioning profile
+        id: icloud
+        env:
+          IDENTITY: ${{ steps.cert.outputs.identity }}
+          PROFILE_NIGHTLY: ${{ secrets.DEVELOPER_ID_PROFILE_NIGHTLY }}
+          PROFILE_STABLE: ${{ secrets.DEVELOPER_ID_PROFILE_STABLE }}
+        run: |
+          python3 scripts/release.py embed-profile "$APP_KEY" "$PRODUCTS/$PRODUCT" \
+            "$RUNNER_TEMP/Shepherd.entitlements" >> "$GITHUB_OUTPUT"
+
       # node is signed with the engine's entitlements (V8 needs allow-jit under
       # the hardened runtime); scripts/sign-engine.sh says why.
       - name: Sign
         run: |
           scripts/sign-app.sh "$PRODUCTS/$PRODUCT" \
-            '${{ steps.cert.outputs.identity }}' App/Shepherd.entitlements \
+            '${{ steps.cert.outputs.identity }}' '${{ steps.icloud.outputs.entitlements }}' \
             App/Engine.entitlements
+
+      # An app signed with iCloud entitlements and no profile that grants them would not open.
+      - name: Verify the iCloud entitlements
+        run: python3 scripts/release.py verify-icloud "$PRODUCTS/$PRODUCT"
 
       - name: Smoke test the shipped SDK
         run: |

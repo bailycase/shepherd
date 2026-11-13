@@ -1,5 +1,5 @@
-// Vendored from leohenon/pi-anthropic-oauth v0.3.4
-// Revision: 44efe694a3e81a62742cdb3e7ba9da858e191a81
+// Vendored from leohenon/pi-anthropic-oauth v0.3.9
+// Revision: 0078268804557bbbc82c60e364a34debf0450a90
 // MIT License
 // 
 // Copyright (c) 2026 Leo Henon
@@ -22,7 +22,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 export const CLAUDE_CODE_VERSION_ENV = "PI_ANTHROPIC_OAUTH_CLAUDE_CODE_VERSION";
-const DEFAULT_CLAUDE_CODE_VERSION = "2.1.280";
+const DEFAULT_CLAUDE_CODE_VERSION = "2.1.322";
 
 /**
  * Claude Code version advertised to the API (user agent and billing header).

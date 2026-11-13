@@ -20,6 +20,19 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(SHEPHERD_URL_SCHEME)</string>
+			</array>
+		</dict>
+	</array>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
 	<key>NSHighResolutionCapable</key>
@@ -27,6 +40,9 @@
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_shepherd._tcp</string>
+		<string>_ssh._tcp</string>
+		<string>_companion-link._tcp</string>
+		<string>_device-info._tcp</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Shepherd serves its sessions to remote Shepherd clients over your network.</string>
