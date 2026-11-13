@@ -15,6 +15,9 @@ struct FleetIndexStorage {
         var rules: String
         var eventID: UInt64?
         var volume: String?
+        /// The modification time of every directory as the index last read it. Saved with the event id: what the system's event history
+        /// holds about a change made while the host was down is not complete, and a directory whose time moved is how a new file is found.
+        var directories: [String: Int64]?
     }
 
     /// One line of the snapshot or the journal. A line with `x` removes the path.
