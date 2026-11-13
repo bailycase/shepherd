@@ -404,9 +404,9 @@ struct ThreadView: View {
         // there (`NativeThreadStore.suspend`). In a window nobody can see it keeps its loop and pulls
         // nothing (`ThreadRest`).
         .modifier(ThreadRest(store: store, owner: storeOwner, active: active, run: loopRun))
-        // The rows not while the reader is away from the tail: the rows that join the eager tail change height above them, which only a
-        // view held to the tail takes without moving. It starts again when they return (the key reads `sticky` only while a restore is
-        // under way). The lazy stack is the exception, for a reader wherever they are: until it is back they cannot reach the older rows.
+        // The row steps wait for the reader to be at the tail: the rows that join the eager tail change height above them, which only a
+        // view held to the tail takes without moving. They start again when the reader returns (the key reads `sticky` only while a
+        // restore is under way). The lazy stack does not wait for that: until it is back they cannot reach the older rows.
         .task(id: restoreStepping && active && (follower.sticky || restore.awaitsHistory)) {
             if restoreStepping && active && (follower.sticky || restore.awaitsHistory) { await restoreRows() }
         }
@@ -933,8 +933,9 @@ final class ThreadRowIndex {
 /// would be shown its estimates, before the scroll view has been held to the tail, and would build them. The next frame brings the lazy
 /// stack back with the rows older than the eager tail, whatever the person types (it builds nothing at the tail, and without it the
 /// thread seems to end where its last screen does), and the rows between join the eager tail a step at a time, newest first, each
-/// leaving the lazy stack for the eager stack once, when no key or scroll is recent. The end of the thread, where the reader is, never moves: the scroll view keeps it
-/// while the content above it grows, at the bottom of the window even where the rows drawn so far do not fill it (`ThreadTailAnchor`).
+/// leaving the lazy stack for the eager stack once, when no key or scroll is recent. The end of the thread, where the reader is, never
+/// moves: the scroll view keeps it while the content above it grows, at the bottom of the window even where the rows drawn so far do
+/// not fill it (`ThreadTailAnchor`).
 /// No update builds more than a step of rows, and a thread whose rest costs no more than a step draws it all in its first frame.
 ///
 /// Read in `body`, which it changes only through `steps`: the rest is a reference's, so keeping it current never draws the view.
