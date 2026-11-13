@@ -8,10 +8,10 @@ import ShepherdRemote
 /// next. A row opens its run (pushed on iPhone, in the inspector beside the thread on iPad);
 /// touch and hold for Open and the run's controls. A run that asked its parent a question says so
 /// quietly on its row: a subagent never asks the user. It stays until your next message once
-/// every run has finished.
+/// every run has finished. It reads the store's tray itself: a child's tool call redraws this and
+/// not the composer around it, which reads only whether the tray shows (`hasTray`).
 struct SubagentTraySection: View {
     let ref: AgentRef
-    let tray: NativeSubagentTray
     let store: NativeThreadStore
     let state: ComposerState
     let size: SHSubagentTraySize
@@ -22,6 +22,10 @@ struct SubagentTraySection: View {
 
     var body: some View {
         let _ = SHRenderProbe.tick("composer.tray")
+        if let tray = store.tray { card(tray) }
+    }
+
+    private func card(_ tray: NativeSubagentTray) -> some View {
         let values = SubagentValues.tray(tray)
         let shown = NativeSubagentTray.shownRows
         let long = values.rows.count > shown

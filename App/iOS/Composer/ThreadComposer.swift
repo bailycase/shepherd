@@ -85,16 +85,15 @@ struct ThreadComposer: View {
                 ComposerWidget(title: widget.title, text: widget.text)
             }
             if store.hasGoal || store.dialogs.isEmpty {
-                if store.hasGoal || store.tray != nil {
+                if store.hasGoal || store.hasTray {
                     SHDockStack(size: store.hasGoal && goalSize == .desktop ? .pointer : wide ? .pad : .phone, showsTray: true, showsQueue: !state.rows.isEmpty) {
                         VStack(spacing: 0) {
                             if store.hasGoal {
                                 ThreadGoalCard(store: store, active: live,
                                                size: goalSize, framed: false)
                             }
-                            if let tray = store.tray {
-                                SubagentTraySection(ref: ref, tray: tray, store: store, state: state,
-                                                    size: wide ? .pad : .phone, enabled: live)
+                            if store.hasTray {
+                                SubagentTraySection(ref: ref, store: store, state: state, size: wide ? .pad : .phone, enabled: live)
                                     .overlay(alignment: .top) {
                                         if store.hasGoal { SHHairline(color: Color.sh.lineStrong) }
                                     }
@@ -166,7 +165,7 @@ struct ThreadComposer: View {
         .padding(.bottom, MobileLayout.composerBottom)
         .background(Color.sh.bgWindow)
         .shAnimation(.content, value: store.dialogs.isEmpty)
-        .shAnimation(.list, value: store.tray == nil)
+        .shAnimation(.list, value: store.hasTray)
         .shAnimation(.list, value: store.goalID)
         .onAppear { state.restoreDraft(in: store) }
         .task(id: store.draft) {
