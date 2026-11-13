@@ -20,3 +20,31 @@ public enum SHComposerFit {
         }
     }
 }
+
+/// What a composer field last measured, kept while what it was measured for holds: the `key`, which is everything
+/// but the width that the answer depends on (the text, by a revision that each edit bumps, and the style it is drawn
+/// in), and the width. A layout pass asks a field's size more than once for the same edit; only the first ask has to
+/// lay the text out.
+public struct SHComposerFitCache<Key: Equatable, Answer> {
+    /// The widths one edit keeps an answer for: the ones a layout pass tries in turn.
+    public static var widths: Int { 4 }
+
+    private var measuredFor: Key?
+    private var answers: [CGFloat: Answer] = [:]
+
+    public init() {}
+
+    /// The answer at `width` for `key`. `measure` runs only when that is not the answer last given, and its result is kept.
+    public mutating func answer(width: CGFloat, key: Key, measure: () -> Answer) -> Answer {
+        if measuredFor == key {
+            if let known = answers[width] { return known }
+        } else {
+            measuredFor = key
+            answers.removeAll(keepingCapacity: true)
+        }
+        let answer = measure()
+        if answers.count >= Self.widths { answers.removeAll(keepingCapacity: true) }
+        answers[width] = answer
+        return answer
+    }
+}
