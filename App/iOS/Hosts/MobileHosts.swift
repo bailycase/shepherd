@@ -25,6 +25,9 @@ final class MobileHost: Identifiable {
     fileprivate(set) var capabilities: Set<String> = []
     /// When this device's connection to it last ended (saved apart from the record).
     fileprivate(set) var lastSeen: Date?
+    /// The Mac's fleet host id, as its `helloOk` said, kept across launches (`MobileHosts.fleetIDKey`): how the Fleet screen
+    /// finds this pairing among the fleet's Macs while the Mac is away. nil until it has said.
+    fileprivate(set) var fleetID: UUID?
 
     @ObservationIgnored fileprivate(set) var client: RemoteHostClient? {
         didSet { tunnelSlot.hub = client?.tunnels }
@@ -94,8 +97,27 @@ final class MobileHosts {
     /// When each host's connection last ended, by id (seconds since 1970): "Last seen" for a host
     /// the phone cannot reach now. Apart from the records, which hold only what the user entered.
     static let lastSeenKey = "shepherd.ios.hosts.lastSeen"
+    /// Each host's fleet host id, by id.
+    static let fleetIDKey = "shepherd.ios.hosts.fleetID"
+    /// The hosts (by id) whose saved token is this device's own, given by a pairing or by a Mac that
+    /// offered it, and not the Mac's shared token (which a Mac can stop accepting).
+    static let ownTokenKey = "shepherd.ios.hosts.ownToken"
 
     private(set) var hosts: [MobileHost] = []
+
+    /// What this device tells a Mac of a fleet about itself when it pairs.
+    struct DeviceDescription: Equatable {
+        var name: String
+        var kind: FleetDeviceKind
+
+        static let phone = DeviceDescription(name: "iPhone", kind: .iphone)
+    }
+
+    /// The identity this device presents to every Mac it is paired with. Kept in the Keychain.
+    struct DeviceIdentity: Codable, Equatable {
+        var id: UUID
+        var token: String
+    }
 
     /// What the phone tells a host it reads: the client's list, and previews of idle threads
     /// (`nativeThreadPreviewCapability`), so Home reads a thread without starting its pi.
@@ -106,6 +128,11 @@ final class MobileHosts {
     @ObservationIgnored let defaults: UserDefaults
     @ObservationIgnored private let tokens: HostTokens
     @ObservationIgnored private let clientName: String
+    @ObservationIgnored private let device: DeviceDescription
+    /// Hosts whose token is this device's own; saved apart from the records, which hold nothing secret.
+    @ObservationIgnored private var ownTokens: Set<UUID> = []
+    /// Offers in flight, so one host is offered a token once at a time.
+    @ObservationIgnored private var offering: Set<UUID> = []
     @ObservationIgnored private let makeClient: () -> RemoteHostClient
     @ObservationIgnored private let pause: (Duration) async throws -> Void
     @ObservationIgnored private(set) var foreground = false
@@ -120,11 +147,13 @@ final class MobileHosts {
     @ObservationIgnored var onNativeThreadChanged: ((MobileHost, AgentID) -> Void)?
 
     init(defaults: UserDefaults = .standard, tokens: HostTokens = .keychain, clientName: String = "Shepherd iOS",
+         device: DeviceDescription = .phone,
          makeClient: @escaping () -> RemoteHostClient = { RemoteHostClient() },
          pause: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
         self.defaults = defaults
         self.tokens = tokens
         self.clientName = clientName
+        self.device = device
         self.makeClient = makeClient
         self.pause = pause
         var records = RemoteHostRecord.decodeList(defaults.data(forKey: Self.recordsKey))
@@ -134,9 +163,12 @@ final class MobileHosts {
             defaults.set(legacy.id.uuidString, forKey: Self.legacyTokenKey)
         }
         defaults.removeObject(forKey: Self.legacyKey)
+        ownTokens = Set((defaults.stringArray(forKey: Self.ownTokenKey) ?? []).compactMap(UUID.init(uuidString:)))
         hosts = records.map(MobileHost.init)
         let seen = defaults.dictionary(forKey: Self.lastSeenKey) as? [String: Double] ?? [:]
         for host in hosts { host.lastSeen = seen[host.id.uuidString].map(Date.init(timeIntervalSince1970:)) }
+        let fleetIDs = defaults.dictionary(forKey: Self.fleetIDKey) as? [String: String] ?? [:]
+        for host in hosts { host.fleetID = fleetIDs[host.id.uuidString].flatMap(UUID.init(uuidString:)) }
         moveLegacyToken()
     }
 
@@ -167,6 +199,97 @@ final class MobileHosts {
 
     /// The saved token, for a form editing the host.
     func token(for id: UUID) throws -> String? { try tokens.read(id) }
+
+    // MARK: Pairing
+
+    /// This device's identity: made and saved on first use, then the same for every Mac. `renew` makes a
+    /// new one (the old one was revoked).
+    func deviceIdentity(renew: Bool = false) throws -> DeviceIdentity {
+        if !renew, let saved = try tokens.readDevice(), let identity = try? JSONDecoder().decode(DeviceIdentity.self, from: Data(saved.utf8)) {
+            return identity
+        }
+        let identity = DeviceIdentity(id: UUID(), token: FleetProtocol.makeToken())
+        try tokens.saveDevice(String(decoding: try JSONEncoder().encode(identity), as: UTF8.self))
+        return identity
+    }
+
+    private func introduction(_ identity: DeviceIdentity) -> FleetDeviceIntroduction {
+        FleetDeviceIntroduction(deviceID: identity.id, name: device.name, kind: device.kind, tokenHash: FleetProtocol.hash(identity.token))
+    }
+
+    /// Pairs with the Mac at `address`:`port` using the code it shows (Add a device), then adds it and every
+    /// other Mac of its fleet, each with this device's own token. `expecting` is the Mac's id hash when a QR
+    /// named it. Returns the ids of the hosts added or updated. Nothing but the code is typed.
+    @discardableResult
+    func pair(address: String, port: UInt16, code: String, expecting: String? = nil) async throws -> [UUID] {
+        var identity = try deviceIdentity()
+        func attempt() async throws -> (result: FleetDevicesResult, identity: RemoteHostClient.FleetPeerIdentity) {
+            try await RemoteHostClient.fleetPairDevice(host: address, port: port, code: code, device: introduction(identity))
+        }
+        var answered: (result: FleetDevicesResult, identity: RemoteHostClient.FleetPeerIdentity)
+        do {
+            answered = try await attempt()
+        } catch RemoteHostClientError.rejected(FleetProtocol.Code.deviceRevoked, _) {
+            // The Mac removed this device's identity: it pairs again as a new one, with the same code.
+            identity = try deviceIdentity(renew: true)
+            answered = try await attempt()
+        }
+        if let expecting, FleetProtocol.advertisedIDHash(answered.identity.hostID) != expecting {
+            // The QR named another Mac than the one that answered. Its code was spent, so say so.
+            throw RemoteHostClientError.rejected(code: FleetProtocol.Code.wrongHost, message: "Another Mac answered at that address.")
+        }
+        var found = [(name: answered.result.name, address: address, port: port)]
+        for member in answered.result.members {
+            guard let host = member.host else { continue }
+            found.append((member.name, host, member.port))
+        }
+        var ids: [UUID] = []
+        for mac in found {
+            if let existing = hosts.first(where: { $0.record.address == mac.address && $0.record.port == mac.port }) {
+                try tokens.save(identity.token, existing.id)
+                markOwnToken(existing.id)
+                if foreground { retry(existing.id) }
+                ids.append(existing.id)
+            } else if let entry = try? RemoteHostEntry(name: mac.name, address: mac.address, port: String(mac.port), token: identity.token) {
+                let id = try add(entry)
+                markOwnToken(id)
+                ids.append(id)
+            }
+        }
+        return ids
+    }
+
+    private func markOwnToken(_ id: UUID) {
+        guard ownTokens.insert(id).inserted else { return }
+        defaults.set(ownTokens.map(\.uuidString).sorted(), forKey: Self.ownTokenKey)
+    }
+
+    /// A host that offers fleet and is reached with its shared token (an older pairing) is given this
+    /// device's own token: the device's identity is sent, the Mac keeps its hash, and the next connection
+    /// uses it. The shared token stays in the Keychain until the new one is saved, so a failure on the way
+    /// leaves the host working and the offer is made again at the next connection.
+    private func offerOwnToken(_ host: MobileHost, over client: RemoteHostClient) {
+        guard client.capabilities.contains(RemoteProtocol.fleetDevicesCapability), !ownTokens.contains(host.id), offering.insert(host.id).inserted else { return }
+        let id = host.id
+        Task { [weak self, weak client] in
+            guard let self, let client else { return }
+            defer { self.offering.remove(id) }
+            do {
+                var identity = try self.deviceIdentity()
+                do {
+                    _ = try await client.fleetEnrollDevice(self.introduction(identity))
+                } catch RemoteHostClientError.rejected(FleetProtocol.Code.deviceRevoked, _) {
+                    identity = try self.deviceIdentity(renew: true)
+                    _ = try await client.fleetEnrollDevice(self.introduction(identity))
+                }
+                guard self.host(id) != nil else { return }
+                try self.tokens.save(identity.token, id)
+                self.markOwnToken(id)
+            } catch {
+                // Offered again at the next connection.
+            }
+        }
+    }
 
     // MARK: Editing
 
@@ -214,8 +337,15 @@ final class MobileHosts {
         }
         let host = hosts.remove(at: index)
         disconnect(host)
+        if ownTokens.remove(id) != nil { defaults.set(ownTokens.map(\.uuidString).sorted(), forKey: Self.ownTokenKey) }
         persist()
         persistLastSeen()
+        persistFleetIDs()
+    }
+
+    private func persistFleetIDs() {
+        defaults.set(Dictionary(uniqueKeysWithValues: hosts.compactMap { host in host.fleetID.map { (host.id.uuidString, $0.uuidString) } }),
+                     forKey: Self.fleetIDKey)
     }
 
     private func persist() {
@@ -351,8 +481,13 @@ final class MobileHosts {
                 if host.stateRevision == revision { host.adopt(state) }
                 if host.capabilities != client.capabilities { host.capabilities = client.capabilities }
                 host.session = UUID()
+                if let fleetID = client.hostID, host.fleetID != fleetID {
+                    host.fleetID = fleetID
+                    self?.persistFleetIDs()
+                }
                 host.set(.connected)
                 host.backoff.reset()
+                if let self { self.offerOwnToken(host, over: client) }
                 self?.onHostConnected?(host)
             } catch {
                 client.disconnect()

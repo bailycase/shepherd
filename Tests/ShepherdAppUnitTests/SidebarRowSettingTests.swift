@@ -31,7 +31,7 @@ struct SidebarRowSettingTests {
     }
 }
 
-/// Settings ▸ Appearance ▸ Sidebar: Organize by (Activity by default), Group by host (off) and
+/// Settings ▸ Appearance ▸ Sidebar: Organize by (Activity by default) and
 /// Keep idle threads (7 days), each remembered and reset.
 @Suite("Sidebar organize settings")
 @MainActor
@@ -39,7 +39,6 @@ struct SidebarOrganizeSettingTests {
     @Test func theSidebarIsOrganizedByActivityByDefault() {
         let settings = AppSettings(store: Fixture.defaults())
         #expect(settings.sidebarStyle == .activity)
-        #expect(!settings.sidebarGroupByHost)
         #expect(settings.sidebarKeepIdleDays == 7)
     }
 
@@ -47,10 +46,9 @@ struct SidebarOrganizeSettingTests {
         let store = Fixture.defaults()
         let settings = AppSettings(store: store)
         settings.sidebarStyle = .projects
-        settings.sidebarGroupByHost = true
         settings.sidebarKeepIdleDays = 0
         let reloaded = AppSettings(store: store)
-        #expect(reloaded.sidebarStyle == .projects && reloaded.sidebarGroupByHost && reloaded.sidebarKeepIdleDays == 0)
+        #expect(reloaded.sidebarStyle == .projects && reloaded.sidebarKeepIdleDays == 0)
         #expect(store.string(forKey: AppSettings.Key.sidebarStyle) == "projects")
     }
 
@@ -65,15 +63,23 @@ struct SidebarOrganizeSettingTests {
         #expect(settings.sidebarKeepIdleDays == 7)
     }
 
+    /// Group by host is gone: the fleet shows a host as a tag on the row. A preference an older build
+    /// stored is simply never read.
+    @Test func anOldGroupByHostPreferenceLoadsAndChangesNothing() {
+        let store = Fixture.defaults()
+        store.set(true, forKey: "shepherd.sidebar.groupByHost")
+        let settings = AppSettings(store: store)
+        #expect(settings.sidebarStyle == .activity && settings.sidebarKeepIdleDays == 7)
+    }
+
     @Test func resettingReturnsToActivity() {
         let store = Fixture.defaults()
         let settings = AppSettings(store: store)
         settings.sidebarStyle = .projects
-        settings.sidebarGroupByHost = true
         settings.sidebarKeepIdleDays = 30
         settings.resetToDefaults()
-        #expect(settings.sidebarStyle == .activity && !settings.sidebarGroupByHost && settings.sidebarKeepIdleDays == 7)
-        for key in [AppSettings.Key.sidebarStyle, AppSettings.Key.sidebarGroupByHost, AppSettings.Key.sidebarKeepIdleDays] {
+        #expect(settings.sidebarStyle == .activity && settings.sidebarKeepIdleDays == 7)
+        for key in [AppSettings.Key.sidebarStyle, AppSettings.Key.sidebarKeepIdleDays] {
             #expect(store.object(forKey: key) == nil)
         }
     }

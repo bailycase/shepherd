@@ -14,11 +14,9 @@ struct ProjectsSettings: View {
         Group {
             if let project = model.selected {
                 ProjectSettingsDetail(model: model, project: project, cookies: vm.projectCookies, cookieScope: vm.cookieScope(for: project),
-                                      hooks: project.host.id == "local" ? vm.hooks : UUID(uuidString: project.host.id).map(vm.hooks(for:)),
+                                      hooks: vm.hooks,
                                       openHooks: {
-                                          let host = UUID(uuidString: project.host.id)
-                                          vm.hooks(for: host).spaceFilter = nil
-                                          vm.adoptSettingsHost(host)
+                                          vm.hooks.spaceFilter = nil
                                           vm.settingsSection = .hooks
                                       })
             } else {
@@ -39,13 +37,7 @@ struct ProjectsSettings: View {
             ChildProjectSheet(model: model, dismiss: { addingChild = nil })
         }
         .sheet(item: $adding) { adding in
-            AddSpaceSheet(model: adding, list: { host, path in
-                if host.id == "local" { return try await LocalDirectoryLister.load(path: path) }
-                guard vm.remoteHosts.allConnections.first(where: { $0.id.uuidString == host.id })?.endpointID == host.endpointID else {
-                    throw ProjectFileError("host_changed", "The host address changed. Close the picker and choose the host again.")
-                }
-                return try await vm.remoteHosts.listDir(hostID: UUID(uuidString: host.id)!, path: path)
-            }, dismiss: { self.adding = nil })
+            AddSpaceSheet(model: adding, list: { _, path in try await LocalDirectoryLister.load(path: path) }, dismiss: { self.adding = nil })
         }
     }
 
@@ -57,13 +49,7 @@ struct ProjectsSettings: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 add
             }
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: SH.Space.xl) { filter; hosts; Spacer(minLength: 0); count }
-                VStack(alignment: .leading, spacing: SH.Space.m) {
-                    HStack(spacing: SH.Space.xl) { filter; Spacer(minLength: 0); count }
-                    ScrollView(.horizontal) { hosts }.scrollIndicators(.hidden)
-                }
-            }
+            HStack(spacing: SH.Space.xl) { filter; Spacer(minLength: 0); count }
             if let error = model.error { SettingsNote(text: error) }
             table
             Text("Space grouping changes only Shepherd. Instructions and settings follow folders on disk.")
@@ -76,10 +62,6 @@ struct ProjectsSettings: View {
     private var filter: some View {
         SHSearchField("Filter spaces", text: $model.filter)
             .frame(width: AppLayout.projectsFilterWidth)
-    }
-
-    private var hosts: some View {
-        SHSegmentedPicker("Space hosts", selection: $model.host, options: model.hostOptions)
     }
 
     private var count: some View {
@@ -98,7 +80,7 @@ struct ProjectsSettings: View {
     private var table: some View {
         VStack(spacing: 0) {
             ProjectColumns {
-                Text("SPACE"); Text("HOST"); Text("CONFIGURATION"); Color.clear
+                Text("SPACE"); Text("CONFIGURATION"); Color.clear
             }
             .font(.shMono(AppLayout.projectsHeaderSize))
             .foregroundStyle(Color.sh.textTertiary)
@@ -112,14 +94,10 @@ struct ProjectsSettings: View {
                                        open: { Task { await model.open(row) } },
                                        toggle: { model.collapsed.formSymmetricDifference([row.id]) },
                                        addSubproject: {
-                                           if row.host.id == "local" {
-                                               addingChild = vm.childProjectModel(path: row.project.directory, name: row.project.name)
-                                           } else {
-                                               adding = vm.addSpaceModel(host: row.host)
-                                           }
-                                       }, remove: row.host.id == "local" && row.project.projectID != nil
+                                           addingChild = vm.childProjectModel(path: row.project.directory, name: row.project.name)
+                                       }, remove: row.project.projectID != nil
                                            ? { vm.requestSpaceDelete(row.project.projectID) } : nil,
-                                       rename: row.host.id == "local" && row.project.projectID != nil
+                                       rename: row.project.projectID != nil
                                            ? { vm.spaceRenameTarget = row.project.projectID } : nil)
                         if row.id != model.visible.last?.id { SHHairline() }
                     }
@@ -143,8 +121,8 @@ struct ProjectsSettings: View {
 }
 
 /// The board's columns: the project takes what is left (never under 200pt, where the
-/// configuration gives way first); host 120, configuration 230, the action 152; 16pt apart and 16pt
-/// in. Host and action grow with the text size, the same on every row, so the columns stay aligned.
+/// configuration gives way first); configuration 230, the action 152; 16pt apart and 16pt
+/// in. The action grows with the text size, the same on every row, so the columns stay aligned.
 private struct ProjectColumns<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
@@ -156,8 +134,6 @@ private struct ProjectColumns<Content: View>: View {
                     case 0:
                         columns[index].frame(minWidth: AppLayout.projectsNameMinWidth, maxWidth: .infinity, alignment: .leading)
                     case 1:
-                        columns[index].frame(width: AppLayout.projectsHostWidth * scale, alignment: .leading)
-                    case 2:
                         columns[index].frame(minWidth: AppLayout.projectsSummaryMinWidth, idealWidth: AppLayout.projectsSummaryWidth,
                                              maxWidth: AppLayout.projectsSummaryWidth, alignment: .leading)
                             .layoutPriority(1)
@@ -173,7 +149,7 @@ private struct ProjectColumns<Content: View>: View {
 }
 
 /// One project in the tree (SettingsProjects, parents and subprojects): a parent's disclosure, the
-/// folder, the name with a parent's "2 subprojects", the path; its host; its configuration, a
+/// folder, the name with a parent's "2 subprojects", the path; its configuration, a
 /// subproject's with "From <parent>" under it; and Add subproject on a top-level row, Open project
 /// on a subproject. The row opens the project.
 private struct ProjectTreeRow: View {
@@ -212,7 +188,6 @@ private struct ProjectTreeRow: View {
                     }
             }
             .padding(.leading, CGFloat(row.ancestorIDs.count) * SH.Space.xxl)
-            Text(row.host.name).font(.shSans(AppLayout.projectsHostSize)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
             configuration
             action
         }

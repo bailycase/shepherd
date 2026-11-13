@@ -183,6 +183,18 @@ public final class SessionServer: @unchecked Sendable {
 
         /// Connected through the local socket (`host.sock`): the app itself, offered `local.v1`.
         var isLocal = false
+        /// The Mac this connection authenticated as, with its fleet token (`FleetService`); nil for
+        /// the shared token and the local app. Such a connection is sent no workspace state.
+        var fleetPeerID: UUID?
+        /// The client device this connection authenticated as, with its own token (`FleetDevices`): a
+        /// client, offered no fleet capability (`FleetAccess`). nil for the shared token, a peer and the local app.
+        var fleetDeviceID: UUID?
+        /// What a remote client called itself in `hello`.
+        var clientName: String?
+        /// Where a remote connection came from, as text (a peer Mac's address, for pairing).
+        var peerHost: String?
+        /// Fleet requests this connection sent before `hello`; the host closes it past a few.
+        var unauthenticatedFleetRequests = 0
         /// Terminals whose PTY is not read until this local app catches up (`localOutputHighWaterMark`).
         var heldOutput: Set<SessionID> = []
         /// What this local app is writing for the person and has not closed (`changesWriteBegan`);
@@ -819,11 +831,19 @@ public final class SessionServer: @unchecked Sendable {
     private var acceptSource: DispatchSourceRead?
     private var remoteListenFD: Int32 = -1
     private var remoteAcceptSource: DispatchSourceRead?
+    /// Signalled when the remote listener's descriptor is really closed: until then its port is still taken.
+    /// `Closed` belongs to the listener that is open, `Closing` to one that was stopped and is awaited.
+    private var remoteListenerClosed: DispatchSemaphore?
+    private var remoteListenerClosing: DispatchSemaphore?
     private var remoteToken: String?
     /// The local socket (`host.sock`) the app connects to a background host through, and its token.
     private var localAcceptSource: DispatchSourceRead?
     private var localSocketPath: String?
     private var localToken: String?
+    /// This host's fleet (`FleetService`), present only while Settings ▸ Experiments ▸ Fleet is on. Server queue.
+    var fleet: FleetService?
+    /// The port the remote listener is bound to, nil while it isn't open. Server queue.
+    private var remoteListenPort: UInt16?
     /// This host's build, said in `helloOk` (nil: none to say, as in tests).
     public var hostBuild: String? = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
     /// Which remote clients (by fd) stream each session's output. Registered
@@ -1072,12 +1092,17 @@ public final class SessionServer: @unchecked Sendable {
                 && ($0 != RemoteProtocol.hostUpdateCapability || onRemoteHostUpdate != nil)
                 && (designsServed && designs || !RemoteProtocol.designCapabilities.contains($0))
                 && (tunnelsServed || ($0 != RemoteProtocol.browserTunnelCapability && $0 != RemoteProtocol.browserDriveCapability))
+                && (($0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetSyncCapability) || fleet?.membership == true)
+                && ($0 != RemoteProtocol.fleetDevicesCapability || fleet != nil)
+                && (($0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetViewCapability && $0 != RemoteProtocol.fleetDispatchCapability) || fleet?.membership == true)
+                && ($0 != RemoteProtocol.fleetSnapshotCapability || fleet?.membership == true)
         }
     }
 
     /// What the host offers `client`: `files.v1` only to a client that listed it in `hello`. Server queue.
     private func offeredCapabilities(to client: ExtensionConnection) -> [String] {
         offeredCapabilities.filter { $0 != RemoteProtocol.filesCapability || client.clientCapabilities.contains($0) }
+            .filter { client.fleetDeviceID == nil || FleetAccess.device.isOffered($0) }
             + (client.isLocal ? [RemoteProtocol.localCapability, RemoteProtocol.changesWritesCapability] : [])
             + (client.isLocal && onDrainRequest != nil ? [RemoteProtocol.hostDrainCapability] : [])
     }
@@ -1224,6 +1249,470 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    // MARK: - Fleet (server queue)
+
+    /// What this host calls itself in a fleet (nil: the Mac's own name) and whether it advertises
+    /// over Bonjour. Tests name their hosts and keep them off the network. Server queue.
+    private var fleetOptions: (name: String?, advertises: Bool) = (nil, true)
+    /// Tests: how the next fleet takes its samples and reads the time (nil: the system's).
+    private var fleetPressureMaker: (@Sendable (DispatchQueue, @escaping @Sendable () -> FleetLocalFacts) -> FleetPressure)?
+    private var fleetClock: (@Sendable () -> Date)?
+
+    /// The app's settings as a fleet syncs them (`FleetHostSettingsSource`); nil until the app says how to apply one.
+    private var fleetHostSettings: FleetHostSettingsSource?
+
+    /// Lets the host settings sync across a fleet: `apply` changes one the way the Mac's own Settings
+    /// would (called from any thread). The app then reports the settings with `fleetHostSettingsChanged`.
+    public func setFleetHostSettings(apply: @escaping @Sendable (HostSettingChange) -> Void) {
+        queue.async { [self] in
+            let source = FleetHostSettingsSource(apply: apply)
+            fleetHostSettings = source
+            fleet?.syncEngine.add(source)
+        }
+    }
+
+    /// The host settings as the app has them now: a change here becomes an op, and a synced
+    /// value the app was told to apply shows up here when it has.
+    public func fleetHostSettingsChanged(_ settings: HostSettings) {
+        queue.async { [self] in
+            fleetHostSettings?.update(settings)
+            fleetSettings = settings
+            // A space's changes to what stays home reach its index.
+            fleet?.index.reconcile()
+            fleet?.syncEngine.localChanged()
+            // A cap raised or work switched on frees what was held.
+            fleet?.dispatch.evaluate()
+        }
+    }
+
+    /// The host settings as the app last reported them: the fleet's policy (Threads can send work, the cap, the
+    /// weights) is read from here. Server queue.
+    private var fleetSettings: HostSettings?
+    /// Places promised to dispatches that haven't started (`FleetPressureSample.reserved`), for any thread.
+    private let fleetReserved = FleetCounter()
+
+    /// Server queue: a skill was written by the fleet's sync. One push covers the files a pass wrote.
+    private var skillsSyncPushPending = false
+    private func skillsSyncWrote() {
+        guard !skillsSyncPushPending else { return }
+        skillsSyncPushPending = true
+        queue.async { [self] in
+            skillsSyncPushPending = false
+            pushSettingsChanged(.skills)
+        }
+    }
+
+    /// Before an agent's pi starts: reads this Mac's sign-ins and the newest of every Mac it is connected to, so
+    /// pi never starts with an OAuth token another Mac has already rotated away (`FleetSync.catchUpCredentials`).
+    /// Returns at once with Fleet off or no peer connected, and after a few seconds at most. Any actor.
+    func fleetCredentialFence() async {
+        let engine = await withCheckedContinuation { (continuation: CheckedContinuation<FleetSync?, Never>) in
+            queue.async { [self] in continuation.resume(returning: fleet?.membership == true ? fleet?.syncEngine : nil) }
+        }
+        await engine?.catchUpCredentials()
+    }
+
+    /// Tests: the saved versions of a unit in this host's fleet store, newest first, and what decides it now.
+    func fleetSyncHistory(_ unit: String) -> [FleetHistoryEntry] { queue.sync { fleet?.syncEngine.store.history(of: unit) ?? [] } }
+    func fleetSyncWinner(_ unit: String) -> FleetOp? { queue.sync { fleet?.syncEngine.store.winner(of: unit) } }
+    func fleetSyncUnits() -> [String] { queue.sync { fleet?.syncEngine.store.units ?? [] } }
+    var fleetStoreDirectory: URL? { queue.sync { fleet?.syncEngine.store.directory } }
+
+    /// Sets `fleetOptions` for the next `setFleetEnabled(true)`.
+    public func configureFleet(name: String?, advertises: Bool) {
+        queue.sync { fleetOptions = (name, advertises) }
+    }
+
+    /// Tests: sets the clock and how the next fleet's pressure is made (`FleetPressure`'s
+    /// providers get this host's facts), for `setFleetEnabled(true)`.
+    func configureFleet(clock: (@Sendable () -> Date)?,
+                        pressure: (@Sendable (DispatchQueue, @escaping @Sendable () -> FleetLocalFacts) -> FleetPressure)?) {
+        queue.sync {
+            fleetClock = clock
+            fleetPressureMaker = pressure
+        }
+    }
+
+    /// The finder the running fleet uses, readable from any thread (readiness is made off the queue).
+    private let fleetRepoFinder = FleetRepoFinderBox()
+
+    /// What this host tells a fleet about itself: threads working, the projects it has folders
+    /// for and pi's MCP file (readiness). Any thread.
+    var fleetLocalFacts: @Sendable () -> FleetLocalFacts {
+        { [weak self] in
+            guard let self else { return FleetLocalFacts() }
+            let state = self.store.committed
+            let spaces = state.spaces.filter { !$0.hidden }
+            return FleetLocalFacts(activeAgents: state.agents.filter { $0.status == .working }.count,
+                                   spaces: spaces.map { (name: $0.name, path: $0.path) },
+                                   mcpConfig: self.pi.files.mcpConfig,
+                                   // The repositories this Mac can serve: its spaces', and every other checkout it already has that a
+                                   // dispatch would bind to (`FleetRepoFinder`, from what it last saw: no look at the disk here).
+                                   repoKeys: Array(Set(spaces.filter { FleetDispatch.folderExists($0.path) }.compactMap(\.repoKey))
+                                       .union(self.fleetRepoFinder.value?.knownKeys() ?? [])).sorted(),
+                                   reserved: self.fleetReserved.value)
+        }
+    }
+
+    /// Takes part in a fleet while `enabled` (Settings ▸ Experiments ▸ Fleet): this host's
+    /// identity, its links to the Macs it is paired with, its Bonjour advertisement and the fleet
+    /// requests (`FleetService`). Off ends the links and refuses every fleet message with "Enable
+    /// Fleet in Settings ▸ Experiments"; saved pairings stay and come back when it is turned on.
+    /// `name` is what other Macs call this one (the Mac's own name unless a test names it).
+    public func setFleetEnabled(_ enabled: Bool) {
+        queue.async { [self] in
+            // The service lives as long as the host (client devices pair with it whether or not Fleet is on);
+            // membership is what Fleet switches.
+            if let service = fleet {
+                guard service.membership != enabled else { return }
+                service.setMembership(enabled)
+                if !enabled {
+                    for client in Array(clients.values) where client.fleetPeerID != nil { disconnect(client, reason: "fleet turned off") }
+                }
+                pushSettingsChanged(.fleet)
+                announceFleetCapabilities()
+                return
+            }
+            do {
+                let clock = fleetClock ?? Date.init
+                let facts = fleetLocalFacts
+                let pressure = fleetPressureMaker?(queue, facts) ?? FleetPressure(queue: queue, clock: clock, localFacts: facts)
+                let service = try FleetService(queue: queue, directory: supportDirectory.appendingPathComponent("fleet", isDirectory: true),
+                                               name: fleetOptions.name ?? Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
+                                               build: hostBuild, advertises: fleetOptions.advertises, membership: enabled, clock: clock, pressure: pressure)
+                service.onChange = { [weak self] in self?.pushSettingsChanged(.fleet) }
+                pressure.onChange = { [weak self] in self?.pushSettingsChanged(.fleetPressure) }
+                service.onPeerRemoved = { [weak self] hostID in
+                    guard let self else { return }
+                    for client in Array(self.clients.values) where client.fleetPeerID == hostID { self.disconnect(client, reason: "removed from the fleet") }
+                }
+                service.onDeviceRevoked = { [weak self] deviceID in
+                    guard let self else { return }
+                    for client in Array(self.clients.values) where client.fleetDeviceID == deviceID { self.disconnect(client, reason: "device revoked") }
+                }
+                service.onSharedTokenRetired = { [weak self] in
+                    guard let self else { return }
+                    // What connected on the shared token ends; peers, devices and this Mac's app stay.
+                    for client in Array(self.clients.values) where client.isRemote && !client.isLocal && client.authenticated
+                        && client.fleetPeerID == nil && client.fleetDeviceID == nil {
+                        self.disconnect(client, reason: "shared token retired")
+                    }
+                }
+                fleet = service
+                fleetRepoFinder.value = service.dispatch.finder
+                if fleetDeveloperFolderSet { service.dispatch.developerFolder = fleetDeveloperFolder }
+                wireFleetDispatch(service)
+                // What syncs: the root instructions, pi's own preferences, and (once the app reports
+                // them) the host settings. Each is read and written through the code that owns it.
+                instructions.onChange = { [weak self] _ in self?.queue.async { self?.fleet?.syncEngine.localChanged() } }
+                service.syncEngine.add(FleetInstructionsSource(instructions) { [weak self] in
+                    guard let self else { return }
+                    self.announceInstructions(self.instructions.snapshot())
+                })
+                service.syncEngine.add(FleetPiSettingsSource(settings: pi.files.settings))
+                if let source = fleetHostSettings { service.syncEngine.add(source) }
+                addFleetContentSources(to: service)
+                // Skills and extensions: content, a file at a time, through the stores that own them.
+                service.syncEngine.add(FleetSkillsSource(skills) { [weak self] in self?.skillsSyncWrote() })
+                service.syncEngine.add(FleetExtensionsSource(pi.importedState()))
+                // Sign-ins: pi's `auth.json` and `mcp-auth.json`, a provider or a server at a time, under pi's lock.
+                let kept = supportDirectory.appendingPathComponent("fleet/credentials-excluded.json")
+                for (file, kind) in [("auth.json", FleetCredentialsSource.Kind.providers), ("mcp-auth.json", .mcpServers)] {
+                    service.syncEngine.add(FleetCredentialsSource(file: pi.files.directory.appendingPathComponent(file), kind: kind, exclusions: kept))
+                }
+                service.listenerChanged(remoteListenPort)
+                // Which checkouts the content index reads: the spaces' (`fleet.snapshot.v1`).
+                service.index.host = FleetIndexService.Host(
+                    spaces: { [weak self] in self?.store.state.spaces ?? [] },
+                    overrides: { [weak self] space in
+                        let excludes = self?.fleetSettings?.fleetSnapshotExcludes[FleetSnapshotExcludes.settingKey(spaceID: space.rawValue)] ?? FleetSnapshotExcludes()
+                        return FleetExclusions.Overrides(excluded: excludes.excluded, included: excludes.included)
+                    },
+                    worktrees: { [weak self] in self?.store.state.agents.compactMap { agent in agent.worktreePath.map { (agent.spaceID, $0) } } ?? [] })
+                service.start()
+                if enabled { announceFleetCapabilities() }
+            } catch {
+                ShepherdLog.error("fleet could not start: \(error)")
+            }
+        }
+    }
+
+    /// Where this Mac's shared MCP servers are (`~/.config/mcp/mcp.json`). Tests point it at a scratch file.
+    public var mcpConfigFile = MCPConfigFile(url: ShepherdPaths.mcpConfigURL())
+    /// Tests: the subagent definitions a fleet writes through, where pi's engine is not the app's.
+    var fleetSubagentStore: SubagentDefinitionsStore?
+    private var fleetRepoKeys: FleetRepoKeys?
+    private var repoKeysRefreshing = false
+
+    /// The content a fleet syncs beside the settings and instructions: MCP servers, hooks, subagent
+    /// profiles and spaces. Each is read and written through the code that owns it, and each announces
+    /// a synced write the way the person's own save would.
+    private func addFleetContentSources(to service: FleetService) {
+        let directory = supportDirectory.appendingPathComponent("fleet", isDirectory: true)
+        let sync = service.syncEngine
+        sync.add(FleetMCPSource(file: { [weak self] in self?.mcpConfigFile ?? MCPConfigFile(url: ShepherdPaths.mcpConfigURL()) }) { [weak self] in self?.queue.async { self?.pushSettingsChanged(.mcp) } })
+        sync.add(FleetHooksSource(catalog: { [weak self] in self?.hooks ?? HookCatalog(support: directory) }) { [weak self] in
+            self?.queue.async {
+                guard let self else { return }
+                self.pushSettingsChanged(.hooks)
+                if let handler = self.onHooksChanged { self.hopToMain { handler() } }
+            }
+        })
+        let subagents = SubagentDefinitionsStore(pi: pi, parserSource: ChildrenExtension.configSource)
+        sync.add(FleetSubagentsSource(store: { [weak self] in self?.fleetSubagentStore ?? subagents }) { [weak self] in
+            self?.queue.async {
+                self?.pushSettingsChanged(.subagents)
+                self?.fleet?.syncEngine.localChanged()
+            }
+        })
+        let keys = FleetRepoKeys(directory: directory)
+        fleetRepoKeys = keys
+        let host = FleetSpacesSource.Host(
+            spaces: { [weak self] in self?.store.state.spaces ?? [] },
+            hasThreads: { [weak self] id in self?.store.state.agents.contains { $0.spaceID == id } ?? false },
+            mutate: { [weak self] change in try self?.mutateState { change(&$0.spaces) } },
+            locate: { [weak service] key in service?.dispatch.finder.locate(key)?.path })
+        let spaces = FleetSpacesSource(host: host, directory: directory)
+        fleetSpacesSource = spaces
+        sync.add(spaces)
+        sync.beforeScan = { [weak self] in self?.refreshRepoKeys() }
+        refreshRepoKeys()
+    }
+
+    private var fleetSpacesSource: FleetSpacesSource?
+
+    /// Gives the dispatch engine what it needs of this server: the workspace and settings, the thread it
+    /// starts and stops and messages, and the parent's own queue for results. Server queue.
+    private func wireFleetDispatch(_ service: FleetService) {
+        service.dispatch.reservedSink = fleetReserved
+        service.dispatch.host = FleetDispatchHost(
+            state: { [weak self] in self?.store.state ?? ShepherdState() },
+            settings: { [weak self] in self?.fleetSettings },
+            wakeParent: { [weak self] agentID, text in await self?.pushMessage(toAgent: agentID, text: text, delivery: .task) ?? false },
+            createThread: { [weak self] request in
+                await withCheckedContinuation { continuation in
+                    self?.queue.async {
+                        guard let self, let handler = self.onRemoteCreateAgent else {
+                            return continuation.resume(returning: .failure(RemoteCreateAgentError("This Mac can't start threads right now.")))
+                        }
+                        self.hopToMain { handler(request) { continuation.resume(returning: $0) } }
+                    } ?? continuation.resume(returning: .failure(RemoteCreateAgentError("host is shutting down")))
+                }
+            },
+            stopThread: { [weak self] agentID in self?.rpcThread(forAgent: agentID)?.stop { _ in } },
+            messageThread: { [weak self] agentID, text, delivery in
+                await withCheckedContinuation { continuation in
+                    self?.queue.async {
+                        guard let self, let thread = self.rpcThread(forAgent: agentID), thread.isServable else {
+                            return continuation.resume(returning: false)
+                        }
+                        thread.send(id: UUID(), text: text, delivery: delivery, images: [], alone: true) { result in
+                            if case .accepted = result { continuation.resume(returning: true) } else { continuation.resume(returning: false) }
+                        }
+                    } ?? continuation.resume(returning: false)
+                }
+            },
+            threadFacts: { [weak self] agentID in
+                guard let self, let agent = self.store.state.agents.first(where: { $0.id == agentID }) else { return nil }
+                var lastText: String?
+                if let thread = self.rpcThread(forAgent: agentID) {
+                    let assistant = thread.live.last(where: { $0.value.role == "assistant" })?.value
+                        ?? thread.history.last(where: { $0.role == "assistant" })
+                    lastText = assistant?.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
+                }
+                return FleetThreadFacts(status: agent.status, waitingOn: agent.waitingOn, lastText: lastText, worktree: agent.worktreePath)
+            },
+            repoPlaces: { [weak self] in self?.fleetRepoPlaces() ?? [] },
+            bindSpace: { [weak self] binding in self?.bindFleetCheckout(binding) })
+    }
+
+    /// An agent's `fleet_*` tool. Refused unless Fleet is on and the thread may send work at all (`fleet_scope`:
+    /// a dispatched thread, a project worker, a coordinator, a design's agent or an automation run
+    /// never does); the settings and the per-thread cap are the engine's. Server queue.
+    private func serveFleetTool(_ message: ExtensionMessage, from client: ExtensionConnection) {
+        let id: Int, agentID: AgentID
+        switch message {
+        case .fleetListHosts(let value, let agent), .fleetDispatch(let value, let agent, _, _, _, _, _, _), .fleetDispatchStatus(let value, let agent, _),
+             .fleetDispatchMessage(let value, let agent, _, _, _), .fleetDispatchCancel(let value, let agent, _):
+            (id, agentID) = (value, agent)
+        default: return
+        }
+        guard let fleet, fleet.membership else {
+            return reply(.error(id: id, code: FleetDispatchCode.fleetOff, message: "Fleet is off. Turn it on in Settings ▸ Experiments."), to: client)
+        }
+        if let refusal = FleetDispatch.scopeProblem(for: agentID, in: store.state, unattended: Self.unattendedAgentIDs(in: store.state)) {
+            return reply(.error(id: id, code: refusal.code, message: refusal.message), to: client)
+        }
+        // The engine answers on this queue, now or later.
+        let answer: (Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void = { [weak self, weak client] result in
+            guard let self, let client, self.clients[client.fd] === client else { return }
+            switch result {
+            case .success(let record): self.reply(.fleetDispatch(id: id, info: FleetDispatchInfo(record)), to: client)
+            case .failure(let refusal): self.reply(.error(id: id, code: refusal.code, message: refusal.message), to: client)
+            }
+        }
+        switch message {
+        case .fleetListHosts:
+            reply(.fleetHosts(id: id, hosts: fleet.dispatch.hosts(for: agentID)), to: client)
+        case .fleetDispatch(_, _, let key, let task, let title, let host, let model, let thinking):
+            fleet.dispatch.dispatch(from: agentID, key: key, task: task, title: title, host: host, model: model, thinking: thinking, reply: answer)
+        case .fleetDispatchStatus(_, _, let key):
+            fleet.dispatch.agentControl(from: agentID, key: key, .status, reply: answer)
+        case .fleetDispatchMessage(_, _, let key, let text, let delivery):
+            fleet.dispatch.agentControl(from: agentID, key: key, .message(text: text, delivery: delivery), reply: answer)
+        case .fleetDispatchCancel(_, _, let key):
+            fleet.dispatch.agentControl(from: agentID, key: key, .cancel, reply: answer)
+        default: break
+        }
+    }
+
+    /// Server queue: the folders this Mac already knows that may hold a checkout of a repository (`FleetRepoFinder`): the folders of its
+    /// spaces, the main checkout of each thread's worktree, what the content index reads and where fleet spaces were bound. It never
+    /// looks anywhere else.
+    func fleetRepoPlaces() -> [FleetRepoFinder.Place] {
+        let state = store.state
+        var places = state.spaces.filter { !$0.hidden && !$0.holdsDesigns && !$0.holdsProjects && !$0.holdsThreads }
+            .map { FleetRepoFinder.Place(path: ($0.path as NSString).expandingTildeInPath, isSpace: true) }
+        places += state.agents.compactMap(\.worktreePath).map { FleetRepoFinder.Place(path: ($0 as NSString).expandingTildeInPath, isSpace: false) }
+        places += (fleet?.index.indexes() ?? []).map { FleetRepoFinder.Place(path: $0.root, isSpace: false) }
+        places += (fleetSpacesSource?.boundPaths ?? []).map { FleetRepoFinder.Place(path: ($0 as NSString).expandingTildeInPath, isSpace: false) }
+        return places
+    }
+
+    /// Server queue: puts a checkout in the workspace as a space for a dispatch (`FleetDispatchHost.bindSpace`). A space already at that
+    /// folder is the one (it takes the repository's key when it has none); otherwise a new space is added, with the fleet's id for it
+    /// when this Mac has no space by that id.
+    private func bindFleetCheckout(_ binding: FleetSpaceBinding) -> Space? {
+        let canonical = PiHome.canonical(binding.path)
+        if let existing = store.state.spaces.first(where: { !$0.hidden && PiHome.canonical($0.path) == canonical }) {
+            guard existing.repoKey == nil else { return existing }
+            try? mutateState { state in
+                if let index = state.spaces.firstIndex(where: { $0.id == existing.id }) { state.spaces[index].repoKey = binding.repoKey }
+            }
+            return store.state.spaces.first { $0.id == existing.id }
+        }
+        var id = binding.id ?? SpaceID()
+        if store.state.spaces.contains(where: { $0.id == id }) { id = SpaceID() }
+        let space = Space(id: id, name: binding.name, path: binding.path, worktreeBase: binding.worktreeBase, repoKey: binding.repoKey)
+        do { try mutateState { $0.spaces.append(space) } } catch { return nil }
+        fleetSpacesSource?.bind(id, to: binding.path)
+        return space
+    }
+
+    /// Tests: where a clone goes first, instead of `~/Developer`.
+    func configureFleetClones(developerFolder: URL?) {
+        queue.sync { fleet?.dispatch.developerFolder = developerFolder; fleetDeveloperFolder = developerFolder; fleetDeveloperFolderSet = true }
+    }
+    private var fleetDeveloperFolder: URL?
+    private var fleetDeveloperFolderSet = false
+
+    /// Tests, and a person locating a folder: this Mac's folder for a space the fleet synced.
+    func bindFleetSpace(_ id: SpaceID, to path: String) {
+        queue.sync { fleetSpacesSource?.bind(id, to: path) }
+        queue.async { [self] in fleet?.syncEngine.localChanged() }
+    }
+
+    /// Server queue: the spaces changed, so their repo keys may have, and the fleet may have something to say.
+    func fleetSpacesChanged() {
+        guard let fleet, fleet.membership else { return }
+        refreshRepoKeys()
+        fleet.index.reconcile()
+        fleet.syncEngine.localChanged()
+    }
+
+    /// Server queue: looks at the checkout of each space whose git config changed (off the queue, since it
+    /// runs git) and records the new `repoKey`s through the usual state mutation.
+    private func refreshRepoKeys() {
+        refreshRepoCandidates()
+        guard let keys = fleetRepoKeys, !repoKeysRefreshing, fleet?.membership == true else { return }
+        let spaces = store.state.spaces.filter(FleetSpacesSource.syncs).map { (id: $0.id, path: $0.path, key: $0.repoKey) }
+        guard !spaces.isEmpty else { return }
+        repoKeysRefreshing = true
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let changes = keys.changes(for: spaces)
+            self?.queue.async {
+                guard let self else { return }
+                self.repoKeysRefreshing = false
+                guard !changes.isEmpty else { return }
+                try? self.mutateState { state in
+                    for index in state.spaces.indices {
+                        if let key = changes[state.spaces[index].id] { state.spaces[index].repoKey = key }
+                    }
+                }
+            }
+        }
+    }
+
+    private var repoCandidatesRefreshing = false
+    private var repoCandidatesAgain = false
+
+    /// Server queue: looks at the folders this Mac knows (`fleetRepoPlaces`) for checkouts and their origins, off the queue, so a synced
+    /// space with no folder here binds to a checkout this Mac already has. Says so to the sync when what can be found changed. A place
+    /// that appears while a look is under way is looked at when it ends.
+    private func refreshRepoCandidates() {
+        guard let finder = fleet?.dispatch.finder, fleet?.membership == true else { return }
+        guard !repoCandidatesRefreshing else { repoCandidatesAgain = true; return }
+        let places = fleetRepoPlaces()
+        guard !places.isEmpty else { return }
+        repoCandidatesRefreshing = true
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let changed = finder.refresh(places)
+            self?.queue.async {
+                guard let self else { return }
+                self.repoCandidatesRefreshing = false
+                if changed { self.fleet?.syncEngine.localChanged() }
+                if self.repoCandidatesAgain {
+                    self.repoCandidatesAgain = false
+                    self.refreshRepoCandidates()
+                }
+            }
+        }
+    }
+
+    /// Fleet went on or off: remote clients (a phone drawing or hiding its Fleet screen) are told what the host offers now.
+    private func announceFleetCapabilities() {
+        for client in clients.values where client.isRemote && !client.isLocal && client.authenticated && client.fleetPeerID == nil {
+            guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: offeredCapabilities(to: client))) else { continue }
+            enqueuePayload(payload, to: client)
+        }
+    }
+
+    /// Hands a fleet request to `FleetService`, or refuses it while Fleet is off.
+    private func serveFleet(_ request: RemoteRequest, from client: ExtensionConnection) {
+        let id: Int
+        switch request {
+        case .fleetIdentify(let value), .fleetPair(let value, _, _), .fleetEstablish(let value, _), .fleetIntroduce(let value, _),
+             .fleetRevoke(let value, _, _), .fleetRead(let value), .fleetAction(let value, _), .fleetSync(let value, _),
+             .fleetPressure(let value, _), .fleetReadiness(let value, _), .fleetPressureNow(let value), .fleetRepoManifest(let value, _),
+             .fleetSnapshotPart(let value, _, _), .fleetBlobPush(let value, _, _),
+             .fleetDispatchCreate(let value, _), .fleetDispatchControl(let value, _, _), .fleetDispatchChanged(let value, _),
+             .fleetDispatchResult(let value, _, _, _),
+             .fleetPairDevice(let value, _, _), .fleetEnrollDevice(let value, _), .fleetSyncDevices(let value, _):
+            id = value
+        default: return
+        }
+        guard let fleet else {
+            // Off: the app still reads an empty fleet to draw the switch's state.
+            if case .fleetRead = request, client.isLocal {
+                send(.fleetResult(id: id, result: FleetResult(snapshot: FleetSnapshot())), to: client)
+            } else {
+                send(.error(id: id, code: FleetProtocol.Code.off, message: "Enable Fleet in Settings ▸ Experiments."), to: client)
+            }
+            return
+        }
+        let caller = FleetCaller(connection: client.fd, isLocal: client.isLocal, authenticated: client.authenticated,
+                                 peerHostID: client.fleetPeerID, observedHost: client.peerHost, deviceID: client.fleetDeviceID,
+                                 clientName: client.clientName)
+        let connection = ChangesUnchecked(value: client)
+        fleet.serve(request, from: caller) { [weak self] reply in
+            self?.queue.async {
+                let client = connection.value
+                guard let self, self.clients[client.fd] === client else { return }
+                self.send(reply, to: client)
+            }
+        }
+    }
+
     /// Every slash command a pi on this host has listed since the app started, whether or not it is
     /// hidden from the menu: the Slash commands page lists these, so a hidden one can come back. A
     /// name appears once; commands of threads that have since stopped stay listed.
@@ -1360,6 +1849,7 @@ public final class SessionServer: @unchecked Sendable {
         // Keep ownership until cleanup is over; a rejected instance cleans up nothing.
         if owned { designs.removeLeftovers() }
         queue.sync { releaseOwnershipOnQueue() }
+        awaitRemoteListenerClosed()
     }
 
     // MARK: - Lifecycle (server queue)
@@ -1693,6 +2183,11 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func stopOnQueue() {
+        // A stopped host holds no links and watches no files: its fleet ends with it.
+        fleet?.stop()
+        fleet = nil
+        fleetRepoFinder.value = nil
+        instructions.onChange = nil
         isStarted = false
         pushNotifications.stop()
         logicalProjectEpoch &+= 1
@@ -2178,6 +2673,14 @@ public final class SessionServer: @unchecked Sendable {
     /// connections and sessions are unaffected.
     public func stopRemoteListener() {
         queue.sync { stopRemoteListenerOnQueue() }
+        awaitRemoteListenerClosed()
+    }
+
+    /// A cancelled dispatch source closes its descriptor later, on the queue, so a port is free again only
+    /// once that has happened: a stop is not finished (a relisten on the same port would find it busy) before it.
+    private func awaitRemoteListenerClosed() {
+        guard let closing = queue.sync(execute: { () -> DispatchSemaphore? in defer { remoteListenerClosing = nil }; return remoteListenerClosing }) else { return }
+        _ = closing.wait(timeout: .now() + 5)
     }
 
     private func startRemoteListenerOnQueue(port: UInt16, tokenURL: URL) throws -> UInt16 {
@@ -2234,10 +2737,14 @@ public final class SessionServer: @unchecked Sendable {
 
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
         source.setEventHandler { [weak self] in self?.acceptRemotePending(on: fd) }
-        source.setCancelHandler { close(fd) }
+        let closed = DispatchSemaphore(value: 0)
+        source.setCancelHandler { close(fd); closed.signal() }
         remoteAcceptSource = source
+        remoteListenerClosed = closed
         source.activate()
         ShepherdLog.info("remote listener on port \(boundPort)")
+        remoteListenPort = boundPort
+        fleet?.listenerChanged(boundPort)
         return boundPort
     }
 
@@ -2247,8 +2754,12 @@ public final class SessionServer: @unchecked Sendable {
         }
         remoteAcceptSource?.cancel()
         remoteAcceptSource = nil
+        if let closed = remoteListenerClosed { remoteListenerClosing = closed }
+        remoteListenerClosed = nil
         remoteListenFD = -1
         remoteToken = nil
+        remoteListenPort = nil
+        fleet?.listenerChanged(nil)
     }
 
     /// Load the shared remote token, generating one (32 random bytes as hex,
@@ -2372,6 +2883,7 @@ public final class SessionServer: @unchecked Sendable {
             _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
 
             let client = ExtensionConnection(fd: fd, isRemote: true)
+            client.peerHost = FleetAddresses.peerHost(of: fd)
             let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
             source.setEventHandler { [weak self] in self?.handleReadable(fd: fd) }
             source.setCancelHandler { close(fd) }
@@ -2401,6 +2913,18 @@ public final class SessionServer: @unchecked Sendable {
         }
 
         guard client.authenticated else {
+            // The two fleet requests answered before `hello`: who is there, and pairing with a code.
+            switch request {
+            case .fleetIdentify(let id), .fleetPair(let id, _, _), .fleetPairDevice(let id, _, _):
+                client.unauthenticatedFleetRequests += 1
+                guard client.unauthenticatedFleetRequests <= FleetService.unauthenticatedRequestLimit else {
+                    sendFinal(.error(id: id, code: FleetProtocol.Code.busy, message: "Too many requests."), to: client)
+                    return
+                }
+                serveFleet(request, from: client)
+                return
+            default: break
+            }
             guard case .hello(let id, let token, let clientName, let protocolVersion, let capabilities) = request else {
                 ShepherdLog.warning("remote request before hello on fd \(client.fd)")
                 sendFinal(.error(id: 0, code: "unauthenticated", message: "hello required"), to: client)
@@ -2414,13 +2938,27 @@ public final class SessionServer: @unchecked Sendable {
                 ), to: client)
                 return
             }
-            guard let expected = client.isLocal ? localToken : remoteToken, RemoteToken.matches(token, expected: expected) else {
+            // The shared token (until it is retired, while Fleet is on), a paired Mac's own (a fleet
+            // peer) or a client device's own; the last two never on the local socket.
+            let sharedMatches = (client.isLocal ? localToken : remoteToken).map { RemoteToken.matches(token, expected: $0) } ?? false
+            let retired = fleet?.sharedTokenRetired ?? FleetDevices.sharedTokenRetired(in: supportDirectory.appendingPathComponent("fleet", isDirectory: true))
+            let shared = sharedMatches && (client.isLocal || !retired)
+            let peer = sharedMatches || client.isLocal ? nil : fleet?.authenticate(token: token)
+            let device = sharedMatches || client.isLocal || peer != nil ? nil : fleet?.authenticateDevice(token: token)
+            guard shared || peer != nil || device != nil else {
                 ShepherdLog.warning("remote client '\(clientName)' rejected: bad token (fd \(client.fd))")
                 sendFinal(.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token"), to: client)
                 return
             }
             // What the other clients are owed goes out first: the new one reads its state from its fetch.
             flushRemoteState()
+            client.fleetPeerID = peer
+            client.fleetDeviceID = device
+            client.clientName = clientName
+            if let peer { fleet?.peerAuthenticated(peer, from: client.peerHost) }
+            if let device { fleet?.deviceAuthenticated(device, connection: client.fd, clientName: clientName, from: client.peerHost) }
+            // A connection that lists no capabilities is a Mac's host establishing a peer, not a client someone uses.
+            if shared, !client.isLocal, capabilities?.isEmpty == false { fleet?.sharedTokenUsed(clientName: clientName, host: client.peerHost) }
             client.authenticated = true
             client.clientCapabilities = Set(capabilities ?? [])
             if client.isLocal { localAppsChanged() }
@@ -2428,7 +2966,8 @@ public final class SessionServer: @unchecked Sendable {
                 id: id,
                 protocolVersion: RemoteProtocol.version,
                 capabilities: offeredCapabilities(to: client),
-                hostBuild: hostBuild
+                hostBuild: hostBuild,
+                hostID: fleet?.membership == true ? fleet?.hostID : nil
             ), to: client)
             sendStartProblems(to: client)
             sendAppProcesses(to: client)
@@ -2440,6 +2979,11 @@ public final class SessionServer: @unchecked Sendable {
         }
 
         switch request {
+        case .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
+             .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
+             .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult,
+             .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
+            serveFleet(request, from: client)
         case .pushRegistration(let id, let registration):
             guard offeredCapabilities.contains(RemoteProtocol.pushNotificationsCapability),
                   client.clientCapabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
@@ -3853,6 +4397,7 @@ public final class SessionServer: @unchecked Sendable {
             self.queue.async {
                 if request.changesSkills, case .success(.skills(let snapshot)) = result {
                     self.pushSettingsChanged(.skills)
+                    self.fleet?.syncEngine.localChanged()
                     if let handler = self.onSkillsChanged { self.hopToMain { handler(snapshot) } }
                 }
                 guard self.clients[client.fd] === client else { return }
@@ -4457,7 +5002,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Push a fresh state snapshot to every authenticated remote client.
     private func broadcastRemoteState(_ full: ShepherdState) {
-        broadcastRemoteState(full, to: clients.values.filter { $0.isRemote && $0.authenticated })
+        broadcastRemoteState(full, to: clients.values.filter { $0.isRemote && $0.authenticated && $0.fleetPeerID == nil })
     }
 
     /// Each client's view of `full` (`remoteState`), encoded once per view actually sent: with
@@ -4653,6 +5198,7 @@ public final class SessionServer: @unchecked Sendable {
                 + "(\(client.queuedReplyBytes) B unwritten)")
         }
         hostUpdateRequests[client.fd] = nil
+        fleet?.connectionClosed(client.fd)
         clients.removeValue(forKey: client.fd)
         for span in client.personWrites { changes.endWrite(span) }
         client.personWrites.removeAll()
@@ -4724,6 +5270,14 @@ public final class SessionServer: @unchecked Sendable {
             refuse(message, on: client)
             return
         }
+        // The fleet tools answer for themselves, ahead of the scope lists below: a thread that may not send work
+        // is told `fleet_scope`, whichever kind of thread it is (the lists below refuse them too, as a second wall).
+        switch message {
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
+            serveFleetTool(message, from: client)
+            return
+        default: break
+        }
         let coordinatorPeer = store.state.agents.contains { agent in
             agent.coordinatorFor != nil && (agent.id == message.speaksFor || agent.id == client.agentID
                 || isPiProcess(client.peerPID, ofAgent: agent.id))
@@ -4742,7 +5296,8 @@ public final class SessionServer: @unchecked Sendable {
         }
         if assignedWorker {
             switch message {
-            case .childScope, .spawnAgent, .moveAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation:
+            case .childScope, .spawnAgent, .moveAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation,
+                 .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
                 if let id = message.replyID { reply(.error(id: id, code: "project_scope", message: "Use Project threads through the coordinator; subagents and workflows are unavailable in Projects. Peer and automation admission is also unavailable."), to: client) }
                 return
             default: break
@@ -4895,6 +5450,8 @@ public final class SessionServer: @unchecked Sendable {
             hopToMain { [weak self] in self?.onNotify?(agentID, title, body) }
         case .helloAgent(let agentID):
             client.agentID = agentID
+            // Results held for this thread while its pi was away go now.
+            fleet?.dispatch.parentConnected(agentID)
         case .coordinateAgent(let id, let agentID, let targetAgentID, let request):
             coordinateAgent(id: id, agentID: agentID, targetAgentID: targetAgentID, request: request, client: client)
         case .agentResponse(let agentID, let token, let result):
@@ -4956,6 +5513,8 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             routeAgentPeerRequest(.move(agentID: agentID, targetAgentID: targetAgentID, spaceID: spaceID), requestID: id, client: client)
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
+            break // Served ahead of the scope lists above (`serveFleetTool`).
         case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "cwd and prompt are required"), to: client)
@@ -6077,6 +6636,7 @@ public final class SessionServer: @unchecked Sendable {
              .reviewResult(let id, _), .appResult(let id, _),
              .automations(let id, _),
              .agents(let id, _),
+             .fleetHosts(let id, _), .fleetDispatch(let id, _),
              .message(let id, _, _),
              .agentRequest(let id, _, _, _),
              .agentResult(let id, _),
@@ -6240,6 +6800,8 @@ public final class SessionServer: @unchecked Sendable {
         }
         let committedState = store.state
         scheduleRemoteState()
+        // A dispatched thread that settled has a result to send back.
+        fleet?.dispatch.agentStatusChanged(agentID, status)
         hopToMain { [weak self] in
             self?.onAgentStatus?(agentID, status, failure)
             self?.onStateChanged?(committedState)
@@ -6433,6 +6995,11 @@ public final class SessionServer: @unchecked Sendable {
         }
         let oldProjects = ProjectSettingsStore.directories(in: before)
         let newProjects = ProjectSettingsStore.directories(in: state)
+        if before.spaces != state.spaces, fleet != nil { queue.async { [weak self] in self?.fleetSpacesChanged() } }
+        // A thread's worktree is a place a checkout of a repository may be found from (`FleetRepoFinder`).
+        else if fleet != nil, Set(before.agents.compactMap(\.worktreePath)) != Set(state.agents.compactMap(\.worktreePath)) {
+            queue.async { [weak self] in self?.refreshRepoCandidates() }
+        }
         if before.spaces != state.spaces || !oldProjects.elementsEqual(newProjects, by: { $0.0 == $1.0 && $0.1 == $1.1 }) {
             projects.remember(before)
             projects.remember(state)
@@ -7310,6 +7877,9 @@ public final class SessionServer: @unchecked Sendable {
             // persistence fails, the user's processes and workspace remain
             // untouched rather than becoming an unrecorded partial deletion.
             let doomedTabIDs = Set(doomedTabs.map(\.id))
+            // A thread that is closed sends nothing more: its dispatches end, and a dispatched thread's ends too.
+            self.fleet?.dispatch.cancelDispatches(ownedBy: agentID)
+            self.fleet?.dispatch.agentRemoved(agentID)
             try self.mutateState {
                 $0.agents.removeAll { $0.id == agentID }
                 $0.tabs.removeAll { doomedTabIDs.contains($0.id) }
@@ -8785,6 +9355,11 @@ public final class SessionServer: @unchecked Sendable {
             thread.compactionSettings = { model in PiConfig.compactionSettings(model: model, cwd: cwd, in: piDirectory) }
             // pi is idle and nothing continues (the run a done was held across has settled, or the
             // queue did not go after all): the agent is done even though its report was held.
+            // Stop on a thread cancels the work it sent to other Macs, and nothing wakes it back up.
+            thread.onStopRequested = { [weak serverWeak] in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                server.queue.async { server.fleet?.dispatch.cancelDispatches(ownedBy: agentID) }
+            }
             thread.onIdleAfterQueue = { [weak serverWeak] in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid),
                       server.store.state.agents.first(where: { $0.id == agentID })?.status == .working else { return }

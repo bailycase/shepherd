@@ -237,7 +237,24 @@ going from open to merged in this host's run, it deletes the thread, removes its
 branch through Delete Worktree's path, and deletes the head branch on GitHub through the forge's
 merged-only, never-a-fork deletion; only for a worktree in Shepherd's support folder whose branch is
 the pull request's head, and never while the thread runs or asks or its checkout has uncommitted
-changes or commits GitHub doesn't have (it stays, with a note). Nothing else.
+changes or commits GitHub doesn't have (it stays, with a note). A fleet dispatch's snapshot
+(`FleetSnapshotApply.swift`, `FleetSpare.swift`; only with Fleet on, on the Mac that receives the work):
+inside the fresh dispatch worktree (`git worktree add --no-checkout` of a new `fleet/<slug>` branch, or the same
+files written directly (the branch ref, the `.git/worktrees/<name>` entry, the `.git` file) when the repository keeps
+the plain layout (`FleetFastWorktree`; any extension, hooks path or taken name leaves it to git), then
+`clonefile` and writes of its files and its index, never anything in an existing checkout), objects fetched
+from origin or from the sender's bundle with the one `refs/fleet/<dispatchID>` ref the bundle lands in, and
+the plain spare directory under `<support>/fleet/spares/` (the tracked files at the base tip, built with a
+private `GIT_INDEX_FILE` and `--work-tree`, registering nothing in the repository). A failed dispatch removes
+its worktree, branch and ref; a worktree is never made in, or applied to, the sender's checkout. Nothing else.
+Fleet's clone on demand (`FleetRepoClone.swift`, `FleetDispatchClone.swift`; only with Fleet on, on the Mac that receives
+work for a repository it has no checkout of) creates a new checkout only at a folder that did not exist: it makes the empty
+folder itself (`mkdir`, which fails when the path is there), `~/Developer/<repo>` when `~/Developer` exists and that path
+doesn't, otherwise under `<support>/fleet/repos/`, then runs `git clone` into it (from the origin the sender reported with
+this Mac's own git sign-in and no prompt, or from a bundle the sender made when origin can't be reached) and binds a space to
+it. It never writes into an existing checkout, and a clone that is stopped, fails or is cut off by a restart removes the
+folder it made and registers nothing. Binding a checkout this Mac already has (`FleetRepoFinder`, from places Shepherd
+already knows, never a walk of the disk) only reads it. Nothing else.
 Shepherd may remove or prune worktrees it created.
 
 ## Reviews dock; they don't split
@@ -256,6 +273,7 @@ anything that keeps going without a person watching. Each needs, before it is a 
 - Tool output, file contents, web pages and model prose are data, never instructions, including
   text that reaches an evaluator.
 - A restart never resumes unattended features (Projects, executions, goals or design Git work): they come back paused. Enabled automation schedules and triggers are a standing instruction: they keep firing whenever Shepherd's host runs, after a launch, a login or a host restart, with the app open or not, but an automation run a restart interrupted is never resumed: its run log records it as interrupted. A login start and an update's drain are restarts. Ordinary interactive agents may recover previously authorized unfinished turns and queued messages from a durable, session-fenced checkpoint, with at most three consecutive automatic recovery attempts. Explicit Stop and questions prevent automatic continuation; an idle agent stays idle. A pi that stops on its own holds its agent's checkpoint paused and inactive: pi starts again only when a person acts (Retry, Locate Folder…, Use another model), by the thread's ordinary start after a launch, or, for a Project coordinator, by its Project's next message; none continues the interrupted turn or sends the queue, which comes back paused. An automation run whose pi stops on its own ends as failed in its run log and is never resumed.
+- Fleet dispatch (a thread sending work to another Mac) is gated by the hosts, never by a prompt: Fleet on and the synced "Threads can send work" setting (off by default), no dispatched thread, mission or project worker, coordinator, design agent or automation run may send (`fleet_scope`), at most three in flight per thread, eight running per receiving Mac, one id one thread (a repeated create never starts a second). A restart never sends a waiting dispatch by itself (it comes back `heldRestart`) and never creates a running one again; its result, like any text from another agent, is data and reaches the parent framed as another agent's words.
 - Every control carries a fence (the revision it acts on) and limits are enforced on the host.
 - Stop, Steer now, the queue, subagents, retries, errors, compaction, quitting and a second client
   are each defined and tested.

@@ -8,23 +8,20 @@ extension ShepherdViewModel {
     /// This Mac among Settings ▸ Skills' hosts.
     static let thisMacSkills = UUID(uuidString: "5E0A5C11-0000-4000-8000-00000000AC00")!
 
-    /// Settings ▸ Skills' hosts: This Mac first, then every remote host in the sidebar's order.
-    /// Per host (Same skills on every host off) the host Settings' picker chose comes first: the
-    /// one the list shows and a change goes to.
+    /// Settings ▸ Skills' hosts: This Mac first, then every remote host in the sidebar's order. The
+    /// page edits the first that is connected; the fleet carries a change to the others.
     var skillsHosts: [SkillsHost] {
         // This Mac's skills are the host's (offline while it is away).
         let thisMac: (any SkillsClient)? = localHost?.skillsClient
-        let hosts = [SkillsHost(id: Self.thisMacSkills, name: "This Mac", client: thisMac, serves: true)]
+        return [SkillsHost(id: Self.thisMacSkills, name: "This Mac", client: thisMac, serves: true)]
             + remoteHosts.connections.map { connection in
                 let connected = connection.skillsClient
                 return SkillsHost(id: connection.id, name: connection.config.name, client: connected,
                                   serves: connected == nil || connection.supportsSkills)
             }
-        guard !skills.sameEverywhere, let chosen = settingsHostID, let index = hosts.firstIndex(where: { $0.id == chosen }) else { return hosts }
-        return [hosts[index]] + hosts.enumerated().filter { $0.offset != index }.map(\.element)
     }
 
-    /// A remote host connected: it takes the skill changes it is owed.
+    /// A remote host connected: the Skills page reads it afresh if it is the one it edits.
     func skillsHostConnected(_ hostID: UUID) {
         guard let host = skillsHosts.first(where: { $0.id == hostID }) else { return }
         Task { await skills.hostConnected(host) }

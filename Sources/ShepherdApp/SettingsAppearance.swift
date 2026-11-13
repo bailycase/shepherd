@@ -30,10 +30,6 @@ struct AppearanceSettings: View {
             SettingsGroup(title: "Sidebar") {
                 OrganizeByRow(style: Binding(get: { sidebar.sidebarStyle }, set: { vm.setSidebarStyle($0) }))
                 if sidebar.sidebarStyle == .projects {
-                    SettingsRow(title: "Group by host",
-                                subtitle: "A section for each Mac or server, its spaces inside. Off shows the host as a tag on the row.") {
-                        SettingsSwitch(label: "Group by host", isOn: $sidebar.sidebarGroupByHost)
-                    }
                     SettingsRow(title: "Keep idle threads",
                                 subtitle: "Then they leave the sidebar; ⌘K still finds them. Running threads and anything waiting on you stay.") {
                         SHPopupMenu(Self.keepIdleTitle(sidebar.sidebarKeepIdleDays)) {

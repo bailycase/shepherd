@@ -33,8 +33,15 @@ struct SidebarView: View {
                 }
             }
         } footer: {
-            let footer = vm.sidebarFooterIdentity ?? SidebarDerivation.footer
-            SHSidebarFooter(name: footer.name, detail: footer.detail, settingsShortcut: "⌘,") { vm.showSettings = true }
+            if vm.settings.fleetEnabled, !vm.fleetPage.page.cards.isEmpty {
+                // FleetSidebar: with Fleet on, the footer is the Fleet row and Settings.
+                SidebarFleetFooter(footer: vm.fleetPage.page.footer, selected: vm.shownDestination == .fleet,
+                                   open: { vm.openDestination(.fleet) }, settings: { vm.showSettings = true })
+                    .equatable()
+            } else {
+                let footer = vm.sidebarFooterIdentity ?? SidebarDerivation.footer
+                SHSidebarFooter(name: footer.name, detail: footer.detail, settingsShortcut: "⌘,") { vm.showSettings = true }
+            }
         }
         .environment(\.shMotionPaused, !windowVisible)
         .transaction { if !windowVisible { $0.disablesAnimations = true } }
@@ -151,7 +158,8 @@ private struct SidebarItemView: View, Equatable {
             case .row(let row):
                 // A run under its automation's row sits a level in (`nested`), as in the space tree.
                 SHSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
-                             accessory: accessory(row), hasGoal: row.hasGoal, nested: row.foldedUnder != nil, badge: row.pullRequest)
+                             accessory: accessory(row), hasGoal: row.hasGoal, nested: row.foldedUnder != nil || row.fleetNested,
+                             badge: row.pullRequest, elbow: row.fleetNested)
                     .help(row.help)
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }
                     .accessibilityLabel(row.accessibilityLabel)

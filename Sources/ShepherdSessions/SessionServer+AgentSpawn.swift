@@ -131,6 +131,8 @@ extension SessionServer {
         }
         var (fresh, problem) = (false, spawn.problem)
         if problem == nil {
+            // In a fleet, the newest sign-ins of the other Macs come first: a refresh token another Mac rotated is no use here.
+            await fleetCredentialFence()
             // Ready Shepherd's pi home, and give pi a session to find, so --session-id does not warn.
             (fresh, problem) = await AgentLaunch.prepare(for: agent, cwd: cwd, pi: pi, codemode: spawn.settings.codemode,
                                                          requiredHistoryEntryID: spawn.requiredHistoryEntryID)

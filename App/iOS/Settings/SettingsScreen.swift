@@ -31,7 +31,6 @@ private struct SettingsList: View {
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        let model = HomeFeed.of(hosts).model
         let designs = MobileDesigns.of(hosts).model
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
@@ -40,13 +39,13 @@ private struct SettingsList: View {
                 }
                 SettingsSection("Agents") {
                     SHListCard {
-                        row(.defaults, trailing: value(store.defaultsValue(chosenHost: navigator.settingsSelection.chosenHost)))
+                        row(.defaults, trailing: value(store.defaultsValue))
                         row(.instructions, trailing: value(store.instructionsValue))
                         row(.skills, trailing: value(store.skillsValue))
                         if store.showsHooks {
-                            row(.hooks, trailing: value(store.hooksValue(chosenHost: navigator.settingsSelection.hooksHost)))
+                            row(.hooks, trailing: value(store.hooksValue))
                         }
-                        row(.pi, trailing: value(store.extensionsValue(chosenHost: navigator.settingsSelection.chosenHost)))
+                        row(.pi, trailing: value(store.extensionsValue))
                         row(.mcp, trailing: SHListRow.Trailing.none)
                         row(.subagents, trailing: SHListRow.Trailing.none)
                         row(.signIn, trailing: SHListRow.Trailing.none)
@@ -61,8 +60,8 @@ private struct SettingsList: View {
                 }
                 SettingsSection("Machines") {
                     SHListCard {
-                        row(.hosts, trailing: model.offlineCount > 0 ? .alert("\(model.offlineCount) offline")
-                            : .value(model.hosts.isEmpty ? "None" : String(model.hosts.count)))
+                        // The Macs this device is paired with, their room, and Add a Mac (what Hosts was).
+                        row(.fleet, trailing: store.fleetValue)
                         row(.spaces, trailing: SHListRow.Trailing.none)
                         row(.worktrees, trailing: SHListRow.Trailing.none)
                     }
@@ -73,7 +72,7 @@ private struct SettingsList: View {
                     row(.diagnostics, trailing: SHListRow.Trailing.none)
                 }
                 SettingsSection("About") {
-                    SHListCard { AboutRow(agent: store.agentVersion(chosenHost: navigator.settingsSelection.chosenHost)) }
+                    SHListCard { AboutRow(agent: store.agentVersion) }
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
@@ -115,7 +114,7 @@ private struct SettingsSplit: View {
                     }
                 }
                 .padding(MobileLayout.settingsListInset)
-                AboutLine(agent: store.listFootVersion(page: selection.page, chosenHost: selection.chosenHost))
+                AboutLine(agent: store.listFootVersion(page: selection.page))
                     .padding(.horizontal, MobileLayout.settingsListInset + SH.Space.l)
                     .padding(.vertical, SH.Space.l)
             }
@@ -180,7 +179,7 @@ struct SettingsPageView: View {
         case .instructions: InstructionsScreen()
         case .skills: SkillsScreen()
         case .hooks: HooksScreen()
-        case .hosts: HostsScreen()
+        case .fleet: FleetScreen()
         case .spaces: SpacesScreen()
         case .notifications: NotificationsScreen()
         case .experiments: ExperimentsScreen()

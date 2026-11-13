@@ -24,6 +24,10 @@
 	<string>26.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_shepherd._tcp</string>
+	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Shepherd serves its sessions to remote Shepherd clients over your network.</string>
 	<key>NSPrincipalClass</key>

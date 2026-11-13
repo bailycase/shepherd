@@ -5,10 +5,10 @@ import ShepherdRemote
 
 // Settings ▸ Instructions on iPhone and iPad (MobileInstructions, MobileInstructionsEdit,
 // iPadSettingsInstructions; home track): the root AGENTS.md and APPEND_SYSTEM.md every pi
-// session Shepherd starts reads, which each host keeps in its own support folder
-// (`instructions.v1`; never pi's ~/.pi/agent). With Same on every host on (the default, kept per
-// device), the page edits one set of files and a save writes them to every host; off, it edits
-// one host's. `ClientInstructions` holds every rule; these screens draw it.
+// session Shepherd starts reads (`instructions.v1`; never pi's ~/.pi/agent). They are the
+// fleet's: one copy, edited through the first Mac that answers, and the Macs' own sync carries a
+// save to every other Mac, so these screens have no host to pick and nothing to fan out.
+// `ClientInstructions` holds every rule; these screens draw it.
 
 /// Settings ▸ Instructions: the phone's page, or the iPad's editor beside Settings' list.
 struct InstructionsScreen: View {
@@ -34,8 +34,7 @@ struct InstructionsScreen: View {
 
 // MARK: iPhone
 
-/// The phone's page (MobileInstructions): what the files are, Same on every host, the two files
-/// (each opening the editor), and every host's state.
+/// The phone's page (MobileInstructions): what the files are, and the two of them, each opening the editor.
 private struct InstructionsPhonePage: View {
     let store: SettingsStore
     @Environment(MobileNavigator.self) private var navigator
@@ -43,57 +42,32 @@ private struct InstructionsPhonePage: View {
     var body: some View {
         let model = store.instructions
         let hosts = store.hosts
-        let edited = model.edited(in: hosts, selectedHost: navigator.settingsSelection.instructionsHost)
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                    Text(InstructionsCopy.explanation)
-                        .shText(.caption)
-                        .foregroundStyle(Color.sh.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, SH.Space.xs)
-                    SHListCard {
-                        SettingsSwitchRow("Same on every host", note: InstructionsCopy.scopeNote(sameEverywhere: model.sameEverywhere),
-                                          isOn: model.sameEverywhere) { model.sameEverywhere = $0 }
-                    }
-                }
+                Text(InstructionsCopy.explanation)
+                    .shText(.caption)
+                    .foregroundStyle(Color.sh.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, SH.Space.xs)
                 if let problem = model.problem {
                     SHBanner(.failed, title: problem) {
                         Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
                     }
                 }
-                if let edited, model.files(of: edited).snapshot != nil {
+                if model.edited(in: hosts) != nil {
                     SettingsSection("Files") {
                         SHListCard {
                             ForEach(InstructionFile.allCases, id: \.self) { file in
                                 Button { navigator.open(.settings(.instructionsFile(file))) } label: {
-                                    InstructionsFileRow(file: file, note: InstructionsPresentation.fileNote(file, text: model.text(file, in: hosts, selectedHost: navigator.settingsSelection.instructionsHost), sentence: true),
-                                                        edited: model.isEdited(file, in: hosts, selectedHost: navigator.settingsSelection.instructionsHost))
+                                    InstructionsFileRow(file: file, note: InstructionsPresentation.fileNote(file, text: model.text(file, in: hosts), sentence: true),
+                                                        edited: model.isEdited(file))
                                 }
                                 .buttonStyle(.shRow(radius: 0))
                             }
                         }
                     }
                 } else {
-                    InstructionsUnavailable(model: model, hosts: hosts, edited: edited)
-                }
-                if !hosts.isEmpty {
-                    SettingsSection("Hosts") {
-                        SHListCard {
-                            ForEach(hosts) { host in
-                                InstructionsHostLine(model: model, host: host, hosts: hosts)
-                            }
-                        }
-                        if !model.differing(in: hosts).isEmpty {
-                            Button("Sync now") { Task { await model.syncNow(in: hosts) } }
-                                .buttonStyle(.sh(.secondary))
-                                .disabled(model.busy)
-                                .padding(.top, SH.Space.xs)
-                        }
-                        if !model.sameEverywhere {
-                            SettingsFootnote("Tap a host to edit its own files.")
-                        }
-                    }
+                    InstructionsUnavailable(model: model, hosts: hosts)
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
@@ -102,7 +76,6 @@ private struct InstructionsPhonePage: View {
             .frame(maxWidth: .infinity)
         }
         .refreshable { await store.refresh() }
-        .shAnimation(.content, value: model.sameEverywhere)
     }
 }
 
@@ -148,104 +121,29 @@ private struct InstructionsFileRow: View {
     }
 }
 
-/// A host's row: a display glyph, the host (mono 15), and its state trailing: with Same on
-/// every host on, how it compares ("synced 2m ago", "differs · 2 lines", "offline · will
-/// sync"); per host, the files it holds, the host being edited checked, and a tap to edit it.
-private struct InstructionsHostLine: View {
-    @Environment(MobileNavigator.self) private var navigator
-    let model: ClientInstructions
-    let host: SettingsHost
-    let hosts: [SettingsHost]
-
-    var body: some View {
-        if model.sameEverywhere {
-            line(chosen: false)
-        } else {
-            Button { navigator.settingsSelection.instructionsHost = host.id } label: {
-                line(chosen: model.edited(in: hosts, selectedHost: navigator.settingsSelection.instructionsHost)?.id == host.id)
-            }
-            .buttonStyle(.shRow(radius: 0))
-            .accessibilityHint("Edits \(host.name)'s own files")
-        }
-    }
-
-    private func line(chosen: Bool) -> some View {
-        let sh = Color.sh
-        let chip = state
-        return HStack(spacing: SH.Space.l) {
-            Image(systemName: "desktopcomputer")
-                .font(.sh(.caption, weight: .medium))
-                .foregroundStyle(sh.textSecondary)
-                .frame(width: SHListMetrics.leadingWidth)
-                .accessibilityHidden(true)
-            Text(host.name)
-                .font(.shMono(SHTextStyle.ui.size))
-                .foregroundStyle(sh.textPrimary)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if let word = chip.word {
-                Text(word).font(.sh(.caption)).foregroundStyle(chip.tone.color).lineLimit(1)
-            }
-            if chosen {
-                Image(systemName: "checkmark")
-                    .font(.sh(.ui, weight: .semibold))
-                    .foregroundStyle(sh.lantern)
-                    .accessibilityLabel("Editing")
-            }
-        }
-        .padding(.horizontal, SH.Space.l)
-        .frame(maxWidth: .infinity, minHeight: MobileLayout.instructionsHostRowHeight, alignment: .leading)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-    }
-
-    /// With Same on every host on, the host's chip; per host, what it holds.
-    private var state: InstructionsChip {
-        if model.sameEverywhere {
-            let chip = model.chip(for: host, file: .agents, in: hosts)
-            return InstructionsChip(chip.tone, chip.word ?? "matches")
-        }
-        if let snapshot = model.files(of: host).snapshot {
-            return InstructionsChip(.quiet, InstructionsPresentation.filesHeld(snapshot))
-        }
-        return model.chip(for: host, file: .agents, in: hosts)
-    }
-}
-
-/// In place of the files when no host's can be read, or the host chosen can't: why.
+/// In place of the files when no Mac's can be read: why.
 private struct InstructionsUnavailable: View {
     let model: ClientInstructions
     let hosts: [SettingsHost]
-    let edited: SettingsHost?
 
     var body: some View {
-        if let edited {
-            switch model.files(of: edited) {
-            case .checking, .loaded:
-                ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
-            case .offline:
-                SettingsFootnote("\(edited.name) is offline. Its instructions show here once it's back.")
-            case .unsupported:
-                SettingsFootnote("\(edited.name)'s Shepherd is too old to share its instructions. Update it to edit them here.")
-            case .failed(let reason):
-                SettingsFootnote(reason, tone: .failed)
-            }
-        } else if hosts.isEmpty {
-            SettingsFootnote("Add a host in Settings ▸ Hosts to edit its instructions here.")
+        if hosts.isEmpty {
+            SettingsFootnote("Add a Mac in Settings ▸ Fleet to start.")
         } else if hosts.contains(where: { model.files(of: $0) == .checking }) {
             ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
         } else if hosts.allSatisfy({ !$0.isConnected }) {
-            SettingsFootnote("No host is online. The instructions show here once one is back.")
+            SettingsFootnote("No Mac is online. The instructions show here once one is back.")
+        } else if let reason = hosts.lazy.compactMap({ model.files(of: $0) }).compactMap({ if case .failed(let reason) = $0 { reason } else { nil } }).first {
+            SettingsFootnote(reason, tone: .failed)
         } else {
-            SettingsFootnote("Your hosts' Shepherd is too old to share instructions. Update it to edit them here.")
+            SettingsFootnote("Your Macs' Shepherd is too old to share instructions. Update it to edit them here.")
         }
     }
 }
 
 /// The phone's editor (MobileInstructionsEdit): the file under an inline header naming it and
-/// where a save goes ("every host · edited"), Save trailing, and the key row over the keyboard.
+/// saying it is the fleet's ("the fleet · edited"), Save trailing, and the key row over the keyboard.
 struct InstructionsEditorScreen: View {
-    @Environment(MobileNavigator.self) private var navigator
     let file: InstructionFile
     @Environment(MobileHosts.self) private var hosts
     @State private var focus = InstructionsEditorFocus()
@@ -254,19 +152,17 @@ struct InstructionsEditorScreen: View {
         let store = SettingsStore.of(hosts)
         let model = store.instructions
         let settingsHosts = store.hosts
-        let selectedHost = navigator.settingsSelection.instructionsHost
-        let edited = model.edited(in: settingsHosts, selectedHost: selectedHost)
-        let isEdited = model.isEdited(file, in: settingsHosts, selectedHost: selectedHost)
+        let isEdited = model.isEdited(file)
         Group {
-            if let edited, model.files(of: edited).snapshot != nil {
+            if model.edited(in: settingsHosts) != nil {
                 InstructionsTextEditor(
-                    text: Binding(get: { model.text(file, in: settingsHosts, selectedHost: selectedHost) }, set: { model.setText($0, file: file, in: settingsHosts, selectedHost: selectedHost) }),
-                    saved: model.saved(file, in: settingsHosts, selectedHost: selectedHost) ?? "",
+                    text: Binding(get: { model.text(file, in: settingsHosts) }, set: { model.setText($0, file: file, in: settingsHosts) }),
+                    saved: model.saved(file, in: settingsHosts) ?? "",
                     metrics: .phone, focus: focus, accessibilityLabel: file.fileName
                 )
             } else {
                 ScrollView {
-                    InstructionsUnavailable(model: model, hosts: settingsHosts, edited: edited)
+                    InstructionsUnavailable(model: model, hosts: settingsHosts)
                         .padding(MobileLayout.gutter)
                 }
             }
@@ -291,7 +187,7 @@ struct InstructionsEditorScreen: View {
                     Text(file.fileName)
                         .font(.shMono(SHTextStyle.ui.size, .semibold))
                         .foregroundStyle(Color.sh.textPrimary)
-                    Text(model.scope(in: settingsHosts, selectedHost: selectedHost) + (isEdited ? " · edited" : ""))
+                    Text(InstructionsCopy.scope + (isEdited ? " · edited" : ""))
                         .font(.sh(.micro, weight: .regular))
                         .foregroundStyle(Color.sh.textTertiary)
                 }
@@ -301,9 +197,8 @@ struct InstructionsEditorScreen: View {
                 if model.busy {
                     ProgressView().progressViewStyle(SHSpinnerStyle())
                 } else {
-                    Button("Save") { Task { await model.save(file, in: settingsHosts, selectedHost: selectedHost) } }
+                    Button("Save") { Task { await model.save(file, in: settingsHosts) } }
                         .disabled(!isEdited)
-                        .accessibilityLabel(model.saveTitle(in: settingsHosts, selectedHost: selectedHost))
                 }
             }
         }
@@ -314,10 +209,9 @@ struct InstructionsEditorScreen: View {
 
 // MARK: iPad
 
-/// The iPad's page (iPadSettingsInstructions): Every host | Per host with each host's state,
-/// History and Save, the files as tabs, the editor, and the order pi reads them in.
+/// The iPad's page (iPadSettingsInstructions): what the files are, History and Save, the files as
+/// tabs, the editor, and the order pi reads them in.
 private struct InstructionsPadPage: View {
-    @Environment(MobileNavigator.self) private var navigator
     let store: SettingsStore
     @State private var file: InstructionFile = .agents
     @State private var focus = InstructionsEditorFocus()
@@ -326,18 +220,13 @@ private struct InstructionsPadPage: View {
     var body: some View {
         let model = store.instructions
         let hosts = store.hosts
-        let edited = model.edited(in: hosts, selectedHost: navigator.settingsSelection.instructionsHost)
-        let snapshot = edited.flatMap { model.files(of: $0).snapshot }
+        let snapshot = model.edited(in: hosts).flatMap { model.files(of: $0).snapshot }
         VStack(alignment: .leading, spacing: MobileLayout.instructionsPadSpacing) {
-            // History's popover hangs off its button, so the actions are built once: only the
-            // scope wraps under its picker when the column is narrow.
-            HStack(alignment: .top, spacing: SH.Space.l) {
-                // iPadSettingsInstructions: the scope control over each host's state.
-                VStack(alignment: .leading, spacing: SH.Space.s) {
-                    scopePicker(model)
-                    scopeState(model, hosts: hosts)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(alignment: .center, spacing: SH.Space.l) {
+                Text(InstructionsCopy.padNote)
+                    .shText(.caption)
+                    .foregroundStyle(Color.sh.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 actions(model, hosts: hosts, ready: snapshot != nil)
             }
             if let problem = model.problem {
@@ -346,7 +235,7 @@ private struct InstructionsPadPage: View {
                 }
             }
             if let snapshot {
-                InstructionsFileTabs(file: $file, note: { InstructionsPresentation.fileNote($0, text: model.text($0, in: hosts, selectedHost: navigator.settingsSelection.instructionsHost)) })
+                InstructionsFileTabs(file: $file, note: { InstructionsPresentation.fileNote($0, text: model.text($0, in: hosts)) })
                 editor(model, hosts: hosts, path: snapshot.path(of: file))
                 if !focus.editing {
                     InstructionsReadOrder(file: file)
@@ -356,7 +245,7 @@ private struct InstructionsPadPage: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
-                InstructionsUnavailable(model: model, hosts: hosts, edited: edited)
+                InstructionsUnavailable(model: model, hosts: hosts)
                 Spacer(minLength: 0)
             }
         }
@@ -366,54 +255,21 @@ private struct InstructionsPadPage: View {
         .shAnimation(.content, value: focus.editing)
     }
 
-    /// Every host | Per host.
-    private func scopePicker(_ model: ClientInstructions) -> some View {
-        InstructionsScopePicker(sameEverywhere: Binding(get: { model.sameEverywhere }, set: { model.sameEverywhere = $0 }))
-    }
-
-    /// Each host's state, or which host is edited.
-    private func scopeState(_ model: ClientInstructions, hosts: [SettingsHost]) -> some View {
-        HStack(spacing: SH.Space.l) {
-            if model.sameEverywhere {
-                if let line = model.syncLine(in: hosts) {
-                    Text(line).shText(.caption).foregroundStyle(Color.sh.textTertiary).lineLimit(2)
-                }
-                if !model.differing(in: hosts).isEmpty {
-                    Button("Sync now") { Task { await model.syncNow(in: hosts) } }
-                        .buttonStyle(.shLink(font: .sh(.caption)))
-                        .disabled(model.busy)
-                }
-            } else {
-                Menu {
-                    ForEach(hosts) { host in
-                        Button { navigator.settingsSelection.instructionsHost = host.id } label: {
-                            if host.id == model.edited(in: hosts, selectedHost: navigator.settingsSelection.instructionsHost)?.id { Label(host.name, systemImage: "checkmark") } else { Text(host.name) }
-                        }
-                    }
-                } label: {
-                    SettingsMenuLabel(model.edited(in: hosts, selectedHost: navigator.settingsSelection.instructionsHost)?.name ?? "No host", mono: true)
-                }
-                .accessibilityLabel("Host to edit")
-            }
-        }
-    }
-
     /// History and Save.
     private func actions(_ model: ClientInstructions, hosts: [SettingsHost], ready: Bool) -> some View {
-        let selectedHost = navigator.settingsSelection.instructionsHost
-        return HStack(spacing: SH.Space.m) {
+        HStack(spacing: SH.Space.m) {
             Button("History") { showsHistory = true }
                 .buttonStyle(.sh(.secondary, size: .l))
                 .disabled(!ready)
                 .popover(isPresented: $showsHistory, arrowEdge: .top) {
-                    InstructionsHistoryList(entries: model.history(file, in: hosts, selectedHost: selectedHost)) { entry in
+                    InstructionsHistoryList(entries: model.history(file, in: hosts)) { entry in
                         showsHistory = false
-                        Task { await model.restore(entry, in: hosts, selectedHost: selectedHost) }
+                        Task { await model.restore(entry, in: hosts) }
                     }
                 }
-            Button(model.saveTitle(in: hosts, selectedHost: selectedHost)) { Task { await model.save(file, in: hosts, selectedHost: selectedHost) } }
+            Button("Save") { Task { await model.save(file, in: hosts) } }
                 .buttonStyle(.sh(.primary, size: .l))
-                .disabled(!model.isEdited(file, in: hosts, selectedHost: selectedHost) || model.busy)
+                .disabled(!model.isEdited(file) || model.busy)
         }
         .fixedSize()
     }
@@ -421,7 +277,6 @@ private struct InstructionsPadPage: View {
     /// The editor card: the file's path and "● edited" over the file.
     private func editor(_ model: ClientInstructions, hosts: [SettingsHost], path: String) -> some View {
         let sh = Color.sh
-        let selectedHost = navigator.settingsSelection.instructionsHost
         return VStack(spacing: 0) {
             HStack(spacing: SH.Space.m) {
                 Text(path)
@@ -430,7 +285,7 @@ private struct InstructionsPadPage: View {
                     .lineLimit(1)
                     .truncationMode(.head)
                 Spacer(minLength: SH.Space.m)
-                if model.isEdited(file, in: hosts, selectedHost: selectedHost) {
+                if model.isEdited(file) {
                     Text("● edited").font(.sh(.caption)).foregroundStyle(sh.lanternText)
                 }
             }
@@ -439,8 +294,8 @@ private struct InstructionsPadPage: View {
             .background(sh.bgSunken)
             SHHairline()
             InstructionsTextEditor(
-                text: Binding(get: { model.text(file, in: hosts, selectedHost: selectedHost) }, set: { model.setText($0, file: file, in: hosts, selectedHost: selectedHost) }),
-                saved: model.saved(file, in: hosts, selectedHost: selectedHost) ?? "",
+                text: Binding(get: { model.text(file, in: hosts) }, set: { model.setText($0, file: file, in: hosts) }),
+                saved: model.saved(file, in: hosts) ?? "",
                 metrics: .pad, focus: focus, accessibilityLabel: file.fileName
             )
             .frame(minHeight: MobileLayout.instructionsEditorMinHeight, maxHeight: .infinity)
@@ -448,45 +303,6 @@ private struct InstructionsPadPage: View {
         .background(sh.bgWindow)
         .clipShape(RoundedRectangle(cornerRadius: SH.Radius.l))
         .shBorder(sh.lineSubtle, radius: SH.Radius.l)
-    }
-}
-
-/// Every host | Per host (iPadSettingsInstructions): a 300pt control on `bgSunken` with a
-/// `lineSubtle` line, the chosen side raised.
-private struct InstructionsScopePicker: View {
-    @Binding var sameEverywhere: Bool
-
-    var body: some View {
-        HStack(spacing: SH.Space.xxs) {
-            segment("Every host", chosen: sameEverywhere) { sameEverywhere = true }
-            segment("Per host", chosen: !sameEverywhere) { sameEverywhere = false }
-        }
-        .padding(SH.Space.xxs)
-        .frame(width: MobileLayout.instructionsScopeWidth)
-        .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: MobileLayout.instructionsScopeRadius))
-        .shBorder(Color.sh.lineSubtle, radius: MobileLayout.instructionsScopeRadius)
-        .shAnimation(.content, value: sameEverywhere)
-        .accessibilityRepresentation {
-            Picker("Instructions", selection: $sameEverywhere) {
-                Text("Every host").tag(true)
-                Text("Per host").tag(false)
-            }
-            .pickerStyle(.segmented)
-        }
-    }
-
-    private func segment(_ title: String, chosen: Bool, action: @escaping () -> Void) -> some View {
-        let sh = Color.sh
-        return Button(action: action) {
-            Text(title)
-                .font(.shSans(MobileLayout.instructionsScopeTextSize, .regular))
-                .foregroundStyle(sh.textPrimary)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, minHeight: MobileLayout.instructionsScopeSegmentHeight)
-                .background(chosen ? sh.bgRaised : .clear, in: RoundedRectangle(cornerRadius: MobileLayout.instructionsScopeSegmentRadius))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 }
 
@@ -615,11 +431,11 @@ private struct InstructionsHistoryList: View {
 
 /// The page's words.
 private enum InstructionsCopy {
-    static let explanation = "The agent reads these at the start of every session Shepherd starts, on every host."
-
-    static func scopeNote(sameEverywhere: Bool) -> String {
-        sameEverywhere ? "Save once, written to every host." : "Each host keeps its own."
-    }
+    static let explanation = "The agent reads these at the start of every session Shepherd starts, on any Mac in the fleet."
+    /// Under the editor's file name on the phone.
+    static let scope = "the fleet"
+    /// Beside History and Save on the iPad.
+    static let padNote = "Shared across the fleet. Every Mac gets each save."
 
     /// Under the read order: why the open file sits where it does.
     static func readOrderNote(_ file: InstructionFile) -> String {
@@ -628,19 +444,6 @@ private enum InstructionsCopy {
             "Shepherd's AGENTS.md comes before any folder's or repo's AGENTS.md, so a repo's own file can refine it."
         case .appendSystem:
             "APPEND_SYSTEM.md is added to the end of the agent’s system prompt, so these rules beat anything in an AGENTS.md. Keep it short."
-        }
-    }
-}
-
-extension InstructionsChip.Tone {
-    /// The chip's color: `done`, `lanternText`, `textTertiary`, `running` or `failed`.
-    @MainActor var color: Color {
-        switch self {
-        case .done: Color.sh.done
-        case .attention: Color.sh.lanternText
-        case .quiet: Color.sh.textTertiary
-        case .working: Color.sh.running
-        case .failed: Color.sh.failed
         }
     }
 }

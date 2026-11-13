@@ -350,10 +350,14 @@ final class ShepherdViewModel {
     let hooks: HooksModel
     /// Settings › Apps, and the apps running now.
     let apps: AppsModel
+    /// Settings ▸ Fleet: this Mac's fleet as its host reports it.
+    let fleet = FleetSettingsModel()
+    /// The Fleet page and the sidebar's Fleet row: the cards derived from `fleet`'s snapshot.
+    let fleetPage = FleetPageModel()
+    /// What the buttons on dispatch cards do (`configureFleetThreadActions`).
+    let fleetThreadActions = FleetThreadActions()
     /// The thread whose Browser waits for each app's address.
     @ObservationIgnored var appPageWaits: [AppKey: AgentID] = [:]
-    /// Each remote host's hooks, made when first shown (`hooks(for:)`).
-    @ObservationIgnored var remoteHookModels: [UUID: HooksModel] = [:]
     /// Settings ▸ Skills: every host's agent skills, This Mac's through its host.
     let skills: ClientSkills
     /// Settings ▸ MCP servers: this Mac's servers, their sign-ins, and the credentials agents ask for.
@@ -551,17 +555,11 @@ final class ShepherdViewModel {
     @ObservationIgnored var madeSubagentDefinitions: SubagentDefinitionsModel?
     /// Sign-ins remote clients drive on this Mac (`RemoteRequest.hostConfig`).
     @ObservationIgnored let remoteSignIns = RemoteSignIns()
-    /// Settings' host picker: the remote host a host-level page shows; nil for this Mac.
-    var settingsHostID: UUID?
     /// The background host's launchd job, when this launch may use it (`BackgroundService.prepare`);
     /// nil has the app supervise its own host, with no Settings line. Set at launch.
     @ObservationIgnored var backgroundService: BackgroundService?
     /// Its status as Settings last read it.
     var backgroundServiceStatus: BackgroundService.Status?
-    /// A remote host's settings and configuration as Settings shows them (`settingsHostID`).
-    @ObservationIgnored let remoteHostSettings = ClientHostSettings()
-    @ObservationIgnored let remoteHostConfig = ClientHostConfig()
-    @ObservationIgnored let remoteSuggestions = ClientSuggestions()
     var subagentDefinitions: SubagentDefinitionsModel {
         if let madeSubagentDefinitions { return madeSubagentDefinitions }
         let model = SubagentDefinitionsModel(pi: pi)
@@ -703,11 +701,11 @@ final class ShepherdViewModel {
         remoteThreadStores.onLiveChange = { [weak hosts] live in hosts?.updateThreadHints(live: live) }
         hosts.onNativeThreadChanged = { [weak remoteThreadStores] ref in remoteThreadStores?.existing(for: ref)?.historyChanged() }
         remoteThreadStores.hostName = { [weak hosts] ref in hosts?.allConnections.first { $0.id == ref.hostID }?.config.name }
-        let instructions = InstructionsModel(remoteHosts: hosts, defaults: sidebarDefaults)
+        let instructions = InstructionsModel(remoteHosts: hosts)
         instructions.piHome = pi.home
         self.instructions = instructions
         self.suggestions = SuggestionsModel(instructions: instructions, remoteHosts: hosts)
-        self.skills = ClientSkills(defaults: sidebarDefaults)
+        self.skills = ClientSkills()
         // The host's catalog arrives on connect (`localHostSettingsChanged`).
         self.slashCommands = SlashCommandsModel(hidden: self.settings.hiddenSlashCommands)
         // This Mac's hook files, as the host reads them.
@@ -756,9 +754,8 @@ final class ShepherdViewModel {
         self.yourPi.checkLogins = { [weak piAuth = self.piAuth] providers in await piAuth?.checkLogins(providers) ?? [:] }
         // Logins re-imported from your pi: agents waiting on a sign-in try again.
         self.yourPi.onSignInsChanged = { [weak self] in _ = self?.retrySignedOutAgents(nil) }
-        // A host that comes back takes the instruction and skill changes it is owed.
-        hosts.onHostConnected = { [weak self, weak instructions = self.instructions] hostID in
-            instructions?.hostConnected(hostID)
+        // A host that comes back takes the skill changes it is owed (instructions sync underneath, over the fleet).
+        hosts.onHostConnected = { [weak self] hostID in
             self?.skillsHostConnected(hostID)
         }
         threadStores.configure = { [weak self] agent, store in store.offline = self?.coordinatorHeldOff(agent) ?? false }
@@ -854,6 +851,21 @@ final class ShepherdViewModel {
         installMissingSpaceWatch()
         installProjectRuntime()
         self.hooks.spacePaths = { [weak self] in self?.state.spaces.filter { !$0.hidden }.map(\.path) ?? [] }
+        self.fleet.host = { [weak self] in try self?.remoteHosts.thisMacHost() }
+        self.fleetPage.weight = { [weak self] in self?.settings.fleetWeight(of: $0) ?? .normal }
+        self.fleetPage.setWeight = { [weak self] in self?.settings.setFleetWeight($0, of: $1) }
+        self.configureFleetThreadActions()
+        self.fleetPage.autoDispatch = { [weak self] in self?.settings.autoDispatch(pairedMacs: $0) ?? ($0 > 0) }
+        self.fleetPage.batteryCountsHalf = { [weak self] in self?.settings.fleetBatteryCountsHalf ?? true }
+        self.fleetPage.threadCap = { [weak self] in self?.settings.fleetThreadCap ?? HostSettings.fleetThreadCapDefault }
+        self.fleet.onSnapshot = { [fleetPage] in fleetPage.update($0) }
+        self.settings.onFleetWeightsChange = { [fleetPage] in fleetPage.recompute() }
+        self.fleet.pairClient = { [weak self] host, port, code in try await self?.remoteHosts.pairAsClient(host: host, port: port, code: code) }
+        self.fleet.browse = { update in
+            let browser = FleetBrowser()
+            browser.start(update)
+            return { browser.stop() }
+        }
         self.apps.spaces = { [weak self] in self?.state.spaces.filter { !$0.hidden } ?? [] }
         self.apps.currentSpace = { [weak self] in self?.selectedRemoteAgent == nil ? self?.selectedAgent?.spaceID : nil }
         installApps()

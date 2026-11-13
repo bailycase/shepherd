@@ -147,7 +147,6 @@ extension ShepherdViewModel {
 
     /// Add or edit apps…: Settings › Apps.
     func openAppsSettings() {
-        adoptSettingsHost(nil)
         settingsSection = .apps
         showSettings = true
     }

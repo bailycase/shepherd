@@ -6,8 +6,8 @@ import ShepherdSessions
 import ShepherdTestKit
 @testable import ShepherdApp
 
-/// Settings ▸ Instructions on the Mac: drafts, what Save says and writes, what a host that can't
-/// take a save is owed, and what the page remembers between launches.
+/// Settings ▸ Instructions on the Mac: drafts, what Save writes, and what stays when a save lands
+/// under an edit. The files are the fleet's: the page edits this Mac's copy and knows no other host.
 @Suite("Instructions model")
 @MainActor
 struct InstructionsModelTests {
@@ -18,17 +18,10 @@ struct InstructionsModelTests {
         store = InstructionsStore(directory: try makeScratchDirectory("instructions"))
     }
 
-    func makeModel(_ hosts: RemoteHostStore? = nil) async -> InstructionsModel {
-        let model = InstructionsModel(store: store, remoteHosts: hosts ?? RemoteHostStore(defaults: defaults, connects: false), defaults: defaults)
+    func makeModel() async -> InstructionsModel {
+        let model = InstructionsModel(store: store, remoteHosts: RemoteHostStore(defaults: defaults, connects: false))
         await model.refresh()
         return model
-    }
-
-    /// A host that is configured but never answers (nothing listens on port 1).
-    func offlineHost(_ name: String = "horizon") -> (RemoteHostStore, UUID) {
-        let hosts = RemoteHostStore(defaults: defaults, connects: false)
-        hosts.addHost(name: name, host: "127.0.0.1", port: 1, token: "x")
-        return (hosts, hosts.connections[0].id)
     }
 
     /// L9: the AGENTS.md and APPEND_SYSTEM.md that came over into Shepherd's pi home are named on
@@ -37,13 +30,13 @@ struct InstructionsModelTests {
         let piHome = try makeScratchDirectory("pi-home")
         try "# Your rules\n".write(to: piHome.appendingPathComponent("AGENTS.md"), atomically: true, encoding: .utf8)
         try "".write(to: piHome.appendingPathComponent("APPEND_SYSTEM.md"), atomically: true, encoding: .utf8)
-        let model = InstructionsModel(store: store, remoteHosts: RemoteHostStore(defaults: defaults, connects: false), defaults: defaults)
+        let model = InstructionsModel(store: store, remoteHosts: RemoteHostStore(defaults: defaults, connects: false))
         model.piHome = piHome
         await model.refresh()
         #expect(model.imported.keys.sorted { $0.rawValue < $1.rawValue } == [.agents], "an empty APPEND_SYSTEM.md offers nothing")
         #expect(model.adoptable(.agents)?.name == "AGENTS.md" && model.adoptable(.appendSystem) == nil)
         model.adoptImported(.agents)
-        #expect(model.text(.agents, on: .local) == "# Your rules\n" && model.isEdited(.agents, on: .local))
+        #expect(model.text(.agents) == "# Your rules\n" && model.isEdited(.agents))
         #expect(model.adoptable(.agents) == nil, "once adopted (or edited) the offer is gone")
         await model.save()
         #expect(store.snapshot().agents == "# Your rules\n" && model.adoptable(.agents) == nil)
@@ -52,73 +45,68 @@ struct InstructionsModelTests {
     @Test func anEditIsADraftUntilItMatchesTheSavedFileAgain() async throws {
         try store.save(.agents, content: "- a\n")
         let model = await makeModel()
-        #expect(model.text(.agents, on: .local) == "- a\n")
-        model.setText("- a\n- b\n", file: .agents, on: .local)
-        #expect(model.isEdited(.agents, on: .local))
+        #expect(model.text(.agents) == "- a\n")
+        model.setText("- a\n- b\n", file: .agents)
+        #expect(model.isEdited(.agents))
         #expect(model.canSave)
         // The other file has no draft of its own.
-        #expect(!model.isEdited(.appendSystem, on: .local))
-        model.setText("- a\n", file: .agents, on: .local)
-        #expect(!model.isEdited(.agents, on: .local))
+        #expect(!model.isEdited(.appendSystem))
+        model.setText("- a\n", file: .agents)
+        #expect(!model.isEdited(.agents))
         #expect(!model.canSave)
     }
 
     @Test func saveWritesThisMacsFileAndRecordsIt() async throws {
         let model = await makeModel()
-        model.setText("- Never force-push.\n", file: .agents, on: .local)
+        model.setText("- Never force-push.\n", file: .agents)
         await model.save()
         #expect(store.snapshot().agents == "- Never force-push.\n")
-        #expect(!model.isEdited(.agents, on: .local))
-        #expect(model.history(on: .local).map(\.summary) == ["Added “Never force-push.”"])
+        #expect(!model.isEdited(.agents))
+        #expect(model.history().map(\.summary) == ["Added “Never force-push.”"])
         #expect(model.problem == nil)
     }
 
-    @Test(arguments: [false, true], [false, true])
-    func savingOrRestoringKeepsNewerEditsOnEitherMachine(restore: Bool, remote: Bool) async throws {
-        let hosts = RemoteHostStore(defaults: defaults, connects: false)
-        let machine: InstructionsModel.Machine = remote ? .remote(UUID()) : .local
+    @Test(arguments: [false, true])
+    func savingOrRestoringKeepsNewerEdits(restore: Bool) async throws {
         let entry = InstructionHistoryEntry(id: UUID(), file: .agents, savedAt: 0, summary: "older")
         let (requests, arrivals) = AsyncStream<RemoteInstructionsRequest>.makeStream()
         let (replies, resume) = AsyncStream<InstructionsSnapshot>.makeStream()
-        let model = InstructionsModel(store: store, remoteHosts: hosts, defaults: defaults) { destination, request in
-            #expect(destination == machine)
+        let model = InstructionsModel(store: store, remoteHosts: RemoteHostStore(defaults: defaults, connects: false)) { request in
             arrivals.yield(request)
             for await snapshot in replies { return snapshot }
             throw RemoteHostClientError.disconnected
         }
-        model.sameEverywhere = false
-        model.machine = machine
-        model.setText("submitted", file: .agents, on: machine)
+        model.setText("submitted", file: .agents)
         let writing = Task {
-            if restore { await model.restore(entry, on: machine) }
-            else { await model.save() }
+            if restore { await model.restore(entry) } else { await model.save() }
         }
         for await request in requests {
+            // The page is the Mac's own: the host's history says "This Mac" for an empty origin, and the fleet carries the rest.
             if restore {
-                #expect(request == .restore(revisionID: entry.id, origin: remote ? InstructionsModel.machineName : ""))
+                #expect(request == .restore(revisionID: entry.id, origin: ""))
             } else {
-                #expect(request == .save(file: .agents, content: "submitted", origin: remote ? InstructionsModel.machineName : "", sync: false))
+                #expect(request == .save(file: .agents, content: "submitted", origin: "", sync: false))
             }
             break
         }
-        model.setText("newer edit", file: .agents, on: machine)
+        model.setText("newer edit", file: .agents)
         resume.yield(InstructionsSnapshot(agents: restore ? "restored" : "submitted", directory: "~/i"))
         await writing.value
         arrivals.finish()
         resume.finish()
-        #expect(model.text(.agents, on: machine) == "newer edit")
-        #expect(model.isEdited(.agents, on: machine))
+        #expect(model.text(.agents) == "newer edit")
+        #expect(model.isEdited(.agents))
         #expect(model.problem == nil)
-        if !remote { #expect(model.saved(.agents, on: machine) == (restore ? "restored" : "submitted")) }
+        #expect(model.saved(.agents) == (restore ? "restored" : "submitted"))
     }
 
     @Test func revertDropsTheDraft() async throws {
         try store.save(.appendSystem, content: "rule\n")
         let model = await makeModel()
         model.file = .appendSystem
-        model.setText("other\n", file: .appendSystem, on: .local)
+        model.setText("other\n", file: .appendSystem)
         model.revert()
-        #expect(model.text(.appendSystem, on: .local) == "rule\n")
+        #expect(model.text(.appendSystem) == "rule\n")
         #expect(store.snapshot().appendSystem == "rule\n")
     }
 
@@ -126,98 +114,30 @@ struct InstructionsModelTests {
         try store.save(.agents, content: "- a\n")
         try store.save(.agents, content: "- b\n")
         let model = await makeModel()
-        let first = try #require(model.history(on: .local).last)
-        await model.restore(first, on: .local)
+        let first = try #require(model.history().last)
+        await model.restore(first)
         #expect(store.snapshot().agents == "- a\n")
-        #expect(model.text(.agents, on: .local) == "- a\n")
-        #expect(model.history(on: .local).first?.summary.hasPrefix("Restored the ") == true)
-    }
-
-    @Test func saveNamesWhereItWrites() async throws {
-        let alone = await makeModel()
-        #expect(alone.saveTitle == "Save")
-
-        let (hosts, hostID) = offlineHost()
-        defer { hosts.removeHost(id: hostID) }
-        let model = await makeModel(hosts)
-        // An offline host still takes the save later, so it counts.
-        #expect(model.saveTitle == "Save to all hosts")
-        model.sameEverywhere = false
-        #expect(model.saveTitle == "Save to This Mac")
-        model.machine = .remote(hostID)
-        #expect(model.saveTitle == "Save to horizon")
-    }
-
-    @Test func anOfflineHostIsOwedTheFilesOfASave() async throws {
-        let (hosts, hostID) = offlineHost()
-        defer { hosts.removeHost(id: hostID) }
-        let model = await makeModel(hosts)
-        #expect(model.files(of: hostID) == .offline)
-        model.setText("- a\n", file: .agents, on: .local)
-        await model.save()
-        #expect(store.snapshot().agents == "- a\n")
-        #expect(model.chip(for: .remote(hostID)) == InstructionsChip(.quiet, "offline · will sync"))
-        // Owed across launches.
-        let relaunched = InstructionsModel(store: store, remoteHosts: hosts, defaults: defaults)
-        #expect(relaunched.chip(for: .remote(hostID)) == InstructionsChip(.quiet, "offline · will sync"))
-    }
-
-    @Test func sameOnEveryHostIsRememberedAndEditsThisMac() async throws {
-        let (hosts, hostID) = offlineHost()
-        defer { hosts.removeHost(id: hostID) }
-        let model = await makeModel(hosts)
-        #expect(model.sameEverywhere)
-        model.sameEverywhere = false
-        model.machine = .remote(hostID)
-        #expect(!InstructionsModel(store: store, remoteHosts: hosts, defaults: defaults).sameEverywhere)
-        model.sameEverywhere = true
-        #expect(model.machine == .local)
-    }
-
-    /// A host that can't be read can't be edited: nothing could say what a save would replace.
-    @Test func anUnreadHostHasNoTextToEdit() async throws {
-        let (hosts, hostID) = offlineHost()
-        defer { hosts.removeHost(id: hostID) }
-        let model = await makeModel(hosts)
-        #expect(model.saved(.agents, on: .remote(hostID)) == nil)
-        #expect(model.path(of: .agents, on: .remote(hostID)) == nil)
-        #expect(model.row(for: .remote(hostID)).detail == "offline")
-        #expect(model.comparing == nil)
-    }
-
-    /// Lets the model's own tasks run until `condition` holds; here they finish at once, since
-    /// nothing waits on a host.
-    func settle(_ condition: () -> Bool) async {
-        for _ in 0..<100 where !condition() { await Task.yield() }
+        #expect(model.text(.agents) == "- a\n")
+        #expect(model.history().first?.summary.hasPrefix("Restored the ") == true)
     }
 
     /// A suggestion added while AGENTS.md is being edited stays when the draft is saved.
     @Test func aLineAddedUnderADraftStaysInIt() async throws {
         try store.save(.agents, content: "- a\n")
         let model = await makeModel()
-        model.setText("- a\n- edited\n", file: .agents, on: .local)
+        model.setText("- a\n- edited\n", file: .agents)
         model.localChanged(try store.save(.agents, content: "- a\n- added\n"))
-        #expect(model.saved(.agents, on: .local) == "- a\n- added\n")
-        #expect(model.text(.agents, on: .local) == "- a\n- edited\n- added\n")
+        #expect(model.saved(.agents) == "- a\n- added\n")
+        #expect(model.text(.agents) == "- a\n- edited\n- added\n")
     }
 
-    /// With Same on every host on, a change to This Mac's files from elsewhere goes to every
-    /// host too; one that is offline is owed it.
-    @Test func aChangeOnThisMacIsOwedToAnOfflineHost() async throws {
-        let (hosts, hostID) = offlineHost()
-        defer { hosts.removeHost(id: hostID) }
-        let model = await makeModel(hosts)
-        model.localChanged(try store.save(.agents, content: "- from the iPhone\n"))
-        await settle { model.chip(for: .remote(hostID)).word == "offline · will sync" }
-        #expect(model.chip(for: .remote(hostID)) == InstructionsChip(.quiet, "offline · will sync"))
-    }
-
-    @Test func thisMacReadsAsThisMacInAHostsHistory() async {
+    /// A save another Mac made arrives through the host's sync: the open page shows it at once.
+    @Test func aSyncedSaveShowsAtOnceAndLeavesTheOtherFilesDraftAlone() async throws {
         let model = await makeModel()
-        let synced = InstructionHistoryEntry(id: UUID(), file: .agents, savedAt: 0,
-                                             summary: "Synced from \(InstructionsModel.machineName)")
-        #expect(model.summary(of: synced) == "Synced from This Mac")
-        let other = InstructionHistoryEntry(id: UUID(), file: .agents, savedAt: 0, summary: "Synced from studio")
-        #expect(model.summary(of: other) == "Synced from studio")
+        model.setText("my draft of APPEND_SYSTEM", file: .appendSystem)
+        model.localChanged(try store.save(.agents, content: "from the Mac mini\n", origin: "Mac mini", sync: true))
+        #expect(model.saved(.agents) == "from the Mac mini\n" && !model.isEdited(.agents))
+        #expect(model.text(.appendSystem) == "my draft of APPEND_SYSTEM")
+        #expect(model.history().map(\.summary) == ["Synced from Mac mini"])
     }
 }

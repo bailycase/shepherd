@@ -116,15 +116,14 @@ enum ClientStateChecks {
     static func selectedHostSummaries(_ app: MobileApp) async {
         let settings = SettingsStore.of(app.hosts)
         await settings.refresh()
-        for host in settings.hosts where host.isConnected {
-            guard let value = settings.hostSettings.settings(of: host) else { check(false, "summary host loaded"); continue }
-            let nav = MobileNavigator()
-            nav.settingsSelection.chosenHost = host.id
-            check(settings.defaultsValue(chosenHost: nav.settingsSelection.chosenHost) == HostSettingsPresentation.defaultsValue(value)
-                  && settings.extensionsValue(chosenHost: nav.settingsSelection.chosenHost) == HostSettingsPresentation.extensionsValue(value)
-                  && settings.agentVersion(chosenHost: nav.settingsSelection.chosenHost) == HostSettingsPresentation.agentVersion(value),
-                  "Settings and More summaries follow the scene-selected host")
+        guard let host = settings.settingsHost, host.isConnected, let value = settings.hostSettings.settings(of: host) else {
+            check(false, "summary host loaded")
+            return
         }
+        check(settings.defaultsValue == HostSettingsPresentation.defaultsValue(value)
+              && settings.extensionsValue == HostSettingsPresentation.extensionsValue(value)
+              && settings.agentVersion == HostSettingsPresentation.agentVersion(value),
+              "Settings and More summaries follow the host the phone reads")
     }
 
     static func commitAndQueueOwnership() async {
@@ -252,21 +251,17 @@ enum ClientStateChecks {
     static func sceneOwnershipAndForget(_ app: MobileApp) {
         let a = MobileNavigator(), b = MobileNavigator()
         let ref = FixtureData.ref(FixtureData.preview)
-        a.settingsSelection.chosenHost = ref.host
         a.settingsSelection.page = .instructions
-        a.settingsSelection.instructionsHost = ref.host
         a.composerPresentation.state(for: ref).choosingModel = true
         a.composerPresentation.state(for: ref).showingContext = true
         a.commitPopover = ref
-        check(b.settingsSelection.chosenHost == nil && b.settingsSelection.instructionsHost == nil && b.settingsSelection.page == .appearance,
-              "Settings host and page belong to their window")
+        check(b.settingsSelection.page == .appearance, "Settings page belongs to its window")
         check(!b.composerPresentation.state(for: ref).choosingModel && !b.composerPresentation.state(for: ref).showingContext,
               "composer sheets open in one window only")
         b.commitPopover = nil
         check(a.commitPopover == ref, "closing another window's commit does not close this one")
         a.forget(host: ref.host)
-        check(a.settingsSelection.chosenHost == nil && a.settingsSelection.instructionsHost == nil && a.commitPopover == nil
-              && !a.composerPresentation.state(for: ref).showingContext, "forget clears scene-local host state")
+        check(a.commitPopover == nil && !a.composerPresentation.state(for: ref).showingContext, "forget clears scene-local host state")
 
         let forgotten = AgentRef(host: UUID(), agent: AgentID(rawValue: "forgotten"))
         let kept = AgentRef(host: UUID(), agent: AgentID(rawValue: "kept"))
@@ -348,7 +343,7 @@ enum ClientStateChecks {
         typealias Tab = MobileNavigator.Tab
         let a = FixtureData.ref(FixtureData.preview)
         let landings: [(MobileRoute, Tab, Tab, String)] = [
-            (.settings(.hosts), .home, .settings, "a Settings page"),
+            (.settings(.fleet), .home, .settings, "a Settings page"),
             (.home(.more), .home, .settings, "More is Settings now"),
             (.home(.automations), .home, .automations, "Automations is its tab"),
             (.automations(.detail(host: a.host, automation: AutomationID(rawValue: "x"))), .home, .automations, "an automation"),

@@ -8,6 +8,8 @@ import ShepherdSessions
 struct PiSignInSettings: View {
     let yourPi: YourPiModel
     let auth: PiAuthStore
+    /// Fleet is on: a sign-in is the same on every Mac (`FleetCredentialsSource`), and the page says so.
+    var inFleet = false
     @State private var renaming: Renaming?
     @State private var newName = ""
 
@@ -23,7 +25,9 @@ struct PiSignInSettings: View {
                                      needed: auth.needed, problems: auth.problems, accounts: auth.accounts)
         ScrollViewReader { proxy in
             SettingsPage(title: "Sign-in",
-                         explanation: "Subscriptions and API keys for agents on this Mac. They live in Shepherd’s own pi, so your terminal pi keeps its own.") {
+                         explanation: inFleet
+                             ? "Subscriptions and API keys, the same on every Mac in your fleet: sign in once. They live in Shepherd’s own pi, so your terminal pi keeps its own."
+                             : "Subscriptions and API keys for agents on this Mac. They live in Shepherd’s own pi, so your terminal pi keeps its own.") {
                 Button("Re-import from pi") { Task { await yourPi.reimport(.logins) } }
                 .buttonStyle(.sh(.secondary, size: .s))
                 .shControlScale(.standard)
@@ -36,7 +40,8 @@ struct PiSignInSettings: View {
                     }
                 }
                 SettingsGroup(title: "API keys",
-                              footnote: "Pasted keys are saved in Shepherd’s pi, readable only by you. Environment variables are read each time an agent starts. Command values are not supported.") {
+                              footnote: "Pasted keys are saved in Shepherd’s pi, readable only by you. Environment variables are read each time an agent starts. Command values are not supported."
+                              + (inFleet ? " A sign-in kept only in a Mac’s Keychain stays on that Mac." : "")) {
                     ForEach(page.apiKeys) { row in
                         providerRow(row).id(row.id)
                     }

@@ -2,10 +2,12 @@ import Foundation
 import Observation
 import ShepherdProtocol
 
-// Settings ▸ Skills on the Mac, the iPhone and the iPad: every host's agent skills, read and
-// changed over `skills.v1` (the Mac's own through its store). The model holds what the pages draw
-// and every rule they follow, so the pages only draw; they pass the hosts as the app knows them
-// now (`SkillsHost`).
+// Settings ▸ Skills on the Mac, the iPhone and the iPad: the agent skills every Mac in the fleet
+// shares, read and changed over `skills.v1` (the Mac's own through its store). The page edits one
+// host's copy, the first connected one; the fleet carries a change to every other Mac on its own
+// (`fleet.sync.v1`), so nothing here knows about the other hosts. The model holds what the pages
+// draw and every rule they follow, so the pages only draw; they pass the hosts as the app knows
+// them now (`SkillsHost`).
 
 /// What Settings ▸ Skills reads and changes a host's skills through: its `RemoteHostClient`, the
 /// Mac's own store, or a stand-in in tests.
@@ -55,12 +57,12 @@ public enum HostSkills: Equatable, Sendable {
     }
 }
 
-/// One installed skill as the list draws it: the skill as the first host that has it holds it.
+/// One installed skill as the list draws it.
 public struct SkillRow: Identifiable, Equatable, Sendable {
     public var skill: InstalledSkill
-    /// An update or a change is on its way to the hosts ("Updating").
+    /// An update is being installed ("Updating").
     public var isUpdating: Bool
-    /// The SKILL.md the first host's pi uses instead (with `~`), when a skill of the same name
+    /// The SKILL.md this host's pi uses instead (with `~`), when a skill of the same name
     /// from pi's own setup comes first: the agent never sees this one.
     public var shadowedBy: String?
 
@@ -104,73 +106,35 @@ public struct PiSkillGroup: Identifiable, Equatable, Sendable {
     public var id: Kind { kind }
 }
 
-/// Where one host is with a skill (the detail's Hosts).
-public struct SkillCopy: Identifiable, Equatable, Sendable {
+/// An install on its way, for the sheet or screen that follows it.
+public struct SkillInstall: Equatable, Sendable {
     public enum State: Equatable, Sendable {
+        case installing
         case installed
-        case updating
-        case checking
-        /// Online without it.
-        case missing
-        /// Offline, with a change waiting for it.
-        case owed
-        case offline
-        case unsupported
+        case failed(String)
     }
 
-    public var id: UUID
-    public var name: String
     public var state: State
 
-    public init(id: UUID, name: String, state: State) {
-        self.id = id
-        self.name = name
-        self.state = state
-    }
-}
-
-/// An install on its way to each host, one host at a time ("Installing · 1 of 3 hosts").
-public struct SkillInstall: Equatable, Sendable {
-    public struct Step: Identifiable, Equatable, Sendable {
-        public enum State: Equatable, Sendable {
-            case waiting
-            case copying
-            case installed
-            /// Offline: it installs when the host is back.
-            case owed
-            case failed(String)
-        }
-
-        public var id: UUID
-        public var name: String
-        public var state: State
-    }
-
-    public var steps: [Step]
-    public var cancelled = false
-    /// What each host is sent, so Cancel can take back what an offline host is owed.
-    var request: RemoteSkillsRequest?
-
-    public var installed: Int { steps.filter { $0.state == .installed }.count }
-    public var isRunning: Bool { !cancelled && steps.contains { $0.state == .waiting || $0.state == .copying } }
+    public var isRunning: Bool { state == .installing }
     public var failure: String? {
-        for step in steps { if case .failed(let reason) = step.state { return reason } }
+        if case .failed(let reason) = state { return reason }
         return nil
     }
 }
 
-/// Where a skill on skills.sh stands on the hosts: Install, installing (the hosts it has
-/// reached), installed, or installed with a newer commit waiting.
+/// Where a skill on skills.sh stands: Install, installing, installed, or installed with a newer
+/// commit waiting.
 public enum SkillResultState: Equatable, Sendable {
     case install
-    case installing(SkillInstall)
+    case installing
     case installed
     case update
 
     @MainActor
     public init(_ skill: DirectorySkill, model: ClientSkills, hosts: [SkillsHost]) {
         if let install = model.installs[skill.id], install.isRunning {
-            self = .installing(install)
+            self = .installing
         } else if let row = model.row(skill.slug, in: hosts) {
             self = row.skill.update == nil ? .installed : .update
         } else {
@@ -179,41 +143,22 @@ public enum SkillResultState: Equatable, Sendable {
     }
 }
 
-/// Settings ▸ Skills' model. Skills are global: with Same skills on every host on (the default,
-/// kept per device), every change goes to every host, one that is offline is owed it and takes it
-/// when it's back, and the list shows the first host's skills with where each host is. Off, the
-/// page changes the first host alone.
+/// Settings ▸ Skills' model. Skills are the fleet's: the page reads and changes one copy, on the
+/// first connected host, and the fleet carries every change to the other Macs by itself.
 @MainActor
 @Observable
 public final class ClientSkills {
-    private enum Key {
-        static let sameEverywhere = "shepherd.skills.sameEverywhere"
-        static let owed = "shepherd.skills.owed"
-    }
-
     /// A removal the toast can take back.
     public struct Removal: Equatable, Sendable {
         public var name: String
-        public var hosts: [UUID]
     }
 
     public enum Filter: String, CaseIterable, Sendable {
         case all, on, updates
     }
 
-    public var sameEverywhere: Bool {
-        didSet { if sameEverywhere != oldValue { defaults.set(sameEverywhere, forKey: Key.sameEverywhere) } }
-    }
     /// The last change a host refused, in words.
     public private(set) var problem: String?
-    /// An ambiguous queued mutation the user must inspect before explicitly abandoning its receipt.
-    public struct Unacknowledged: Equatable, Identifiable, Sendable {
-        public let id: UUID
-        public let host: UUID
-        public let hostName: String
-    }
-    public private(set) var unacknowledged: Unacknowledged?
-
     /// The removal Undo takes back.
     public private(set) var removal: Removal?
     /// Installs from Browse and Add from repo, by the key the sheet gave them.
@@ -221,52 +166,16 @@ public final class ClientSkills {
 
     private var loaded: [UUID: HostSkills] = [:]
     private var updating: Set<String> = []
-    private var sending: [UUID: Set<String>] = [:]
-    /// Changes waiting for hosts that were offline, in order.
-    private struct Owed: Codable, Equatable {
-        var id = UUID()
-        var request: RemoteSkillsRequest
-        // Written before sending: a restart must reconcile an unacknowledged mutation too.
-        var attempted: Bool? = nil
-    }
-    private var owed: [UUID: [Owed]] {
-        didSet { saveOwed() }
-    }
 
     @ObservationIgnored private var forgotten: Set<UUID> = []
-    @ObservationIgnored private var catchingUp: Set<UUID> = []
     @ObservationIgnored private var installAttempts: [String: UUID] = [:]
-    @ObservationIgnored private let defaults: UserDefaults
 
-    public init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        sameEverywhere = defaults.object(forKey: Key.sameEverywhere) as? Bool ?? true
-        if let data = defaults.data(forKey: Key.owed),
-           let decoded = try? JSONDecoder().decode([String: [Owed]].self, from: data) {
-            owed = Dictionary(uniqueKeysWithValues: decoded.compactMap { key, value in UUID(uuidString: key).map { ($0, value) } })
-        } else if let data = defaults.data(forKey: Key.owed),
-                  let decoded = try? JSONDecoder().decode([String: [RemoteSkillsRequest]].self, from: data) {
-            owed = Dictionary(uniqueKeysWithValues: decoded.compactMap { key, value in
-                UUID(uuidString: key).map { ($0, value.map { Owed(request: $0) }) }
-            })
-        } else {
-            owed = [:]
-        }
-    }
+    public init() {}
 
-    /// Explicit Forget, not a disconnect: discard only this host's saved obligations.
+    /// Explicit Forget, not a disconnect: drop what was read from this host.
     public func forget(host: UUID) {
         forgotten.insert(host)
-        if unacknowledged?.host == host { unacknowledged = nil }
         loaded[host] = nil
-        owed[host] = nil
-        sending[host] = nil
-        for key in Array(installs.keys) {
-            installs[key]?.steps.removeAll { $0.id == host }
-            if installs[key]?.steps.isEmpty == true { dismissInstall(key) }
-        }
-        removal?.hosts.removeAll { $0 == host }
-        if removal?.hosts.isEmpty == true { removal = nil }
     }
 
     // MARK: Reading
@@ -277,41 +186,33 @@ public final class ClientSkills {
         return loaded[host.id] ?? .loading
     }
 
-    /// The first host whose skills are read: what the list shows and every host is compared with.
+    /// The host the page edits: the first that is connected and serves skills.
+    public func edited(in hosts: [SkillsHost]) -> SkillsHost? {
+        hosts.first { !forgotten.contains($0.id) && $0.isConnected && $0.serves }
+    }
+
+    /// The edited host once its skills are read: what the list shows.
     public func reference(in hosts: [SkillsHost]) -> SkillsHost? {
-        hosts.first { state(of: $0).snapshot != nil }
+        edited(in: hosts).flatMap { state(of: $0).snapshot != nil ? $0 : nil }
     }
 
-    /// The hosts a change goes to: every host, or with Same skills on every host off the first.
-    public func targets(in hosts: [SkillsHost]) -> [SkillsHost] {
-        let hosts = hosts.filter { !forgotten.contains($0.id) }
-        if sameEverywhere { return hosts }
-        return (reference(in: hosts) ?? hosts.first).map { [$0] } ?? []
-    }
-
-    /// Every skill on any host, by name, as the first host that has it holds it.
+    /// Every skill the edited host has, by name.
     public func rows(in hosts: [SkillsHost]) -> [SkillRow] {
-        var skills: [String: InstalledSkill] = [:]
-        for host in hosts {
-            for skill in state(of: host).snapshot?.skills ?? [] where skills[skill.name] == nil {
-                skills[skill.name] = skill
-            }
-        }
         let shadowed = pi(in: hosts)?.skills.shadowedInstalled ?? [:]
-        return skills.values.sorted { $0.name < $1.name }.map {
+        return (reference(in: hosts).flatMap { state(of: $0).snapshot }?.skills ?? []).sorted { $0.name < $1.name }.map {
             SkillRow(skill: $0, isUpdating: updating.contains($0.name), shadowedBy: $0.isOn ? shadowed[$0.name] : nil)
         }
     }
 
-    /// The skills the first host's pi loads from outside its skills folder, and that host; nil
-    /// while none is read, or when the first host predates reporting them. They are that host's
-    /// own: Same skills on every host never touches them.
+    /// The skills the edited host's pi loads from outside its skills folder, and that host; nil
+    /// while none is read, or when the host predates reporting them. They are that host's own:
+    /// the fleet never carries them.
     public func pi(in hosts: [SkillsHost]) -> (host: SkillsHost, skills: PiSkills)? {
         guard let host = reference(in: hosts), let pi = state(of: host).snapshot?.pi else { return nil }
         return (host, pi)
     }
 
-    /// The read-only groups a filter and a search keep: the first host's pi setup, then its pi
+    /// The read-only groups a filter and a search keep: the host's pi setup, then its pi
     /// packages; an empty group is left out. They never have updates, and On keeps the skills the
     /// agent uses (not one a skill of the same name shadows).
     public func piGroups(in hosts: [SkillsHost], filter: Filter = .all, query: String = "") -> [PiSkillGroup] {
@@ -350,38 +251,19 @@ public final class ClientSkills {
         rows(in: hosts).first { $0.name == name }
     }
 
-    /// Where each host is with a skill.
-    public func copies(of name: String, in hosts: [SkillsHost]) -> [SkillCopy] {
-        hosts.map { host in
-            let state: SkillCopy.State
-            switch self.state(of: host) {
-            case .offline: state = owes(host.id, name) ? .owed : .offline
-            case .unsupported: state = .unsupported
-            case .loading, .failed: state = .checking
-            case .loaded(let snapshot):
-                if sending[host.id]?.contains(name) == true {
-                    state = .updating
-                } else {
-                    state = snapshot.skill(name) == nil ? .missing : .installed
-                }
-            }
-            return SkillCopy(id: host.id, name: host.name, state: state)
-        }
-    }
-
-    /// When the first host last looked for updates.
+    /// When the host last looked for updates.
     public func checkedAt(in hosts: [SkillsHost]) -> Double? {
         reference(in: hosts).flatMap { state(of: $0).snapshot?.checkedAt }
     }
 
-    /// Update automatically, as the first host has it.
+    /// Update automatically, as the host has it.
     public func autoUpdate(in hosts: [SkillsHost]) -> Bool {
         reference(in: hosts).flatMap { state(of: $0).snapshot?.autoUpdate } ?? false
     }
 
-    /// Every skill the first host's agent loads, in pi's order: the installed ones that are on
-    /// (less any a skill from pi's setup shadows), then pi's own. Each is a name, a description,
-    /// its SKILL.md and how it's used.
+    /// Every skill the host's agent loads, in pi's order: the installed ones that are on (less any
+    /// a skill from pi's setup shadows), then pi's own. Each is a name, a description, its SKILL.md
+    /// and how it's used.
     public func loadedSkills(in hosts: [SkillsHost]) -> [(name: String, summary: String, location: String, invocation: SkillInvocation)] {
         guard let snapshot = reference(in: hosts).flatMap({ state(of: $0).snapshot }) else { return [] }
         let shadowed = snapshot.pi?.shadowedInstalled ?? [:]
@@ -394,40 +276,30 @@ public final class ClientSkills {
         return installed + outside
     }
 
-    /// What every automatic skill the first host's agent loads costs in every prompt, pi's own
-    /// included.
+    /// What every automatic skill the host's agent loads costs in every prompt, pi's own included.
     public func promptTokens(in hosts: [SkillsHost]) -> Int {
         SkillsText.promptTokens(loadedSkills(in: hosts).filter { $0.invocation == .automatic }.map { ($0.name, $0.summary, $0.location) })
     }
 
-    /// Where the first host keeps its skills ("~/.agents/skills").
+    /// Where the host keeps its skills ("~/.agents/skills").
     public func directory(in hosts: [SkillsHost]) -> String {
         reference(in: hosts).flatMap { state(of: $0).snapshot?.directory } ?? "~/.agents/skills"
     }
 
-    /// Whether any host has a change waiting for it.
-    public func owes(_ host: UUID) -> Bool {
-        !(owed[host] ?? []).isEmpty
-    }
-
     // MARK: Hosts
 
-    /// Reads every connected host's skills, giving a host that is owed changes them first.
+    /// Reads the edited host's skills afresh.
     public func refresh(_ hosts: [SkillsHost]) async {
-        for host in hosts where host.isConnected && host.serves {
-            await catchUp(host)
-            await fetch(host)
-        }
+        if let host = edited(in: hosts) { await fetch(host) }
     }
 
-    /// A host connected again: it takes what it is owed, then the page reads it afresh.
+    /// A host connected again: the page reads it afresh.
     public func hostConnected(_ host: SkillsHost) async {
         guard host.isConnected, host.serves else { return }
-        await catchUp(host)
         await fetch(host)
     }
 
-    /// A host's skills changed without this page (another device, the host's own check).
+    /// A host's skills changed without this page (another device, the fleet, the host's own check).
     public func hostChanged(_ id: UUID, _ snapshot: SkillsSnapshot) {
         guard !forgotten.contains(id) else { return }
         loaded[id] = .loaded(snapshot)
@@ -437,65 +309,52 @@ public final class ClientSkills {
         problem = nil
     }
 
-    /// User-confirmed only: stop waiting for this one receipt, without retrying or rolling back
-    /// its possibly completed mutation. Later requests remain ordered and can catch up normally.
-    public func resolveUnacknowledged(_ entry: Unacknowledged, in hosts: [SkillsHost]) async {
-        guard !forgotten.contains(entry.host), unacknowledged?.id == entry.id, !catchingUp.contains(entry.host),
-              let index = owed[entry.host]?.firstIndex(where: { $0.id == entry.id && $0.attempted == true }) else { return }
-        owed[entry.host]?.remove(at: index)
-        if unacknowledged?.id == entry.id { unacknowledged = nil; problem = nil }
-        if let host = hosts.first(where: { $0.id == entry.host }) { await hostConnected(host) }
-    }
-
     // MARK: Changes
 
-    /// Turns a skill on or off on every target host, showing it at once.
+    /// Turns a skill on or off, showing it at once.
     @discardableResult
     public func setOn(_ name: String, _ on: Bool, in hosts: [SkillsHost]) -> Task<Void, Never> {
-        post(.setOn(name: name, on: on), name: name, to: holders(of: name, in: hosts)) { snapshot in
+        post(.setOn(name: name, on: on), in: hosts) { snapshot in
             if let index = snapshot.skills.firstIndex(where: { $0.name == name }) { snapshot.skills[index].isOn = on }
         }
     }
 
-    /// How the agent may use a skill, on every target host.
+    /// How the agent may use a skill.
     @discardableResult
     public func setInvocation(_ name: String, _ invocation: SkillInvocation, in hosts: [SkillsHost]) -> Task<Void, Never> {
-        post(.setInvocation(name: name, invocation: invocation), name: name, to: holders(of: name, in: hosts)) { snapshot in
+        post(.setInvocation(name: name, invocation: invocation), in: hosts) { snapshot in
             if let index = snapshot.skills.firstIndex(where: { $0.name == name }) { snapshot.skills[index].invocation = invocation }
         }
     }
 
-    /// Takes a skill off every target host; Undo puts it back.
+    /// Takes a skill off the fleet; Undo puts it back.
     @discardableResult
     public func remove(_ name: String, in hosts: [SkillsHost]) -> Task<Void, Never> {
-        let targets = holders(of: name, in: hosts)
-        removal = Removal(name: name, hosts: targets.map(\.id))
-        return post(.remove(name: name), name: name, to: targets) { snapshot in
+        removal = Removal(name: name)
+        return post(.remove(name: name), in: hosts) { snapshot in
             snapshot.skills.removeAll { $0.name == name }
         }
     }
 
-    /// Puts back the skill just removed, on the hosts it came off.
+    /// Puts back the skill just removed.
     @discardableResult
     public func undoRemoval(in hosts: [SkillsHost]) -> Task<Void, Never>? {
         guard let removal else { return nil }
         self.removal = nil
-        let targets = hosts.filter { removal.hosts.contains($0.id) }
-        return post(.restore(name: removal.name), name: removal.name, to: targets, showing: nil)
+        return post(.restore(name: removal.name), in: hosts, showing: nil)
     }
 
     public func dismissRemoval() {
         removal = nil
     }
 
-    /// Installs a skill's newer commit on every target host; the row says Updating meanwhile.
+    /// Installs a skill's newer commit; the row says Updating meanwhile.
     public func update(_ name: String, in hosts: [SkillsHost]) async {
         guard let current = row(name, in: hosts), let source = current.skill.source, let update = current.skill.update,
               !updating.contains(name) else { return }
         updating.insert(name)
         defer { updating.remove(name) }
-        await send(.install(repo: source.repo, paths: [source.path], commit: update.commit, invocation: nil), name: name,
-                   to: targets(in: hosts))
+        await send(.install(repo: source.repo, paths: [source.path], commit: update.commit, invocation: nil), in: hosts)
     }
 
     /// Update N: every skill with a newer commit.
@@ -505,23 +364,22 @@ public final class ClientSkills {
         }
     }
 
-    /// Update automatically, on every target host.
+    /// Update automatically.
     @discardableResult
     public func setAutoUpdate(_ on: Bool, in hosts: [SkillsHost]) -> Task<Void, Never> {
-        post(.configure(autoUpdate: on), name: nil, to: targets(in: hosts)) { $0.autoUpdate = on }
+        post(.configure(autoUpdate: on), in: hosts) { $0.autoUpdate = on }
     }
 
-    /// Asks each connected host to look for newer commits now.
+    /// Asks the host to look for newer commits now.
     public func checkUpdates(in hosts: [SkillsHost]) async {
-        await send(.checkUpdates, name: nil, to: targets(in: hosts).filter(\.isConnected))
+        await send(.checkUpdates, in: hosts)
     }
 
     // MARK: Installing
 
-    /// A repository's skills, looked up on the first connected host (Add from repo).
+    /// A repository's skills, looked up on the edited host (Add from repo).
     public func lookUp(_ repo: String, in hosts: [SkillsHost]) async throws -> RepoSkills {
-        guard let host = targets(in: hosts).first(where: { $0.isConnected && $0.serves }) ?? hosts.first(where: { !forgotten.contains($0.id) && $0.isConnected && $0.serves }),
-              host.client != nil else {
+        guard let host = edited(in: hosts) else {
             throw RemoteHostClientError.rejected(code: "offline", message: "No host is connected to look it up.")
         }
         guard case .repo(let found) = try await request(.lookUp(repo: repo), on: host) else {
@@ -530,84 +388,52 @@ public final class ClientSkills {
         return found
     }
 
-    /// Installs skills from a repository on every target host, one host at a time; `key` names
-    /// the install for the sheet that follows it.
+    /// Installs skills from a repository; `key` names the install for the sheet that follows it.
     public func install(_ key: String, repo: String, paths: [String], commit: String?, invocation: SkillInvocation?,
                         in hosts: [SkillsHost]) async {
         await run(key, .install(repo: repo, paths: paths, commit: commit, invocation: invocation), in: hosts)
     }
 
-    /// Installs a folder copied from this device on every target host, one host at a time.
+    /// Installs a folder copied from this device.
     public func installFiles(_ key: String, name: String, files: [SkillFile], invocation: SkillInvocation,
                              in hosts: [SkillsHost]) async {
         await run(key, .installFiles(name: name, files: files, invocation: invocation), in: hosts)
     }
 
     private func run(_ key: String, _ request: RemoteSkillsRequest, in hosts: [SkillsHost]) async {
-        let destinations = targets(in: hosts)
-        guard !destinations.isEmpty else { return }
+        guard let host = edited(in: hosts) else { return }
         let attempt = UUID()
         installAttempts[key] = attempt
-        installs[key] = SkillInstall(steps: destinations.map { host in
-            SkillInstall.Step(id: host.id, name: host.name, state: host.isConnected ? .waiting : .owed)
-        }, request: request)
-        for host in destinations {
-            guard installAttempts[key] == attempt, installs[key]?.cancelled == false, !Task.isCancelled else { break }
-            guard !forgotten.contains(host.id) else { continue }
-            guard host.client != nil else {
-                owe(request, to: host.id)
-                continue
-            }
-            guard host.serves else {
-                step(key, host.id, .failed("Update Shepherd on \(host.name) to install skills there."))
-                continue
-            }
-            step(key, host.id, .copying)
-            do {
-                if case .skills(let snapshot) = try await self.request(request, on: host) { loaded[host.id] = .loaded(snapshot) }
-                guard installAttempts[key] == attempt else { return }
-                step(key, host.id, .installed)
-            } catch {
-                guard installAttempts[key] == attempt else { return }
-                guard !forgotten.contains(host.id) else { continue }
-                step(key, host.id, .failed(settingsProblem(error)))
-            }
+        installs[key] = SkillInstall(state: .installing)
+        do {
+            if case .skills(let snapshot) = try await self.request(request, on: host) { loaded[host.id] = .loaded(snapshot) }
+            guard installAttempts[key] == attempt else { return }
+            installs[key] = SkillInstall(state: .installed)
+        } catch {
+            guard installAttempts[key] == attempt, !forgotten.contains(host.id) else { return }
+            installs[key] = SkillInstall(state: .failed(settingsProblem(error)))
         }
     }
 
-    /// Installs a skill from skills.sh: its repository is looked up on a host to find the
-    /// skill's folder, then installed like one from Add from repo.
+    /// Installs a skill from skills.sh: its repository is looked up to find the skill's folder,
+    /// then installed like one from Add from repo.
     public func install(_ key: String, source: String, skill: String, invocation: SkillInvocation?, in hosts: [SkillsHost]) async {
-        guard !targets(in: hosts).isEmpty else { return }
+        guard edited(in: hosts) != nil else { return }
         let attempt = UUID()
         installAttempts[key] = attempt
-        installs[key] = SkillInstall(steps: targets(in: hosts).map { SkillInstall.Step(id: $0.id, name: $0.name, state: .waiting) })
+        installs[key] = SkillInstall(state: .installing)
         do {
             let found = try await lookUp(source, in: hosts)
-            guard installAttempts[key] == attempt, installs[key]?.cancelled == false, !Task.isCancelled else { return }
+            guard installAttempts[key] == attempt, !Task.isCancelled else { return }
             guard let match = found.skills.first(where: { $0.name == skill })
                 ?? found.skills.first(where: { $0.path.split(separator: "/").last.map(String.init) == skill }) else {
                 throw RemoteHostClientError.rejected(code: "no_such_skill", message: "\(source) has no skill named \(skill).")
             }
             await install(key, repo: found.repo, paths: [match.path], commit: found.commit, invocation: invocation, in: hosts)
         } catch {
-            guard installAttempts[key] == attempt, installs[key]?.cancelled == false, !Task.isCancelled else { return }
-            let reason = settingsProblem(error)
-            installs[key]?.steps = (installs[key]?.steps ?? []).map { SkillInstall.Step(id: $0.id, name: $0.name, state: .failed(reason)) }
+            guard installAttempts[key] == attempt, !Task.isCancelled else { return }
+            installs[key] = SkillInstall(state: .failed(settingsProblem(error)))
         }
-    }
-
-    /// Stops an install before the hosts it hasn't reached; what those hosts are owed is dropped.
-    public func cancelInstall(_ key: String) {
-        guard var install = installs[key] else { return }
-        install.cancelled = true
-        for index in install.steps.indices where install.steps[index].state == .owed || install.steps[index].state == .waiting {
-            if let request = install.request, let last = owed[install.steps[index].id]?.lastIndex(where: { $0.request == request && $0.attempted != true }) {
-                owed[install.steps[index].id]?.remove(at: last)
-            }
-            install.steps[index].state = .failed("Cancelled")
-        }
-        installs[key] = install
     }
 
     public func dismissInstall(_ key: String) {
@@ -617,49 +443,29 @@ public final class ClientSkills {
 
     // MARK: Private
 
-    /// The target hosts that have the skill, or are offline (and may).
-    private func holders(of name: String, in hosts: [SkillsHost]) -> [SkillsHost] {
-        targets(in: hosts).filter { host in
-            switch state(of: host) {
-            case .loaded(let snapshot): snapshot.skill(name) != nil
-            case .offline: true
-            default: false
-            }
-        }
-    }
-
-    private func post(_ request: RemoteSkillsRequest, name: String?, to targets: [SkillsHost],
+    private func post(_ request: RemoteSkillsRequest, in hosts: [SkillsHost],
                       showing change: ((inout SkillsSnapshot) -> Void)?) -> Task<Void, Never> {
         problem = nil
-        if let change {
-            for host in targets {
-                guard case .loaded(var snapshot)? = loaded[host.id], host.isConnected else { continue }
-                change(&snapshot)
-                loaded[host.id] = .loaded(snapshot)
-            }
+        if let change, let host = edited(in: hosts), case .loaded(var snapshot)? = loaded[host.id] {
+            change(&snapshot)
+            loaded[host.id] = .loaded(snapshot)
         }
-        return Task { await send(request, name: name, to: targets) }
+        return Task { await send(request, in: hosts) }
     }
 
-    /// Sends `request` to each host: a connected one answers with its skills, an offline one is
-    /// owed it (except a check, which it does itself).
-    private func send(_ request: RemoteSkillsRequest, name: String?, to targets: [SkillsHost]) async {
-        for host in targets {
-            guard !forgotten.contains(host.id) else { continue }
-            guard host.client != nil else {
-                if request != .checkUpdates { owe(request, to: host.id) }
-                continue
-            }
-            guard host.serves else { continue }
-            if let name { sending[host.id, default: []].insert(name) }
-            do {
-                if case .skills(let snapshot) = try await self.request(request, on: host) { loaded[host.id] = .loaded(snapshot) }
-            } catch {
-                guard !forgotten.contains(host.id) else { continue }
-                problem = targets.count > 1 ? "\(host.name): \(settingsProblem(error))" : settingsProblem(error)
-                await fetch(host)
-            }
-            if let name { sending[host.id]?.remove(name) }
+    private func post(_ request: RemoteSkillsRequest, in hosts: [SkillsHost], showing change: @escaping (inout SkillsSnapshot) -> Void) -> Task<Void, Never> {
+        post(request, in: hosts, showing: Optional(change))
+    }
+
+    /// Sends `request` to the edited host: it answers with its skills.
+    private func send(_ request: RemoteSkillsRequest, in hosts: [SkillsHost]) async {
+        guard let host = edited(in: hosts) else { return }
+        do {
+            if case .skills(let snapshot) = try await self.request(request, on: host) { loaded[host.id] = .loaded(snapshot) }
+        } catch {
+            guard !forgotten.contains(host.id) else { return }
+            problem = settingsProblem(error)
+            await fetch(host)
         }
     }
 
@@ -679,109 +485,5 @@ public final class ClientSkills {
         let result = try await client.skills(request)
         guard !forgotten.contains(host.id) else { throw CancellationError() }
         return result
-    }
-
-    /// Acknowledge one entry at a time; never consume a replacement or an unattempted suffix.
-    private func catchUp(_ host: SkillsHost) async {
-        guard !forgotten.contains(host.id), host.client != nil, let requests = owed[host.id], !requests.isEmpty,
-              catchingUp.insert(host.id).inserted else { return }
-        defer { catchingUp.remove(host.id) }
-        for entry in requests {
-            guard !Task.isCancelled else { return }
-            guard owed[host.id]?.contains(where: { $0.id == entry.id }) == true else { continue }
-            do {
-                if entry.attempted == true {
-                    guard case .skills(let snapshot) = try await request(.fetch, on: host) else { return }
-                    loaded[host.id] = .loaded(snapshot)
-                    switch entry.request {
-                    case .remove(let name) where snapshot.skill(name) == nil,
-                         .restore(let name) where snapshot.skill(name) != nil:
-                        owed[host.id]?.removeAll { $0.id == entry.id }
-                        continue
-                    case .install, .installFiles, .remove, .restore:
-                        // No operation receipt or file hashes: a fetch cannot prove a timed-out
-                        // copy has stopped. Keep it owed rather than blindly replaying it.
-                        unacknowledged = Unacknowledged(id: entry.id, host: host.id, hostName: host.name)
-                        problem = "A skill change on \(host.name) wasn't acknowledged. Check it on the host before continuing."
-                        return
-                    default:
-                        break // Setters can safely send their desired value again.
-                    }
-                }
-                guard let current = owed[host.id]?.firstIndex(where: { $0.id == entry.id }) else { continue }
-                owed[host.id]?[current].attempted = true
-                guard case .skills(let snapshot) = try await request(entry.request, on: host) else { return }
-                loaded[host.id] = .loaded(snapshot)
-                owed[host.id]?.removeAll { $0.id == entry.id }
-            } catch {
-                guard !forgotten.contains(host.id) else { return }
-                if case RemoteHostClientError.rejected(code: "no_such_skill", message: _) = error {
-                    owed[host.id]?.removeAll { $0.id == entry.id }
-                    continue
-                }
-                // Skills actually throws timeout/disconnected, not just outcomeUnknown.
-                if case RemoteHostClientError.rejected(let code, _) = error,
-                   code != "outcome_unknown", code != "protocol", code != "write_failed",
-                   let current = owed[host.id]?.firstIndex(where: { $0.id == entry.id }) {
-                    owed[host.id]?[current].attempted = nil
-                }
-                problem = "\(host.name): \(settingsProblem(error))"
-                return
-            }
-        }
-    }
-
-    /// Adds a change a host is owed, dropping any earlier one it replaces.
-    private func owe(_ request: RemoteSkillsRequest, to host: UUID) {
-        guard !forgotten.contains(host) else { return }
-        var requests = owed[host] ?? []
-        switch request {
-        case .setOn(let name, _):
-            requests.removeAll { if case .setOn(name, _) = $0.request { return $0.attempted != true } else { return false } }
-        case .setInvocation(let name, _):
-            requests.removeAll { if case .setInvocation(name, _) = $0.request { return $0.attempted != true } else { return false } }
-        case .configure:
-            requests.removeAll { if case .configure = $0.request { return $0.attempted != true } else { return false } }
-        case .remove(let name):
-            requests.removeAll { owed in
-                guard owed.attempted != true else { return false }
-                return switch owed.request {
-                case .setOn(name, _), .setInvocation(name, _), .restore(name): true
-                default: false
-                }
-            }
-        case .restore(let name):
-            // Undoing a removal the host never took: the two cancel out.
-            if let last = requests.lastIndex(where: { $0.request == .remove(name: name) && $0.attempted != true }) {
-                requests.remove(at: last)
-                owed[host] = requests
-                return
-            }
-        default:
-            break
-        }
-        requests.append(Owed(request: request))
-        owed[host] = requests
-    }
-
-    private func owes(_ host: UUID, _ name: String) -> Bool {
-        (owed[host] ?? []).contains { entry in
-            switch entry.request {
-            case .setOn(name, _), .setInvocation(name, _), .remove(name), .restore(name): true
-            case .install: true
-            default: false
-            }
-        }
-    }
-
-    private func step(_ key: String, _ host: UUID, _ state: SkillInstall.Step.State) {
-        guard var install = installs[key], let index = install.steps.firstIndex(where: { $0.id == host }) else { return }
-        install.steps[index].state = state
-        installs[key] = install
-    }
-
-    private func saveOwed() {
-        let stored = Dictionary(uniqueKeysWithValues: owed.map { ($0.key.uuidString, $0.value) })
-        if let data = try? JSONEncoder().encode(stored) { defaults.set(data, forKey: Key.owed) }
     }
 }

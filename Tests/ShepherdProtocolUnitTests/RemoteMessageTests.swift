@@ -12,6 +12,107 @@ enum RemoteSamples {
     static let tab = TabID(rawValue: "tab")
     static let split = PaneNode.split(axis: .vertical, ratio: 0.5, first: .leaf(LeafPane(cwd: "/a")), second: .leaf(LeafPane(cwd: "/b")))
 
+    static let fleetHost = UUID(uuidString: "00000000-0000-0000-0000-0000000000F1")!
+    static let fleetHash = String(repeating: "ab", count: 32)
+    static let fleetIntroduction = FleetIntroduction(hostID: fleetHost, name: "MacBook Pro", myTokenHash: fleetHash, port: 7434)
+    static let fleetMember = FleetMember(hostID: fleetHost, name: "Mac mini", host: "192.168.1.40", port: 7434)
+    static let fleetDevice = FleetDeviceIntroduction(deviceID: UUID(uuidString: "00000000-0000-0000-0000-0000000000D1")!, name: "iPhone", kind: .iphone, tokenHash: fleetHash)
+    static let fleetDeviceEntries = [
+        FleetDeviceEntry(deviceID: fleetDevice.deviceID, name: "iPhone", kind: .iphone, tokenHash: fleetHash, pairedAt: 1_790_000_000_000),
+        FleetDeviceEntry(deviceID: UUID(uuidString: "00000000-0000-0000-0000-0000000000D2")!, name: "iPad", kind: .ipad, tokenHash: nil,
+                         pairedAt: 1_790_000_000_500, revokedAt: 1_790_000_001_000),
+    ]
+    static let fleetDevicesSnapshot = FleetDevicesSnapshot(
+        devices: [FleetDeviceStatus(deviceID: fleetDevice.deviceID, name: "iPhone", kind: .iphone, pairedAt: 1_790_000_000_000, connected: true, lastSeen: 1_790_000_002_000),
+                  FleetDeviceStatus(deviceID: UUID(uuidString: "00000000-0000-0000-0000-0000000000D3")!, name: "Mac mini", kind: .macApp, pairedAt: 1_790_000_000_100, connected: false)],
+        code: FleetJoinStatus(expiresAt: 1_790_000_300_000, attemptsLeft: 5),
+        sharedToken: FleetSharedTokenStatus(retired: false, waiting: [FleetLegacyClient(id: "Shepherd iOS@192.168.1.31", name: "Shepherd iOS", lastSeen: 1_790_000_002_000)], switched: 2))
+    static let fleetSnapshot = FleetSnapshot(
+        enabled: true, hostID: fleetHost, name: "MacBook Pro", build: "412", addresses: ["192.168.1.20"], port: 7434, advertising: true,
+        peers: [FleetPeerStatus(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F2")!, name: "Mac mini", host: "192.168.1.40", port: 7434,
+                                pairedAt: 1_790_000_000_000, link: .connected),
+                FleetPeerStatus(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F3")!, name: "Mac Studio", pairedAt: 1_790_000_001_000,
+                                link: .offline, lastSeen: 1_790_000_002_000)],
+        join: FleetJoinStatus(expiresAt: 1_790_000_300_000, attemptsLeft: 4),
+        sync: FleetSyncStatus(peers: [.init(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F2")!, name: "Mac mini", state: .inSync),
+                                      .init(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F3")!, name: "Mac Studio", state: .offline)],
+                              notice: "Replaced AGENTS.md with Mac mini's. The old copy is in its history."),
+        macs: [FleetMacState(hostID: fleetHost, sample: fleetSample, sampleAge: 2.5, readiness: fleetReadiness),
+               FleetMacState(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F2")!)])
+    static let fleetSample = FleetPressureSample(cpuUtilization: 0.72, cpuCount: 12, totalMemoryBytes: 38_654_705_664, availableMemoryBytes: 10_093_173_145,
+                                                 thermal: .fair, onBattery: true, batteryPercent: 41, activeAgents: 3, reserved: 1)
+    static let fleetIndexStatus = FleetIndexStatus(indexing: true, repos: [
+        FleetIndexStatus.Repo(repo: "github.com/acme/web", name: "acme-web", files: 20_001, ready: true),
+        FleetIndexStatus.Repo(repo: "space:2F1D", name: "orders-svc", files: 412, ready: false),
+        FleetIndexStatus.Repo(repo: "space:90AB", name: "monorepo", files: 0, ready: false, tooLarge: true)])
+    static let fleetManifestPrefixes = [FleetHashPrefix(hi: 0x0123_4567_89AB_CDEF, lo: 0xFEDC_BA98_7654_3210), FleetHashPrefix(hi: 1, lo: 2)]
+    static let fleetManifestFull = FleetRepoManifestUpdate(repo: "github.com/acme/web", kind: .full, generation: 7, seq: 0,
+                                                           added: FleetHashPrefix.pack(fleetManifestPrefixes), part: 0, parts: 2,
+                                                           digest: FleetManifest(fleetManifestPrefixes).digest)
+    static let fleetManifestDelta = FleetRepoManifestUpdate(repo: "space:2F1D", kind: .delta, generation: 7, seq: 3,
+                                                            added: FleetHashPrefix.pack(fleetManifestPrefixes.prefix(1)),
+                                                            removed: FleetHashPrefix.pack(fleetManifestPrefixes.suffix(1)), digest: .empty)
+    static let fleetManifestHead = FleetRepoManifestUpdate(repo: "github.com/acme/web", kind: .head, generation: 7, seq: 3,
+                                                           digest: FleetManifest(fleetManifestPrefixes).digest)
+    static let fleetReadiness = FleetReadinessReport(model: "MacBook Pro", chip: "M4 Pro",
+                                                     missing: [FleetMissingTool(kind: .binary, name: "muse"), FleetMissingTool(kind: .xcode)],
+                                                     repos: ["acme-web", "payments-api"], repoKeys: ["github.com/acme/payments-api", "github.com/acme/web"])
+    static let dispatchID = UUID(uuidString: "5D4F1F6E-2B0C-4C86-9E43-7F5B7E0A9C11")!
+    static let dispatchCreate = FleetDispatchCreate(
+        dispatchID: dispatchID, task: "Fix the flaky payment test.", title: "Fix flaky payment test", repoKey: "github.com/acme/payments-api",
+        commitSHA: String(repeating: "a", count: 40), subdir: "services/api", branch: "fleet/fix-flaky-payment-test", model: "acme/model-a", thinking: "high",
+        from: FleetDispatchSender(hostID: fleetHost, hostName: "MacBook Pro", agentID: AgentID(rawValue: "a1"), agentTitle: "Ship checkout"))
+    static let snapshotHash = FleetHash(of: Data("made-up contents".utf8))
+    static let snapshotHeader = FleetSnapshotHeader(commit: String(repeating: "a", count: 40), rootHash: snapshotHash, digest: FleetHash(of: Data("digest".utf8)),
+                                                    files: 3, directories: 1, deletions: 1, parts: 1, fileCount: 6_020, bytes: 2_800_000,
+                                                    bundle: FleetBlobRef(hash: FleetHash(of: Data("bundle".utf8)), size: 4_096))
+    /// The repository itself in a bundle, for a Mac that has no checkout and couldn't clone it from origin.
+    static let repoBundleHeader = FleetSnapshotHeader(commit: String(repeating: "a", count: 40), rootHash: snapshotHash, digest: FleetHash(of: Data("digest".utf8)),
+                                                      files: 0, directories: 0, deletions: 0, parts: 0, fileCount: 0, bytes: 9_000_000,
+                                                      bundle: FleetBlobRef(hash: FleetHash(of: Data("repo".utf8)), size: 9_000_000), repoBundle: true)
+    /// Only the repository (the dispatch carries no edits): no manifest, no digest.
+    static let repoOnlyHeader = FleetSnapshotHeader(commit: String(repeating: "a", count: 40), rootHash: FleetHash(a: 0, b: 0, c: 0, d: 0), digest: FleetHash(a: 0, b: 0, c: 0, d: 0),
+                                                    files: 0, directories: 0, deletions: 0, parts: 0, fileCount: 0, bytes: 9_000_000,
+                                                    bundle: FleetBlobRef(hash: FleetHash(of: Data("repo".utf8)), size: 9_000_000), repoBundle: true, repoOnly: true)
+    static let dispatchCreateCloning = FleetDispatchCreate(
+        dispatchID: dispatchID, task: "Profile the orders import.", title: "Profile the orders import", repoKey: "github.com/acme/orders-svc",
+        commitSHA: String(repeating: "a", count: 40), from: FleetDispatchSender(hostID: fleetHost, hostName: "MacBook Pro", agentTitle: "Speed up checkout CI"),
+        snapshot: repoBundleHeader,
+        repo: FleetRepoSource(origin: "https://github.com/acme/orders-svc.git", spaceID: SpaceID(rawValue: "S1"), name: "orders-svc", worktreeBase: "origin/main"))
+    static let dispatchCreateWithSnapshot = FleetDispatchCreate(
+        dispatchID: dispatchID, task: "Fix the flaky payment test.", title: "Fix flaky payment test", repoKey: "github.com/acme/payments-api",
+        commitSHA: String(repeating: "a", count: 40), from: FleetDispatchSender(hostID: fleetHost, hostName: "MacBook Pro", agentTitle: "Ship checkout"),
+        snapshot: snapshotHeader)
+    static let snapshotPart = FleetSnapshotPart(
+        index: 0, files: [FleetSnapshotFile(path: "src/app.ts", kind: .file, hash: snapshotHash, size: 42), FleetSnapshotFile(path: "node_modules/.bin/tool", kind: .symlink, hash: snapshotHash, size: 22)],
+        directories: [FleetSnapshotDirectory(path: "node_modules", hash: snapshotHash, files: 6_000, bytes: 215_715_200)], deletions: ["old.txt"], wantsNeeds: true)
+    static let blobChunk = FleetBlobChunk(hash: snapshotHash, size: 10, offset: 4, data: Data([1, 2, 3, 4, 5, 6]))
+    static let dispatchRecord = FleetDispatchRecord(
+        id: dispatchID, parentAgentID: AgentID(rawValue: "a1"), parentHostID: fleetHost, parentHostName: "MacBook Pro", parentTitle: "Ship checkout",
+        targetHostID: UUID(uuidString: "0B8C1D52-3B5C-4F0A-8F56-1B7C6C9D5E22"), targetHostName: "Mac mini", state: .running, title: "Fix flaky payment test",
+        task: "Fix the flaky payment test.", repoKey: "github.com/acme/payments-api", commitSHA: String(repeating: "a", count: 40),
+        branch: "fleet/fix-flaky-payment-test", reasonCodes: [FleetPlacementReason(.mostRoom, ratio: 3.4)], remoteAgentID: AgentID(rawValue: "a9"),
+        activity: "working", createdAt: 1_790_000_000_000, updatedAt: 1_790_000_001_000)
+    /// A dispatch whose Mac is cloning the repository for it, and where the sender's space and origin were kept for that.
+    static let dispatchRecordCloning = FleetDispatchRecord(
+        id: dispatchID, parentAgentID: AgentID(rawValue: "a1"), parentHostID: fleetHost, parentHostName: "MacBook Pro", parentTitle: "Speed up checkout CI",
+        targetHostID: UUID(uuidString: "0B8C1D52-3B5C-4F0A-8F56-1B7C6C9D5E22"), targetHostName: "Mac Studio", state: .preparing, title: "Profile the orders import",
+        task: "Profile the orders import.", repoKey: "github.com/acme/orders-svc", commitSHA: String(repeating: "a", count: 40),
+        reasonCodes: [FleetPlacementReason(.mostRoom, ratio: 3.4), FleetPlacementReason(.willClone)], activity: "cloning orders-svc: receiving objects",
+        spaceID: SpaceID(rawValue: "S1"), origin: "https://github.com/acme/orders-svc.git",
+        clone: FleetCloneProgress(name: "orders-svc", source: "github.com/acme/orders-svc", phase: "receiving objects", fraction: 0.37),
+        createdAt: 1_790_000_000_000, updatedAt: 1_790_000_001_000)
+    static let branchFacts = FleetBranchFacts(branch: "fleet/fix-flaky-payment-test", head: String(repeating: "b", count: 40), ahead: 2, pushed: true,
+                                              filesChanged: 3, insertions: 10, deletions: 2)
+    static let fleetOp = FleetOp(mac: fleetHost, seq: 3, hlc: FleetHLC(wallMs: 1_790_000_000_123, counter: 2), unit: "instruction:AGENTS.md",
+                                 change: .blob(hash: String(repeating: "cd", count: 32), size: 424), seed: true, macName: "MacBook Pro")
+    static let fleetSettingOp = FleetOp(mac: fleetHost, seq: 4, hlc: FleetHLC(wallMs: 1_790_000_000_200), unit: "setting:host.defaultModel",
+                                        change: .value("\"acme/model\""))
+    /// A sign-in, as the fleet carries it: inline, pi's own JSON for one provider (a made up token).
+    static let fleetCredentialOp = FleetOp(mac: fleetHost, seq: 5, hlc: FleetHLC(wallMs: 1_790_000_000_300), unit: "credential:acme-ai",
+                                           change: .value(#"{"access":"fake-access","expires":1790003600000,"refresh":"fake-refresh","type":"oauth"}"#))
+    static let fleetVector = FleetVersionVector([fleetHost: 4, UUID(uuidString: "00000000-0000-0000-0000-0000000000F2")!: 9])
+
     static let commitFile = RemoteCommitFile(path: "App/iOS/FleetView.swift", status: "M", added: 9, removed: 7, fingerprint: "f1")
     static let renamedFile = RemoteCommitFile(path: "new name.swift", oldPath: "old.swift", status: "R", added: 0, removed: 0, fingerprint: "f2")
     static let commitInfo = RemoteCommitInfo(
@@ -242,7 +343,7 @@ enum RemoteSamples {
     static let hostSettings = HostSettings(
         shepherdVersion: "0.4.2", piVersion: "0.87.1", defaultModel: "anthropic/claude-opus", defaultThinking: .high,
         defaultServiceTier: .fast, textGenerationModel: "anthropic/claude-haiku", visionModel: "google/gemini-flash", compactAtPercent: 80,
-        queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true, projectsEnabled: true,
+        queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true, projectsEnabled: true, fleetEnabled: true,
         worktreeBase: .head, fetchBeforeCreating: false, mergePRAutomatically: true, mergeMethod: .rebase, closeOnMerge: true,
         backgroundService: true, designToolEnabled: true,
         subagentDefaults: HostSettings.SubagentDefaults(concurrency: 6, model: "openai/gpt-5-mini", thinking: .low, context: .fork),
@@ -250,7 +351,8 @@ enum RemoteSamples {
         slashCommands: [NativeCommand(name: "review", description: "Review a diff", source: "extension")], hiddenSlashCommands: ["review"],
         bundledExtensions: [HostSettings.BundledExtension(id: "panes", name: "Panes and agent tools", on: true),
                             HostSettings.BundledExtension(id: "review", name: "Diff review tool", on: false)],
-        installedExtensions: ["npm:@example/pi-tools@1.0.0"], updatePiDaily: true)
+        installedExtensions: ["npm:@example/pi-tools@1.0.0"], updatePiDaily: true,
+        fleetWeights: [FleetSendWeight.settingKey(hostID: fleetHost): .lessOften])
     static let mcpInventory = HostMCPInventory(
         servers: [HostMCPServer(name: "github", kind: .remote, endpoint: "https://api.githubcopilot.com/mcp/", status: .connected,
                                 signIn: "Signed in", tools: 12),
@@ -272,7 +374,9 @@ enum RemoteSamples {
     static let hostSettingChanges: [HostSettingChange] = [
         .defaultModel("openai/gpt-5"), .defaultModel(nil), .defaultThinking(.low), .queueDelivery(.all),
         .defaultServiceTier(.fast), .textGenerationModel("openai/gpt-5-mini"), .textGenerationModel(nil), .namingModel("openai/gpt-5-mini"), .compactAtPercent(70), .compactAtPercent(nil),
-        .goalCrossProviderEvaluation(true), .goalCrossProviderEvaluation(false), .goalsEnabled(true), .goalsEnabled(false), .projectsEnabled(true), .projectsEnabled(false),
+        .goalCrossProviderEvaluation(true), .goalCrossProviderEvaluation(false), .goalsEnabled(true), .goalsEnabled(false), .projectsEnabled(true), .projectsEnabled(false), .fleetEnabled(true), .fleetEnabled(false),
+        .fleetWeight(hostID: RemoteSamples.fleetHost, weight: .prefer), .fleetWeight(hostID: RemoteSamples.fleetHost, weight: .manualOnly),
+        .fleetThreadsCanSend(true), .fleetThreadCap(5), .fleetAutoDispatch(true), .fleetAutoDispatch(false), .fleetBatteryCountsHalf(false),
         .worktreeBase(.fresh), .fetchBeforeCreating(true), .commitRemainingWork(false), .generatePRDescriptions(false),
         .deleteLocalBranch(false), .mergePRAutomatically(false), .mergeMethod(.squash),
         .bundledExtension(id: "review", on: true), .updatePiDaily(false), .updateExtensionsDaily(true),
@@ -407,11 +511,15 @@ struct RemoteRequestTests {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .projectRequest, .startThread, .focusThread, .projectExecutors, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design,
-             .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps:
+             .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps,
+             .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
+             .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
+             .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult,
+             .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 53
+    static let caseCount = 74
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -422,6 +530,79 @@ struct RemoteRequestTests {
         .pushRegistration(id: 94, registration: RemotePushRegistration(id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64),
             preferences: RemotePushPreferences(topics: [.questions, .failures], awayOnly: false))),
         .pushUnregister(id: 94, registrationID: "11111111-2222-3333-4444-555555555555"),
+        .fleetIdentify(id: 70),
+        .fleetPair(id: 71, code: "482913", from: RemoteSamples.fleetIntroduction),
+        .fleetEstablish(id: 72, from: RemoteSamples.fleetIntroduction),
+        .fleetIntroduce(id: 73, introduction: FleetIntroduce(member: RemoteSamples.fleetMember, theirTokenHash: nil)),
+        .fleetIntroduce(id: 74, introduction: FleetIntroduce(member: RemoteSamples.fleetMember, theirTokenHash: RemoteSamples.fleetHash)),
+        .fleetRevoke(id: 75, hostID: RemoteSamples.fleetHost, at: 1_790_000_000_123),
+        .fleetSync(id: 82, request: .hello(vector: RemoteSamples.fleetVector)),
+        .fleetSync(id: 86, request: .hello(vector: RemoteSamples.fleetVector, fresh: true)),
+        .fleetSync(id: 87, request: .op(RemoteSamples.fleetCredentialOp)),
+        .fleetSync(id: 83, request: .ops([RemoteSamples.fleetOp, RemoteSamples.fleetSettingOp])),
+        .fleetSync(id: 84, request: .op(RemoteSamples.fleetSettingOp)),
+        .fleetSync(id: 85, request: .blob(hash: String(repeating: "cd", count: 32), offset: 262_144)),
+        .fleetRead(id: 76),
+        .fleetAction(id: 77, action: .startJoin),
+        .fleetAction(id: 78, action: .stopJoin),
+        .fleetAction(id: 79, action: .pair(host: "192.168.1.40", port: 7434, code: "482913")),
+        .fleetAction(id: 80, action: .remove(hostID: RemoteSamples.fleetHost)),
+        .fleetAction(id: 81, action: .adopt([FleetLegacyHost(id: RemoteSamples.fleetHost, name: "Mac mini", host: "192.168.1.40", port: 7434, token: "shared")])),
+        .fleetAction(id: 101, action: .watching(true)),
+        .fleetAction(id: 102, action: .watching(false)),
+        .fleetAction(id: 103, action: .reconnect(hostID: RemoteSamples.fleetHost)),
+        .fleetPressure(id: 104, sample: RemoteSamples.fleetSample),
+        .fleetReadiness(id: 105, report: RemoteSamples.fleetReadiness),
+        .fleetPressureNow(id: 106),
+        .fleetRepoManifest(id: 107, update: RemoteSamples.fleetManifestFull),
+        .fleetRepoManifest(id: 108, update: RemoteSamples.fleetManifestDelta),
+        .fleetRepoManifest(id: 109, update: RemoteSamples.fleetManifestHead),
+        .fleetDispatchCreate(id: 110, create: RemoteSamples.dispatchCreate),
+        .fleetDispatchCreate(id: 118, create: RemoteSamples.dispatchCreateWithSnapshot),
+        .fleetDispatchCreate(id: 122, create: RemoteSamples.dispatchCreateCloning),
+        .fleetDispatchCreate(id: 129, create: FleetDispatchCreate(dispatchID: RemoteSamples.dispatchID, kind: .userThread, task: "Look.", title: "", repoKey: "github.com/acme/orders-svc",
+                                                                  commitSHA: String(repeating: "b", count: 40), branch: "feat/orders",
+                                                                  from: FleetDispatchSender(hostID: RemoteSamples.fleetHost, hostName: "MacBook Pro", agentTitle: ""),
+                                                                  start: FleetThreadStart(place: .existingBranch, branch: "feat/orders"))),
+        .fleetDispatchCreate(id: 125, create: FleetDispatchCreate(dispatchID: RemoteSamples.dispatchID, kind: .userThread, task: "Look.", title: "", repoKey: "local/0123456789ab",
+                                                                  commitSHA: String(repeating: "a", count: 40), from: FleetDispatchSender(hostID: RemoteSamples.fleetHost, hostName: "MacBook Pro", agentTitle: ""),
+                                                                  snapshot: RemoteSamples.repoOnlyHeader, repo: FleetRepoSource(origin: nil, spaceID: SpaceID(rawValue: "S1"), name: "web"))),
+        .fleetDispatchCreate(id: 123, create: FleetDispatchCreate(dispatchID: RemoteSamples.dispatchID, kind: .userThread, task: "Look.", title: "", repoKey: "github.com/acme/web",
+                                                                  from: FleetDispatchSender(hostID: RemoteSamples.fleetHost, hostName: "MacBook Pro", agentTitle: ""),
+                                                                  repo: FleetRepoSource(origin: nil))),
+        .fleetSnapshotPart(id: 119, dispatchID: RemoteSamples.dispatchID, part: RemoteSamples.snapshotPart),
+        .fleetSnapshotPart(id: 120, dispatchID: RemoteSamples.dispatchID, part: FleetSnapshotPart(index: -1, wantsNeeds: true)),
+        .fleetBlobPush(id: 121, dispatchID: RemoteSamples.dispatchID, chunk: RemoteSamples.blobChunk),
+        .fleetDispatchCreate(id: 111, create: FleetDispatchCreate(dispatchID: RemoteSamples.dispatchID, kind: .userThread, task: "Look at the logs.", title: "",
+                                                                  repoKey: "github.com/acme/web", from: FleetDispatchSender(hostID: RemoteSamples.fleetHost, hostName: "MacBook Pro", agentTitle: ""))),
+        .fleetDispatchControl(id: 112, dispatchID: RemoteSamples.dispatchID, control: .status),
+        .fleetDispatchControl(id: 113, dispatchID: RemoteSamples.dispatchID, control: .cancel),
+        .fleetDispatchControl(id: 114, dispatchID: RemoteSamples.dispatchID, control: .message(text: "Also update the docs.", delivery: .steer)),
+        .fleetDispatchChanged(id: 115, record: RemoteSamples.dispatchRecord),
+        .fleetDispatchChanged(id: 124, record: RemoteSamples.dispatchRecordCloning),
+        .fleetDispatchResult(id: 116, dispatchID: RemoteSamples.dispatchID, text: "Fixed: the test raced the clock.", branchFacts: RemoteSamples.branchFacts),
+        .fleetDispatchResult(id: 117, dispatchID: RemoteSamples.dispatchID, text: "Nothing to change.", branchFacts: nil),
+        .fleetPairDevice(id: 82, code: "482913", device: RemoteSamples.fleetDevice),
+        .fleetEnrollDevice(id: 83, device: RemoteSamples.fleetDevice),
+        .fleetSyncDevices(id: 84, devices: RemoteSamples.fleetDeviceEntries),
+        .fleetSyncDevices(id: 85, devices: []),
+        .fleetAction(id: 86, action: .startDeviceCode),
+        .fleetAction(id: 87, action: .stopDeviceCode),
+        .fleetAction(id: 88, action: .revokeDevice(RemoteSamples.fleetDevice.deviceID)),
+        .fleetAction(id: 89, action: .forgetLegacyClient("Shepherd iOS@192.168.1.31")),
+        .fleetAction(id: 99, action: .retireSharedToken),
+        .fleetAction(id: 100, action: .enrollApp(name: "MacBook Pro")),
+        .fleetAction(id: 101, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", host: nil))),
+        .fleetAction(id: 102, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", title: "Profile import",
+                                                                    host: "Mac mini", model: "acme/model-1", thinking: "high"))),
+        .fleetAction(id: 126, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", host: "Mac mini",
+                                                                    start: FleetThreadStart(place: .newWorktree, base: "origin/main", branch: "fix/orders-import")))),
+        .fleetAction(id: 127, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.",
+                                                                    start: FleetThreadStart(place: .existingBranch, branch: "feat/orders")))),
+        .fleetAction(id: 128, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", start: FleetThreadStart(place: .checkout)))),
+        .fleetAction(id: 103, action: .retryDispatch(id: RemoteSamples.dispatchID, host: nil)),
+        .fleetAction(id: 104, action: .retryDispatch(id: RemoteSamples.dispatchID, host: RemoteSamples.fleetHost)),
+        .fleetAction(id: 105, action: .cancelDispatch(id: RemoteSamples.dispatchID)),
         .hostUpdate(id: 90, request: .status),
         .hostUpdate(id: 91, request: .check),
         .hostUpdate(id: 92, request: .install(offerID: S.op, authorized: true)),
@@ -720,11 +901,11 @@ struct RemoteReplyTests {
         case .nativeThreadChanged, .fleetDigest, .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged, .pullRequestLinks:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .fleetIdentity, .fleetPaired, .fleetResult, .fleetSyncReply, .fleetRepoManifestAck, .fleetSnapshotAck, .fleetDevices, .fleetPressureSample, .fleetDispatchAccepted, .fleetDispatchState, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged, .pullRequestLinks:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 56
+    static let caseCount = 66
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -740,6 +921,35 @@ struct RemoteReplyTests {
                                                                 model: "host/model", thinking: .high, serviceTier: .fast)),
         .helloOk(id: 1, protocolVersion: RemoteProtocol.version, capabilities: RemoteProtocol.capabilities),
         .helloOk(id: 2, protocolVersion: RemoteProtocol.version, capabilities: [RemoteProtocol.localCapability], hostBuild: "2611071"),
+        .helloOk(id: 3, protocolVersion: RemoteProtocol.version, capabilities: [RemoteProtocol.fleetCapability], hostBuild: "2611071", hostID: S.fleetHost),
+        .fleetIdentity(id: 4, hostID: S.fleetHost, name: "Mac mini", build: "412", fleetEnabled: true),
+        .fleetIdentity(id: 5, hostID: S.fleetHost, name: "Mac mini", build: nil, fleetEnabled: false),
+        .fleetPaired(id: 6, hostID: S.fleetHost, name: "Mac mini", myTokenHash: S.fleetHash),
+        .fleetDispatchAccepted(id: 16, record: S.dispatchRecord),
+        .fleetDispatchState(id: 17, record: S.dispatchRecord),
+        .fleetDispatchState(id: 25, record: S.dispatchRecordCloning),
+        .fleetSyncReply(id: 11, reply: .state(vector: S.fleetVector)),
+        .fleetSyncReply(id: 12, reply: .blob(hash: String(repeating: "cd", count: 32), offset: 0, total: 5, data: Data("hello".utf8))),
+        .fleetResult(id: 7, result: FleetResult(snapshot: S.fleetSnapshot)),
+        .fleetResult(id: 17, result: FleetResult(snapshot: { var snapshot = S.fleetSnapshot; snapshot.index = S.fleetIndexStatus; return snapshot }())),
+        .fleetResult(id: 11, result: FleetResult(snapshot: { var snapshot = S.fleetSnapshot; snapshot.devices = S.fleetDevicesSnapshot; return snapshot }(),
+                                                 deviceCode: .init(code: "482913", expiresAt: 1_790_000_300_000))),
+        .fleetResult(id: 14, result: FleetResult(snapshot: S.fleetSnapshot, appToken: String(repeating: "cd", count: 32))),
+        .fleetResult(id: 18, result: FleetResult(snapshot: S.fleetSnapshot, dispatch: S.dispatchRecord)),
+        .fleetDevices(id: 13, result: FleetDevicesResult(hostID: S.fleetHost, name: "Mac mini", members: [S.fleetMember], devices: S.fleetDeviceEntries)),
+        .fleetDevices(id: 15, result: FleetDevicesResult(hostID: S.fleetHost, name: "Mac mini")),
+        .fleetResult(id: 8, result: FleetResult(snapshot: S.fleetSnapshot, join: .init(code: "482913", expiresAt: 1_790_000_300_000))),
+        .fleetResult(id: 9, result: FleetResult(snapshot: S.fleetSnapshot, paired: S.fleetSnapshot.peers[0])),
+        .fleetPressureSample(id: 11, sample: S.fleetSample, readiness: S.fleetReadiness),
+        .fleetPressureSample(id: 13, sample: S.fleetSample, readiness: nil),
+        .fleetRepoManifestAck(id: 14, ack: FleetRepoManifestAck(repo: "github.com/acme/web", generation: 7, seq: 3)),
+        .fleetRepoManifestAck(id: 16, ack: FleetRepoManifestAck(repo: "space:2F1D", generation: 7, seq: 0, resend: true)),
+        .fleetSnapshotAck(id: 17, ack: FleetSnapshotAck(dispatchID: RemoteSamples.dispatchID, parts: 2, needs: [RemoteSamples.snapshotHash], needsCount: 1)),
+        .fleetSnapshotAck(id: 18, ack: FleetSnapshotAck(dispatchID: RemoteSamples.dispatchID, parts: 2, complete: true)),
+        .fleetResult(id: 10, result: FleetResult(snapshot: S.fleetSnapshot, adopted: [
+            FleetAdoption(id: S.fleetHost, outcome: .established(hostID: S.fleetHost, name: "Mac mini")),
+            FleetAdoption(id: S.fleetHost, outcome: .notFleet), FleetAdoption(id: S.fleetHost, outcome: .unreachable),
+            FleetAdoption(id: S.fleetHost, outcome: .refused(code: "unauthorized"))])),
         .agentResult(id: 60, result: .ok),
         .ok(id: 12),
         .paneOpened(id: 14, paneID: S.pane),
@@ -814,6 +1024,7 @@ struct RemoteReplyTests {
         .designRelay(token: 3, jobFile: "/tmp/acme/design-relay/3.json"),
         .settingsChanged(page: .instructions),
         .settingsChanged(page: .slashCommands),
+        .settingsChanged(page: .fleetPressure),
         .toolFinished(agentID: AgentID(rawValue: "a"), tool: "edit"),
         .designNotesChanged(designID: DesignID(rawValue: "d1")),
         .designGitChanged(designID: DesignID(rawValue: "d1")),
@@ -1027,6 +1238,46 @@ struct RemoteReplyTests {
         #expect(settings == HostSettings())
     }
 
+    @Test func anOlderHostsSettingsLeaveFleetOff() throws {
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(RemoteSamples.hostSettings)) as? [String: Any])
+        json.removeValue(forKey: "fleetEnabled")
+        var expected = RemoteSamples.hostSettings
+        expected.fleetEnabled = false
+        #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
+        json["fleetEnabled"] = NSNull()
+        #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
+        var settings = HostSettings()
+        #expect(!settings.fleetEnabled)
+        settings.apply(.fleetEnabled(true))
+        #expect(settings.fleetEnabled)
+        #expect(HostSettingChange.fleetEnabled(true).capability == RemoteProtocol.fleetExperimentCapability)
+    }
+
+    /// The Dispatch settings: Auto dispatch is unset until the person chooses (it reads as on with a second Mac paired); battery counts half.
+    @Test func autoDispatchReadsAsOnOnceAMacIsPairedUntilTheUserChooses() throws {
+        var settings = HostSettings()
+        #expect(settings.fleetAutoDispatch == nil && settings.fleetBatteryCountsHalf && !settings.fleetThreadsCanSend)
+        #expect(!settings.autoDispatch(pairedMacs: 0) && settings.autoDispatch(pairedMacs: 1))
+        settings.apply(.fleetAutoDispatch(false))
+        #expect(!settings.autoDispatch(pairedMacs: 2), "a choice beats the default")
+        // A host from before these settings decodes with the defaults.
+        var object = try Wire.object(HostSettings(fleetAutoDispatch: true, fleetBatteryCountsHalf: false))
+        object["fleetAutoDispatch"] = nil
+        object["fleetBatteryCountsHalf"] = nil
+        let older = try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(older.fleetAutoDispatch == nil && older.fleetBatteryCountsHalf)
+        #expect(HostSettingChange.fleetAutoDispatch(true).capability == RemoteProtocol.fleetDispatchCapability)
+        #expect(HostSettingChange.fleetBatteryCountsHalf(false).capability == RemoteProtocol.fleetDispatchCapability)
+    }
+
+    /// A host from before Fleet says no id in `helloOk`; its client reads that as a Mac without a fleet identity.
+    @Test func aHelloOkWithoutAHostIDIsAnOlderHost() throws {
+        #expect(try Wire.decode(RemoteReply.self, #"{"type":"helloOk","id":1,"protocolVersion":1,"capabilities":[]}"#)
+            == .helloOk(id: 1, protocolVersion: 1, capabilities: [], hostBuild: nil, hostID: nil))
+        let object = try Wire.object(RemoteReply.helloOk(id: 1, protocolVersion: 1, capabilities: []))
+        #expect(object["hostID"] == nil)
+    }
+
     /// A change applies to the one setting it names; a bundled extension the host doesn't have
     /// changes nothing.
     @Test func aHostSettingChangeAppliesToItsSettingAlone() {
@@ -1237,6 +1488,14 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.appsV2Capability, RemoteProtocol.agentRestartCapability, RemoteProtocol.completionSeenCapability,
             RemoteProtocol.pushMuteCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
+            RemoteProtocol.fleetExperimentCapability,
+            // Offered only while the host's Fleet experiment is on (SessionServer.setFleetEnabled).
+            RemoteProtocol.fleetCapability, RemoteProtocol.fleetPressureCapability, RemoteProtocol.fleetDispatchCapability,
+            RemoteProtocol.fleetSyncCapability, RemoteProtocol.fleetSnapshotCapability,
+            // Offered to every client, a device included, while the host's Fleet experiment is on.
+            RemoteProtocol.fleetViewCapability,
+            // Offered whenever the host runs, Fleet on or off, and never to a client device (FleetAccess).
+            RemoteProtocol.fleetDevicesCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
             RemoteProtocol.designAgentCapability, RemoteProtocol.designLifecycleCapability, RemoteProtocol.designSystemsCapability,
@@ -1253,6 +1512,12 @@ struct RemoteProtocolConstantTests {
     @Test func capabilityStringsAreStable() {
         #expect(RemoteProtocol.nativeThreadRevisionsCapability == "native.revisions.v1")
         #expect(RemoteProtocol.nativeFleetDigestCapability == "native.fleetDigest.v1")
+        #expect(RemoteProtocol.fleetCapability == "fleet.v1")
+        #expect(RemoteProtocol.fleetPressureCapability == "fleet.pressure.v1")
+        #expect(RemoteProtocol.fleetSnapshotCapability == "fleet.snapshot.v1")
+        #expect(RemoteProtocol.fleetDispatchCapability == "fleet.dispatch.v1")
+        #expect(RemoteProtocol.fleetDevicesCapability == "fleet.devices.v1")
+        #expect(RemoteProtocol.fleetExperimentCapability == "experiments.fleet.v1")
         #expect(RemoteProtocol.logicalProjectsCapability == "logicalProjects.v1")
         #expect(RemoteProtocol.projectMessageImagesCapability == "logicalProjectRuntime.images.v1")
         #expect(RemoteProtocol.projectConversationThinkingCapability == "logicalProjects.conversationThinking.v1")

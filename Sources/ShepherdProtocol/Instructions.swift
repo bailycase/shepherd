@@ -110,8 +110,8 @@ public enum RemoteInstructionsRequest: Codable, Hashable, Sendable {
     /// The files, where they live and their history.
     case fetch
     /// Replace one file. `origin` names the client in the history ("studio", "iPhone"); `sync`
-    /// marks a copy of another host's file (Same on every host, Copy … to …), which the history
-    /// records as "Synced from origin".
+    /// marks a copy of another host's file, which the history records as "Synced from origin"
+    /// (older clients' fan-out; the fleet's own sync writes its copies itself).
     case save(file: InstructionFile, content: String, origin: String, sync: Bool)
     /// Put a saved version back.
     case restore(revisionID: UUID, origin: String)
