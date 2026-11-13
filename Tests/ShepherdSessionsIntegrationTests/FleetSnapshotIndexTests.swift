@@ -301,12 +301,10 @@ extension FleetSnapshotIndexTests {
         try await eventually("B to hold A's manifest") { try await b.peerHolds(b, of: a) }
         let aID = try await a.hostID()
         let (dir, port) = (b.host.dir, b.port)
-        // The copy is saved a moment after it changes.
-        try await eventually("B's copy to be on disk") {
-            FileManager.default.fileExists(atPath: b.host.dir.appendingPathComponent("fleet/index/peers/\(aID.uuidString)").path)
-        }
+        // No wait for the copy to reach the disk on its own (a save follows a change by a second): a host that stops leaves what it
+        // holds on disk, a save already under way included, and that is what the restart below is built on.
         b.stop(keepFiles: true)
-        // What the copy on disk is, as the host stopped (it is saved as the host stops, not only a moment after a change).
+        // What the copy on disk is, as the host stopped.
         let saved = FleetPeerManifests.load(from: dir.appendingPathComponent("fleet/index/peers", isDirectory: true))
         let digest = try #require(saved.manifest(of: aID, repo: Self.origin)).digest
         let back = try await Mac("Mac mini", dir: dir, port: port)
