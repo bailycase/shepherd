@@ -70,4 +70,25 @@ struct ScrollFollowerSendTests {
         #expect(lands == c.lands)
         #expect(follower.showsJump(running: false) == c.pill)
     }
+
+    struct Pill: Sendable, CustomTestStringConvertible {
+        var sticky: Bool
+        var unseen: Bool
+        var running: Bool
+        var shows: Bool
+        var testDescription: String { "sticky \(sticky), unseen \(unseen), running \(running)" }
+    }
+
+    static let pills: [Pill] = [true, false].flatMap { sticky in
+        [true, false].flatMap { unseen in
+            [true, false].map { running in Pill(sticky: sticky, unseen: unseen, running: running, shows: !sticky && (running || unseen)) }
+        }
+    }
+
+    @Test("the pill rule over the mirrored parts agrees with the follower's own", arguments: pills)
+    func theMirroredPillAgreesWithTheFollowers(_ pill: Pill) {
+        let follower = NativeScrollFollower(sticky: pill.sticky, unseen: pill.unseen)
+        #expect(NativeScrollFollower.showsJump(sticky: pill.sticky, unseen: pill.unseen, running: pill.running) == pill.shows)
+        #expect(follower.showsJump(running: pill.running) == pill.shows)
+    }
 }

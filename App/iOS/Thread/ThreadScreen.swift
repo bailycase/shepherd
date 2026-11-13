@@ -253,9 +253,9 @@ struct ThreadTranscript: View {
     @Environment(\.designMarkupCanvas) private var markupCanvas
     /// A Project's coordinator or worker: its key is no agent's, so no ordinary-thread action is offered.
     @Environment(\.projectTranscript) private var projectTranscript
-    /// Follows the tail until the reader drags away from it.
+    /// Follows the tail until the reader drags away from it. The body reads only the parts of it that it draws
+    /// (`follows`, `unseen`, `restoresTurn`, `visibleTurn`): the follower itself changes with every scroll frame.
     private var presentation: ComposerPresentation { navigator.composerPresentation.state(for: ref) }
-    private var follower: NativeScrollFollower { presentation.scrollFollower }
     @State private var historyPaging = NativeHistoryPaging()
     /// Lands the transcript on its tail after layout; only a mount's first few landings run inside it (ThreadTailPin).
     @State private var tailPin = ThreadTailPin()
@@ -264,14 +264,15 @@ struct ThreadTranscript: View {
 
     private static let bottomID = "thread-bottom"
 
-    // iOS 27.1's bottom anchor can retain a lazy stack's estimated height after a fold.
-    // Use the same explicit following as macOS 27.
+    // iOS 27.1's bottom anchor can retain a lazy stack's estimated height after a fold, so the size-change anchor
+    // is left to the explicit following of macOS 27. The initial anchor only places a new stack's first layout, so
+    // a transcript with no turn to restore opens at its tail on both.
     private var nativeTail: Bool {
         if #available(iOS 27.1, *) { false } else { true }
     }
 
     var body: some View {
-        @Bindable var presentation = presentation
+        let presentation = presentation
         let rows = store.rows
         let running = store.running
         let thinking = store.showsThinking
@@ -335,16 +336,18 @@ struct ThreadTranscript: View {
             }
             // Open at the tail and stay pinned while it grows; only the reader's own drag
             // detaches, and sending re-attaches.
-            .scrollPosition(id: $presentation.visibleTurn, anchor: .top)
+            .scrollPosition(id: Binding(get: { presentation.visibleTurn }, set: { presentation.noteVisibleTurn($0) }), anchor: .top)
             .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
-            .onChange(of: store.sessionKey) { _, _ in
+            .onChange(of: store.sessionKey) { old, _ in
                 tailPin.reset()
+                // Another session has other turns, so the one kept is gone; the first key a new store learns is the same thread's.
+                if old != nil { presentation.noteVisibleTurn(nil) }
                 loadVisibleHistory()
             }
             // A reused view (the design pane's chat has no identity of its own) shows another thread.
             .onChange(of: ref) { _, _ in tailPin.reset() }
-            .defaultScrollAnchor(nativeTail ? (follower.sticky ? .bottom : .top) : nil, for: .initialOffset)
-            .defaultScrollAnchor(nativeTail ? (follower.sticky ? .bottom : nil) : (follower.sticky ? nil : .top), for: .sizeChanges)
+            .defaultScrollAnchor(presentation.restoresTurn ? (nativeTail ? .top : nil) : .bottom, for: .initialOffset)
+            .defaultScrollAnchor(nativeTail ? (presentation.follows ? .bottom : nil) : (presentation.follows ? nil : .top), for: .sizeChanges)
             .onScrollGeometryChange(for: TailReading.self, of: Self.reading) { old, new in
                 // Insets and row wrapping can settle separately from scroll offsets. While
                 // following, keep the tail above the composer through every change. This runs
@@ -402,7 +405,7 @@ struct ThreadTranscript: View {
             // Laid out in the thread's safe area, so it sits on the composer; the margin of its
             // 44pt hit area draws the capsule 8pt above it.
             .overlay(alignment: .bottom) {
-                SHJumpToLatest(action: follower.showsJump(running: running) ? {
+                SHJumpToLatest(action: NativeScrollFollower.showsJump(sticky: presentation.follows, unseen: presentation.unseen, running: running) ? {
                     follow { $0.jumpToLatest(); return false }
                     tailPin.asked(lander(proxy))
                 } : nil)
@@ -419,12 +422,12 @@ struct ThreadTranscript: View {
     /// tail reads this far from the end of its content, and that is where the pin treats it as at rest.
     private var tailGap: CGFloat { sizeClass == .regular && !designChat ? MobileLayout.padThreadGutter : MobileLayout.gutter }
 
-    private var historyEnabled: Bool { store.isLive && store.ready && !store.loadingOlder && !follower.sticky }
+    private var historyEnabled: Bool { store.isLive && store.ready && !store.loadingOlder && !presentation.follows }
 
     private func loadVisibleHistory() {
         guard historyPaging.takeRequest(session: store.sessionKey, cursor: store.olderCursor, enabled: historyEnabled) else { return }
         // ScrollViewReader jumps can leave the native position binding nil at the boundary.
-        if presentation.visibleTurn == nil { presentation.visibleTurn = store.rows.first?.id }
+        presentation.pinHistoryTurn(store.rows.first?.id)
         Task { await store.loadOlder() }
     }
 
@@ -446,9 +449,10 @@ struct ThreadTranscript: View {
     /// that changes nothing redraws nothing. Returns what the change returned.
     @discardableResult
     private func follow(_ change: (inout NativeScrollFollower) -> Bool) -> Bool {
-        var next = follower
+        let presentation = presentation
+        var next = presentation.scrollFollower
         let result = change(&next)
-        if next != follower { presentation.scrollFollower = next }
+        if next != presentation.scrollFollower { presentation.follow(next) }
         return result
     }
 
