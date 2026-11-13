@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 import ShepherdProtocol
-import ShepherdRemote
+@testable import ShepherdRemote
 import ShepherdUI
 import ShepherdTestSupport
 import SwiftUI
@@ -77,6 +77,18 @@ struct FleetPreviewTests {
     @Test func addAMac() async throws {
         try await Preview.render("fleet-pair", size: CGSize(width: 640, height: 760)) {
             Self.pairing(found: Self.found).padding(SH.Space.xxl).frame(width: 640, height: 760).background(Color.sh.scrim)
+        }
+    }
+
+    /// The Mac mini sits on another subnet, where only Apple's own Bonjour types arrive: it is listed because Shepherd
+    /// answered a probe at its address, in the same row as the Mac Studio Bonjour found.
+    @Test func addAMacWithOneFoundThroughAppleServices() async throws {
+        let mini = RemoteHostClient.FleetPeerIdentity(hostID: UUID(), name: "Mac mini", build: "1.9", fleetEnabled: true)
+        let list = FleetNeighbors.merged(bonjour: [Self.found[1]],
+                                         probed: [FleetNeighbors.found(mini, address: "192.168.20.5", port: 7434)])
+        #expect(list.map(\.name) == ["Mac Studio", "Mac mini"])
+        try await Preview.render("fleet-pair-found-by-probe", size: CGSize(width: 640, height: 760)) {
+            Self.pairing(found: list).padding(SH.Space.xxl).frame(width: 640, height: 760).background(Color.sh.scrim)
         }
     }
 

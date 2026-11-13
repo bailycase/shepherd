@@ -27,6 +27,9 @@
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_shepherd._tcp</string>
+		<string>_ssh._tcp</string>
+		<string>_companion-link._tcp</string>
+		<string>_device-info._tcp</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Shepherd serves its sessions to remote Shepherd clients over your network.</string>

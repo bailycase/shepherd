@@ -7,6 +7,9 @@
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_shepherd._tcp</string>
+		<string>_ssh._tcp</string>
+		<string>_companion-link._tcp</string>
+		<string>_device-info._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Scan the code a Shepherd Mac shows to pair this device with it.</string>
