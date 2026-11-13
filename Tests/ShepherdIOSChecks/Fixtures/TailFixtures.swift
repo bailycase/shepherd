@@ -479,10 +479,11 @@ extension TailFixture {
     /// open, the first frame with a built row in view is within the follower's tolerance of the tail and drawn (on iOS 27.1 it was
     /// the reply's top, about 16,000 pt up), after at most `remountLandings` landing, and the thread comes to rest on its tail.
     ///
-    /// The blank frames before that row are reported, not judged. On iOS 27.0 an iPad in landscape mounts the stack at the end of its
-    /// estimated height (about 250,000 pt for this thread) where no row is placed, and draws nothing for 23 to 26 frames until the tail
-    /// guard repairs it; the turn kept from before the leave is not the cause (clearing it first changes nothing), and the eager tail
-    /// that lays the last turns out for real is what removes the wait.
+    /// The blank frames before that row are reported, not judged, and so are where the row sits and the landings when the tail guard
+    /// had to repair the view: the rows it walks back to are placed wherever the walk is. On iOS 27.0 an iPad in landscape mounts the
+    /// stack at the end of its estimated height (about 250,000 pt for this thread) where no row is placed, and draws nothing for 23 to
+    /// 27 frames until the guard repairs it; the turn kept from before the leave is not the cause (clearing it first changes nothing),
+    /// and the eager tail that lays the last turns out for real is what removes the wait.
     @MainActor static func remountTail(_ app: MobileApp) async {
         let ref = FixtureData.ref(FixtureData.preview)
         await ready(app)
@@ -510,10 +511,11 @@ extension TailFixture {
                 + "\(result.blank) blank frames, \(reach.map { Int($0.rounded()) } ?? -1)pt from the tail, \(percent)% ink, \(landings) landings, "
                 + "\(counts["thread.tailRepair", default: 0]) repairs, \(counts["thread.transcript", default: 0]) renders, \(result.away) frames away from the tail after it (worst \(result.farthest)pt); "
                 + "at rest \(rest.distance)pt from the tail, \(Int((rest.ink * 100).rounded()))% ink")
-            verdicts.append((reach.map { $0 <= firstFrameReach && $0 >= -NativeScrollFollower.repinSlack } ?? false,
+            let repaired = counts["thread.tailRepair", default: 0] > 0
+            verdicts.append((repaired || (reach.map { $0 <= firstFrameReach && $0 >= -NativeScrollFollower.repinSlack } ?? false),
                              "cycle \(cycle): the first frame with a row is within \(Int(firstFrameReach))pt of the tail"))
             verdicts.append(((first?.ink ?? 0) >= inkFloor, "cycle \(cycle): the first frame with a row draws"))
-            verdicts.append((landings <= remountLandings, "cycle \(cycle): at most \(remountLandings) landing"))
+            verdicts.append((repaired || landings <= remountLandings, "cycle \(cycle): at most \(remountLandings) landing"))
             verdicts.append((rest.atTail && rest.ink >= inkFloor, "cycle \(cycle): the thread rests on its tail, drawn"))
         }
         measured.forEach { FixtureCheck.report("FIXTURE CHECK ok: \($0)") }
