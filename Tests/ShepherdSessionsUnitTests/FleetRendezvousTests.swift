@@ -90,9 +90,9 @@ struct FleetRendezvousUnitTests {
     @Test func aLookupFindsNothingForACodeNobodyShowsAndDropsAnExpiredRecord() async {
         let now = Date(timeIntervalSince1970: 1_750_000_000)
         let key = FleetRendezvousKey.join(code: "482913")
-        let stale = FleetRendezvousRecord(key: key, hostID: UUID(), routes: [FleetAddress(host: "10.0.0.2", port: 7434)],
+        let stale = FleetRendezvousRecord(key: key, hostID: UUID(), routes: [FleetRoute(host: "10.0.0.2", port: 7434, kind: .lan, learned: false)],
                                           expiresAt: now.timeIntervalSince1970 * 1000 - 1, updatedAt: 0)
-        let live = FleetRendezvousRecord(key: key, hostID: UUID(), routes: [FleetAddress(host: "10.0.0.2", port: 7434)],
+        let live = FleetRendezvousRecord(key: key, hostID: UUID(), routes: [FleetRoute(host: "10.0.0.2", port: 7434, kind: .lan, learned: false)],
                                          expiresAt: now.timeIntervalSince1970 * 1000 + 1, updatedAt: 0)
         let store = Store(held: [key: stale])
         let rendezvous = FleetRendezvous(store: store)

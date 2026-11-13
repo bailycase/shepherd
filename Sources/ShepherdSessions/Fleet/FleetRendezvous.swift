@@ -47,8 +47,9 @@ struct FleetRendezvousRecord: Equatable, Sendable {
     var name: String = ""
     /// The Mac's listener port; every route also carries its own.
     var port: UInt16 = 0
-    /// Every address it has, most useful first. The seam for slice N1's route type: it replaces `FleetAddress` here.
-    var routes: [FleetAddress]
+    /// Every route it has, most useful first, with each one's kind and whether it was learned (a record an older build wrote holds
+    /// bare addresses, which read as given routes of the kind their form says).
+    var routes: [FleetRoute]
     var build: String?
     /// Epoch milliseconds the code stops working (Join only).
     var expiresAt: Double?

@@ -49,10 +49,17 @@ struct FleetRendezvousTests {
     typealias Mac = FleetPairingTests.Mac
 
     /// A host that shares `cloud` and says its listener is at `127.0.0.1` (after `extra`, routes that lead nowhere).
-    static func mac(_ name: String, cloud: FleetRendezvousStore, extra: [FleetAddress] = [], dir: URL? = nil, joinLifetime: TimeInterval? = nil,
-                    fleet: Bool = true) async throws -> Mac {
+    static func mac(_ name: String, cloud: FleetRendezvousStore, extra: [FleetRoute] = [], dir: URL? = nil, joinLifetime: TimeInterval? = nil,
+                    fleet: Bool = true, dials: Bool = true) async throws -> Mac {
         try await Mac(name, dir: dir, fleet: fleet) {
-            $0.configureFleetRendezvous(store: cloud, routes: { port in extra + [FleetAddress(host: "127.0.0.1", port: port)] },
+            // A Mac that doesn't dial leaves the link to the other Mac's own connection (a Mac's connection to the one that dialed it
+            // carries the link as well, so a test of one Mac finding the other by a route needs the other not to dial first).
+            if !dials {
+                $0.fleetLinkOptions = SessionServer.FleetLinkOptions(dialer: { _, _, _, _, _ in
+                    throw RemoteHostClientError.rejected(code: "unreachable", message: "This Mac doesn't dial in this test.")
+                })
+            }
+            $0.configureFleetRendezvous(store: cloud, routes: { port in extra + [FleetRoute(host: "127.0.0.1", port: port, kind: .lan, learned: false)] },
                                         joinLifetime: joinLifetime, lookupInterval: 0)
         }
     }
@@ -82,7 +89,7 @@ struct FleetRendezvousTests {
         #expect(!"\(record)".contains(code), "the code is in no field, nor in the record's name")
         let bID = try await b.read().hostID
         #expect(record.hostID == bID && record.name == "Mac mini" && record.port == b.port)
-        #expect(record.routes == [FleetAddress(host: "127.0.0.1", port: b.port)])
+        #expect(record.routes == [FleetRoute(host: "127.0.0.1", port: b.port, kind: .lan, learned: false)])
         let expiresAt = try #require(record.expiresAt)
         #expect(abs(expiresAt - (Date().timeIntervalSince1970 + FleetProtocol.codeLifetime) * 1000) < 30_000)
 
@@ -94,11 +101,28 @@ struct FleetRendezvousTests {
         try await eventually("the used code's record to be deleted") { cloud.records(.join).isEmpty }
     }
 
+    /// The records carry the routes the Mac reports to a linked peer, each with its kind (and the flag a peer keeps), not bare addresses.
+    @Test func joinAndPresenceRecordsCarryRoutesWithTheirKinds() async throws {
+        let cloud = FakeCloud()
+        let named = [FleetRoute(host: "mac-mini.local", port: 1, kind: .hostname, learned: false), FleetRoute(host: "100.101.102.103", port: 1, kind: .tailscale, learned: false)]
+        let a = try await Self.mac("MacBook Pro", cloud: cloud), b = try await Self.mac("Mac mini", cloud: cloud, extra: named)
+        defer { a.stop(); b.stop() }
+        let code = try await b.startJoin()
+        try await eventually("the Join record to be written") { !cloud.records(.join).isEmpty }
+        let expected = named + [FleetRoute(host: "127.0.0.1", port: b.port, kind: .lan, learned: false)]
+        #expect(cloud.records(.join).first?.routes == expected)
+        try await Self.findAndPair(a, code: code)
+        try await a.waitForLink(to: b)
+        try await b.waitForLink(to: a)
+        let bID = try #require(try await b.read().hostID)
+        try await eventually("Mac mini's presence record") { cloud.record(.presence(of: bID))?.routes == expected }
+    }
+
     @Test func routesAreTriedInOrderAndOneThatDoesNotAnswerIsSkipped() async throws {
         let cloud = FakeCloud()
         // Nothing listens on port 1: the first route is refused, the second is the Mac.
         let a = try await Self.mac("MacBook Pro", cloud: cloud)
-        let b = try await Self.mac("Mac mini", cloud: cloud, extra: [FleetAddress(host: "127.0.0.1", port: 1)])
+        let b = try await Self.mac("Mac mini", cloud: cloud, extra: [FleetRoute(host: "127.0.0.1", port: 1, kind: .lan, learned: false)])
         defer { a.stop(); b.stop() }
         let code = try await b.startJoin()
         try await eventually("the Join record") { !cloud.records(.join).isEmpty }
@@ -131,7 +155,7 @@ struct FleetRendezvousTests {
         // A record under another code that points at Mac mini: it says where, and nothing more.
         let forged = "246810"
         cloud.plant(FleetRendezvousRecord(key: .join(code: forged), hostID: try #require(try await b.read().hostID), name: "Mac mini", port: b.port,
-                                          routes: [FleetAddress(host: "127.0.0.1", port: b.port)], expiresAt: Date().timeIntervalSince1970 * 1000 + 60_000,
+                                          routes: [FleetRoute(host: "127.0.0.1", port: b.port, kind: .lan, learned: false)], expiresAt: Date().timeIntervalSince1970 * 1000 + 60_000,
                                           updatedAt: 0))
         let refused = await Self.refusal { _ = try await Self.findAndPair(a, code: forged) }
         #expect(refused?.code == FleetProtocol.Code.badCode)
@@ -146,7 +170,7 @@ struct FleetRendezvousTests {
         let code = try await b.startJoin()
         // The record's host id isn't the Mac that answers at its route (a stale address another Mac now holds).
         cloud.plant(FleetRendezvousRecord(key: .join(code: code), hostID: UUID(), name: "Mac mini", port: b.port,
-                                          routes: [FleetAddress(host: "127.0.0.1", port: b.port)], expiresAt: Date().timeIntervalSince1970 * 1000 + 60_000,
+                                          routes: [FleetRoute(host: "127.0.0.1", port: b.port, kind: .lan, learned: false)], expiresAt: Date().timeIntervalSince1970 * 1000 + 60_000,
                                           updatedAt: 0))
         let refused = await Self.refusal { _ = try await Self.findAndPair(a, code: code) }
         #expect(refused != nil)
@@ -177,7 +201,7 @@ struct FleetRendezvousTests {
         let a = try await Self.mac("MacBook Pro", cloud: cloud)
         defer { a.stop() }
         let key = FleetRendezvousKey.join(code: "135790")
-        cloud.plant(FleetRendezvousRecord(key: key, hostID: UUID(), name: "Mac mini", port: 7434, routes: [FleetAddress(host: "127.0.0.1", port: 7434)],
+        cloud.plant(FleetRendezvousRecord(key: key, hostID: UUID(), name: "Mac mini", port: 7434, routes: [FleetRoute(host: "127.0.0.1", port: 7434, kind: .lan, learned: false)],
                                           expiresAt: Date().timeIntervalSince1970 * 1000 - 1, updatedAt: 0))
         let refused = await Self.refusal { _ = try await Self.findAndPair(a, code: "135 790") }
         #expect(refused?.code == FleetProtocol.Code.notFound)
@@ -196,14 +220,14 @@ struct FleetRendezvousTests {
         try await b.waitForLink(to: a)
         let bID = try #require(try await b.read().hostID)
         try await eventually("both Macs' presence records") { cloud.records(.presence).count == 2 }
-        #expect(cloud.record(.presence(of: bID))?.routes == [FleetAddress(host: "127.0.0.1", port: b.port)])
+        #expect(cloud.record(.presence(of: bID))?.routes == [FleetRoute(host: "127.0.0.1", port: b.port, kind: .lan, learned: false)])
         #expect(cloud.record(.presence(of: bID))?.name == "", "nothing but where it is goes through iCloud")
 
         // Mac mini comes back somewhere else: Mac MacBook Pro's saved route is dead.
         let (dir, oldPort) = (b.host.dir, b.port)
         b.stop(keepFiles: true)
         try await eventually("the link to Mac mini to drop") { try await a.peers().first?.link != .connected }
-        let back = try await Self.mac("Mac mini", cloud: cloud, dir: dir)
+        let back = try await Self.mac("Mac mini", cloud: cloud, dir: dir, dials: false)
         restarted = back
         try #require(back.port != oldPort)
         #expect(try await a.read().peers.first?.port == oldPort)

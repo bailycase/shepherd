@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import ShepherdProtocol
 
@@ -5,6 +6,47 @@ import ShepherdProtocol
 struct FleetAddress: Codable, Hashable, Sendable {
     var host: String
     var port: UInt16
+}
+
+/// One way to reach a peer Mac: where it listens and what kind of route that is. The host keeps the ones it was given when it paired
+/// (`FleetPeerRecord.addresses`, never learned) and the ones the peer reports while they are linked (`FleetPeerRecord.learned`).
+struct FleetRoute: Codable, Hashable, Sendable {
+    var host: String
+    var port: UInt16
+    var kind: FleetRouteKind
+    /// The peer reported it, so it goes when the peer stops reporting it; nobody removes it by hand.
+    var learned: Bool
+
+    var address: FleetAddress { FleetAddress(host: host, port: port) }
+
+    init(host: String, port: UInt16, kind: FleetRouteKind, learned: Bool) {
+        self.host = host
+        self.port = port
+        self.kind = kind
+        self.learned = learned
+    }
+
+    private enum CodingKeys: String, CodingKey { case host, port, kind, learned }
+
+    /// A route from before kinds (a bare address, as an iCloud record of an older build holds it) reads its kind off its form.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        host = try c.decode(String.self, forKey: .host)
+        port = try c.decode(UInt16.self, forKey: .port)
+        kind = (try? c.decodeIfPresent(FleetRouteKind.self, forKey: .kind)) ?? Self.kind(ofAddress: host)
+        learned = try c.decodeIfPresent(Bool.self, forKey: .learned) ?? false
+    }
+
+    /// What a route entered or observed as an address is, by its form: a name, a Tailscale address (100.64.0.0/10) or a LAN one.
+    static func kind(ofAddress host: String) -> FleetRouteKind {
+        var v4 = in_addr()
+        if inet_pton(AF_INET, host, &v4) == 1 {
+            let ip = UInt32(bigEndian: v4.s_addr)
+            return ip & 0xffc00000 == 0x64400000 ? .tailscale : .lan
+        }
+        var v6 = in6_addr()
+        return inet_pton(AF_INET6, host, &v6) == 1 ? .lan : .hostname
+    }
 }
 
 /// One paired Mac in `peers.json`. Each side made the token it presents; this host holds that
@@ -29,11 +71,26 @@ struct FleetPeerRecord: Codable, Equatable, Identifiable, Sendable {
     var revokedAt: Double?
     /// Members of the fleet this Mac still has to introduce to this peer, which joined through it.
     var introduce: [UUID]
+    /// The routes the peer last reported (`FleetRouteReport`), in the order it gave them. Replaced by every report.
+    var learned: [FleetRoute]
+    /// The routes the peer's presence record in iCloud last named (`FleetRendezvous`): tried after the others, and replaced by the next look.
+    var presence: [FleetRoute]
 
     var id: UUID { hostID }
 
+    /// Every route to try, in order: the addresses this host was given, the ones the peer reported, then the ones its presence record
+    /// named. Each address once, at the first place it appears.
+    var routes: [FleetRoute] {
+        var seen = Set<FleetAddress>()
+        let given = addresses.map { FleetRoute(host: $0.host, port: $0.port, kind: FleetRoute.kind(ofAddress: $0.host), learned: false) }
+        return (given + learned + presence).filter { seen.insert($0.address).inserted }
+    }
+
     init(hostID: UUID, name: String, kind: FleetPeerKind = .mac, addresses: [FleetAddress] = [], myToken: String? = nil,
-         peerTokenHash: String? = nil, pairedAt: Double, revoked: Bool = false, revokedAt: Double? = nil, introduce: [UUID] = []) {
+         peerTokenHash: String? = nil, pairedAt: Double, revoked: Bool = false, revokedAt: Double? = nil, introduce: [UUID] = [],
+         learned: [FleetRoute] = [], presence: [FleetRoute] = []) {
+        self.learned = learned
+        self.presence = presence
         self.hostID = hostID
         self.name = name
         self.kind = kind
@@ -47,7 +104,7 @@ struct FleetPeerRecord: Codable, Equatable, Identifiable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case hostID, name, kind, addresses, myToken, peerTokenHash, pairedAt, revoked, revokedAt, introduce
+        case hostID, name, kind, addresses, myToken, peerTokenHash, pairedAt, revoked, revokedAt, introduce, learned, presence
     }
 
     /// Every field but the id decodes with a default, so older files keep loading.
@@ -63,10 +120,36 @@ struct FleetPeerRecord: Codable, Equatable, Identifiable, Sendable {
         revoked = try c.decodeIfPresent(Bool.self, forKey: .revoked) ?? false
         revokedAt = try c.decodeIfPresent(Double.self, forKey: .revokedAt)
         introduce = try c.decodeIfPresent([UUID].self, forKey: .introduce) ?? []
+        learned = (try? c.decodeIfPresent([FleetRoute].self, forKey: .learned)) ?? []
+        presence = (try? c.decodeIfPresent([FleetRoute].self, forKey: .presence)) ?? []
     }
 
     /// A peer this host holds a link to: not removed, and it has a token to present.
     var isLinkable: Bool { !revoked && myToken != nil && !addresses.isEmpty }
+
+    /// Takes in what the peer reports: the routes it gave replace the ones it gave before, except where they are an address this host
+    /// was given. False when nothing changed.
+    @discardableResult
+    mutating func learn(_ report: FleetRouteReport) -> Bool {
+        var next: [FleetRoute] = []
+        for reported in report.routes.prefix(FleetRouteReport.maxRoutes) {
+            let route = FleetRoute(host: reported.host, port: report.port, kind: reported.kind, learned: true)
+            if !addresses.contains(route.address), !next.contains(where: { $0.address == route.address }) { next.append(route) }
+        }
+        guard next != learned else { return false }
+        learned = next
+        return true
+    }
+
+    /// Keeps the routes the peer's presence record names (at most `FleetRouteReport.maxRoutes`, each marked learned). False when they
+    /// are the ones already held.
+    mutating func adoptPresence(_ routes: [FleetRoute]) -> Bool {
+        let next = routes.prefix(FleetRouteReport.maxRoutes).filter { FleetRouteReport.isHost($0.host) && $0.port > 0 }
+            .map { FleetRoute(host: $0.host, port: $0.port, kind: $0.kind, learned: true) }
+        guard next != presence else { return false }
+        presence = next
+        return true
+    }
 
     /// Puts `address` first, keeping the others.
     mutating func reached(at address: FleetAddress) {
@@ -132,6 +215,8 @@ struct FleetPeers: Codable, Equatable, Sendable {
             record.myToken = nil
             record.peerTokenHash = nil
             record.introduce = []
+            record.learned = []
+            record.presence = []
             upsert(record)
         } else {
             upsert(FleetPeerRecord(hostID: hostID, name: "", pairedAt: 0, revoked: true, revokedAt: at))

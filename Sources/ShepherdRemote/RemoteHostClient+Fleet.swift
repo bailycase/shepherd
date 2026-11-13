@@ -145,6 +145,11 @@ extension RemoteHostClient {
         try expectFleetOk(try await request { .fleetReadiness(id: $0, report: report) })
     }
 
+    /// Tells the peer every way this Mac can be reached now (`fleetLinkCapability`); the peer keeps them in place of the last report.
+    public func fleetRoutes(_ report: FleetRouteReport) async throws {
+        try expectFleetOk(try await request { .fleetRoutes(id: $0, report: report) })
+    }
+
     /// Asks the peer for a sample now.
     public func fleetPressureNow() async throws -> (sample: FleetPressureSample, readiness: FleetReadinessReport?) {
         switch try await request({ .fleetPressureNow(id: $0) }) {

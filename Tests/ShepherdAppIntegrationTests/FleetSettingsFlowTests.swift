@@ -153,7 +153,7 @@ struct FleetSettingsFlowTests {
     }
 
     static func viaICloud(_ cloud: Cloud) -> (SessionServer) -> Void {
-        { server in server.configureFleetRendezvous(store: cloud, routes: { port in [FleetAddress(host: "127.0.0.1", port: port)] }, lookupInterval: 0) }
+        { server in server.configureFleetRendezvous(store: cloud, routes: { port in [FleetRoute(host: "127.0.0.1", port: port, kind: .lan, learned: false)] }, lookupInterval: 0) }
     }
 
     @Test func aCodeTypedWithNoMacPickedPairsThroughICloudAndASheetOnAnOlderHostIsNotOffered() async throws {

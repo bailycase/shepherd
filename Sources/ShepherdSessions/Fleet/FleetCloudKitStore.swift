@@ -65,7 +65,7 @@ struct FleetCloudKitStore: FleetRendezvousStore {
         }
         let fields = fetched.encryptedValues
         guard let id = (fields["hostID"] as String?).flatMap(UUID.init(uuidString:)),
-              let routes = (fields["routes"] as Data?).flatMap({ try? JSONDecoder().decode([FleetAddress].self, from: $0) }) else { return nil }
+              let routes = (fields["routes"] as Data?).flatMap({ try? JSONDecoder().decode([FleetRoute].self, from: $0) }) else { return nil }
         return FleetRendezvousRecord(key: key, hostID: id, name: fields["name"] as String? ?? "",
                                      port: (fields["port"] as Int?).flatMap { UInt16(exactly: $0) } ?? 0, routes: routes,
                                      build: fields["build"] as String?, expiresAt: fields["expiresAt"] as Double?,

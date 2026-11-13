@@ -111,6 +111,10 @@ enum RemoteSamples {
     /// A sign-in, as the fleet carries it: inline, pi's own JSON for one provider (a made up token).
     static let fleetCredentialOp = FleetOp(mac: fleetHost, seq: 5, hlc: FleetHLC(wallMs: 1_790_000_000_300), unit: "credential:acme-ai",
                                            change: .value(#"{"access":"fake-access","expires":1790003600000,"refresh":"fake-refresh","type":"oauth"}"#))
+    static let routeReport = FleetRouteReport(port: 7434, routes: [
+        FleetReportedRoute(host: "10.77.20.10", kind: .lan), FleetReportedRoute(host: "mac-mini.local", kind: .hostname),
+        FleetReportedRoute(host: "100.101.102.103", kind: .tailscale), FleetReportedRoute(host: "10.8.0.4", kind: .vpn),
+    ])
     static let fleetVector = FleetVersionVector([fleetHost: 4, UUID(uuidString: "00000000-0000-0000-0000-0000000000F2")!: 9])
 
     static let commitFile = RemoteCommitFile(path: "App/iOS/FleetView.swift", status: "M", added: 9, removed: 7, fingerprint: "f1")
@@ -514,12 +518,12 @@ struct RemoteRequestTests {
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps,
              .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
              .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
-             .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult,
+             .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult, .fleetRoutes, .fleetPeerAnswer,
              .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 74
+    static let caseCount = 76
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -583,6 +587,11 @@ struct RemoteRequestTests {
         .fleetDispatchChanged(id: 124, record: RemoteSamples.dispatchRecordCloning),
         .fleetDispatchResult(id: 116, dispatchID: RemoteSamples.dispatchID, text: "Fixed: the test raced the clock.", branchFacts: RemoteSamples.branchFacts),
         .fleetDispatchResult(id: 117, dispatchID: RemoteSamples.dispatchID, text: "Nothing to change.", branchFacts: nil),
+        .fleetRoutes(id: 140, report: RemoteSamples.routeReport),
+        .fleetRoutes(id: 141, report: FleetRouteReport(port: 7434, routes: [])),
+        .fleetPeerAnswer(id: 142, reply: .ok(id: 142)),
+        .fleetPeerAnswer(id: 143, reply: .fleetSyncReply(id: 143, reply: .state(vector: RemoteSamples.fleetVector))),
+        .fleetPeerAnswer(id: 144, reply: .error(id: 144, code: "forbidden", message: "Only a Mac in the fleet syncs.")),
         .fleetPairDevice(id: 82, code: "482913", device: RemoteSamples.fleetDevice),
         .fleetEnrollDevice(id: 83, device: RemoteSamples.fleetDevice),
         .fleetSyncDevices(id: 84, devices: RemoteSamples.fleetDeviceEntries),
@@ -902,11 +911,11 @@ struct RemoteReplyTests {
         case .nativeThreadChanged, .fleetDigest, .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .fleetIdentity, .fleetPaired, .fleetResult, .fleetSyncReply, .fleetRepoManifestAck, .fleetSnapshotAck, .fleetDevices, .fleetPressureSample, .fleetDispatchAccepted, .fleetDispatchState, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged, .pullRequestLinks:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .fleetIdentity, .fleetPaired, .fleetResult, .fleetSyncReply, .fleetRepoManifestAck, .fleetSnapshotAck, .fleetDevices, .fleetPressureSample, .fleetDispatchAccepted, .fleetDispatchState, .fleetPeerCall, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged, .pullRequestLinks:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 66
+    static let caseCount = 67
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -926,6 +935,9 @@ struct RemoteReplyTests {
         .fleetIdentity(id: 4, hostID: S.fleetHost, name: "Mac mini", build: "412", fleetEnabled: true),
         .fleetIdentity(id: 5, hostID: S.fleetHost, name: "Mac mini", build: nil, fleetEnabled: false),
         .fleetPaired(id: 6, hostID: S.fleetHost, name: "Mac mini", myTokenHash: S.fleetHash),
+        .fleetPeerCall(id: 150, request: .fleetPressureNow(id: 150)),
+        .fleetPeerCall(id: 151, request: .fleetRoutes(id: 151, report: S.routeReport)),
+        .fleetPeerCall(id: 152, request: .fleetDispatchResult(id: 152, dispatchID: S.dispatchID, text: "Fixed.", branchFacts: nil)),
         .fleetDispatchAccepted(id: 16, record: S.dispatchRecord),
         .fleetDispatchState(id: 17, record: S.dispatchRecord),
         .fleetDispatchState(id: 25, record: S.dispatchRecordCloning),
@@ -1492,7 +1504,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.fleetExperimentCapability,
             // Offered only while the host's Fleet experiment is on (SessionServer.setFleetEnabled).
             RemoteProtocol.fleetCapability, RemoteProtocol.fleetPressureCapability, RemoteProtocol.fleetDispatchCapability,
-            RemoteProtocol.fleetSyncCapability, RemoteProtocol.fleetSnapshotCapability, RemoteProtocol.fleetRendezvousCapability,
+            RemoteProtocol.fleetSyncCapability, RemoteProtocol.fleetSnapshotCapability, RemoteProtocol.fleetRendezvousCapability, RemoteProtocol.fleetLinkCapability,
             // Offered to every client, a device included, while the host's Fleet experiment is on.
             RemoteProtocol.fleetViewCapability,
             // Offered whenever the host runs, Fleet on or off, and never to a client device (FleetAccess).
