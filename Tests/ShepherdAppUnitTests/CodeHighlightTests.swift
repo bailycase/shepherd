@@ -164,8 +164,7 @@ struct CodeHighlightTests {
     /// text plain after them.
     @Test func aBlockKeepsItsLastColorsWithTheNewTextPlainAfterThem() throws {
         let full = CodeHighlightCache.Key(code: "var a = 1\nvar b = 2\nvar c", language: "go")
-        let prefix = full.prefix(lines: 2)
-        #expect(prefix.code == "var a = 1\nvar b = 2")
+        let prefix = CodeHighlightCache.Key(code: "var a = 1\nvar b = 2", language: "go")
         let colored = try #require(CodeHighlightCache.render(prefix, style: style))
 
         let drawn = try #require(CodeHighlightCache.colors(for: full, last: CodeHighlightCache.Rendered(key: prefix, value: colored), cached: nil))
@@ -199,33 +198,13 @@ struct CodeHighlightTests {
         try #require(CodeHighlightCache.render(key, style: style))
     }
 
-    /// Each throttled render of a growing fence is a new key; the older render of the same fence is dead weight.
-    @Test func aNewerRenderOfAGrowingFenceReplacesTheOlder() throws {
-        let newer = CodeHighlightCache.Key(code: "var grow1 = 1\nvar grow2 = 2\nvar grow3 = 3", language: "go")
-        let older = newer.prefix(lines: 2)
-        #expect(older.code == "var grow1 = 1\nvar grow2 = 2")
-        CodeHighlightCache.store(try colored(older), for: older)
-        #expect(CodeHighlightCache.cached(older) != nil)
-
-        CodeHighlightCache.store(try colored(newer), for: newer, replacing: older)
-
-        #expect(CodeHighlightCache.cached(older) == nil)
-        #expect(CodeHighlightCache.cached(newer) != nil)
-    }
-
-    @Test func aReplacementThatIsNotAPrefixKeepsBoth() throws {
-        let other = CodeHighlightCache.Key(code: "var other1 = 1\nvar other2 = 2", language: "go")
-        let grown = CodeHighlightCache.Key(code: "var grown1 = 1\nvar grown2 = 2\nvar grown3 = 3", language: "go")
-        let python = CodeHighlightCache.Key(code: grown.prefix(lines: 2).code, language: "python")
-        for key in [other, python] { CodeHighlightCache.store(try colored(key), for: key) }
-
-        CodeHighlightCache.store(try colored(grown), for: grown, replacing: other)
-        CodeHighlightCache.store(try colored(grown), for: grown, replacing: python)
-        CodeHighlightCache.store(try colored(grown), for: grown, replacing: grown)
-
-        #expect(CodeHighlightCache.cached(other) != nil, "a render of other code stays")
-        #expect(CodeHighlightCache.cached(python) != nil, "a render of the same text in another language stays")
-        #expect(CodeHighlightCache.cached(grown) != nil, "a render never replaces itself")
+    /// A fence's code is drawn without its leading and trailing newlines; the rest is left as it is.
+    @Test(arguments: [
+        ("\nvar a = 1\n", "var a = 1"), ("\r\n\nvar a = 1\r\n", "var a = 1"), ("var a = 1\n\nvar b = 2", "var a = 1\n\nvar b = 2"),
+        ("  var a = 1  ", "  var a = 1  "), ("", ""), ("\n", ""), ("var a = \"\u{2028}\"\u{2028}", "var a = \"\u{2028}\""),
+    ] as [(String, String)])
+    func aFencesCodeIsTrimmedOfItsSurroundingNewlinesOnly(fence: String, code: String) {
+        #expect(CodeHighlightCache.Key(fence: fence, language: "go").code == code)
     }
 
     /// The cache is limited by what its entries hold, not by how many there are: a fence's code and its colored runs.
@@ -235,8 +214,8 @@ struct CodeHighlightTests {
         keyword.foregroundColor = Self.solid("#8892B5")
         let value = AttributedString("ab\n") + keyword
         #expect(value.runs.count == 2)
-        #expect(CodeHighlightCache.cost(of: key, value) == 5 * 2 + 2 * 128)
-        #expect(CodeHighlightCache.cost(of: CodeHighlightCache.Key(code: "🐑", language: nil), AttributedString("🐑")) == 4 * 2 + 128)
+        #expect(CodeHighlightCache.cost(of: key, value) == 5 * 2 + 2 * 384)
+        #expect(CodeHighlightCache.cost(of: CodeHighlightCache.Key(code: "🐑", language: nil), AttributedString("🐑")) == 4 * 2 + 384)
     }
 
     /// A render larger than the whole budget is not stored: NSCache would evict the others to make room for it.

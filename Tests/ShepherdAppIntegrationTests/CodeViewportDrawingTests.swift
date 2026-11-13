@@ -249,6 +249,79 @@ struct CodeViewportDrawingTests {
         #expect(try render(field, scroll: scroll, fraction: 1) == drawn, "ending the selection returns to the same drawing")
     }
 
+    // MARK: A fence a reply is writing
+
+    private static let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+
+    /// The keyword and the comment of each of `lines`, from the line at `from` on, as the spans a highlight would give.
+    private func spans(of lines: [String], from: Int, to end: Int) -> [SHCodeColors.Span] {
+        var spans: [SHCodeColors.Span] = []
+        var offset = lines[..<from].reduce(0) { $0 + $1.utf16.count + 1 }
+        for line in lines[from..<end] {
+            let text = line as NSString
+            for (word, color) in [("let", Color.sh.synKeyword), ("// note", Color.sh.synComment)] {
+                let found = text.range(of: word)
+                if found.location != NSNotFound { spans.append(SHCodeColors.Span(range: (offset + found.location)..<(offset + found.location + found.length), color: color)) }
+            }
+            offset += text.length + 1
+        }
+        return spans
+    }
+
+    /// A fence written in chunks, its colors landing a few lines behind, draws and measures as the same fence built
+    /// whole, in both appearances, and lays out only what each chunk adds once its renderer exists.
+    @Test(arguments: [false, true])
+    func aFenceGrownChunkByChunkDrawsAndMeasuresLikeTheSameFenceBuiltWhole(dark: Bool) throws {
+        SHFonts.register()
+        let lines = (0..<400).map { "let sheep\($0) = compute(\($0), from: flock) // note \($0)" }
+        let window = OffscreenWindow(size: CGSize(width: 520, height: 320), dark: dark)
+        defer { window.close() }
+        let field = SHNativeCodeText.Field(labelWithString: "")
+        let scroll = mount(field, in: window)
+        field.font = Self.font
+        let styling = SHNativeCodeText.Styling(font: Self.font, lineSpacing: 4, foreground: Color.sh.textPrimary)
+        var colors = SHCodeColors()
+        var colored = 0
+        SHRenderProbe.start()
+        defer { SHRenderProbe.stop() }
+        for end in stride(from: 8, through: lines.count, by: 8) {
+            if end.isMultiple(of: 16) {
+                colors.recolor(from: lines[..<colored].reduce(0) { $0 + $1.utf16.count + 1 }, with: spans(of: lines, from: colored, to: end - 4))
+                colored = end - 4
+            }
+            field.showGrowing(lines[..<end].joined(separator: "\n"), colors: colors, styling: styling)
+            field.setFrameSize(field.intrinsicContentSize)
+            scroll.layoutSubtreeIfNeeded()
+            _ = try render(field, scroll: scroll, fraction: 1)
+        }
+        let counts = SHRenderProbe.stop()
+
+        let code = lines.joined(separator: "\n")
+        let whole = SHNativeCodeText.Field(labelWithString: "")
+        let wholeWindow = OffscreenWindow(size: CGSize(width: 520, height: 320), dark: dark)
+        defer { wholeWindow.close() }
+        let wholeScroll = mount(whole, in: wholeWindow)
+        whole.font = Self.font
+        var highlighted = AttributedString(code)
+        for span in colors.spans {
+            let start = highlighted.index(highlighted.startIndex, offsetByCharacters: span.range.lowerBound)
+            highlighted[start..<highlighted.index(start, offsetByCharacters: span.range.count)].foregroundColor = span.color
+        }
+        whole.setCode(SHNativeCodeText.attributedCode(code, highlighted: highlighted, font: Self.font, lineSpacing: 4))
+        size(whole, in: wholeScroll)
+
+        #expect(field.frame.size == whole.frame.size, "the size laid out as the chunks came is the size the cell measures")
+        for fraction in [0.0, 0.5, 1.0] {
+            #expect(try render(field, scroll: scroll, fraction: fraction) == render(whole, scroll: wholeScroll, fraction: fraction),
+                    "fraction \(fraction)")
+        }
+        let units = code.utf16.count
+        #expect(counts["code.laidOutUnits", default: 0] < 3 * units,
+                "laid out \(counts["code.laidOutUnits", default: 0]) units for a fence of \(units)")
+        #expect(counts["code.styledUnits", default: 0] < 3 * units, "styled \(counts["code.styledUnits", default: 0]) units for a fence of \(units)")
+        #expect(counts["layout.codeMeasured", default: 0] <= 2, "the cell measures the fence only before its renderer exists")
+    }
+
     // MARK: Renderers a field lets go of
 
     @Test func aRendererGivenBackHoldsNoTextAndServesTheNextField() throws {
