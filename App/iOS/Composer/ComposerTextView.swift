@@ -63,6 +63,7 @@ struct ComposerTextView: View {
                 view.selectedRange = caret ?? NSRange(location: view.attributedText.length, length: 0)
                 coordinator.updating = false
                 coordinator.drawn = Drawn(font: font, dark: dark)
+                coordinator.revision += 1
                 view.invalidateIntrinsicContentSize()
             }
             view.typingAttributes = coordinator.attributes
@@ -75,14 +76,36 @@ struct ComposerTextView: View {
             }
         }
 
+        /// A layout pass asks for the field's size several times per edit: at its width, and at no width limit, where a stack
+        /// only learns how far the field could stretch. Each answer lays the whole draft out, a draft on one line the slowest,
+        /// so a height is kept for the edit and width it was measured for (`Coordinator.fits`), and an unlimited width is
+        /// answered with the height at the width the field has.
         func sizeThatFits(_ proposal: ProposedViewSize, uiView view: UITextView, context: Context) -> CGSize? {
             let width = proposal.width ?? view.bounds.width
             guard width > 0 else { return nil }
-            let fit = view.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
-            let most = ceil(font.lineHeight * CGFloat(SHComposerMetrics.fieldMaxLines))
-            let scrolls = fit > most
-            if view.isScrollEnabled != scrolls { view.isScrollEnabled = scrolls }
-            return CGSize(width: width, height: max(ceil(font.lineHeight), min(fit, most)))
+            SHRenderProbe.tick("layout.composerFieldProbed")
+            let coordinator = context.coordinator
+            let wrapAt = width.isFinite || view.bounds.width <= 0 ? width : view.bounds.width
+            let answer = coordinator.fits.answer(width: wrapAt, key: Fit(revision: coordinator.revision, font: font)) {
+                SHRenderProbe.tick("layout.composerFieldMeasured")
+                let fit = view.sizeThatFits(CGSize(width: wrapAt, height: .greatestFiniteMagnitude)).height
+                let most = ceil(font.lineHeight * CGFloat(SHComposerMetrics.fieldMaxLines))
+                return Fit.Answer(height: max(ceil(font.lineHeight), min(fit, most)), scrolls: fit > most)
+            }
+            if view.isScrollEnabled != answer.scrolls { view.isScrollEnabled = answer.scrolls }
+            return CGSize(width: width, height: answer.height)
+        }
+
+        /// What a height depends on besides the width: the words, by `Coordinator.revision`, and the type they are set in.
+        struct Fit: Equatable {
+            var revision: Int
+            var font: UIFont
+
+            /// The field's height at a width, and whether its words run past it.
+            struct Answer {
+                var height: CGFloat
+                var scrolls: Bool
+            }
         }
 
         struct Drawn: Equatable {
@@ -94,6 +117,9 @@ struct ComposerTextView: View {
             var parent: Field
             var updating = false
             var drawn: Drawn?
+            /// Bumped by every change to the words the field holds, by the reader's edits and by code's.
+            var revision = 0
+            var fits = SHComposerFitCache<Fit, Fit.Answer>()
             init(_ parent: Field) { self.parent = parent }
 
             var attributes: [NSAttributedString.Key: Any] {
@@ -101,6 +127,7 @@ struct ComposerTextView: View {
             }
 
             func textViewDidChange(_ view: UITextView) {
+                revision += 1
                 guard !updating else { return }
                 parent.text = SHSkillChips.text(of: view.attributedText)
             }
