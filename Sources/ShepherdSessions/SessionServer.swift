@@ -1340,6 +1340,7 @@ public final class SessionServer: @unchecked Sendable {
         var drainGrace: Duration?
         var recheckInterval: Duration?
         var networkSettle: DispatchTimeInterval?
+        var predatesLinks = false
     }
     var fleetLinkOptions: FleetLinkOptions {
         get { queue.sync { storedFleetLinkOptions } }
@@ -1399,6 +1400,7 @@ public final class SessionServer: @unchecked Sendable {
                 if let grace = storedFleetLinkOptions.drainGrace { service.drainGrace = grace }
                 if let interval = storedFleetLinkOptions.recheckInterval { service.recheckInterval = interval }
                 if let settle = storedFleetLinkOptions.networkSettle { service.networkSettle = settle }
+                service.predatesLinks = storedFleetLinkOptions.predatesLinks
                 service.onChange = { [weak self] in self?.pushSettingsChanged(.fleet) }
                 // A Mac that can't be dialed sends its requests over the connection it opened (`fleet.link.v1`).
                 service.onPeerCall = { [weak self] connection, id, request in

@@ -77,6 +77,9 @@ final class FleetService: @unchecked Sendable {
     var recheckInterval: Duration = .seconds(60)
     /// An interface change is reported after the network has been quiet this long.
     var networkSettle: DispatchTimeInterval = .milliseconds(500)
+    /// Tests: this host acts as one from before links ran both ways: it neither takes calls over a connection a peer opened nor
+    /// reports or learns routes, and says so in neither its hello nor its offer.
+    var predatesLinks = false
     private var stopWatching: (@Sendable () -> Void)?
     private var lastReport: FleetRouteReport?
 
@@ -373,6 +376,7 @@ final class FleetService: @unchecked Sendable {
             guard caller.access == .member, let from = caller.peerHostID else {
                 return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet reports how it can be reached."))
             }
+            guard !predatesLinks else { return reply(Self.refusal(id, "unsupported", "The host does not take this request.")) }
             guard report.isValid else { return reply(Self.refusal(id, FleetProtocol.Code.invalid, "That report of routes isn't valid.")) }
             received(report, from: from)
             reply(.ok(id: id))
@@ -1330,7 +1334,7 @@ final class FleetService: @unchecked Sendable {
 
     /// A Mac connected with its token and said it takes calls over its connection (`fleet.link.v1`): the link may run over it.
     func peerConnected(_ hostID: UUID, connection: Int32, capabilities: Set<String>) {
-        guard membership, !stopped, capabilities.contains(RemoteProtocol.fleetLinkCapability),
+        guard membership, !stopped, !predatesLinks, capabilities.contains(RemoteProtocol.fleetLinkCapability),
               peers.record(hostID).map({ !$0.revoked }) == true else { return }
         let channel = InboundChannel(service: self, queue: queue, connection: connection)
         let client = RemoteHostClient(peerChannel: channel, hostID: hostID, capabilities: capabilities.intersection(RemoteProtocol.fleetLinkClientCapabilities))
@@ -1422,7 +1426,7 @@ final class FleetService: @unchecked Sendable {
 
     /// Tells the peer on `client` every way this host can be reached, when the peer takes it.
     private func reportRoutes(over client: RemoteHostClient) {
-        guard client.capabilities.contains(RemoteProtocol.fleetLinkCapability), let report = routeReport() else { return }
+        guard !predatesLinks, client.capabilities.contains(RemoteProtocol.fleetLinkCapability), let report = routeReport() else { return }
         lastReport = report
         Task { try? await client.fleetRoutes(report) }
     }
@@ -1432,7 +1436,7 @@ final class FleetService: @unchecked Sendable {
     private func networkChanged() {
         guard !stopped, membership else { return }
         for link in links.values { link.networkChanged.fire() }
-        guard let report = routeReport(), report != lastReport else { return }
+        guard !predatesLinks, let report = routeReport(), report != lastReport else { return }
         lastReport = report
         for link in links.values where link.phase == .connected {
             guard let client = link.active, client.capabilities.contains(RemoteProtocol.fleetLinkCapability) else { continue }
@@ -1502,6 +1506,12 @@ final class FleetService: @unchecked Sendable {
     func linkRoute(_ hostID: UUID) -> (route: FleetRoute?, viaItsLink: Bool)? {
         links[hostID]?.active.map { _ in (links[hostID]?.route, links[hostID]?.activeInbound == true) }
     }
+
+    /// What the link's components send over now (`FleetCaller`-free: the client of whichever connection carries the link).
+    func channel(to hostID: UUID) -> RemoteHostClient? { links[hostID]?.active }
+
+    /// How many connections `hostID` has open to this host that can carry calls.
+    func connectionCount(from hostID: UUID) -> Int { inboundConnections.values.filter { $0.hostID == hostID }.count }
 
     /// Whether this host's own connection to `hostID` is open, whichever carries the link.
     func holdsOwnConnection(to hostID: UUID) -> Bool { links[hostID]?.client != nil }
