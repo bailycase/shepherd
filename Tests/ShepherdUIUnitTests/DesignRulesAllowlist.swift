@@ -29,6 +29,12 @@ enum DesignRuleAllowlist {
 
     private static let chevrons = "Predates SHGlyph.popupChevrons: the up-down popup chevrons as a plain symbol string. Pass SHGlyph.popupChevrons when the file is next changed."
 
+    private static let menu = "A menu or toolbar item: AppKit and UIKit draw it and rebuild it each time it opens, so no SwiftUI animation renames it."
+    private static let kind = "Follows what the item is (its kind), which is fixed while it is on screen, so nothing renames it."
+    private static func unanimated(_ what: String) -> String {
+        "Follows \(what). No shAnimation or withSHAnimation reaches it, so it changes at once and loads no drawing pool. If an animation is added here, the pair must turn or fade instead."
+    }
+
     static let entries: [DesignRuleException] = [
         // Raw colors: each is something other than app chrome, or a known fix.
         .init(.rawColor, "App/iOS/DesignPad/PadDesignMarkup.swift", 1, "Flattens an exported drawing onto a white page: image content, not chrome."),
@@ -58,6 +64,51 @@ enum DesignRuleAllowlist {
         .init(.rawGlyphName, "App/iOS/Settings/HostSettingsScreens.swift", 1, chevrons),
         .init(.rawGlyphName, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Controls/Pickers.swift", 1, chevrons),
         .init(.rawGlyphName, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/TouchDiff.swift", 1, chevrons),
+        // Symbols that follow state where no animation reaches them. Each file says why; a disclosure
+        // chevron that does animate is an SHTurningChevron, and any other pair that animates fades.
+        .init(.symbolRenameUnderAnimation, "App/Widgets/ShepherdWidgets.swift", 1, "A widget draws one snapshot per timeline entry, so a symbol is never renamed on screen."),
+        .init(.symbolRenameUnderAnimation, "App/iOS/Browser/ThreadBrowserPane.swift", 1, unanimated("the page's loading state; nothing in the browser pane animates it")),
+        .init(.symbolRenameUnderAnimation, "App/iOS/Composer/ComposerControls.swift", 1, unanimated("the chosen speed; nothing in the composer's chips animates it")),
+        .init(.symbolRenameUnderAnimation, "App/iOS/Files/ThreadFilesSplit.swift", 1, unanimated("a folder's open state; nothing in the files tree or its store animates it")),
+        .init(.symbolRenameUnderAnimation, "App/iOS/Forge/ForgeDiffScreen.swift", 1, menu),
+        .init(.symbolRenameUnderAnimation, "App/iOS/Forge/ForgeListScreen.swift", 1, kind),
+        .init(.symbolRenameUnderAnimation, "App/iOS/Home/ThreadRowMenu.swift", 2, menu),
+        .init(.symbolRenameUnderAnimation, "App/iOS/Projects/ProjectFilesScreen.swift", 1, kind),
+        .init(.symbolRenameUnderAnimation, "App/iOS/Projects/ProjectScreen.swift", 1, menu),
+        .init(.symbolRenameUnderAnimation, "App/iOS/Review/DiffScreen.swift", 1, menu),
+        .init(.symbolRenameUnderAnimation, "App/iOS/Review/PadReviewScreen.swift", 3, menu),
+        .init(.symbolRenameUnderAnimation, "App/iOS/Review/ScopeMenu.swift", 2, "A menu item (rebuilt each time the menu opens), and the toolbar title's scope glyph, which follows the store's scope and which nothing in the review screens animates."),
+        .init(.symbolRenameUnderAnimation, "App/iOS/Search/AgentActionsMenu.swift", 1, menu),
+        .init(.symbolRenameUnderAnimation, "App/iOS/Search/SearchPalette.swift", 1, "Follows whether a listed step failed, which is fixed once the line is listed, so nothing renames it."),
+        .init(.symbolRenameUnderAnimation, "App/iOS/Settings/ExperimentsScreens.swift", 2, kind),
+        .init(.symbolRenameUnderAnimation, "App/iOS/Settings/SkillsScreens.swift", 1, unanimated("whether a skill is picked; the screen animates its list and search, not the pick")),
+        .init(.symbolRenameUnderAnimation, "App/iOS/Thread/ThreadApps.swift", 2, "A menu item, and the menu's label in the thread's toolbar, which follows whether the app runs and which nothing in this file animates."),
+        .init(.symbolRenameUnderAnimation, "App/iOS/Thread/ThreadScreen.swift", 1, kind),
+        .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Browser/Browser.swift", 1, unanimated("whether the console drawer is open; BrowserPane flips it with no animation")),
+        .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/ContextMeter.swift", 1, kind),
+        .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/ModelSettings.swift", 1, kind),
+        .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/DesignTool/Lifecycle.swift", 1, kind),
+        .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/DesignTool/References.swift", 1, kind),
+        .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Navigation/SidePane.swift", 1, kind),
+        .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Settings/MCPServerRow.swift", 1, kind),
+        .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Thread/Compaction.swift", 1, "Follows the compaction's tone, drawn only once it has ended and fixed from then on, so nothing renames it."),
+        .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Thread/ProseBlocks.swift", 1, "A task item of a finished Markdown block: its box is fixed by the text, so nothing renames it."),
+        .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Thread/SentCommand.swift", 1, kind),
+        .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Thread/ThreadParts.swift", 1, kind),
+        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/DesignSystemReferencePage.swift", 1, kind),
+        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/FilesTab.swift", 2, unanimated("the tree's hidden-files toggle and a folder's open state; the file tree model changes with no animation")),
+        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/Forge/ForgePage.swift", 1, unanimated("whether the page is pinned; the page animates its notices, not the pin")),
+        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/MCP/AddMCPServerSheet.swift", 1, unanimated("whether a variable is secret; the sheet animates its check and advanced sections, not this")),
+        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/Pages/AutomationsPage.swift", 1, unanimated("Pause and Resume; nothing in the page animates it")),
+        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/RemoteDirectoryPicker.swift", 1, kind),
+        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/SettingsExperiments.swift", 1, kind),
+        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/SettingsProjects.swift", 1, unanimated("a project's open state; the tree flips it with no animation")),
+        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/SettingsSkills.swift", 2, kind),
+        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/SkillsSheets.swift", 1, unanimated("the typed source; the sheet animates the skill detail, not the field")),
+        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/TerminalPanelViews.swift", 1, unanimated("the terminal panel's maximized state, which lands at once")),
+        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/Thread/HookRows.swift", 1, "Follows a hook test's outcome; the file's one animation is the row's disclosure, which does not change it."),
+        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/Thread/QueueStack.swift", 1, menu),
+        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/ThreadHeaderApps.swift", 1, menu),
         // Literal font sizes.
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Agents/AgentParts.swift", 1, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Agents/Inspector.swift", 3, font),

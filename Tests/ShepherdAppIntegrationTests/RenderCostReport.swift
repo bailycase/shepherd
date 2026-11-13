@@ -143,6 +143,60 @@ struct RenderCostReport {
         report.add("thread writing a Swift fence (15 chunks, 100 ms apart)", "tree-sitter renders", "\(renders)")
     }
 
+    /// One 3,000-line Python fence written in 2 KB chunks, 40 ms apart, as a reply writes it, in a
+    /// scroll view that follows its end: the main thread's cost per chunk, the process's CPU and instructions for the whole stream, and
+    /// how much heap and footprint the fence takes while it grows and keeps once the reply is done.
+    @Test func streamedLongFence() async throws {
+        let code = FenceStream.python(lines: 3_000)
+        let chunks = stride(from: 0, to: code.utf8.count, by: 2_048).map { String(decoding: code.utf8.prefix(min($0 + 2_048, code.utf8.count)), as: UTF8.self) }
+        func fence(_ code: String, writing: Bool) -> some View {
+            ScrollView { HighlightedCodeBlock(code: code, language: "python", writing: writing) }.defaultScrollAnchor(.bottom)
+        }
+        let window = OffscreenWindow(size: CGSize(width: 720, height: 800), dark: false, fence("", writing: true))
+        defer { window.close() }
+        ListPerf.settle(window)
+        try await Task.sleep(for: Self.atRest)
+        let before = FenceStream.Memory.now()
+        var costs: [Double] = []
+        var peakHeap = before.heap
+        SHRenderProbe.start()
+        let process = ProcessCPU.now()
+        let instructions = ListPerf.instructions()
+        for chunk in chunks {
+            costs.append(await cost(window) {
+                window.show(fence(chunk, writing: true))
+                try? await Task.sleep(for: .milliseconds(40))
+            })
+            peakHeap = max(peakHeap, FenceStream.Memory.now().heap)
+        }
+        let streamCPU = ListPerf.milliseconds(ProcessCPU.now() - process)
+        let streamInstructions = ListPerf.instructions() - instructions
+        let streaming = SHRenderProbe.stop()
+        let peak = FenceStream.Memory.now()
+        window.show(fence(code, writing: false))
+        let key = CodeHighlightCache.Key(fence: code, language: "python")
+        try await eventuallyOnMain("the finished fence to be colored") {
+            ListPerf.settle(window)
+            return CodeHighlightCache.cached(key) != nil
+        }
+        try await Task.sleep(for: .seconds(2))
+        ListPerf.settle(window)
+        let after = FenceStream.Memory.now()
+        let label = "3,000-line Python fence (\(chunks.count) chunks of 2 KB, 40 ms apart)"
+        report.add(label, "chunk: main-thread CPU median · p95 · worst", String(format: "%.2f ms · %.2f ms · %.2f ms",
+            MainThreadCPU.median(costs), costs.sorted()[costs.count * 95 / 100], costs.max() ?? 0))
+        report.add(label, "stream: main-thread CPU total", ms: costs.reduce(0, +))
+        report.add(label, "stream: process CPU, all threads", ms: streamCPU)
+        report.add(label, "stream: instructions", String(format: "%.0f M", streamInstructions))
+        report.add(label, "heap in use: before · peak while streaming · after the reply",
+                   String(format: "%.1f · %.1f · %.1f MB", before.heapMB, Double(peakHeap) / 1_048_576, after.heapMB))
+        report.add(label, "footprint: before · after streaming · after the reply · lifetime peak",
+                   String(format: "%.1f · %.1f · %.1f · %.1f MB", before.footprintMB, peak.footprintMB, after.footprintMB, after.peakFootprintMB))
+        report.add(label, "bodies and work while streaming", counts: streaming.filter {
+            ["code.highlighted", "code.nativeUpdated", "thread.codeAttributes", "layout.codeMeasured", "highlight.render",
+             "highlight.units", "code.styledUnits", "code.laidOutUnits"].contains($0.key) })
+    }
+
     /// Real thread rows containing prose and code, rather than the short replies used by the
     /// mounted-workspace resize report. No input events are sent to the off-screen window.
     @Test(arguments: [12, 500])
@@ -363,5 +417,49 @@ struct RenderCostReport {
             thread.close()
         }
         report.add("thread (60 turns) under its toolbar", "stats-only poll: main-thread CPU (median of 3)", ms: MainThreadCPU.median(runs))
+    }
+}
+
+/// A long fence and what the process holds.
+enum FenceStream {
+    /// `lines` lines of Python: functions with docstrings, comments, strings and numbers.
+    static func python(lines: Int) -> String {
+        var out: [String] = []
+        var index = 0
+        while out.count < lines {
+            out += [
+                "",
+                "def handler_\(index)(request, limit=\(index % 97)):",
+                "    \"\"\"Handle request \(index) and return the sheep that fit.\"\"\"",
+                "    # count the flock before anything else",
+                "    flock = [name for name in request.names if len(name) > \(index % 7)]",
+                "    if not flock:",
+                "        return {\"status\": \"empty\", \"id\": \(index)}",
+                "    return {\"status\": \"ok\", \"count\": len(flock), \"limit\": limit}",
+            ]
+            index += 1
+        }
+        return out.prefix(lines).joined(separator: "\n")
+    }
+
+    struct Memory {
+        var heap: Int
+        var footprint: UInt64
+        var peakFootprint: UInt64
+
+        var heapMB: Double { Double(heap) / 1_048_576 }
+        var footprintMB: Double { Double(footprint) / 1_048_576 }
+        var peakFootprintMB: Double { Double(peakFootprint) / 1_048_576 }
+
+        /// The malloc heap in use, and the footprint the kernel charges the process.
+        static func now() -> Memory {
+            var stats = malloc_statistics_t()
+            malloc_zone_statistics(nil, &stats)
+            var info = rusage_info_v4()
+            _ = withUnsafeMutablePointer(to: &info) {
+                $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(getpid(), RUSAGE_INFO_V4, $0) }
+            }
+            return Memory(heap: Int(stats.size_in_use), footprint: info.ri_phys_footprint, peakFootprint: info.ri_lifetime_max_phys_footprint)
+        }
     }
 }

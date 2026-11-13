@@ -11,6 +11,15 @@ enum MobileLayout {
     static let blockSpacing: CGFloat = SH.Space.l
     /// A thread's turns.
     static let turnSpacing: CGFloat = SH.Space.xxl
+    /// How long a following transcript must be quiet before it is judged stranded (`ThreadTailGuard`), how long a step of the walk
+    /// back to its rows waits for them to be realized, how many steps a walk takes at most, how many walks in a row are tried
+    /// before it rests, how long it rests, and the smallest page worth walking by.
+    static let tailGuardQuiet: Duration = .milliseconds(150)
+    static let tailGuardStep: Duration = .milliseconds(40)
+    static let tailGuardSteps = 40
+    static let tailGuardAttempts = 6
+    static let tailGuardRest: Duration = .seconds(3)
+    static let tailGuardMinimumPage: CGFloat = 50
     /// The parts inside one agent turn.
     static let turnItemSpacing: CGFloat = SH.Space.l
     /// Lines inside a work group.

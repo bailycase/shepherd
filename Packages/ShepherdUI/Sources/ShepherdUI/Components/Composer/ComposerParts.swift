@@ -6,6 +6,9 @@ public enum SHComposerMetrics {
     public static let chipHeight: CGFloat = 26
     /// Send and Stop.
     public static let actionSize: CGFloat = 28
+    /// Send's arrow and Stop's square.
+    public static let sendGlyph: CGFloat = 13
+    public static let stopGlyph: CGFloat = 10
     public static let fieldMinHeight: CGFloat = 56
     public static let modelSettingsWidth: CGFloat = 328
     public static let branchSymbol: CGFloat = 13
@@ -209,17 +212,20 @@ public struct SHComposerActionButton: View {
         self.action = action
     }
 
-    /// Send and Stop are one glyph, so a turn starting or ending blends the fill and the glyph
-    /// in place, together. (A symbol replace runs on SF Symbols' own, slower clock: it left an
-    /// arrow on the red Stop fill for a moment.)
+    /// Send and Stop are two glyphs stacked in the circle and cross-faded by opacity, so a turn
+    /// starting or ending blends the fill and the glyph in place, together. Not one image whose
+    /// symbol name changes: that draws through RenderBox, which loads about 258 MB of accelerated
+    /// drawing pool for 1.2 to 1.6 s at every turn start and end (stacked, the swap costs about
+    /// 7 MB). A symbol replace would also run on SF Symbols' own, slower clock and leave an arrow
+    /// on the red Stop fill for a moment.
     public var body: some View {
         let sh = Color.sh
         let send = mode == .send
         Button(action: action) {
-            Image(systemName: send ? "arrow.up" : "stop.fill")
-                .font(.system(size: send ? 13 : 10, weight: .semibold))
-                .foregroundStyle(send ? sh.textOnLantern : sh.textOnFailed)
-                .shContentTransition(.crossFade)
+            ZStack {
+                glyph("arrow.up", size: SHComposerMetrics.sendGlyph, color: sh.textOnLantern, shown: send)
+                glyph("stop.fill", size: SHComposerMetrics.stopGlyph, color: sh.textOnFailed, shown: !send)
+            }
         }
         .buttonStyle(SHComposerActionStyle(fill: send ? sh.lantern : sh.failed))
         .disabled(!enabled)
@@ -230,6 +236,14 @@ public struct SHComposerActionButton: View {
         }
         .shAnimation(.content, value: send)
         .accessibilityLabel(send ? "Send" : "Stop")
+    }
+
+    private func glyph(_ symbol: String, size: CGFloat, color: Color, shown: Bool) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(color)
+            .opacity(shown ? 1 : 0)
+            .accessibilityHidden(true)
     }
 }
 

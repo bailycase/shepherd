@@ -1,6 +1,6 @@
 import AppKit
 import SwiftUI
-import ShepherdUI
+@testable import ShepherdUI
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
@@ -412,35 +412,146 @@ struct ThreadCodeBlockTests {
         #expect(pasteboard.string(forType: .string) == (code as NSString).substring(with: selection))
     }
 
-    @Test func aGrowingFenceKeepsOnlyItsNewestColors() async throws {
+    /// Whether the character at `unit` of the field is drawn in a syntax color, not the text color.
+    private func isColored(_ field: NSTextField, at unit: Int) -> Bool {
+        guard unit < field.attributedStringValue.length else { return false }
+        let color = field.attributedStringValue.attribute(.foregroundColor, at: unit, effectiveRange: nil) as? NSColor
+        return color != nil && color != NSColor(Color.sh.textPrimary)
+    }
+
+    /// A fence being written is colored line by line and kept by its block, not by the shared cache,
+    /// which holds only the fence once it is done.
+    @Test func aGrowingFenceStoresNothingInTheCacheUntilItIsDone() async throws {
         func lines(_ count: Int) -> String { (0..<count).map { "var sheep\($0) = \($0)" }.joined(separator: "\n") }
-        /// The key a block being written colors: its code up to its last complete line.
-        func rendered(_ code: String) -> CodeHighlightCache.Key {
-            let key = CodeHighlightCache.Key(fence: code, language: "go")
-            return key.prefix(lines: code.utf8.count { $0 == UInt8(ascii: "\n") })
-        }
         let first = lines(8), second = lines(16), full = CodeHighlightCache.Key(fence: lines(17), language: "go")
-        #expect(rendered(first) != rendered(second))
         let window = OffscreenWindow(size: CGSize(width: 480, height: 800),
                                      HighlightedCodeBlock(code: first, language: "go", writing: true))
         defer { window.close() }
         try await eventuallyOnMain("the first lines to be colored") {
             ListPerf.settle(window)
-            return CodeHighlightCache.cached(rendered(first)) != nil
+            return codeField(in: window.host, code: first).map { isColored($0, at: 0) } ?? false
         }
         window.show(HighlightedCodeBlock(code: second, language: "go", writing: true))
+        let start = (second as NSString).range(of: "var sheep14").location
         try await eventuallyOnMain("the next render to be colored") {
             ListPerf.settle(window)
-            return CodeHighlightCache.cached(rendered(second)) != nil
+            return codeField(in: window.host, code: second).map { isColored($0, at: start) } ?? false
         }
-        #expect(CodeHighlightCache.cached(rendered(first)) == nil, "the older render of the same fence is gone")
+        #expect(CodeHighlightCache.cached(CodeHighlightCache.Key(fence: first, language: "go")) == nil)
+        #expect(CodeHighlightCache.cached(CodeHighlightCache.Key(fence: second, language: "go")) == nil)
 
         window.show(HighlightedCodeBlock(code: lines(17), language: "go", writing: false))
         try await eventuallyOnMain("the finished fence to be colored") {
             ListPerf.settle(window)
             return CodeHighlightCache.cached(full) != nil
         }
-        #expect(CodeHighlightCache.cached(rendered(second)) == nil, "a closed fence leaves only its full render")
+        #expect(CodeHighlightCache.cached(CodeHighlightCache.Key(fence: second, language: "go")) == nil, "a closed fence leaves only its full render")
+    }
+
+    /// A reply writing a long fence in chunks: each chunk is colored, turned into native text and laid out
+    /// from where it changed, so what the whole stream costs follows the length of the fence, not its square.
+    /// A fence in a language with no grammar is laid out the same way, uncolored. The fence ends as its
+    /// whole highlight.
+    @Test(arguments: ["go", "text"])
+    func aFenceStreamedInChunksIsColoredStyledAndLaidOutInProportionToItsLength(language: String) async throws {
+        let lines = (0..<400).map { "var sheep\($0) = \($0) // flock" }
+        let code = lines.joined(separator: "\n")
+        let window = OffscreenWindow(size: CGSize(width: 520, height: 320),
+                                     HighlightedCodeBlock(code: lines[0], language: language, writing: true))
+        defer { window.close() }
+        ListPerf.settle(window)
+        SHRenderProbe.start()
+        defer { SHRenderProbe.stop() }
+        for end in stride(from: 25, through: lines.count, by: 25) {
+            let written = lines[..<end].joined(separator: "\n")
+            window.show(HighlightedCodeBlock(code: written, language: language, writing: true))
+            ListPerf.settle(window)
+            if language == "go" {
+                // The lines before the one still being written are colored before the next chunk comes.
+                let last = (written as NSString).range(of: "var sheep\(end - 2)").location
+                try await eventuallyOnMain("\(end - 1) lines to be colored") {
+                    ListPerf.settle(window)
+                    return codeField(in: window.host, code: written).map { isColored($0, at: last) } ?? false
+                }
+            }
+        }
+        let streaming = SHRenderProbe.stop()
+
+        window.show(HighlightedCodeBlock(code: code, language: language, writing: false))
+        let key = CodeHighlightCache.Key(fence: code, language: language)
+        if language == "go" {
+            try await eventuallyOnMain("the finished fence to be colored") {
+                ListPerf.settle(window)
+                return CodeHighlightCache.cached(key) != nil
+            }
+        }
+        ListPerf.settle(window)
+
+        let units = code.utf16.count
+        for (probe, name) in [("code.styledUnits", "styled"), ("code.laidOutUnits", "laid out"), ("highlight.units", "colored")] {
+            let count = streaming[probe, default: 0]
+            #expect(count < 3 * units, "\(count) units \(name) while streaming a fence of \(units)")
+        }
+        #expect(streaming["layout.codeMeasured", default: 0] <= 2, "the cell measures the fence only before its renderer exists")
+        if language == "go" { #expect(streaming["highlight.render", default: 0] >= 8, "the colors landed chunk by chunk") }
+
+        let field = try #require(codeField(in: window.host, code: key.code))
+        let whole = language == "go" ? try #require(CodeHighlightCache.cached(key)) : nil
+        let expected = SHNativeCodeText.attributedCode(key.code, highlighted: whole, font: try #require(field.font), lineSpacing: SHTextStyle.code.lineSpacing + 0.6)
+        #expect(field.attributedStringValue.isEqual(to: expected), "the fence ends as its whole highlight")
+        #expect(field.frame.height > CGFloat(lines.count) * 12)
+    }
+
+    @Test func aSelectionSurvivesTheNextChunkOfAFenceBeingWritten() throws {
+        let code = "let sheep = 1\nlet flock = 2"
+        var colors = SHCodeColors()
+        colors.recolor(from: 0, with: [SHCodeColors.Span(range: 0..<3, color: Color.sh.synKeyword)])
+        let window = OffscreenWindow(SHCodeBlock(code, language: "swift", colors: colors))
+        defer { window.close() }
+        ListPerf.settle(window)
+        let field = try #require(codeField(in: window.host, code: code))
+        let editor = try #require(window.window.fieldEditor(true, for: field) as? NSTextView)
+        let selection = NSRange(location: 4, length: 5)
+        field.cell?.select(withFrame: field.bounds, in: field, editor: editor, delegate: field, start: selection.location, length: selection.length)
+        #expect(window.window.makeFirstResponder(editor))
+        #expect((editor.string as NSString).substring(with: selection) == "sheep")
+        let initialHeight = field.frame.height
+
+        let grown = code + "\nlet count = 42"
+        colors.recolor(from: 14, with: [SHCodeColors.Span(range: 14..<17, color: Color.sh.synKeyword)])
+        window.show(SHCodeBlock(grown, language: "swift", colors: colors))
+        ListPerf.settle(window)
+
+        #expect(codeField(in: window.host, code: grown) === field)
+        #expect(editor.string == grown && editor.selectedRange() == selection && field.currentEditor() === editor)
+        #expect(field.frame.height > initialHeight, "a line more makes the fence taller")
+    }
+
+    @Test func aFenceHiddenWhileItIsWrittenDrawsAsIfBuiltWholeWhenShownAgain() throws {
+        let lines = (0..<60).map { "let sheep\($0) = \($0) // flock" }
+        var colors = SHCodeColors()
+        colors.recolor(from: 0, with: [])
+        let window = OffscreenWindow(size: CGSize(width: 480, height: 800), dark: false,
+                                     SHCodeBlock(lines[..<20].joined(separator: "\n"), language: "swift", colors: colors))
+        defer { window.close() }
+        ListPerf.settle(window)
+        _ = try drawn(try #require(codeField(in: window.host, code: lines[..<20].joined(separator: "\n"))))
+
+        window.host.isHidden = true
+        ListPerf.settle(window)
+        for end in [30, 45, 60] {
+            window.show(SHCodeBlock(lines[..<end].joined(separator: "\n"), language: "swift", colors: colors))
+            ListPerf.settle(window)
+        }
+        window.host.isHidden = false
+        ListPerf.settle(window)
+        let code = lines.joined(separator: "\n")
+        let grown = try drawn(try #require(codeField(in: window.host, code: code)))
+
+        let reference = OffscreenWindow(size: CGSize(width: 480, height: 800), dark: false, SHCodeBlock(code, language: "swift"))
+        defer { reference.close() }
+        ListPerf.settle(reference)
+        #expect(grown == (try drawn(try #require(codeField(in: reference.host, code: code)))))
     }
 
     @Test func aFenceScrolledBackIntoViewIsColoredOnItsFirstFrame() async throws {

@@ -241,7 +241,7 @@ struct ProjectSummaryStrip: View {
         VStack(spacing: 0) {
             Button { withSHAnimation(.disclosure) { expanded.toggle() } } label: {
                 HStack(spacing: SH.Space.s) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    SHTurningChevron(isOpen: expanded)
                         .font(.system(size: SHLeadMetrics.summaryChevron, weight: .medium))
                         .accessibilityHidden(true)
                     Text(summary).font(.sh(.caption))
