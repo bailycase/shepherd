@@ -22,7 +22,8 @@ struct FleetPagePreviewTests {
     static var snapshot: FleetSnapshot {
         FleetSnapshot(
             enabled: true, hostID: here, name: "MacBook Pro", addresses: ["192.168.1.40"], port: 7434, advertising: true,
-            peers: [FleetPeerStatus(hostID: mini, name: "Mac mini", host: "192.168.1.52", port: 7434, pairedAt: 1, link: .connected),
+            peers: [FleetPeerStatus(hostID: mini, name: "Mac mini", host: "192.168.1.52", port: 7434, pairedAt: 1, link: .connected,
+                                    reach: FleetPeerReach(host: "192.168.1.52", kind: .lan)),
                     FleetPeerStatus(hostID: studio, name: "Mac Studio", host: "192.168.1.60", port: 7434, pairedAt: 2, link: .offline, lastSeen: seenAt)],
             macs: [
                 FleetMacState(hostID: here, sample: FleetPressureSample(cpuUtilization: 0.72, cpuCount: 12, totalMemoryBytes: 36 * gib,
@@ -53,6 +54,22 @@ struct FleetPagePreviewTests {
     }
 
     static let noActions = FleetPageActions(choose: { _, _ in }, retry: { _ in }, openSettings: {}, addMac: {})
+
+    /// How each Mac is reached: over a LAN address, over the name a Mac reports, over Tailscale, and over the link the other Mac opened
+    /// because only that Mac can dial.
+    @Test func howEachMacIsReached() async throws {
+        var snapshot = Self.snapshot
+        let tailscale = UUID()
+        snapshot.peers = [FleetPeerStatus(hostID: Self.mini, name: "Mac mini", pairedAt: 1, link: .connected, reach: FleetPeerReach(viaItsLink: true)),
+                          FleetPeerStatus(hostID: Self.studio, name: "Mac Studio", pairedAt: 2, link: .connected,
+                                          reach: FleetPeerReach(host: "100.101.102.103", kind: .tailscale)),
+                          FleetPeerStatus(hostID: tailscale, name: "Mac Pro", pairedAt: 3, link: .connected,
+                                          reach: FleetPeerReach(host: "mac-pro.local", kind: .hostname))]
+        let page = Self.page(snapshot)
+        try await Preview.renderMatrix("fleet3a-reach", size: CGSize(width: 1208, height: 900)) {
+            FleetPageContent(page: page, actions: Self.noActions).frame(width: 1208, height: 900)
+        }
+    }
 
     @Test func fleetPage() async throws {
         let page = Self.page()

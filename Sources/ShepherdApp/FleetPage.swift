@@ -223,10 +223,6 @@ struct FleetMacCardView: View, Equatable {
                     Text(card.hardware).font(.sh(.micro, weight: .regular)).foregroundStyle(sh.textTertiary)
                         .lineLimit(1).truncationMode(.tail)
                 }
-                if let reach = card.reach {
-                    Text(reach).font(.sh(.micro, weight: .regular)).foregroundStyle(sh.textTertiary)
-                        .lineLimit(1).truncationMode(.middle)
-                }
             }
             Spacer(minLength: SH.Space.s)
             status
@@ -274,6 +270,9 @@ struct FleetMacCardView: View, Equatable {
                 }
             }
             FleetFact("Agents") { Text(card.agents).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary) }
+            if let reach = card.reach {
+                FleetFact("Link") { Text(reach).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.middle) }
+            }
         }
         .padding(.vertical, SH.Space.l)
         .padding(.horizontal, SH.Space.xl)
