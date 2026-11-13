@@ -51,7 +51,12 @@ public struct NativeTranscriptPlace: Equatable, Sendable {
     /// detached with nothing kept (SwiftUI can leave the position nil, as after a jump) would sit there without following the tail,
     /// with the jump pill showing while the agent runs. Nothing changes where a turn is kept or where the transcript does not mount
     /// at its tail.
-    public mutating func mount() {
+    ///
+    /// A follower who left holding the bottom marker comes back to it, whatever joined while the transcript was away: a mount is not
+    /// rows joining after the marker, and handing nothing would open the stack at the top of its content where there is no initial
+    /// anchor. `tail` is the transcript's last row now.
+    public mutating func mount(tail: String?) {
+        if follower.sticky, !mountsAtTail, turn == Self.bottomMarker { markerTail = tail }
         guard mountsAtTail, turn == nil, !follower.sticky else { return }
         var next = follower
         next.jumpToLatest()
