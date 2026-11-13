@@ -79,11 +79,17 @@ struct ScrollFollowerSendTests {
         var testDescription: String { "sticky \(sticky), unseen \(unseen), running \(running)" }
     }
 
-    static let pills: [Pill] = [true, false].flatMap { sticky in
-        [true, false].flatMap { unseen in
-            [true, false].map { running in Pill(sticky: sticky, unseen: unseen, running: running, shows: !sticky && (running || unseen)) }
-        }
-    }
+    /// Only a reader away from the tail sees the pill, and only while output is arriving or already came.
+    static let pills: [Pill] = [
+        Pill(sticky: true, unseen: true, running: true, shows: false),
+        Pill(sticky: true, unseen: true, running: false, shows: false),
+        Pill(sticky: true, unseen: false, running: true, shows: false),
+        Pill(sticky: true, unseen: false, running: false, shows: false),
+        Pill(sticky: false, unseen: true, running: true, shows: true),
+        Pill(sticky: false, unseen: true, running: false, shows: true),
+        Pill(sticky: false, unseen: false, running: true, shows: true),
+        Pill(sticky: false, unseen: false, running: false, shows: false),
+    ]
 
     @Test("the pill rule over the mirrored parts agrees with the follower's own", arguments: pills)
     func theMirroredPillAgreesWithTheFollowers(_ pill: Pill) {
