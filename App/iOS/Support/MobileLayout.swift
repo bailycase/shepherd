@@ -20,6 +20,8 @@ enum MobileLayout {
     static let tailGuardAttempts = 6
     static let tailGuardRest: Duration = .seconds(3)
     static let tailGuardMinimumPage: CGFloat = 50
+    /// How long a transcript counts as just appeared: it goes at once to the rows its stack placed when none is in view (`ThreadTailGuard`).
+    static let tailGuardMount: Duration = .seconds(1)
     /// The parts inside one agent turn.
     static let turnItemSpacing: CGFloat = SH.Space.l
     /// Lines inside a work group.
