@@ -62,10 +62,10 @@ struct MountedBudgetTests {
                 try MountedBudgetTests.seed(replies: replies, cycles: cycles, shortTail: shortTail).write(to: file)
                 return file
             }
-            // As the root view hangs the workspace: readers left scrolled up pin their thread's history.
+            // As the root view hangs the workspace: readers left scrolled up pin their thread's history, and a restore waits for keys.
             let (vm, agents) = try await MountedWorkspace.start(count, in: app, env: { ["STUB_PI_MESSAGES_FILE": files[$0].path] })
             let window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true,
-                                         WorkspaceView(vm: vm).environment(\.threadReaderPins, vm.threadReaderPins))
+                                         WorkspaceView(vm: vm).environment(\.threadReaderPins, vm.threadReaderPins).environment(\.userActivity, vm.userActivity))
             let visible = vm.threadStores.store(for: agents[0].agent.id)
             try await eventuallyOnMain("the visible thread to load", timeout: .seconds(60)) { visible.ready }
             try await eventuallyOnMain("every layout to mount") { ListPerf.settle(window); return vm.mountedTabs.count == agents.count }

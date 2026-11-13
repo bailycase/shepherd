@@ -51,4 +51,18 @@ struct ThreadRestoreTests {
         let frame = firstFrame(few)
         #expect(few.keptRows == few.rows.count && frame.plan == nil && !frame.restoring)
     }
+
+    /// The lazy stack comes back with the first step, and until it does a reader cannot scroll to the rows above the last screen.
+    @Test func aRestoreAwaitsItsLazyStackUntilItsFirstStep() {
+        let long = store(turns: 12)
+        let restore = ThreadRestore()
+        let frame = firstFrame(long, restore: restore)
+        #expect(frame.restoring && restore.awaitsHistory)
+        let more = restore.advance(rows: long.rows, eagerRows: ThreadView.eagerRows) { _ in Issue.record("the first step takes no rows"); return 0 }
+        #expect(more && !restore.awaitsHistory, "the first step brings the lazy stack back")
+        let rows = long.rows, eager = ThreadView.eagerRows
+        let plan = restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager) { long.restoreCost(drawn: $0, upTo: eager) }
+        #expect(plan == ThreadRestore.Plan(eager: 4, history: true))
+        #expect(!ThreadRestore().awaitsHistory, "a thread that is not restoring awaits nothing")
+    }
 }

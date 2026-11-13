@@ -11,12 +11,15 @@ final class UserActivity {
     init() {
         // Only this app's events: another app's typing is no reason for this one to wait.
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .scrollWheel, .leftMouseDragged]) { [weak self] event in
-            MainActor.assumeIsolated { self?.lastEvent = .now }
+            MainActor.assumeIsolated { self?.noteEvent() }
             return event
         }
     }
 
     deinit { if let monitor { NSEvent.removeMonitor(monitor) } }
+
+    /// A key, a scroll or a drag has just come. The monitor's word, and a test's for the person typing.
+    func noteEvent() { lastEvent = .now }
 
     /// A key, a scroll or a drag came within `AppLayout.inputRecentWindow`.
     var inputRecent: Bool {

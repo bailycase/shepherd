@@ -404,10 +404,11 @@ struct ThreadView: View {
         // there (`NativeThreadStore.suspend`). In a window nobody can see it keeps its loop and pulls
         // nothing (`ThreadRest`).
         .modifier(ThreadRest(store: store, owner: storeOwner, active: active, run: loopRun))
-        // Not while the reader is away from the tail: the rows that join the eager tail change height above them, which only a view held
-        // to the tail takes without moving. It starts again when they return (the key reads `sticky` only while a restore is under way).
-        .task(id: restoreStepping && active && follower.sticky) {
-            if restoreStepping && active && follower.sticky { await restoreRows() }
+        // The rows not while the reader is away from the tail: the rows that join the eager tail change height above them, which only a
+        // view held to the tail takes without moving. It starts again when they return (the key reads `sticky` only while a restore is
+        // under way). The lazy stack is the exception, for a reader wherever they are: until it is back they cannot reach the older rows.
+        .task(id: restoreStepping && active && (follower.sticky || restore.awaitsHistory)) {
+            if restoreStepping && active && (follower.sticky || restore.awaitsHistory) { await restoreRows() }
         }
         .task(id: LoopKey(active: active, run: loopRun)) {
             guard !Task.isCancelled else { return }
@@ -440,13 +441,27 @@ struct ThreadView: View {
         origins.runtime.isEmpty ? store.listRows : store.listRows.filter { !($0.isUser && origins.hides($0.turn)) }
     }
 
-    /// Draws the rows a restore still owes (`ThreadRestore`) a step at a time, each after the frame of the one before it. It waits while
-    /// the reader's hand is on the scroll view, and for keystrokes: a step takes tens of milliseconds, which a key pressed in it feels.
-    /// It looks again every `restoreRetry` while either lasts, and a key or a scroll lasts `AppLayout.inputRecentWindow` past its event. It
-    /// runs only while the reader is at the tail (the task's key): the rows that join the eager tail change height above them, which only a
-    /// view held to the tail (`ThreadTailAnchor`) takes without moving.
+    /// Brings back what a restore still owes (`ThreadRestore`), a step at a time, each after the frame of the one before it. The lazy
+    /// stack comes first, as soon as the frame that drew the last screen is out and no scroll gesture is under way, whatever the person
+    /// types and wherever the reader is: it builds nothing at the tail, and until it is back the thread seems to end where its last
+    /// screen does. The rows then wait while the reader's hand is on the scroll view, and for keystrokes: a step takes tens of
+    /// milliseconds, which a key pressed in it feels. It looks again every `restoreRetry` while either lasts, and a key or a scroll lasts
+    /// `AppLayout.inputRecentWindow` past its event. They run only while the reader is at the tail (the task's key): the rows that join
+    /// the eager tail change height above them, which only a view held to the tail (`ThreadTailAnchor`) takes without moving.
     private func restoreRows() async {
         func waiting() -> Bool { follower.userScrolling || !follower.sticky || userActivity?.inputRecent == true }
+        if restore.awaitsHistory {
+            try? await Task.sleep(for: AppLayout.restorePause)
+            while follower.userScrolling, !Task.isCancelled { try? await Task.sleep(for: AppLayout.restoreRetry) }
+            guard !Task.isCancelled else { return }
+            // The stack's height comes in above whatever the reader is looking at, and a scroll view held to nothing keeps its offset
+            // from the top: a reader who scrolled away in the moments before it comes goes back to the tail, held there as it grows.
+            if !follower.sticky {
+                follower.jumpToLatest()
+                tailGuard.land()
+            }
+            _ = restore.advance(rows: listedRows(userOrigins), eagerRows: Self.eagerRows) { _ in 0 }
+        }
         while !Task.isCancelled {
             try? await Task.sleep(for: waiting() ? AppLayout.restoreRetry : AppLayout.restorePause)
             guard !Task.isCancelled else { return }
@@ -667,7 +682,8 @@ struct ThreadView: View {
     }
 
     // Starting history during an animated jump can discard its restoration scroll request.
-    private var historyEnabled: Bool { active && store.ready && !store.loadingOlder && !follower.sticky && !historyAnchor.animating }
+    // The rows of a thread still to bring its lazy stack back (`ThreadRestore`) are in memory, drawn or not: nothing to load for them.
+    private var historyEnabled: Bool { active && store.ready && !store.loadingOlder && !follower.sticky && !historyAnchor.animating && !restore.awaitsHistory }
 
     private func loadVisibleHistory() {
         guard historyPaging.takeRequest(session: store.sessionKey, cursor: store.olderCursor, enabled: historyEnabled) else { return }
@@ -915,8 +931,9 @@ final class ThreadRowIndex {
 /// How a thread that let its rows go (`NativeThreadStores`) brings them back when it is shown again, bottom first. The rows it kept
 /// (`NativeThreadStore.keptRows`) are all it draws in its first frame, and are not built again: a lazy stack drawn in that frame
 /// would be shown its estimates, before the scroll view has been held to the tail, and would build them. The next frame brings the lazy
-/// stack back with the rows older than the eager tail, and the rows between join the eager tail a step at a time, newest first, each
-/// leaving the lazy stack for the eager stack once. The end of the thread, where the reader is, never moves: the scroll view keeps it
+/// stack back with the rows older than the eager tail, whatever the person types (it builds nothing at the tail, and without it the
+/// thread seems to end where its last screen does), and the rows between join the eager tail a step at a time, newest first, each
+/// leaving the lazy stack for the eager stack once, when no key or scroll is recent. The end of the thread, where the reader is, never moves: the scroll view keeps it
 /// while the content above it grows, at the bottom of the window even where the rows drawn so far do not fill it (`ThreadTailAnchor`).
 /// No update builds more than a step of rows, and a thread whose rest costs no more than a step draws it all in its first frame.
 ///
@@ -944,6 +961,10 @@ final class ThreadRestore {
     @ObservationIgnored private var hiddenKept: Int?
     /// This showing has begun (or needed no restore).
     @ObservationIgnored private var begun = false
+
+    /// The lazy stack is still to come back (the next step brings it): the thread draws only the rows the eager stack holds, so a
+    /// reader cannot scroll to older ones.
+    var awaitsHistory: Bool { restoring && !history }
 
     /// What the thread draws in this update; nil for all of it. `hiddenKept` is what the hidden view draws
     /// (`NativeThreadStore.transcriptDrawn`, read only while hidden, so that the thread on screen is not drawn again by the store

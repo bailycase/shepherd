@@ -169,7 +169,9 @@ struct ReleasedThreadBottomFirstTests {
     }
 
     /// A reader who scrolls up while the rest is coming back keeps the place they scrolled to: the rows stop joining the tail above
-    /// them, and are there to scroll through; back at the tail, the rest comes back.
+    /// them, and are there to scroll through; back at the tail, the rest comes back. Keys keep the rows off while the lazy stack's
+    /// estimate of its rows settles (as it does when its rows are measured), because a reader away from the tail whose scroll view
+    /// then shrinks past them is put back at the end of it.
     @Test func aReaderWhoScrollsUpDuringTheRestoreStaysWhereTheyAre() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -178,16 +180,21 @@ struct ReleasedThreadBottomFirstTests {
         for index in [1, 0] { try await work.show(index) }
         let store = work.store(1)
         let fences = try work.fields(1)
-        _ = try await Self.release(work, 1, from: fences)
+        let held = try await Self.release(work, 1, from: fences)
 
+        work.vm.userActivity.noteEvent()
         work.vm.selectAgent(work.agents[1].agent.id)
-        try await eventuallyOnMain("the thread to be shown, with its restore begun", timeout: .seconds(60)) {
+        var first: CGFloat?, heights: [CGFloat] = []
+        try await eventuallyOnMain("the lazy stack to be back and its estimate to hold still", timeout: .seconds(60)) {
+            work.vm.userActivity.noteEvent()
             ListPerf.settle(work.window)
-            return try work.host(1)?.isHidden == false && !store.transcriptReleased
+            guard try work.host(1)?.isHidden == false, !store.transcriptReleased, let now = try work.transcript(1)?.documentView?.bounds.height else { return false }
+            first = first ?? now
+            heights.append(now)
+            return now > (first ?? now) + 50 && heights.suffix(8).count == 8 && Set(heights.suffix(8)).count == 1
         }
-        // The reader's hand goes onto the scroll view at once, as a wheel tick does.
         let begun = try work.fields(1)
-        #expect(begun < fences * 9 / 10, "the rest has not all come back yet: \(begun) of \(fences)")
+        #expect(begun < fences * 9 / 10 && begun >= held, "the rest has not come back yet: \(begun) of \(fences), from \(held)")
         let scroll = try #require(try work.transcript(1))
         let clip = scroll.contentView
         let input = work.vm.threadStores.input(for: work.agents[1].agent.id)
@@ -206,14 +213,14 @@ struct ReleasedThreadBottomFirstTests {
         }
         let away = try #require(try work.distanceFromTail(1))
         #expect(away > 80, "the reader is \(away) points above the tail")
-        let held = try work.fields(1)
-        #expect(held < fences * 9 / 10, "the rest stopped coming back when the reader left the tail: \(held) of \(fences)")
+        let heldNow = try work.fields(1)
+        #expect(heldNow < fences * 9 / 10, "the rest stopped coming back when the reader left the tail: \(heldNow) of \(fences)")
 
         // Nothing joins the tail above the reader for as long as they stay.
         for _ in 0..<40 { ListPerf.settle(work.window) }
         try await eventuallyOnMain("the restore to hold still", poll: .milliseconds(30)) {
             ListPerf.settle(work.window)
-            return try work.fields(1) == held
+            return try work.fields(1) == heldNow
         }
         #expect(clip.bounds.origin.y == rest, "and the reader's place did not move: \(clip.bounds.origin.y) from \(rest)")
 
@@ -243,6 +250,171 @@ struct ReleasedThreadBottomFirstTests {
             Issue.record("\(error): \(drawn) of \(fences) fences, \(try work.distanceFromTail(1) ?? .infinity) points above the tail, released \(store.transcriptReleased)")
         }
         #expect(try work.distanceFromTail(1).map { abs($0) <= 1 } == true, "and the end of the thread is where it was")
+    }
+
+    /// A keyboard switch (⌘1-9, ⌃Tab) is a key, and the person may keep typing: the rows come back only once they stop, but the lazy stack
+    /// that holds the rows above the last screen comes straight back, because it builds nothing at the tail and without it the thread
+    /// seems to end where its last screen does. A key at every look, the thread's document grows by the stack's rows within a few frames
+    /// while no row joins the tail; once the keys stop, the rest comes back.
+    @Test func aKeyboardSwitchBringsTheLazyStackBackWhileTheKeysAreRecent() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let work = try await Workspace.open(2, replies: 18, cycles: 4, in: app)
+        defer { work.window.close() }
+        for index in [1, 0] { try await work.show(index) }
+        let store = work.store(1)
+        let fences = try work.fields(1)
+        let held = try await Self.release(work, 1, from: fences)
+        #expect(store.transcriptReleased && held < fences)
+
+        work.vm.userActivity.noteEvent()
+        work.vm.selectAgent(work.agents[1].agent.id)
+        var heights: [CGFloat] = [], tails: [CGFloat] = [], looks = 0
+        func look() throws {
+            work.vm.userActivity.noteEvent()
+            ListPerf.settle(work.window)
+            guard try work.host(1)?.isHidden == false, let height = try work.transcript(1)?.documentView?.bounds.height else { return }
+            heights.append(height)
+            tails.append(try work.distanceFromTail(1) ?? .infinity)
+            looks += 1
+        }
+        do {
+            try await eventuallyOnMain("the lazy stack's rows to be in the thread while a key comes at every look", timeout: .seconds(30), poll: .milliseconds(10)) {
+                try look()
+                return heights.count > 1 && heights.last.map { $0 > heights[0] + 50 } == true
+            }
+        } catch {
+            Issue.record("\(error): the document stayed at \(heights.first ?? 0) points over \(looks) looks, drawn \(try work.fields(1)) of \(fences) fields")
+        }
+        let now = try work.fields(1)
+        #expect(now < fences / 2, "no row joined the tail while the keys came: \(now) of \(fences) fields, from \(held)")
+        #expect(tails.allSatisfy { abs($0) <= 1 }, "the end of the thread never moved: \(tails.map { ($0 * 10).rounded() / 10 })")
+
+        // The keys stop, and the rest of the rows come back.
+        var drawn = 0, steady = 0
+        do {
+            try await eventuallyOnMain("the rest to come back once the keys stop", timeout: .seconds(60)) {
+                ListPerf.settle(work.window)
+                let fields = try work.fields(1)
+                steady = fields == drawn ? steady + 1 : 0
+                drawn = fields
+                return drawn >= fences * 9 / 10 && steady >= 8
+            }
+        } catch {
+            Issue.record("\(error): \(drawn) of \(fences) fences, released \(store.transcriptReleased)")
+        }
+        #expect(try work.distanceFromTail(1).map { abs($0) <= 1 } == true, "and the end of the thread is where it was")
+    }
+
+    /// A reader who scrolls up in the moments after a keyboard switch, with keys still coming, can reach the rows above the last screen: the
+    /// thread never ends where its last screen does.
+    @Test func aReaderWhoScrollsUpWhileTheKeysAreRecentReachesTheOlderRows() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let work = try await Workspace.open(2, replies: 18, cycles: 4, in: app)
+        defer { work.window.close() }
+        for index in [1, 0] { try await work.show(index) }
+        let store = work.store(1)
+        let fences = try work.fields(1)
+        let held = try await Self.release(work, 1, from: fences)
+        #expect(store.transcriptReleased && held < fences)
+
+        work.vm.userActivity.noteEvent()
+        work.vm.selectAgent(work.agents[1].agent.id)
+        var height: CGFloat?, grown = false
+        try await eventuallyOnMain("the lazy stack to be back, with a key at every look") {
+            work.vm.userActivity.noteEvent()
+            ListPerf.settle(work.window)
+            guard try work.host(1)?.isHidden == false, let now = try work.transcript(1)?.documentView?.bounds.height else { return false }
+            height = height ?? now
+            grown = now > (height ?? now) + 50
+            return grown
+        }
+        let atArrival = try work.fields(1)
+        let scroll = try #require(try work.transcript(1))
+        let clip = scroll.contentView
+        let input = work.vm.threadStores.input(for: work.agents[1].agent.id)
+        var reached = false, ticks = 0, top: CGFloat = 0
+        while !reached, ticks < 80 {
+            work.vm.userActivity.noteEvent()
+            input.readerScrolled(upward: true)
+            clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 0, y: clip.bounds.origin.y - 250), size: clip.bounds.size)).origin)
+            scroll.reflectScrolledClipView(clip)
+            ListPerf.settle(work.window)
+            try await Task.sleep(for: .milliseconds(10))
+            ticks += 1
+            top = clip.bounds.origin.y
+            reached = try work.fields(1) > held
+        }
+        let above = try work.distanceFromTail(1) ?? .infinity, built = try work.fields(1)
+        #expect(atArrival == held, "the lazy stack built nothing at the tail: \(atArrival) fields, from \(held)")
+        #expect(reached, "scrolling up \(ticks) times reached rows above the last screen: \(built) fields, from \(held), \(above) points above the tail, at \(top) of the document")
+        #expect(above > 80, "the reader is above the tail: \(above)")
+        let rest = clip.bounds.origin.y
+        for _ in 0..<20 {
+            work.vm.userActivity.noteEvent()
+            ListPerf.settle(work.window)
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(abs(clip.bounds.origin.y - rest) <= 1, "and nothing moved the reader while the keys came: \(clip.bounds.origin.y) from \(rest)")
+    }
+
+    /// A reader who scrolls up the moment the last screen is drawn, before the lazy stack is back, is at the tail again once it is: its
+    /// height is added above them, which a scroll view not held to the tail takes as a move to the oldest rows. From there they scroll
+    /// up through every row.
+    @Test func aReaderWhoScrollsUpBeforeTheLazyStackIsBackComesBackToTheTailAndReachesTheOlderRows() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let work = try await Workspace.open(2, replies: 18, cycles: 4, in: app)
+        defer { work.window.close() }
+        for index in [1, 0] { try await work.show(index) }
+        let store = work.store(1)
+        let fences = try work.fields(1)
+        let held = try await Self.release(work, 1, from: fences)
+        #expect(store.transcriptReleased && held < fences)
+
+        // Nothing here lets a task run: the restore's first step waits for the main actor, which the reader does not.
+        work.vm.selectAgent(work.agents[1].agent.id)
+        var passes = 0
+        while try work.host(1)?.isHidden != false, passes < 50 {
+            ListPerf.settle(work.window)
+            passes += 1
+        }
+        let scroll = try #require(try work.transcript(1))
+        let clip = scroll.contentView
+        let input = work.vm.threadStores.input(for: work.agents[1].agent.id)
+        let height = scroll.documentView?.bounds.height ?? 0
+        func up(_ points: CGFloat) {
+            input.readerScrolled(upward: true)
+            clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 0, y: clip.bounds.origin.y - points), size: clip.bounds.size)).origin)
+            scroll.reflectScrolledClipView(clip)
+            ListPerf.settle(work.window)
+        }
+        for _ in 0..<3 { up(250) }
+        let before = try #require(try work.distanceFromTail(1))
+        #expect(before > 80 && scroll.documentView?.bounds.height == height, "the reader is \(before) points above the tail, in the last screen alone")
+
+        try await eventuallyOnMain("the lazy stack to be back above the reader", timeout: .seconds(30)) {
+            ListPerf.settle(work.window)
+            return (scroll.documentView?.bounds.height ?? 0) > height + 50
+        }
+        var tail = CGFloat.infinity
+        try await eventuallyOnMain("the reader to be back at the tail", timeout: .seconds(30)) {
+            ListPerf.settle(work.window)
+            tail = try work.distanceFromTail(1) ?? .infinity
+            return abs(tail) <= 1
+        }
+        #expect(abs(tail) <= 1, "the reader went from \(before) points above the tail to \(tail)")
+
+        var reached = false, ticks = 0
+        while !reached, ticks < 80 {
+            up(250)
+            try await Task.sleep(for: .milliseconds(10))
+            ticks += 1
+            reached = try work.fields(1) > held
+        }
+        let built = try work.fields(1)
+        #expect(reached, "scrolling up \(ticks) times reached rows above the last screen: \(built) fields, from \(held)")
     }
 
     /// A thread hidden halfway through its restore and let go of again comes back from its last screen, not from the rows it had
