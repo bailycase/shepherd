@@ -176,11 +176,17 @@ public struct SHCodeBlock: View, Equatable {
     let language: String?
     let highlighted: AttributedString?
     let colors: SHCodeColors?
+    /// The reply is still writing this fence. The iPhone and iPad then draw it as blocks of lines, so a chunk lays
+    /// out the end of it; a finished fence is one `Text`.
+    private(set) var writing = false
     #if os(macOS)
     @State private var nativeCode = SHNativeCodeText.Cache()
+    #else
+    @State private var fence = SHFenceBlocks.Cache()
+    #endif
+    /// The block's width and the code's: code wider than the block scrolls, otherwise it sits as it is.
     @State private var availableCodeWidth: CGFloat?
     @State private var codeWidth: CGFloat = 0
-    #endif
     @State private var hovering = false
     @State private var copied = false
     /// Copies so far: each one pops the check.
@@ -198,6 +204,7 @@ public struct SHCodeBlock: View, Equatable {
 
     nonisolated public static func == (lhs: SHCodeBlock, rhs: SHCodeBlock) -> Bool {
         lhs.code == rhs.code && lhs.language == rhs.language && lhs.highlighted == rhs.highlighted && lhs.colors == rhs.colors
+            && lhs.writing == rhs.writing
     }
 
     public var body: some View {
@@ -232,30 +239,19 @@ public struct SHCodeBlock: View, Equatable {
             .padding(.trailing, SH.Space.s)
             .frame(height: SHThreadMetrics.codeHeaderHeight)
             .overlay(alignment: .bottom) { SHHairline() }
-            // Short code stays out of nested scrolling; wide code keeps its natural line width.
-            #if os(macOS)
-            // ViewThatFits reconstructs native measuring fields during unrelated layout updates.
+            // Short code stays out of nested scrolling; wide code keeps its natural line width. Two measured
+            // widths choose between them: ViewThatFits lays the code out for each choice, and on the Mac
+            // it reconstructs native measuring fields during unrelated layout updates.
             if let availableCodeWidth, codeWidth > availableCodeWidth {
                 ScrollView(.horizontal) { codeText }
                     .scrollIndicators(.hidden)
             } else {
                 codeText
             }
-            #else
-            ViewThatFits(in: .horizontal) {
-                codeText
-                ScrollView(.horizontal) { codeText }
-                    .scrollIndicators(.hidden)
-            }
-            #endif
         }
-        #if os(macOS)
         // Accept the column's proposal even when the fixed-size code initially overflows it.
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableCodeWidth = $0 }
-        #else
-        .frame(maxWidth: .infinity, alignment: .leading)
-        #endif
         .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
         .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
         .shBorder(sh.lineSubtle, radius: SH.Radius.m)
@@ -264,33 +260,37 @@ public struct SHCodeBlock: View, Equatable {
         .accessibilityLabel(language.map { "\($0) code" } ?? "Code")
     }
 
+    private var codeLineSpacing: CGFloat { SHTextStyle.code.lineSpacing + 0.6 }
+
     /// The code at its natural width, unwrapped.
     private var codeText: some View {
         Group {
             #if os(macOS)
             SHNativeCodeText(code: code, highlighted: highlighted, colors: colors, scale: ThemeStore.shared.textScale,
-                             lineSpacing: SHTextStyle.code.lineSpacing + 0.6, cache: nativeCode)
+                             lineSpacing: codeLineSpacing, cache: nativeCode)
             #else
-            if let highlighted { Text(highlighted) } else { Text(code) }
+            if let highlighted { Text(highlighted) }
+            else if writing { SHFenceBlocksView(blocks: fence.blocks(for: code), lineSpacing: codeLineSpacing) }
+            else { Text(code) }
             #endif
         }
         .font(.sh(.code))
-        .lineSpacing(SHTextStyle.code.lineSpacing + 0.6)
+        .lineSpacing(codeLineSpacing)
         .foregroundStyle(Color.sh.textPrimary)
         .textSelection(.enabled)
         .fixedSize()
         .padding(.horizontal, SH.Space.l)
         .padding(.vertical, 10)
-        #if os(macOS)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { codeWidth = $0 }
-        #endif
     }
 }
 
 extension SHCodeBlock: SHProseCode {
-    /// `writing` is not drawn: this block shows the code as it stands, with no colors.
+    /// Without colors: this block shows the code as it stands. A fence being written is drawn as blocks of lines on the
+    /// iPhone and iPad, and as it stands on the Mac.
     public init(code: String, language: String?, writing: Bool) {
         self.init(code, language: language)
+        self.writing = writing
     }
 }
 

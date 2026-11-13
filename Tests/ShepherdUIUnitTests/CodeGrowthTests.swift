@@ -156,3 +156,171 @@ struct CodeGrowthTests {
         #expect(SHNativeCodeText.Field.layoutSize(of: renderer) == nil)
     }
 }
+
+/// The iPhone and iPad draw a fence a reply is writing as blocks of finished lines and a tail, so a chunk lays out the
+/// tail and not the fence.
+@Suite("Fence blocks")
+struct FenceBlocksTests {
+    private static let size = SHFenceBlocks.linesPerBlock
+
+    private static func line(_ n: Int) -> String {
+        switch n % 5 {
+        case 0: "func handle\(n)(_ row: OutboxRow, broker: Broker) async throws -> Ack {"
+        case 1: "    let lease = try await row.lease(ttl: .seconds(\(10 + n % 20)))"
+        case 2: "    defer { lease.release() } // \(n)"
+        case 3: ""
+        default: "}"
+        }
+    }
+
+    private static func fence(lines: Int) -> String { (0..<lines).map(line).joined(separator: "\n") }
+
+    /// The fence as a reply writes it: `chunk` characters at a time.
+    private static func steps(of code: String, chunk: Int) -> [String] {
+        var grown = "", steps: [String] = []
+        var rest = Substring(code)
+        while !rest.isEmpty {
+            let piece = rest.prefix(chunk)
+            grown += piece
+            rest = rest.dropFirst(chunk)
+            steps.append(grown)
+        }
+        return steps
+    }
+
+    /// The text a step lays out that the step before did not: the blocks that are new or changed, and the tail if it changed.
+    private static func laidOut(_ next: SHFenceBlocks, after previous: SHFenceBlocks) -> Int {
+        let before = Dictionary(uniqueKeysWithValues: previous.frozen.map { ($0.id, $0.text) })
+        let blocks = next.frozen.filter { before[$0.id] != $0.text }.reduce(0) { $0 + $1.text.utf16.count }
+        return blocks + (next.tail == previous.tail ? 0 : next.tail.utf16.count)
+    }
+
+    private static func whole(_ blocks: SHFenceBlocks, separator: String = "\n") -> String {
+        (blocks.frozen.map(\.text) + [blocks.tail]).joined(separator: separator)
+    }
+
+    @Test(arguments: [0, 1, 31, 32, 33, 64, 65, 200])
+    func theBlocksAndTheTailAreTheFenceAndCutOnlyAtLineBreaks(lines: Int) {
+        let code = Self.fence(lines: lines)
+        var blocks = SHFenceBlocks()
+        blocks.update(to: code)
+        #expect(Self.whole(blocks) == code)
+        #expect(blocks.frozen.count == max(0, lines - 1) / Self.size)
+        #expect(blocks.frozen.enumerated().allSatisfy { $0.element.id == $0.offset && $0.element.text.split(separator: "\n", omittingEmptySubsequences: false).count == Self.size })
+        #expect(blocks.tail.split(separator: "\n", omittingEmptySubsequences: false).count <= Self.size)
+    }
+
+    @Test func aFenceGrownByChunksHoldsWhatAWholeCutHolds() {
+        let code = Self.fence(lines: 400) + "\n"
+        let grown = SHFenceBlocks.Cache()
+        for (index, step) in Self.steps(of: code, chunk: 37).enumerated() {
+            let blocks = grown.blocks(for: step)
+            var fresh = SHFenceBlocks()
+            fresh.update(to: step)
+            #expect(blocks.frozen == fresh.frozen && blocks.tail == fresh.tail, "step \(index)")
+        }
+    }
+
+    @Test func aBlockIsTheSameTextFromTheStepItIsCutOn() {
+        let cache = SHFenceBlocks.Cache()
+        var cut: [Int: String] = [:]
+        for step in Self.steps(of: Self.fence(lines: 400), chunk: 23) {
+            for block in cache.blocks(for: step).frozen {
+                #expect(cut[block.id, default: block.text] == block.text, "block \(block.id)")
+                cut[block.id] = block.text
+            }
+        }
+        #expect(cut.count == 399 / Self.size)
+    }
+
+    /// A reply is written forward, so the cost of a chunk is the same early in a fence and late in it.
+    @Test func aChunkLaysOutTheTailAndNotTheFence() {
+        let code = Self.fence(lines: 1_100)
+        #expect(code.utf8.count > 34_000)
+        let longest = code.split(separator: "\n", omittingEmptySubsequences: false).map(\.utf16.count).max() ?? 0
+        let steps = Self.steps(of: code, chunk: 40)
+        var blocks = SHFenceBlocks(), costs: [Int] = []
+        for step in steps {
+            let before = blocks
+            blocks.update(to: step)
+            costs.append(Self.laidOut(blocks, after: before))
+        }
+        // A chunk lays out a new block cut from the tail, and the tail it leaves: never more than two blocks of lines.
+        let bound = 2 * Self.size * (longest + 1)
+        #expect(costs.max() ?? .max <= bound, "most laid out by a chunk: \(costs.max() ?? 0), bound \(bound)")
+        let early = costs[50..<100].max() ?? .max, late = costs.suffix(50).max() ?? 0
+        #expect(late <= 2 * early, "\(late) units late in the fence, \(early) early")
+        // One Text for the fence lays the whole fence out for each chunk.
+        let whole = steps.reduce(0) { $0 + $1.utf16.count }
+        #expect(costs.reduce(0, +) * 10 < whole, "\(costs.reduce(0, +)) units laid out, against \(whole)")
+    }
+
+    @Test func aFenceThatIsNotAGrowthOfTheBlocksCutStartsOver() {
+        let code = Self.fence(lines: 100)
+        var blocks = SHFenceBlocks()
+        blocks.update(to: code)
+        let edited = "// edited\n" + code
+        blocks.update(to: edited)
+        #expect(Self.whole(blocks) == edited)
+        #expect(blocks.frozen.first?.text.hasPrefix("// edited") == true)
+
+        blocks.update(to: "let a = 1")
+        #expect(blocks.frozen.isEmpty && blocks.tail == "let a = 1")
+
+        blocks.update(to: code)
+        blocks.update(to: String(code.prefix(code.count / 2)))
+        #expect(Self.whole(blocks) == String(code.prefix(code.count / 2)))
+    }
+
+    @Test func aFenceKeepsItsBlocksWhenTheLastLineChangesWithoutAnythingBeforeIt() {
+        var blocks = SHFenceBlocks()
+        blocks.update(to: Self.fence(lines: 70) + "x")
+        let held = blocks.frozen
+        blocks.update(to: Self.fence(lines: 70) + "y")
+        #expect(blocks.frozen == held)
+        #expect(blocks.tail.hasSuffix("y"))
+    }
+
+    @Test func aLineBreakEndingAFenceLeavesAnEmptyLastLine() {
+        var blocks = SHFenceBlocks()
+        blocks.update(to: (0..<Self.size).map { "line \($0)" }.joined(separator: "\n") + "\n")
+        #expect(blocks.frozen.count == 1 && blocks.tail.isEmpty)
+        blocks.update(to: (0..<Self.size).map { "line \($0)" }.joined(separator: "\n"))
+        #expect(blocks.frozen.isEmpty && blocks.tail.hasPrefix("line 0"), "the block is cut only once a line follows it")
+    }
+
+    @Test func aBreakOfReturnAndLineFeedIsNotSplitBetweenBlocks() {
+        let code = (0..<(2 * Self.size + 5)).map { "line \($0)" }.joined(separator: "\r\n")
+        var blocks = SHFenceBlocks()
+        blocks.update(to: code)
+        #expect(blocks.frozen.count == 2)
+        #expect(blocks.frozen.allSatisfy { !$0.text.hasSuffix("\r") && !$0.text.hasSuffix("\n") })
+        #expect(Self.whole(blocks, separator: "\r\n") == code)
+    }
+
+    @Test(arguments: [
+        "let sheep = \"🐑\"\n", "naïve café — flock\n", "שלום\tworld\n", "e\u{301}\u{301} combining\n", "\u{2028}break\n", "日本語のコード\n",
+    ])
+    func textOfAnyScriptIsCutAtLineBreaksOnly(line: String) {
+        let code = String(repeating: line, count: 3 * Self.size + 2) + "end"
+        let cache = SHFenceBlocks.Cache()
+        var last = SHFenceBlocks()
+        for step in Self.steps(of: code, chunk: 5) { last = cache.blocks(for: step) }
+        #expect(Self.whole(last) == code)
+        var fresh = SHFenceBlocks()
+        fresh.update(to: code)
+        #expect(last.frozen == fresh.frozen && last.tail == fresh.tail)
+    }
+
+    @Test func aBlockSizeThatNeverFillsLaysOutTheWholeFenceForEachChunk() {
+        var blocks = SHFenceBlocks(linesPerBlock: .max)
+        let steps = Self.steps(of: Self.fence(lines: 200), chunk: 40)
+        var cost = 0
+        for step in steps {
+            let before = blocks
+            blocks.update(to: step)
+            cost = Self.laidOut(blocks, after: before)
+        }
+        #expect(blocks.frozen.isEmpty && cost == steps.last?.utf16.count)
+    }
+}
