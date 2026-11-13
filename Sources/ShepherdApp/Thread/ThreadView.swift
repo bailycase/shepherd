@@ -944,7 +944,11 @@ final class ThreadRestore {
         guard active else {
             self.hiddenKept = hiddenKept
             // Hidden halfway through, it keeps the rows it has and waits for the next showing: the rest is not built for no one.
-            if restoring, let first, let index = rows.lastIndex(where: { $0.id == first }) { return Plan(eager: rows.endIndex - index, history: history) }
+            // Unless a pass has let those go again (`hiddenKept` below what the restore had): the next showing starts again from
+            // the rows kept, as after any release, and does not build the difference in its first frame.
+            if restoring, let first, let index = rows.lastIndex(where: { $0.id == first }), self.hiddenKept.map({ $0 >= rows.endIndex - index }) ?? true {
+                return Plan(eager: rows.endIndex - index, history: history)
+            }
             begun = false
             finish()
             return nil

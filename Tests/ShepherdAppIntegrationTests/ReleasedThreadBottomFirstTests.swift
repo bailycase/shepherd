@@ -165,4 +165,56 @@ struct ReleasedThreadBottomFirstTests {
         }
         #expect(clip.bounds.origin.y == rest, "and the reader's place did not move: \(clip.bounds.origin.y) from \(rest)")
     }
+
+    /// A thread hidden halfway through its restore and let go of again comes back from its last screen, not from the rows it had
+    /// restored: its first frame back builds nothing, as it did the first time.
+    @Test func aThreadReleasedAgainHalfwayThroughItsRestoreStillBuildsNothingInItsFirstFrameBack() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let work = try await Workspace.open(3, replies: 18, cycles: 4, in: app)
+        defer { work.window.close() }
+        for index in [1, 2, 0] { try await work.show(index) }
+        let store = work.store(1)
+        let fences = try work.fields(1)
+        #expect(fences > 0)
+        let held = try await Self.release(work, 1, from: fences)
+        #expect(store.transcriptReleased && held < fences)
+
+        // Shown, it starts to restore; some of its rows are back when a third thread takes the screen.
+        work.vm.selectAgent(work.agents[1].agent.id)
+        var back = held
+        try await eventuallyOnMain("some of its rows to come back", timeout: .seconds(60)) {
+            ListPerf.settle(work.window)
+            back = try work.fields(1)
+            return try work.host(1)?.isHidden == false && !store.transcriptReleased && back > held
+        }
+        #expect(back < fences * 9 / 10, "the restore is not done: \(back) of \(fences)")
+        work.vm.selectAgent(work.agents[2].agent.id)
+        var passes = 0
+        while try work.host(1)?.isHidden != true, passes < 50 {
+            ListPerf.settle(work.window)
+            passes += 1
+        }
+        #expect(try work.host(1)?.isHidden == true, "the third thread is shown after \(passes) passes")
+
+        // A pass takes its rows again, down to the last screen.
+        work.releaseHidden()
+        try await eventuallyOnMain("the thread to hold only its last screen again") {
+            ListPerf.settle(work.window)
+            guard store.transcriptDrawn == store.keptRows else { return false }
+            return try work.fields(1) <= held
+        }
+
+        SHRenderProbe.start()
+        defer { SHRenderProbe.stop() }
+        work.vm.selectAgent(work.agents[1].agent.id)
+        passes = 0
+        while try work.host(1)?.isHidden != false, passes < 50 {
+            ListPerf.settle(work.window)
+            passes += 1
+        }
+        #expect(try work.host(1)?.isHidden == false, "the thread is shown after \(passes) passes")
+        #expect(SHRenderProbe.count("deck.flipLayout") == 1, "the deck laid the host out once as it showed it")
+        #expect(SHRenderProbe.count("code.nativeCreated") == 0, "no code field is built to show it, from \(back) of \(fences) it had restored: \(SHRenderProbe.counts)")
+    }
 }
