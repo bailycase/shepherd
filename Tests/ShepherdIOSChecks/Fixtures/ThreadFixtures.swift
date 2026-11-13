@@ -773,7 +773,8 @@ enum FollowFixture {
     /// the reader's hand does to it only when that changes what it shows: a finger coming down
     /// renders it no time. The drag crosses a row of this short thread every 100 pt or so, and
     /// each crossing is a new turn kept under the top edge, so its renders are reported, not judged
-    /// (`thread-detach-in-reply` judges a drag inside one row).
+    /// (`thread-detach-in-reply` judges a drag inside one row). Where not `ComposerPresentation.nativeTail` (iOS 27.1) the transcript
+    /// draws from every change of the follower, so touch-down draws it once and is not judged.
     @MainActor static func jump(_ app: MobileApp) async {
         let store = app.threads.store(for: FixtureData.ref(FixtureData.preview))
         try? await Task.sleep(for: .seconds(1))
@@ -799,7 +800,9 @@ enum FollowFixture {
         }
         check("a thread dragged up stays where the reader left it") { $0 > NativeScrollFollower.threshold }
         FixtureCheck.report("FIXTURE CHECK ok: the transcript rendered \(touchDown) times at touch-down and \(dragged) over the whole drag")
-        FixtureCheck.report("FIXTURE CHECK \(touchDown == 0 ? "ok" : "FAILED"): touch-down alone renders the transcript no time")
+        if ComposerPresentation.nativeTail {
+            FixtureCheck.report("FIXTURE CHECK \(touchDown == 0 ? "ok" : "FAILED"): touch-down alone renders the transcript no time")
+        }
     }
 
     /// Prints whether the thread's tail sits where `holds` wants it: its distance, in points,

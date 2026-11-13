@@ -17,11 +17,14 @@ extension FixtureCatalog {
             // Ten flings up through the thread and back to the end of the long thread: its last line above the composer, rows drawn.
             FixtureScreen(name: "thread-flings-rows", hosts: TailFixture.hosts(), routes: [.thread(thread)], prepare: TailFixture.flings),
             // The long thread mounted again (the phone pops it and pushes it back; the iPad opens other threads until it is no longer
-            // retained): its first frame with a row is at the tail and drawn, after at most one landing. The blank frames before
-            // that row are reported.
+            // retained): its first frame with a row is at the tail and drawn, after at most one landing, and it rests on its tail.
+            // The blank frames before that row are reported. A re-open the tail guard repaired (every one on an iPad in landscape on
+            // iOS 27.0) is judged only on ink and rest, so a pass there says nothing of where the transcript mounts; and where it
+            // does not mount at its tail by design (iOS 27.1, `ComposerPresentation.nativeTail`) the distance and landings are reported.
             FixtureScreen(name: "thread-remount-tail", hosts: TailFixture.remountHosts(), routes: [.thread(thread)], prepare: TailFixture.remountTail),
             // A 300 pt drag up from the tail of the 24 KB reply moves the view by the drag and no more (nothing sends it to the reply's
-            // top), and the transcript renders no time at touch-down and at most four times over the whole drag.
+            // top), and the transcript renders no time at touch-down and at most four times over the whole drag (where
+            // `ComposerPresentation.nativeTail`: on iOS 27.1 it draws from every change of the follower, and these are reported).
             FixtureScreen(name: "thread-detach-in-reply", hosts: TailFixture.hosts(), routes: [.thread(thread)], prepare: TailFixture.detachInReply),
             // A reader who scrolled up past the reply and left comes back to the row they left at the top.
             FixtureScreen(name: "thread-detached-remount", hosts: TailFixture.remountHosts(), routes: [.thread(thread)], prepare: TailFixture.detachedRemount),
@@ -482,10 +485,12 @@ extension TailFixture {
     /// the reply's top, about 16,000 pt up), after at most `remountLandings` landing, and the thread comes to rest on its tail.
     ///
     /// The blank frames before that row are reported, not judged, and so are where the row sits and the landings when the tail guard
-    /// had to repair the view: the rows it walks back to are placed wherever the walk is. On iOS 27.0 an iPad in landscape mounts the
-    /// stack at the end of its estimated height (about 250,000 pt for this thread) where no row is placed, and draws nothing for 23 to
-    /// 27 frames until the guard repairs it; the turn kept from before the leave is not the cause (clearing it first changes nothing),
-    /// and the eager tail that lays the last turns out for real is what removes the wait.
+    /// had to repair the view: the rows it walks back to are placed wherever the walk is. A repaired open is judged only on ink and
+    /// rest, so that it passes proves nothing about the mount. On iOS 27.0 an iPad in landscape mounts the stack at the end of its
+    /// estimated height (about 250,000 pt for this thread) where no row is placed, and draws nothing for 23 to 27 frames until the
+    /// guard repairs it, every time; the turn kept from before the leave is not the cause (clearing it first changes nothing), and
+    /// the eager tail that lays the last turns out for real is what removes the wait. Where the transcript does not mount at its tail
+    /// (`ComposerPresentation.nativeTail` is false, iOS 27.1) the distance and landings are reported too, until a Duo has measured it.
     @MainActor static func remountTail(_ app: MobileApp) async {
         let ref = FixtureData.ref(FixtureData.preview)
         await ready(app)
@@ -493,6 +498,7 @@ extension TailFixture {
         let pad = app.navigator.layout == .pad
         var measured: [String] = []
         var verdicts: [(ok: Bool, line: String)] = []
+        var onlyInkAndRest = 0
         for cycle in 1...remountCycles {
             await leave(app)
             SHRenderProbe.start()
@@ -514,16 +520,18 @@ extension TailFixture {
                 + "\(counts["thread.tailRepair", default: 0]) repairs, \(counts["thread.transcript", default: 0]) renders, \(result.away) frames away from the tail after it (worst \(result.farthest)pt); "
                 + "at rest \(rest.distance)pt from the tail, \(Int((rest.ink * 100).rounded()))% ink")
             let repaired = counts["thread.tailRepair", default: 0] > 0
-            verdicts.append((repaired || (reach.map { $0 <= firstFrameReach && $0 >= -NativeScrollFollower.repinSlack } ?? false),
-                             "cycle \(cycle): the first frame with a row is within \(Int(firstFrameReach))pt of the tail"))
+            if repaired || !ComposerPresentation.nativeTail { onlyInkAndRest += 1 } else {
+                verdicts.append((reach.map { $0 <= firstFrameReach && $0 >= -NativeScrollFollower.repinSlack } ?? false,
+                                 "cycle \(cycle): the first frame with a row is within \(Int(firstFrameReach))pt of the tail"))
+                verdicts.append((landings <= remountLandings, "cycle \(cycle): at most \(remountLandings) landing"))
+            }
             verdicts.append(((first?.ink ?? 0) >= inkFloor, "cycle \(cycle): the first frame with a row draws"))
-            verdicts.append((repaired || landings <= remountLandings, "cycle \(cycle): at most \(remountLandings) landing"))
             verdicts.append((rest.atTail && rest.ink >= inkFloor, "cycle \(cycle): the thread rests on its tail, drawn"))
         }
         measured.forEach { FixtureCheck.report("FIXTURE CHECK ok: \($0)") }
         let failed = verdicts.filter { !$0.ok }
         if let first = failed.first { FixtureCheck.report("FIXTURE CHECK FAILED: \(failed.count) of \(verdicts.count) checks, the first: \(first.line)") }
-        FixtureCheck.report("FIXTURE CHECK ok: \(verdicts.count) checks over \(remountCycles) re-opens")
+        FixtureCheck.report("FIXTURE CHECK ok: \(verdicts.count) checks over \(remountCycles) re-opens, \(onlyInkAndRest) of them judged only on ink and rest")
     }
 
     /// "thread-detach-in-reply": from the tail of the 24 KB reply the reader drags 300 pt up in 50 pt steps (the pan stepped as
@@ -531,7 +539,9 @@ extension TailFixture {
     /// nothing sends the view to the reply's top when the reader lets go of the tail, and the reader is detached. The drag stays
     /// inside one row, so the transcript draws only for what changed in it: a finger coming down renders it no time, and the
     /// detach and the two turns SwiftUI then reports at the top edge (the bottom marker, then the reply) at most `dragRenders`
-    /// times between them. The merge base drew it once at touch-down and five times over the whole drag.
+    /// times between them. The merge base drew it once at touch-down and five times over the whole drag, and so does iOS 27.1
+    /// (not `ComposerPresentation.nativeTail`), so there the renders are reported, not judged: with the turn kept and no render at
+    /// touch-down, SwiftUI's next update of the scroll view put the drag's first 50 pt step back (an iPad in portrait).
     @MainActor static func detachInReply(_ app: MobileApp) async {
         let ref = FixtureData.ref(FixtureData.preview)
         await ready(app)
@@ -563,6 +573,7 @@ extension TailFixture {
             + "and \(dragged) over the whole drag")
         let held = abs(moved - 300) <= restoreTolerance && worst <= restoreTolerance && detached && ink >= inkFloor
         FixtureCheck.report("FIXTURE CHECK \(held ? "ok" : "FAILED"): a drag up inside the reply moves the view by the drag and detaches the reader")
+        guard ComposerPresentation.nativeTail else { return }
         FixtureCheck.report("FIXTURE CHECK \(touchDown == 0 ? "ok" : "FAILED"): touch-down alone renders the transcript no time")
         FixtureCheck.report("FIXTURE CHECK \(dragged <= dragRenders ? "ok" : "FAILED"): the whole drag renders the transcript at most \(dragRenders) times")
     }
