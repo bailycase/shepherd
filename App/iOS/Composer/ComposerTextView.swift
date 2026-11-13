@@ -78,6 +78,8 @@ struct ComposerTextView: View {
         func sizeThatFits(_ proposal: ProposedViewSize, uiView view: UITextView, context: Context) -> CGSize? {
             let width = proposal.width ?? view.bounds.width
             guard width > 0 else { return nil }
+            SHRenderProbe.tick("layout.composerFieldProbed")
+            SHRenderProbe.tick("layout.composerFieldMeasured")
             let fit = view.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
             let most = ceil(font.lineHeight * CGFloat(SHComposerMetrics.fieldMaxLines))
             let scrolls = fit > most
