@@ -366,9 +366,9 @@ struct ReleasedThreadBottomFirstTests {
         #expect(abs(clip.bounds.origin.y - rest) <= 1, "and nothing moved the reader while the keys came: \(clip.bounds.origin.y) from \(rest)")
     }
 
-    /// A reader who scrolls up the moment the last screen is drawn, before the lazy stack is back, is at the tail again once it is: its
-    /// height is added above them, which a scroll view not held to the tail takes as a move to the oldest rows. From there they scroll
-    /// up through every row.
+    /// A reader who scrolls up the moment the last screen is drawn, before the lazy stack is back, with keys still coming, is at the tail
+    /// again once it is: its height is added above them, which a scroll view not held to the tail takes as a move to the oldest rows.
+    /// From there they scroll up through every row.
     @Test func aReaderWhoScrollsUpBeforeTheLazyStackIsBackComesBackToTheTailAndReachesTheOlderRows() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -381,6 +381,7 @@ struct ReleasedThreadBottomFirstTests {
         #expect(store.transcriptReleased && held < fences)
 
         // Nothing here lets a task run: the restore's first step waits for the main actor, which the reader does not.
+        work.vm.userActivity.noteEvent()
         work.vm.selectAgent(work.agents[1].agent.id)
         var passes = 0
         while try work.host(1)?.isHidden != false, passes < 50 {
@@ -392,6 +393,7 @@ struct ReleasedThreadBottomFirstTests {
         let input = work.vm.threadStores.input(for: work.agents[1].agent.id)
         let height = scroll.documentView?.bounds.height ?? 0
         func up(_ points: CGFloat) {
+            work.vm.userActivity.noteEvent()
             input.readerScrolled(upward: true)
             clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 0, y: clip.bounds.origin.y - points), size: clip.bounds.size)).origin)
             scroll.reflectScrolledClipView(clip)
@@ -402,6 +404,7 @@ struct ReleasedThreadBottomFirstTests {
         #expect(before > 80 && scroll.documentView?.bounds.height == height, "the reader is \(before) points above the tail, in the last screen alone")
 
         try await eventuallyOnMain("the lazy stack to be back above the reader", timeout: .seconds(30)) {
+            work.vm.userActivity.noteEvent()
             ListPerf.settle(work.window)
             return (scroll.documentView?.bounds.height ?? 0) > height + 50
         }
