@@ -38,6 +38,7 @@ struct ThreadComposer: View {
     private var presentation: ComposerPresentation { navigator.composerPresentation.state(for: ref) }
 
     var body: some View {
+        let _ = SHRenderProbe.tick("composer.body")
         let store = threads.store(for: ref)
         let state = ComposerStates.shared.state(for: ref)
         let host = hosts.host(ref.host)

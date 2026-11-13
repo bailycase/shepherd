@@ -21,6 +21,7 @@ struct SubagentTraySection: View {
     @Environment(\.composerMaxHeight) private var composerMaxHeight
 
     var body: some View {
+        let _ = SHRenderProbe.tick("composer.tray")
         let values = SubagentValues.tray(tray)
         let shown = NativeSubagentTray.shownRows
         let long = values.rows.count > shown
