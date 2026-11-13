@@ -329,17 +329,12 @@ struct FleetSnapshotTransferTests {
         }
         let bID = try await b.hostID()
         let repo = FleetDispatchTests.repoKey
-        // The sender's index has the directory, and holds the target's manifest naming it; the target has its spare.
-        let hash = try await { () -> FleetHash in
-            var found: FleetHash?
-            try await FleetDispatchTests.wait("the sender to index node_modules", timeout: .seconds(120)) {
-                found = a.server.queue.sync { a.server.fleet?.index.index(at: a.folder.path) }.flatMap { index in index.queue.sync { index.hash(ofDirectory: "node_modules") } }
-                return found != nil
-            }
-            return try #require(found)
-        }()
+        // The sender's index has the directory, and holds the target's manifest naming it; the target has its spare. The directory's hash
+        // is read again at every look: the first one is the directory as far as the index had read it, and the target never holds that.
         try await FleetDispatchTests.wait("the sender to hold a manifest of node_modules on the target", timeout: .seconds(120)) {
-            a.server.queue.sync { a.server.fleet?.index.manifest(of: bID, repo: repo)?.contains(hash) } == true
+            let index = a.server.queue.sync { a.server.fleet?.index.index(at: a.folder.path) }
+            guard let hash = index.flatMap({ index in index.queue.sync { index.hash(ofDirectory: "node_modules") } }) else { return false }
+            return a.server.queue.sync { a.server.fleet?.index.manifest(of: bID, repo: repo)?.contains(hash) } == true
         }
         let canonical = PiHome.canonical(b.folder.path)
         try await FleetDispatchTests.wait("the target's spare and its listing", timeout: .seconds(120)) {

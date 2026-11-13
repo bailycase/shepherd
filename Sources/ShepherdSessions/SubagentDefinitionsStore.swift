@@ -100,8 +100,9 @@ public final class SubagentDefinitionsStore: @unchecked Sendable {
                     guard files.count < 512 else { throw Failure("At most 512 subagent files can load.") }
                     let file = relative + name
                     do {
-                        let text = try read(file)
-                        files.append(["file": file, "text": text ?? "", "fingerprint": fingerprint(text ?? "")])
+                        // Gone since the folder was listed (deleted meanwhile): not an empty file.
+                        guard let text = try read(file) else { continue }
+                        files.append(["file": file, "text": text, "fingerprint": fingerprint(text)])
                     } catch {
                         var row = ["file": file, "error": String(describing: error)]
                         row["fingerprint"] = (error as? Failure)?.fingerprint

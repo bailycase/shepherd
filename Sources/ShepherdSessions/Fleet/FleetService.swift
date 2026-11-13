@@ -702,15 +702,19 @@ final class FleetService: @unchecked Sendable {
         peers = updated
         let notified = links.filter { $0.key != hostID && $0.key != from }.compactMap(\.value.client)
         let leaving = links[hostID]?.client
+        // The link's task disconnects its client when cancelled, so while the notice is still to be sent it is
+        // cancelled after it (a Mac removed under a cancelled link would never hear that it was).
+        let linkTask = flood ? links[hostID]?.task : nil
         if flood {
             Task {
                 for client in notified { try? await client.fleetRevoke(hostID: hostID, at: at) }
                 // The Mac that was removed is told too, when it is reachable: it leaves.
                 try? await leaving?.fleetRevoke(hostID: hostID, at: at)
                 leaving?.disconnect()
+                linkTask?.cancel()
             }
         }
-        stopLink(hostID, closing: !flood)
+        stopLink(hostID, closing: !flood, cancelling: !flood)
         pressure.forget(hostID)
         pressure.refresh()
         index.forget(peer: hostID)
@@ -990,12 +994,12 @@ final class FleetService: @unchecked Sendable {
     }
 
     /// Ends the link to `hostID`. `closing: false` leaves its connection open for the caller to
-    /// close once it has said what it has to.
-    private func stopLink(_ hostID: UUID, closing: Bool = true) {
+    /// close once it has said what it has to, and `cancelling: false` its task (which closes it) running.
+    private func stopLink(_ hostID: UUID, closing: Bool = true, cancelling: Bool = true) {
         guard let link = links.removeValue(forKey: hostID) else { return }
         syncEngine.linkDown(peer: hostID)
         index.linkDown(peer: hostID)
-        link.task?.cancel()
+        if cancelling { link.task?.cancel() }
         if closing { link.client?.disconnect() }
         link.client = nil
     }

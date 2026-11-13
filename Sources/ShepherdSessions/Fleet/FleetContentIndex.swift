@@ -485,7 +485,9 @@ final class FleetContentIndex: @unchecked Sendable {
 
     /// Files whose class is being (or is about to be) asked of git, and whether a lookup is out.
     private var unclassified = Set<String>()
-    private var classifying = false
+    private(set) var classifying = false
+    /// Counts the times every entry was given its class again; an answer asked for before one is older than it.
+    private var reclassifications = 0
 
     private func apply(classes paths: Set<String>) {
         let paths = Array(paths)
@@ -506,12 +508,13 @@ final class FleetContentIndex: @unchecked Sendable {
         classifying = true
         let paths = Array(unclassified)
         unclassified = []
-        let (root, classifier) = (self.root, self.classifier)
+        let (root, classifier, asked) = (self.root, self.classifier, reclassifications)
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let lookup = paths.count > 400 ? classifier.lookup(root, nil) : classifier.lookup(root, paths)
             self?.queue.async {
                 guard let self else { return }
-                if let lookup, !self.stopped {
+                // An answer from before a reclassify is older than what the reclassify (which covers these files) put in.
+                if let lookup, !self.stopped, self.reclassifications == asked {
                     self.applyClasses(of: paths, lookup)
                     self.persist()
                 }
@@ -618,6 +621,7 @@ final class FleetContentIndex: @unchecked Sendable {
     /// Git's lists changed (a commit, an add, a change to what is ignored): every entry gets its class again.
     func reclassify() {
         guard let lookup = classifier.lookup(root, nil) else { return }
+        reclassifications += 1
         apply(lookup)
     }
 

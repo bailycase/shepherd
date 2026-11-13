@@ -216,13 +216,16 @@ final class FleetSync: @unchecked Sendable {
                 failed.set()
                 await hop { session.again = false }
             }
-        } while await hop({ session.again && self.sessions[session.peer] === session })
-        await hop {
+        // Deciding to stop and clearing `running` are one step on the queue: a pump between the two would set
+        // `again` on a session that then stops, and its ops would wait for the next unrelated change.
+        } while await hop({ () -> Bool in
+            if session.again && self.sessions[session.peer] === session { return true }
             session.running = false
             // A failed hello is tried again at the next link; a link that works is one session.
             if failed.isSet { session.helloed = false }
             self.onChange?()
-        }
+            return false
+        })
     }
 
     private final class Flag: @unchecked Sendable {

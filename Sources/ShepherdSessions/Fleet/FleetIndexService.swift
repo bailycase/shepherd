@@ -387,10 +387,11 @@ final class FleetIndexService: @unchecked Sendable {
         }
     }
 
-    /// Writes the copies that changed, off the server queue; `wait` for the host that is stopping, which has to leave them on disk.
+    /// Writes the copies that changed, off the server queue; `wait` for the host that is stopping, which has to leave them on
+    /// disk, including a save an earlier flush already started (nothing new to take does not mean nothing is being written).
     private func flushSaves(wait: Bool = false) {
-        guard let job = peerCopies.takeSave(to: peersDirectory) else { return }
-        if wait { persistQueue.sync(execute: job) } else { persistQueue.async(execute: job) }
+        let job = peerCopies.takeSave(to: peersDirectory)
+        if wait { persistQueue.sync { job?() } } else if let job { persistQueue.async(execute: job) }
     }
 
     // MARK: Snapshots (server queue)

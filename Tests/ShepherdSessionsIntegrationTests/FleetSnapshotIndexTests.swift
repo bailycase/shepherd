@@ -188,12 +188,13 @@ extension FleetSnapshotIndexTests {
         try await eventually("A's index to be ready") { try await a.read().index?.repos.first?.ready == true }
         let index = try #require(a.index(repo))
         try Data("export const wip = 1\n".utf8).write(to: repo.appendingPathComponent("src/wip.ts"))
-        try await eventually("the new file to be untracked") { index.queue.sync { index.entries["src/wip.ts"]?.state == .untracked } }
+        // `settle()` asks the system for the events it holds: how long it takes to hand them over is not what is tested.
+        try await eventually("the new file to be untracked") { index.settle(); return index.queue.sync { index.entries["src/wip.ts"]?.state == .untracked } }
         try git(["add", "src/wip.ts"], in: repo)
-        try await eventually("git add to make it tracked") { index.queue.sync { index.entries["src/wip.ts"]?.state == .tracked } }
+        try await eventually("git add to make it tracked") { index.settle(); return index.queue.sync { index.entries["src/wip.ts"]?.state == .tracked } }
         let rescans = index.queue.sync { index.rescans }
         try git(["rm", "-q", "--cached", "src/wip.ts"], in: repo)
-        try await eventually("git rm --cached to untrack it") { index.queue.sync { index.entries["src/wip.ts"]?.state == .untracked } }
+        try await eventually("git rm --cached to untrack it") { index.settle(); return index.queue.sync { index.entries["src/wip.ts"]?.state == .untracked } }
         #expect(index.queue.sync { index.rescans == rescans || index.lostEvents > 0 })
     }
 
@@ -213,6 +214,10 @@ extension FleetSnapshotIndexTests {
         try Data("export const app = 'lost'\n".utf8).write(to: repo.appendingPathComponent("src/app.ts"))
         try Data("export const quiet = true\n".utf8).write(to: repo.appendingPathComponent("src/quiet.ts"))
         try await eventually("the lost events to arrive and be dropped") { stream.droppedEvents >= 2 }
+        // Every event the system holds for the folder (a directory's own change comes after its files') is dropped too, or one that
+        // arrives after the stream is listening again would bring the index up to date and leave the check nothing to find.
+        stream.flush()
+        index.queue.sync {}
         #expect(index.queue.sync { index.entries["src/quiet.ts"] } == nil, "the index is stale")
         #expect(b.manifest(of: aID)?.contains(hash("export const app = 'lost'\n")) == false)
         // The check finds it, rescans, and the delta goes to B like any other.
@@ -277,6 +282,7 @@ extension FleetSnapshotIndexTests {
         defer { back.stop() }
         try await eventually("the restarted index to hold the change") {
             guard let index = back.index(repo) else { return false }
+            index.settle()
             return index.queue.sync { index.entries["src/arrived-while-down.ts"] != nil && index.entries["scripts/run.sh"] == nil && index.entries["src/app.ts"]?.hash == self.hash("export const app = 'while down'\n") }
         }
         // From the saved index and the journal of events, not a walk of the tree.
@@ -301,12 +307,10 @@ extension FleetSnapshotIndexTests {
         try await eventually("B to hold A's manifest") { try await b.peerHolds(b, of: a) }
         let aID = try await a.hostID()
         let (dir, port) = (b.host.dir, b.port)
-        // The copy is saved a moment after it changes.
-        try await eventually("B's copy to be on disk") {
-            FileManager.default.fileExists(atPath: b.host.dir.appendingPathComponent("fleet/index/peers/\(aID.uuidString)").path)
-        }
+        // No wait for the copy to reach the disk on its own (a save follows a change by a second): a host that stops leaves what it
+        // holds on disk, a save already under way included, and that is what the restart below is built on.
         b.stop(keepFiles: true)
-        // What the copy on disk is, as the host stopped (it is saved as the host stops, not only a moment after a change).
+        // What the copy on disk is, as the host stopped.
         let saved = FleetPeerManifests.load(from: dir.appendingPathComponent("fleet/index/peers", isDirectory: true))
         let digest = try #require(saved.manifest(of: aID, repo: Self.origin)).digest
         let back = try await Mac("Mac mini", dir: dir, port: port)
