@@ -391,7 +391,8 @@ final class FixtureHost: @unchecked Sendable {
         case .drain(let id), .fleetIdentify(let id), .fleetPair(let id, _, _), .fleetEstablish(let id, _), .fleetIntroduce(let id, _),
              .fleetRevoke(let id, _, _), .fleetSync(let id, _), .fleetRead(let id), .fleetAction(let id, _),
              .fleetPressure(let id, _), .fleetReadiness(let id, _), .fleetPressureNow(let id), .fleetRepoManifest(let id, _),
-             .fleetSnapshotPart(let id, _, _), .fleetBlobPush(let id, _, _):
+             .fleetSnapshotPart(let id, _, _), .fleetBlobPush(let id, _, _), .fleetDispatchCreate(let id, _), .fleetDispatchControl(let id, _, _),
+             .fleetDispatchChanged(let id, _), .fleetDispatchResult(let id, _, _, _), .fleetRoutes(let id, _), .fleetPeerAnswer(let id, _):
             return [.error(id: id, code: "unsupported", message: refused)]
         case .pushRegistration(let id, _):
             note("pushRegistration")
