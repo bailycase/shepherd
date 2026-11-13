@@ -67,7 +67,31 @@ struct NativeTranscriptPlaceTests {
              mountsAtTail: false, events: [.detach, .mount], turn: nil, follows: false),
         Case(testDescription: "without a mount at the tail, SwiftUI reporting none clears the turn",
              mountsAtTail: false, events: [.swiftUI("reply"), .swiftUI(nil)], turn: nil, follows: true),
+        // ... but not the bottom marker, which is no turn: a follower on it is on the tail, and the id handed back to SwiftUI at the next
+        // turn's rows would put the first landing short of it.
+        Case(testDescription: "without a mount at the tail, a follower keeps nothing of the bottom marker",
+             mountsAtTail: false, events: [.swiftUI(marker)], turn: nil, follows: true),
+        Case(testDescription: "without a mount at the tail, the bottom marker replaces a turn kept for a follower",
+             mountsAtTail: false, events: [.swiftUI("reply"), .swiftUI(marker)], turn: nil, follows: true),
+        Case(testDescription: "without a mount at the tail, a follower still keeps a row after the marker",
+             mountsAtTail: false, events: [.swiftUI(marker), .swiftUI("reply")], turn: "reply", follows: true),
+        Case(testDescription: "without a mount at the tail, a detached reader keeps the bottom marker",
+             mountsAtTail: false, events: [.detach, .swiftUI(marker)], turn: marker, follows: false),
+        Case(testDescription: "without a mount at the tail, a detached reader keeps a row",
+             mountsAtTail: false, events: [.detach, .swiftUI("reply")], turn: "reply", follows: false),
+        Case(testDescription: "without a mount at the tail, a report of the marker after the reader came back is dropped",
+             mountsAtTail: false, events: [.detach, .swiftUI("reply"), .reattach, .swiftUI(marker)], turn: nil, follows: true),
+        Case(testDescription: "without a mount at the tail, coming back to the tail forgets the bottom marker kept for the reader who was away",
+             mountsAtTail: false, events: [.detach, .swiftUI(marker), .reattach], turn: nil, follows: true),
+        // A transcript that mounts at its tail drops the marker with everything else while it follows.
+        Case(testDescription: "a follower keeps nothing of the bottom marker",
+             mountsAtTail: true, events: [.swiftUI(marker)], turn: nil, follows: true),
+        Case(testDescription: "a detached reader keeps the bottom marker",
+             mountsAtTail: true, events: [.detach, .swiftUI(marker)], turn: marker, follows: false),
     ]
+
+    /// The bottom anchor row of the transcript, as SwiftUI reports it through the position binding.
+    static let marker = NativeTranscriptPlace.bottomMarker
 
     @Test(arguments: cases)
     func place(_ c: Case) {

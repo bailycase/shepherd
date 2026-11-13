@@ -61,8 +61,8 @@ final class ComposerPresentation {
         publish()
     }
 
-    /// SwiftUI's writes through the transcript's position binding. Where `nativeTail` they are not kept while following, and equal
-    /// ones notify nothing, so the layout a position change sets off never sees `visibleTurn` change.
+    /// SwiftUI's writes through the transcript's position binding. Where `nativeTail`, or when it is the bottom marker, they are not kept
+    /// while following, and equal ones notify nothing, so the layout a position change sets off never sees `visibleTurn` change.
     func noteVisibleTurn(_ id: String?) {
         place.note(id)
         publish()

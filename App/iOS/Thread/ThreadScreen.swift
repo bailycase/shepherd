@@ -264,7 +264,7 @@ struct ThreadTranscript: View {
     /// Whether this mount has appeared: `onAppear` also fires when a screen pushed over the thread is popped, which is no mount.
     @State private var appeared = false
 
-    private static let bottomID = "thread-bottom"
+    private static let bottomID = NativeTranscriptPlace.bottomMarker
 
     // iOS 27.1's bottom anchor can retain a lazy stack's estimated height after a fold, so there the size-change anchor
     // is left to the explicit following of macOS 27, and the initial anchor and the turn kept stay as they were before

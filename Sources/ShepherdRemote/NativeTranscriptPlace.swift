@@ -7,12 +7,18 @@ import Foundation
 /// A transcript that `mountsAtTail` opens on its bottom anchors at the tail while it follows, so it keeps no turn from then: a turn
 /// kept from a streaming reply would put the next mount back at the top of the reply it was reading. Writes SwiftUI makes through the
 /// position binding while the reader follows are therefore dropped, and returning to the tail forgets the turn kept for a reader who
-/// was away. A transcript that does not keeps the turn it is on whether it follows or not.
+/// was away. A transcript that does not keeps the turn it is on whether it follows or not, except the bottom marker: that is the tail
+/// itself, not a turn, and the id handed back to SwiftUI when the next turn's rows join resolves short of the tail (iOS 27.1 landed
+/// 5,563 pt short and the view sat that far away for 0.2 s). The marker is kept only for a reader who is away from the tail.
 public struct NativeTranscriptPlace: Equatable, Sendable {
     public private(set) var follower = NativeScrollFollower()
     /// The turn SwiftUI keeps under the top edge. Nil while following where `mountsAtTail`.
     public private(set) var turn: String?
     public let mountsAtTail: Bool
+
+    /// The id of the 1 pt row that ends the transcript's turns. SwiftUI reports it through the position binding at the end of a drag
+    /// to the tail, and the transcript lands on it.
+    public static let bottomMarker = "thread-bottom"
 
     public init(mountsAtTail: Bool) { self.mountsAtTail = mountsAtTail }
 
@@ -25,7 +31,7 @@ public struct NativeTranscriptPlace: Equatable, Sendable {
     public mutating func follow(_ next: NativeScrollFollower) {
         let returned = next.sticky && !follower.sticky
         follower = next
-        if returned, mountsAtTail { turn = nil }
+        if returned, mountsAtTail || turn == Self.bottomMarker { turn = nil }
     }
 
     /// A transcript mounting with no turn to restore opens on its bottom anchor, at its tail, so the reader must follow it: one left
@@ -39,10 +45,10 @@ public struct NativeTranscriptPlace: Equatable, Sendable {
         follow(next)
     }
 
-    /// SwiftUI's write through the position binding: kept unless the reader follows where `mountsAtTail`. Nil clears, as another
-    /// session's turns are not the ones kept.
+    /// SwiftUI's write through the position binding: kept unless the reader follows, where `mountsAtTail` or when it is the bottom
+    /// marker. Nil clears, as another session's turns are not the ones kept.
     public mutating func note(_ id: String?) {
-        turn = follower.sticky && mountsAtTail ? nil : id
+        turn = follower.sticky && (mountsAtTail || id == Self.bottomMarker) ? nil : id
     }
 
     /// Keeps the oldest loaded turn at the top while older ones load above it, when SwiftUI has none to keep.
