@@ -127,6 +127,13 @@ struct ThreadView: View {
         // The list, not `rows`: the streaming reply is a shell here, and its content (`liveRow`) is
         // read by its own row view, so a streamed chunk redraws that row and not this body.
         let rows: [NativeThreadRow] = origins.runtime.isEmpty ? store.listRows : store.listRows.filter { !($0.isUser && origins.hides($0.turn)) }
+        // A hidden thread whose rows were let go to keep what the hidden views hold within a budget (`NativeThreadStores`) draws
+        // only the last ones it still has, in steps down to none; only the two lists of rows below read this. The thread on
+        // screen never reads it, so it is never redrawn by it, and shown again draws its rows, kept in the store, in the update
+        // that shows it.
+        let kept = active ? nil : store.transcriptDrawn
+        let dormant = kept != nil
+        let drawn = rows.suffix(kept ?? rows.count)
         // A Project's accepted messages the transcript has not taken in: waiting ones go to the composer's Up next, outcomes stay here.
         let held = projectSend?.held() ?? []
         // A row's background needs only the boundary ID, not a captured copy of the transcript.
@@ -151,7 +158,7 @@ struct ThreadView: View {
             let _ = keepTail(proxy)
             ZStack(alignment: .bottom) {
                 let spacing = leadColumn ? SHLeadMetrics.turnGap : AppLayout.turnSpacing
-                let eager = rows.suffix(Self.eagerRows)
+                let eager = drawn.suffix(Self.eagerRows)
                 ScrollView {
                     // Never animated as a whole (rows, their text, and the tail anchor change on
                     // every streamed chunk): turns that arrive make their own entrance.
@@ -170,11 +177,14 @@ struct ThreadView: View {
                         }
                         if let day = leadDayTitle(rows) { SHLeadDaySeparator(word: day) }
                         LazyVStack(alignment: .leading, spacing: spacing) {
-                            ForEach(rows.prefix(rows.count - eager.count)) { row in
+                            ForEach(drawn.prefix(drawn.count - eager.count)) { row in
                                 rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                             }
                         }
                         .scrollTargetLayout()
+                        // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
+                        // that host does not run). Its identity changes only while the rows are let go, and takes them with it.
+                        .id(dormant)
                         ForEach(eager) { row in
                             rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                         }
@@ -246,6 +256,14 @@ struct ThreadView: View {
                         historyAnchor?.position.scrollTo(id: id, anchor: .top)
                     }
                 }
+                .onChange(of: dormant) { _, dormant in
+                    // Its rows gone, a reader left scrolled up would come back at the top of a shrunken scroll view, with nothing
+                    // to anchor it to the bottom: it comes back at its tail, and no longer keeps its history pinned.
+                    guard dormant, !follower.sticky else { return }
+                    historyAnchor.cancel()
+                    follower.jumpToLatest()
+                    readerPins?.unpin(store, owner: storeOwner)
+                }
                 .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
                 .onChange(of: running) { _, running in
                     if !running { tailGuard.turnFinished() }
@@ -267,6 +285,8 @@ struct ThreadView: View {
                     }
                     tailGuard.distance = new.distance
                     tailGuard.suspect()
+                    // Every reading that can move the boundary row lands here, so the row itself is not measured per frame.
+                    if historyAnchor.isEngaged { historyAnchor.moved() }
                 }
                 .onScrollPhaseChange { old, phase, context in
                     // Only a live finger/wheel counts. Momentum and programmatic phases are not
@@ -500,9 +520,6 @@ struct ThreadView: View {
         .background {
             if row.id == historyRowID {
                 ThreadHistoryAnchor.Probe(anchor: historyAnchor, rowID: row.id)
-                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: { _ in
-                        historyAnchor.moved()
-                    }
             }
         }
     }

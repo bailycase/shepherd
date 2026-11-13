@@ -13,6 +13,14 @@ import ShepherdUI
 /// four at a time, until one is realized, then down a page at a time to the end, and lands on the tail again. The Mac's
 /// `ThreadTailGuard` is the same idea over an `NSScrollView`.
 ///
+/// A transcript that has just appeared gets no wait. iOS 27.0's lazy stack mounts a following transcript at the end of its
+/// estimated height, and on an iPad in landscape the rows it has built at the end of the thread stand nowhere near it (about
+/// 28,000 pt where the estimate says 247,000): nothing is in view until a walk finds them, 25 frames and about 680 ms later. The
+/// markers know where those rows are, so within the first second a following view with built rows and none in view goes to the
+/// last of them at once, `tailGuardAttempts` times at most: when a reading reports it, and a turn later in case the rows were
+/// not placed yet. The stack measures what it can see and the bottom anchor keeps the tail while it does, so the view settles
+/// on its tail with no landing.
+///
 /// A repair is not over until the view has been seen resting on its tail, so while one is under way a view that rests well
 /// short of it is walked down and landed again. Outside a repair a view that rests short of the tail is the reader's, however
 /// it got there. The guard acts only on a transcript that follows its tail and that nobody touches, a bounded number of
@@ -41,6 +49,10 @@ final class ThreadTailGuard {
     private var unsettled = false
     /// A walk is under way: a check that comes due meanwhile has nothing to add, the walk ends by scheduling one.
     private var walking = false
+    /// When the first reading of this appearing came: the transcript counts as just appeared for `tailGuardMount` after it.
+    private var mountedAt: ContinuousClock.Instant?
+    /// How many times this appearing has been sent to its placed rows.
+    private var mountJumps = 0
     /// Bumped when the transcript leaves the screen. A walk that began before ends at its next await without touching anything:
     /// the transcript may have come back and started a walk of its own.
     private var generation = 0
@@ -56,7 +68,12 @@ final class ThreadTailGuard {
         self.status = status
         self.land = land
         lastReading = .now
+        if mountedAt == nil { mountedAt = .now }
         guard status().following else { return }
+        if mounting {
+            goToPlacedRows()
+            Task { @MainActor [weak self] in self?.goToPlacedRows() }
+        }
         scheduleCheck()
     }
 
@@ -68,6 +85,8 @@ final class ThreadTailGuard {
         attempts = 0
         unsettled = false
         walking = false
+        mountedAt = nil
+        mountJumps = 0
         standAside(false)
         standAside = { _ in }
         status = { Status(following: false, hasRows: false, tailGap: 0) }
@@ -75,6 +94,34 @@ final class ThreadTailGuard {
     }
 
     private var scrollView: UIScrollView? { finder?.enclosingScrollView }
+
+    private var mounting: Bool {
+        mountedAt.map { .now - $0 < MobileLayout.tailGuardMount } ?? false
+    }
+
+    /// A following view with built rows and none in view puts the last of them at the bottom of the view, above the thread's
+    /// bottom padding, where a tail rests.
+    private func goToPlacedRows() {
+        guard mounting, mountJumps < MobileLayout.tailGuardAttempts, status().following, let scroll = scrollView, scroll.window != nil, page > MobileLayout.tailGuardMinimumPage,
+              !moving(scroll), !rowsInView(scroll) else { return }
+        var last: CGRect?
+        for marker in markers.allObjects where marker.window != nil && marker.enclosingScrollView === scroll {
+            let frame = marker.convert(marker.bounds, to: scroll)
+            if frame.height > 0, last.map({ frame.maxY > $0.maxY }) ?? true { last = frame }
+        }
+        guard let last else { return }
+        mountJumps += 1
+        let inset = scroll.adjustedContentInset
+        let target = last.maxY + status().tailGap + inset.bottom - scroll.bounds.height
+        SHRenderProbe.tick("thread.tailMountJump")
+        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: min(max(target, -inset.top), endOffset(of: scroll))), animated: false)
+    }
+
+    /// The offset that puts the end of the document at the bottom of the view.
+    private func endOffset(of scroll: UIScrollView) -> CGFloat {
+        let inset = scroll.adjustedContentInset
+        return max(-inset.top, scroll.contentSize.height + inset.bottom - scroll.bounds.height)
+    }
 
     /// One task waits out the quiet: it sleeps until `tailGuardQuiet` has passed since the last reading, wakes to find a later one
     /// moved the time, and sleeps again, so a transcript that keeps scrolling costs no task per frame.
@@ -166,11 +213,10 @@ final class ThreadTailGuard {
 
     /// Scrolls a page at a time toward the end of the document, up to the last row the stack placed.
     private func walkDown(_ scroll: UIScrollView, run: Int) async {
-        let inset = scroll.adjustedContentInset
         guard page > MobileLayout.tailGuardMinimumPage else { return }
         for _ in 0..<MobileLayout.tailGuardSteps {
             guard goesOn(run), !moving(scroll) else { return }
-            let end = max(-inset.top, scroll.contentSize.height + inset.bottom - scroll.bounds.height)
+            let end = endOffset(of: scroll)
             let from = scroll.contentOffset.y
             if from >= end - 1 { return }
             scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: min(from + page, end)), animated: false)
