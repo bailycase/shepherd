@@ -1065,9 +1065,13 @@ class ContractTests(unittest.TestCase):
 
     def test_ios_info_plist_allows_only_local_networking(self):
         # The Browser loads a host's dev server at http://localhost through the device's loopback;
-        # nothing broader than the local-networking exception.
+        # nothing broader than the local-networking exception. Finding a Mac adds the Bonjour types it browses
+        # (Shepherd's own and the ones Apple's reflector carries across subnets) and the camera string for the
+        # pairing QR scanner: all local network or on device, nothing that reaches beyond it.
         info = plistlib.loads(self.read("App", "iOS", "Info.plist").encode())
         self.assertEqual(info, {"NSAppTransportSecurity": {"NSAllowsLocalNetworking": True},
+                                "NSBonjourServices": ["_shepherd._tcp", "_ssh._tcp", "_companion-link._tcp", "_device-info._tcp"],
+                                "NSCameraUsageDescription": "Scan the code a Shepherd Mac shows to pair this device with it.",
                                 # Empty unless the TestFlight job supplies the public DSN.
                                 "ShepherdSentryDSN": "$(SHEPHERD_SENTRY_DSN)"})
 

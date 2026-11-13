@@ -1,0 +1,41 @@
+DEFINE SCHEMA
+
+    RECORD TYPE FleetJoin (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE,
+        build           ENCRYPTED STRING,
+        expiresAt       ENCRYPTED DOUBLE,
+        hostID          ENCRYPTED STRING,
+        name            ENCRYPTED STRING,
+        port            ENCRYPTED INT64,
+        routes          ENCRYPTED BYTES,
+        updatedAt       ENCRYPTED DOUBLE,
+
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE FleetPresence (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE,
+        build           ENCRYPTED STRING,
+        expiresAt       ENCRYPTED DOUBLE,
+        hostID          ENCRYPTED STRING,
+        name            ENCRYPTED STRING,
+        port            ENCRYPTED INT64,
+        routes          ENCRYPTED BYTES,
+        updatedAt       ENCRYPTED DOUBLE,
+
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );

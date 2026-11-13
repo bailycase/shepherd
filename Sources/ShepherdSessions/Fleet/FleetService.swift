@@ -91,12 +91,34 @@ final class FleetService: @unchecked Sendable {
     /// The content index of this Mac's repositories and the manifests the Macs hold of each other (`fleet.snapshot.v1`).
     let index: FleetIndexService
     private var devices: FleetDevices
-    private var join: (window: FleetJoinWindow, owner: Int32)?
+    private var join: (window: FleetJoinWindow, owner: Int32)? {
+        // However the window ends (used, cancelled, expired, locked out, its screen closed), its record in iCloud goes with it.
+        didSet { if join?.window.codeHash != oldValue?.window.codeHash { retractJoinRecord() } }
+    }
     /// The code window of Add a device: the same kind of window as `join`, shown on the Mac that takes the device.
     private var deviceCode: (window: FleetJoinWindow, owner: Int32)?
     /// The connections each device has open now (their fds).
     private var deviceConnections: [UUID: Set<Int32>] = [:]
     private var listenerPort: UInt16?
+
+    // iCloud rendezvous (`FleetRendezvous`): nil while this host has no store to write to. Server queue.
+    private let rendezvous: FleetRendezvous?
+    /// Every route this Mac can be reached at on `port`, most useful first: what Join and presence records say (the same list a
+    /// linked peer is sent, `FleetRouteReport`). Tests set it.
+    var routes: (@Sendable (UInt16) -> [FleetRoute])?
+
+    /// This Mac's own routes on `port`: the test's, or the network's.
+    private func ownRoutes(_ port: UInt16) -> [FleetRoute] {
+        routes?(port) ?? network.routes().map { FleetRoute(host: $0.host, port: port, kind: $0.kind, learned: false) }
+    }
+    /// Write the presence record when the network changes (the host does; tests call `addressesChanged()` themselves).
+    var watchesNetwork = false
+    /// How long a code window and its Join record last.
+    var joinLifetime: TimeInterval = FleetProtocol.codeLifetime
+    /// The least time between two looks for one peer's presence record.
+    var presenceLookupInterval: TimeInterval = 30
+    private var publishedJoin: FleetRendezvousKey?
+    private var publishedPresence: [FleetRoute]?
     private var links: [UUID: Link] = [:]
     private var brokering = false
     private var stopped = false
@@ -131,6 +153,8 @@ final class FleetService: @unchecked Sendable {
         /// Wakes the dialing loop while it waits for the peer to give up the link, and the recheck of earlier routes.
         let wake = FleetSignal()
         let networkChanged = FleetSignal()
+        /// When this peer's presence record was last read.
+        var lastLookup: Date?
 
         init(hostID: UUID) { self.hostID = hostID }
     }
@@ -146,9 +170,11 @@ final class FleetService: @unchecked Sendable {
     private var currentInbound: [UUID: Int32] = [:]
 
     init(queue: DispatchQueue, directory: URL, name: String, build: String?, advertises: Bool = true, membership: Bool = true,
-         clock: @escaping @Sendable () -> Date = Date.init, pressure: FleetPressure? = nil, network: FleetNetwork = .system) throws {
+         clock: @escaping @Sendable () -> Date = Date.init, pressure: FleetPressure? = nil, network: FleetNetwork = .system,
+         rendezvous: FleetRendezvous? = nil) throws {
         self.queue = queue
         self.network = network
+        self.rendezvous = rendezvous
         self.membership = membership
         self.directory = directory
         self.name = name
@@ -260,7 +286,46 @@ final class FleetService: @unchecked Sendable {
 
     private func changed() {
         updateIndexing()
+        refreshPresence()
         onChange?()
+    }
+
+    // MARK: iCloud rendezvous (server queue)
+
+    /// This Mac's addresses may have changed: its presence record is written again if they did.
+    func addressesChanged() { refreshPresence() }
+
+    /// Keeps one "where I am" record while this Mac is in a fleet with a peer and serving, updated when its routes change, and
+    /// removes it when it isn't any more. A peer that can't reach this Mac on the routes it knows reads it (`lookUp`).
+    private func refreshPresence() {
+        guard let rendezvous else { return }
+        let key = FleetRendezvousKey.presence(of: identity.hostID)
+        guard membership, !stopped, let port = listenerPort, !peers.members.isEmpty else {
+            if publishedPresence != nil {
+                publishedPresence = nil
+                rendezvous.delete(key)
+            }
+            return
+        }
+        let current = ownRoutes(port)
+        guard !current.isEmpty, current != publishedPresence else { return }
+        publishedPresence = current
+        rendezvous.put(FleetRendezvousRecord(key: key, hostID: identity.hostID, routes: current, updatedAt: nowMilliseconds))
+    }
+
+    /// Writes the Join record of the code just shown: where this Mac listens, under the code's hash.
+    private func publishJoinRecord(code: String, window: FleetJoinWindow) {
+        guard let rendezvous, let port = listenerPort else { return }
+        let key = FleetRendezvousKey.join(code: code)
+        publishedJoin = key
+        rendezvous.put(FleetRendezvousRecord(key: key, hostID: identity.hostID, name: name, port: port, routes: ownRoutes(port), build: build,
+                                             expiresAt: (window.expiresAt.timeIntervalSince1970 * 1000).rounded(), updatedAt: nowMilliseconds))
+    }
+
+    private func retractJoinRecord() {
+        guard let key = publishedJoin else { return }
+        publishedJoin = nil
+        rendezvous?.delete(key)
     }
 
     /// The content index reads repositories only while Fleet is on and a Mac is paired: nobody else would use it.
@@ -801,17 +866,18 @@ final class FleetService: @unchecked Sendable {
     private func perform(_ action: FleetAction, id: Int, caller: FleetCaller, reply: @escaping @Sendable (RemoteReply) -> Void) {
         switch action {
         case .startJoin:
-            let opened = FleetJoinWindow.open(now: clock())
+            let opened = FleetJoinWindow.open(now: clock(), lifetime: joinLifetime)
             join = (opened.window, caller.connection)
+            publishJoinRecord(code: opened.code, window: opened.window)
             let expiry = opened.window
-            queue.asyncAfter(deadline: .now() + FleetProtocol.codeLifetime) { [weak self] in
+            queue.asyncAfter(deadline: .now() + joinLifetime) { [weak self] in
                 // Only the window this timer was made for.
                 guard let self, self.join?.window == expiry else { return }
                 self.join = nil
                 self.changed()
             }
             changed()
-            let expiresAt = (clock().addingTimeInterval(FleetProtocol.codeLifetime).timeIntervalSince1970 * 1000).rounded()
+            let expiresAt = (clock().addingTimeInterval(joinLifetime).timeIntervalSince1970 * 1000).rounded()
             reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot(), join: .init(code: opened.code, expiresAt: expiresAt))))
         case .stopJoin:
             if join != nil { join = nil; changed() }
@@ -827,6 +893,16 @@ final class FleetService: @unchecked Sendable {
                 guard let self else { return }
                 do {
                     let paired = try await self.pair(host: host, port: port, code: code)
+                    reply(.fleetResult(id: id, result: FleetResult(snapshot: await self.sync { self.snapshot() }, paired: paired)))
+                } catch {
+                    reply(Self.failure(id, error))
+                }
+            }
+        case .findAndPair(let code):
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let paired = try await self.findAndPair(code: code)
                     reply(.fleetResult(id: id, result: FleetResult(snapshot: await self.sync { self.snapshot() }, paired: paired)))
                 } catch {
                     reply(Self.failure(id, error))
@@ -947,7 +1023,7 @@ final class FleetService: @unchecked Sendable {
 
     /// Enters `code` on the Mac at `host`:`port`, which shows it, and joins its fleet: pairs with
     /// it, then introduces it to every Mac this one is paired with.
-    private func pair(host: String, port: UInt16, code: String) async throws -> FleetPeerStatus {
+    private func pair(host: String, port: UInt16, code: String, expecting: UUID? = nil, connectTimeout: TimeInterval = 10) async throws -> FleetPeerStatus {
         let setup = await sync { () -> (token: String, port: UInt16, members: [UUID])? in
             guard let listenerPort = self.listenerPort else { return nil }
             return (FleetProtocol.makeToken(), listenerPort, self.peers.members.map(\.hostID))
@@ -956,7 +1032,8 @@ final class FleetService: @unchecked Sendable {
             throw RemoteHostClientError.rejected(code: "listener_off", message: "This Mac isn't serving, so the other Mac couldn't reach it.")
         }
         let introduction = FleetIntroduction(hostID: identity.hostID, name: name, myTokenHash: FleetProtocol.hash(setup.token), port: setup.port)
-        let (pairing, _) = try await RemoteHostClient.fleetPair(host: host, port: port, code: code, introduction: introduction)
+        let (pairing, _) = try await RemoteHostClient.fleetPair(host: host, port: port, code: code, introduction: introduction,
+                                                                expecting: expecting, connectTimeout: connectTimeout)
         guard pairing.hostID != identity.hostID else {
             throw RemoteHostClientError.rejected(code: FleetProtocol.Code.invalid, message: "That is this Mac.")
         }
@@ -973,6 +1050,47 @@ final class FleetService: @unchecked Sendable {
         await waitForLink(pairing.hostID)
         await sync { self.brokerPending() }
         return status
+    }
+
+    /// How long one route of a Join record is tried before the next: a route another network blocks gives no answer at all.
+    static let routePatience: TimeInterval = 4
+
+    /// Joins the fleet of the Mac showing `code` without knowing where it is: the code's Join record in this person's iCloud says
+    /// where, and the Mac is then paired exactly as `pair(host:port:code:)` does, over the first route that answers as the Mac
+    /// the record names. The record carries no proof: a code that doesn't verify there pairs nothing.
+    private func findAndPair(code typed: String) async throws -> FleetPeerStatus {
+        let code = FleetJoinWindow.normalized(typed)
+        guard code.count == FleetProtocol.codeLength else {
+            throw RemoteHostClientError.rejected(code: FleetProtocol.Code.invalid, message: "A pairing code is \(FleetProtocol.codeLength) digits.")
+        }
+        let lookup = await rendezvous?.lookupJoin(code: code, now: clock()) ?? .unavailable(.unavailable)
+        let record: FleetRendezvousRecord
+        switch lookup {
+        case .found(let found): record = found
+        case .notFound:
+            throw RemoteHostClientError.rejected(code: FleetProtocol.Code.notFound,
+                                                 message: "No Mac is showing that code. Check the digits, and that the other Mac uses the same Apple ID.")
+        case .unavailable(let reason):
+            throw RemoteHostClientError.rejected(code: FleetProtocol.Code.icloudUnavailable,
+                                                 message: reason == .noAccount ? "Not signed in to iCloud: use a pairing link"
+                                                                               : "iCloud isn't available on this Mac: use a pairing link")
+        }
+        guard record.hostID != identity.hostID else {
+            throw RemoteHostClientError.rejected(code: FleetProtocol.Code.invalid, message: "That is this Mac.")
+        }
+        var failure: Error = RemoteHostClientError.timeout
+        for route in record.routes {
+            do {
+                return try await pair(host: route.host, port: route.port, code: code, expecting: record.hostID, connectTimeout: Self.routePatience)
+            } catch RemoteHostClientError.rejected(let reason, let message) where reason != FleetProtocol.Code.wrongHost {
+                // The Mac answered and said no (a wrong code, Fleet off, a spent window): another route says the same.
+                throw RemoteHostClientError.rejected(code: reason, message: message)
+            } catch {
+                // Nothing answered there, or another Mac did: the next route.
+                failure = error
+            }
+        }
+        throw failure
     }
 
     /// A host the app already knew by address and the shared token becomes a peer: no code, the
@@ -1197,7 +1315,11 @@ final class FleetService: @unchecked Sendable {
                     break
                 }
                 if Task.isCancelled { return }
-                if !held { await sync { self.setDialing(.offline, of: link) } }
+                if !held {
+                    await sync { self.setDialing(.offline, of: link) }
+                    // Every route it knows failed: where the peer says it is now, if it said, is tried at once.
+                    if await lookUp(link) { continue }
+                }
                 try? await Task.sleep(for: held ? .seconds(1) : backoff.next())
             }
         }
@@ -1287,6 +1409,33 @@ final class FleetService: @unchecked Sendable {
             }
         }
         return nil
+    }
+
+    /// Reads the peer's presence record (at most once per `presenceLookupInterval`) and keeps the routes in it with the peer's, after
+    /// the ones it was given and the ones it reported. True when that changed them, so the caller tries them now. The record only
+    /// says where: the link still asks who answers before it sends a token (`expectingHostID`).
+    private func lookUp(_ link: Link) async -> Bool {
+        guard let rendezvous else { return false }
+        let due = await sync { () -> Bool in
+            guard self.links[link.hostID] === link, !self.stopped, self.membership else { return false }
+            let now = self.clock()
+            if let last = link.lastLookup, now.timeIntervalSince(last) < self.presenceLookupInterval { return false }
+            link.lastLookup = now
+            return true
+        }
+        guard due, let presence = await rendezvous.lookupPresence(of: link.hostID), presence.hostID == link.hostID else { return false }
+        return await sync { self.adopt(presence.routes, for: link) }
+    }
+
+    private func adopt(_ routes: [FleetRoute], for link: Link) -> Bool {
+        guard links[link.hostID] === link, var record = peers.record(link.hostID), !record.revoked, !routes.isEmpty else { return false }
+        let before = record.routes
+        guard record.adoptPresence(routes) else { return false }
+        guard (try? save(record)) != nil else { return false }
+        // Routes it already tried this round are not news.
+        guard record.routes != before else { return false }
+        changed()
+        return true
     }
 
     /// Returns when the peer stops answering.
@@ -1421,7 +1570,7 @@ final class FleetService: @unchecked Sendable {
 
     /// What this host reports of itself to a peer: every way it can be reached now. Nil while it isn't serving.
     private func routeReport() -> FleetRouteReport? {
-        listenerPort.map { FleetRouteReport(port: $0, routes: network.routes()) }
+        listenerPort.map { port in FleetRouteReport(port: port, routes: ownRoutes(port).map { FleetReportedRoute(host: $0.host, kind: $0.kind) }) }
     }
 
     /// Tells the peer on `client` every way this host can be reached, when the peer takes it.
@@ -1435,6 +1584,7 @@ final class FleetService: @unchecked Sendable {
     /// own addresses.
     private func networkChanged() {
         guard !stopped, membership else { return }
+        if watchesNetwork { refreshPresence() }
         for link in links.values { link.networkChanged.fire() }
         guard !predatesLinks, let report = routeReport(), report != lastReport else { return }
         lastReport = report

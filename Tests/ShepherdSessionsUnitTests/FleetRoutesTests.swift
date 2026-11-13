@@ -93,4 +93,51 @@ struct FleetRoutesTests {
         #expect(FleetRoute.kind(ofAddress: "fd00::1") == .lan)
         #expect(FleetRoute.kind(ofAddress: "mac-mini.local") == .hostname)
     }
+
+    // MARK: Presence routes (iCloud)
+
+    @Test func theRoutesOfAPresenceRecordComeAfterTheGivenAndTheReportedOnes() {
+        var record = Self.record()
+        record.learn(Self.report([("mac-mini.local", .hostname)]))
+        let adopted = record.adoptPresence([FleetRoute(host: "10.77.30.5", port: 7434, kind: .lan, learned: false),
+                                            FleetRoute(host: "mac-mini.local", port: 7434, kind: .hostname, learned: false),
+                                            FleetRoute(host: "10.77.20.10", port: 7434, kind: .lan, learned: false)])
+        #expect(adopted)
+        #expect(record.routes.map(\.host) == ["10.77.20.10", "mac-mini.local", "10.77.30.5"], "known, then reported, then presence; each address once")
+        #expect(record.routes.map(\.learned) == [false, true, true])
+        let again = record.adoptPresence(record.presence)
+        #expect(!again, "the same record is not news")
+    }
+
+    @Test func aNewPresenceRecordReplacesTheLastAndARemovedPeerKeepsNone() {
+        var record = Self.record()
+        record.adoptPresence([FleetRoute(host: "10.77.30.5", port: 7434, kind: .lan, learned: false)])
+        record.adoptPresence([FleetRoute(host: "10.77.40.5", port: 7500, kind: .tailscale, learned: false)])
+        #expect(record.presence == [FleetRoute(host: "10.77.40.5", port: 7500, kind: .tailscale, learned: true)])
+        record.adoptPresence([FleetRoute(host: "10.0.0.1/evil", port: 7434, kind: .lan, learned: false), FleetRoute(host: "10.0.0.2", port: 0, kind: .lan, learned: false)])
+        #expect(record.presence.isEmpty, "a host or port no Mac could have said is dropped")
+        record.adoptPresence([FleetRoute(host: "10.77.30.5", port: 7434, kind: .lan, learned: false)])
+        var peers = FleetPeers()
+        peers.upsert(record)
+        peers.revoke(record.hostID, at: 100)
+        #expect(peers.record(record.hostID)?.presence.isEmpty == true)
+    }
+
+    @Test func aRouteKeepsItsKindAndFlagThroughAFileAndAnOlderRecordHoldsBareAddresses() throws {
+        let routes = [FleetRoute(host: "100.101.102.103", port: 7434, kind: .tailscale, learned: true), FleetRoute(host: "mac-mini.local", port: 7434, kind: .hostname, learned: false)]
+        #expect(try JSONDecoder().decode([FleetRoute].self, from: JSONEncoder().encode(routes)) == routes)
+        // What an iCloud record of the build before routes holds: host and port.
+        let older = try JSONDecoder().decode([FleetRoute].self, from: Data(#"[{"host":"10.77.20.10","port":7434},{"host":"mac-mini.local","port":7434},{"host":"100.64.0.9","port":7434}]"#.utf8))
+        #expect(older.map(\.kind) == [.lan, .hostname, .tailscale] && older.allSatisfy { !$0.learned })
+        let id = UUID()
+        var record = Self.record()
+        record.hostID = id
+        record.adoptPresence(routes)
+        var peers = FleetPeers()
+        peers.upsert(record)
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try peers.save(to: dir)
+        #expect(try FleetPeers.load(from: dir).record(id)?.presence == record.presence)
+    }
 }

@@ -48,6 +48,11 @@ public enum FleetProtocol {
         public static let busy = "busy"
         /// A device pairs with an id that was revoked: it makes a new one and pairs again.
         public static let deviceRevoked = "device_revoked"
+        /// Nobody is showing that code (`FleetAction.findAndPair`): the code finds no Join record.
+        public static let notFound = "not_found"
+        /// iCloud can't be used to look for a Mac (`FleetAction.findAndPair`): no account, a different Apple ID, or no
+        /// access from this build. Pairing goes on the other ways.
+        public static let icloudUnavailable = "icloud_unavailable"
     }
 }
 
@@ -312,12 +317,16 @@ public enum FleetAction: Codable, Hashable, Sendable {
     case retryDispatch(id: UUID, host: UUID?)
     /// Stop a dispatch this Mac sent, and its thread on the other Mac.
     case cancelDispatch(id: UUID)
+    /// Pair with the Mac showing `code` without knowing where it is: the host asks the person's own iCloud
+    /// (`RemoteProtocol.fleetRendezvousCapability`) where that code was shown, then pairs over the routes it
+    /// finds exactly as `pair` does. The code is still the only proof. Answered with the Mac (`FleetResult.paired`).
+    case findAndPair(code: String)
 
     /// The actions about client devices, which work with Fleet off; the others are a member's.
     public var isDeviceAction: Bool {
         switch self {
         case .startDeviceCode, .stopDeviceCode, .revokeDevice, .forgetLegacyClient, .retireSharedToken, .enrollApp: true
-        case .startJoin, .stopJoin, .pair, .remove, .adopt, .watching, .reconnect, .sendThread, .retryDispatch, .cancelDispatch: false
+        case .startJoin, .stopJoin, .pair, .remove, .adopt, .watching, .reconnect, .sendThread, .retryDispatch, .cancelDispatch, .findAndPair: false
         }
     }
 }

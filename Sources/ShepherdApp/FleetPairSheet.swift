@@ -24,7 +24,9 @@ struct FleetPairSheet: View {
     }
 
     private var mac: FoundMac? { model.found.first { $0.id == picked } ?? (model.found.count == 1 ? model.found.first : nil) }
-    private var ready: Bool { mac != nil && code.count == FleetProtocol.codeLength && model.pairing != .working }
+    /// No Mac is picked and the host can look the code up in iCloud, so the code alone is enough.
+    private var findsByCode: Bool { mac == nil && !asClient && model.findsByCode }
+    private var ready: Bool { (mac != nil || findsByCode) && code.count == FleetProtocol.codeLength && model.pairing != .working }
     private var theirName: String { mac?.name ?? "the other Mac" }
 
     var body: some View {
@@ -48,16 +50,20 @@ struct FleetPairSheet: View {
         } status: {
             switch model.pairing {
             case .failed(let message): SHDialogStatus(message, isError: true)
-            case .working: SHDialogStatus("Adding \(theirName)…")
+            case .working: SHDialogStatus(mac == nil ? "Looking for the Mac…" : "Adding \(theirName)…")
             case .idle: SHDialogStatus(asClient ? "The Mac can revoke this one any time." : "You can remove a Mac from any Mac in the fleet.")
             }
         } actions: {
             Button("Cancel") { dismiss() }
                 .buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
             Button(mac.map { "Add \($0.name)" } ?? "Add Mac") {
-                guard let mac else { return }
                 Task {
-                    let added = asClient ? await model.pairAsClient(with: mac, code: code) : await model.pair(with: mac, code: code)
+                    let added: Bool
+                    if let mac {
+                        added = asClient ? await model.pairAsClient(with: mac, code: code) : await model.pair(with: mac, code: code)
+                    } else {
+                        added = await model.pairByCode(code)
+                    }
                     if added { dismiss() }
                 }
             }
@@ -90,7 +96,8 @@ struct FleetPairSheet: View {
 
     @ViewBuilder private var macs: some View {
         if model.found.isEmpty {
-            Text("Looking for Macs running Shepherd on this network…")
+            Text(findsByCode ? "Looking for Macs running Shepherd on this network… Not listed? Enter its code and Shepherd looks through your iCloud."
+                             : "Looking for Macs running Shepherd on this network…")
                 .font(.sh(.ui))
                 .foregroundStyle(Color.sh.textTertiary)
         } else {

@@ -547,7 +547,11 @@
   everywhere (a tombstone, so a stale pairing never undoes a newer one). `fleetRead` and `fleetAction` (pair, start and
   stop a join window, remove, hand over legacy hosts) are for this Mac's own app over `host.sock`. The host
   advertises `_shepherd._tcp` (TXT: `v`, a hash of its id, name, build; never the id) while Fleet is on; the app browses
-  it for Add a Mac and hands the address to the host. Fleet needs the listener, so it opens it even with Serve this Mac
+  it for Add a Mac and hands the address to the host. Where a router's mDNS reflector passes Apple's own types but not
+  `_shepherd._tcp`, Add a Mac (Mac and iOS) also browses `_ssh._tcp`, `_companion-link._tcp` and `_device-info._tcp` (each is in
+  `NSBonjourServices`), resolves each device to an IPv4 address without connecting to it, and probes each address once, four at
+  a time, with an unauthenticated `fleetIdentify` on the edition's default ports (7434, 7433); a Mac that answers is listed
+  like a Bonjour one and pairs by code as ever. It adds no wire message: an older build answers the same request. Fleet needs the listener, so it opens it even with Serve this Mac
   off. Shepherd adds no TLS: the fleet runs over the user's own network. A paired Mac the app reached with the shared
   token is marked `fleetManaged` in `RemoteHostStore` (its address and token are the fleet's), keeping its `bindingID`.
   **Devices** (phones, iPads and Macs' apps) are clients: `FleetAccess` is `local`, `member` (a peer Mac), `device` or
@@ -629,6 +633,11 @@
   link is on a later route it tries the earlier ones every 60 s and when the network changes, and moves to the first that answers (the old
   connection is let go as above). `FleetPeerStatus.reach` (`FleetPeerReach`: the route and its kind, or `viaItsLink` when only the other Mac
   dials) is for this Mac's app and is left out of a client's view; the Fleet page's Mac card says "via 10.77.20.10 · LAN" or "via its link to you".
+  **iCloud records** (`fleet.rendezvous.v1`) carry the same routes: a Join and a presence record hold this Mac's own routes (`FleetRoute`: host,
+  port, kind, learned; a record an older build wrote holds bare addresses, which read as given routes of the kind their form says), and
+  the network change that reports routes to linked peers also rewrites the presence record. A peer whose routes all failed reads the
+  presence record and keeps its routes in `FleetPeerRecord.presence` (replaced by each look), tried after the addresses it was
+  given and the routes the Mac reported.
 - **Fleet pressure and readiness** (`fleet.pressure.v1`, offered with `fleet.v1`): each Mac pushes `fleetPressure` (a
   `FleetPressureSample`: CPU share, core count, total and available memory, thermal state, power, threads working,
   reserved places) every 5 s to the Macs it holds a link to, `fleetReadiness` (a `FleetReadinessReport`: model, chip, the

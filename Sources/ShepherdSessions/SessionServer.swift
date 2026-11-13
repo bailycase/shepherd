@@ -1094,7 +1094,8 @@ public final class SessionServer: @unchecked Sendable {
                 && (tunnelsServed || ($0 != RemoteProtocol.browserTunnelCapability && $0 != RemoteProtocol.browserDriveCapability))
                 && (($0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetSyncCapability) || fleet?.membership == true)
                 && ($0 != RemoteProtocol.fleetDevicesCapability || fleet != nil)
-                && (($0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetViewCapability && $0 != RemoteProtocol.fleetDispatchCapability) || fleet?.membership == true)
+                && (($0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetViewCapability && $0 != RemoteProtocol.fleetDispatchCapability
+                     && $0 != RemoteProtocol.fleetRendezvousCapability) || fleet?.membership == true)
                 && (($0 != RemoteProtocol.fleetSnapshotCapability && $0 != RemoteProtocol.fleetLinkCapability) || fleet?.membership == true)
         }
     }
@@ -1257,6 +1258,10 @@ public final class SessionServer: @unchecked Sendable {
     /// Tests: how the next fleet takes its samples and reads the time (nil: the system's).
     private var fleetPressureMaker: (@Sendable (DispatchQueue, @escaping @Sendable () -> FleetLocalFacts) -> FleetPressure)?
     private var fleetClock: (@Sendable () -> Date)?
+    /// Tests: how the next fleet finds Macs through iCloud (`FleetRendezvous`). Without it a host that advertises uses the real
+    /// CloudKit store (or none, in a build without the entitlement); one that doesn't advertise (a test) uses none.
+    private var fleetRendezvousSetup: (store: FleetRendezvousStore, routes: (@Sendable (UInt16) -> [FleetRoute])?,
+                                       joinLifetime: TimeInterval?, lookupInterval: TimeInterval?)?
 
     /// The app's settings as a fleet syncs them (`FleetHostSettingsSource`); nil until the app says how to apply one.
     private var fleetHostSettings: FleetHostSettingsSource?
@@ -1347,6 +1352,12 @@ public final class SessionServer: @unchecked Sendable {
         set { queue.sync { storedFleetLinkOptions = newValue } }
     }
     private var storedFleetLinkOptions = FleetLinkOptions()
+    /// Tests: stands `store` in for iCloud for the next `setFleetEnabled(true)`, with the routes this host says it has, how long a
+    /// join code lasts and how often a peer's presence is looked up.
+    func configureFleetRendezvous(store: FleetRendezvousStore, routes: (@Sendable (UInt16) -> [FleetRoute])? = nil,
+                                  joinLifetime: TimeInterval? = nil, lookupInterval: TimeInterval? = nil) {
+        queue.sync { fleetRendezvousSetup = (store, routes, joinLifetime, lookupInterval) }
+    }
 
     /// The finder the running fleet uses, readable from any thread (readiness is made off the queue).
     private let fleetRepoFinder = FleetRepoFinderBox()
@@ -1392,15 +1403,26 @@ public final class SessionServer: @unchecked Sendable {
                 let clock = fleetClock ?? Date.init
                 let facts = fleetLocalFacts
                 let pressure = fleetPressureMaker?(queue, facts) ?? FleetPressure(queue: queue, clock: clock, localFacts: facts)
+                // iCloud is where a Mac that Bonjour can't reach is found; a build without the entitlement gets a store that says
+                // unavailable, so everything else works as it does without it.
+                let rendezvous: FleetRendezvousStore? = fleetRendezvousSetup?.store ?? (fleetOptions.advertises ? FleetCloudKitStore.forThisBuild : nil)
                 let service = try FleetService(queue: queue, directory: supportDirectory.appendingPathComponent("fleet", isDirectory: true),
                                                name: fleetOptions.name ?? Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
                                                build: hostBuild, advertises: fleetOptions.advertises, membership: enabled, clock: clock, pressure: pressure,
-                                               network: storedFleetLinkOptions.network ?? .system)
+                                               network: storedFleetLinkOptions.network ?? .system,
+                                               rendezvous: rendezvous.map { FleetRendezvous(store: $0) })
                 if let dialer = storedFleetLinkOptions.dialer { service.dialer = dialer }
                 if let grace = storedFleetLinkOptions.drainGrace { service.drainGrace = grace }
                 if let interval = storedFleetLinkOptions.recheckInterval { service.recheckInterval = interval }
                 if let settle = storedFleetLinkOptions.networkSettle { service.networkSettle = settle }
                 service.predatesLinks = storedFleetLinkOptions.predatesLinks
+                if let setup = fleetRendezvousSetup {
+                    if let routes = setup.routes { service.routes = routes }
+                    if let lifetime = setup.joinLifetime { service.joinLifetime = lifetime }
+                    if let interval = setup.lookupInterval { service.presenceLookupInterval = interval }
+                } else {
+                    service.watchesNetwork = fleetOptions.advertises
+                }
                 service.onChange = { [weak self] in self?.pushSettingsChanged(.fleet) }
                 // A Mac that can't be dialed sends its requests over the connection it opened (`fleet.link.v1`).
                 service.onPeerCall = { [weak self] connection, id, request in

@@ -23,12 +23,13 @@ extension RemoteHostClient {
 
     /// Pairs with the Mac at `host`:`port` using the code its Join screen shows. The connection
     /// never authenticates: it asks who answers, refuses to go on when that isn't `expecting`
-    /// (when given) or has Fleet off, and then sends the code with `introduction`. Closes when done.
+    /// (when given) or has Fleet off, and then sends the code with `introduction`. Closes when done. An address that
+    /// doesn't answer within `connectTimeout` seconds is given up on.
     public static func fleetPair(host: String, port: UInt16, code: String, introduction: FleetIntroduction,
-                                 expecting: UUID? = nil) async throws -> (pairing: FleetPairing, identity: FleetPeerIdentity) {
+                                 expecting: UUID? = nil, connectTimeout: TimeInterval = 10) async throws -> (pairing: FleetPairing, identity: FleetPeerIdentity) {
         let client = RemoteHostClient()
         defer { client.disconnect() }
-        try await client.openUnauthenticated(host: host, port: port)
+        try await client.openUnauthenticated(host: host, port: port, timeout: connectTimeout)
         let identity = try await client.fleetIdentify()
         if let expecting, identity.hostID != expecting {
             throw RemoteHostClientError.rejected(code: FleetProtocol.Code.wrongHost, message: "Another Mac answers at this address.")
@@ -42,12 +43,31 @@ extension RemoteHostClient {
 
     /// Who answers, asked before any `hello`.
     public func fleetIdentify() async throws -> FleetPeerIdentity {
-        let reply = try await request { .fleetIdentify(id: $0) }
+        try await fleetIdentify(timeout: Self.requestTimeout)
+    }
+
+    func fleetIdentify(timeout: TimeInterval) async throws -> FleetPeerIdentity {
+        let reply = try await request(timeout: timeout) { .fleetIdentify(id: $0) }
         switch reply {
         case .fleetIdentity(_, let hostID, let name, let build, let enabled):
             return FleetPeerIdentity(hostID: hostID, name: name, build: build, fleetEnabled: enabled)
         case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
         default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected fleet reply")
+        }
+    }
+
+    /// Asks whether Shepherd answers at `host`:`port`: one connection, one `fleetIdentify`, then it closes.
+    /// Nil for anything else (nothing listens, a refusal, another service, no answer within `timeout`).
+    /// Add a Mac uses it on devices that announce an Apple service type, to list the Macs Bonjour for
+    /// `_shepherd._tcp` does not reach.
+    public static func fleetProbe(host: String, port: UInt16, timeout: TimeInterval = 2) async -> FleetPeerIdentity? {
+        let client = RemoteHostClient()
+        defer { client.disconnect() }
+        do {
+            try await client.openUnauthenticated(host: host, port: port, timeout: timeout)
+            return try await client.fleetIdentify(timeout: timeout)
+        } catch {
+            return nil
         }
     }
 

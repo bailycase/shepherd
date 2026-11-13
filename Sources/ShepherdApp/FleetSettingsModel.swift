@@ -144,6 +144,9 @@ final class FleetSettingsModel {
     /// Add a Mac: the Macs Bonjour found that this Mac doesn't have and isn't.
     var found: [FoundMac] = []
     var pairing: Pairing = .idle
+    /// The host can look a code up in this person's iCloud (`RemoteProtocol.fleetRendezvousCapability`): Add a Mac then works
+    /// without a Mac picked from the list. A host without it (an older Nightly still running) pairs only with a picked Mac.
+    var findsByCode = false
     /// The last thing that failed on the page, said under the Macs.
     var problem: String?
     /// The phones, iPads and Mac apps paired as clients, as Settings lists them.
@@ -180,6 +183,7 @@ final class FleetSettingsModel {
         do {
             guard let client = try host() else { return }
             apply(try await client.fleetRead())
+            findsByCode = client.capabilities.contains(RemoteProtocol.fleetRendezvousCapability)
             problem = nil
         } catch {
             if !loaded { problem = Self.words(error) }
@@ -330,6 +334,21 @@ final class FleetSettingsModel {
         do {
             guard let client = try host() else { pairing = .failed("Shepherd's background service isn't answering."); return false }
             apply(try await client.fleetAction(.pair(host: address, port: port, code: code)))
+            pairing = .idle
+            return true
+        } catch {
+            pairing = .failed(Self.words(error))
+            return false
+        }
+    }
+
+    /// Enters `code` with no Mac picked: the host asks this person's iCloud where a Mac showed that code, then pairs over the
+    /// routes it finds. The code is still the only proof. True when it paired.
+    func pairByCode(_ code: String) async -> Bool {
+        pairing = .working
+        do {
+            guard let client = try host() else { pairing = .failed("Shepherd's background service isn't answering."); return false }
+            apply(try await client.fleetAction(.findAndPair(code: code)))
             pairing = .idle
             return true
         } catch {
