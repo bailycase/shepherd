@@ -11,9 +11,10 @@ final class ComposerPresentation {
     // The compact and regular shells rebuild their transcript when the scene changes width.
     // Keep reader intent and disclosures here with this window's existing scroll/find intent.
 
-    /// The reader's place against the tail, which every scroll frame may change: bookkeeping, so not observed. The transcript
-    /// draws only the three values below that mirror it, which `follow(_:)` writes when they change.
-    @ObservationIgnored private(set) var scrollFollower = NativeScrollFollower()
+    /// The reader's place: the follower, which every scroll frame may change, and the turn kept for the next mount. Bookkeeping, so not
+    /// observed. The transcript draws only the four values below that mirror it, which `publish()` writes when they change.
+    @ObservationIgnored private var place = NativeTranscriptPlace(mountsAtTail: ComposerPresentation.nativeTail)
+    var scrollFollower: NativeScrollFollower { place.follower }
     /// How many times the follower changed, counted only where not `nativeTail`: there the transcript draws from every change, as it
     /// did when it observed the follower. Without a render at the finger's touch-down, a drag from the tail there was put back on
     /// it by SwiftUI's next update of the scroll view.
@@ -45,44 +46,37 @@ final class ComposerPresentation {
     }
 
     /// Takes the follower as the transcript changed it, writing what it draws only when that changed, so a scroll frame that
-    /// changes nothing it shows redraws nothing. Where `nativeTail`, returning to the tail forgets the turn kept for a reader who
-    /// was away.
+    /// changes nothing it shows redraws nothing.
     func follow(_ next: NativeScrollFollower) {
-        let returned = next.sticky && !scrollFollower.sticky
-        scrollFollower = next
+        place.follow(next)
         if !Self.nativeTail { followerChanges &+= 1 }
-        if follows != next.sticky { follows = next.sticky }
-        if unseen != next.unseen { unseen = next.unseen }
-        if returned, Self.nativeTail { keepTurn(nil) }
+        publish()
     }
 
-    /// A transcript mounting with no turn to restore opens on its bottom anchor, at its tail, so the reader must follow it. One left
-    /// detached with nothing kept (SwiftUI can leave the position nil, as after a jump) would sit there with no follow of the tail,
-    /// the jump pill showing while the agent runs, and, where the tail guard repairs only a following transcript, a blank one on an
-    /// iPad in landscape. Where not `nativeTail` the turn is kept as it was before the transcript opened at its tail, and nothing
-    /// changes.
+    /// A transcript mounting with no turn to restore must follow its tail (`NativeTranscriptPlace.mount()`).
     func mount() {
-        guard Self.nativeTail, !restoresTurn, !follows else { return }
-        var next = scrollFollower
-        next.jumpToLatest()
-        follow(next)
+        place.mount()
+        publish()
     }
 
     /// SwiftUI's writes through the transcript's position binding. Where `nativeTail` they are not kept while following, and equal
     /// ones notify nothing, so the layout a position change sets off never sees `visibleTurn` change.
     func noteVisibleTurn(_ id: String?) {
-        keepTurn(scrollFollower.sticky && Self.nativeTail ? nil : id)
+        place.note(id)
+        publish()
     }
 
     /// Keeps the oldest loaded turn at the top while older ones load above it, when SwiftUI has none to keep.
     func pinHistoryTurn(_ id: String?) {
-        guard visibleTurn == nil, let id else { return }
-        keepTurn(id)
+        place.pin(id)
+        publish()
     }
 
-    private func keepTurn(_ id: String?) {
-        if visibleTurn != id { visibleTurn = id }
-        if restoresTurn != (id != nil) { restoresTurn = id != nil }
+    private func publish() {
+        if follows != place.follows { follows = place.follows }
+        if unseen != place.unseen { unseen = place.unseen }
+        if visibleTurn != place.turn { visibleTurn = place.turn }
+        if restoresTurn != place.restoresTurn { restoresTurn = place.restoresTurn }
     }
 }
 
