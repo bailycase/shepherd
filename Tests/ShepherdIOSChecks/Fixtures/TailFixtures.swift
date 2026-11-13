@@ -21,7 +21,7 @@ extension FixtureCatalog {
             // that row are reported.
             FixtureScreen(name: "thread-remount-tail", hosts: TailFixture.remountHosts(), routes: [.thread(thread)], prepare: TailFixture.remountTail),
             // A 300 pt drag up from the tail of the 24 KB reply moves the view by the drag and no more (nothing sends it to the reply's
-            // top), and the transcript renders no time at touch-down and at most three times over the whole drag.
+            // top), and the transcript renders no time at touch-down and at most four times over the whole drag.
             FixtureScreen(name: "thread-detach-in-reply", hosts: TailFixture.hosts(), routes: [.thread(thread)], prepare: TailFixture.detachInReply),
             // A reader who scrolled up past the reply and left comes back to the row they left at the top.
             FixtureScreen(name: "thread-detached-remount", hosts: TailFixture.remountHosts(), routes: [.thread(thread)], prepare: TailFixture.detachedRemount),
@@ -383,8 +383,10 @@ extension TailFixture {
     static let firstFrameReach = NativeScrollFollower.threshold
     /// The row's top may sit this far from the top edge once a detached reader's row is restored.
     static let restoreTolerance: CGFloat = 8
-    /// Renders of the transcript that a drag inside one row may cause: the detach, and the two turns SwiftUI reports after it.
-    static let dragRenders = 3
+    /// Renders of the transcript that a drag inside one row may cause: the detach, the two turns SwiftUI reports after it, and
+    /// now and then one more (3 in 8 of 10 drags on an iPad Pro 13 in the simulator, 4 in one; the merge base drew it 5 times in all
+    /// but the one a load average of 274 disturbed).
+    static let dragRenders = 4
 
     /// The long thread, and short ones in the other seats, so the iPad's other threads add nothing tall to the window.
     static func remountHosts() -> [FixtureHostData] {
@@ -528,8 +530,8 @@ extension TailFixture {
     /// `FollowFixture.jump` does). At each step the offset has moved by the drag, give or take 8 pt, and so it does after the lift:
     /// nothing sends the view to the reply's top when the reader lets go of the tail, and the reader is detached. The drag stays
     /// inside one row, so the transcript draws only for what changed in it: a finger coming down renders it no time, and the
-    /// detach and the two turns SwiftUI then reports at the top edge (the bottom marker, then the reply) at most three times
-    /// between them. The merge base drew it once at touch-down and five times over the whole drag.
+    /// detach and the two turns SwiftUI then reports at the top edge (the bottom marker, then the reply) at most `dragRenders`
+    /// times between them. The merge base drew it once at touch-down and five times over the whole drag.
     @MainActor static func detachInReply(_ app: MobileApp) async {
         let ref = FixtureData.ref(FixtureData.preview)
         await ready(app)
