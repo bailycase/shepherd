@@ -420,7 +420,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// one (`fleetIdentify`, `fleetPair`): a Mac pairing with another by code. Nothing is sent
     /// but those, so no token ever goes to an address that has not said who it is. Close it with
     /// `disconnect()`.
-    func openUnauthenticated(host: String, port: UInt16) async throws {
+    func openUnauthenticated(host: String, port: UInt16, timeout: TimeInterval = 10) async throws {
         let opening = RemoteSocketOpen()
         let attempt = try queue.sync {
             guard self.fd < 0 else {
@@ -434,7 +434,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         try await withTaskCancellationHandler {
             let fd: Int32
             do {
-                fd = try await opening.open(host: host, port: port, override: socketOpen)
+                fd = try await opening.open(host: host, port: port, timeout: timeout, override: socketOpen)
             } catch {
                 queue.sync { if connectionGeneration == attempt { pendingOpen = nil } }
                 throw error
