@@ -20,7 +20,7 @@ extension FixtureCatalog {
             // retained): a built row shows from its first frame, at the tail and drawn, with no repair by the tail guard and at most one
             // landing, and it rests on its tail. The frames before that row, the time to it and the memory the mount takes are reported.
             // Where it does not mount at its tail by design (iOS 27.1, `ComposerPresentation.nativeTail`) the distance and landings are
-            // reported, not judged.
+            // reported, and on iOS 27.1 a blank frame or a repair fails the open.
             FixtureScreen(name: "thread-remount-tail", hosts: TailFixture.remountHosts(), routes: [.thread(thread)],
                           prepare: { app in await TailFixture.remountTail(app) }),
             // A 300 pt drag up from the tail of the 24 KB reply moves the view by the drag and no more (nothing sends it to the reply's
@@ -399,6 +399,8 @@ extension TailFixture {
     static let remountBlankFrames = 1
     /// How far from the tail the first frame with a row may be: the follower's own tolerance.
     static let firstFrameReach = NativeScrollFollower.threshold
+    /// Whether this runs on iOS 27.1 or later, where `ComposerPresentation.nativeTail` is off and a re-open was measured on a Duo.
+    static let fromIOS271: Bool = { if #available(iOS 27.1, *) { true } else { false } }()
     /// The row's top may sit this far from the top edge once a detached reader's row is restored.
     static let restoreTolerance: CGFloat = 8
     /// Renders of the transcript that a drag inside one row may cause: the detach, the two turns SwiftUI reports after it, and
@@ -536,7 +538,8 @@ extension TailFixture {
     /// The base mounted the lazy stack at the end of its estimated height (about 250,000 pt for this thread) while the nine rows it
     /// had built at the end of the thread stood at about 28,000 pt, so no row was in view for 18 to 27 frames, until the guard walked
     /// back to them (`ThreadTailGuard`). Where the transcript does not mount at its tail (`ComposerPresentation.nativeTail` is false,
-    /// iOS 27.1) the distance and landings are reported, not judged, until a Duo has measured it. Set `TAIL_TRACE` in the launch
+    /// iOS 27.1) the distance and landings are reported too; on iOS 27.1 a blank frame or a repair fails the open whichever way
+    /// `nativeTail` goes, which is what lifting it does until the last turns are laid out for real. Set `TAIL_TRACE` in the launch
     /// environment to have every frame of a mount described.
     @MainActor static func remountTail(_ app: MobileApp, rows: Int = 150) async {
         let ref = FixtureData.ref(FixtureData.preview)
@@ -573,14 +576,22 @@ extension TailFixture {
                 + "\(counts["thread.tailRepair", default: 0]) repairs, \(counts["thread.transcript", default: 0]) renders, \(result.away) frames away from the tail after it (worst \(result.farthest)pt); "
                 + "at rest \(rest.distance)pt from the tail, \(Int((rest.ink * 100).rounded()))% ink; "
                 + "footprint \(Int(away.rounded())) MB away, \(Int(mounted.rounded())) MB mounted (+\(Int((mounted - away).rounded())))")
-            if !ComposerPresentation.nativeTail { onlyInkAndRest += 1 } else {
+            let repaired = counts["thread.tailRepair", default: 0] > 0
+            if Self.fromIOS271 {
+                // iOS 27.1 opens as the merge base did, which needs no repair and shows no blank frame, whichever way `nativeTail` goes.
+                // Mounting it at its tail there stranded the stack at the end of its estimated height: 26 blank frames (about 840 ms) and a
+                // repair on every re-open on the Duo's cover display, and two repairs on the open one. Its first frame with a row has drawn
+                // nothing yet on the open Duo, on the merge base too, so beyond the wait only the rest is judged.
+                onlyInkAndRest += 1
+                verdicts.append((result.blank == 0 && !repaired, "cycle \(cycle): no blank frame before the first row, and no repair"))
+            } else {
                 verdicts.append((result.blank <= remountBlankFrames, "cycle \(cycle): at most \(remountBlankFrames) frames with no row in view, not \(result.blank)"))
-                verdicts.append((counts["thread.tailRepair", default: 0] == 0, "cycle \(cycle): the tail guard had nothing to repair"))
+                verdicts.append((!repaired, "cycle \(cycle): the tail guard had nothing to repair"))
                 verdicts.append((reach.map { $0 <= firstFrameReach + gap && $0 >= -NativeScrollFollower.repinSlack } ?? false,
                                  "cycle \(cycle): the first frame with a row is within \(Int(firstFrameReach))pt of where a landing leaves the view"))
                 verdicts.append((landings <= remountLandings, "cycle \(cycle): at most \(remountLandings) landing"))
             }
-            verdicts.append(((first?.ink ?? 0) >= inkFloor, "cycle \(cycle): the first frame with a row draws"))
+            if !Self.fromIOS271 { verdicts.append(((first?.ink ?? 0) >= inkFloor, "cycle \(cycle): the first frame with a row draws")) }
             verdicts.append((rest.atTail && rest.ink >= inkFloor, "cycle \(cycle): the thread rests on its tail, drawn"))
         }
         measured.forEach { FixtureCheck.report("FIXTURE CHECK ok: \($0)") }
@@ -651,7 +662,7 @@ extension TailFixture {
     /// (`unplacedRemount`).
     ///
     /// The second scrolls up past the reply and the row before it, leaves, and comes back. The row SwiftUI kept under the top edge
-    /// is the one at the top again, within `restoreTolerance`, and the thread draws.
+    /// is the one at the top again, within `restoreTolerance` (and one turn spacing more on iOS 27.1), and the thread draws.
     @MainActor static func detachedRemount(_ app: MobileApp) async {
         await ready(app)
         MainQueueWatchdog.start(limit: 5)
@@ -741,7 +752,10 @@ extension TailFixture {
         let ink = FollowFixture.transcriptInk()
         FixtureCheck.report("FIXTURE CHECK ok: left on row \(row ?? "none") \(detached ? "detached" : "still following"); back on row \(back ?? "none"), "
             + "its top \(top.map { String(Int($0.offset.rounded())) } ?? "unread")pt from the top edge, \(Int((ink * 100).rounded()))% ink")
-        let held = row != nil && detached && back == row && top.map { abs($0.offset) <= restoreTolerance } == true && ink >= inkFloor
+        // iOS 27.1 puts the restored row's top one turn spacing under the top edge (24 pt on the Duo, on the merge base too), where 27.0
+        // puts it within `restoreTolerance`.
+        let tolerance = restoreTolerance + (Self.fromIOS271 ? MobileLayout.turnSpacing : 0)
+        let held = row != nil && detached && back == row && top.map { abs($0.offset) <= tolerance } == true && ink >= inkFloor
         FixtureCheck.report("FIXTURE CHECK \(held ? "ok" : "FAILED"): a detached reader comes back to the row they left")
     }
 }
