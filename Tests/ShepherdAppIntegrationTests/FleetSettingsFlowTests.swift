@@ -40,9 +40,10 @@ struct FleetSettingsFlowTests {
         var server: SessionServer { host.server }
 
         /// `fleet: false` leaves Fleet off, as a fresh install is; `serving` turns Settings ▸ Remote's Serve this Mac on.
-        init(_ name: String, fleet: Bool = true, serving: Bool = false, dir: URL? = nil) async throws {
+        init(_ name: String, fleet: Bool = true, serving: Bool = false, dir: URL? = nil, configure: (SessionServer) -> Void = { _ in }) async throws {
             let host = try ScratchServer(dir: dir)
             host.server.configureFleet(name: name, advertises: false)
+            configure(host.server)
             let settings = AppSettings(store: ScratchDefaults())
             // Ephemeral: never the edition's own port, which a running Shepherd may hold.
             settings.remoteListenerPort = 0
@@ -138,6 +139,53 @@ struct FleetSettingsFlowTests {
             await b.model.refresh()
             return a.model.rows.count == 1 && b.model.rows.count == 1
         }
+    }
+
+    /// iCloud as a dictionary: Add a Mac with no Mac picked asks the host, which finds where the code was shown.
+    final class Cloud: FleetRendezvousStore, @unchecked Sendable {
+        private let lock = NSLock()
+        private var records: [FleetRendezvousKey: FleetRendezvousRecord] = [:]
+        private let failure: FleetRendezvousError?
+        init(failure: FleetRendezvousError? = nil) { self.failure = failure }
+        func put(_ record: FleetRendezvousRecord) async throws { try lock.withLock { if let failure { throw failure }; records[record.key] = record } }
+        func fetch(_ key: FleetRendezvousKey) async throws -> FleetRendezvousRecord? { try lock.withLock { if let failure { throw failure }; return records[key] } }
+        func delete(_ key: FleetRendezvousKey) async throws { try lock.withLock { if let failure { throw failure }; records[key] = nil } }
+    }
+
+    static func viaICloud(_ cloud: Cloud) -> (SessionServer) -> Void {
+        { server in server.configureFleetRendezvous(store: cloud, routes: { port in [FleetAddress(host: "127.0.0.1", port: port)] }, lookupInterval: 0) }
+    }
+
+    @Test func aCodeTypedWithNoMacPickedPairsThroughICloudAndASheetOnAnOlderHostIsNotOffered() async throws {
+        let cloud = Cloud()
+        let a = try await FleetApp("MacBook Pro", configure: Self.viaICloud(cloud)), b = try await FleetApp("Mac mini", configure: Self.viaICloud(cloud))
+        defer { a.stop(); b.stop() }
+        #expect(!a.model.findsByCode, "until the host has said what it can do")
+        await a.model.refresh()
+        #expect(a.model.findsByCode)
+        await b.model.startJoin()
+        let code = try #require(b.model.join?.code)
+
+        #expect(await a.model.pairByCode(code))
+        #expect(a.model.pairing == .idle)
+        try await Self.waitFor("both Macs to list each other as connected") {
+            await a.model.refresh(); await b.model.refresh()
+            return a.model.rows.map(\.state) == [.thisMac, .connected] && b.model.rows.map(\.state) == [.thisMac, .connected]
+        }
+        #expect(b.model.joinEnd == .joined("MacBook Pro"))
+    }
+
+    @Test func aCodeNobodyShowsAndNoICloudEachSaySoInTheSheet() async throws {
+        let a = try await FleetApp("MacBook Pro", configure: Self.viaICloud(Cloud()))
+        let signedOut = try await FleetApp("Mac studio", configure: Self.viaICloud(Cloud(failure: .noAccount)))
+        defer { a.stop(); signedOut.stop() }
+        #expect(!(await a.model.pairByCode("482913")))
+        guard case .failed(let none) = a.model.pairing else { Issue.record("a code nobody shows paired"); return }
+        #expect(none.hasPrefix("No Mac is showing that code"))
+
+        #expect(!(await signedOut.model.pairByCode("482913")))
+        #expect(signedOut.model.pairing == .failed("Not signed in to iCloud: use a pairing link"))
+        #expect(signedOut.model.rows.map(\.title) == [] || signedOut.model.rows.map(\.title) == ["This Mac"], "nothing was added")
     }
 
     /// What the Mac's app does with sync: a setting changed on one Mac's Settings is applied by the other's own
