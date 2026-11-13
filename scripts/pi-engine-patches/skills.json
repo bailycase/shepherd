@@ -825,31 +825,31 @@
     {
       "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-oauth/convert.js",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "0aad2a5a71627d8e5c0694804db2b2c0d10b631da0aa1bfec82be38dd107fe6f",
+      "after": "c93b3312d7b6152d9a4f85a7f3cd176057710f817d909aaacb051792f765a3fd",
       "source": "anthropic-oauth/convert.js"
     },
     {
       "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-oauth/stream.js",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "3f46bb6a07338dc84a7b5dbd860d971bf1bdb98f726928dea89943e76e7c1a64",
+      "after": "d0bdb498a84327b0393934b6cf17a7411b7cccded52a6ddfc7a21127190a4df3",
       "source": "anthropic-oauth/stream.js"
     },
     {
       "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-oauth/auth.js",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "20e4f6035f7f3e01d807366a2dcb43f6da1f03b34a2d5684114b07ae7efc4906",
+      "after": "a2721ed583ebd10aeadc67bd606e741ecdd08441010399e284fd50ef26b4d72d",
       "source": "anthropic-oauth/auth.js"
     },
     {
       "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-oauth/version.js",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "08945730a660d9a4d10e1d349f003422ddc44dbee4ebc6771af6933c2f75c259",
+      "after": "46550c6fbcea2437013849f477f973834e65f69395530f1621ab1d2a74c4e684",
       "source": "anthropic-oauth/version.js"
     },
     {
       "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-oauth/prompt.js",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "041bbcb40bfe1183e2431b0090ccf90f025765f290005c2d8985c437041bbc24",
+      "after": "d191149d1479c041a5374cd51ee5d08dd5fc49c07ae9fc2b0ade5b458287c0df",
       "source": "anthropic-oauth/prompt.js"
     },
     {
@@ -861,31 +861,31 @@
     {
       "path": "dist/bundle/chunks/anthropic-oauth/convert.js",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "0aad2a5a71627d8e5c0694804db2b2c0d10b631da0aa1bfec82be38dd107fe6f",
+      "after": "c93b3312d7b6152d9a4f85a7f3cd176057710f817d909aaacb051792f765a3fd",
       "source": "anthropic-oauth/convert.js"
     },
     {
       "path": "dist/bundle/chunks/anthropic-oauth/stream.js",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "3f46bb6a07338dc84a7b5dbd860d971bf1bdb98f726928dea89943e76e7c1a64",
+      "after": "d0bdb498a84327b0393934b6cf17a7411b7cccded52a6ddfc7a21127190a4df3",
       "source": "anthropic-oauth/stream.js"
     },
     {
       "path": "dist/bundle/chunks/anthropic-oauth/auth.js",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "20e4f6035f7f3e01d807366a2dcb43f6da1f03b34a2d5684114b07ae7efc4906",
+      "after": "a2721ed583ebd10aeadc67bd606e741ecdd08441010399e284fd50ef26b4d72d",
       "source": "anthropic-oauth/auth.js"
     },
     {
       "path": "dist/bundle/chunks/anthropic-oauth/version.js",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "08945730a660d9a4d10e1d349f003422ddc44dbee4ebc6771af6933c2f75c259",
+      "after": "46550c6fbcea2437013849f477f973834e65f69395530f1621ab1d2a74c4e684",
       "source": "anthropic-oauth/version.js"
     },
     {
       "path": "dist/bundle/chunks/anthropic-oauth/prompt.js",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "041bbcb40bfe1183e2431b0090ccf90f025765f290005c2d8985c437041bbc24",
+      "after": "d191149d1479c041a5374cd51ee5d08dd5fc49c07ae9fc2b0ade5b458287c0df",
       "source": "anthropic-oauth/prompt.js"
     },
     {
