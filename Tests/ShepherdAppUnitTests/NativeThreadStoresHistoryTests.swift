@@ -195,7 +195,6 @@ struct NativeThreadStoresHistoryTests {
         defer { pauses.end() }
         let stores = mountedStores(["a", "b", "c"], selected: "c", pauses: pauses, turns: 8)
         let a = stores.store(for: "a")
-        #expect(stores.releaseStep <= 4 << 20, "about a code-heavy reply's rows")
         let one = a.mountedCost(eagerRows: 1)
         stores.eagerRows = 8
         stores.releaseStep = one

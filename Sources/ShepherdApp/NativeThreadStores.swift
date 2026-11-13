@@ -57,10 +57,10 @@ final class NativeThreadStores<Key: Hashable> {
     var releaseDelay: Duration = .seconds(2)
     var releaseSpacing: Duration = .milliseconds(250)
     /// The estimated bytes of one thread's rows a pass lets go of, at most (a row larger than it goes whole, as a pass lets go
-    /// of at least one): a code-heavy thread's rows take tens of milliseconds each to tear down, so a step is about a row of
-    /// them and no pass takes much of the main thread.
-    var releaseStep = 4 << 20
-    /// Whether the person is scrolling or typing, or the thread on screen is streaming: a pass waits `releaseSpacing` and looks again.
+    /// of at least one). A pass costs the main thread a layout of the whole mounted tree, tens of milliseconds, whether it takes
+    /// one row or eight, so a smaller step makes more passes and more of those stalls for the same memory, and shortens none.
+    var releaseStep = 32 << 20
+    /// Whether the person is scrolling or typing, or a thread on screen is streaming: a pass waits `releaseSpacing` and looks again.
     var busy: (() -> Bool)?
     /// Waits out a pass's delay (a test replaces it, and the timer with it).
     var pause: @MainActor @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
