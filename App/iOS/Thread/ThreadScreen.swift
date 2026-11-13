@@ -261,6 +261,8 @@ struct ThreadTranscript: View {
     @State private var tailPin = ThreadTailPin()
     /// Gets a following transcript out of a stranded scroll position, where no row is realized (ThreadTailGuard).
     @State private var tailGuard = ThreadTailGuard()
+    /// Hands the bottom marker back to SwiftUI once the landings after new rows have settled (ThreadTailHold).
+    @State private var tailHold = ThreadTailHold()
     /// Whether this mount has appeared: `onAppear` also fires when a screen pushed over the thread is popped, which is no mount.
     @State private var appeared = false
 
@@ -277,6 +279,7 @@ struct ThreadTranscript: View {
         let running = store.running
         let thinking = store.showsThinking
         let liveRow = rows.last(where: \.live)
+        let tail = rows.last?.id
         ScrollViewReader { proxy in
             // Counted here, where the transcript's own state is read: the body above reads the store only.
             let _ = SHRenderProbe.tick("thread.transcript")
@@ -338,7 +341,7 @@ struct ThreadTranscript: View {
             }
             // Open at the tail and stay pinned while it grows; only the reader's own drag
             // detaches, and sending re-attaches.
-            .scrollPosition(id: Binding(get: { presentation.visibleTurn }, set: { presentation.noteVisibleTurn($0) }), anchor: .top)
+            .scrollPosition(id: Binding(get: { presentation.position(tail: tail) }, set: { presentation.noteVisibleTurn($0, tail: tail) }), anchor: .top)
             .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
             .onChange(of: store.sessionKey) { old, _ in
                 tailPin.reset()
@@ -422,6 +425,7 @@ struct ThreadTranscript: View {
                 presentation.mount()
             }
             .onDisappear {
+                tailHold.stop()
                 tailPin.stop()
                 tailGuard.stop()
             }
@@ -474,7 +478,13 @@ struct ThreadTranscript: View {
     /// the view, so a landing asked for before a remount reads the follower it was asked for.
     private func lander(_ proxy: ScrollViewProxy) -> ThreadTailPin.Land {
         let presentation = presentation
-        return { resized in Self.land(proxy, presentation: presentation, resized: resized) }
+        let store = store
+        let hold = tailHold
+        return { resized in
+            Self.land(proxy, presentation: presentation, resized: resized)
+            let tail = store.rows.last?.id
+            hold.landed { if store.rows.last?.id == tail { presentation.hold(tail: tail) } }
+        }
     }
 
     /// Lands on the tail while the reader still follows it and has not taken hold of the thread.

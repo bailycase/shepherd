@@ -10,8 +10,11 @@ struct NativeTranscriptPlaceTests {
         case detach
         /// The reader came back to the tail (a drag that ended near it, the jump pill, a send).
         case reattach
-        /// SwiftUI reports the turn under the top edge through the position binding; nil is its report of none.
-        case swiftUI(String?)
+        /// SwiftUI reports the turn under the top edge through the position binding; nil is its report of none. `tail` is the
+        /// transcript's last row at the time.
+        case swiftUI(String?, tail: String? = nil)
+        /// The landings after new rows joined have settled, and the transcript's last row is `tail`.
+        case hold(tail: String?)
         /// The history pager keeps the oldest loaded turn while older ones load.
         case pin(String?)
         /// The transcript mounts again.
@@ -67,36 +70,40 @@ struct NativeTranscriptPlaceTests {
              mountsAtTail: false, events: [.detach, .mount], turn: nil, follows: false),
         Case(testDescription: "without a mount at the tail, SwiftUI reporting none clears the turn",
              mountsAtTail: false, events: [.swiftUI("reply"), .swiftUI(nil)], turn: nil, follows: true),
-        // ... but not the bottom marker, which is no turn: a follower on it is on the tail, and the id handed back to SwiftUI at the next
-        // turn's rows would put the first landing short of it.
-        Case(testDescription: "without a mount at the tail, a follower keeps nothing of the bottom marker",
-             mountsAtTail: false, events: [.swiftUI(marker)], turn: nil, follows: true),
-        Case(testDescription: "without a mount at the tail, the bottom marker replaces a turn kept for a follower",
-             mountsAtTail: false, events: [.swiftUI("reply"), .swiftUI(marker)], turn: nil, follows: true),
-        Case(testDescription: "without a mount at the tail, a follower still keeps a row after the marker",
-             mountsAtTail: false, events: [.swiftUI(marker), .swiftUI("reply")], turn: "reply", follows: true),
+        // The bottom marker is kept like any turn, for the tail it was reported at.
+        Case(testDescription: "without a mount at the tail, a follower keeps the bottom marker",
+             mountsAtTail: false, events: [.swiftUI(marker, tail: "a")], turn: marker, follows: true),
+        Case(testDescription: "without a mount at the tail, a row replaces the bottom marker",
+             mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .swiftUI("reply", tail: "a")], turn: "reply", follows: true),
         Case(testDescription: "without a mount at the tail, a detached reader keeps the bottom marker",
-             mountsAtTail: false, events: [.detach, .swiftUI(marker)], turn: marker, follows: false),
-        Case(testDescription: "without a mount at the tail, a detached reader keeps a row",
-             mountsAtTail: false, events: [.detach, .swiftUI("reply")], turn: "reply", follows: false),
-        Case(testDescription: "without a mount at the tail, a report of the marker after the reader came back is dropped",
-             mountsAtTail: false, events: [.detach, .swiftUI("reply"), .reattach, .swiftUI(marker)], turn: nil, follows: true),
-        Case(testDescription: "without a mount at the tail, coming back to the tail forgets the bottom marker kept for the reader who was away",
-             mountsAtTail: false, events: [.detach, .swiftUI(marker), .reattach], turn: nil, follows: true),
+             mountsAtTail: false, events: [.detach, .swiftUI(marker, tail: "a")], turn: marker, follows: false),
+        Case(testDescription: "without a mount at the tail, coming back to the tail keeps the bottom marker",
+             mountsAtTail: false, events: [.detach, .swiftUI(marker, tail: "a"), .reattach], turn: marker, follows: true),
         // A transcript that mounts at its tail drops the marker with everything else while it follows.
         Case(testDescription: "a follower keeps nothing of the bottom marker",
-             mountsAtTail: true, events: [.swiftUI(marker)], turn: nil, follows: true),
+             mountsAtTail: true, events: [.swiftUI(marker, tail: "a")], turn: nil, follows: true),
         Case(testDescription: "a detached reader keeps the bottom marker",
-             mountsAtTail: true, events: [.detach, .swiftUI(marker)], turn: marker, follows: false),
+             mountsAtTail: true, events: [.detach, .swiftUI(marker, tail: "a")], turn: marker, follows: false),
+        // Holding the marker again, for a follower on the tail.
+        Case(testDescription: "without a mount at the tail, holding keeps the bottom marker for a follower with nothing kept",
+             mountsAtTail: false, events: [.hold(tail: "a")], turn: marker, follows: true),
+        Case(testDescription: "without a mount at the tail, holding replaces the turn kept for a follower",
+             mountsAtTail: false, events: [.swiftUI("reply", tail: "a"), .hold(tail: "a")], turn: marker, follows: true),
+        Case(testDescription: "without a mount at the tail, holding leaves a detached reader's turn alone",
+             mountsAtTail: false, events: [.detach, .swiftUI("reply", tail: "a"), .hold(tail: "a")], turn: "reply", follows: false),
+        Case(testDescription: "without a mount at the tail, holding keeps nothing for a detached reader with nothing kept",
+             mountsAtTail: false, events: [.detach, .hold(tail: "a")], turn: nil, follows: false),
+        Case(testDescription: "holding keeps nothing for a transcript that mounts at its tail",
+             mountsAtTail: true, events: [.hold(tail: "a")], turn: nil, follows: true),
     ]
 
     /// The bottom anchor row of the transcript, as SwiftUI reports it through the position binding.
     static let marker = NativeTranscriptPlace.bottomMarker
 
-    @Test(arguments: cases)
-    func place(_ c: Case) {
-        var place = NativeTranscriptPlace(mountsAtTail: c.mountsAtTail)
-        for event in c.events {
+    /// The place after the events, from a fresh one.
+    static func played(_ events: [Event], mountsAtTail: Bool) -> NativeTranscriptPlace {
+        var place = NativeTranscriptPlace(mountsAtTail: mountsAtTail)
+        for event in events {
             switch event {
             case .detach:
                 var next = place.follower
@@ -106,15 +113,68 @@ struct NativeTranscriptPlaceTests {
                 var next = place.follower
                 next.jumpToLatest()
                 place.follow(next)
-            case .swiftUI(let id): place.note(id)
+            case .swiftUI(let id, let tail): place.note(id, tail: tail)
+            case .hold(let tail): place.hold(tail: tail)
             case .pin(let id): place.pin(id)
             case .mount: place.mount()
             case .newSession: place.note(nil)
             }
         }
+        return place
+    }
+
+    @Test(arguments: cases)
+    func place(_ c: Case) {
+        let place = Self.played(c.events, mountsAtTail: c.mountsAtTail)
         #expect(place.turn == c.turn)
         #expect(place.restoresTurn == (c.turn != nil))
         #expect(place.follows == c.follows)
+    }
+
+    struct PositionCase: Sendable, CustomTestStringConvertible {
+        var testDescription: String
+        var mountsAtTail: Bool
+        var events: [Event]
+        /// The transcript's last row when SwiftUI is handed its position, and what it is handed.
+        var tail: String?
+        var handed: String?
+    }
+
+    /// The position handed to SwiftUI: the pass that adds rows after the bottom marker would resolve it short of the tail, so a follower
+    /// is handed the marker only for the tail it was kept for.
+    static let positions: [PositionCase] = [
+        PositionCase(testDescription: "a follower is handed the bottom marker while the last row is the one it was kept for",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a")], tail: "a", handed: marker),
+        PositionCase(testDescription: "a follower is handed nothing once a row joined after the marker",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a")], tail: "b", handed: nil),
+        PositionCase(testDescription: "a follower is handed the marker again once it was held for the new tail",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .hold(tail: "b")], tail: "b", handed: marker),
+        PositionCase(testDescription: "a follower holding the marker is handed nothing at the next row to join",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .hold(tail: "b")], tail: "c", handed: nil),
+        PositionCase(testDescription: "a follower is handed nothing for a tail that was held for another",
+                     mountsAtTail: false, events: [.hold(tail: "a")], tail: "b", handed: nil),
+        PositionCase(testDescription: "a follower with no rows yet is handed the marker kept for none",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: nil)], tail: nil, handed: marker),
+        PositionCase(testDescription: "a follower is handed a row it keeps whatever joins",
+                     mountsAtTail: false, events: [.swiftUI("reply", tail: "a")], tail: "b", handed: "reply"),
+        PositionCase(testDescription: "a detached reader is handed the marker whatever joins",
+                     mountsAtTail: false, events: [.detach, .swiftUI(marker, tail: "a")], tail: "b", handed: marker),
+        PositionCase(testDescription: "a reader who came back is handed nothing once a row joined while they were away",
+                     mountsAtTail: false, events: [.detach, .swiftUI(marker, tail: "a"), .reattach], tail: "b", handed: nil),
+        PositionCase(testDescription: "a reader who came back is handed the marker while the tail is as it was",
+                     mountsAtTail: false, events: [.detach, .swiftUI(marker, tail: "a"), .reattach], tail: "a", handed: marker),
+        PositionCase(testDescription: "a follower with nothing kept is handed nothing",
+                     mountsAtTail: false, events: [], tail: "a", handed: nil),
+        PositionCase(testDescription: "a transcript that mounts at its tail hands a follower nothing",
+                     mountsAtTail: true, events: [.swiftUI(marker, tail: "a")], tail: "a", handed: nil),
+        PositionCase(testDescription: "a transcript that mounts at its tail hands a detached reader the turn kept",
+                     mountsAtTail: true, events: [.detach, .swiftUI("reply", tail: "a")], tail: "b", handed: "reply"),
+    ]
+
+    @Test(arguments: positions)
+    func position(_ c: PositionCase) {
+        let place = Self.played(c.events, mountsAtTail: c.mountsAtTail)
+        #expect(place.position(tail: c.tail) == c.handed)
     }
 
     @Test("what the transcript draws of the follower: following, and output it has not seen")
