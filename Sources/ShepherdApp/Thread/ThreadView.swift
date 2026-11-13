@@ -968,10 +968,11 @@ final class ThreadRestore {
 
     /// What the thread draws in this update; nil for all of it. `hiddenKept` is what the hidden view draws
     /// (`NativeThreadStore.transcriptDrawn`, read only while hidden, so that the thread on screen is not drawn again by the store
-    /// clearing it), and `rows` all the rows once the thread is shown. `owed` is the estimated bytes of the rows between the last
-    /// `hiddenKept` and the eager tail (`NativeThreadStore.restoreCost`), read once as it comes back: a thread that owes no more than
-    /// a step (`AppLayout.restoreStepBytes`) draws them all in its first frame, as it would after any release, because there is nothing
-    /// to spread, and a last screen that is all it drew might not fill its window (`ThreadTailAnchor`).
+    /// clearing it), and `rows` all the rows once the thread is shown. `owed` is what building the rows between the last `hiddenKept`
+    /// and the eager tail costs, beyond their chrome (`NativeThreadStore.restoreCost`), read once as it comes back: a thread that owes
+    /// no more than a step (`AppLayout.restoreStepBytes`) draws them all in its first frame, as it would after any release, because
+    /// there is nothing to spread (a dozen rows of one line owe nothing), and a last screen that is all it drew might not fill its
+    /// window (`ThreadTailAnchor`).
     func plan<Rows: BidirectionalCollection>(active: Bool, hiddenKept: Int?, rows: Rows, eagerRows: Int, owed: (Int) -> Int) -> Plan?
     where Rows.Element == NativeThreadRow, Rows.Index == Int {
         _ = steps

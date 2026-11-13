@@ -1670,13 +1670,14 @@ public final class NativeThreadStore {
         return more
     }
 
-    /// The estimated bytes (`mountedCost`) of the rows between the last `drawn` and the last `upTo` rows: what a restore that has
-    /// drawn `drawn` rows still owes the eager tail of `upTo`. Read once as a thread comes back, from the view that decides whether it
-    /// restores at all (`ThreadRestore`).
+    /// What building the rows between the last `drawn` and the last `upTo` rows costs, in the bytes of `mountedCost` beyond each row's
+    /// chrome (`NativeMountedCost.rowBase`, which is memory but a few views): what a restore that has drawn `drawn` rows still owes the
+    /// eager tail of `upTo`. A thread of rows of one line owes nothing, however many. Read once as a thread comes back, from the view
+    /// that decides whether it restores at all (`ThreadRestore`).
     public func restoreCost(drawn: Int, upTo: Int) -> Int {
         let count = min(rows.count, rowCosts.count)
         guard drawn < min(upTo, count) else { return 0 }
-        return (drawn..<min(upTo, count)).reduce(0) { $0 + rowCosts[count - 1 - $1] }
+        return (drawn..<min(upTo, count)).reduce(0) { $0 + max(0, rowCosts[count - 1 - $1] - NativeMountedCost.rowBase) }
     }
 
     /// An estimate of what the views of this thread hold while it is mounted, in bytes (`NativeMountedCost`): the last

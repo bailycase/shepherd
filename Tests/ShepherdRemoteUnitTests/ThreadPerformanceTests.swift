@@ -482,17 +482,30 @@ struct ThreadPerformanceTests {
         #expect(store.restoreStep(drawn: count + 5, bytes: .max) == 0)
     }
 
-    /// What a restore owes is the cost of the rows between the ones drawn and the eager tail, counted from the end.
+    /// What a restore owes is what the rows between the ones drawn and the eager tail cost beyond their chrome, counted from the end: a
+    /// row's chrome costs memory (`NativeMountedCost.rowBase`) but a few views, so a thread of one-line rows owes nothing.
     @Test func aRestoreOwesTheRowsBetweenTheOnesDrawnAndTheEagerTail() async {
         let history = (0..<10).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant(NativeMountedCostTests.bigReply(cycles: 2), id: "a\($0)")] }
         let store = manualStore()
         let loop = await start(store, FakeHost(F.snapshot(messages: history)))
         defer { loop.cancel(); store.stop() }
-        let costs = store.rows.map { NativeMountedCost.row($0) }
+        let costs = store.rows.map { max(0, NativeMountedCost.row($0) - NativeMountedCost.rowBase) }
         let count = costs.count
+        #expect(costs.allSatisfy { $0 > 0 })
         #expect(store.restoreCost(drawn: 2, upTo: 5) == costs[(count - 5)..<(count - 2)].reduce(0, +), "the three rows before the last two")
         #expect(store.restoreCost(drawn: 0, upTo: count) == costs.reduce(0, +) && store.restoreCost(drawn: 2, upTo: count + 9) == costs.dropLast(2).reduce(0, +), "to the first row at most")
         #expect(store.restoreCost(drawn: 5, upTo: 5) == 0 && store.restoreCost(drawn: 6, upTo: 5) == 0 && store.restoreCost(drawn: count, upTo: count + 1) == 0, "none when nothing is between")
+    }
+
+    /// Rows of one short line cost their chrome and a few bytes of text: a restore owes next to nothing for any number of them.
+    @Test func aRestoreOwesNothingForRowsOfOneLine() async {
+        let history = (0..<15).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant("Done.", id: "a\($0)")] }
+        let store = manualStore()
+        let loop = await start(store, FakeHost(F.snapshot(messages: history)))
+        defer { loop.cancel(); store.stop() }
+        let chrome = store.restoreStep(drawn: 0, bytes: .max) * NativeMountedCost.rowBase
+        #expect(chrome > 16 << 20, "their chrome alone adds up to more than a step: \(chrome)")
+        #expect(store.restoreCost(drawn: 4, upTo: 30) < 1 << 20, "and the rows cost next to nothing to build: \(store.restoreCost(drawn: 4, upTo: 30))")
     }
 
     @Test func childProgressInvalidatesItsOwningSuffixRatherThanAllHistory() async {
