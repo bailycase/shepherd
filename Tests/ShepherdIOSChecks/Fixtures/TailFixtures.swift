@@ -627,13 +627,14 @@ extension TailFixture {
         let worst = await dragUp(scroll, from: start, steps: 6)
         pan.state = .ended
         let dragged = await FollowFixture.transcriptRendersAtRest()
+        let walks = "\(SHRenderProbe.count("thread.tailMountJump")) mount jumps, \(SHRenderProbe.count("thread.tailRepair")) repairs"
         SHRenderProbe.stop()
         let moved = start - scroll.contentOffset.y
         let detached = !app.navigator.composerPresentation.state(for: ref).scrollFollower.sticky
         let ink = FollowFixture.transcriptInk()
         FixtureCheck.report("FIXTURE CHECK ok: the drag moved the view \(Int(moved.rounded()))pt of 300, \(Int(worst.rounded()))pt at worst mid-drag, "
             + "\(detached ? "detached" : "still following"), \(Int((ink * 100).rounded()))% ink; the transcript rendered \(touchDown) times at touch-down "
-            + "and \(dragged) over the whole drag")
+            + "and \(dragged) over the whole drag; \(walks)")
         let held = abs(moved - 300) <= restoreTolerance && worst <= restoreTolerance && detached && ink >= inkFloor
         FixtureCheck.report("FIXTURE CHECK \(held ? "ok" : "FAILED"): a drag up inside the reply moves the view by the drag and detaches the reader")
         guard ComposerPresentation.nativeTail else { return }
