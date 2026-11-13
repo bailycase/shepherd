@@ -17,17 +17,22 @@ extension FixtureCatalog {
             // Ten flings up through the thread and back to the end of the long thread: its last line above the composer, rows drawn.
             FixtureScreen(name: "thread-flings-rows", hosts: TailFixture.hosts(), routes: [.thread(thread)], prepare: TailFixture.flings),
             // The long thread mounted again (the phone pops it and pushes it back; the iPad opens other threads until it is no longer
-            // retained): its first frame with a row is at the tail and drawn, after at most one landing, and it rests on its tail.
-            // The blank frames before that row are reported. A re-open the tail guard repaired (every one on an iPad in landscape on
-            // iOS 27.0) is judged only on ink and rest, so a pass there says nothing of where the transcript mounts; and where it
-            // does not mount at its tail by design (iOS 27.1, `ComposerPresentation.nativeTail`) the distance and landings are reported.
-            FixtureScreen(name: "thread-remount-tail", hosts: TailFixture.remountHosts(), routes: [.thread(thread)], prepare: TailFixture.remountTail),
+            // retained): a built row shows from its first frame, at the tail and drawn, with no repair by the tail guard and at most one
+            // landing, and it rests on its tail. The frames before that row, the time to it and the memory the mount takes are reported.
+            // Where it does not mount at its tail by design (iOS 27.1, `ComposerPresentation.nativeTail`) the distance and landings are
+            // reported, not judged.
+            FixtureScreen(name: "thread-remount-tail", hosts: TailFixture.remountHosts(), routes: [.thread(thread)],
+                          prepare: { app in await TailFixture.remountTail(app) }),
             // A 300 pt drag up from the tail of the 24 KB reply moves the view by the drag and no more (nothing sends it to the reply's
             // top), and the transcript renders no time at touch-down and at most four times over the whole drag (where
             // `ComposerPresentation.nativeTail`: on iOS 27.1 it draws from every change of the follower, and these are reported).
             FixtureScreen(name: "thread-detach-in-reply", hosts: TailFixture.hosts(), routes: [.thread(thread)], prepare: TailFixture.detachInReply),
             // A reader who dragged up inside the reply, and one who scrolled up past it, come back to the row they left at the top.
             FixtureScreen(name: "thread-detached-remount", hosts: TailFixture.remountHosts(), routes: [.thread(thread)], prepare: TailFixture.detachedRemount),
+            // The same re-open over the long thread with a short line from the person after the 24 KB reply: the reply is the last row
+            // but one, and most of the view (the base drew nothing for 18 frames).
+            FixtureScreen(name: "thread-remount-follow-up", hosts: TailFixture.followUpHosts(), routes: [.thread(thread)],
+                          prepare: { app in await TailFixture.remountTail(app, rows: 151) }),
             // A reader detached inside the reply with no turn kept (SwiftUI left the position binding nil) comes back to the tail and follows it.
             FixtureScreen(name: "thread-unplaced-remount", hosts: TailFixture.remountHosts(), routes: [.thread(thread)], prepare: TailFixture.unplacedRemount),
         ]
@@ -63,6 +68,10 @@ enum TailFixture {
 
     /// 150 short turns, then a question and a reply that runs 24 KB.
     static func thread() -> NativeThreadSnapshot {
+        FixtureData.snapshot(messages())
+    }
+
+    static func messages() -> [NativeThreadMessage] {
         typealias F = FixtureData
         var messages: [NativeThreadMessage] = []
         for turn in 0..<150 {
@@ -72,7 +81,7 @@ enum TailFixture {
         }
         messages.append(F.user("lu", "Write up the whole outbox design, section by section.", at: 3_100_000))
         messages.append(F.assistant("la", longReply(cycles: 24), at: 3_110_000))
-        return F.snapshot(messages)
+        return messages
     }
 
     /// About 1 KB of prose, a list and a code block per cycle.
@@ -166,9 +175,9 @@ enum TailFixture {
     }
 
     /// Waits for the long thread to be on screen with its rows built.
-    @MainActor static func ready(_ app: MobileApp) async {
+    @MainActor static func ready(_ app: MobileApp, rows: Int = 150) async {
         let store = app.threads.store(for: FixtureData.ref(FixtureData.preview))
-        await FixtureWindows.wait("the long thread", seconds: 20) { store.rows.count > 150 && FollowFixture.threadScrollView() != nil }
+        await FixtureWindows.wait("the long thread", seconds: 20) { store.rows.count > rows && FollowFixture.threadScrollView() != nil }
         try? await Task.sleep(for: .seconds(1.5))
     }
 
@@ -384,6 +393,10 @@ extension TailFixture {
     static let remountCycles = 3
     /// Landings with the content or the width moving that one re-open may make.
     static let remountLandings = 1
+    /// How many display frames a re-opened transcript may show with its scroll view in place and no row in view (the base mounted an
+    /// iPad in landscape on iOS 27.0 at 18 to 27 of them, every time, until the tail guard walked back to the rows; it now shows none,
+    /// and a frame is all the transition's first layout could still cost).
+    static let remountBlankFrames = 1
     /// How far from the tail the first frame with a row may be: the follower's own tolerance.
     static let firstFrameReach = NativeScrollFollower.threshold
     /// The row's top may sit this far from the top edge once a detached reader's row is restored.
@@ -398,6 +411,23 @@ extension TailFixture {
         var hosts = hosts()
         for agent in [FixtureData.extensions, FixtureData.dock, FixtureData.deletion] { hosts[0].threads[agent] = FixtureData.thread() }
         return hosts
+    }
+
+    /// `remountHosts` over the long thread and a short line from the person after its reply.
+    static func followUpHosts() -> [FixtureHostData] {
+        var hosts = remountHosts()
+        hosts[0].threads[FixtureData.preview] = FixtureData.snapshot(messages() + [FixtureData.user("fu", "Thanks, that is what I needed.", at: 3_200_000)])
+        return hosts
+    }
+
+    /// The app's physical footprint now, in megabytes (what the system charges it).
+    static func footprintMB() -> Double {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+        }
+        return result == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : 0
     }
 
     /// Threads to open so the long one is no longer retained: `PadDetailRoot` keeps the last three it showed.
@@ -478,31 +508,50 @@ extension TailFixture {
         return best.map { ($0.minY - visible.minY, $0.height) }
     }
 
+    /// Every built row the scroll view holds, in its content's coordinates, in view or not (`builtRows` counts those in view).
+    @MainActor fileprivate static func placedRows(in scroll: UIScrollView) -> [CGRect] {
+        let limit = scroll.contentSize.height * 0.9
+        var frames: [CGRect] = []
+        func walk(_ view: UIView) {
+            if type(of: view) == UIView.self, !view.isUserInteractionEnabled, view.accessibilityElementsHidden, !view.isAccessibilityElement,
+               view.subviews.isEmpty, view.bounds.height > 0, view.bounds.height < limit, view.bounds.width > scroll.bounds.width * 0.3 {
+                frames.append(view.convert(view.bounds, to: scroll))
+            }
+            view.subviews.forEach(walk)
+        }
+        walk(scroll)
+        return frames.sorted { $0.minY < $1.minY }
+    }
+
     @MainActor fileprivate static func tailDistance(of scroll: UIScrollView) -> CGFloat {
         scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.contentOffset.y - scroll.bounds.height
     }
 
     /// "thread-remount-tail": the long thread leaves and comes back `remountCycles` times. Display frame by display frame from the
-    /// open, the first frame with a built row in view is within the follower's tolerance of the tail and drawn (on iOS 27.1 it was
-    /// the reply's top, about 16,000 pt up), after at most `remountLandings` landing, and the thread comes to rest on its tail.
+    /// open, the scroll view has a built row in view from its first frame (at most `remountBlankFrames` without one), no repair by
+    /// the tail guard is needed, that row is within the follower's tolerance of the tail and drawn (on iOS 27.1 it was the reply's
+    /// top, about 16,000 pt up), after at most `remountLandings` landing, and the thread comes to rest on its tail. What mounting
+    /// costs is reported with it: the time to the first row and the footprint, against the one the thread gave back on leaving.
     ///
-    /// The blank frames before that row are reported, not judged, and so are where the row sits and the landings when the tail guard
-    /// had to repair the view: the rows it walks back to are placed wherever the walk is. A repaired open is judged only on ink and
-    /// rest, so that it passes proves nothing about the mount. On iOS 27.0 an iPad in landscape mounts the stack at the end of its
-    /// estimated height (about 250,000 pt for this thread) where no row is placed, and draws nothing for 23 to 27 frames until the
-    /// guard repairs it, every time; the turn kept from before the leave is not the cause (clearing it first changes nothing), and
-    /// the eager tail that lays the last turns out for real is what removes the wait. Where the transcript does not mount at its tail
-    /// (`ComposerPresentation.nativeTail` is false, iOS 27.1) the distance and landings are reported too, until a Duo has measured it.
-    @MainActor static func remountTail(_ app: MobileApp) async {
+    /// The base mounted the lazy stack at the end of its estimated height (about 250,000 pt for this thread) while the nine rows it
+    /// had built at the end of the thread stood at about 28,000 pt, so no row was in view for 18 to 27 frames, until the guard walked
+    /// back to them (`ThreadTailGuard`). Where the transcript does not mount at its tail (`ComposerPresentation.nativeTail` is false,
+    /// iOS 27.1) the distance and landings are reported, not judged, until a Duo has measured it. Set `TAIL_TRACE` in the launch
+    /// environment to have every frame of a mount described.
+    @MainActor static func remountTail(_ app: MobileApp, rows: Int = 150) async {
         let ref = FixtureData.ref(FixtureData.preview)
-        await ready(app)
+        await ready(app, rows: rows)
         MainQueueWatchdog.start(limit: 5)
         let pad = app.navigator.layout == .pad
         var measured: [String] = []
         var verdicts: [(ok: Bool, line: String)] = []
         var onlyInkAndRest = 0
+        let gap = shownThreadScroll().map(gutter(of:)) ?? 0
         for cycle in 1...remountCycles {
             await leave(app)
+            // What the thread gave back when it left is read after a pause, for the views to be freed.
+            try? await Task.sleep(for: .milliseconds(700))
+            let away = footprintMB()
             SHRenderProbe.start()
             let frames = MountFrames()
             frames.start()
@@ -510,6 +559,7 @@ extension TailFixture {
             await FixtureWindows.wait("a built row after the re-open", seconds: 15) { frames.firstRow != nil }
             await settle()
             let counts = SHRenderProbe.stop()
+            let mounted = footprintMB()
             let result = frames.stop()
             let landings = counts["thread.tailLanding", default: 0] + counts["thread.tailLandingResized", default: 0]
             let rest = shown()
@@ -517,14 +567,17 @@ extension TailFixture {
             let reach = first?.distance
             let percent = Int(((first?.ink ?? 0) * 100).rounded())
             if result.blank > 0 { measured.append("  cycle \(cycle) blank frames (content height:offset): \(result.blankTrace.prefix(6) + result.blankTrace.suffix(2))") }
+            result.placementTrace.forEach { measured.append("  cycle \(cycle) \($0)") }
             measured.append("cycle \(cycle) (\(pad ? "pad" : "phone")): first row at frame \(first?.frame ?? -1) (\(Int((first?.milliseconds ?? -1).rounded())) ms), "
                 + "\(result.blank) blank frames, \(reach.map { Int($0.rounded()) } ?? -1)pt from the tail, \(percent)% ink, \(landings) landings, "
                 + "\(counts["thread.tailRepair", default: 0]) repairs, \(counts["thread.transcript", default: 0]) renders, \(result.away) frames away from the tail after it (worst \(result.farthest)pt); "
-                + "at rest \(rest.distance)pt from the tail, \(Int((rest.ink * 100).rounded()))% ink")
-            let repaired = counts["thread.tailRepair", default: 0] > 0
-            if repaired || !ComposerPresentation.nativeTail { onlyInkAndRest += 1 } else {
-                verdicts.append((reach.map { $0 <= firstFrameReach && $0 >= -NativeScrollFollower.repinSlack } ?? false,
-                                 "cycle \(cycle): the first frame with a row is within \(Int(firstFrameReach))pt of the tail"))
+                + "at rest \(rest.distance)pt from the tail, \(Int((rest.ink * 100).rounded()))% ink; "
+                + "footprint \(Int(away.rounded())) MB away, \(Int(mounted.rounded())) MB mounted (+\(Int((mounted - away).rounded())))")
+            if !ComposerPresentation.nativeTail { onlyInkAndRest += 1 } else {
+                verdicts.append((result.blank <= remountBlankFrames, "cycle \(cycle): at most \(remountBlankFrames) frames with no row in view, not \(result.blank)"))
+                verdicts.append((counts["thread.tailRepair", default: 0] == 0, "cycle \(cycle): the tail guard had nothing to repair"))
+                verdicts.append((reach.map { $0 <= firstFrameReach + gap && $0 >= -NativeScrollFollower.repinSlack } ?? false,
+                                 "cycle \(cycle): the first frame with a row is within \(Int(firstFrameReach))pt of where a landing leaves the view"))
                 verdicts.append((landings <= remountLandings, "cycle \(cycle): at most \(remountLandings) landing"))
             }
             verdicts.append(((first?.ink ?? 0) >= inkFloor, "cycle \(cycle): the first frame with a row draws"))
@@ -707,11 +760,13 @@ extension TailFixture {
         /// Frames with the scroll view in place and no built row in view, before the first row.
         var blank = 0
         var firstRow: FirstRow?
-        /// Frames after the first row more than the follower's tolerance from the tail, and the farthest of them.
+        /// Frames after the first row more than a landing's slack short of where a landing leaves the view, and the farthest of them.
         var away = 0
         var farthest = 0
         /// The scroll view's content height, offset and built rows in view on the frames before the first row, as far as the first 40.
         var blankTrace: [String] = []
+        /// With `TAIL_TRACE` set: the same frames in full (see `placement`), and the first frames after the first row.
+        var placementTrace: [String] = []
     }
 
     private(set) var firstRow: FirstRow?
@@ -744,6 +799,7 @@ extension TailFixture {
         guard let scroll else { return }
         let rows = TailFixture.builtRows(in: scroll)
         let distance = TailFixture.tailDistance(of: scroll)
+        if Self.traces, result.placementTrace.count < 70 { result.placementTrace.append(placement(of: scroll, inView: rows, at: result.frames)) }
         if firstRow == nil {
             guard rows > 0 else {
                 result.blank += 1
@@ -752,10 +808,24 @@ extension TailFixture {
             }
             firstRow = FirstRow(frame: result.frames, milliseconds: (CACurrentMediaTime() - started) * 1000, distance: distance,
                                 ink: FollowFixture.transcriptInk())
-        } else if distance > NativeScrollFollower.threshold {
+        } else if distance > NativeScrollFollower.repinSlack + TailFixture.gutter(of: scroll) {
             result.away += 1
             result.farthest = max(result.farthest, Int(distance.rounded()))
         }
+    }
+
+    /// Set `TAIL_TRACE` in the launch environment to have every frame of a mount described.
+    private static let traces = ProcessInfo.processInfo.environment["TAIL_TRACE"] != nil
+
+    /// One frame: the content height and offset, the built rows in view, then how many rows are built and where the first and
+    /// last of them sit in the content, against the viewport, with the repairs the guard has begun so far.
+    private func placement(of scroll: UIScrollView, inView: Int, at frame: Int) -> String {
+        let placed = TailFixture.placedRows(in: scroll)
+        let span = placed.isEmpty ? "none" : "\(Int(placed[0].minY))..\(Int(placed[placed.count - 1].maxY))"
+        let tall = placed.max { $0.height < $1.height }.map { "tallest \(Int($0.height)) at \(Int($0.minY))" } ?? ""
+        return "f\(frame) h\(Int(scroll.contentSize.height)) y\(Int(scroll.contentOffset.y)) view \(Int(scroll.bounds.height)) "
+            + "inview \(inView) built \(placed.count) \(span) \(tall) repairs \(SHRenderProbe.count("thread.tailRepair")) "
+            + "landings \(SHRenderProbe.count("thread.tailLanding") + SHRenderProbe.count("thread.tailLandingResized"))"
     }
 
     private final class Ticker: NSObject {
