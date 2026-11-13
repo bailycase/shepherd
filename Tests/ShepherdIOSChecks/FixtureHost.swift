@@ -82,6 +82,12 @@ final class FixtureHost: @unchecked Sendable {
         for fd in lock.withLock({ connections }) { _ = write(fd, encoded) }
     }
 
+    /// Tells every connected client that a thread changed, as a pushing host does after each step of a live turn.
+    func pushThreadChanged(_ agent: AgentID) {
+        guard let encoded = try? NDJSON.encode(RemoteReply.nativeThreadChanged(agentID: agent)) else { return }
+        for fd in lock.withLock({ connections }) { _ = write(fd, encoded) }
+    }
+
     private func serve(_ fd: Int32) {
         lock.withLock { _ = connections.insert(fd) }
         defer {
