@@ -17,11 +17,12 @@ import ShepherdUI
 ///
 /// Row views: a hidden layout stays mounted and its thread keeps the views of its last rows, which are most of what the
 /// app holds (`NativeThreadStore.mountedCost` estimates them). Past `mountedBudget` bytes of them in all, the least
-/// recently shown hidden threads let their rows go (`NativeThreadStore.releaseTranscript`), one thread a pass, unpinned
-/// ones first, then readers left scrolled up beyond the `keepPinned` most recently shown. The newest hidden thread, the
-/// ones on screen and the selected one are never taken. Only the thread view's rows go: the host, the page, the history, the
-/// caches and the draft stay, so showing a thread draws its rows from them in the update that shows it, never blank. A
-/// reader taken this way comes back at the tail of its thread, not at its place (`ThreadView`).
+/// recently shown hidden threads let their rows go (`NativeThreadStore.releaseTranscript`), one thread a pass and `releaseStep`
+/// bytes of its rows at a time, unpinned ones first, then readers left scrolled up beyond the `keepPinned` most recently
+/// shown. The newest hidden thread, the ones on screen and the selected one are never taken. Only the thread view's rows go:
+/// the host, the page, the history, the caches and the draft stay, so showing a thread draws its rows from them in the
+/// update that shows it, never blank. A reader taken this way comes back at the tail of its thread, not at its place
+/// (`ThreadView`).
 @MainActor
 final class NativeThreadStores<Key: Hashable> {
     private var stores: [Key: NativeThreadStore] = [:]
@@ -53,6 +54,10 @@ final class NativeThreadStores<Key: Hashable> {
     /// How long after the last show the first pass runs, and between the passes that follow while the budget is over.
     var releaseDelay: Duration = .seconds(2)
     var releaseSpacing: Duration = .milliseconds(250)
+    /// The estimated bytes of one thread's rows a pass lets go of, at most (a row larger than it goes whole, as a pass lets go
+    /// of at least one): a thread's views take a few hundred milliseconds to tear down in one update, with a code-heavy
+    /// thread's rows tens of milliseconds each, so no pass takes much of the main thread.
+    var releaseStep = 32 << 20
     /// Waits out a pass's delay (a test replaces it, and the timer with it).
     var pause: @MainActor @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
     private var mountedPass: Task<Void, Never>?
@@ -225,11 +230,11 @@ final class NativeThreadStores<Key: Hashable> {
     }
 
     /// Lets the rows of the hidden threads go while their estimated views (`mountedCost`) add up to more than the budget:
-    /// at most `limit` threads, then the next pass `releaseSpacing` later while it is still over, so that no one
-    /// pass tears down much. Threads on screen, selected, released already or holding nothing are not asked. Costs are read
-    /// here, in a pass, never in a view body. Returns what it took.
+    /// `step` bytes of at most `limit` threads (`releaseStep` unless given), then the next pass `releaseSpacing` later while it is
+    /// still over, so that no one pass tears down much. Threads on screen, selected, released already or holding nothing are
+    /// not asked. Costs are read here, in a pass, never in a view body. Returns the threads it took from and the bytes it took.
     @discardableResult
-    func enforceMountedBudget(budget: Int? = nil, keep: Int = 1, keepPinned: Int? = nil, limit: Int = 1) -> (threads: Int, bytes: Int) {
+    func enforceMountedBudget(budget: Int? = nil, keep: Int = 1, keepPinned: Int? = nil, limit: Int = 1, step: Int? = nil) -> (threads: Int, bytes: Int) {
         guard let mounted = mounted?() else { return (0, 0) }
         recent.removeAll { stores[$0] == nil }
         let onScreen = (protected?() ?? []).union(live)
@@ -243,16 +248,20 @@ final class NativeThreadStores<Key: Hashable> {
             costs[key] = cost
             return MountedEntry(key: key, cost: cost, pinned: pins?.isPinned(store) == true)
         }
-        let releases = Self.viewReleases(entries, keep: keep, keepPinned: keepPinned ?? self.keepPinned, budget: budget ?? mountedBudget)
-        var bytes = 0
+        let budget = budget ?? mountedBudget
+        let releases = Self.viewReleases(entries, keep: keep, keepPinned: keepPinned ?? self.keepPinned, budget: budget)
+        var freed = 0, more = releases.count > limit
         for key in releases.prefix(limit) {
-            stores[key]?.releaseTranscript()
-            bytes += costs[key] ?? 0
+            guard let store = stores[key] else { continue }
+            store.releaseTranscript(bytes: step ?? releaseStep, eagerRows: eagerRows)
+            let left = store.mountedCost(eagerRows: eagerRows)
+            freed += (costs[key] ?? 0) - left
+            if left > 0 { more = true }
             SHRenderProbe.tick("thread.rowsReleased")
             AppSignposts.thread.emitEvent("thread rows released")
         }
-        if releases.count > limit { scheduleMountedPass(after: releaseSpacing) }
-        return (min(limit, releases.count), bytes)
+        if more, entries.reduce(0, { $0 + $1.cost }) - freed > budget { scheduleMountedPass(after: releaseSpacing) }
+        return (min(limit, releases.count), freed)
     }
 
     /// The next pass, `delay` from now in place of any waiting.

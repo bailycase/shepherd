@@ -126,10 +126,12 @@ struct ThreadView: View {
         // read by its own row view, so a streamed chunk redraws that row and not this body.
         let rows: [NativeThreadRow] = origins.runtime.isEmpty ? store.listRows : store.listRows.filter { !($0.isUser && origins.hides($0.turn)) }
         // A hidden thread whose rows were let go to keep what the hidden views hold within a budget (`NativeThreadStores`) draws
-        // none; only the two lists of rows below read this. The thread on screen never reads the flag, so it is never redrawn
-        // by it, and shown again draws its rows, kept in the store, in the update that shows it.
-        let dormant = !active && store.transcriptReleased
-        let drawn: [NativeThreadRow] = dormant ? [] : rows
+        // only the last ones it still has, in steps down to none; only the two lists of rows below read this. The thread on
+        // screen never reads it, so it is never redrawn by it, and shown again draws its rows, kept in the store, in the update
+        // that shows it.
+        let kept = active ? nil : store.transcriptDrawn
+        let dormant = kept != nil
+        let drawn = rows.suffix(kept ?? rows.count)
         // A Project's accepted messages the transcript has not taken in: waiting ones go to the composer's Up next, outcomes stay here.
         let held = projectSend?.held() ?? []
         // A row's background needs only the boundary ID, not a captured copy of the transcript.

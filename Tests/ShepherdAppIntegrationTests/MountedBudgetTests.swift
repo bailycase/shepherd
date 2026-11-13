@@ -134,18 +134,19 @@ struct MountedBudgetTests {
             }
         }
 
-        /// Takes the rows of every hidden thread but the ones kept, in one call.
+        /// Takes the rows of every hidden thread but the ones kept, all of them and in one call.
         @discardableResult
         func releaseHidden(keep: Int = 0, keepPinned: Int = 0) -> (threads: Int, bytes: Int) {
-            stores.enforceMountedBudget(budget: 0, keep: keep, keepPinned: keepPinned, limit: .max)
+            stores.enforceMountedBudget(budget: 0, keep: keep, keepPinned: keepPinned, limit: .max, step: .max)
         }
     }
 
     // MARK: The budget
 
     /// Eight threads of five long replies, a budget of three and a half threads' rows: once every one has been
-    /// shown and the first is on screen again, the four shown longest ago have let their rows go, the three shown
-    /// last keep theirs, and the layouts of the released ones hold no code field.
+    /// shown and the first is on screen again, the hidden threads shown longest ago have let their rows go, a few rows a
+    /// pass, and no further than the budget: three whole threads and part of the fourth, the three shown last keep
+    /// theirs, and the layouts of the released ones hold no more code fields than that.
     @Test func hiddenThreadsKeepNoMoreRowsThanTheBudget() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -157,26 +158,29 @@ struct MountedBudgetTests {
         let one = work.store(0).mountedCost(eagerRows: stores.eagerRows)
         let perThread = try work.fields(0)
         #expect(one > 0 && perThread > 0, "a thread holds rows that cost something: \(one) bytes, \(perThread) fields")
+        stores.releaseStep = one / 4
         stores.mountedBudget = one * 7 / 2
 
         for index in 1..<8 { try await work.show(index) }
         try await work.show(0)
 
-        let released = 1...4, kept = 5...7
-        try await eventuallyOnMain("the four oldest hidden threads to let their rows go and the others to keep theirs", timeout: .seconds(60)) {
+        let whole = 1...3, last = 4, kept = 5...7
+        func hidden() -> Int { (1..<8).reduce(0) { $0 + work.store($1).mountedCost(eagerRows: stores.eagerRows) } }
+        try await eventuallyOnMain("the oldest hidden threads to let their rows go, down to the budget, and the others to keep theirs", timeout: .seconds(60)) {
             ListPerf.settle(work.window)
-            return released.allSatisfy { work.store($0).transcriptReleased } && kept.allSatisfy { !work.store($0).transcriptReleased }
+            return whole.allSatisfy { work.store($0).transcriptDrawn == 0 } && work.store(last).transcriptReleased
+                && kept.allSatisfy { !work.store($0).transcriptReleased } && hidden() <= stores.mountedBudget
         }
         try await eventuallyOnMain("a released layout to hold no code field", timeout: .seconds(60)) {
             ListPerf.settle(work.window)
-            return try released.allSatisfy { try work.fields($0) == 0 }
+            return try whole.allSatisfy { try work.fields($0) == 0 }
         }
+        #expect(work.store(last).transcriptDrawn != 0, "the fourth stopped when the budget was reached, with rows left")
         for index in kept { #expect(try work.fields(index) > 0, "agent \(index) keeps its fences") }
         let total = try (0..<8).reduce(0) { $0 + (try work.fields($1)) }
-        #expect(total <= (1 + kept.count) * perThread * 5 / 4, "\(total) fields in the window, a thread holds \(perThread)")
+        #expect(total <= (1 + kept.count) * perThread * 5 / 4 + perThread, "\(total) fields in the window, a thread holds \(perThread)")
         #expect(!work.store(0).transcriptReleased, "the thread on screen is never released")
-        let hidden = kept.reduce(0) { $0 + work.store($1).mountedCost(eagerRows: stores.eagerRows) }
-        #expect(hidden <= stores.mountedBudget, "what the hidden threads keep is within the budget: \(hidden) of \(stores.mountedBudget)")
+        #expect(hidden() <= stores.mountedBudget, "what the hidden threads keep is within the budget: \(hidden()) of \(stores.mountedBudget)")
     }
 
     // MARK: Switching stays a flip
@@ -218,6 +222,41 @@ struct MountedBudgetTests {
             #expect(deck.pages[tab]?.host === hosts[index] && deck.pages[tab]?.page === pages[index], "still the same objects for agent \(index)")
         }
         #expect(SHRenderProbe.count("deck.unmount") == 0 && SHRenderProbe.count("deck.mount") == 0, "no layout was removed or mounted")
+    }
+
+    /// Shown again halfway through its release, a thread draws every row it had, from what the store kept.
+    @Test func aThreadLeftHalfwayReleasedDrawsEverythingWhenShown() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let work = try await Workspace.open(2, replies: 4, cycles: 15, in: app)
+        defer { work.window.close() }
+        for index in [1, 0] { try await work.show(index) }
+        let store = work.store(1)
+        let fences = try work.fields(1)
+        let step = store.mountedCost(eagerRows: work.stores.eagerRows) / 4
+        #expect(fences > 0 && step > 0)
+
+        for _ in 0..<2 { #expect(work.stores.enforceMountedBudget(budget: 0, keep: 0, step: step).threads == 1) }
+        try await eventuallyOnMain("agent 1's layout to hold fewer code fields, and some") {
+            ListPerf.settle(work.window)
+            let now = try work.fields(1)
+            return now > 0 && now < fences
+        }
+        #expect(store.transcriptReleased && store.transcriptDrawn != 0)
+
+        SHRenderProbe.start()
+        defer { SHRenderProbe.stop() }
+        work.vm.selectAgent(work.agents[1].agent.id)
+        var passes = 0
+        while try work.host(1)?.isHidden != false, passes < 50 {
+            ListPerf.settle(work.window)
+            passes += 1
+        }
+        #expect(SHRenderProbe.count("deck.flipLayout") == 1, "a thread that let some rows go is laid out as it is shown too")
+        let drawn = try work.fields(1)
+        #expect(drawn == fences, "every fence is drawn in the first frame the layout is shown: \(drawn) of \(fences)")
+        try await eventuallyOnMain("the thread to run again") { ListPerf.settle(work.window); return !store.transcriptReleased }
+        #expect(SHRenderProbe.count("deck.mount") == 0 && SHRenderProbe.count("deck.unmount") == 0)
     }
 
     /// A release changes what the thread's rows draw and nothing else: the scroll view stays, no entrance plays when the
@@ -300,7 +339,7 @@ struct MountedBudgetTests {
         defer { work.window.close() }
         for index in [1, 2, 0] { try await work.show(index) }
         // The newest hidden thread (2) is never taken: only the older one (1) is.
-        #expect(work.stores.enforceMountedBudget(budget: 0, keep: 1, keepPinned: 0, limit: .max).threads == 1)
+        #expect(work.stores.enforceMountedBudget(budget: 0, keep: 1, keepPinned: 0, limit: .max, step: .max).threads == 1)
         #expect(work.store(1).transcriptReleased && !work.store(2).transcriptReleased)
 
         SHRenderProbe.start()
@@ -402,7 +441,7 @@ struct MountedBudgetTests {
         defer { SHRenderProbe.stop() }
 
         let stores = rig.vm.remoteThreadStores
-        #expect(stores.enforceMountedBudget(budget: 0, keep: 0, keepPinned: 0, limit: .max).threads == 2, "the two hidden pages")
+        #expect(stores.enforceMountedBudget(budget: 0, keep: 0, keepPinned: 0, limit: .max, step: .max).threads == 2, "the two hidden pages")
         try await eventuallyOnMain("the hidden pages to hold no code field") {
             ListPerf.settle(rig.window)
             return try fields(0) == 0 && fields(1) == 0
