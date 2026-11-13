@@ -173,15 +173,17 @@ page draws: its coordinator never mounts here, and a worker only while it is the
 A hidden thread keeps its host, page, history and draft, but its rows are bounded: past
 `NativeThreadStores.mountedBudget` (an eighth of the memory, at most 2 GiB, counted by
 `NativeThreadStore.mountedCost`) the least recently shown hidden threads let their rows go
-(`releaseTranscript`), one thread a pass and about a row of it (`releaseStep`), so no pass tears down
-much on the main thread, and not while the person types or scrolls or the thread on screen streams
-(`NativeThreadStores.busy`): unpinned ones first, then readers left scrolled up beyond the two most
+(`releaseTranscript`), one thread a pass and `releaseStep` bytes of it, and not while the person types
+or scrolls or a thread on screen, local or remote, streams (`NativeThreadStores.busy`, for at most ten
+seconds a pass, so that a long stream cannot hold the budget off for good): unpinned ones first, then readers left scrolled up beyond the two most
 recently shown; the thread shown before the current one, and the one on screen, never. A thread
 keeps its last screen built (`NativeThreadStore.keptRows`: at most four rows within 16 MiB, or a last
 row of up to 64 MiB alone; a larger reply goes with the rest), which still counts against the budget. Showing one draws that last screen in the pass that shows it and
 builds nothing there (the deck lays the host out as it unhides one that let rows go, so no frame
 has the layout without them); the rows above come back after that frame, newest first, a step of
-rows at a time (`ThreadRestore`), and a reader taken this way comes back at its tail. The pass
+rows at a time (`ThreadRestore`, which also waits for keystrokes and for a reader away from the tail,
+and starts again from the last screen if a pass lets its rows go again meanwhile), and a reader taken
+this way comes back at its tail. The pass
 loads, sends and resumes nothing. Each of the local and the remote thread stores has its own budget.
 
 A remote agent's thread (a paired Mac's, or this Mac's own while the app is the background

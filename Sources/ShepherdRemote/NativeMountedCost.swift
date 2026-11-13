@@ -117,7 +117,8 @@ public enum NativeMountedCost {
     /// fit this, the last one alone while it fits `lastRow`.
     public static let lastScreen = 16 * 1024 * 1024
     /// The most a last row alone may cost and still be kept. A reply larger than this (a giant one, 100 KB of fences and tables
-    /// costs 250 MiB) is let go with the rest: kept, a hundred hidden threads would hold what the budget exists to bound.
+    /// costs 250 MiB) is let go with the rest: kept, a hundred hidden threads would hold what the budget exists to bound. Showing
+    /// such a thread again builds that reply in one update (about a second), so raising this trades memory for that stall.
     public static let lastRow = 64 * 1024 * 1024
     /// The most rows of a last screen, whatever they cost.
     public static let lastScreenRows = 4
