@@ -164,6 +164,33 @@ struct ReleasedThreadBottomFirstTests {
             return try work.fields(1) == held
         }
         #expect(clip.bounds.origin.y == rest, "and the reader's place did not move: \(clip.bounds.origin.y) from \(rest)")
+
+        // Back at the tail (scrolled down as a reader does, until the lazy rows it passes have measured), the rest comes back
+        // and the end of the thread holds still.
+        var landed = false
+        for _ in 0..<40 where !landed {
+            input.readerScrolled(upward: false)
+            let bottom = (scroll.documentView?.bounds.height ?? 0) - clip.bounds.height + scroll.contentInsets.bottom
+            clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 0, y: bottom), size: clip.bounds.size)).origin)
+            scroll.reflectScrolledClipView(clip)
+            ListPerf.settle(work.window)
+            landed = try work.distanceFromTail(1).map { abs($0) <= 1 } == true
+        }
+        let above = try work.distanceFromTail(1) ?? .infinity
+        #expect(landed, "the reader is back at the tail: \(above) points above it")
+        var drawn = 0, steady = 0
+        do {
+            try await eventuallyOnMain("the rest to come back once the reader is at the tail", timeout: .seconds(60)) {
+                ListPerf.settle(work.window)
+                let now = try work.fields(1)
+                steady = now == drawn ? steady + 1 : 0
+                drawn = now
+                return drawn >= fences * 9 / 10 && steady >= 8
+            }
+        } catch {
+            Issue.record("\(error): \(drawn) of \(fences) fences, \(try work.distanceFromTail(1) ?? .infinity) points above the tail, released \(store.transcriptReleased)")
+        }
+        #expect(try work.distanceFromTail(1).map { abs($0) <= 1 } == true, "and the end of the thread is where it was")
     }
 
     /// A thread hidden halfway through its restore and let go of again comes back from its last screen, not from the rows it had
