@@ -259,6 +259,8 @@ struct ThreadView: View {
                     }
                     tailGuard.distance = new.distance
                     tailGuard.suspect()
+                    // Every reading that can move the boundary row lands here, so the row itself is not measured per frame.
+                    if historyAnchor.isEngaged { historyAnchor.moved() }
                 }
                 .onScrollPhaseChange { old, phase, context in
                     // Only a live finger/wheel counts. Momentum and programmatic phases are not
@@ -473,9 +475,6 @@ struct ThreadView: View {
         .background {
             if row.id == historyRowID {
                 ThreadHistoryAnchor.Probe(anchor: historyAnchor, rowID: row.id)
-                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: { _ in
-                        historyAnchor.moved()
-                    }
             }
         }
     }
