@@ -12,7 +12,7 @@ final class ComposerPresentation {
     // Keep reader intent and disclosures here with this window's existing scroll/find intent.
 
     /// The reader's place: the follower, which every scroll frame may change, and the turn kept for the next mount. Bookkeeping, so not
-    /// observed. The transcript draws only the four values below that mirror it, which `publish()` writes when they change.
+    /// observed. The transcript draws only the five values below that mirror it, which `publish()` writes when they change.
     @ObservationIgnored private var place = NativeTranscriptPlace(mountsAtTail: ComposerPresentation.nativeTail)
     var scrollFollower: NativeScrollFollower { place.follower }
     /// How many times the follower changed, counted only where not `nativeTail`: there the transcript draws from every change, as it
@@ -29,6 +29,9 @@ final class ComposerPresentation {
     private(set) var visibleTurn: String?
     /// Whether the next mount restores a turn: the initial anchor draws from it, where `nativeTail`.
     private(set) var restoresTurn = false
+    /// The last row the transcript had when the bottom marker was kept: what the position handed to SwiftUI depends on besides
+    /// `visibleTurn` and `follows`, so the transcript draws again when the marker is kept for another tail.
+    private(set) var markerTail: String?
     var openThinking: Set<String> = []
     var editing: NativeQueuedMessage?
     var editText = ""
@@ -61,6 +64,12 @@ final class ComposerPresentation {
         publish()
     }
 
+    /// Another session's turns replace the ones kept (`NativeTranscriptPlace.newSession()`).
+    func newSession() {
+        place.newSession()
+        publish()
+    }
+
     /// SwiftUI's writes through the transcript's position binding. Where `nativeTail` they are not kept while following, and equal
     /// ones notify nothing, so the layout a position change sets off never sees `visibleTurn` change. `tail` is the transcript's last
     /// row, which the bottom marker is kept for.
@@ -70,13 +79,17 @@ final class ComposerPresentation {
     }
 
     /// What the transcript hands SwiftUI as its position: `visibleTurn`, but not the bottom marker once rows have joined after it
-    /// (`NativeTranscriptPlace.position(tail:)`). Reads the two values that mirror what it depends on, so a change of either draws.
+    /// (`NativeTranscriptPlace.position(tail:)`). The guard reads the three values that mirror what the answer depends on, so a
+    /// change of any of them draws.
     func position(tail: String?) -> String? {
-        guard visibleTurn == NativeTranscriptPlace.bottomMarker, follows else { return visibleTurn }
+        guard visibleTurn == NativeTranscriptPlace.bottomMarker, follows, markerTail != tail else { return visibleTurn }
         return place.position(tail: tail)
     }
 
-    /// The landings after new rows joined have settled: the follower keeps the bottom marker again, for the tail as it is
+    /// Whether a follower's bottom marker is withheld for the transcript's last row `tail` (`NativeTranscriptPlace.withholdsMarker`).
+    func withholdsMarker(tail: String?) -> Bool { place.withholdsMarker(tail: tail) }
+
+    /// The landings after new rows joined have settled: a follower whose marker was withheld keeps it again, for the tail as it is
     /// (`NativeTranscriptPlace.hold(tail:)`). Not while a finger is on the thread.
     func hold(tail: String?) {
         guard !place.follower.userScrolling else { return }
@@ -95,6 +108,7 @@ final class ComposerPresentation {
         if unseen != place.unseen { unseen = place.unseen }
         if visibleTurn != place.turn { visibleTurn = place.turn }
         if restoresTurn != place.restoresTurn { restoresTurn = place.restoresTurn }
+        if markerTail != place.markerTail { markerTail = place.markerTail }
     }
 }
 

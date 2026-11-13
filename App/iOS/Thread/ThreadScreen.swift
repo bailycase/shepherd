@@ -346,7 +346,7 @@ struct ThreadTranscript: View {
             .onChange(of: store.sessionKey) { old, _ in
                 tailPin.reset()
                 // Another session has other turns, so the one kept is gone; the first key a new store learns is the same thread's.
-                if old != nil { presentation.noteVisibleTurn(nil) }
+                if old != nil { presentation.newSession() }
                 loadVisibleHistory()
             }
             // A reused view (the design pane's chat has no identity of its own) shows another thread, which mounts as a new transcript does.
@@ -483,6 +483,7 @@ struct ThreadTranscript: View {
         return { resized in
             Self.land(proxy, presentation: presentation, resized: resized)
             let tail = store.rows.last?.id
+            guard presentation.withholdsMarker(tail: tail) else { return }
             hold.landed { if store.rows.last?.id == tail { presentation.hold(tail: tail) } }
         }
     }
