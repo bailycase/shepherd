@@ -188,12 +188,13 @@ extension FleetSnapshotIndexTests {
         try await eventually("A's index to be ready") { try await a.read().index?.repos.first?.ready == true }
         let index = try #require(a.index(repo))
         try Data("export const wip = 1\n".utf8).write(to: repo.appendingPathComponent("src/wip.ts"))
-        try await eventually("the new file to be untracked") { index.queue.sync { index.entries["src/wip.ts"]?.state == .untracked } }
+        // `settle()` asks the system for the events it holds: how long it takes to hand them over is not what is tested.
+        try await eventually("the new file to be untracked") { index.settle(); return index.queue.sync { index.entries["src/wip.ts"]?.state == .untracked } }
         try git(["add", "src/wip.ts"], in: repo)
-        try await eventually("git add to make it tracked") { index.queue.sync { index.entries["src/wip.ts"]?.state == .tracked } }
+        try await eventually("git add to make it tracked") { index.settle(); return index.queue.sync { index.entries["src/wip.ts"]?.state == .tracked } }
         let rescans = index.queue.sync { index.rescans }
         try git(["rm", "-q", "--cached", "src/wip.ts"], in: repo)
-        try await eventually("git rm --cached to untrack it") { index.queue.sync { index.entries["src/wip.ts"]?.state == .untracked } }
+        try await eventually("git rm --cached to untrack it") { index.settle(); return index.queue.sync { index.entries["src/wip.ts"]?.state == .untracked } }
         #expect(index.queue.sync { index.rescans == rescans || index.lostEvents > 0 })
     }
 
@@ -281,6 +282,7 @@ extension FleetSnapshotIndexTests {
         defer { back.stop() }
         try await eventually("the restarted index to hold the change") {
             guard let index = back.index(repo) else { return false }
+            index.settle()
             return index.queue.sync { index.entries["src/arrived-while-down.ts"] != nil && index.entries["scripts/run.sh"] == nil && index.entries["src/app.ts"]?.hash == self.hash("export const app = 'while down'\n") }
         }
         // From the saved index and the journal of events, not a walk of the tree.
