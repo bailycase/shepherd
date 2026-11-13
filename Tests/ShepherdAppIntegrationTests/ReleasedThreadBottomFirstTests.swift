@@ -286,8 +286,15 @@ struct ReleasedThreadBottomFirstTests {
         } catch {
             Issue.record("\(error): the document stayed at \(heights.first ?? 0) points over \(looks) looks, drawn \(try work.fields(1)) of \(fences) fields")
         }
-        let now = try work.fields(1)
-        #expect(now < fences / 2, "no row joined the tail while the keys came: \(now) of \(fences) fields, from \(held)")
+        // A key at every look for two more seconds, a step's time many times over: no row joins the tail.
+        let until = ContinuousClock.now + .seconds(2)
+        var most = 0
+        while ContinuousClock.now < until {
+            try look()
+            most = max(most, try work.fields(1))
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(most < fences / 2, "no row joined the tail while the keys came: \(most) of \(fences) fields, from \(held)")
         #expect(tails.allSatisfy { abs($0) <= 1 }, "the end of the thread never moved: \(tails.map { ($0 * 10).rounded() / 10 })")
 
         // The keys stop, and the rest of the rows come back.
