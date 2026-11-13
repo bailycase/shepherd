@@ -52,6 +52,9 @@ extension AppLayout {
     /// The estimated bytes (`NativeThreadStore.restoreStep`) of rows one step draws, at most; a row larger than it goes whole.
     /// About a code-heavy reply, whose views take tens of milliseconds to build.
     static let restoreStepBytes = 4 << 20
+    /// How long after a key or a scroll the person still counts as at work (`UserActivity`), which a restore and the passes that
+    /// let hidden threads' rows go wait out.
+    static let inputRecentWindow: Duration = .milliseconds(750)
 
     // Empty thread
     /// A fresh agent's framed empty state sits this far down, with its path in Geist Mono at

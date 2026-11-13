@@ -5,9 +5,6 @@ import AppKit
 /// none of it lands in the middle of a keystroke, a scroll or a streamed reply.
 @MainActor
 final class UserActivity {
-    /// How long after a key or a scroll the person still counts as at work.
-    static let window: Duration = .milliseconds(750)
-
     private var monitor: Any?
     private var lastEvent: ContinuousClock.Instant?
 
@@ -21,10 +18,10 @@ final class UserActivity {
 
     deinit { if let monitor { NSEvent.removeMonitor(monitor) } }
 
-    /// A key, a scroll or a drag came within `window`.
+    /// A key, a scroll or a drag came within `AppLayout.inputRecentWindow`.
     var inputRecent: Bool {
         guard let lastEvent else { return false }
-        return lastEvent.duration(to: .now) < Self.window
+        return lastEvent.duration(to: .now) < AppLayout.inputRecentWindow
     }
 
     /// Tells whether a thread on screen changed between one look and the next (a reply streaming in). One per looker.
