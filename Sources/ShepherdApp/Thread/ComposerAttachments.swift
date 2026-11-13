@@ -94,6 +94,9 @@ final class ThreadInput {
     }
     @ObservationIgnored private var wheelIntentUntil = Date.distantPast
     @ObservationIgnored private var wheelUpward = false
+    /// The scroll view carries a flick's momentum (`ScrollPhase.decelerating`). A restore's lazy stack waits for it to rest as it does for
+    /// a hand on the scroll view (`ThreadView.restoreRows`).
+    @ObservationIgnored var decelerating = false
 
     /// Recoil after a downward wheel tick is layout, not a reader scrolling up again.
     func hasWheelIntent(movingUp: Bool) -> Bool {

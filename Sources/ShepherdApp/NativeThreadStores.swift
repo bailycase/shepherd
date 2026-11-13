@@ -4,6 +4,16 @@ import ShepherdCore
 import ShepherdRemote
 import ShepherdUI
 
+/// What a pass that lets hidden threads' rows go finds the app doing when it looks (`NativeThreadStores.busy`).
+enum ThreadPassWait: Equatable {
+    /// Nothing the pass waits for.
+    case idle
+    /// The person is typing or scrolling: the pass waits for as long as that lasts, never running in the middle of a keystroke.
+    case input
+    /// A thread on screen is streaming a reply: the pass waits, but only so long (`NativeThreadStores.patience`).
+    case streaming
+}
+
 /// One `NativeThreadStore` per agent (local `AgentID` or remote `RemoteAgentRef`), kept for
 /// the agent's lifetime so drafts, history pages, and scroll state survive switching.
 ///
@@ -19,10 +29,12 @@ import ShepherdUI
 /// app holds (`NativeThreadStore.mountedCost` estimates them). Past `mountedBudget` bytes of them in all, the least
 /// recently shown hidden threads let their rows go (`NativeThreadStore.releaseTranscript`), one thread a pass and `releaseStep`
 /// bytes of its rows at a time, unpinned ones first, then readers left scrolled up beyond the `keepPinned` most recently
-/// shown. The newest hidden thread, the ones on screen and the selected one are never taken. Only the thread view's rows go:
-/// the host, the page, the history, the caches and the draft stay, so showing a thread draws its rows from them in the
-/// update that shows it, never blank. A reader taken this way comes back at the tail of its thread, not at its place
-/// (`ThreadView`).
+/// shown. The newest hidden thread, the ones on screen and the selected one are never taken. Only the thread view's rows go,
+/// and not its last screen (`NativeThreadStore.keptRows`): the host, the page, the history, the caches, the draft and the rows
+/// at the end of the thread stay, so showing a thread draws its tail in the update that shows it, never blank and with nothing
+/// to build, and the rows above it come back after that frame (`ThreadView`). A reader taken this way comes back at the tail of
+/// its thread, not at its place (`ThreadView`). A pass waits (`busy`) for as long as the person scrolls or types, and while a thread
+/// on screen streams for at most `patience` looks, so that a long stream cannot hold it off for good: it takes no more than a step of rows.
 @MainActor
 final class NativeThreadStores<Key: Hashable> {
     private var stores: [Key: NativeThreadStore] = [:]
@@ -55,9 +67,16 @@ final class NativeThreadStores<Key: Hashable> {
     var releaseDelay: Duration = .seconds(2)
     var releaseSpacing: Duration = .milliseconds(250)
     /// The estimated bytes of one thread's rows a pass lets go of, at most (a row larger than it goes whole, as a pass lets go
-    /// of at least one): a thread's views take a few hundred milliseconds to tear down in one update, with a code-heavy
-    /// thread's rows tens of milliseconds each, so no pass takes much of the main thread.
+    /// of at least one). A pass costs the main thread a layout of the whole mounted tree, tens of milliseconds, whether it takes
+    /// one row or eight, so a smaller step makes more passes and more of those stalls for the same memory, and shortens none.
     var releaseStep = 32 << 20
+    /// What the app is doing that a pass waits for (`ThreadPassWait`): it waits `releaseSpacing` and looks again.
+    var busy: (() -> ThreadPassWait)?
+    /// How many looks in a row a pass waits for a thread on screen to stop streaming before it runs anyway (ten seconds at the default
+    /// spacing), so that a thread that streams for minutes cannot hold the budget off for good; the pass after it waits as long again.
+    /// Typing and scrolling use none of it: a pass never runs while they last.
+    var patience = 40
+    private var putOff = 0
     /// Waits out a pass's delay (a test replaces it, and the timer with it).
     var pause: @MainActor @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
     private var mountedPass: Task<Void, Never>?
@@ -200,6 +219,8 @@ final class NativeThreadStores<Key: Hashable> {
         let cost: Int
         /// A reader is left scrolled up in it (`ThreadReaderPins`): letting its rows go brings it back at its tail.
         let pinned: Bool
+        /// It draws rows beyond its last screen; a thread that does not still counts against the budget, and a pass cannot take more from it.
+        var releasable = true
     }
 
     /// The default `mountedBudget`: an eighth of the memory, and at most 2 GiB. The aborts this bounds look like a limit of
@@ -218,8 +239,8 @@ final class NativeThreadStores<Key: Hashable> {
         guard total > budget else { return [] }
         let newest = Set(entries.suffix(max(0, keep)).map(\.key))
         let readers = Set(entries.filter(\.pinned).suffix(max(0, keepPinned)).map(\.key))
-        let order = entries.filter { !$0.pinned && !newest.contains($0.key) }
-            + entries.filter { $0.pinned && !readers.contains($0.key) && !newest.contains($0.key) }
+        let order = entries.filter { $0.releasable && !$0.pinned && !newest.contains($0.key) }
+            + entries.filter { $0.releasable && $0.pinned && !readers.contains($0.key) && !newest.contains($0.key) }
         var released: [Key] = []
         for entry in order {
             guard total > budget else { break }
@@ -237,7 +258,7 @@ final class NativeThreadStores<Key: Hashable> {
     func enforceMountedBudget(budget: Int? = nil, keep: Int = 1, keepPinned: Int? = nil, limit: Int = 1, step: Int? = nil) -> (threads: Int, bytes: Int) {
         guard let mounted = mounted?() else { return (0, 0) }
         recent.removeAll { stores[$0] == nil }
-        let onScreen = (protected?() ?? []).union(live)
+        let onScreen = self.onScreen
         // Threads never shown (a hidden view built from a preview) count as the oldest.
         let shown = recent.filter(mounted.contains)
         var costs: [Key: Int] = [:]
@@ -246,17 +267,16 @@ final class NativeThreadStores<Key: Hashable> {
             let cost = store.mountedCost(eagerRows: eagerRows)
             guard cost > 0 else { return nil }
             costs[key] = cost
-            return MountedEntry(key: key, cost: cost, pinned: pins?.isPinned(store) == true)
+            return MountedEntry(key: key, cost: cost, pinned: pins?.isPinned(store) == true, releasable: store.canReleaseTranscript)
         }
         let budget = budget ?? mountedBudget
         let releases = Self.viewReleases(entries, keep: keep, keepPinned: keepPinned ?? self.keepPinned, budget: budget)
         var freed = 0, more = releases.count > limit
         for key in releases.prefix(limit) {
             guard let store = stores[key] else { continue }
-            store.releaseTranscript(bytes: step ?? releaseStep, eagerRows: eagerRows)
-            let left = store.mountedCost(eagerRows: eagerRows)
-            freed += (costs[key] ?? 0) - left
-            if left > 0 { more = true }
+            store.releaseTranscript(bytes: step ?? releaseStep, eagerRows: eagerRows, keepingLastScreen: true)
+            freed += (costs[key] ?? 0) - store.mountedCost(eagerRows: eagerRows)
+            if store.canReleaseTranscript { more = true }
             SHRenderProbe.tick("thread.rowsReleased")
             AppSignposts.thread.emitEvent("thread rows released")
         }
@@ -274,8 +294,41 @@ final class NativeThreadStores<Key: Hashable> {
             await pause(delay)
             guard !Task.isCancelled, let self else { return }
             mountedPass = nil
-            enforceMountedBudget()
+            runMountedPass()
         }
+    }
+
+    /// A scheduled pass: the budget is enforced unless the app is busy (`busy`), when the pass waits and looks again: for as long as
+    /// the person types or scrolls, and while a thread streams up to `patience` times in a row. Returns whether it ran.
+    @discardableResult
+    func runMountedPass() -> Bool {
+        switch busy?() ?? .idle {
+        case .input:
+            scheduleMountedPass(after: releaseSpacing)
+            return false
+        case .streaming where putOff < patience:
+            putOff += 1
+            scheduleMountedPass(after: releaseSpacing)
+            return false
+        case .streaming, .idle:
+            break
+        }
+        putOff = 0
+        enforceMountedBudget()
+        return true
+    }
+
+    /// The threads on screen and the selected one.
+    private var onScreen: Set<Key> { (protected?() ?? []).union(live) }
+
+    /// The content version (`NativeThreadStore.threadVersion`) of each thread on screen, by store: what `busy` compares between
+    /// two looks to tell that one is streaming.
+    func shownVersions() -> [ObjectIdentifier: Int] {
+        var versions: [ObjectIdentifier: Int] = [:]
+        for key in onScreen {
+            if let store = stores[key] { versions[ObjectIdentifier(store)] = store.threadVersion }
+        }
+        return versions
     }
 
     /// The agent's store if its thread has been shown, without making one: a pushed revision

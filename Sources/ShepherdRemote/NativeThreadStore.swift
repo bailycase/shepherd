@@ -1607,18 +1607,44 @@ public final class NativeThreadStore {
     /// The thread's hidden view has let some of its rows go, or all of them.
     public var transcriptReleased: Bool { transcriptDrawn != nil }
 
+    /// How many rows at the end of the thread a hidden view keeps when it lets rows go (`releaseTranscript` with
+    /// `keepingLastScreen`): its last screen, the last row if it costs at most `NativeMountedCost.lastRow` and the rows before it
+    /// while all of them cost at most `NativeMountedCost.lastScreen`, and no more than `NativeMountedCost.lastScreenRows`. They stay
+    /// built, so showing the thread again draws them with nothing to build, and the rows above them come back after the first
+    /// frame (`ThreadView`). None when the last row alone costs more: there is nothing to keep that the budget could spare. It counts
+    /// the store's rows, as `restoreStep` does.
+    public var keptRows: Int {
+        let count = min(rows.count, rowCosts.count)
+        var kept = 0, cost = 0
+        while kept < min(count, NativeMountedCost.lastScreenRows) {
+            let next = rowCosts[count - 1 - kept]
+            if cost + next > (kept == 0 ? NativeMountedCost.lastRow : NativeMountedCost.lastScreen) { break }
+            cost += next
+            kept += 1
+        }
+        return kept
+    }
+
+    /// Whether `releaseTranscript(keepingLastScreen: true)` has a row to let go.
+    public var canReleaseTranscript: Bool {
+        let count = min(rows.count, rowCosts.count)
+        return min(transcriptDrawn ?? count, count) > keptRows
+    }
+
     /// Has the thread's hidden view let go of the oldest rows it draws, as many as fit in `bytes` of what `mountedCost` estimates
     /// for them (and at least one row), so that no one update tears down much; `.max` lets every row go. With more rows than `eagerRows`
-    /// the first call lets go of the lazy stack's alone. The history, the rows, every cache, the draft and the store itself stay,
-    /// so showing the thread draws its rows from them in the update that shows it, with nothing to load or parse.
-    public func releaseTranscript(bytes: Int = .max, eagerRows: Int = .max) {
+    /// the first call lets go of the lazy stack's alone. `keepingLastScreen` stops at the rows of `keptRows`, which stay built.
+    /// The history, the rows, every cache, the draft and the store itself stay, so showing the thread draws its rows from them
+    /// in the update that shows it, with nothing to load or parse.
+    public func releaseTranscript(bytes: Int = .max, eagerRows: Int = .max, keepingLastScreen: Bool = false) {
         let count = min(rows.count, rowCosts.count)
+        let floor = keepingLastScreen ? keptRows : 0
         var drawn = min(transcriptDrawn ?? count, count)
         if transcriptDrawn == nil, count > eagerRows, bytes < .max {
-            drawn = eagerRows
+            drawn = max(eagerRows, floor)
         } else {
             var freed = 0
-            while drawn > 0 {
+            while drawn > floor {
                 let cost = rowCosts[count - drawn]
                 if freed > 0, freed + cost > bytes { break }
                 freed += cost
@@ -1626,6 +1652,32 @@ public final class NativeThreadStore {
             }
         }
         if transcriptDrawn != drawn { transcriptDrawn = drawn }
+    }
+
+    /// How many more rows a thread that draws its last `drawn` draws in its next restore step (`ThreadView`): the rows before
+    /// them, as many as fit in `bytes` of what `mountedCost` estimates for them, and at least one; none once the thread has no
+    /// more. Read from the view's task, never from a body. It counts the store's rows: a Project's view hides some (its runtime's
+    /// wake-ups), so there the step is off by the number of those rows, and a step always takes one.
+    public func restoreStep(drawn: Int, bytes: Int) -> Int {
+        let count = min(rows.count, rowCosts.count)
+        var more = 0, cost = 0
+        while drawn + more < count {
+            let next = rowCosts[count - 1 - drawn - more]
+            if more > 0, cost + next > bytes { break }
+            cost += next
+            more += 1
+        }
+        return more
+    }
+
+    /// What building the rows between the last `drawn` and the last `upTo` rows costs, in the bytes of `mountedCost` beyond each row's
+    /// chrome (`NativeMountedCost.rowBase`, which is memory but a few views): what a restore that has drawn `drawn` rows still owes the
+    /// eager tail of `upTo`. A thread of rows of one line owes nothing, however many. Read once as a thread comes back, from the view
+    /// that decides whether it restores at all (`ThreadRestore`).
+    public func restoreCost(drawn: Int, upTo: Int) -> Int {
+        let count = min(rows.count, rowCosts.count)
+        guard drawn < min(upTo, count) else { return 0 }
+        return (drawn..<min(upTo, count)).reduce(0) { $0 + max(0, rowCosts[count - 1 - $1] - NativeMountedCost.rowBase) }
     }
 
     /// An estimate of what the views of this thread hold while it is mounted, in bytes (`NativeMountedCost`): the last

@@ -382,6 +382,132 @@ struct ThreadPerformanceTests {
         store.stop()
     }
 
+    /// A hidden thread keeps its last screen when it lets rows go: the rows from the end that fit `lastScreen` (the last one alone
+    /// if it fits `lastRow`), four at most, built once and never torn down, so showing it again has nothing to build before the first frame.
+    @Test func keptRowsAreTheRowsOfTheLastScreen() async {
+        func kept(_ history: [NativeThreadMessage], parsed: Bool = false) async -> (kept: Int, costs: [Int], store: NativeThreadStore, stop: () -> Void) {
+            let store = manualStore()
+            let loop = await start(store, FakeHost(F.snapshot(messages: history)))
+            // A reply over the off-main parse threshold is costed once its parse lands.
+            if parsed { await until { store.rows.last.map { NativeMountedCost.row($0) > NativeMountedCost.rowBase * 4 } == true } }
+            return (store.keptRows, store.rows.map { NativeMountedCost.row($0) }, store, { loop.cancel(); store.stop() })
+        }
+        let small = await kept((0..<10).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant("answer", id: "a\($0)")] })
+        defer { small.stop() }
+        #expect(small.kept == NativeMountedCost.lastScreenRows && small.costs.suffix(small.kept).reduce(0, +) < NativeMountedCost.lastScreen, "short rows: four, the most")
+
+        // The smallest reply whose row costs more than `bytes`: a reply's cost is no straight line in its cycles, and falls once it is giant.
+        func reply(over bytes: Int) -> Int {
+            var cycles = 1
+            while NativeMountedCost.rowBase + NativeProse(nativeMarkdownParse(NativeMountedCostTests.bigReply(cycles: cycles))).eagerCost <= bytes { cycles += 1 }
+            return cycles
+        }
+
+        let large = await kept([F.user("prompt", id: "u"), F.assistant(NativeMountedCostTests.bigReply(cycles: reply(over: NativeMountedCost.lastScreen)), id: "a")])
+        defer { large.stop() }
+        #expect(large.costs.last.map { $0 > NativeMountedCost.lastScreen && $0 <= NativeMountedCost.lastRow } == true, "a reply of more than a last screen: \(large.costs)")
+        #expect(large.kept == 1, "is kept alone: the first frame builds nothing")
+        let huge = await kept([F.user("prompt", id: "u"), F.assistant(NativeMountedCostTests.bigReply(cycles: reply(over: NativeMountedCost.lastRow)), id: "a")], parsed: true)
+        defer { huge.stop() }
+        #expect(huge.costs.last.map { $0 > NativeMountedCost.lastRow } == true, "a reply of more than a last row")
+        #expect(huge.kept == 0, "has nothing the budget could spare kept for it")
+        #expect(huge.store.canReleaseTranscript, "and all of it can go")
+
+        // Replies a little over half a last screen each: the last one and the question under it, but not the reply before.
+        let half = reply(over: NativeMountedCost.lastScreen / 2)
+        let halves = await kept((0..<6).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant(NativeMountedCostTests.bigReply(cycles: half), id: "a\($0)")] })
+        defer { halves.stop() }
+        let last = halves.costs[halves.costs.count - 1]
+        #expect(last > NativeMountedCost.lastScreen / 2 && last * 2 + halves.costs[halves.costs.count - 2] > NativeMountedCost.lastScreen, "a reply of \(last) bytes: two do not fit")
+        #expect(halves.kept == 2, "the reply and its question: \(halves.costs.suffix(4))")
+    }
+
+    /// With `keepingLastScreen` a thread lets rows go no further than its last screen, which stays drawn and held; nothing more can be released.
+    @Test func releasingTheTranscriptKeepingTheLastScreenStopsAtTheKeptRows() async {
+        final class Fired: @unchecked Sendable { var count = 0 }
+        let history = (0..<10).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant(NativeMountedCostTests.bigReply(cycles: 2), id: "a\($0)")] }
+        let host = FakeHost(F.snapshot(messages: history))
+        let store = manualStore()
+        let loop = await start(store, host)
+        defer { loop.cancel(); store.stop() }
+        let rows = store.rows, kept = store.keptRows
+        let costs = rows.map { NativeMountedCost.row($0) }
+        let eager = 8
+        #expect(kept > 0 && kept < eager && store.canReleaseTranscript)
+
+        store.releaseTranscript(bytes: 1, eagerRows: eager, keepingLastScreen: true)
+        #expect(store.transcriptDrawn == eager, "the lazy stack's rows go first, as without it")
+        for drawn in stride(from: eager - 1, through: kept, by: -1) {
+            store.releaseTranscript(bytes: 1, eagerRows: eager, keepingLastScreen: true)
+            #expect(store.transcriptDrawn == drawn)
+        }
+        #expect(store.transcriptDrawn == kept && !store.canReleaseTranscript, "it stops at the last screen")
+        let fired = Fired()
+        withObservationTracking { _ = store.transcriptDrawn } onChange: { fired.count += 1 }
+        store.releaseTranscript(bytes: 1, eagerRows: eager, keepingLastScreen: true)
+        store.releaseTranscript(keepingLastScreen: true)
+        #expect(store.transcriptDrawn == kept && fired.count == 0, "a thread at its last screen writes nothing")
+        #expect(store.mountedCost(eagerRows: eager) == costs.suffix(kept).reduce(0, +), "the last screen is what it still holds")
+        #expect(store.rows == rows && store.holdsHistory, "the rows stay")
+
+        store.releaseTranscript(eagerRows: eager)
+        #expect(store.transcriptDrawn == 0, "without it, every row goes as before")
+    }
+
+    /// A thread shorter than its last screen has nothing to release.
+    @Test func aThreadOfFewRowsHasNothingBeyondItsLastScreen() async {
+        let store = manualStore()
+        let loop = await start(store, FakeHost(F.snapshot(messages: [F.user("one", id: "u0"), F.assistant("two", id: "a0")])))
+        defer { loop.cancel(); store.stop() }
+        #expect(store.keptRows == 2 && !store.canReleaseTranscript)
+        store.releaseTranscript(bytes: 1, eagerRows: 30, keepingLastScreen: true)
+        #expect(store.transcriptDrawn == 2, "the thread draws the rows it has")
+        #expect(!store.canReleaseTranscript)
+    }
+
+    /// A restore step takes the rows before the ones drawn, as many as fit in its bytes and at least one, and none past the first row.
+    @Test func aRestoreStepTakesTheRowsBeforeTheOnesDrawnWithinItsBytes() async {
+        let history = (0..<10).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant(NativeMountedCostTests.bigReply(cycles: 2), id: "a\($0)")] }
+        let store = manualStore()
+        let loop = await start(store, FakeHost(F.snapshot(messages: history)))
+        defer { loop.cancel(); store.stop() }
+        let costs = store.rows.map { NativeMountedCost.row($0) }
+        let count = costs.count
+        #expect(count == 20)
+        #expect(store.restoreStep(drawn: 2, bytes: 1) == 1, "at least one row, whatever the bytes")
+        #expect(store.restoreStep(drawn: 2, bytes: .max) == count - 2, "all the rest, given the room")
+        let twoRows = costs[count - 3] + costs[count - 4]
+        #expect(store.restoreStep(drawn: 2, bytes: twoRows) == 2 && store.restoreStep(drawn: 2, bytes: twoRows - 1) == 1)
+        #expect(store.restoreStep(drawn: count - 1, bytes: .max) == 1 && store.restoreStep(drawn: count, bytes: .max) == 0, "none past the first row")
+        #expect(store.restoreStep(drawn: count + 5, bytes: .max) == 0)
+    }
+
+    /// What a restore owes is what the rows between the ones drawn and the eager tail cost beyond their chrome, counted from the end: a
+    /// row's chrome costs memory (`NativeMountedCost.rowBase`) but a few views, so a thread of one-line rows owes nothing.
+    @Test func aRestoreOwesTheRowsBetweenTheOnesDrawnAndTheEagerTail() async {
+        let history = (0..<10).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant(NativeMountedCostTests.bigReply(cycles: 2), id: "a\($0)")] }
+        let store = manualStore()
+        let loop = await start(store, FakeHost(F.snapshot(messages: history)))
+        defer { loop.cancel(); store.stop() }
+        let costs = store.rows.map { max(0, NativeMountedCost.row($0) - NativeMountedCost.rowBase) }
+        let count = costs.count
+        #expect(costs.allSatisfy { $0 > 0 })
+        #expect(store.restoreCost(drawn: 2, upTo: 5) == costs[(count - 5)..<(count - 2)].reduce(0, +), "the three rows before the last two")
+        #expect(store.restoreCost(drawn: 0, upTo: count) == costs.reduce(0, +) && store.restoreCost(drawn: 2, upTo: count + 9) == costs.dropLast(2).reduce(0, +), "to the first row at most")
+        #expect(store.restoreCost(drawn: 5, upTo: 5) == 0 && store.restoreCost(drawn: 6, upTo: 5) == 0 && store.restoreCost(drawn: count, upTo: count + 1) == 0, "none when nothing is between")
+    }
+
+    /// Rows of one short line cost their chrome and a few bytes of text: a restore owes next to nothing for any number of them.
+    @Test func aRestoreOwesNothingForRowsOfOneLine() async {
+        let history = (0..<15).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant("Done.", id: "a\($0)")] }
+        let store = manualStore()
+        let loop = await start(store, FakeHost(F.snapshot(messages: history)))
+        defer { loop.cancel(); store.stop() }
+        let chrome = store.restoreStep(drawn: 0, bytes: .max) * NativeMountedCost.rowBase
+        #expect(chrome > 16 << 20, "their chrome alone adds up to more than a step: \(chrome)")
+        #expect(store.restoreCost(drawn: 4, upTo: 30) < 1 << 20, "and the rows cost next to nothing to build: \(store.restoreCost(drawn: 4, upTo: 30))")
+    }
+
     @Test func childProgressInvalidatesItsOwningSuffixRatherThanAllHistory() async {
         var history = (0..<500).flatMap { [F.user(id: "u\($0)"), F.assistant("answer", id: "a\($0)")] }
         history[999] = F.tool("shepherd_child_start", output: "started", id: "spawn", callID: "spawn")

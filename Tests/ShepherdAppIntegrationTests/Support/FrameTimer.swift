@@ -78,6 +78,24 @@ enum FrameTimer {
             }
         }
 
+        /// The row, in points from the top, of the lowest pixel that differs from the background (the first pixel); -1 when nothing is
+        /// drawn. Where the end of a thread sits in a window, whatever its height.
+        var inkBottom: Int {
+            data.withUnsafeBytes { raw -> Int in
+                let p = raw.bindMemory(to: UInt8.self)
+                guard p.count >= 4 else { return -1 }
+                let (r, g, b) = (Int(p[0]), Int(p[1]), Int(p[2]))
+                for y in stride(from: height - 1, through: 0, by: -1) {
+                    let row = y * bytesPerRow
+                    for x in 0..<width {
+                        let i = row + x * 4
+                        if abs(Int(p[i]) - r) > 12 || abs(Int(p[i + 1]) - g) > 12 || abs(Int(p[i + 2]) - b) > 12 { return y }
+                    }
+                }
+                return -1
+            }
+        }
+
         /// The longest run of rows, in points, that draw only the background (the first pixel):
         /// a blank region inside a long row, which a count of ink cannot see.
         var longestBlankBand: Int {
