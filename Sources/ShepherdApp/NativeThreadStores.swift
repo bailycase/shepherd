@@ -23,8 +23,8 @@ import ShepherdUI
 /// and not its last screen (`NativeThreadStore.keptRows`): the host, the page, the history, the caches, the draft and the rows
 /// at the end of the thread stay, so showing a thread draws its tail in the update that shows it, never blank and with nothing
 /// to build, and the rows above it come back after that frame (`ThreadView`). A reader taken this way comes back at the tail of
-/// its thread, not at its place (`ThreadView`). A pass waits while the person scrolls or types, or the thread on screen
-/// streams (`busy`): it takes no more than a step of rows, and the main thread has none of it at those moments.
+/// its thread, not at its place (`ThreadView`). A pass waits while the person scrolls or types, or a thread on screen
+/// streams (`busy`), for at most `patience` looks and so never for good: it takes no more than a step of rows.
 @MainActor
 final class NativeThreadStores<Key: Hashable> {
     private var stores: [Key: NativeThreadStore] = [:]
@@ -62,6 +62,10 @@ final class NativeThreadStores<Key: Hashable> {
     var releaseStep = 32 << 20
     /// Whether the person is scrolling or typing, or a thread on screen is streaming: a pass waits `releaseSpacing` and looks again.
     var busy: (() -> Bool)?
+    /// How many looks in a row a pass waits for `busy` before it runs anyway (ten seconds at the default spacing), so that a
+    /// thread that streams for minutes cannot hold the budget off for good; the pass after it waits as long again.
+    var patience = 40
+    private var putOff = 0
     /// Waits out a pass's delay (a test replaces it, and the timer with it).
     var pause: @MainActor @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
     private var mountedPass: Task<Void, Never>?
@@ -243,7 +247,7 @@ final class NativeThreadStores<Key: Hashable> {
     func enforceMountedBudget(budget: Int? = nil, keep: Int = 1, keepPinned: Int? = nil, limit: Int = 1, step: Int? = nil) -> (threads: Int, bytes: Int) {
         guard let mounted = mounted?() else { return (0, 0) }
         recent.removeAll { stores[$0] == nil }
-        let onScreen = (protected?() ?? []).union(live)
+        let onScreen = self.onScreen
         // Threads never shown (a hidden view built from a preview) count as the oldest.
         let shown = recent.filter(mounted.contains)
         var costs: [Key: Int] = [:]
@@ -283,16 +287,31 @@ final class NativeThreadStores<Key: Hashable> {
         }
     }
 
-    /// A scheduled pass: the budget is enforced unless the person is at work (`busy`), when the pass waits and looks again.
-    /// Returns whether it ran.
+    /// A scheduled pass: the budget is enforced unless the person is at work (`busy`), when the pass waits and looks again, up
+    /// to `patience` times in a row. Returns whether it ran.
     @discardableResult
     func runMountedPass() -> Bool {
-        if busy?() == true {
+        if busy?() == true, putOff < patience {
+            putOff += 1
             scheduleMountedPass(after: releaseSpacing)
             return false
         }
+        putOff = 0
         enforceMountedBudget()
         return true
+    }
+
+    /// The threads on screen and the selected one.
+    private var onScreen: Set<Key> { (protected?() ?? []).union(live) }
+
+    /// The content version (`NativeThreadStore.threadVersion`) of each thread on screen, by store: what `busy` compares between
+    /// two looks to tell that one is streaming.
+    func shownVersions() -> [ObjectIdentifier: Int] {
+        var versions: [ObjectIdentifier: Int] = [:]
+        for key in onScreen {
+            if let store = stores[key] { versions[ObjectIdentifier(store)] = store.threadVersion }
+        }
+        return versions
     }
 
     /// The agent's store if its thread has been shown, without making one: a pushed revision

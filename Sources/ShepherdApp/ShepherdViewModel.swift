@@ -742,15 +742,9 @@ final class ShepherdViewModel {
         // The threads whose hidden layouts hold row views, which the stores keep within a budget (`NativeThreadStores`).
         threadStores.mounted = { [weak self] in self?.mountedThreadAgents() ?? [] }
         remoteThreadStores.mounted = { [weak self] in self?.mountedRemoteThreads() ?? [] }
-        // They let rows go between keystrokes and scrolls, and while the thread on screen is not streaming.
-        threadStores.busy = { [weak self, stream = UserActivity.Stream()] in
-            guard let self else { return false }
-            return userActivity.inputRecent || stream.changed(selectedAgentID.flatMap { self.threadStores.existing(for: $0)?.threadVersion })
-        }
-        remoteThreadStores.busy = { [weak self, stream = UserActivity.Stream()] in
-            guard let self else { return false }
-            return userActivity.inputRecent || stream.changed(selectedRemoteAgent.flatMap { self.remoteThreadStores.existing(for: $0)?.threadVersion })
-        }
+        // They let rows go between keystrokes and scrolls, and while no thread on screen, local or remote, is streaming.
+        threadStores.busy = { [weak self, stream = UserActivity.Stream()] in self?.personAtWork(stream) ?? false }
+        remoteThreadStores.busy = { [weak self, stream = UserActivity.Stream()] in self?.personAtWork(stream) ?? false }
         // A sign-in or sign-out: Settings reads both sides again.
         self.piAuth.onChanged = { [weak yourPi = self.yourPi] in
             Task { await yourPi?.refresh() }

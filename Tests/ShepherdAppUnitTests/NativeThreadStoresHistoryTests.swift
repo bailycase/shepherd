@@ -179,14 +179,45 @@ struct NativeThreadStoresHistoryTests {
         #expect(b.transcriptDrawn == b.keptRows, "once it is quiet, it runs")
     }
 
-    @Test func theThreadOnScreenStreamsWhenItsVersionMovesBetweenTwoLooks() {
+    @Test func aThreadOnScreenStreamsWhenItsVersionMovesBetweenTwoLooks() {
         let stream = UserActivity.Stream()
-        #expect(!stream.changed(nil), "nothing is shown")
-        #expect(!stream.changed(7), "the first look has nothing to compare with")
-        #expect(!stream.changed(7), "unchanged between two looks")
-        #expect(stream.changed(8), "a chunk came in")
-        #expect(!stream.changed(8))
-        #expect(!stream.changed(nil) && !stream.changed(9), "a thread shown after another is a first look again")
+        let (one, two) = (NSObject(), NSObject())
+        let (a, b) = (ObjectIdentifier(one), ObjectIdentifier(two))
+        defer { withExtendedLifetime((one, two)) {} }
+        #expect(!stream.changed([:]), "nothing is shown")
+        #expect(!stream.changed([a: 7]), "the first look has nothing to compare with")
+        #expect(!stream.changed([a: 7]), "unchanged between two looks")
+        #expect(stream.changed([a: 8]), "a chunk came in")
+        #expect(!stream.changed([a: 8]))
+        #expect(!stream.changed([:]) && !stream.changed([a: 9]), "a thread shown after another is a first look again")
+        #expect(!stream.changed([a: 9, b: 1]), "a second thread coming on screen is a first look too")
+        #expect(stream.changed([a: 9, b: 2]), "and any one of those on screen streaming counts, a local thread's or a remote's")
+    }
+
+    @Test func theShownVersionsAreTheOnesOnScreenAndSelected() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c"], selected: "c", pauses: pauses, turns: 2)
+        let shown = stores.shownVersions()
+        #expect(shown.count == 1 && shown[ObjectIdentifier(stores.store(for: "c"))] == stores.store(for: "c").threadVersion, "the selected thread, which no view marks live here")
+    }
+
+    @Test func aPassWaitsForAThreadThatStreamsOnlyAWhile() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses, turns: 6)
+        stores.releaseStep = .max
+        stores.patience = 3
+        let a = stores.store(for: "a"), b = stores.store(for: "b")
+        stores.mountedBudget = 0
+        #expect(a.transcriptDrawn == a.keptRows && b.transcriptDrawn == nil)
+
+        stores.busy = { true }
+        for look in 1...3 {
+            #expect(stores.runMountedPass() == false && b.transcriptDrawn == nil, "look \(look): it waits")
+        }
+        #expect(stores.runMountedPass() == true && b.transcriptDrawn == b.keptRows, "and then it runs, however busy the app is")
+        #expect(stores.runMountedPass() == false, "the one after waits as long again")
     }
 
     /// A pass lets go of rows a step at a time, and a step is a row or the bytes the stores give it, whichever is more.

@@ -27,15 +27,15 @@ final class UserActivity {
         return lastEvent.duration(to: .now) < Self.window
     }
 
-    /// Tells whether the thread on screen changed between one look and the next (a reply streaming in). One per looker.
+    /// Tells whether a thread on screen changed between one look and the next (a reply streaming in). One per looker.
     final class Stream {
-        private var version: Int?
+        private var versions: [ObjectIdentifier: Int] = [:]
 
-        /// `version` is the shown thread's content version now (nil: nothing is shown). True when it differs from the last look's.
-        func changed(_ version: Int?) -> Bool {
-            defer { self.version = version }
-            guard let version, let last = self.version else { return false }
-            return version != last
+        /// `versions` is the content version of each thread on screen now, by store (`NativeThreadStores.shownVersions`). True when
+        /// one that was on screen at the last look too has a different version. A thread that came on screen is a first look.
+        func changed(_ versions: [ObjectIdentifier: Int]) -> Bool {
+            defer { self.versions = versions }
+            return versions.contains { id, version in self.versions[id].map { $0 != version } ?? false }
         }
     }
 }
