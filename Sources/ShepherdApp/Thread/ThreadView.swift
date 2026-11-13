@@ -133,11 +133,10 @@ struct ThreadView: View {
         let kept = active ? nil : store.transcriptDrawn
         let dormant = kept != nil
         // Shown again, such a thread draws the rows it kept at once (they never went), and the rest after that frame, a step at a time
-        // from the newest (`ThreadRestore`), all in the eager stack: the lazy stack, whose rows are estimates until built, comes
-        // back only when the tail is whole. Nil: all the rows.
-        let restored = restore.drawn(active: active, hiddenKept: kept, rows: rows, eagerRows: Self.eagerRows)
+        // from the newest (`ThreadRestore`): the eager tail grows over the lazy stack's rows, which the second frame brings back.
+        let restored = restore.plan(active: active, hiddenKept: kept, rows: rows, eagerRows: Self.eagerRows)
         let restoreStepping = restore.restoring
-        let drawn = rows.suffix(kept ?? restored ?? rows.count)
+        let drawn = rows.suffix(kept ?? restored.map { $0.history ? rows.count : $0.eager } ?? rows.count)
         // A Project's accepted messages the transcript has not taken in: waiting ones go to the composer's Up next, outcomes stay here.
         let held = projectSend?.held() ?? []
         // A row's background needs only the boundary ID, not a captured copy of the transcript.
@@ -162,7 +161,7 @@ struct ThreadView: View {
             let _ = keepTail(proxy)
             ZStack(alignment: .bottom) {
                 let spacing = leadColumn ? SHLeadMetrics.turnGap : AppLayout.turnSpacing
-                let eager = drawn.suffix(Self.eagerRows)
+                let eager = drawn.suffix(restored?.eager ?? Self.eagerRows)
                 ScrollView {
                     // Never animated as a whole (rows, their text, and the tail anchor change on
                     // every streamed chunk): turns that arrive make their own entrance.
@@ -905,41 +904,50 @@ final class ThreadRowIndex {
     }
 }
 
-/// How a thread that let its rows go (`NativeThreadStores`) brings them back when it is shown again, bottom first. The rows it
-/// kept (`NativeThreadStore.keptRows`) are all it draws in its first frame, and are not built again; the rows above them join them
-/// in the eager stack a step at a time, newest first. The lazy stack, whose rows are estimates until built, returns with the rows
-/// older than the eager tail once that is whole: a scroll view held to the tail would otherwise be shown the estimates and
-/// build them. The end of the thread, where the reader is, never moves: the scroll view keeps it while the content above it
-/// grows. No update builds more than a step of rows.
+/// How a thread that let its rows go (`NativeThreadStores`) brings them back when it is shown again, bottom first. The rows it kept
+/// (`NativeThreadStore.keptRows`) are all it draws in its first frame, and are not built again: a lazy stack drawn in that frame
+/// would be shown its estimates, before the scroll view has been held to the tail, and would build them. The next frame brings the lazy
+/// stack back with the rows older than the eager tail, and the rows between join the eager tail a step at a time, newest first, each
+/// leaving the lazy stack for the eager stack once. The end of the thread, where the reader is, never moves: the scroll view keeps it
+/// while the content above it grows. No update builds more than a step of rows.
 ///
 /// Read in `body`, which it changes only through `steps`: the rest is a reference's, so keeping it current never draws the view.
 @MainActor
 @Observable
 final class ThreadRestore {
+    /// What a restore draws in one update.
+    struct Plan: Equatable {
+        /// How many rows at the end of the thread the eager stack holds.
+        let eager: Int
+        /// The lazy stack draws the rows before them; before it, they are not drawn at all.
+        let history: Bool
+    }
+
     /// Raised by each step, which is what draws the next one.
     private(set) var steps = 0
     /// Rows are still to come back, one step at a time.
     @ObservationIgnored private(set) var restoring = false
-    /// The oldest row drawn while restoring.
+    /// The oldest row of the eager stack while restoring.
     @ObservationIgnored private var first: String?
+    /// The lazy stack is back.
+    @ObservationIgnored private var history = false
     /// The rows the thread's hidden view drew, as the last hidden update saw them (nil: all of them).
     @ObservationIgnored private var hiddenKept: Int?
     /// This showing has begun (or needed no restore).
     @ObservationIgnored private var begun = false
 
-    /// How many rows at the end of `rows` the thread draws in this update; nil for all of them. `hiddenKept` is what the
-    /// hidden view draws (`NativeThreadStore.transcriptDrawn`, read only while hidden, so that the thread on screen is not
-    /// drawn again by the store clearing it), and `rows` all the rows once the thread is shown.
-    func drawn<Rows: BidirectionalCollection>(active: Bool, hiddenKept: Int?, rows: Rows, eagerRows: Int) -> Int?
+    /// What the thread draws in this update; nil for all of it. `hiddenKept` is what the hidden view draws
+    /// (`NativeThreadStore.transcriptDrawn`, read only while hidden, so that the thread on screen is not drawn again by the store
+    /// clearing it), and `rows` all the rows once the thread is shown.
+    func plan<Rows: BidirectionalCollection>(active: Bool, hiddenKept: Int?, rows: Rows, eagerRows: Int) -> Plan?
     where Rows.Element == NativeThreadRow, Rows.Index == Int {
         _ = steps
         guard active else {
             self.hiddenKept = hiddenKept
             // Hidden halfway through, it keeps the rows it has and waits for the next showing: the rest is not built for no one.
-            if restoring, let first, let index = rows.lastIndex(where: { $0.id == first }) { return rows.endIndex - index }
+            if restoring, let first, let index = rows.lastIndex(where: { $0.id == first }) { return Plan(eager: rows.endIndex - index, history: history) }
             begun = false
-            restoring = false
-            first = nil
+            finish()
             return nil
         }
         if !begun {
@@ -948,6 +956,7 @@ final class ThreadRestore {
             if let kept = self.hiddenKept.map({ max(1, $0) }), kept < min(rows.count, eagerRows) {
                 first = rows[rows.endIndex - kept].id
                 restoring = true
+                history = false
             }
             self.hiddenKept = nil
         }
@@ -956,15 +965,21 @@ final class ThreadRestore {
             finish()
             return nil
         }
-        return rows.endIndex - index
+        return Plan(eager: rows.endIndex - index, history: history)
     }
 
-    /// Draws the next step of rows: `step` is how many more rows to take, given how many the tail holds. False when the tail is whole.
+    /// Draws the next step: the lazy stack first, then rows. `step` is how many more rows to take, given how many the eager stack
+    /// holds. False when the eager tail is whole.
     func advance<Rows: BidirectionalCollection>(rows: Rows, eagerRows: Int, step: (Int) -> Int) -> Bool
     where Rows.Element == NativeThreadRow, Rows.Index == Int {
         guard restoring, let first, let index = rows.lastIndex(where: { $0.id == first }) else {
             finish()
             return false
+        }
+        if !history {
+            history = true
+            steps &+= 1
+            return true
         }
         let more = step(rows.endIndex - index)
         let next = max(rows.startIndex, index - more)
@@ -980,6 +995,7 @@ final class ThreadRestore {
     private func finish() {
         restoring = false
         first = nil
+        history = false
     }
 }
 

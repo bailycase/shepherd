@@ -115,4 +115,54 @@ struct ReleasedThreadBottomFirstTests {
         #expect(built.max() ?? 0 <= 8, "no frame built more than a step of rows: \(built.prefix(40))")
         #expect(built.first == 0, "the first frame built no code field")
     }
+
+    /// A reader who scrolls up while the rest is coming back keeps the place they scrolled to: the rows stop joining the tail above
+    /// them, and are there to scroll through; back at the tail, the rest comes back.
+    @Test func aReaderWhoScrollsUpDuringTheRestoreStaysWhereTheyAre() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let work = try await Workspace.open(2, replies: 18, cycles: 4, in: app)
+        defer { work.window.close() }
+        for index in [1, 0] { try await work.show(index) }
+        let store = work.store(1)
+        let fences = try work.fields(1)
+        _ = try await Self.release(work, 1, from: fences)
+
+        work.vm.selectAgent(work.agents[1].agent.id)
+        try await eventuallyOnMain("the thread to be shown, with its restore begun", timeout: .seconds(60)) {
+            ListPerf.settle(work.window)
+            return try work.host(1)?.isHidden == false && !store.transcriptReleased
+        }
+        // The reader's hand goes onto the scroll view at once, as a wheel tick does.
+        let begun = try work.fields(1)
+        #expect(begun < fences * 9 / 10, "the rest has not all come back yet: \(begun) of \(fences)")
+        let scroll = try #require(try work.transcript(1))
+        let clip = scroll.contentView
+        let input = work.vm.threadStores.input(for: work.agents[1].agent.id)
+        for _ in 0..<6 {
+            input.readerScrolled(upward: true)
+            clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 0, y: clip.bounds.origin.y - 250), size: clip.bounds.size)).origin)
+            scroll.reflectScrolledClipView(clip)
+            ListPerf.settle(work.window)
+        }
+        var rest = clip.bounds.origin.y, still = 0
+        try await eventuallyOnMain("the scrolled thread to come to rest", timeout: .seconds(30), poll: .milliseconds(30)) {
+            ListPerf.settle(work.window)
+            still = clip.bounds.origin.y == rest ? still + 1 : 0
+            rest = clip.bounds.origin.y
+            return still >= 12
+        }
+        let away = try #require(try work.distanceFromTail(1))
+        #expect(away > 80, "the reader is \(away) points above the tail")
+        let held = try work.fields(1)
+        #expect(held < fences * 9 / 10, "the rest stopped coming back when the reader left the tail: \(held) of \(fences)")
+
+        // Nothing joins the tail above the reader for as long as they stay.
+        for _ in 0..<40 { ListPerf.settle(work.window) }
+        try await eventuallyOnMain("the restore to hold still", poll: .milliseconds(30)) {
+            ListPerf.settle(work.window)
+            return try work.fields(1) == held
+        }
+        #expect(clip.bounds.origin.y == rest, "and the reader's place did not move: \(clip.bounds.origin.y) from \(rest)")
+    }
 }
