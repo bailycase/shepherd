@@ -25,11 +25,13 @@ struct FleetPairingTests {
         var peersFile: URL { host.dir.appendingPathComponent("fleet/peers.json") }
 
         /// `port` 0 picks one that stays free for a restart; a restarted Mac asks for the one it had, as a real host's is fixed.
-        init(_ name: String, dir: URL? = nil, port: UInt16 = 0, fleet: Bool = true) async throws {
+        /// `configure` sets the host up before its fleet starts (an iCloud store to stand in for CloudKit, say).
+        init(_ name: String, dir: URL? = nil, port: UInt16 = 0, fleet: Bool = true, configure: (SessionServer) -> Void = { _ in }) async throws {
             self.name = name
             let host = try ScratchServer(dir: dir)
             let server = host.server
             server.configureFleet(name: name, advertises: false)
+            configure(server)
             let tokenURL = host.dir.appendingPathComponent("remote-token")
             let socket = host.dir.appendingPathComponent("h.sock").path
             let port = try await RestartablePort.listen(port) { try server.startRemoteListener(port: $0, tokenURL: tokenURL) }

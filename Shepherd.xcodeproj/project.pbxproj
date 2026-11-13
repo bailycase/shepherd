@@ -87,6 +87,7 @@
 		5E000000000000000000A003 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		5E000000000000000000A005 /* AppIconNightly.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIconNightly.icon; sourceTree = "<group>"; };
 		5E000000000000000000A004 /* Shepherd.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Shepherd.entitlements; sourceTree = "<group>"; };
+		5E000000000000000000A008 /* Shepherd.icloud.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Shepherd.icloud.entitlements; sourceTree = "<group>"; };
 		5E000000000000000000A006 /* Engine.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Engine.entitlements; sourceTree = "<group>"; };
 		5E000000000000000000A201 /* Shepherd.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Shepherd.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -226,6 +227,7 @@
 				5E000000000000000000A003 /* AppIcon.icon */,
 				5E000000000000000000A005 /* AppIconNightly.icon */,
 				5E000000000000000000A004 /* Shepherd.entitlements */,
+				5E000000000000000000A008 /* Shepherd.icloud.entitlements */,
 				5E000000000000000000A006 /* Engine.entitlements */,
 			);
 			path = App;
