@@ -402,8 +402,10 @@ struct ThreadView: View {
         // there (`NativeThreadStore.suspend`). In a window nobody can see it keeps its loop and pulls
         // nothing (`ThreadRest`).
         .modifier(ThreadRest(store: store, owner: storeOwner, active: active, run: loopRun))
-        .task(id: restoreStepping && active) {
-            if restoreStepping && active { await restoreRows() }
+        // Not while the reader is away from the tail: the rows that join the eager tail change height above them, which only a view held
+        // to the tail takes without moving. It starts again when they return (the key reads `sticky` only while a restore is under way).
+        .task(id: restoreStepping && active && follower.sticky) {
+            if restoreStepping && active && follower.sticky { await restoreRows() }
         }
         .task(id: LoopKey(active: active, run: loopRun)) {
             guard !Task.isCancelled else { return }
@@ -437,9 +439,10 @@ struct ThreadView: View {
     }
 
     /// Draws the rows a restore still owes (`ThreadRestore`) a step at a time, each after the frame of the one before it. It waits while
-    /// the reader's hand is on the scroll view, and while the reader is away from the tail: the rows that join the eager tail
-    /// change height above them, which only a view held to the tail (`ThreadTailAnchor`) takes without moving. It waits for keystrokes
-    /// too: a step takes tens of milliseconds, which a key pressed in it feels.
+    /// the reader's hand is on the scroll view, and for keystrokes: a step takes tens of milliseconds, which a key pressed in it feels.
+    /// Both end within `AppLayout.inputRecentWindow`, so it looks again every `restoreRetry` for no longer than that. It runs only while the
+    /// reader is at the tail (the task's key): the rows that join the eager tail change height above them, which only a view held to the
+    /// tail (`ThreadTailAnchor`) takes without moving.
     private func restoreRows() async {
         func waiting() -> Bool { follower.userScrolling || !follower.sticky || userActivity?.inputRecent == true }
         while !Task.isCancelled {
