@@ -4,6 +4,16 @@ import ShepherdCore
 import ShepherdRemote
 import ShepherdUI
 
+/// What a pass that lets hidden threads' rows go finds the app doing when it looks (`NativeThreadStores.busy`).
+enum ThreadPassWait: Equatable {
+    /// Nothing the pass waits for.
+    case idle
+    /// The person is typing or scrolling: the pass waits for as long as that lasts, never running in the middle of a keystroke.
+    case input
+    /// A thread on screen is streaming a reply: the pass waits, but only so long (`NativeThreadStores.patience`).
+    case streaming
+}
+
 /// One `NativeThreadStore` per agent (local `AgentID` or remote `RemoteAgentRef`), kept for
 /// the agent's lifetime so drafts, history pages, and scroll state survive switching.
 ///
@@ -23,8 +33,8 @@ import ShepherdUI
 /// and not its last screen (`NativeThreadStore.keptRows`): the host, the page, the history, the caches, the draft and the rows
 /// at the end of the thread stay, so showing a thread draws its tail in the update that shows it, never blank and with nothing
 /// to build, and the rows above it come back after that frame (`ThreadView`). A reader taken this way comes back at the tail of
-/// its thread, not at its place (`ThreadView`). A pass waits while the person scrolls or types, or a thread on screen
-/// streams (`busy`), for at most `patience` looks and so never for good: it takes no more than a step of rows.
+/// its thread, not at its place (`ThreadView`). A pass waits (`busy`) for as long as the person scrolls or types, and while a thread
+/// on screen streams for at most `patience` looks, so that a long stream cannot hold it off for good: it takes no more than a step of rows.
 @MainActor
 final class NativeThreadStores<Key: Hashable> {
     private var stores: [Key: NativeThreadStore] = [:]
@@ -60,10 +70,11 @@ final class NativeThreadStores<Key: Hashable> {
     /// of at least one). A pass costs the main thread a layout of the whole mounted tree, tens of milliseconds, whether it takes
     /// one row or eight, so a smaller step makes more passes and more of those stalls for the same memory, and shortens none.
     var releaseStep = 32 << 20
-    /// Whether the person is scrolling or typing, or a thread on screen is streaming: a pass waits `releaseSpacing` and looks again.
-    var busy: (() -> Bool)?
-    /// How many looks in a row a pass waits for `busy` before it runs anyway (ten seconds at the default spacing), so that a
-    /// thread that streams for minutes cannot hold the budget off for good; the pass after it waits as long again.
+    /// What the app is doing that a pass waits for (`ThreadPassWait`): it waits `releaseSpacing` and looks again.
+    var busy: (() -> ThreadPassWait)?
+    /// How many looks in a row a pass waits for a thread on screen to stop streaming before it runs anyway (ten seconds at the default
+    /// spacing), so that a thread that streams for minutes cannot hold the budget off for good; the pass after it waits as long again.
+    /// Typing and scrolling use none of it: a pass never runs while they last.
     var patience = 40
     private var putOff = 0
     /// Waits out a pass's delay (a test replaces it, and the timer with it).
@@ -287,14 +298,20 @@ final class NativeThreadStores<Key: Hashable> {
         }
     }
 
-    /// A scheduled pass: the budget is enforced unless the person is at work (`busy`), when the pass waits and looks again, up
-    /// to `patience` times in a row. Returns whether it ran.
+    /// A scheduled pass: the budget is enforced unless the app is busy (`busy`), when the pass waits and looks again: for as long as
+    /// the person types or scrolls, and while a thread streams up to `patience` times in a row. Returns whether it ran.
     @discardableResult
     func runMountedPass() -> Bool {
-        if busy?() == true, putOff < patience {
+        switch busy?() ?? .idle {
+        case .input:
+            scheduleMountedPass(after: releaseSpacing)
+            return false
+        case .streaming where putOff < patience:
             putOff += 1
             scheduleMountedPass(after: releaseSpacing)
             return false
+        case .streaming, .idle:
+            break
         }
         putOff = 0
         enforceMountedBudget()

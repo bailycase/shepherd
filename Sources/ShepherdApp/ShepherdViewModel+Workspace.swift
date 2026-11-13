@@ -117,11 +117,12 @@ extension ShepherdViewModel {
         return Set(RemoteDeckPages.pages(shown: remoteDeckRefs, selected: nil, inspecting: nil, states: states).pages)
     }
 
-    /// Whether the person is typing or scrolling, or a thread on screen, local or remote, changed since `stream` last looked (a
-    /// reply streaming in): what the stores' passes (`NativeThreadStores.busy`) wait out.
-    func personAtWork(_ stream: UserActivity.Stream) -> Bool {
+    /// What the stores' passes (`NativeThreadStores.busy`) wait out: the person typing or scrolling, or a thread on screen, local or
+    /// remote, changed since `stream` last looked (a reply streaming in). Typing and scrolling are named first, so that they never
+    /// use up the patience a stream is owed. `stream` looks every time, whichever is returned.
+    func passWait(_ stream: UserActivity.Stream) -> ThreadPassWait {
         let streaming = stream.changed(threadStores.shownVersions().merging(remoteThreadStores.shownVersions()) { $1 })
-        return userActivity.inputRecent || streaming
+        return userActivity.inputRecent ? .input : streaming ? .streaming : .idle
     }
 
     /// The visible layout's id, without copying a `Tab`.

@@ -174,9 +174,9 @@ A hidden thread keeps its host, page, history and draft, but its rows are bounde
 `NativeThreadStores.mountedBudget` (an eighth of the memory, at most 2 GiB, counted by
 `NativeThreadStore.mountedCost`) the least recently shown hidden threads let their rows go
 (`releaseTranscript`), one thread a pass and `releaseStep` bytes of it, and not while the person types
-or scrolls or a thread on screen, local or remote, streams (`NativeThreadStores.busy`, for at most ten
-seconds a pass, so that a long stream cannot hold the budget off for good): unpinned ones first, then readers left scrolled up beyond the two most
-recently shown; the thread shown before the current one, and the one on screen, never. A thread
+or scrolls, however long that lasts, or while a thread on screen, local or remote, streams
+(`NativeThreadStores.busy`: only a stream gives out, after ten seconds a pass, so that a long one cannot hold the budget off for
+good): unpinned ones first, then readers left scrolled up beyond the two most recently shown; the thread shown before the current one, and the one on screen, never. A thread
 keeps its last screen built (`NativeThreadStore.keptRows`: at most four rows within 16 MiB, or a last
 row of up to 64 MiB alone; a larger reply goes with the rest), which still counts against the budget. Showing one draws that last screen in the pass that shows it and
 builds nothing there (the deck lays the host out as it unhides one that let rows go, so no frame

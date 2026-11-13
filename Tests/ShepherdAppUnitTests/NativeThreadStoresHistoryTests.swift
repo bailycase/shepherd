@@ -170,13 +170,34 @@ struct NativeThreadStoresHistoryTests {
         stores.mountedBudget = 0
         #expect(a.transcriptDrawn == a.keptRows && b.transcriptDrawn == nil, "a budget over a pass: the oldest thread goes")
 
-        var atWork = true
-        stores.busy = { atWork }
-        #expect(stores.runMountedPass() == false, "typing, scrolling or a reply streaming in: the pass looks again later")
+        var wait = ThreadPassWait.input
+        stores.busy = { wait }
+        #expect(stores.runMountedPass() == false, "typing or scrolling: the pass looks again later")
+        wait = .streaming
+        #expect(stores.runMountedPass() == false, "or a reply streaming in")
         #expect(b.transcriptDrawn == nil, "and takes nothing")
-        atWork = false
+        wait = .idle
         #expect(stores.runMountedPass() == true)
         #expect(b.transcriptDrawn == b.keptRows, "once it is quiet, it runs")
+    }
+
+    /// Typing and scrolling hold a pass off for as long as they last, however many times it looks: it never runs in the middle of a keystroke.
+    @Test func aPassNeverRunsWhileThePersonTypesOrScrolls() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses, turns: 6)
+        stores.releaseStep = .max
+        stores.patience = 3
+        let a = stores.store(for: "a"), b = stores.store(for: "b")
+        stores.mountedBudget = 0
+        #expect(a.transcriptDrawn == a.keptRows && b.transcriptDrawn == nil)
+
+        stores.busy = { .input }
+        for look in 1...20 {
+            #expect(stores.runMountedPass() == false && b.transcriptDrawn == nil, "look \(look): it waits, patience or not")
+        }
+        stores.busy = { .idle }
+        #expect(stores.runMountedPass() == true && b.transcriptDrawn == b.keptRows, "and runs once the person stops")
     }
 
     @Test func aThreadOnScreenStreamsWhenItsVersionMovesBetweenTwoLooks() {
@@ -212,12 +233,33 @@ struct NativeThreadStoresHistoryTests {
         stores.mountedBudget = 0
         #expect(a.transcriptDrawn == a.keptRows && b.transcriptDrawn == nil)
 
-        stores.busy = { true }
+        stores.busy = { .streaming }
         for look in 1...3 {
             #expect(stores.runMountedPass() == false && b.transcriptDrawn == nil, "look \(look): it waits")
         }
-        #expect(stores.runMountedPass() == true && b.transcriptDrawn == b.keptRows, "and then it runs, however busy the app is")
+        #expect(stores.runMountedPass() == true && b.transcriptDrawn == b.keptRows, "and then it runs, however long the stream goes on")
         #expect(stores.runMountedPass() == false, "the one after waits as long again")
+    }
+
+    /// Only looks at a stream use up the patience: the person typing in between neither adds to it nor ends the wait.
+    @Test func typingDoesNotUseUpThePatienceAStreamIsOwed() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses, turns: 6)
+        stores.releaseStep = .max
+        stores.patience = 3
+        let a = stores.store(for: "a"), b = stores.store(for: "b")
+        stores.mountedBudget = 0
+        #expect(a.transcriptDrawn == a.keptRows && b.transcriptDrawn == nil)
+
+        var wait = ThreadPassWait.streaming
+        stores.busy = { wait }
+        for _ in 1...2 { #expect(stores.runMountedPass() == false) }
+        wait = .input
+        for _ in 1...10 { #expect(stores.runMountedPass() == false, "typing: it waits, and keeps count of the stream") }
+        wait = .streaming
+        #expect(stores.runMountedPass() == false && b.transcriptDrawn == nil, "the third look at the stream is the last it waits for")
+        #expect(stores.runMountedPass() == true && b.transcriptDrawn == b.keptRows, "and the fourth runs")
     }
 
     /// A pass lets go of rows a step at a time, and a step is a row or the bytes the stores give it, whichever is more.
