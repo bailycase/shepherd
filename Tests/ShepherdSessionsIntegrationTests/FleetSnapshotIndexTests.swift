@@ -213,6 +213,10 @@ extension FleetSnapshotIndexTests {
         try Data("export const app = 'lost'\n".utf8).write(to: repo.appendingPathComponent("src/app.ts"))
         try Data("export const quiet = true\n".utf8).write(to: repo.appendingPathComponent("src/quiet.ts"))
         try await eventually("the lost events to arrive and be dropped") { stream.droppedEvents >= 2 }
+        // Every event the system holds for the folder (a directory's own change comes after its files') is dropped too, or one that
+        // arrives after the stream is listening again would bring the index up to date and leave the check nothing to find.
+        stream.flush()
+        index.queue.sync {}
         #expect(index.queue.sync { index.entries["src/quiet.ts"] } == nil, "the index is stale")
         #expect(b.manifest(of: aID)?.contains(hash("export const app = 'lost'\n")) == false)
         // The check finds it, rescans, and the delta goes to B like any other.
