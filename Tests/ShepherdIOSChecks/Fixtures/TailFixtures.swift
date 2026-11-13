@@ -16,6 +16,13 @@ extension FixtureCatalog {
             FixtureScreen(name: "thread-rotate-long-reply", hosts: TailFixture.hosts(), routes: [.thread(thread)], prepare: TailFixture.rotate),
             // Ten flings up through the thread and back to the end of the long thread: its last line above the composer, rows drawn.
             FixtureScreen(name: "thread-flings-rows", hosts: TailFixture.hosts(), routes: [.thread(thread)], prepare: TailFixture.flings),
+            // The long thread mounted again (the phone pops it and pushes it back; the iPad opens other threads until it is no longer
+            // retained): its first frame with a row is at the tail and drawn, after at most one landing and a few blank frames.
+            FixtureScreen(name: "thread-remount-tail", hosts: TailFixture.remountHosts(), routes: [.thread(thread)], prepare: TailFixture.remountTail),
+            // A 300 pt drag up from the tail of the 24 KB reply moves the view by the drag and no more: nothing sends it to the reply's top.
+            FixtureScreen(name: "thread-detach-in-reply", hosts: TailFixture.hosts(), routes: [.thread(thread)], prepare: TailFixture.detachInReply),
+            // A reader who scrolled up past the reply and left comes back to the row they left at the top.
+            FixtureScreen(name: "thread-detached-remount", hosts: TailFixture.remountHosts(), routes: [.thread(thread)], prepare: TailFixture.detachedRemount),
         ]
     }
 }
@@ -359,6 +366,283 @@ enum TailFixture {
             }
             woke = now
         }
+    }
+}
+
+/// A following thread that mounts again (a re-open, an eviction, a rotation) starts at its tail, and a reader who left it detached
+/// comes back to the row they left. These screens run where the long thread's transcript is torn down and built again: the
+/// phone pops the thread and pushes it back; the iPad opens other threads until the long one is past `retainedDetails`.
+extension TailFixture {
+    /// Re-opens per launch; three fit the harness's 60 s launch budget on the iPad, where each also opens four other threads.
+    static let remountCycles = 3
+    /// Frames a mounting thread may show its scroll view with no built row in view. A re-opened thread whose restore sat the view at
+    /// the top of the 24 KB reply drew nothing for 23 to 25 frames on an iPad; the budget is this screen's empirical ceiling.
+    static let blankFrameBudget = 4
+    /// Landings with the content or the width moving that one re-open may make.
+    static let remountLandings = 1
+    /// How far from the tail the first frame with a row may be: the follower's own tolerance.
+    static let firstFrameReach = NativeScrollFollower.threshold
+    /// The row's top may sit this far from the top edge once a detached reader's row is restored.
+    static let restoreTolerance: CGFloat = 8
+
+    /// The long thread, and short ones in the other seats, so the iPad's other threads add nothing tall to the window.
+    static func remountHosts() -> [FixtureHostData] {
+        var hosts = hosts()
+        for agent in [FixtureData.extensions, FixtureData.dock, FixtureData.deletion] { hosts[0].threads[agent] = FixtureData.thread() }
+        return hosts
+    }
+
+    /// Threads to open so the long one is no longer retained: `PadDetailRoot` keeps the last three it showed.
+    private static var others: [AgentRef] {
+        [FixtureData.ref(FixtureData.extensions), FixtureData.ref(FixtureData.dock), FixtureData.ref(FixtureData.deletion),
+         FixtureData.ref(FixtureData.buffer, on: FixtureData.buildBox)]
+    }
+
+    /// Takes the long thread off the screen and waits until its transcript is gone: the phone pops it; the iPad shows four others.
+    @MainActor private static func leave(_ app: MobileApp) async {
+        weak let old = FollowFixture.threadScrollView()
+        if app.navigator.layout == .pad {
+            for other in others {
+                app.navigator.open(.thread(other))
+                try? await Task.sleep(for: .milliseconds(700))
+            }
+        } else {
+            app.navigator.popToRoot()
+        }
+        await FixtureWindows.wait("the long thread to leave", seconds: 15) { old?.window == nil }
+        try? await Task.sleep(for: .milliseconds(500))
+    }
+
+    /// The scroll view of the thread on screen: the tallest one that is not transparent (a retained thread's is).
+    @MainActor fileprivate static func shownThreadScroll() -> UIScrollView? {
+        var found: [UIScrollView] = []
+        func opaque(_ view: UIView) -> Bool {
+            var current: UIView? = view
+            while let each = current {
+                if each.isHidden || each.alpha < 0.5 || each.layer.opacity < 0.5 { return false }
+                current = each.superview
+            }
+            return true
+        }
+        func walk(_ view: UIView) {
+            if let scroll = view as? UIScrollView, !(scroll is UICollectionView), !(scroll is UITextView),
+               scroll.contentSize.height > scroll.bounds.height, opaque(scroll) {
+                found.append(scroll)
+            }
+            view.subviews.forEach(walk)
+        }
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).forEach(walk)
+        return found.max { $0.contentSize.height < $1.contentSize.height }
+    }
+
+    /// How many built rows show in `scroll`. Each row carries a native marker (`TailRowMarker`: a plain view that takes no touch, hides
+    /// from accessibility and is as tall as its row), which says a row was placed where the scroll view's numbers cannot.
+    @MainActor fileprivate static func builtRows(in scroll: UIScrollView) -> Int {
+        let visible = scroll.bounds.inset(by: scroll.adjustedContentInset)
+        let limit = scroll.contentSize.height * 0.9
+        var count = 0
+        func walk(_ view: UIView) {
+            if type(of: view) == UIView.self, !view.isUserInteractionEnabled, view.accessibilityElementsHidden, !view.isAccessibilityElement,
+               view.subviews.isEmpty, view.bounds.height > 0, view.bounds.height < limit, view.bounds.width > scroll.bounds.width * 0.3,
+               view.convert(view.bounds, to: scroll).intersects(visible) {
+                count += 1
+            }
+            view.subviews.forEach(walk)
+        }
+        walk(scroll)
+        return count
+    }
+
+    /// The top built row in view: where its top edge sits against the top of the visible rect, and its height.
+    @MainActor fileprivate static func topRow(in scroll: UIScrollView) -> (offset: CGFloat, height: CGFloat)? {
+        let visible = scroll.bounds.inset(by: scroll.adjustedContentInset)
+        var best: CGRect?
+        func walk(_ view: UIView) {
+            if type(of: view) == UIView.self, !view.isUserInteractionEnabled, view.accessibilityElementsHidden, !view.isAccessibilityElement,
+               view.subviews.isEmpty, view.bounds.height > 0, view.bounds.height < scroll.contentSize.height * 0.9,
+               view.bounds.width > scroll.bounds.width * 0.3 {
+                let frame = view.convert(view.bounds, to: scroll)
+                if frame.maxY > visible.minY + 1, frame.minY < visible.maxY, best.map({ frame.minY < $0.minY }) ?? true { best = frame }
+            }
+            view.subviews.forEach(walk)
+        }
+        walk(scroll)
+        return best.map { ($0.minY - visible.minY, $0.height) }
+    }
+
+    @MainActor fileprivate static func tailDistance(of scroll: UIScrollView) -> CGFloat {
+        scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.contentOffset.y - scroll.bounds.height
+    }
+
+    /// "thread-remount-tail": the long thread leaves and comes back `remountCycles` times. Display frame by display frame from the
+    /// open, the first frame with a built row in view is within the follower's tolerance of the tail and drawn (it was the reply's
+    /// top, about 16,000 pt up, on iOS 27.1, and nothing at all for 23 to 25 frames on an iPad on 27.0, until the tail guard
+    /// repaired it), after at most `remountLandings` landing and `blankFrameBudget` blank frames, and the thread comes to rest on its tail.
+    @MainActor static func remountTail(_ app: MobileApp) async {
+        let ref = FixtureData.ref(FixtureData.preview)
+        await ready(app)
+        MainQueueWatchdog.start(limit: 5)
+        let pad = app.navigator.layout == .pad
+        var measured: [String] = []
+        var verdicts: [(ok: Bool, line: String)] = []
+        for cycle in 1...remountCycles {
+            await leave(app)
+            SHRenderProbe.start()
+            let frames = MountFrames()
+            frames.start()
+            app.navigator.open(.thread(ref))
+            await FixtureWindows.wait("a built row after the re-open", seconds: 15) { frames.firstRow != nil }
+            await settle()
+            let counts = SHRenderProbe.stop()
+            let result = frames.stop()
+            let landings = counts["thread.tailLanding", default: 0] + counts["thread.tailLandingResized", default: 0]
+            let rest = shown()
+            let first = result.firstRow
+            let reach = first?.distance
+            let percent = Int(((first?.ink ?? 0) * 100).rounded())
+            measured.append("cycle \(cycle) (\(pad ? "pad" : "phone")): first row at frame \(first?.frame ?? -1) (\(Int((first?.milliseconds ?? -1).rounded())) ms), "
+                + "\(result.blank) blank frames, \(reach.map { Int($0.rounded()) } ?? -1)pt from the tail, \(percent)% ink, \(landings) landings, "
+                + "\(counts["thread.tailRepair", default: 0]) repairs, \(counts["thread.transcript", default: 0]) renders, \(result.away) frames away from the tail after it (worst \(result.farthest)pt); "
+                + "at rest \(rest.distance)pt from the tail, \(Int((rest.ink * 100).rounded()))% ink")
+            verdicts.append((reach.map { $0 <= firstFrameReach && $0 >= -NativeScrollFollower.repinSlack } ?? false,
+                             "cycle \(cycle): the first frame with a row is within \(Int(firstFrameReach))pt of the tail"))
+            verdicts.append(((first?.ink ?? 0) >= inkFloor, "cycle \(cycle): the first frame with a row draws"))
+            verdicts.append((result.blank <= blankFrameBudget, "cycle \(cycle): at most \(blankFrameBudget) blank frames before it"))
+            verdicts.append((landings <= remountLandings, "cycle \(cycle): at most \(remountLandings) landing"))
+            verdicts.append((rest.atTail && rest.ink >= inkFloor, "cycle \(cycle): the thread rests on its tail, drawn"))
+        }
+        measured.forEach { FixtureCheck.report("FIXTURE CHECK ok: \($0)") }
+        let failed = verdicts.filter { !$0.ok }
+        if let first = failed.first { FixtureCheck.report("FIXTURE CHECK FAILED: \(failed.count) of \(verdicts.count) checks, the first: \(first.line)") }
+        FixtureCheck.report("FIXTURE CHECK ok: \(verdicts.count) checks over \(remountCycles) re-opens")
+    }
+
+    /// "thread-detach-in-reply": from the tail of the 24 KB reply the reader drags 300 pt up in 50 pt steps (the pan stepped as
+    /// `FollowFixture.jump` does). At each step the offset has moved by the drag, give or take 8 pt, and so it does after the lift:
+    /// nothing sends the view to the reply's top when the reader lets go of the tail, and the reader is detached.
+    @MainActor static func detachInReply(_ app: MobileApp) async {
+        let ref = FixtureData.ref(FixtureData.preview)
+        await ready(app)
+        guard let scroll = FollowFixture.threadScrollView() else { return FixtureCheck.report("FIXTURE CHECK FAILED: no thread scroll view") }
+        MainQueueWatchdog.start(limit: 5)
+        _ = await shown(within: .seconds(5)) { $0.atTail && $0.ink >= inkFloor }
+        let start = scroll.contentOffset.y
+        let pan = scroll.panGestureRecognizer
+        var worst: CGFloat = 0
+        pan.state = .began
+        for step in 1...6 {
+            pan.setTranslation(CGPoint(x: 0, y: step * 50), in: scroll)
+            pan.state = .changed
+            scroll.contentOffset.y -= 50
+            try? await Task.sleep(for: .milliseconds(16))
+            worst = max(worst, abs((start - scroll.contentOffset.y) - CGFloat(step * 50)))
+        }
+        pan.state = .ended
+        try? await Task.sleep(for: .seconds(1.5))
+        let moved = start - scroll.contentOffset.y
+        let detached = !app.navigator.composerPresentation.state(for: ref).scrollFollower.sticky
+        let ink = FollowFixture.transcriptInk()
+        FixtureCheck.report("FIXTURE CHECK ok: the drag moved the view \(Int(moved.rounded()))pt of 300, \(Int(worst.rounded()))pt at worst mid-drag, "
+            + "\(detached ? "detached" : "still following"), \(Int((ink * 100).rounded()))% ink")
+        let held = abs(moved - 300) <= restoreTolerance && worst <= restoreTolerance && detached && ink >= inkFloor
+        FixtureCheck.report("FIXTURE CHECK \(held ? "ok" : "FAILED"): a drag up inside the reply moves the view by the drag and detaches the reader")
+    }
+
+    /// "thread-detached-remount": the reader scrolls up past the reply and the row before it, leaves, and comes back. The row SwiftUI
+    /// kept under the top edge is the one at the top again, within `restoreTolerance`, and the thread draws.
+    @MainActor static func detachedRemount(_ app: MobileApp) async {
+        let ref = FixtureData.ref(FixtureData.preview)
+        await ready(app)
+        guard let scroll = FollowFixture.threadScrollView() else { return FixtureCheck.report("FIXTURE CHECK FAILED: no thread scroll view") }
+        MainQueueWatchdog.start(limit: 5)
+        let presentation = app.navigator.composerPresentation.state(for: ref)
+        let finger = Finger(scroll: scroll)
+        await finger.drag(by: -20_000)
+        await FixtureWindows.wait("the thread at rest", seconds: 10) { !scroll.isDragging && !scroll.isDecelerating && !scroll.isTracking }
+        try? await Task.sleep(for: .seconds(1.5))
+        let row = presentation.visibleTurn
+        let detached = !presentation.scrollFollower.sticky
+        await leave(app)
+        let frames = MountFrames()
+        frames.start()
+        app.navigator.open(.thread(ref))
+        await FixtureWindows.wait("a built row after the re-open", seconds: 15) { frames.firstRow != nil }
+        try? await Task.sleep(for: .seconds(2))
+        _ = frames.stop()
+        let back = presentation.visibleTurn
+        let top = shownThreadScroll().flatMap { topRow(in: $0) }
+        let ink = FollowFixture.transcriptInk()
+        FixtureCheck.report("FIXTURE CHECK ok: left on row \(row ?? "none") \(detached ? "detached" : "still following"); back on row \(back ?? "none"), "
+            + "its top \(top.map { String(Int($0.offset.rounded())) } ?? "unread")pt from the top edge, \(Int((ink * 100).rounded()))% ink")
+        let held = row != nil && detached && back == row && top.map { abs($0.offset) <= restoreTolerance } == true && ink >= inkFloor
+        FixtureCheck.report("FIXTURE CHECK \(held ? "ok" : "FAILED"): a detached reader comes back to the row they left")
+    }
+}
+
+/// What a thread mounting shows on each display frame from `start()`: when its scroll view is there, when a built row first shows,
+/// the blank frames between, and how far from the tail the view is at the first row and after it.
+@MainActor final class MountFrames {
+    struct FirstRow {
+        var frame: Int
+        var milliseconds: Double
+        var distance: CGFloat
+        var ink: Double
+    }
+
+    struct Result {
+        var frames = 0
+        /// Frames with the scroll view in place and no built row in view, before the first row.
+        var blank = 0
+        var firstRow: FirstRow?
+        /// Frames after the first row more than the follower's tolerance from the tail, and the farthest of them.
+        var away = 0
+        var farthest = 0
+    }
+
+    private(set) var firstRow: FirstRow?
+    private var result = Result()
+    private var link: CADisplayLink?
+    private var started = CACurrentMediaTime()
+    private weak var scroll: UIScrollView?
+    private var ticker: Ticker?
+
+    func start() {
+        started = CACurrentMediaTime()
+        let ticker = Ticker { [weak self] in self?.tick() }
+        let link = CADisplayLink(target: ticker, selector: #selector(Ticker.fire))
+        link.add(to: .main, forMode: .common)
+        self.ticker = ticker
+        self.link = link
+    }
+
+    func stop() -> Result {
+        link?.invalidate()
+        link = nil
+        var done = result
+        done.firstRow = firstRow
+        return done
+    }
+
+    private func tick() {
+        result.frames += 1
+        if scroll?.window == nil { scroll = TailFixture.shownThreadScroll() }
+        guard let scroll else { return }
+        let rows = TailFixture.builtRows(in: scroll)
+        let distance = TailFixture.tailDistance(of: scroll)
+        if firstRow == nil {
+            guard rows > 0 else { return result.blank += 1 }
+            firstRow = FirstRow(frame: result.frames, milliseconds: (CACurrentMediaTime() - started) * 1000, distance: distance,
+                                ink: FollowFixture.transcriptInk())
+        } else if distance > NativeScrollFollower.threshold {
+            result.away += 1
+            result.farthest = max(result.farthest, Int(distance.rounded()))
+        }
+    }
+
+    private final class Ticker: NSObject {
+        let tick: () -> Void
+        init(_ tick: @escaping () -> Void) { self.tick = tick }
+        @objc func fire() { tick() }
     }
 }
 

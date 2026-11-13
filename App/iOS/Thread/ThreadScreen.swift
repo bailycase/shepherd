@@ -271,6 +271,7 @@ struct ThreadTranscript: View {
     }
 
     var body: some View {
+        let _ = SHRenderProbe.tick("thread.transcript")
         @Bindable var presentation = presentation
         let rows = store.rows
         let running = store.running
