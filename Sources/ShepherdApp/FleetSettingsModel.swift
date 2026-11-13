@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 
 /// One row of Settings ▸ Fleet's Macs: This Mac, then each Mac it is paired with. Plain values, derived once per change.
 struct FleetMacRow: Identifiable, Equatable {
@@ -147,6 +148,17 @@ final class FleetSettingsModel {
     /// The host can look a code up in this person's iCloud (`RemoteProtocol.fleetRendezvousCapability`): Add a Mac then works
     /// without a Mac picked from the list. A host without it (an older Nightly still running) pairs only with a picked Mac.
     var findsByCode = false
+    /// The host pairs with a Mac a pairing link or an SSH find names (`RemoteProtocol.fleetPairLinkCapability`).
+    var findsByLink = false
+    /// Add a Mac, a pairing link: the text in its field, what it says once read, and why it can't be used.
+    var linkText = ""
+    var link: FleetPairingLink?
+    var linkProblem: String?
+    /// A pairing link opened from outside the app (Finder, Messages, AirDrop): Add a Mac opens with it filled in, then clears it.
+    var incomingLink: String?
+    /// Add a Mac, over SSH: what was typed, and how finding the Mac went.
+    var sshTarget = ""
+    var ssh: SSHState = .idle
     /// The last thing that failed on the page, said under the Macs.
     var problem: String?
     /// The phones, iPads and Mac apps paired as clients, as Settings lists them.
@@ -159,8 +171,13 @@ final class FleetSettingsModel {
 
     /// This Mac's host, over its local socket; throws while it is away.
     @ObservationIgnored var host: () throws -> RemoteHostClient? = { nil }
+    /// Asks the Mac `user@host` over ssh where its Shepherd listens (`FleetSSHFinder`); a fixture in tests.
+    @ObservationIgnored var sshFind: (String) async throws -> FleetWhere = { try await FleetSSHFinder().find($0) }
+    /// This app's link scheme, and the time a link's expiry is read against.
+    @ObservationIgnored var linkScheme = FleetPairingLink.currentScheme
+    @ObservationIgnored var now: () -> Date = Date.init
     /// Pairs this app as a device of a Mac that is not in its fleet (Fleet off): the app does it, not its host.
-    @ObservationIgnored var pairClient: (String, UInt16, String) async throws -> Void = { _, _, _ in }
+    @ObservationIgnored var pairClient: (String, UInt16, String, UUID?) async throws -> Void = { _, _, _, _ in }
     /// Starts finding Macs; the answer stops it. Replaced by a fixture in tests.
     @ObservationIgnored var browse: @MainActor (@escaping @Sendable ([FoundMac]) -> Void) -> () -> Void = { _ in {} }
     /// Every snapshot the host answered with, for the Fleet page (`FleetPageModel`).
@@ -184,13 +201,14 @@ final class FleetSettingsModel {
             guard let client = try host() else { return }
             apply(try await client.fleetRead())
             findsByCode = client.capabilities.contains(RemoteProtocol.fleetRendezvousCapability)
+            findsByLink = client.capabilities.contains(RemoteProtocol.fleetPairLinkCapability)
             problem = nil
         } catch {
             if !loaded { problem = Self.words(error) }
         }
     }
 
-    private func apply(_ result: FleetResult) {
+    func apply(_ result: FleetResult) {
         if result.snapshot != snapshot {
             snapshot = result.snapshot
             rows = result.snapshot.enabled ? FleetMacRow.rows(of: result.snapshot) : []
@@ -318,6 +336,11 @@ final class FleetSettingsModel {
         stopBrowsing = nil
         everyFound = []
         found = []
+        linkText = ""
+        link = nil
+        linkProblem = nil
+        sshTarget = ""
+        ssh = .idle
     }
 
     private func filterFound() {
@@ -362,7 +385,7 @@ final class FleetSettingsModel {
         guard let address = mac.address, let port = mac.port else { return false }
         pairing = .working
         do {
-            try await pairClient(address, port, code)
+            try await pairClient(address, port, code, nil)
             pairing = .idle
             return true
         } catch {

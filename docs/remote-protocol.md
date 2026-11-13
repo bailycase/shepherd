@@ -638,6 +638,26 @@
   the network change that reports routes to linked peers also rewrites the presence record. A peer whose routes all failed reads the
   presence record and keeps its routes in `FleetPeerRecord.presence` (replaced by each look), tried after the addresses it was
   given and the routes the Mac reported.
+- **Fleet pairing links and SSH** (`fleet.pairlink.v1`, offered with `fleet.v1`, `FleetPairingLink.swift`, `FleetWhere.swift`): for a network where
+  Bonjour doesn't reach the other Mac. Nothing new crosses between Macs: the Mac that adds another asks `fleetIdentify` and sends `fleetPair`
+  (or `fleetPairDevice`) as for a typed code, so a Mac without the capability is paired with as before. The capability is between an app and
+  its own host: `FleetAction.pairAt(hostID, port, routes, code, expiresAt)` pairs with the Mac `hostID` over its routes in order (a route
+  that doesn't answer is skipped; the one that answers must say it is `hostID`, or the code is never sent, `wrong_host`); a code that has
+  expired by `expiresAt` is refused `link_expired` without a connection, and the Mac that showed the code is the judge of everything else
+  (`not_joining`, `code_expired`, `bad_code`). `FleetSnapshot.routes` is this Mac's own list (`FleetReportedRoute`, in the order it would
+  have them tried) and is never in a client's view.
+  A **pairing link** is `<scheme>://fleet/join?v=1&id=<hostID>&n=<name>&p=<port>&r=<host>,<kind>…&c=<code>&x=<expiry ms>` (`use=device` for an Add a
+  device code). It says where, never more than the code says: it is read as untrusted text (a UUID, a port, at most 32 routes of address
+  characters, a six digit code, an expiry; a repeated part, a missing one or an unknown version is malformed, a route of a kind this build
+  doesn't know is skipped), and it works only while the code does. Each app edition has its own scheme so one never opens another's: Shepherd
+  `shepherd`, Nightly `shepherd-nightly`, a Dev build `shepherd-dev` (`SHEPHERD_URL_SCHEME` in `Shepherd.xcodeproj`, `CFBundleURLTypes` in
+  `App/Info.plist`); an iPhone or iPad registers all three, as it pairs with whichever Mac shared the link, and takes only `use=device` links.
+  **SSH**: Add a Mac runs the user's own `ssh -T -o BatchMode=yes -o ConnectTimeout=… -o ClearAllForwardings=yes -- user@host …` (nothing prompts,
+  `~/.ssh/config` and the agent apply, 15 s at most, killed at the limit) to run `shepherd-cli fleet-where` from the Shepherd of its edition in
+  `/Applications` or `~/Applications` on that Mac. The CLI hands over to the app's executable beside it (`Shepherd --fleet-where`, handled before
+  any UI like `--host`), which reads its host over `host.sock` and prints one line of JSON (`FleetWhere`: host id, name, app, build, port, routes;
+  exit 3 when no host answers, 4 when it isn't listening). It reads and writes nothing else; a CLI from before refuses the argument, which is how
+  an older Shepherd is told apart from a missing one. SSH only finds: the code is typed and `pairAt` does the rest.
 - **Fleet pressure and readiness** (`fleet.pressure.v1`, offered with `fleet.v1`): each Mac pushes `fleetPressure` (a
   `FleetPressureSample`: CPU share, core count, total and available memory, thermal state, power, threads working,
   reserved places) every 5 s to the Macs it holds a link to, `fleetReadiness` (a `FleetReadinessReport`: model, chip, the

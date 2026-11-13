@@ -151,7 +151,7 @@ struct FleetDevicesFlowTests {
         // A's app pairs with B as a client, through the model's pairing and the store.
         let defaults = ScratchDefaults()
         let store = RemoteHostStore(defaults: defaults, connects: false)
-        a.model.pairClient = { host, port, code in try await store.pairAsClient(host: host, port: port, code: code) }
+        a.model.pairClient = { host, port, code, expecting in try await store.pairAsClient(host: host, port: port, code: code, expecting: expecting) }
         await b.model.startDeviceCode()
         let code = try #require(b.model.deviceCode).code
         let added = await a.model.pairAsClient(with: b.found, code: code)

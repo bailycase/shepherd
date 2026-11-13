@@ -84,9 +84,11 @@ func importHerdr() {
 
 let usage = """
 Usage: shepherd --import herdr
+       shepherd fleet-where
 
 Options:
   --import herdr   Import herdr workspaces and pi agent sessions into Shepherd
+  fleet-where      Print where this Mac's Shepherd listens, as JSON (read only)
   --help           Show this help
 """
 
@@ -94,6 +96,8 @@ let args = Array(CommandLine.arguments.dropFirst())
 switch args.first {
 case "--import" where args.count == 2 && args[1] == "herdr":
     importHerdr()
+case "fleet-where" where args.count == 1:
+    FleetWhereCLI.run()
 case "--help", "-h", nil:
     print(usage)
 default:

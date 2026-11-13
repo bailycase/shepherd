@@ -1,5 +1,6 @@
 import SwiftUI
 import ShepherdUI
+import ShepherdProtocol
 
 /// A window's content: the phone shell or the iPad split view by width, the app's state and the
 /// window's own navigator in the environment, the chosen appearance, and hosts connected while
@@ -52,8 +53,16 @@ struct MobileRoot: View {
             app.pushRouter.drainPending(hosts: app.hosts, windows: app.windows)
         }
         .onDisappear { app.windows.unregister(window.id, hosts: app.hosts) }
-        // A widget's or a Live Activity's link (`shepherd://`), in the window it opened.
-        .onOpenURL { url in GlanceBridge.open(url, navigator: navigator) }
+        // A pairing link (`shepherd://fleet/join?…`, from Messages or AirDrop) opens Add a Mac with it filled in; a widget's or a
+        // Live Activity's link (`shepherd://`), the window it names.
+        .onOpenURL { url in
+            if FleetPairingLink.isPairingURL(url) {
+                app.hosts.incomingPairingLink = url.absoluteString
+                navigator.open(.settings(.host(nil)))
+            } else {
+                GlanceBridge.open(url, navigator: navigator)
+            }
+        }
         .onChange(of: scenePhase, initial: true) { _, phase in
             // The first phase can arrive before onAppear: the window counts only once registered.
             app.windows.register(window, navigator: navigator)

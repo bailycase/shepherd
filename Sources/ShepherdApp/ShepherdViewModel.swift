@@ -860,7 +860,7 @@ final class ShepherdViewModel {
         self.fleetPage.threadCap = { [weak self] in self?.settings.fleetThreadCap ?? HostSettings.fleetThreadCapDefault }
         self.fleet.onSnapshot = { [fleetPage] in fleetPage.update($0) }
         self.settings.onFleetWeightsChange = { [fleetPage] in fleetPage.recompute() }
-        self.fleet.pairClient = { [weak self] host, port, code in try await self?.remoteHosts.pairAsClient(host: host, port: port, code: code) }
+        self.fleet.pairClient = { [weak self] host, port, code, expecting in try await self?.remoteHosts.pairAsClient(host: host, port: port, code: code, expecting: expecting) }
         self.fleet.browse = { update in
             let browser = FleetBrowser()
             browser.start(update)

@@ -1095,7 +1095,7 @@ public final class SessionServer: @unchecked Sendable {
                 && (($0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetSyncCapability) || fleet?.membership == true)
                 && ($0 != RemoteProtocol.fleetDevicesCapability || fleet != nil)
                 && (($0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetViewCapability && $0 != RemoteProtocol.fleetDispatchCapability
-                     && $0 != RemoteProtocol.fleetRendezvousCapability) || fleet?.membership == true)
+                     && $0 != RemoteProtocol.fleetRendezvousCapability && $0 != RemoteProtocol.fleetPairLinkCapability) || fleet?.membership == true)
                 && (($0 != RemoteProtocol.fleetSnapshotCapability && $0 != RemoteProtocol.fleetLinkCapability) || fleet?.membership == true)
         }
     }

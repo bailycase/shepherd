@@ -551,6 +551,11 @@ struct RemoteRequestTests {
         .fleetAction(id: 78, action: .stopJoin),
         .fleetAction(id: 79, action: .pair(host: "192.168.1.40", port: 7434, code: "482913")),
         .fleetAction(id: 130, action: .findAndPair(code: "482913")),
+        .fleetAction(id: 131, action: .pairAt(hostID: UUID(uuidString: "5B1F7A52-0F3C-4C55-A5A3-61C0E3F2B9D4")!, port: 7434,
+                                              routes: [FleetReportedRoute(host: "192.168.20.14", kind: .lan), FleetReportedRoute(host: "mac-mini.local", kind: .hostname)],
+                                              code: "482913", expiresAt: 1_770_000_000_000)),
+        .fleetAction(id: 132, action: .pairAt(hostID: UUID(uuidString: "5B1F7A52-0F3C-4C55-A5A3-61C0E3F2B9D4")!, port: 7434,
+                                              routes: [FleetReportedRoute(host: "100.86.12.4", kind: .tailscale)], code: "482913", expiresAt: nil)),
         .fleetAction(id: 80, action: .remove(hostID: RemoteSamples.fleetHost)),
         .fleetAction(id: 81, action: .adopt([FleetLegacyHost(id: RemoteSamples.fleetHost, name: "Mac mini", host: "192.168.1.40", port: 7434, token: "shared")])),
         .fleetAction(id: 101, action: .watching(true)),
@@ -1504,7 +1509,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.fleetExperimentCapability,
             // Offered only while the host's Fleet experiment is on (SessionServer.setFleetEnabled).
             RemoteProtocol.fleetCapability, RemoteProtocol.fleetPressureCapability, RemoteProtocol.fleetDispatchCapability,
-            RemoteProtocol.fleetSyncCapability, RemoteProtocol.fleetSnapshotCapability, RemoteProtocol.fleetRendezvousCapability, RemoteProtocol.fleetLinkCapability,
+            RemoteProtocol.fleetSyncCapability, RemoteProtocol.fleetSnapshotCapability, RemoteProtocol.fleetRendezvousCapability, RemoteProtocol.fleetLinkCapability, RemoteProtocol.fleetPairLinkCapability,
             // Offered to every client, a device included, while the host's Fleet experiment is on.
             RemoteProtocol.fleetViewCapability,
             // Offered whenever the host runs, Fleet on or off, and never to a client device (FleetAccess).
@@ -1529,6 +1534,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.fleetPressureCapability == "fleet.pressure.v1")
         #expect(RemoteProtocol.fleetSnapshotCapability == "fleet.snapshot.v1")
         #expect(RemoteProtocol.fleetRendezvousCapability == "fleet.rendezvous.v1")
+        #expect(RemoteProtocol.fleetPairLinkCapability == "fleet.pairlink.v1")
         #expect(RemoteProtocol.fleetDispatchCapability == "fleet.dispatch.v1")
         #expect(RemoteProtocol.fleetDevicesCapability == "fleet.devices.v1")
         #expect(RemoteProtocol.fleetExperimentCapability == "experiments.fleet.v1")

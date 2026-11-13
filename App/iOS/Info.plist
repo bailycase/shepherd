@@ -11,6 +11,21 @@
 		<string>_companion-link._tcp</string>
 		<string>_device-info._tcp</string>
 	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>com.bailycase.shepherd.ios.pairing</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>shepherd</string>
+				<string>shepherd-nightly</string>
+				<string>shepherd-dev</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Scan the code a Shepherd Mac shows to pair this device with it.</string>
 	<key>NSAppTransportSecurity</key>
