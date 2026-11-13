@@ -112,6 +112,12 @@ public enum NativeMountedCost {
     /// What a row costs before its content: its chrome, spacing and footer. Measured, 0.59 MiB a row.
     public static let rowBase = 600 * 1024
 
+    /// What a hidden thread keeps mounted when it lets rows go, at most (`NativeThreadStore.keptRows`): the rows of its last
+    /// screen, so that showing it again builds nothing before its first frame. A row larger than this is kept alone.
+    public static let lastScreen = 16 * 1024 * 1024
+    /// The most rows of a last screen, whatever they cost.
+    public static let lastScreenRows = 4
+
     // MARK: Kinds
 
     /// What the views of `block` hold, once built.
