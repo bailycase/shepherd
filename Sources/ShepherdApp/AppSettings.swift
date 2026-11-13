@@ -896,13 +896,17 @@ final class AppSettings {
     /// Calls `changed` once a burst of writes to the store (this process's, or another's that
     /// `followOtherProcesses` took) has settled: what Fleet's sync reads the settings again on.
     func observeWrites(settling delay: Duration = .milliseconds(300), _ changed: @escaping @MainActor () -> Void) {
-        writeObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: store, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.writeSettling?.cancel()
-                self?.writeSettling = Task { @MainActor in
-                    try? await Task.sleep(for: delay)
-                    guard !Task.isCancelled else { return }
-                    changed()
+        // Never `queue: .main`: a post waits for that observer to finish, and the host's main queue runs off the main
+        // thread (`dispatchMain`), so a write made on it (`reload`) would wait for itself.
+        writeObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: store, queue: nil) { [weak self] _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.writeSettling?.cancel()
+                    self?.writeSettling = Task { @MainActor in
+                        try? await Task.sleep(for: delay)
+                        guard !Task.isCancelled else { return }
+                        changed()
+                    }
                 }
             }
         }
