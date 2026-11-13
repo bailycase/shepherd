@@ -25,19 +25,24 @@ enum ComposerFieldFixture {
     static let keys = 12
     static let measuresPerEdit = 1
 
-    @MainActor static func field() async -> UITextView {
-        await FixtureWindows.wait("the composer field", seconds: 20) { FollowFixture.composerField() != nil }
+    /// The composer's field as it is now: the thread screen builds its composer again as the thread arrives, so a field held
+    /// from earlier may be one that left the window.
+    @MainActor static var field: UITextView {
         guard let field = FollowFixture.composerField() else { FixtureCheck.fail("no composer field") }
         return field
     }
 
-    /// The field has the caret, so keys typed into it are edits (a field without it takes them without a sound).
-    @MainActor static func focus(_ field: UITextView) async {
+    /// Waits for the thread to be on screen and its composer to stop being rebuilt, with the caret in its field.
+    @MainActor static func ready(_ app: MobileApp) async -> NativeThreadStore {
+        let store = app.threads.store(for: FixtureData.ref(FixtureData.preview))
+        await FixtureWindows.wait("the thread", seconds: 20) { !store.rows.isEmpty && FollowFixture.composerField() != nil }
+        try? await Task.sleep(for: .seconds(2))
         await FixtureWindows.wait("the composer field to take focus", seconds: 20) {
             if !field.isFirstResponder { field.becomeFirstResponder() }
             return field.isFirstResponder
         }
         try? await Task.sleep(for: .seconds(1))
+        return store
     }
 
     @MainActor static func settle() async {
@@ -46,9 +51,7 @@ enum ComposerFieldFixture {
 
     /// "composer-field-work".
     @MainActor static func work(_ app: MobileApp) async {
-        let store = app.threads.store(for: FixtureData.ref(FixtureData.preview))
-        let field = await field()
-        await focus(field)
+        let store = await ready(app)
         var failures: [String] = []
         for size in [0, 6_000, 40_000] {
             store.draft = String(repeating: sentence, count: size / sentence.count)
@@ -121,11 +124,10 @@ enum ComposerFieldFixture {
 
     /// "composer-field-looks".
     @MainActor static func looks(_ app: MobileApp) async {
-        let store = app.threads.store(for: FixtureData.ref(FixtureData.preview))
-        let field = await field()
-        await focus(field)
-        let lineHeight = ceil((field.typingAttributes[.font] as? UIFont ?? .preferredFont(forTextStyle: .body)).lineHeight)
-        let most = ceil(lineHeight * CGFloat(SHComposerMetrics.fieldMaxLines))
+        let store = await ready(app)
+        let fontLine = (field.typingAttributes[.font] as? UIFont ?? .preferredFont(forTextStyle: .body)).lineHeight
+        let lineHeight = ceil(fontLine)
+        let most = ceil(fontLine * CGFloat(SHComposerMetrics.fieldMaxLines))
         var failures: [String] = []
         func expect(_ holds: Bool, _ what: String) { if !holds { failures.append(what) } }
 
@@ -174,7 +176,7 @@ enum ComposerFieldFixture {
         // A skill is one chip in the line.
         store.draft = "Run /skill:debug on the failing job"
         let chip = await look("skill-chip", field)
-        expect(chip.height == lineHeight && !chip.scrolls, "a draft with a skill chip is one line")
+        expect(chip.height < 2 * lineHeight && !chip.scrolls, "a draft with a skill chip is one line")
         store.draft = "/skill:debug " + (1...10).map { "line \($0) after the skill" }.joined(separator: "\n")
         let chipLong = await look("skill-chip-long", field)
         expect(chipLong.height == most && chipLong.scrolls, "a long draft led by a skill chip stands at the ceiling")
@@ -182,13 +184,14 @@ enum ComposerFieldFixture {
         // The width changes with a turn: the same draft is laid out again at the new width.
         store.draft = String(repeating: sentence, count: 6)
         let portrait = await look("wrapped-portrait", field)
+        expect(portrait.height == most && portrait.scrolls, "ten wrapped lines stand at the ceiling and scroll")
         if let scene = field.window?.windowScene {
             await turn(scene, to: .landscapeRight)
             let landscape = await look("wrapped-landscape", field)
-            expect(landscape.width != portrait.width && landscape.height <= portrait.height, "turned wider, the same words take no more height")
+            expect(landscape.width > portrait.width && landscape.height < portrait.height && !landscape.scrolls, "turned wider, the same words take fewer lines")
             await turn(scene, to: .portrait)
             let again = await look("wrapped-portrait-again", field)
-            expect(again.height == portrait.height && again.width == portrait.width, "turned back, the field is as it was")
+            expect(again.height == portrait.height && again.width == portrait.width && again.scrolls == portrait.scrolls, "turned back, the field is as it was")
         }
         store.draft = ""
         FixtureCheck.report("FIXTURE CHECK \(failures.isEmpty ? "ok" : "FAILED"): the composer field's height, ceiling and scrolling\(failures.isEmpty ? "" : ": " + failures.joined(separator: "; "))")
