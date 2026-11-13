@@ -203,8 +203,8 @@ final class NativeThreadStores<Key: Hashable> {
     }
 
     /// The default `mountedBudget`: an eighth of the memory, and at most 2 GiB. The aborts this bounds look like a limit of
-    /// the process (SwiftUI's attribute graph, at 4.9 to 5.9 GB of footprint on a 48 GB Mac), so the cap follows the process
-    /// and not the machine. 2 GiB is what eight code-heavy hidden threads hold, so a Mac of 16 GB or more releases nothing
+    /// the process (SwiftUI's attribute graph, at a footprint of about 5 GB however much memory the Mac has), so the cap
+    /// follows the process and not the machine. 2 GiB is what eight code-heavy hidden threads hold, so a Mac of 16 GB or more releases nothing
     /// that today's bounds keep; an 8 GB Mac gets 1 GiB.
     static func defaultMountedBudget(physicalMemory: UInt64) -> Int {
         Int(min(2 << 30, physicalMemory / 8))
