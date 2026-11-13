@@ -1608,15 +1608,16 @@ public final class NativeThreadStore {
     public var transcriptReleased: Bool { transcriptDrawn != nil }
 
     /// How many rows at the end of the thread a hidden view keeps when it lets rows go (`releaseTranscript` with
-    /// `keepingLastScreen`): its last screen, the rows from the end while their costs add up to at most
-    /// `NativeMountedCost.lastScreen`, at least one and at most `NativeMountedCost.lastScreenRows`. They stay built, so showing the
-    /// thread again draws them with nothing to build, and the rows above them come back after the first frame (`ThreadView`).
+    /// `keepingLastScreen`): its last screen, the last row if it costs at most `NativeMountedCost.lastRow` and the rows before it
+    /// while all of them cost at most `NativeMountedCost.lastScreen`, and no more than `NativeMountedCost.lastScreenRows`. They stay
+    /// built, so showing the thread again draws them with nothing to build, and the rows above them come back after the first
+    /// frame (`ThreadView`). None when the last row alone costs more: there is nothing to keep that the budget could spare.
     public var keptRows: Int {
         let count = min(rows.count, rowCosts.count)
         var kept = 0, cost = 0
         while kept < min(count, NativeMountedCost.lastScreenRows) {
             let next = rowCosts[count - 1 - kept]
-            if kept > 0, cost + next > NativeMountedCost.lastScreen { break }
+            if cost + next > (kept == 0 ? NativeMountedCost.lastRow : NativeMountedCost.lastScreen) { break }
             cost += next
             kept += 1
         }

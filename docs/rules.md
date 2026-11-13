@@ -177,8 +177,8 @@ A hidden thread keeps its host, page, history and draft, but its rows are bounde
 much on the main thread, and not while the person types or scrolls or the thread on screen streams
 (`NativeThreadStores.busy`): unpinned ones first, then readers left scrolled up beyond the two most
 recently shown; the thread shown before the current one, and the one on screen, never. A thread
-keeps its last screen built (`NativeThreadStore.keptRows`, at most four rows within 16 MiB), which
-still counts against the budget. Showing one draws that last screen in the pass that shows it and
+keeps its last screen built (`NativeThreadStore.keptRows`: at most four rows within 16 MiB, or a last
+row of up to 64 MiB alone; a larger reply goes with the rest), which still counts against the budget. Showing one draws that last screen in the pass that shows it and
 builds nothing there (the deck lays the host out as it unhides one that let rows go, so no frame
 has the layout without them); the rows above come back after that frame, newest first, a step of
 rows at a time (`ThreadRestore`), and a reader taken this way comes back at its tail. The pass

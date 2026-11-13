@@ -113,8 +113,12 @@ public enum NativeMountedCost {
     public static let rowBase = 600 * 1024
 
     /// What a hidden thread keeps mounted when it lets rows go, at most (`NativeThreadStore.keptRows`): the rows of its last
-    /// screen, so that showing it again builds nothing before its first frame. A row larger than this is kept alone.
+    /// screen, so that showing it again builds nothing before its first frame. The rows after the last one are kept while they
+    /// fit this, the last one alone while it fits `lastRow`.
     public static let lastScreen = 16 * 1024 * 1024
+    /// The most a last row alone may cost and still be kept. A reply larger than this (a giant one, 100 KB of fences and tables
+    /// costs 250 MiB) is let go with the rest: kept, a hundred hidden threads would hold what the budget exists to bound.
+    public static let lastRow = 64 * 1024 * 1024
     /// The most rows of a last screen, whatever they cost.
     public static let lastScreenRows = 4
 

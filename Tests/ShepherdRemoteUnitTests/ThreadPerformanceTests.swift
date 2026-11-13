@@ -382,36 +382,36 @@ struct ThreadPerformanceTests {
         store.stop()
     }
 
-    /// A hidden thread keeps its last screen when it lets rows go: the rows from the end that fit `lastScreen`, one at least and
-    /// four at most, built once and never torn down, so showing it again has nothing to build before the first frame.
+    /// A hidden thread keeps its last screen when it lets rows go: the rows from the end that fit `lastScreen` (the last one alone
+    /// if it fits `lastRow`), four at most, built once and never torn down, so showing it again has nothing to build before the first frame.
     @Test func keptRowsAreTheRowsOfTheLastScreen() async {
-        func kept(_ history: [NativeThreadMessage]) async -> (kept: Int, costs: [Int], store: NativeThreadStore, stop: () -> Void) {
+        func kept(_ history: [NativeThreadMessage], parsed: Bool = false) async -> (kept: Int, costs: [Int], store: NativeThreadStore, stop: () -> Void) {
             let store = manualStore()
             let loop = await start(store, FakeHost(F.snapshot(messages: history)))
+            // A reply over the off-main parse threshold is costed once its parse lands.
+            if parsed { await until { store.rows.last.map { NativeMountedCost.row($0) > NativeMountedCost.rowBase * 4 } == true } }
             return (store.keptRows, store.rows.map { NativeMountedCost.row($0) }, store, { loop.cancel(); store.stop() })
         }
         let small = await kept((0..<10).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant("answer", id: "a\($0)")] })
         defer { small.stop() }
         #expect(small.kept == NativeMountedCost.lastScreenRows && small.costs.suffix(small.kept).reduce(0, +) < NativeMountedCost.lastScreen, "short rows: four, the most")
 
-        // The smallest reply whose row costs more than `bytes`: a reply's cost is no straight line in its cycles.
+        // The smallest reply whose row costs more than `bytes`: a reply's cost is no straight line in its cycles, and falls once it is giant.
         func reply(over bytes: Int) -> Int {
-            func cost(_ cycles: Int) -> Int {
-                NativeMountedCost.rowBase + NativeProse(nativeMarkdownParse(NativeMountedCostTests.bigReply(cycles: cycles))).eagerCost
-            }
-            var low = 1, high = 1
-            while cost(high) <= bytes { low = high; high *= 2 }
-            while high - low > 1 {
-                let middle = (low + high) / 2
-                if cost(middle) > bytes { high = middle } else { low = middle }
-            }
-            return high
+            var cycles = 1
+            while NativeMountedCost.rowBase + NativeProse(nativeMarkdownParse(NativeMountedCostTests.bigReply(cycles: cycles))).eagerCost <= bytes { cycles += 1 }
+            return cycles
         }
 
-        let huge = await kept([F.user("prompt", id: "u"), F.assistant(NativeMountedCostTests.bigReply(cycles: reply(over: NativeMountedCost.lastScreen)), id: "a")])
+        let large = await kept([F.user("prompt", id: "u"), F.assistant(NativeMountedCostTests.bigReply(cycles: reply(over: NativeMountedCost.lastScreen)), id: "a")])
+        defer { large.stop() }
+        #expect(large.costs.last.map { $0 > NativeMountedCost.lastScreen && $0 <= NativeMountedCost.lastRow } == true, "a reply of more than a last screen: \(large.costs)")
+        #expect(large.kept == 1, "is kept alone: the first frame builds nothing")
+        let huge = await kept([F.user("prompt", id: "u"), F.assistant(NativeMountedCostTests.bigReply(cycles: reply(over: NativeMountedCost.lastRow)), id: "a")], parsed: true)
         defer { huge.stop() }
-        #expect(huge.costs.last.map { $0 > NativeMountedCost.lastScreen } == true, "the last reply alone is more than a last screen")
-        #expect(huge.kept == 1, "and is kept alone: the first frame builds nothing")
+        #expect(huge.costs.last.map { $0 > NativeMountedCost.lastRow } == true, "a reply of more than a last row")
+        #expect(huge.kept == 0, "has nothing the budget could spare kept for it")
+        #expect(huge.store.canReleaseTranscript, "and all of it can go")
 
         // Replies a little over half a last screen each: the last one and the question under it, but not the reply before.
         let half = reply(over: NativeMountedCost.lastScreen / 2)

@@ -127,9 +127,8 @@ struct ThreadView: View {
         // read by its own row view, so a streamed chunk redraws that row and not this body.
         let rows = listedRows(origins)
         // A hidden thread whose rows were let go to keep what the hidden views hold within a budget (`NativeThreadStores`) draws
-        // only the last ones it still has, in steps down to none; only the two lists of rows below read this. The thread on
-        // screen never reads it, so it is never redrawn by it, and shown again draws its rows, kept in the store, in the update
-        // that shows it.
+        // only the last ones it still has, in steps down to its last screen; only the two lists of rows below read this. The thread
+        // on screen never reads it, so it is never redrawn by it.
         let kept = active ? nil : store.transcriptDrawn
         let dormant = kept != nil
         // Shown again, such a thread draws the rows it kept at once (they never went), and the rest after that frame, a step at a time
