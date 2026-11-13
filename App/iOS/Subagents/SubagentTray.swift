@@ -25,7 +25,7 @@ struct SubagentTraySection: View {
         if let tray = store.tray { card(tray) }
     }
 
-    private func card(_ tray: NativeSubagentTray) -> some View {
+    @ViewBuilder private func card(_ tray: NativeSubagentTray) -> some View {
         let values = SubagentValues.tray(tray)
         let shown = NativeSubagentTray.shownRows
         let long = values.rows.count > shown
