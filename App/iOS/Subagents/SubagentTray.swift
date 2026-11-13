@@ -10,6 +10,10 @@ import ShepherdRemote
 /// quietly on its row: a subagent never asks the user. It stays until your next message once
 /// every run has finished. It reads the store's tray itself: a child's tool call redraws this and
 /// not the composer around it, which reads only whether the tray shows (`hasTray`).
+///
+/// While the composer takes the section out, the store's tray is already nil, but a view in its
+/// removal transition still runs its body. The last tray is kept for that pass, so the card fades
+/// out with its rows as it did when the composer handed it a copy.
 struct SubagentTraySection: View {
     let ref: AgentRef
     let store: NativeThreadStore
@@ -19,10 +23,25 @@ struct SubagentTraySection: View {
     @Environment(MobileNavigator.self) private var navigator
     @ScaledMetric(relativeTo: .body) private var rowsMaxHeight = MobileLayout.trayRowsMaxHeight
     @Environment(\.composerMaxHeight) private var composerMaxHeight
+    @State private var last = LastTray()
+
+    /// The tray this section drew last. A class nobody observes: writing it in `body` costs no render.
+    private final class LastTray {
+        var value: NativeSubagentTray?
+    }
 
     var body: some View {
         let _ = SHRenderProbe.tick("composer.tray")
-        if let tray = store.tray { card(tray) }
+        if let tray = remembered(store.tray) {
+            card(tray)
+        } else {
+            let _ = SHRenderProbe.tick("composer.tray.empty")
+        }
+    }
+
+    private func remembered(_ tray: NativeSubagentTray?) -> NativeSubagentTray? {
+        if let tray { last.value = tray }
+        return tray ?? last.value
     }
 
     @ViewBuilder private func card(_ tray: NativeSubagentTray) -> some View {
