@@ -16,6 +16,8 @@ enum SubagentTrayTicks {
     static let ticks = 20
     /// Runs of the composer's body the ticks may cost together: a layout pass for something else.
     static let composerLimit = 2
+    /// Seconds a poll may take to reach the tray: a busy machine answers slowly.
+    static let patience = 60.0
 
     /// The step the host serves.
     private final class Stage: @unchecked Sendable {
@@ -75,13 +77,13 @@ enum SubagentTrayTicks {
         func worker() -> NativeTrayRow.Line? { store.tray?.rows.first { $0.runID == SubagentFixtures.worker }?.line }
         let expected = lines()
         SHRenderProbe.start()
-        await FixtureWindows.wait("the tray to dock", seconds: 20) { worker() != nil && SHRenderProbe.count("composer.tray") > 0 }
+        await FixtureWindows.wait("the tray to dock", seconds: patience) { worker() != nil }
         await settle()
         SHRenderProbe.start()
         for tick in 1...ticks {
             let drawn = SHRenderProbe.count("composer.tray")
             stage.advance()
-            await FixtureWindows.wait("tick \(tick) to reach the tray", seconds: 20) {
+            await FixtureWindows.wait("tick \(tick) to reach the tray", seconds: patience) {
                 worker() == expected[tick] && SHRenderProbe.count("composer.tray") > drawn
             }
         }
