@@ -239,6 +239,10 @@ final class FixtureHost: @unchecked Sendable {
              .apps(let id, _):
             note(Self.kind(request))
             return [.error(id: id, code: "fixture", message: "No fixture answer for this request.")]
+        case .fleetEnrollDevice(let id, _):
+            // Offered on every connect once hello advertises `fleetDevicesCapability`; left unanswered it times out after 10 s and the
+            // host's connection is torn down, which shows the thread's offline banner at the top of a long transcript.
+            return [.error(id: id, code: "unsupported", message: "The fixture host enrolls no device.")]
         default:
             return []
         }
