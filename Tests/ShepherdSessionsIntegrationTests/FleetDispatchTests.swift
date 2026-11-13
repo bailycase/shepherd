@@ -70,7 +70,8 @@ struct FleetDispatchTests {
         /// `Developer` folder (made by a test that wants it there), never the real one.
         init(_ name: String, origin: Origin, busy: UInt64 = 20, repoKey: String? = FleetDispatchTests.repoKey, dir: URL? = nil, port: UInt16 = 0,
              sendWork: Bool = true, cap: Int = HostSettings.fleetThreadCapDefault, checkout: Bool = true,
-             uncommitted: FleetUncommittedChanges = .sendThem, links: SessionServer.FleetLinkOptions? = nil, gate: FleetTestGate? = nil) async throws {
+             uncommitted: FleetUncommittedChanges = .sendThem, links: SessionServer.FleetLinkOptions? = nil, gate: FleetTestGate? = nil,
+             mcp: [String: String] = [:], lacking: Set<String> = [], noXcode: Bool = false) async throws {
             self.name = name
             meter = FleetPressureIntegrationTests.Meter(busy: busy)
             settings = Locked(HostSettings(fleetThreadsCanSend: sendWork, fleetThreadCap: cap, fleetUncommitted: uncommitted))
@@ -83,10 +84,15 @@ struct FleetDispatchTests {
             // A test that holds this Mac's readings back holds back its answer to `fleetPressureNow`.
             if let gate { sources.pause = { _ in await gate.pass() } }
             let held = sources
+            // pi's MCP file on this Mac, and what its login shell can't find (`lacking`, `noXcode`).
+            if !mcp.isEmpty {
+                let servers = mcp.map { #""\#($0.key)": {"command": "\#($0.value)"}"# }.sorted().joined(separator: ",")
+                try Data(#"{"mcpServers": {\#(servers)}}"#.utf8).write(to: server.pi.files.mcpConfig)
+            }
             if let links { server.fleetLinkOptions = links }
             server.configureFleet(clock: { clock.now }, pressure: { queue, facts in
                 FleetPressure(queue: queue, clock: { clock.now }, sampler: FleetPressureSampler(sources: held), localFacts: facts,
-                              probe: { _ in FleetProbeResult() }, hardware: { (name, "M4 Pro") }, interval: 3_600)
+                              probe: { commands in FleetProbeResult(missingCommands: Set(commands).intersection(lacking), noXcode: noXcode) }, hardware: { (name, "M4 Pro") }, interval: 3_600)
             })
             let folder = scratch.appendingPathComponent("web", isDirectory: true)
             self.folder = folder
@@ -232,11 +238,13 @@ struct FleetDispatchTests {
     static func pair(busyA: UInt64 = 20, busyB: UInt64 = 20, sendWork: Bool = true, cap: Int = HostSettings.fleetThreadCapDefault,
                      originExtra: [String: String] = [:], repoKeyB: String? = repoKey,
                      originOfB: ((Origin) throws -> Origin)? = nil, checkoutB: Bool = true,
-                     uncommittedA: FleetUncommittedChanges = .sendThem) async throws -> (a: Mac, b: Mac, origin: Origin) {
+                     uncommittedA: FleetUncommittedChanges = .sendThem, mcp: [String: String] = [:], lackingB: Set<String> = [],
+                     noXcodeB: Bool = false) async throws -> (a: Mac, b: Mac, origin: Origin) {
         try StubPi.installAsEngine()
         let origin = try makeOrigin(extra: originExtra)
-        let a = try await Mac("MacBook Pro", origin: origin, busy: busyA, sendWork: sendWork, cap: cap, uncommitted: uncommittedA)
-        let b = try await Mac("Mac mini", origin: try originOfB?(origin) ?? origin, busy: busyB, repoKey: repoKeyB, sendWork: sendWork, checkout: checkoutB)
+        let a = try await Mac("MacBook Pro", origin: origin, busy: busyA, sendWork: sendWork, cap: cap, uncommitted: uncommittedA, mcp: mcp)
+        let b = try await Mac("Mac mini", origin: try originOfB?(origin) ?? origin, busy: busyB, repoKey: repoKeyB, sendWork: sendWork, checkout: checkoutB,
+                              mcp: mcp, lacking: lackingB, noXcode: noXcodeB)
         try await a.pair(with: b)
         try await waitForReports(a, b)
         return (a, b, origin)
@@ -493,6 +501,50 @@ struct FleetDispatchTests {
         try await Self.wait("B to run it") { b.taken().first?.state == .running }
         try await a.server.deleteAgent(parent.agent.id)
         try await Self.wait("both ends to cancel") { a.sent().first?.state == .cancelled && b.taken().first?.state == .cancelled }
+    }
+
+    // MARK: What a Mac lacks
+
+    @Test func aMacMissingAnMCPServersCommandStillRunsTheWorkAndTheSenderIsToldWhatItLacked() async throws {
+        let (a, b, _) = try await Self.pair(busyA: 90, busyB: 10, mcp: ["bear": "/Applications/Bear.app/bearcli", "fetch": "npx"], lackingB: ["npx"])
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent()
+        try parent.hello()
+        let bID = try await b.hostID()
+        // B's report says what it lacks, as a fact; it is not a reason to refuse.
+        let report = try #require(try await a.local.fleetRead().snapshot.macs.first { $0.hostID == bID }?.readiness)
+        #expect(Set(report.missing) == [FleetMissingTool(kind: .binary, name: "npx"), FleetMissingTool(kind: .binary, name: "bearcli")])
+        guard case .fleetHosts(_, let hosts) = try await parent.call({ .fleetListHosts(id: $0, agentID: parent.agent.id) }) else { Issue.record("no list"); return }
+        let mini = try #require(hosts.first { $0.name == "Mac mini" })
+        #expect(mini.problems.isEmpty && Set(mini.without ?? []) == ["npx", "bearcli"])
+
+        // Named and Auto both place it; the thread runs there, and the sender's reply and record name the servers it started without.
+        let named = try parent.info(try await parent.dispatch(key: "named", host: "Mac mini"))
+        #expect(named.host == "Mac mini" && named.failure == nil && Set(named.without ?? []) == ["npx", "bearcli"])
+        try await Self.wait("B to run the dispatched thread") { !b.dispatched.isEmpty }
+        #expect(Set(a.sent().first { $0.id.uuidString.lowercased() == named.dispatchID }?.without ?? []) == ["npx", "bearcli"])
+        let auto = try parent.info(try await parent.dispatch("Another task.", key: "auto"))
+        #expect(auto.host == "Mac mini" && auto.failure == nil && auto.without?.isEmpty == false)
+        #expect(a.sent().allSatisfy { $0.failure == nil })
+    }
+
+    @Test func aMacWithoutXcodeTakesAWebRepositoryAndIsRefusedOneWithAnXcodeProject() async throws {
+        let web = try await Self.pair(busyA: 90, busyB: 10, noXcodeB: true)
+        defer { web.a.stop(); web.b.stop() }
+        let parent = try await web.a.parent()
+        try parent.hello()
+        #expect(try parent.info(try await parent.dispatch(key: "web", host: "Mac mini")).failure == nil)
+        try await Self.wait("B to run the web thread") { !web.b.dispatched.isEmpty }
+
+        let ios = try await Self.pair(busyA: 90, busyB: 10, originExtra: ["App.xcodeproj/project.pbxproj": "// acme-ios\n"], noXcodeB: true)
+        defer { ios.a.stop(); ios.b.stop() }
+        let iosParent = try await ios.a.parent()
+        try iosParent.hello()
+        guard case .error(_, let code, let message) = try await iosParent.dispatch(key: "ios", host: "Mac mini") else { Issue.record("not refused"); return }
+        #expect(code == FleetDispatchCode.hostNotReady && message.contains("Xcode isn't installed"))
+        #expect(ios.b.dispatched.isEmpty)
+        guard case .fleetHosts(_, let hosts) = try await iosParent.call({ .fleetListHosts(id: $0, agentID: iosParent.agent.id) }) else { Issue.record("no list"); return }
+        #expect(hosts.first { $0.name == "Mac mini" }?.problems == ["Xcode"], "fleet_hosts says what stops work for this thread's repository")
     }
 
     // MARK: Refusals with codes

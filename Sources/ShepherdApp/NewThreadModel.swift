@@ -252,7 +252,9 @@ final class NewThreadState {
         let snapshot = vm.fleetPage.snapshot
         return FleetWherePicker.make(
             snapshot: snapshot, pick: wherePick, repoKey: space.repoKey, repoName: space.name,
-            autoDispatch: vm.settings.autoDispatch(pairedMacs: snapshot.peers.count), weight: { vm.settings.fleetWeight(of: $0) },
+            autoDispatch: vm.settings.autoDispatch(pairedMacs: snapshot.peers.count),
+            // Read the folder only when a Mac lacks Xcode: the rest never care.
+            needsXcode: snapshot.macs.contains { $0.readiness?.lacks.contains(.xcode) == true } && FleetPlacement.hasXcodeProject(atPath: space.path), weight: { vm.settings.fleetWeight(of: $0) },
             batteryCountsHalf: vm.settings.fleetBatteryCountsHalf, snapshotAge: max(0, Date().timeIntervalSince(vm.fleetPage.snapshotAt)),
             baseBranch: workplaceBase(vm), startsInCheckout: !(worktree && offersWorktree(vm)))
     }

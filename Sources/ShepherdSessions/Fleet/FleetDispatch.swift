@@ -520,8 +520,10 @@ final class FleetDispatch: @unchecked Sendable {
         placing.insert(id)
         let stale = peers().filter { peer in
             guard peer.connected else { return false }
-            let age = pressure.macs(thisMac: hostID, peerIDs: [peer.hostID]).first { $0.hostID == peer.hostID }?.sampleAge
-            return age.map { $0 > FleetRoom.staleAfter / 2 } ?? true
+            let state = pressure.macs(thisMac: hostID, peerIDs: [peer.hostID]).first { $0.hostID == peer.hostID }
+            // A peer whose report lists something missing is asked too: it looks again before it answers, and the tool may be installed now.
+            if let readiness = state?.readiness, !readiness.missing.isEmpty || readiness.noXcode { return true }
+            return state?.sampleAge.map { $0 > FleetRoom.staleAfter / 2 } ?? true
         }
         let asks = stale.compactMap { peer in client(peer.hostID).map { (peer.hostID, $0) } }
         Task.detached { [weak self, pressure] in
@@ -547,7 +549,7 @@ final class FleetDispatch: @unchecked Sendable {
         guard [.placing, .waitingRoom, .heldLimit].contains(record.state) else { return completion?(.success(record)) ?? () }
         let macs = placementMacs(for: record)
         let batteryHalf = host.settings()?.fleetBatteryCountsHalf ?? true
-        let outcome = FleetPlacement.place(host: record.requestedHost, macs: macs, batteryCountsHalf: batteryHalf)
+        let outcome = FleetPlacement.place(host: record.requestedHost, macs: macs, needsXcode: needsXcode(record), batteryCountsHalf: batteryHalf)
         switch outcome {
         case .place(let target, let reasons):
             // A thread the person started that stays on this Mac isn't a dispatch: the app starts it itself.
@@ -559,6 +561,8 @@ final class FleetDispatch: @unchecked Sendable {
             record.targetHostID = target
             record.targetHostName = macs.first { $0.hostID == target }?.name
             record.reasonCodes = reasons
+            // What the target lacks of MCP servers doesn't stop it: the thread starts without them, and the sender is told which.
+            record.without = macs.first { $0.hostID == target }?.withoutCommands ?? []
             record.state = .preparing
             record.updatedAt = now
             outbound[id] = record
@@ -592,6 +596,13 @@ final class FleetDispatch: @unchecked Sendable {
         }
     }
 
+    /// Whether this dispatch's repository has an Xcode project at its top level (here: it is the sending Mac's checkout that is looked at),
+    /// the only reason a Mac without Xcode is refused.
+    func needsXcode(_ record: FleetDispatchRecord) -> Bool {
+        let spaces = host.state().spaces.filter { $0.id == record.spaceID || (!record.repoKey.isEmpty && $0.repoKey == record.repoKey) }
+        return FleetReadiness.needsXcode(spaces: spaces.map { ($0.name, $0.path) })
+    }
+
     /// Every Mac as placement sees it: this Mac and each paired one.
     func placementMacs(for record: FleetDispatchRecord) -> [FleetPlacement.Mac] {
         let settings = host.settings()
@@ -604,7 +615,7 @@ final class FleetDispatch: @unchecked Sendable {
         let local = states.first { $0.hostID == hostID }
         macs.append(FleetPlacement.Mac(
             hostID: hostID, name: hostName(), isLocal: true, connected: true, hasRepo: true,
-            problems: (local?.readiness ?? pressure.localReadiness)?.missing.map(Self.problemName) ?? [],
+            lacks: (local?.readiness ?? pressure.localReadiness)?.lacks ?? [],
             sample: local?.sample, sampleAge: local?.sampleAge, weight: weight(hostID), inFlight: inFlight(hostID)))
         for peer in peers() {
             let state = states.first { $0.hostID == peer.hostID }
@@ -614,18 +625,10 @@ final class FleetDispatch: @unchecked Sendable {
             let hasRepo: Bool? = readiness.map { $0.repoKeys.contains(record.repoKey) }
             macs.append(FleetPlacement.Mac(
                 hostID: peer.hostID, name: peer.name, isLocal: false, connected: peer.connected, hasRepo: hasRepo,
-                problems: readiness?.missing.map(Self.problemName) ?? [], sample: state?.sample, sampleAge: state?.sampleAge,
+                lacks: readiness?.lacks ?? [], sample: state?.sample, sampleAge: state?.sampleAge,
                 weight: weight(peer.hostID), inFlight: inFlight(peer.hostID)))
         }
         return macs
-    }
-
-    static func problemName(_ tool: FleetMissingTool) -> String {
-        switch tool.kind {
-        case .binary: tool.name
-        case .git: "git"
-        case .xcode: "Xcode"
-        }
     }
 
     static func refusal(_ code: String, _ detail: String?) -> FleetDispatchRefusal {

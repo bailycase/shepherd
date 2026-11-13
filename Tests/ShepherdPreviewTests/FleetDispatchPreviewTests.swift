@@ -23,12 +23,12 @@ struct FleetDispatchPreviewTests {
 
     static func record(_ state: FleetDispatchState, title: String = "Fix flaky payment test", target: UUID? = P.mini, host: String? = "Mac mini",
                        kind: FleetDispatchRecord.Kind = .agentDispatch, reasons: [FleetPlacementReason] = [FleetPlacementReason(.localIneligible, skip: "cpu"), FleetPlacementReason(.mostRoom, ratio: 3.4)],
-                       failure: String? = nil, id: UUID? = nil, at: Double = 100) -> FleetDispatchRecord {
+                       failure: String? = nil, id: UUID? = nil, without: [String] = [], at: Double = 100) -> FleetDispatchRecord {
         var record = FleetDispatchRecord(
             id: id ?? UUID(), kind: kind, parentAgentID: kind == .userThread ? nil : sender, parentHostID: P.here, parentHostName: "MacBook Pro",
             parentTitle: kind == .userThread ? "" : senderTitle, targetHostID: target, targetHostName: host, state: state, failure: failure, title: title,
             task: "Fix the flaky payment test.", repoKey: "github.com/acme/payments-api", commitSHA: "4e1c9a2" + String(repeating: "0", count: 33),
-            branch: "fleet/fix-flaky-payment", reasonCodes: reasons, remoteAgentID: [.running, .done].contains(state) ? AgentID(rawValue: "mini-1") : nil, createdAt: at)
+            branch: "fleet/fix-flaky-payment", reasonCodes: reasons, without: without, remoteAgentID: [.running, .done].contains(state) ? AgentID(rawValue: "mini-1") : nil, createdAt: at)
         record.updatedAt = at
         return record
     }
@@ -68,6 +68,19 @@ struct FleetDispatchPreviewTests {
             try await Preview.renderMatrix(name, size: CGSize(width: 1000, height: 820), ready: { fixture.store.ready }) {
                 fixture.thread(title: Self.senderTitle).environment(\.fleetThread, surface)
             }
+        }
+    }
+
+    /// The Mac lacks the command of an MCP server: the thread started anyway, and the card says without which server.
+    @Test func aDispatchToAMacMissingAnMCPCommandSaysWhatItStartedWithout() async throws {
+        let id = try #require(FleetDispatchID.forToolCall(Self.toolCall, agent: Self.sender))
+        let fixture = ThreadFixture(Self.parentSnapshot(done: false))
+        defer { fixture.store.stop() }
+        let record = Self.record(.running, id: id, without: ["bearcli"])
+        let surface = Self.surface([record])
+        #expect(surface.cards.first?.detail.hasSuffix("Started on Mac mini without: bearcli (MCP)") == true)
+        try await Preview.renderMatrix("fleet-readiness-dispatch-without", size: CGSize(width: 1000, height: 820), ready: { fixture.store.ready }) {
+            fixture.thread(title: Self.senderTitle).environment(\.fleetThread, surface)
         }
     }
 
@@ -233,6 +246,15 @@ struct FleetDispatchPreviewTests {
         }
         try await Preview.renderMatrix("fleet4d-new-thread-popover", size: CGSize(width: 1280, height: 760)) {
             NewThreadPage(vm: vm, chrome: PageHeaderChrome(), whereOpen: true)
+        }
+        // The Mac Auto picks lacks an MCP server's command: still the pick, and the note says the thread starts without that server.
+        let miniIndex = try #require(snapshot.macs.firstIndex { $0.hostID == P.mini })
+        snapshot.macs[miniIndex].readiness?.missing = [FleetMissingTool(kind: .binary, name: "bearcli")]
+        vm.fleetPage.update(snapshot)
+        let lacking = vm.newThread.fleetPicker(vm)
+        #expect(lacking.chip == "Auto · Mac mini" && lacking.note?.hasSuffix("It starts without bearcli (MCP).") == true)
+        try await Preview.renderMatrix("fleet-readiness-new-thread-chip", size: CGSize(width: 1280, height: 760)) {
+            NewThreadPage(vm: vm, chrome: PageHeaderChrome())
         }
     }
 

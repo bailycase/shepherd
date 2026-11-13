@@ -56,7 +56,7 @@ enum RemoteSamples {
                                                            digest: FleetManifest(fleetManifestPrefixes).digest)
     static let fleetReadiness = FleetReadinessReport(model: "MacBook Pro", chip: "M4 Pro",
                                                      missing: [FleetMissingTool(kind: .binary, name: "muse"), FleetMissingTool(kind: .xcode)],
-                                                     repos: ["acme-web", "payments-api"], repoKeys: ["github.com/acme/payments-api", "github.com/acme/web"])
+                                                     repos: ["acme-web", "payments-api"], repoKeys: ["github.com/acme/payments-api", "github.com/acme/web"], noXcode: true)
     static let dispatchID = UUID(uuidString: "5D4F1F6E-2B0C-4C86-9E43-7F5B7E0A9C11")!
     static let dispatchCreate = FleetDispatchCreate(
         dispatchID: dispatchID, task: "Fix the flaky payment test.", title: "Fix flaky payment test", repoKey: "github.com/acme/payments-api",

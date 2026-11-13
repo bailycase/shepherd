@@ -256,6 +256,72 @@ struct FleetPressureIntegrationTests {
         #expect(page.cards.first { $0.id == aID }?.ready.text == "muse CLI isn’t installed")
     }
 
+    /// A Mac whose pi's MCP file names a program at `path`, which isn't there yet.
+    private static func macLacking(_ path: URL, probes: Locked<Int> = Locked(0)) async throws -> Mac {
+        let config = path.deletingLastPathComponent().appendingPathComponent("mcp.json")
+        try Data(#"{"mcpServers": {"bear": {"command": "\#(path.path)"}}}"#.utf8).write(to: config)
+        return try await Mac("MacBook Pro", busy: 30, mcpConfig: config, probe: { _ in probes.withValue { $0 += 1 }; return FleetProbeResult() })
+    }
+
+    private static func install(_ path: URL) throws {
+        try Data("#!/bin/sh\n".utf8).write(to: path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path.path)
+    }
+
+    @Test func aToolInstalledAfterTheReportWasMadeIsReportedReadyAtTheNextRecheckWithoutARestart() async throws {
+        let dir = try makeScratchDirectory("recheck")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let tool = dir.appendingPathComponent("bearcli")
+        let probes = Locked(0)
+        let a = try await Self.macLacking(tool, probes: probes), b = try await Mac("Mac mini", busy: 60)
+        defer { a.stop(); b.stop() }
+        try await Self.pair(a, b)
+        let aID = try await a.hostID()
+        try await eventually("B to hold A's report naming the missing tool") {
+            try await b.state(of: aID)?.readiness?.missing == [FleetMissingTool(kind: .binary, name: "bearcli")]
+        }
+
+        // Installed, but the interval hasn't passed: the report still stands and nothing is asked again.
+        try Self.install(tool)
+        let before = probes.current
+        let reads = a.meter.cpuReads
+        a.clock.advance(FleetPressure.missingRecheckInterval - 1)
+        a.tick()
+        try await eventually("a second sample") { a.meter.cpuReads > reads }
+        #expect(probes.current == before)
+        #expect(try await b.state(of: aID)?.readiness?.missing.isEmpty == false)
+
+        // One interval later it looks again, and the change reaches B.
+        a.clock.advance(1)
+        a.tick()
+        try await eventually("the tool to be reported installed") { try await b.state(of: aID)?.readiness?.missing.isEmpty == true }
+        let before2 = probes.current
+        let reads2 = a.meter.cpuReads
+        a.clock.advance(FleetPressure.missingRecheckInterval * 3)
+        a.tick()
+        try await eventually("another sample") { a.meter.cpuReads > reads2 }
+        #expect(probes.current == before2, "nothing is missing, so nothing is asked again before the daily recheck")
+    }
+
+    @Test func aPlacementLooksAgainAtWhatAReportSaysIsMissingBeforeItRelies() async throws {
+        let dir = try makeScratchDirectory("recheck-now")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let tool = dir.appendingPathComponent("bearcli")
+        let a = try await Self.macLacking(tool), b = try await Mac("Mac mini", busy: 60)
+        defer { a.stop(); b.stop() }
+        try await Self.pair(a, b)
+        let aID = try await a.hostID()
+        try await eventually("B to hold A's report naming the missing tool") {
+            try await b.state(of: aID)?.readiness?.missing == [FleetMissingTool(kind: .binary, name: "bearcli")]
+        }
+        // No tick and no time has passed; B asking A for a reading (as a placement does) finds the tool.
+        try Self.install(tool)
+        let asB = try await a.connectAsPeer(b)
+        defer { asB.disconnect() }
+        #expect(try await asB.fleetPressureNow().readiness?.missing == [])
+        try await eventually("B to hold the new report") { try await b.state(of: aID)?.readiness?.missing.isEmpty == true }
+    }
+
     @Test func aDailyRecheckRemakesTheReportEvenWithNothingChanged() async throws {
         let probes = Locked(0)
         let a = try await Mac("MacBook Pro", busy: 30, probe: { _ in probes.withValue { $0 += 1 }; return FleetProbeResult() })
