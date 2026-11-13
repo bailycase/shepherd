@@ -271,13 +271,14 @@ struct ThreadTranscript: View {
     }
 
     var body: some View {
-        let _ = SHRenderProbe.tick("thread.transcript")
         @Bindable var presentation = presentation
         let rows = store.rows
         let running = store.running
         let thinking = store.showsThinking
         let liveRow = rows.last(where: \.live)
         ScrollViewReader { proxy in
+            // Counted here, where the transcript's own state is read: the body above reads the store only.
+            let _ = SHRenderProbe.tick("thread.transcript")
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: MobileLayout.turnSpacing) {
                     if let banner {

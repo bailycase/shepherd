@@ -754,10 +754,26 @@ enum FollowFixture {
         return fields.last
     }
 
+    /// Waits until the transcript has drawn nothing for half a second (at most five seconds), and returns how many times it drew
+    /// since `SHRenderProbe.start()`. The lift and the detach of a drag come when the coast ends.
+    @MainActor static func transcriptRendersAtRest() async -> Int {
+        var seen = -1
+        var quiet = 0
+        for _ in 1...50 where quiet < 5 {
+            try? await Task.sleep(for: .milliseconds(100))
+            let now = SHRenderProbe.count("thread.transcript")
+            quiet = now == seen ? quiet + 1 : 0
+            seen = now
+        }
+        return seen
+    }
+
     /// A finger drags the thread up from its tail (its pan recognizer stepped through a drag, as
     /// a touch would), then the turn and its reply arrive in two polls. The transcript draws what
     /// the reader's hand does to it only when that changes what it shows: a finger coming down
-    /// renders it no time, the whole drag (detaching from the tail) at most twice.
+    /// renders it no time. The drag crosses a row of this short thread every 100 pt or so, and
+    /// each crossing is a new turn kept under the top edge, so its renders are reported, not judged
+    /// (`thread-detach-in-reply` judges a drag inside one row).
     @MainActor static func jump(_ app: MobileApp) async {
         let store = app.threads.store(for: FixtureData.ref(FixtureData.preview))
         try? await Task.sleep(for: .seconds(1))
@@ -774,17 +790,8 @@ enum FollowFixture {
             try? await Task.sleep(for: .milliseconds(16))
         }
         pan.state = .ended
-        // The lift and the detach come when the coast ends: wait until the transcript has drawn nothing for half a second.
-        var seen = -1
-        var quiet = 0
-        for _ in 1...50 where quiet < 5 {
-            try? await Task.sleep(for: .milliseconds(100))
-            let now = SHRenderProbe.count("thread.transcript")
-            quiet = now == seen ? quiet + 1 : 0
-            seen = now
-        }
-        let counts = SHRenderProbe.stop()
-        let dragged = counts["thread.transcript", default: 0]
+        let dragged = await transcriptRendersAtRest()
+        SHRenderProbe.stop()
         for stage in 1...2 {
             state.advance()
             await FixtureWindows.wait(seconds: 10) { store.snapshot?.revision == UInt64(stage + 1) }
@@ -793,7 +800,6 @@ enum FollowFixture {
         check("a thread dragged up stays where the reader left it") { $0 > NativeScrollFollower.threshold }
         FixtureCheck.report("FIXTURE CHECK ok: the transcript rendered \(touchDown) times at touch-down and \(dragged) over the whole drag")
         FixtureCheck.report("FIXTURE CHECK \(touchDown == 0 ? "ok" : "FAILED"): touch-down alone renders the transcript no time")
-        FixtureCheck.report("FIXTURE CHECK \(dragged <= 2 ? "ok" : "FAILED"): the whole drag renders the transcript at most twice")
     }
 
     /// Prints whether the thread's tail sits where `holds` wants it: its distance, in points,
