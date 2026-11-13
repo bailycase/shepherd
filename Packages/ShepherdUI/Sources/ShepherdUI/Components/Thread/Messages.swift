@@ -178,9 +178,10 @@ public struct SHCodeBlock: View, Equatable {
     let colors: SHCodeColors?
     #if os(macOS)
     @State private var nativeCode = SHNativeCodeText.Cache()
+    #endif
+    /// The block's width and the code's: code wider than the block scrolls, otherwise it sits as it is.
     @State private var availableCodeWidth: CGFloat?
     @State private var codeWidth: CGFloat = 0
-    #endif
     @State private var hovering = false
     @State private var copied = false
     /// Copies so far: each one pops the check.
@@ -232,30 +233,19 @@ public struct SHCodeBlock: View, Equatable {
             .padding(.trailing, SH.Space.s)
             .frame(height: SHThreadMetrics.codeHeaderHeight)
             .overlay(alignment: .bottom) { SHHairline() }
-            // Short code stays out of nested scrolling; wide code keeps its natural line width.
-            #if os(macOS)
-            // ViewThatFits reconstructs native measuring fields during unrelated layout updates.
+            // Short code stays out of nested scrolling; wide code keeps its natural line width. Two measured
+            // widths choose between them: ViewThatFits lays the code out for each choice, and on the Mac
+            // it reconstructs native measuring fields during unrelated layout updates.
             if let availableCodeWidth, codeWidth > availableCodeWidth {
                 ScrollView(.horizontal) { codeText }
                     .scrollIndicators(.hidden)
             } else {
                 codeText
             }
-            #else
-            ViewThatFits(in: .horizontal) {
-                codeText
-                ScrollView(.horizontal) { codeText }
-                    .scrollIndicators(.hidden)
-            }
-            #endif
         }
-        #if os(macOS)
         // Accept the column's proposal even when the fixed-size code initially overflows it.
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableCodeWidth = $0 }
-        #else
-        .frame(maxWidth: .infinity, alignment: .leading)
-        #endif
         .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
         .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
         .shBorder(sh.lineSubtle, radius: SH.Radius.m)
@@ -281,9 +271,7 @@ public struct SHCodeBlock: View, Equatable {
         .fixedSize()
         .padding(.horizontal, SH.Space.l)
         .padding(.vertical, 10)
-        #if os(macOS)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { codeWidth = $0 }
-        #endif
     }
 }
 
