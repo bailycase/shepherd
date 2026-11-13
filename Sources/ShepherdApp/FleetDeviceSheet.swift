@@ -14,6 +14,7 @@ struct FleetDeviceSheet: View {
     var body: some View {
         SHDialog("Add a device", message: "On your iPhone or iPad, open Shepherd and Add a Mac. Enter the code, or scan this on a phone.",
                  width: AppLayout.fleetJoinWidth) {
+            VStack(spacing: 0) {
             VStack(spacing: SH.Space.l) {
                 if let end = model.deviceCodeEnd {
                     outcome(end)
@@ -29,6 +30,12 @@ struct FleetDeviceSheet: View {
             .frame(maxWidth: .infinity)
             .padding(.horizontal, SHDialogMetrics.inset)
             .padding(.vertical, SH.Space.l)
+            if model.deviceCodeEnd == nil, let code = model.deviceCode, let link = model.pairingLink(for: code, purpose: .device) {
+                SHHairline()
+                FleetShareSection(link: link, title: "If the device can't find this Mac",
+                                  detail: "Send it a pairing link. On an iPhone or iPad it opens Add a Mac with this Mac and its code filled in, on any network the two share.")
+            }
+            }
         } actions: {
             if model.deviceCodeEnd == .closed {
                 Button("New code") { Task { await model.startDeviceCode() } }.buttonStyle(.sh(.secondary))

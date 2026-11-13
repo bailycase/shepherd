@@ -914,6 +914,7 @@
 				SDKROOT = macosx;
 				SHEPHERD_APPCAST = appcast.xml;
 				SHEPHERD_SENTRY_DSN = "";
+				SHEPHERD_URL_SCHEME = "shepherd-dev";
 				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
@@ -961,6 +962,7 @@
 				SDKROOT = macosx;
 				SHEPHERD_APPCAST = appcast.xml;
 				SHEPHERD_SENTRY_DSN = "";
+				SHEPHERD_URL_SCHEME = shepherd;
 				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
@@ -1008,6 +1010,7 @@
 				SDKROOT = macosx;
 				SHEPHERD_APPCAST = "appcast-shepherd-nightly.xml";
 				SHEPHERD_SENTRY_DSN = "";
+				SHEPHERD_URL_SCHEME = "shepherd-nightly";
 				SWIFT_VERSION = 6.0;
 			};
 			name = Nightly;

@@ -21,6 +21,14 @@ extension ShepherdViewModel {
         }
     }
 
+    /// A pairing link opened from Finder, Messages or AirDrop (`FleetPairingLink`): Settings ▸ Fleet opens Add a Mac with it filled in.
+    /// Only this app's own edition's scheme reaches here; the sheet says why a link it can't use isn't one.
+    func openFleetLink(_ url: URL) {
+        fleet.receive(link: url)
+        settingsSection = .fleet
+        showSettings = true
+    }
+
     /// This Mac's own fleet host id, once its host has said it.
     var thisFleetID: UUID? { settings.fleetEnabled ? fleetPage.snapshot.hostID : nil }
 

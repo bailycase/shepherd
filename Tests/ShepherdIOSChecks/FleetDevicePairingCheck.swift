@@ -122,9 +122,45 @@ struct FleetDevicePairingCheck {
         check(model.code == "482913" && model.ready, "the code keeps six digits")
         check(!model.take(scanned: "https://example.com/?code=123456"), "another QR isn't a pairing code")
         check(model.take(scanned: FleetProtocol.pairLink(code: "654321", advertisedID: "abcdabcdabcdabcd")) && model.code == "654321" && model.picked == "air", "a scanned QR enters its code and chooses its Mac")
+
+        // A pairing link (from Messages or AirDrop, or pasted) names the Mac and its code, whichever edition shared it. Only a device link
+        // is taken here; an expired one, a Join link and other text say why not.
+        let linkHosts = MobileHosts(defaults: scratchDefaults("link"), tokens: HostTokens.memory(), device: .phone, pause: { _ in try await Task.sleep(for: .milliseconds(20)) })
+        let linking = MobilePairing(hosts: linkHosts) { _ in {} }
+        let soon = (Date().timeIntervalSince1970 * 1000 + 60_000).rounded()
+        let routes = [FleetReportedRoute(host: "no-such-mac.invalid", kind: .hostname), FleetReportedRoute(host: "127.0.0.1", kind: .lan)]
+        let device = FleetPairingLink(purpose: .device, hostID: fleet.hostID, name: "Mac mini", port: mini.port, routes: routes, code: "482913", expiresAt: soon)
+        fleet.code = "482913"
+        linkHosts.incomingPairingLink = device.url(scheme: "shepherd-nightly").absoluteString
+        linking.takeIncomingLink()
+        check(linkHosts.incomingPairingLink == nil && linking.link == device && linking.code == "482913" && linking.ready && linking.macName == "Mac mini",
+              "an opened link fills in the Mac and its code")
+        var join = device
+        join.purpose = .join
+        linking.read(link: join.url(scheme: "shepherd").absoluteString)
+        check(linking.link == nil && linking.linkProblem?.contains("adds a Mac to a fleet") == true, "a Join link isn't for a device")
+        var expired = device
+        expired.expiresAt = Date().timeIntervalSince1970 * 1000 - 1
+        linking.read(link: expired.url(scheme: "shepherd").absoluteString)
+        check(linking.link == nil && linking.linkProblem?.hasPrefix("That link has expired") == true, "an expired link pairs nothing")
+        linking.read(link: "https://example.com/?c=482913")
+        check(linking.link == nil && linking.linkProblem != nil, "other text is not a link")
+
+        // A link whose Mac answers with another id is refused before the code is sent; the right one pairs over the route that answers.
+        var stranger = device
+        stranger.hostID = UUID()
+        let accepted = fleet.accepted.count
+        linking.read(link: stranger.url(scheme: "shepherd").absoluteString)
+        await linking.pair()
+        guard case .failed = linking.phase else { fatalError("FAILED: a link naming another Mac paired") }
+        check(linkHosts.hosts.isEmpty && fleet.accepted.count == accepted, "nothing was added or sent for the wrong Mac")
+        linking.read(link: device.url(scheme: "shepherd").absoluteString)
+        await linking.pair()
+        guard case .paired(let names) = linking.phase else { fatalError("FAILED: the link didn't pair: \(linking.phase)") }
+        check(names == ["Mac mini", "Mac Studio"] && fleet.accepted.count == accepted + 1 && linking.link == nil && linking.code.isEmpty, "the Mac and its fleet were added over the second route")
         model.stop()
         check(model.found.isEmpty, "stopping clears the list")
-        print("PASS: device pairing: the Mac and its fleet added with one token, wrong code, repeated pairing, revoked identity renewed, an older pairing offered its own token and keeping the shared one until it is saved, scanned QR")
+        print("PASS: device pairing: the Mac and its fleet added with one token, wrong code, repeated pairing, revoked identity renewed, an older pairing offered its own token and keeping the shared one until it is saved, scanned QR, a pairing link opened, refused and paired")
     }
 
     static func check(_ condition: @autoclosure () throws -> Bool, _ what: String) rethrows {

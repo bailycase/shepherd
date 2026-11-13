@@ -908,6 +908,16 @@ final class FleetService: @unchecked Sendable {
                     reply(Self.failure(id, error))
                 }
             }
+        case .pairAt(let hostID, let port, let routes, let code, let expiresAt):
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let paired = try await self.pairAt(hostID: hostID, port: port, routes: routes, code: code, expiresAt: expiresAt)
+                    reply(.fleetResult(id: id, result: FleetResult(snapshot: await self.sync { self.snapshot() }, paired: paired)))
+                } catch {
+                    reply(Self.failure(id, error))
+                }
+            }
         case .watching(let on):
             pressure.watch(on, connection: caller.connection)
             reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot())))
@@ -1075,13 +1085,37 @@ final class FleetService: @unchecked Sendable {
                                                  message: reason == .noAccount ? "Not signed in to iCloud: use a pairing link"
                                                                                : "iCloud isn't available on this Mac: use a pairing link")
         }
-        guard record.hostID != identity.hostID else {
+        return try await pair(overRoutes: record.routes.map { ($0.host, $0.port) }, expecting: record.hostID, code: code)
+    }
+
+    /// Joins the fleet of the Mac `hostID` that a pairing link or an SSH find named: the same handshake as `pair(host:port:code:)` over
+    /// each route in turn, and only with the Mac that answers as `hostID`. A code that has stopped working (`expiresAt`) is refused
+    /// before anything is dialed.
+    private func pairAt(hostID: UUID, port: UInt16, routes: [FleetReportedRoute], code typed: String, expiresAt: Double?) async throws -> FleetPeerStatus {
+        let code = FleetJoinWindow.normalized(typed)
+        guard code.count == FleetProtocol.codeLength else {
+            throw RemoteHostClientError.rejected(code: FleetProtocol.Code.invalid, message: "A pairing code is \(FleetProtocol.codeLength) digits.")
+        }
+        guard FleetRouteReport(port: port, routes: routes).isValid, !routes.isEmpty else {
+            throw RemoteHostClientError.rejected(code: FleetProtocol.Code.invalid, message: "That pairing link doesn't say where the Mac is.")
+        }
+        if let expiresAt, clock().timeIntervalSince1970 * 1000 >= expiresAt {
+            throw RemoteHostClientError.rejected(code: FleetProtocol.Code.linkExpired,
+                                                 message: "That pairing link has expired. Open Join a fleet on the other Mac for a new one.")
+        }
+        return try await pair(overRoutes: routes.map { ($0.host, port) }, expecting: hostID, code: code)
+    }
+
+    /// Pairs over the first of `routes` that answers as `expecting`; a Mac that answers and says no (a wrong code, Fleet off, a spent
+    /// window) ends it, as another route would say the same.
+    private func pair(overRoutes routes: [(host: String, port: UInt16)], expecting: UUID, code: String) async throws -> FleetPeerStatus {
+        guard expecting != identity.hostID else {
             throw RemoteHostClientError.rejected(code: FleetProtocol.Code.invalid, message: "That is this Mac.")
         }
         var failure: Error = RemoteHostClientError.timeout
-        for route in record.routes {
+        for route in routes {
             do {
-                return try await pair(host: route.host, port: route.port, code: code, expecting: record.hostID, connectTimeout: Self.routePatience)
+                return try await pair(host: route.host, port: route.port, code: code, expecting: expecting, connectTimeout: Self.routePatience)
             } catch RemoteHostClientError.rejected(let reason, let message) where reason != FleetProtocol.Code.wrongHost {
                 // The Mac answered and said no (a wrong code, Fleet off, a spent window): another route says the same.
                 throw RemoteHostClientError.rejected(code: reason, message: message)
@@ -1148,7 +1182,8 @@ final class FleetService: @unchecked Sendable {
         let sharedToken = FleetSharedTokenStatus(retired: devices.sharedTokenRetired, waiting: devices.waiting(now: now).map(\.client),
                                                  switched: clients.count)
         return FleetSnapshot(enabled: membership, hostID: identity.hostID, name: name, build: build, addresses: FleetAddresses.local(),
-                             port: listenerPort, advertising: discovery?.isAdvertising ?? false, peers: statuses, join: window,
+                             port: listenerPort, routes: listenerPort.map { ownRoutes($0).map { FleetReportedRoute(host: $0.host, kind: $0.kind) } } ?? [],
+                             advertising: discovery?.isAdvertising ?? false, peers: statuses, join: window,
                              sync: membership ? syncStatus : nil, devices: FleetDevicesSnapshot(devices: clients, code: code, sharedToken: sharedToken),
                              macs: membership ? pressure.macs(thisMac: identity.hostID, peerIDs: statuses.map(\.hostID)) : [],
                              dispatches: membership ? dispatch.log() : [], index: membership ? index.status() : nil)

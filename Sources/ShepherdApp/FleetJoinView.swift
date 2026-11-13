@@ -2,29 +2,38 @@ import SwiftUI
 import ShepherdUI
 import ShepherdProtocol
 
-/// Join a fleet (FleetStates): the code another Mac in the fleet enters under Add a Mac, and this
-/// Mac's address under it, for telling a Mac that can't be found from one that can't be reached.
+/// Join a fleet (FleetStates, FleetPairAnywhere): the code another Mac in the fleet enters under Add a Mac, and for a Mac that can't
+/// find this one, a pairing link to send it and every route this Mac can be reached by.
 /// The code works only while this sheet is open: closing it closes the window on the host.
 struct FleetJoinView: View {
     var model: FleetSettingsModel
     let dismiss: () -> Void
 
     var body: some View {
-        SHDialog("Join a fleet", message: "On a Mac already in the fleet, open Settings ▸ Fleet ▸ Add a Mac and enter:",
-                 width: AppLayout.fleetJoinWidth) {
-            VStack(spacing: SH.Space.l) {
-                if let end = model.joinEnd {
-                    outcome(end)
-                } else if let join = model.join {
-                    FleetJoinCode(join: join)
-                    address
-                } else {
-                    Text("Opening a code…").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
+        SHDialog("Join a fleet", message: "On a Mac already in your fleet, open Settings ▸ Fleet ▸ Add a Mac and enter this code.",
+                 width: AppLayout.fleetPairWidth) {
+            VStack(spacing: 0) {
+                VStack(spacing: SH.Space.l) {
+                    if let end = model.joinEnd {
+                        outcome(end)
+                    } else if let join = model.join {
+                        FleetJoinCode(join: join)
+                    } else {
+                        Text("Opening a code…").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, SHDialogMetrics.inset)
+                .padding(.bottom, SH.Space.l)
+                if model.joinEnd == nil, let join = model.join, let link = model.pairingLink(for: join) {
+                    SHHairline()
+                    FleetShareSection(link: link, routes: model.snapshot.routes)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, SHDialogMetrics.inset)
-            .padding(.vertical, SH.Space.l)
+        } status: {
+            if model.joinEnd == nil, let join = model.join, model.pairingLink(for: join) != nil {
+                SHDialogStatus("The link stops working when the code expires.")
+            }
         } actions: {
             if model.joinEnd == .closed {
                 Button("New code") { Task { await model.startJoin() } }.buttonStyle(.sh(.secondary))
@@ -36,18 +45,6 @@ struct FleetJoinView: View {
         .onDisappear { Task { await model.stopJoin() } }
     }
 
-    /// Where this Mac is, for the person at the other one.
-    @ViewBuilder private var address: some View {
-        let snapshot = model.snapshot
-        if let host = snapshot.addresses.first {
-            Text("Not listed on the other Mac? This Mac is at \(host)\(snapshot.port.map { ", port \($0)" } ?? ""). Both Macs need to be on the same local network for it to show up.")
-                .font(.sh(.caption))
-                .foregroundStyle(Color.sh.textTertiary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
     @ViewBuilder private func outcome(_ end: FleetSettingsModel.JoinEnd) -> some View {
         switch end {
         case .joined(let name):
@@ -57,6 +54,54 @@ struct FleetJoinView: View {
                 .font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
                 .multilineTextAlignment(.center)
         }
+    }
+}
+
+/// "If that Mac can't find this one": Share link and Copy link, and the routes this Mac says it can be reached at.
+struct FleetShareSection: View {
+    let link: FleetPairingLink
+    /// Shown as "Reachable at", each with its kind; none draws no list.
+    var routes: [FleetReportedRoute] = []
+    var title = "If that Mac can't find this one"
+    var detail = "Send it a pairing link. It carries where to reach this Mac and the code, and works on any network the two Macs share: another VLAN, a VPN or Tailscale."
+    @State private var copied = false
+
+    var body: some View {
+        let sh = Color.sh
+        let url = link.url()
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            Text(title).shSectionLabel()
+            Text(detail)
+                .font(.sh(.ui))
+                .foregroundStyle(sh.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: SH.Space.s) {
+                ShareLink(item: url) {
+                    Label("Share link", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.sh(.secondary))
+                Button(copied ? "Copied" : "Copy link") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                    copied = true
+                }
+                .buttonStyle(.sh(.secondary))
+            }
+            if !routes.isEmpty {
+                Text("Reachable at").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                ForEach(routes, id: \.self) { route in
+                    HStack(spacing: SH.Space.m) {
+                        Text(route.host).font(.sh(.mono)).foregroundStyle(sh.textPrimary).textSelection(.enabled)
+                        Spacer(minLength: SH.Space.m)
+                        Text(route.kind.label).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(EdgeInsets(top: SH.Space.l, leading: SHDialogMetrics.inset, bottom: SH.Space.l, trailing: SHDialogMetrics.inset))
+        .onChange(of: link) { copied = false }
     }
 }
 

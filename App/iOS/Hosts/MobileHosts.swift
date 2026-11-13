@@ -105,6 +105,9 @@ final class MobileHosts {
 
     private(set) var hosts: [MobileHost] = []
 
+    /// A pairing link opened from Messages, AirDrop or Files (`shepherd://fleet/join?…`): Add a Mac fills it in, then clears it.
+    var incomingPairingLink: String?
+
     /// What this device tells a Mac of a fleet about itself when it pairs.
     struct DeviceDescription: Equatable {
         var name: String
@@ -219,12 +222,13 @@ final class MobileHosts {
 
     /// Pairs with the Mac at `address`:`port` using the code it shows (Add a device), then adds it and every
     /// other Mac of its fleet, each with this device's own token. `expecting` is the Mac's id hash when a QR
-    /// named it. Returns the ids of the hosts added or updated. Nothing but the code is typed.
+    /// named it; `expectingID` is the Mac's id when a pairing link named it, checked before the code is sent. Returns the ids of the hosts
+    /// added or updated. Nothing but the code is typed.
     @discardableResult
-    func pair(address: String, port: UInt16, code: String, expecting: String? = nil) async throws -> [UUID] {
+    func pair(address: String, port: UInt16, code: String, expecting: String? = nil, expectingID: UUID? = nil) async throws -> [UUID] {
         var identity = try deviceIdentity()
         func attempt() async throws -> (result: FleetDevicesResult, identity: RemoteHostClient.FleetPeerIdentity) {
-            try await RemoteHostClient.fleetPairDevice(host: address, port: port, code: code, device: introduction(identity))
+            try await RemoteHostClient.fleetPairDevice(host: address, port: port, code: code, device: introduction(identity), expecting: expectingID)
         }
         var answered: (result: FleetDevicesResult, identity: RemoteHostClient.FleetPeerIdentity)
         do {

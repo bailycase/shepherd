@@ -10,6 +10,7 @@ struct ShepherdLauncher {
     @MainActor
     static func main() {
         if CommandLine.arguments.dropFirst().contains(ShepherdHost.argument) { ShepherdHost.main() }
+        if ShepherdFleetWhere.requested { ShepherdFleetWhere.main() }
         ShepherdMacApp.main()
     }
 }

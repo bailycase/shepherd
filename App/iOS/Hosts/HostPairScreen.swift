@@ -32,7 +32,10 @@ struct HostPairScreen: View {
             MobilePairing.seed(pairing)
             model = pairing
             pairing.start()
+            pairing.takeIncomingLink()
         }
+        // A link opened while this screen is up fills it in.
+        .onChange(of: hosts.incomingPairingLink) { model?.takeIncomingLink() }
         .onDisappear { model?.stop() }
         .sheet(isPresented: $scanning) {
             PairScanner { text in model?.take(scanned: text) }
@@ -50,7 +53,7 @@ struct PairForm: View {
     var body: some View {
         Form {
             Section {
-                if model.found.isEmpty {
+                if model.found.isEmpty && model.link == nil {
                     HStack(spacing: SH.Space.s) {
                         ProgressView().controlSize(.small)
                         Text("Looking for Macs running Shepherd on this network…")
@@ -65,6 +68,16 @@ struct PairForm: View {
             } footer: {
                 Text("Open Shepherd on the Mac. Both need to be on the same local network.")
                     .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+            }
+            if model.found.isEmpty || model.link != nil || !model.linkText.isEmpty {
+                Section {
+                    PairLinkField(model: model)
+                } header: {
+                    Text("Open a pairing link").shSectionLabel()
+                } footer: {
+                    Text(model.linkProblem ?? "If the Mac is on another network, VPN or VLAN, open the link its Add a device screen shares, by AirDrop or Messages. It fills in where to find the Mac and its code.")
+                        .font(.sh(.caption)).foregroundStyle(model.linkProblem == nil ? Color.sh.textTertiary : Color.sh.failed)
+                }
             }
             Section {
                 PairCodeField(code: $model.code)
@@ -88,7 +101,7 @@ struct PairForm: View {
             Section {
                 Button(action: pair) {
                     HStack {
-                        Text(model.mac.map { "Add \($0.name)" } ?? "Add Mac")
+                        Text(model.macName.map { "Add \($0)" } ?? "Add Mac")
                         if model.phase == .working { Spacer(); ProgressView().controlSize(.small) }
                     }
                 }
@@ -140,6 +153,25 @@ struct PairForm: View {
         Task {
             await model.pair()
             if case .paired = model.phase { dismiss() }
+        }
+    }
+}
+
+/// The pairing link's field and Paste: a link the Mac shared fills in the Mac and its code.
+struct PairLinkField: View {
+    @Bindable var model: MobilePairing
+
+    var body: some View {
+        HStack(spacing: SH.Space.s) {
+            TextField("shepherd://fleet/join?…", text: Binding(get: { model.linkText }, set: { model.read(link: $0) }))
+                .font(.sh(.mono))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+                .disabled(model.phase == .working)
+                .accessibilityLabel("Pairing link")
+            Button("Paste") { if let text = UIPasteboard.general.string { model.read(link: text) } }
+                .buttonStyle(.borderless)
         }
     }
 }
