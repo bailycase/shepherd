@@ -173,20 +173,27 @@ page draws: its coordinator never mounts here, and a worker only while it is the
 A hidden thread keeps its host, page, history and draft, but its rows are bounded: past
 `NativeThreadStores.mountedBudget` (an eighth of the memory, at most 2 GiB, counted by
 `NativeThreadStore.mountedCost`) the least recently shown hidden threads let their rows go
-(`releaseTranscript`), one thread a pass and `releaseStep` bytes of it, and not while the person types
-or scrolls, however long that lasts, or while a thread on screen, local or remote, streams
-(`NativeThreadStores.busy`: only a stream gives out, after ten seconds a pass, so that a long one cannot hold the budget off for
-good): unpinned ones first, then readers left scrolled up beyond the two most recently shown; the thread shown before the current one, and the one on screen, never. A thread
-keeps its last screen built (`NativeThreadStore.keptRows`: at most four rows within 16 MiB, or a last
-row of up to 64 MiB alone; a larger reply goes with the rest), which still counts against the budget. Showing one draws that last screen in the pass that shows it and
-builds nothing there (the deck lays the host out as it unhides one that let rows go, so no frame
-has the layout without them; a thread whose rest costs no more than a step draws it all there instead);
-the rows above come back after that frame, newest first, a step of
-rows at a time (`ThreadRestore`, which also waits for keystrokes and for a reader away from the tail,
-and starts again from the last screen if a pass lets its rows go again meanwhile), with the thread
-at the bottom of its window while it does (`ThreadTailAnchor`), and a reader taken
-this way comes back at its tail. The pass
-loads, sends and resumes nothing. Each of the local and the remote thread stores has its own budget.
+(`releaseTranscript`), one thread a pass and `releaseStep` bytes of it. A pass never runs while the
+person types or scrolls, however long that lasts, nor while a thread on screen, local or remote,
+streams (`NativeThreadStores.busy`; only a stream gives out, after ten seconds of passes, so that
+a long one cannot hold the budget off for good). Unpinned threads go first, then readers left
+scrolled up beyond the two most recently shown; the thread shown before the current one, and the one
+on screen, never. A thread keeps its last screen built (`NativeThreadStore.keptRows`: at most four
+rows within 16 MiB, or a last row of up to 64 MiB alone; a larger reply goes with the rest), which
+still counts against the budget. The pass loads, sends and resumes nothing. Each of the local and
+the remote thread stores has its own budget.
+
+Showing a thread that let rows go draws that last screen in the pass that shows it and builds
+nothing there (the deck lays the host out as it unhides one, so no frame has the layout without
+them). A thread whose rest costs no more than a step (`AppLayout.restoreStepBytes`, counted beyond
+each row's chrome, so a dozen rows of one line cost nothing) draws all of it there instead. The rest
+comes back after that frame (`ThreadRestore`): first the lazy stack, whatever the person types (it
+builds nothing at the tail, and without it a reader could not scroll to older rows; a reader who
+scrolled away before it came goes back to the tail), then the rows above the last screen, newest
+first, a step of rows at a time. Those steps wait for keystrokes, scrolls and a reader away from
+the tail, and start again from the last screen if a pass lets the rows go again meanwhile. The
+thread sits at the bottom of its window while it restores (`ThreadTailAnchor`), and a reader taken
+this way comes back at its tail.
 
 A remote agent's thread (a paired Mac's, or this Mac's own while the app is the background
 service's client) is a page of its own deck (`RemoteLayoutDeck`), keyed by `RemoteAgentRef`. A page
