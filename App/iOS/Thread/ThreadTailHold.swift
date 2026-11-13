@@ -1,12 +1,13 @@
 import Foundation
 
-/// Hands the bottom marker back to SwiftUI after new rows joined a following transcript.
+/// Hands the bottom marker back to SwiftUI after new rows joined a following transcript whose reader had kept it.
 ///
 /// SwiftUI keeps a view on the tail through everything that grows it while the bottom marker is its position, and lands a
 /// reply's growth with a handful of landings. The pass that adds rows after the marker resolves it against the lazy stack's
-/// estimate, though, so a following transcript withholds it there (`NativeTranscriptPlace.position(tail:)`) and the pin lands the
+/// estimate, though, so a follower who kept it has it withheld there (`NativeTranscriptPlace.position(tail:)`) and the pin lands the
 /// view instead. Once a landing has been made and `MobileLayout.tailHoldWait` has passed with no row joining since, the layout of
 /// those rows is settled and the marker is the position again, which is what stops the pin landing for every step of the reply.
+/// A follower whose marker was never withheld starts no wait (`NativeTranscriptPlace.withholdsMarker(tail:)`).
 @MainActor
 final class ThreadTailHold {
     private var wait: Task<Void, Never>?
