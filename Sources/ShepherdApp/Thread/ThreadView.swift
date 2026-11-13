@@ -17,6 +17,8 @@ extension EnvironmentValues {
     /// A design's chat: its comments' cards, which messages carrying a comment draw.
     @Entry var designCommentCards: DesignCommentCards? = nil
     @Entry var threadReaderPins: ThreadReaderPins? = nil
+    /// Whether the person is typing or scrolling, which a restore of a thread's rows waits out (`ThreadRestore`).
+    @Entry var userActivity: UserActivity? = nil
 }
 
 /// An agent's thread (SHThread board): an 820pt column of turns in a scroll view that follows
@@ -90,6 +92,7 @@ struct ThreadView: View {
     var nativeTail = ThreadTailAnchor.isNative
     @Environment(\.presentImages) private var presentImages
     @Environment(\.threadReaderPins) private var readerPins
+    @Environment(\.userActivity) private var userActivity
     /// This view's claim on the store's poll loop: one agent's store can be shown by two views at once.
     @State private var storeOwner = UUID()
     @State private var fallbackInput = ThreadInput()
@@ -435,13 +438,14 @@ struct ThreadView: View {
 
     /// Draws the rows a restore still owes (`ThreadRestore`) a step at a time, each after the frame of the one before it. It waits while
     /// the reader's hand is on the scroll view, and while the reader is away from the tail: the rows that join the eager tail
-    /// change height above them, which only a view held to the tail (`ThreadTailAnchor`) takes without moving.
+    /// change height above them, which only a view held to the tail (`ThreadTailAnchor`) takes without moving. It waits for keystrokes
+    /// too: a step takes tens of milliseconds, which a key pressed in it feels.
     private func restoreRows() async {
+        func waiting() -> Bool { follower.userScrolling || !follower.sticky || userActivity?.inputRecent == true }
         while !Task.isCancelled {
-            let reading = follower.userScrolling || !follower.sticky
-            try? await Task.sleep(for: reading ? AppLayout.restoreRetry : AppLayout.restorePause)
+            try? await Task.sleep(for: waiting() ? AppLayout.restoreRetry : AppLayout.restorePause)
             guard !Task.isCancelled else { return }
-            if follower.userScrolling || !follower.sticky { continue }
+            if waiting() { continue }
             let rows = listedRows(userOrigins)
             let more = restore.advance(rows: rows, eagerRows: Self.eagerRows) { [store] drawn in
                 store.restoreStep(drawn: drawn, bytes: AppLayout.restoreStepBytes)

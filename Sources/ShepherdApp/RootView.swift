@@ -138,6 +138,7 @@ struct RootView: View {
         .environment(\.presentImages, ImageViewerPresenter(model: vm))
         .environment(\.hookPresenter, HookPresenter(model: vm))
         .environment(\.threadReaderPins, vm.threadReaderPins)
+        .environment(\.userActivity, vm.userActivity)
         .environment(\.shDiagramPresentation, vm.diagramPresentation)
         .frame(minWidth: AppLayout.windowMinWidth, minHeight: AppLayout.windowMinHeight)
         // Only the width the shell's layout can tell apart: past the widest window that still
