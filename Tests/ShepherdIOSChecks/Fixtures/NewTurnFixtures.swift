@@ -34,6 +34,10 @@ enum NewTurnFixture {
     static let jolt: CGFloat = 400
     /// Frames beyond the limit that the screen allows: none.
     static let joltBudget = 0
+    /// Landings the pin may make for the reply of a reader who held the bottom marker. With the marker held again after the rows that
+    /// joined the screen counts 26 to 31 in a debug build on the Duo; with the hold taken away the pin lands for every step of the reply
+    /// and it counts 86 to 105. Only a debug build counts landings (a release build reads none and passes).
+    static let landingCeiling = 60
     private static let rate = 1_200.0
     private static let stepsPerSecond = 30.0
     /// Four seconds of the live reply: the jolts began within 35 ms of the new rows and ended within 0.6 s.
@@ -87,6 +91,7 @@ enum NewTurnFixture {
             if resting { break }
         }
         let held = place.visibleTurn ?? "nil"
+        let heldMarker = place.visibleTurn == NativeTranscriptPlace.bottomMarker
         guard resting else { return FixtureCheck.report("FIXTURE CHECK FAILED: the reader did not come to rest on the tail before the new turn") }
         let frames = Frames(scroll: scroll, gutter: gutter)
         SHRenderProbe.start()
@@ -107,6 +112,10 @@ enum NewTurnFixture {
             + "\(shown.distance)pt above the tail at rest, \(Int((shown.ink * 100).rounded()))% ink")
         FixtureCheck.report("FIXTURE CHECK \(drawn == replyLength ? "ok" : "FAILED"): the new turn's reply reached the thread in full")
         FixtureCheck.report("FIXTURE CHECK \(result.over <= joltBudget ? "ok" : "FAILED"): the new turn leaves a following transcript within \(Int(jolt))pt of its tail on every frame")
+        if heldMarker {
+            FixtureCheck.report("FIXTURE CHECK \(landings <= landingCeiling ? "ok" : "FAILED"): a reader who held the bottom marker is followed in "
+                + "at most \(landingCeiling) landings (\(landings))")
+        }
         FixtureCheck.report("FIXTURE CHECK \(settled.atTail ? "ok" : "FAILED"): the transcript rests on its tail after the new turn")
         FixtureCheck.report("FIXTURE CHECK \(shown.ink >= TailFixture.inkFloor ? "ok" : "FAILED"): the transcript draws after the new turn")
     }
