@@ -302,6 +302,7 @@ struct ThreadView: View {
                     // intent; a gesture that ends near the bottom re-sticks from where it lands.
                     historyAnchor.animating = phase == .animating
                     follower.userScrolling = phase == .interacting
+                    input.decelerating = phase == .decelerating
                     if phase == .interacting {
                         historyAnchor.cancel()
                         historyPaging.beginScroll()
@@ -428,6 +429,8 @@ struct ThreadView: View {
                 hovering = false
                 historyAnchor.cancel()
                 historyAnchor.animating = false
+                // A flick's momentum ends with no word once the view is hidden: the next showing's restore does not wait for it.
+                input.decelerating = false
                 tailGuard.stop()
                 store.suspend(owner: storeOwner)
                 readerPins?.stopped(store, owner: storeOwner)
@@ -452,17 +455,18 @@ struct ThreadView: View {
     }
 
     /// Brings back what a restore still owes (`ThreadRestore`), a step at a time, each after the frame of the one before it. The lazy
-    /// stack comes first, as soon as the frame that drew the last screen is out and no scroll gesture is under way, whatever the person
-    /// types and wherever the reader is: it builds nothing at the tail, and until it is back the thread seems to end where its last
-    /// screen does. The rows then wait while the reader's hand is on the scroll view, and for keystrokes: a step takes tens of
-    /// milliseconds, which a key pressed in it feels. It looks again every `restoreRetry` while either lasts, and a key or a scroll lasts
-    /// `AppLayout.inputRecentWindow` past its event. They run only while the reader is at the tail (the task's key): the rows that join
+    /// stack comes first, as soon as the frame that drew the last screen is out and the scroll view is at rest (no hand on it, no flick's
+    /// momentum), whatever the person types and wherever the reader is: it builds nothing at the tail, and until it is back the thread
+    /// seems to end where its last screen does. The rows then wait while the scroll view is not at rest, and for keystrokes: a step takes
+    /// tens of milliseconds, which a key pressed in it feels. It looks again every `restoreRetry` while either lasts, and a key or a scroll
+    /// lasts `AppLayout.inputRecentWindow` past its event. They run only while the reader is at the tail (the task's key): the rows that join
     /// the eager tail change height above them, which only a view held to the tail (`ThreadTailAnchor`) takes without moving.
     private func restoreRows() async {
-        func waiting() -> Bool { follower.userScrolling || !follower.sticky || userActivity?.inputRecent == true }
+        func scrolling() -> Bool { follower.userScrolling || input.decelerating }
+        func waiting() -> Bool { scrolling() || !follower.sticky || userActivity?.inputRecent == true }
         if restore.awaitsHistory {
             try? await Task.sleep(for: AppLayout.restorePause)
-            while follower.userScrolling, !Task.isCancelled { try? await Task.sleep(for: AppLayout.restoreRetry) }
+            while scrolling(), !Task.isCancelled { try? await Task.sleep(for: AppLayout.restoreRetry) }
             guard !Task.isCancelled else { return }
             // The stack's height comes in above whatever the reader is looking at, and a scroll view held to nothing keeps its offset
             // from the top: a reader who scrolled away in the moments before it comes goes back to the tail, held there as it grows.
@@ -962,7 +966,8 @@ final class ThreadRowIndex {
 /// leaving the lazy stack for the eager stack once, when no key or scroll is recent. The end of the thread, where the reader is, never
 /// moves: the scroll view keeps it while the content above it grows, at the bottom of the window even where the rows drawn so far do
 /// not fill it (`ThreadTailAnchor`).
-/// No update builds more than a step of rows, and a thread whose rest costs no more than a step draws it all in its first frame.
+/// No update builds more than a step of rows, except the first frame of a thread whose rest costs no more than a step (a dozen rows of
+/// one line cost nothing), which draws all of it: up to the eager rows, and the lazy stack's first screen.
 ///
 /// Read in `body`, which it changes only through `steps`: the rest is a reference's, so keeping it current never draws the view.
 @MainActor

@@ -188,12 +188,13 @@ nothing there (the deck lays the host out as it unhides one, so no frame has the
 them). A thread whose rest costs no more than a step (`AppLayout.restoreStepBytes`, counted beyond
 each row's chrome, so a dozen rows of one line cost nothing) draws all of it there instead. The rest
 comes back after that frame (`ThreadRestore`): first the lazy stack, whatever the person types (it
-builds nothing at the tail, and without it a reader could not scroll to older rows; a reader who
-scrolled away before it came goes back to the tail), then the rows above the last screen, newest
-first, a step of rows at a time. Those steps wait for keystrokes, scrolls and a reader away from
-the tail, and start again from the last screen if a pass lets the rows go again meanwhile. The
-thread sits at the bottom of its window while it restores (`ThreadTailAnchor`), and a reader taken
-this way comes back at its tail.
+builds nothing at the tail, and without it a reader could not scroll to older rows; it waits only
+for a hand on the scroll view or a flick's momentum, and a reader who scrolled away before it came
+goes back to the tail then), then the rows above the last screen, newest first, a step of rows at
+a time. Those steps wait for keystrokes, scrolls and a reader away from the tail, and start again
+from the last screen if a pass lets the rows go again meanwhile. The thread sits at the bottom of
+its window while it restores (`ThreadTailAnchor`), and a reader taken this way comes back at its
+tail.
 
 A remote agent's thread (a paired Mac's, or this Mac's own while the app is the background
 service's client) is a page of its own deck (`RemoteLayoutDeck`), keyed by `RemoteAgentRef`. A page

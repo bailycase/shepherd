@@ -427,6 +427,63 @@ struct ReleasedThreadBottomFirstTests {
         #expect(reached, "scrolling up \(ticks) times reached rows above the last screen: \(built) fields, from \(held)")
     }
 
+    /// A reader who flicks up as the last screen is drawn and lifts their finger is left where they are while the scroll view still
+    /// carries the flick's momentum: the lazy stack waits for it to rest, as for a hand on the scroll view, and then puts them back at
+    /// the tail.
+    @Test func aReaderWhoseFlickIsStillDeceleratingIsNotPutBackAtTheTailUntilItRests() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let work = try await Workspace.open(2, replies: 18, cycles: 4, in: app)
+        defer { work.window.close() }
+        for index in [1, 0] { try await work.show(index) }
+        let store = work.store(1)
+        let fences = try work.fields(1)
+        let held = try await Self.release(work, 1, from: fences)
+        #expect(store.transcriptReleased && held < fences)
+
+        work.vm.selectAgent(work.agents[1].agent.id)
+        var passes = 0
+        while try work.host(1)?.isHidden != false, passes < 50 {
+            ListPerf.settle(work.window)
+            passes += 1
+        }
+        let scroll = try #require(try work.transcript(1))
+        let clip = scroll.contentView
+        let input = work.vm.threadStores.input(for: work.agents[1].agent.id)
+        let height = scroll.documentView?.bounds.height ?? 0
+        for _ in 0..<3 {
+            input.readerScrolled(upward: true)
+            clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 0, y: clip.bounds.origin.y - 250), size: clip.bounds.size)).origin)
+            scroll.reflectScrolledClipView(clip)
+            ListPerf.settle(work.window)
+        }
+        let before = try #require(try work.distanceFromTail(1))
+        #expect(before > 80 && scroll.documentView?.bounds.height == height, "the reader is \(before) points above the tail, in the last screen alone")
+
+        // The scroll view reports the momentum at every look, for well over the restore's retry.
+        for _ in 0..<60 {
+            input.decelerating = true
+            ListPerf.settle(work.window)
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let during = try work.distanceFromTail(1) ?? .infinity
+        #expect(scroll.documentView?.bounds.height == height, "the lazy stack stayed out while the momentum lasted: \(scroll.documentView?.bounds.height ?? 0) from \(height)")
+        #expect(abs(during - before) <= 1, "and the reader stayed where they were: \(during) points above the tail, from \(before)")
+
+        input.decelerating = false
+        try await eventuallyOnMain("the lazy stack to be back once the scroll view rests", timeout: .seconds(30)) {
+            ListPerf.settle(work.window)
+            return (scroll.documentView?.bounds.height ?? 0) > height + 50
+        }
+        var tail = CGFloat.infinity
+        try await eventuallyOnMain("the reader to be back at the tail", timeout: .seconds(30)) {
+            ListPerf.settle(work.window)
+            tail = try work.distanceFromTail(1) ?? .infinity
+            return abs(tail) <= 1
+        }
+        #expect(abs(tail) <= 1, "the reader went from \(before) points above the tail to \(tail)")
+    }
+
     /// A thread hidden halfway through its restore and let go of again comes back from its last screen, not from the rows it had
     /// restored: its first frame back builds nothing, as it did the first time.
     @Test func aThreadReleasedAgainHalfwayThroughItsRestoreStillBuildsNothingInItsFirstFrameBack() async throws {
