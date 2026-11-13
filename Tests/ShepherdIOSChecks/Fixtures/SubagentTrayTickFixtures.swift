@@ -91,11 +91,9 @@ enum SubagentTrayTicks {
         let counts = SHRenderProbe.stop()
         let composer = counts["composer.body", default: 0]
         let tray = counts["composer.tray", default: 0]
-        FixtureCheck.report("FIXTURE CHECK ok: \(ticks) ticks: the composer's body ran \(composer) times, the tray section \(tray)")
-        if composer > composerLimit {
-            FixtureCheck.report("FIXTURE CHECK FAILED: the composer's body ran \(composer) times over \(ticks) subagent ticks (at most \(composerLimit)): it reads the tray's rows")
-        }
-        FixtureCheck.report("FIXTURE CHECK ok: the composer's body ran at most \(composerLimit) times over \(ticks) ticks")
+        let measured = "the composer's body ran \(composer) times over \(ticks) subagent ticks (at most \(composerLimit)); the tray section ran \(tray)"
+        if composer > composerLimit { FixtureCheck.report("FIXTURE CHECK FAILED: \(measured): the composer reads the tray's rows") }
+        FixtureCheck.report("FIXTURE CHECK ok: \(measured)")
     }
 
     /// Waits until the composer and the tray draw nothing for 500 ms, at most 5 s.
