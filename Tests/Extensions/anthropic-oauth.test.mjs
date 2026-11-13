@@ -1,4 +1,4 @@
-// Offline serialization/stream parity with unmodified pi-anthropic-oauth v0.3.4.
+// Offline serialization/stream parity with unmodified pi-anthropic-oauth v0.3.9.
 // PI_PACKAGE_DIR=<patched pinned package> node --test Tests/Extensions/anthropic-oauth.test.mjs
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
@@ -115,17 +115,17 @@ function assertOAuth({ headers, body }) {
   headers = new Headers(headers);
   assert.equal(headers.get("authorization"), `Bearer ${oauth}`);
   assert.equal(headers.get("x-api-key"), null);
-  assert.equal(headers.get("user-agent"), "claude-cli/2.1.280 (external, cli)");
+  assert.equal(headers.get("user-agent"), "claude-cli/2.1.322 (external, cli)");
   assert.equal(headers.get("x-app"), "cli");
   assert.equal(headers.get("anthropic-beta"), "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14");
-  assert.match(body.system[0].text, /^x-anthropic-billing-header: cc_version=2\.1\.280; cc_entrypoint=cli; cch=00000; cc_prompt_id=[0-9a-f-]{36}$/);
+  assert.match(body.system[0].text, /^x-anthropic-billing-header: cc_version=2\.1\.322; cc_entrypoint=cli; cch=00000; cc_prompt_id=[0-9a-f-]{36}$/);
   assert.equal(body.system[1].text, "You are a Claude agent, built on Anthropic's Claude Agent SDK.");
   assert.equal(body.system[0].cache_control, undefined);
   assert.equal(body.system[1].cache_control, undefined);
 }
 
 test("vendored runtime is an unmodified transpilation of all five pinned upstream modules", () => {
-  assert.equal(pin.revision, "44efe694a3e81a62742cdb3e7ba9da858e191a81");
+  assert.equal(pin.revision, "0078268804557bbbc82c60e364a34debf0450a90");
   for (const name of ["auth", "convert", "prompt", "stream", "version"]) {
     const runtime = fs.readFileSync(new URL(`../../scripts/pi-engine-patches/anthropic-oauth/${name}.js`, import.meta.url), "utf8");
     const expected = fs.readFileSync(path.join(oracleDir, `${name}.js`), "utf8");

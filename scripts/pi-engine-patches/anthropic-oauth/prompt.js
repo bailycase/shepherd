@@ -1,5 +1,5 @@
-// Vendored from leohenon/pi-anthropic-oauth v0.3.4
-// Revision: 44efe694a3e81a62742cdb3e7ba9da858e191a81
+// Vendored from leohenon/pi-anthropic-oauth v0.3.9
+// Revision: 0078268804557bbbc82c60e364a34debf0450a90
 // MIT License
 // 
 // Copyright (c) 2026 Leo Henon
