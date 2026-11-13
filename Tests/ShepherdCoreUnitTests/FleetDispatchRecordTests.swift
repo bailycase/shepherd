@@ -22,6 +22,7 @@ struct FleetDispatchRecordTests {
         record.activity = "working"
         record.subdir = "apps/web"
         record.start = FleetThreadStart(place: .existingBranch, base: "origin/main", branch: "feat/orders")
+        record.without = ["bearcli"]
         let decoded = try JSONDecoder().decode(FleetDispatchRecord.self, from: JSONEncoder().encode(record))
         #expect(decoded == record)
     }
@@ -42,6 +43,8 @@ struct FleetDispatchRecordTests {
         let record = try JSONDecoder().decode(FleetDispatchRecord.self, from: Data(json.utf8))
         #expect(record.id == id && record.kind == .agentDispatch && record.reasonCodes.isEmpty && record.title.isEmpty)
         #expect(record.state == .failed, "a state this build doesn't know is never resumed")
+        #expect(record.without.isEmpty, "a record from before a Mac could start a thread without an MCP server names none")
+        #expect(!String(decoding: try JSONEncoder().encode(Self.record()), as: UTF8.self).contains("\"without\""), "written only when set")
     }
 
     @Test func onlyWorkInTheAirOrOnAMacCountsAgainstTheCap() {

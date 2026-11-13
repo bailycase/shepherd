@@ -34,6 +34,15 @@ struct FleetDispatchPresentationTests {
         #expect(card.actions == [.open, .stop])
     }
 
+    @Test func aDispatchToAMacWithoutAnMCPServersCommandSaysItStartedWithoutIt() throws {
+        var record = Self.record(.running)
+        record.without = ["bearcli"]
+        let card = try #require(Self.cards([record]).first)
+        #expect(card.detail.hasSuffix(" · Started on Mac mini without: bearcli (MCP)"))
+        record.without = ["bearcli", "muse"]
+        #expect(try #require(Self.cards([record]).first).detail.hasSuffix("without: bearcli (MCP) and muse (MCP)"))
+    }
+
     @Test func whyReadsFromTheReasonCodesTheSendersHostRecorded() {
         func why(_ reasons: [FleetPlacementReason], kind: FleetDispatchRecord.Kind = .agentDispatch) -> String {
             FleetDispatchPresentation.whyWords(Self.record(.running, reasons: reasons, kind: kind))
@@ -189,6 +198,27 @@ struct FleetDispatchPresentationTests {
                        repoKey: String? = FleetDispatchPresentationTests.orders, base: String? = "origin/main", checkout: Bool = false) -> FleetWherePicker {
         FleetWherePicker.make(snapshot: snapshot, pick: pick, repoKey: repoKey, repoName: "orders-svc", autoDispatch: auto, weight: { _ in .normal },
                               baseBranch: base, startsInCheckout: checkout, locale: P.en, calendar: P.utc)
+    }
+
+    @Test func aMacMissingAnMCPCommandIsStillPickableAndTheNoteSaysTheThreadStartsWithoutIt() throws {
+        var snapshot = Self.withOrders()
+        let index = try #require(snapshot.macs.firstIndex { $0.hostID == P.mini })
+        snapshot.macs[index].readiness?.missing = [FleetMissingTool(kind: .binary, name: "bearcli")]
+        let auto = Self.picker(snapshot: snapshot)
+        #expect(auto.winner == "Mac mini" && auto.target == P.mini, "it still has the most room")
+        #expect(auto.note?.hasSuffix("It starts without bearcli (MCP).") == true)
+        #expect(Self.picker(.mac(P.mini), snapshot: snapshot).note == "Runs on Mac mini in a new worktree from origin/main. It starts without bearcli (MCP).")
+        #expect(Self.picker(.mac(P.mini), snapshot: Self.withOrders()).note?.contains("without") == false)
+    }
+
+    @Test func aMacWithoutXcodeLosesAutoOnlyForARepositoryWithAnXcodeProject() throws {
+        var snapshot = Self.withOrders()
+        let index = try #require(snapshot.macs.firstIndex { $0.hostID == P.mini })
+        snapshot.macs[index].readiness?.noXcode = true
+        #expect(Self.picker(snapshot: snapshot).winner == "Mac mini")
+        let xcode = FleetWherePicker.make(snapshot: snapshot, pick: nil, repoKey: Self.orders, repoName: "orders-svc", autoDispatch: true, needsXcode: true,
+                                          weight: { _ in .normal }, baseBranch: "origin/main", locale: P.en, calendar: P.utc)
+        #expect(xcode.winner != "Mac mini" && xcode.winner != nil)
     }
 
     @Test func autoNamesTheMacWithTheMostRoomAndTheRepoLine() {

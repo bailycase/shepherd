@@ -214,8 +214,12 @@ public enum FleetDispatchPresentation {
         if let sha = record.commitSHA { parts.append("\(repoName(record.repoKey)) @ \(short(sha))") }
         else { parts.append(repoName(record.repoKey)) }
         if let branch = record.branch { parts.append("new worktree \(branch)") }
+        if !record.without.isEmpty { parts.append("Started on \(hostName(of: record) ?? "that Mac") without: \(withoutWords(record.without))") }
         return parts.joined(separator: " · ")
     }
+
+    /// The MCP servers a Mac lacked, by command: "bearcli (MCP)", "bearcli (MCP) and muse (MCP)".
+    public static func withoutWords(_ commands: [String]) -> String { joined(commands.map { "\($0) (MCP)" }) }
 
     /// Why it went where it did, from the codes the sender's host recorded.
     static func whyWords(_ record: FleetDispatchRecord) -> String {

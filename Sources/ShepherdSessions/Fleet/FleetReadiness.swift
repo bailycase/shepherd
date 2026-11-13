@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdCore
 import ShepherdProtocol
 
 /// What this host knows of itself that a readiness report is made from.
@@ -31,8 +32,8 @@ struct FleetProbeResult: Equatable, Sendable {
 }
 
 /// Readiness (`FleetReadinessReport`): the facts sync can't carry. Each local MCP server's command
-/// resolved the way a thread would run it (the login shell's PATH), git, Xcode where a project
-/// needs it, the projects this Mac has a folder for, and its hardware. Never sign-in, which
+/// resolved the way a thread would run it (the login shell's PATH), git, Xcode (named missing where a project
+/// here needs it, and always as `noXcode` for a dispatch that does), the projects this Mac has a folder for, and its hardware. Never sign-in, which
 /// syncs, and never an action: a Mac that lacks a program says so and that is all.
 enum FleetReadiness {
     /// Asks the login shell which of `commands` don't resolve, and whether git and Xcode are there.
@@ -67,11 +68,7 @@ enum FleetReadiness {
 
     /// Whether any project folder holds an Xcode project at its top level.
     static func needsXcode(spaces: [(name: String, path: String)], fileManager: FileManager = .default) -> Bool {
-        spaces.contains { space in
-            let path = (space.path as NSString).expandingTildeInPath
-            let names = (try? fileManager.contentsOfDirectory(atPath: path)) ?? []
-            return names.contains { $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace") }
-        }
+        spaces.contains { FleetPlacement.hasXcodeProject(atPath: $0.path, fileManager: fileManager) }
     }
 
     /// The report for `facts`. `commands` are the ones to resolve (`mcpCommands`).
@@ -96,7 +93,7 @@ enum FleetReadiness {
         if needsXcode, found.noXcode { missing.append(FleetMissingTool(kind: .xcode)) }
         let machine = hardware()
         return FleetReadinessReport(model: machine.model, chip: machine.chip, missing: missing,
-                                    repos: Array(Set(spaces.map(\.name).filter { !$0.isEmpty })).sorted(), repoKeys: repoKeys)
+                                    repos: Array(Set(spaces.map(\.name).filter { !$0.isEmpty })).sorted(), repoKeys: repoKeys, noXcode: found.noXcode)
     }
 
     // MARK: The system's facts
