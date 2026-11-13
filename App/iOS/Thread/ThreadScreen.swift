@@ -261,6 +261,8 @@ struct ThreadTranscript: View {
     @State private var tailPin = ThreadTailPin()
     /// Gets a following transcript out of a stranded scroll position, where no row is realized (ThreadTailGuard).
     @State private var tailGuard = ThreadTailGuard()
+    /// Whether this mount has appeared: `onAppear` also fires when a screen pushed over the thread is popped, which is no mount.
+    @State private var appeared = false
 
     private static let bottomID = "thread-bottom"
 
@@ -411,6 +413,11 @@ struct ThreadTranscript: View {
                 } : nil)
             }
             .scrollDismissesKeyboard(.interactively)
+            .onAppear {
+                guard !appeared else { return }
+                appeared = true
+                presentation.mount()
+            }
             .onDisappear {
                 tailPin.stop()
                 tailGuard.stop()

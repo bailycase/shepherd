@@ -26,9 +26,10 @@ extension FixtureCatalog {
             // top), and the transcript renders no time at touch-down and at most four times over the whole drag (where
             // `ComposerPresentation.nativeTail`: on iOS 27.1 it draws from every change of the follower, and these are reported).
             FixtureScreen(name: "thread-detach-in-reply", hosts: TailFixture.hosts(), routes: [.thread(thread)], prepare: TailFixture.detachInReply),
-            // A reader who dragged up inside the reply (no row kept) and left comes back to the tail, following it; one who scrolled up
-            // past the reply and left comes back to the row they left at the top.
+            // A reader who dragged up inside the reply, and one who scrolled up past it, come back to the row they left at the top.
             FixtureScreen(name: "thread-detached-remount", hosts: TailFixture.remountHosts(), routes: [.thread(thread)], prepare: TailFixture.detachedRemount),
+            // A reader detached inside the reply with no turn kept (SwiftUI left the position binding nil) comes back to the tail and follows it.
+            FixtureScreen(name: "thread-unplaced-remount", hosts: TailFixture.remountHosts(), routes: [.thread(thread)], prepare: TailFixture.unplacedRemount),
         ]
     }
 }
@@ -590,21 +591,34 @@ extension TailFixture {
     /// "thread-detached-remount": a reader who left the tail comes back after the transcript was torn down and built again. Two
     /// readers, one after the other on the same launch.
     ///
-    /// The first drags 300 pt up from the tail, inside the 24 KB reply: SwiftUI reports no new turn, so none is kept, and the reader
-    /// is detached with no row to come back to (`visibleTurn` is nil). Where `ComposerPresentation.nativeTail` the transcript opens
-    /// on its bottom anchor, so it must also follow: a follower left detached there would sit at the tail without following new
-    /// output, with the jump pill showing while the agent runs. On iOS 27.1 the turn is kept as before and this is reported.
+    /// The first drags 300 pt up from the tail, inside the 24 KB reply. SwiftUI writes the turn under the top edge once the drag
+    /// has left the tail (the bottom marker, then the reply), so the reply is the row kept, and the reader comes back detached with
+    /// the reply's top at the top edge, as on the merge base. Nothing is kept only when SwiftUI leaves the position binding nil
+    /// (`unplacedRemount`).
     ///
     /// The second scrolls up past the reply and the row before it, leaves, and comes back. The row SwiftUI kept under the top edge
     /// is the one at the top again, within `restoreTolerance`, and the thread draws.
     @MainActor static func detachedRemount(_ app: MobileApp) async {
         await ready(app)
         MainQueueWatchdog.start(limit: 5)
-        await detachedInReplyRemount(app)
+        await detachedInReplyRemount(app, forgetting: false)
         await detachedPastReplyRemount(app)
     }
 
-    @MainActor private static func detachedInReplyRemount(_ app: MobileApp) async {
+    /// "thread-unplaced-remount": a reader detached inside the reply whom SwiftUI left with no turn to restore (it can leave the
+    /// position binding nil at a boundary, as after a jump; here it is written nil once the drag is at rest) leaves and comes back.
+    /// Where `ComposerPresentation.nativeTail` the transcript opens on its bottom anchor when no turn is kept, so it must also follow
+    /// the tail: a follower still detached would leave it at the tail without following new output, with the jump pill showing while
+    /// the agent runs. On iOS 27.1 the transcript opens as the merge base did, and this is reported.
+    @MainActor static func unplacedRemount(_ app: MobileApp) async {
+        await ready(app)
+        MainQueueWatchdog.start(limit: 5)
+        await detachedInReplyRemount(app, forgetting: true)
+    }
+
+    /// Drags 300 pt up from the tail inside the reply, waits for the view to rest, leaves, and comes back; then reports and judges
+    /// where the reader is. `forgetting` first takes the turn kept away, as a nil write from SwiftUI would.
+    @MainActor private static func detachedInReplyRemount(_ app: MobileApp, forgetting: Bool) async {
         let ref = FixtureData.ref(FixtureData.preview)
         guard let scroll = FollowFixture.threadScrollView() else { return FixtureCheck.report("FIXTURE CHECK FAILED: no thread scroll view") }
         let presentation = app.navigator.composerPresentation.state(for: ref)
@@ -617,8 +631,9 @@ extension TailFixture {
         pan.state = .ended
         await FixtureWindows.wait("the thread at rest", seconds: 10) { !scroll.isDragging && !scroll.isDecelerating && !scroll.isTracking }
         try? await Task.sleep(for: .seconds(1.5))
-        let moved = start - scroll.contentOffset.y
-        let kept = presentation.visibleTurn
+        if forgetting { presentation.noteVisibleTurn(nil) }
+        let moved = Int((start - scroll.contentOffset.y).rounded())
+        let row = presentation.visibleTurn
         let detached = !presentation.scrollFollower.sticky
         await leave(app)
         let frames = MountFrames()
@@ -627,18 +642,27 @@ extension TailFixture {
         await FixtureWindows.wait("a built row after the re-open", seconds: 15) { frames.firstRow != nil }
         await settle()
         _ = frames.stop()
+        let back = presentation.visibleTurn
+        let top = shownThreadScroll().flatMap { topRow(in: $0) }
         let rest = shown()
         let follows = presentation.follows && presentation.scrollFollower.sticky
         // The jump pill shows for a detached reader while the agent runs (`running`) or after output they have not seen.
         let pill = NativeScrollFollower.showsJump(sticky: presentation.follows, unseen: presentation.unseen, running: true)
-        FixtureCheck.report("FIXTURE CHECK ok: dragged \(Int(moved.rounded()))pt up inside the reply, left \(detached ? "detached" : "still following") "
-            + "with \(kept.map { "row \($0)" } ?? "no row") kept; back, the view is \(rest.distance)pt from the tail, "
+        FixtureCheck.report("FIXTURE CHECK ok: dragged \(moved)pt up inside the reply, left \(detached ? "detached" : "still following") "
+            + "with \(row.map { "row \($0)" } ?? "no row") kept; back on \(back.map { "row \($0)" } ?? "no row"), its top "
+            + "\(top.map { String(Int($0.offset.rounded())) } ?? "unread")pt from the top edge, \(rest.distance)pt from the tail, "
             + "\(follows ? "following" : "detached"), \(pill ? "with" : "without") the jump pill while the agent runs, \(Int((rest.ink * 100).rounded()))% ink")
-        guard ComposerPresentation.nativeTail else { return }
-        FixtureCheck.report("FIXTURE CHECK \(detached && kept == nil && abs(moved - 300) <= restoreTolerance ? "ok" : "FAILED"): "
-            + "a drag inside the reply leaves the reader detached with no row kept")
-        FixtureCheck.report("FIXTURE CHECK \(follows && !pill && rest.atTail && rest.ink >= inkFloor ? "ok" : "FAILED"): "
-            + "a reader with no row to come back to returns to the tail, following it, with no jump pill")
+        if forgetting {
+            guard ComposerPresentation.nativeTail else { return }
+            FixtureCheck.report("FIXTURE CHECK \(detached && row == nil ? "ok" : "FAILED"): the reader is detached with no row kept")
+            FixtureCheck.report("FIXTURE CHECK \(follows && !pill && rest.atTail && rest.ink >= inkFloor ? "ok" : "FAILED"): "
+                + "a reader with no row to come back to returns to the tail, following it, with no jump pill")
+        } else {
+            // The reply is some 10,000 pt of lazily measured text, so its top lands within a few tens of points of the top edge, not
+            // within `restoreTolerance` as a short row's does (-18 pt and -15 pt on the merge base too): it is the row that is judged.
+            let held = row != nil && detached && back == row && rest.distance > Int(firstFrameReach) && rest.ink >= inkFloor
+            FixtureCheck.report("FIXTURE CHECK \(held ? "ok" : "FAILED"): a reader detached inside the reply comes back to the row they left, detached")
+        }
     }
 
     @MainActor private static func detachedPastReplyRemount(_ app: MobileApp) async {

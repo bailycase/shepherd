@@ -56,6 +56,18 @@ final class ComposerPresentation {
         if returned, Self.nativeTail { keepTurn(nil) }
     }
 
+    /// A transcript mounting with no turn to restore opens on its bottom anchor, at its tail, so the reader must follow it. One left
+    /// detached with nothing kept (SwiftUI can leave the position nil, as after a jump) would sit there with no follow of the tail,
+    /// the jump pill showing while the agent runs, and, where the tail guard repairs only a following transcript, a blank one on an
+    /// iPad in landscape. Where not `nativeTail` the turn is kept as it was before the transcript opened at its tail, and nothing
+    /// changes.
+    func mount() {
+        guard Self.nativeTail, !restoresTurn, !follows else { return }
+        var next = scrollFollower
+        next.jumpToLatest()
+        follow(next)
+    }
+
     /// SwiftUI's writes through the transcript's position binding. Where `nativeTail` they are not kept while following, and equal
     /// ones notify nothing, so the layout a position change sets off never sees `visibleTurn` change.
     func noteVisibleTurn(_ id: String?) {
