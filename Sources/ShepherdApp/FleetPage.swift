@@ -223,6 +223,10 @@ struct FleetMacCardView: View, Equatable {
                     Text(card.hardware).font(.sh(.micro, weight: .regular)).foregroundStyle(sh.textTertiary)
                         .lineLimit(1).truncationMode(.tail)
                 }
+                if let reach = card.reach {
+                    Text(reach).font(.sh(.micro, weight: .regular)).foregroundStyle(sh.textTertiary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
             }
             Spacer(minLength: SH.Space.s)
             status

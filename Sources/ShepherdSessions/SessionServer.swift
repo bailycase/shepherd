@@ -1095,7 +1095,7 @@ public final class SessionServer: @unchecked Sendable {
                 && (($0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetSyncCapability) || fleet?.membership == true)
                 && ($0 != RemoteProtocol.fleetDevicesCapability || fleet != nil)
                 && (($0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetViewCapability && $0 != RemoteProtocol.fleetDispatchCapability) || fleet?.membership == true)
-                && ($0 != RemoteProtocol.fleetSnapshotCapability || fleet?.membership == true)
+                && (($0 != RemoteProtocol.fleetSnapshotCapability && $0 != RemoteProtocol.fleetLinkCapability) || fleet?.membership == true)
         }
     }
 
@@ -1333,6 +1333,20 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Tests: how the next fleet reaches its peers and learns its own addresses (`FleetService`'s `network`, `dialer` and timings).
+    struct FleetLinkOptions {
+        var network: FleetNetwork?
+        var dialer: FleetService.Dialer?
+        var drainGrace: Duration?
+        var recheckInterval: Duration?
+        var networkSettle: DispatchTimeInterval?
+    }
+    var fleetLinkOptions: FleetLinkOptions {
+        get { queue.sync { storedFleetLinkOptions } }
+        set { queue.sync { storedFleetLinkOptions = newValue } }
+    }
+    private var storedFleetLinkOptions = FleetLinkOptions()
+
     /// The finder the running fleet uses, readable from any thread (readiness is made off the queue).
     private let fleetRepoFinder = FleetRepoFinderBox()
 
@@ -1379,8 +1393,22 @@ public final class SessionServer: @unchecked Sendable {
                 let pressure = fleetPressureMaker?(queue, facts) ?? FleetPressure(queue: queue, clock: clock, localFacts: facts)
                 let service = try FleetService(queue: queue, directory: supportDirectory.appendingPathComponent("fleet", isDirectory: true),
                                                name: fleetOptions.name ?? Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
-                                               build: hostBuild, advertises: fleetOptions.advertises, membership: enabled, clock: clock, pressure: pressure)
+                                               build: hostBuild, advertises: fleetOptions.advertises, membership: enabled, clock: clock, pressure: pressure,
+                                               network: storedFleetLinkOptions.network ?? .system)
+                if let dialer = storedFleetLinkOptions.dialer { service.dialer = dialer }
+                if let grace = storedFleetLinkOptions.drainGrace { service.drainGrace = grace }
+                if let interval = storedFleetLinkOptions.recheckInterval { service.recheckInterval = interval }
+                if let settle = storedFleetLinkOptions.networkSettle { service.networkSettle = settle }
                 service.onChange = { [weak self] in self?.pushSettingsChanged(.fleet) }
+                // A Mac that can't be dialed sends its requests over the connection it opened (`fleet.link.v1`).
+                service.onPeerCall = { [weak self] connection, id, request in
+                    guard let self, let client = self.clients[connection], client.fleetPeerID != nil else { return }
+                    self.send(.fleetPeerCall(id: id, request: request), to: client)
+                }
+                service.onCloseConnection = { [weak self] connection, reason in
+                    guard let self, let client = self.clients[connection] else { return }
+                    self.disconnect(client, reason: reason)
+                }
                 pressure.onChange = { [weak self] in self?.pushSettingsChanged(.fleetPressure) }
                 service.onPeerRemoved = { [weak self] hostID in
                     guard let self else { return }
@@ -1686,7 +1714,7 @@ public final class SessionServer: @unchecked Sendable {
              .fleetPressure(let value, _), .fleetReadiness(let value, _), .fleetPressureNow(let value), .fleetRepoManifest(let value, _),
              .fleetSnapshotPart(let value, _, _), .fleetBlobPush(let value, _, _),
              .fleetDispatchCreate(let value, _), .fleetDispatchControl(let value, _, _), .fleetDispatchChanged(let value, _),
-             .fleetDispatchResult(let value, _, _, _),
+             .fleetDispatchResult(let value, _, _, _), .fleetRoutes(let value, _),
              .fleetPairDevice(let value, _, _), .fleetEnrollDevice(let value, _), .fleetSyncDevices(let value, _):
             id = value
         default: return
@@ -2974,6 +3002,7 @@ public final class SessionServer: @unchecked Sendable {
             if let links = pullRequestLinksPush, client.isLocal, client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
                 send(links, to: client)
             }
+            if let peer { fleet?.peerConnected(peer, connection: client.fd, capabilities: client.clientCapabilities) }
             ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
             return
         }
@@ -2981,9 +3010,16 @@ public final class SessionServer: @unchecked Sendable {
         switch request {
         case .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
              .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
-             .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult,
+             .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult, .fleetRoutes,
              .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
             serveFleet(request, from: client)
+        case .fleetPeerAnswer(let id, let reply):
+            // The answer of a Mac to a call this host sent over the connection it opened: only that Mac's.
+            guard client.fleetPeerID != nil else {
+                send(.error(id: id, code: FleetProtocol.Code.forbidden, message: "Only a Mac in the fleet answers a call."), to: client)
+                return
+            }
+            fleet?.peerAnswered(connection: client.fd, id: id, reply: reply)
         case .pushRegistration(let id, let registration):
             guard offeredCapabilities.contains(RemoteProtocol.pushNotificationsCapability),
                   client.clientCapabilities.contains(RemoteProtocol.pushNotificationsCapability) else {

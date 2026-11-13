@@ -78,6 +78,9 @@ public struct FleetMacCard: Identifiable, Equatable, Sendable {
     public var powerFact = ""
     /// When an asleep Mac was last seen, as a time of day ("10:42"); nil otherwise.
     public var since: String?
+    /// How this Mac reaches it while linked: "via 10.77.20.10 · LAN", or "via its link to you" when only the other Mac can dial.
+    /// Nil for this Mac, one that isn't linked, and a client's view (which never carries an address).
+    public var reach: String?
     /// Threads working on the Mac now; nil while it isn't answering.
     public var working: Int?
     /// The Mac is one of the fleet's (its id is a fleet host id), so a Send work here weight can be set for it. False for a
@@ -220,6 +223,7 @@ public enum FleetPagePresentation {
             /// The sample, when it is recent enough to show.
             var sample: FleetPressureSample?
             var skip: FleetRoom.Skip?
+            var reach: String?
         }
         // The Mac that answered is "This Mac" to its own app; a client names it, and reaches it, or it would not have answered.
         let answering = viewer == .mac ? Entry(id: thisID, name: "This Mac", status: .thisMac, lastSeen: nil, state: macs[thisID], weight: weight(thisID))
@@ -231,7 +235,8 @@ public enum FleetPagePresentation {
             case .connecting: .connecting
             case .offline: .asleep
             }
-            entries.append(Entry(id: peer.hostID, name: peer.name, status: status, lastSeen: peer.lastSeen, state: macs[peer.hostID], weight: weight(peer.hostID)))
+            entries.append(Entry(id: peer.hostID, name: peer.name, status: status, lastSeen: peer.lastSeen, state: macs[peer.hostID], weight: weight(peer.hostID),
+                                 reach: reachWords(peer.reach)))
         }
         for index in entries.indices {
             var entry = entries[index]
@@ -261,6 +266,7 @@ public enum FleetPagePresentation {
             cards.append(card(entry.id, name: entry.name, status: entry.status, lastSeen: entry.lastSeen, state: entry.state,
                               sample: entry.sample, skip: entry.skip, weight: entry.weight, score: scores[index], best: best, compared: compared,
                               batteryCountsHalf: batteryCountsHalf, locale: locale, calendar: calendar))
+            cards[cards.count - 1].reach = entry.reach
         }
 
         for index in cards.indices {
@@ -474,6 +480,14 @@ public enum FleetPagePresentation {
     }
 
     // MARK: Words
+
+    /// "via 10.77.20.10 · LAN", "via its link to you", or nil when the Mac isn't reached by either.
+    static func reachWords(_ reach: FleetPeerReach?) -> String? {
+        guard let reach else { return nil }
+        if reach.viaItsLink { return "via its link to you" }
+        guard let host = reach.host else { return nil }
+        return reach.kind.map { "via \(host) · \($0.label)" } ?? "via \(host)"
+    }
 
     /// "9.4 GB", "41 GB": binary gigabytes, one decimal under ten.
     static func memory(_ bytes: UInt64) -> String {

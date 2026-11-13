@@ -57,6 +57,28 @@ final class FleetService: @unchecked Sendable {
     var onDeviceRevoked: ((UUID) -> Void)?
     /// Server queue: the shared token was retired, so the connections that used it must end.
     var onSharedTokenRetired: (() -> Void)?
+    /// Server queue: send the Mac that opened `connection` a call (`RemoteReply.fleetPeerCall`) with this id.
+    var onPeerCall: ((Int32, Int, RemoteRequest) -> Void)?
+    /// Server queue: close `connection`, a Mac's link that stopped answering.
+    var onCloseConnection: ((Int32, String) -> Void)?
+
+    /// How this host opens a connection to a route of a peer and says hello with the token it presents. Tests replace it to refuse a
+    /// route, or to send one somewhere else.
+    typealias Dialer = @Sendable (_ client: RemoteHostClient, _ route: FleetRoute, _ token: String, _ peer: UUID, _ clientName: String) async throws -> Void
+    var dialer: Dialer = { client, route, token, peer, clientName in
+        _ = try await client.connect(host: route.host, port: route.port, token: token, clientName: clientName,
+                                     capabilities: RemoteProtocol.fleetLinkClientCapabilities, expectingHostID: peer, fetchesState: false)
+    }
+    /// This Mac's addresses and when they change.
+    var network: FleetNetwork
+    /// A connection let go (the other of a pair, or one the link moved off) closes after nothing is in flight on it and this long.
+    var drainGrace: Duration = .seconds(10)
+    /// A link on a later route than its first looks at the earlier ones this often, and when the network changes.
+    var recheckInterval: Duration = .seconds(60)
+    /// An interface change is reported after the network has been quiet this long.
+    var networkSettle: DispatchTimeInterval = .milliseconds(500)
+    private var stopWatching: (@Sendable () -> Void)?
+    private var lastReport: FleetRouteReport?
 
     private var peers: FleetPeers
     /// Pressure samples and readiness reports: this Mac's and each peer's (`FleetPressure`).
@@ -86,19 +108,44 @@ final class FleetService: @unchecked Sendable {
     /// Unauthenticated fleet requests one connection may send.
     static let unauthenticatedRequestLimit = 12
 
+    /// The link to one peer. Two connections can carry it, one this host dialed and one the peer did (`FleetService.reassess`).
     private final class Link {
         let hostID: UUID
+        /// The connection this host dialed, while it holds one, and the route it is on.
         var client: RemoteHostClient?
+        var route: FleetRoute?
+        /// What the link's components send over: `client`, or a client of the connection the peer opened.
+        var active: RemoteHostClient?
+        var activeInbound = false
+        /// The dialing loop: connecting, offline between rounds, connected while it holds a connection.
+        var dialing: FleetPeerStatus.Link = .connecting
         var phase: FleetPeerStatus.Link = .connecting
         var lastSeen: Double?
         var task: Task<Void, Never>?
+        /// The connection being let go, and the tasks that close it.
+        var letGo: RemoteHostClient?
+        var closers: [Task<Void, Never>] = []
+        /// Wakes the dialing loop while it waits for the peer to give up the link, and the recheck of earlier routes.
+        let wake = FleetSignal()
+        let networkChanged = FleetSignal()
 
         init(hostID: UUID) { self.hostID = hostID }
     }
 
+    /// A connection a peer opened to this host that can carry the link.
+    private struct Inbound {
+        let hostID: UUID
+        let channel: InboundChannel
+        let client: RemoteHostClient
+    }
+    private var inboundConnections: [Int32: Inbound] = [:]
+    /// The newest of each peer's connections.
+    private var currentInbound: [UUID: Int32] = [:]
+
     init(queue: DispatchQueue, directory: URL, name: String, build: String?, advertises: Bool = true, membership: Bool = true,
-         clock: @escaping @Sendable () -> Date = Date.init, pressure: FleetPressure? = nil) throws {
+         clock: @escaping @Sendable () -> Date = Date.init, pressure: FleetPressure? = nil, network: FleetNetwork = .system) throws {
         self.queue = queue
+        self.network = network
         self.membership = membership
         self.directory = directory
         self.name = name
@@ -117,7 +164,7 @@ final class FleetService: @unchecked Sendable {
         syncEngine.onChange = { [weak self] in self?.changed() }
         index.onChange = { [weak self] in self?.onChange?() }
         self.pressure.linkConnected = { [weak self] in self?.links.values.contains { $0.phase == .connected } == true }
-        self.pressure.pushTargets = { [weak self] in self?.links.values.compactMap { $0.phase == .connected ? $0.client : nil } ?? [] }
+        self.pressure.pushTargets = { [weak self] in self?.links.values.compactMap { $0.phase == .connected ? $0.active : nil } ?? [] }
         dispatch.indexService = index
         index.onSpaces = { [weak dispatch] spaces in dispatch?.refreshSpares(spaces) }
         dispatch.membership = { [weak self] in self?.membership ?? false }
@@ -127,8 +174,8 @@ final class FleetService: @unchecked Sendable {
             return self.peers.members.map { ($0.hostID, $0.name, self.links[$0.hostID]?.phase == .connected) }
         }
         dispatch.client = { [weak self] in
-            guard let link = self?.links[$0], link.phase == .connected, link.client?.capabilities.contains(RemoteProtocol.fleetDispatchCapability) == true else { return nil }
-            return link.client
+            guard let link = self?.links[$0], link.phase == .connected, link.active?.capabilities.contains(RemoteProtocol.fleetDispatchCapability) == true else { return nil }
+            return link.active
         }
         dispatch.onChange = { [weak self] in self?.changed() }
     }
@@ -144,6 +191,7 @@ final class FleetService: @unchecked Sendable {
         if membership {
             syncEngine.start()
             dispatch.start()
+            startWatchingNetwork()
             for record in peers.members where record.isLinkable { startLink(record.hostID) }
         }
         advertise()
@@ -158,10 +206,12 @@ final class FleetService: @unchecked Sendable {
         if on {
             syncEngine.start()
             dispatch.start()
+            startWatchingNetwork()
             for record in peers.members where record.isLinkable { startLink(record.hostID) }
         } else {
             dispatch.stop()
             join = nil
+            stopWatchingNetwork()
             for id in Array(links.keys) { stopLink(id) }
             // No peer to sample for, and no Fleet page to show.
             pressure.reset()
@@ -177,6 +227,7 @@ final class FleetService: @unchecked Sendable {
         index.stop()
         join = nil
         deviceCode = nil
+        stopWatchingNetwork()
         for id in Array(links.keys) { stopLink(id) }
         pressure.stop()
         syncEngine.stop()
@@ -190,6 +241,9 @@ final class FleetService: @unchecked Sendable {
         listenerPort = port
         advertise()
         changed()
+        // Peers hold the port with the addresses: it goes out again.
+        lastReport = nil
+        networkChanged()
     }
 
     private func advertise() {
@@ -213,6 +267,7 @@ final class FleetService: @unchecked Sendable {
 
     /// A connection of the server closed.
     func connectionClosed(_ connection: Int32) {
+        inboundClosed(connection)
         pressure.connectionClosed(connection)
         if join?.owner == connection {
             join = nil
@@ -274,7 +329,7 @@ final class FleetService: @unchecked Sendable {
     /// A Mac connected with its token from `host`: where to reach it if its address changed.
     func peerAuthenticated(_ hostID: UUID, from host: String?) {
         guard let host, var record = peers.record(hostID), !record.revoked, let current = record.addresses.first,
-              current.host != host else { return }
+              !record.routes.contains(where: { $0.host == host }) else { return }
         record.reached(at: FleetAddress(host: host, port: current.port))
         if (try? save(record)) != nil { changed() }
     }
@@ -283,11 +338,16 @@ final class FleetService: @unchecked Sendable {
 
     /// Serves one fleet request. `reply` may be called now or later, from any thread.
     func serve(_ request: RemoteRequest, from caller: FleetCaller, reply: @escaping @Sendable (RemoteReply) -> Void) {
+        // A Mac that was removed is a member no more, though its connection may stay open a moment, to be told.
+        if let peer = caller.peerHostID, caller.access == .member, peers.record(peer)?.revoked != false, let id = Self.callID(request) {
+            return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "That Mac isn't in the fleet."))
+        }
         // Pairing Macs, removing them and joining are a member's: with Fleet off they are refused, as they always were.
         switch request {
         case .fleetPair(let id, _, _), .fleetEstablish(let id, _), .fleetIntroduce(let id, _), .fleetRevoke(let id, _, _), .fleetSync(let id, _),
              .fleetPressure(let id, _), .fleetReadiness(let id, _), .fleetPressureNow(let id), .fleetRepoManifest(let id, _), .fleetSnapshotPart(let id, _, _), .fleetBlobPush(let id, _, _),
-             .fleetDispatchCreate(let id, _), .fleetDispatchControl(let id, _, _), .fleetDispatchChanged(let id, _), .fleetDispatchResult(let id, _, _, _):
+             .fleetDispatchCreate(let id, _), .fleetDispatchControl(let id, _, _), .fleetDispatchChanged(let id, _), .fleetDispatchResult(let id, _, _, _),
+             .fleetRoutes(let id, _):
             guard membership else { return reply(Self.off(id)) }
         case .fleetAction(let id, let action) where !action.isDeviceAction:
             guard membership else { return reply(Self.off(id)) }
@@ -308,6 +368,13 @@ final class FleetService: @unchecked Sendable {
         case .fleetRevoke(let id, let hostID, let at):
             guard let from = caller.peerHostID else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet removes another.")) }
             revoked(hostID, at: at, heardFrom: from)
+            reply(.ok(id: id))
+        case .fleetRoutes(let id, let report):
+            guard caller.access == .member, let from = caller.peerHostID else {
+                return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet reports how it can be reached."))
+            }
+            guard report.isValid else { return reply(Self.refusal(id, FleetProtocol.Code.invalid, "That report of routes isn't valid.")) }
+            received(report, from: from)
             reply(.ok(id: id))
         case .fleetPressure(let id, let sample):
             guard caller.access == .member, let from = caller.peerHostID else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet reports its load.")) }
@@ -563,7 +630,7 @@ final class FleetService: @unchecked Sendable {
         let ends = await sync { () -> (RemoteHostClient, RemoteHostClient, FleetMember, FleetMember)? in
             guard let newcomer = self.peers.record(newcomerID), !newcomer.revoked, let newcomerAddress = newcomer.addresses.first,
                   let member = self.peers.record(memberID), !member.revoked, let memberAddress = member.addresses.first,
-                  let newcomerClient = self.links[newcomerID]?.client, let memberClient = self.links[memberID]?.client else { return nil }
+                  let newcomerClient = self.links[newcomerID]?.active, let memberClient = self.links[memberID]?.active else { return nil }
             return (newcomerClient, memberClient,
                     FleetMember(hostID: newcomerID, name: newcomer.name, host: newcomerAddress.host, port: newcomerAddress.port),
                     FleetMember(hostID: memberID, name: member.name, host: memberAddress.host, port: memberAddress.port))
@@ -671,7 +738,7 @@ final class FleetService: @unchecked Sendable {
         let entries = devices.entries
         var tasks: [Task<Void, Never>] = []
         for (hostID, link) in links where hostID != except && (only == nil || only == hostID) {
-            guard let client = link.client else { continue }
+            guard let client = link.active else { continue }
             tasks.append(Task { [weak self] in
                 guard let theirs = try? await client.fleetSyncDevices(entries) else { return }
                 self?.queue.async { self?.mergeDevices(theirs.devices, from: hostID) }
@@ -700,25 +767,27 @@ final class FleetService: @unchecked Sendable {
         guard updated.revoke(hostID, at: at) else { return false }
         do { try updated.save(to: directory) } catch { ShepherdLog.error("fleet: could not save a removal: \(error)") }
         peers = updated
-        let notified = links.filter { $0.key != hostID && $0.key != from }.compactMap(\.value.client)
-        let leaving = links[hostID]?.client
+        let notified = links.filter { $0.key != hostID && $0.key != from }.compactMap(\.value.active)
+        let leaving = links[hostID]?.active
         // The link's task disconnects its client when cancelled, so while the notice is still to be sent it is
         // cancelled after it (a Mac removed under a cancelled link would never hear that it was).
         let linkTask = flood ? links[hostID]?.task : nil
         if flood {
-            Task {
+            Task { [weak self] in
                 for client in notified { try? await client.fleetRevoke(hostID: hostID, at: at) }
                 // The Mac that was removed is told too, when it is reachable: it leaves.
                 try? await leaving?.fleetRevoke(hostID: hostID, at: at)
                 leaving?.disconnect()
                 linkTask?.cancel()
+                // Its own connection to this host may be the one that carried the notice: it ends after it.
+                self?.queue.async { self?.onPeerRemoved?(hostID) }
             }
         }
         stopLink(hostID, closing: !flood, cancelling: !flood)
         pressure.forget(hostID)
         pressure.refresh()
         index.forget(peer: hostID)
-        onPeerRemoved?(hostID)
+        if !flood { onPeerRemoved?(hostID) }
         changed()
         return true
     }
@@ -965,8 +1034,14 @@ final class FleetService: @unchecked Sendable {
 
     private func status(of record: FleetPeerRecord) -> FleetPeerStatus {
         let link = links[record.hostID]
-        return FleetPeerStatus(hostID: record.hostID, name: record.name, kind: record.kind, host: record.addresses.first?.host,
-                               port: record.addresses.first?.port, pairedAt: record.pairedAt, link: link?.phase ?? .offline, lastSeen: link?.lastSeen)
+        // How it is reached: the route this host's own connection runs on, or the connection the Mac opened when only that one carries the link.
+        var reach: FleetPeerReach?
+        if link?.phase == .connected {
+            reach = link?.activeInbound == true ? FleetPeerReach(viaItsLink: true) : link?.route.map { FleetPeerReach(host: $0.host, kind: $0.kind) }
+        }
+        return FleetPeerStatus(hostID: record.hostID, name: record.name, kind: record.kind, host: link?.route?.host ?? record.addresses.first?.host,
+                               port: link?.route?.port ?? record.addresses.first?.port, pairedAt: record.pairedAt, link: link?.phase ?? .offline,
+                               lastSeen: link?.lastSeen, reach: reach)
     }
 
     // MARK: - Persistence (server queue)
@@ -983,63 +1058,231 @@ final class FleetService: @unchecked Sendable {
 
     // MARK: - Links
 
-    /// Starts (again) the link to `hostID`: connects with the token this host presents and holds
-    /// the connection, reconnecting with backoff, until the Mac is removed or Fleet is turned off.
+    /// Starts (again) the link to `hostID`: dials it with the token this host presents and holds the connection, reconnecting with
+    /// backoff, until the Mac is removed or Fleet is turned off. The link also works over the connection the Mac opened to this
+    /// host (`peerConnected`): whichever of the two Macs can reach the other carries it.
     private func startLink(_ hostID: UUID) {
         guard !stopped, membership, peers.record(hostID)?.isLinkable == true else { return }
         stopLink(hostID)
         let link = Link(hostID: hostID)
         links[hostID] = link
         link.task = Task { [weak self] in await self?.run(link) }
+        reassess(link)
     }
 
     /// Ends the link to `hostID`. `closing: false` leaves its connection open for the caller to
     /// close once it has said what it has to, and `cancelling: false` its task (which closes it) running.
+    /// The connection the Mac opened is never closed here: it is the server's (`onPeerRemoved`, Fleet off).
     private func stopLink(_ hostID: UUID, closing: Bool = true, cancelling: Bool = true) {
         guard let link = links.removeValue(forKey: hostID) else { return }
         syncEngine.linkDown(peer: hostID)
         index.linkDown(peer: hostID)
-        if cancelling { link.task?.cancel() }
-        if closing { link.client?.disconnect() }
+        if cancelling {
+            link.task?.cancel()
+            for closer in link.closers { closer.cancel() }
+            link.wake.finish()
+            link.networkChanged.finish()
+        }
+        if closing {
+            link.client?.disconnect()
+            link.letGo?.disconnect()
+        }
         link.client = nil
+        link.active = nil
+    }
+
+    /// Which of the two connections of a pair is kept when both Macs dialed: the one opened by the Mac with the lower id, which both
+    /// Macs work out the same way.
+    private func keepsOwnConnection(to peer: UUID) -> Bool { identity.hostID.uuidString < peer.uuidString }
+
+    /// The connection the peer opened to this host, when it carries the link: it lists `fleet.link.v1` in `hello`.
+    private func inboundClient(from peer: UUID) -> RemoteHostClient? {
+        currentInbound[peer].flatMap { inboundConnections[$0] }?.client
+    }
+
+    /// The Mac's own connection is the link, so this host doesn't dial it: the lower id's connection is the one kept.
+    private func waitsForPeerLink(_ link: Link) -> Bool {
+        inboundClient(from: link.hostID) != nil && !keepsOwnConnection(to: link.hostID)
+    }
+
+    /// Chooses what the link's components send over: the connection this host dialed, or the one the peer opened. When both exist the
+    /// lower id's is kept and the other is let go once nothing is in flight on it. Server queue.
+    private func reassess(_ link: Link) {
+        guard links[link.hostID] === link else { return }
+        let own = link.client, theirs = inboundClient(from: link.hostID)
+        let chosen: RemoteHostClient?, viaInbound: Bool
+        switch (own, theirs) {
+        case (let own?, _?) where keepsOwnConnection(to: link.hostID): (chosen, viaInbound) = (own, false)
+        case (_?, let theirs?): (chosen, viaInbound) = (theirs, true)
+        case (let own?, nil): (chosen, viaInbound) = (own, false)
+        case (nil, let theirs?): (chosen, viaInbound) = (theirs, true)
+        case (nil, nil): (chosen, viaInbound) = (nil, false)
+        }
+        if let own, own !== chosen, theirs != nil { letGo(own, of: link) }
+        let previous = link.active
+        link.active = chosen
+        link.activeInbound = viaInbound
+        let phase: FleetPeerStatus.Link = chosen != nil ? .connected : link.dialing
+        let moved = chosen !== previous
+        if moved || link.phase != phase {
+            link.phase = phase
+            if previous != nil, moved {
+                syncEngine.linkDown(peer: link.hostID)
+                index.linkDown(peer: link.hostID)
+            }
+            if moved, let chosen {
+                channelUp(link, chosen)
+            } else if moved {
+                link.lastSeen = nowMilliseconds
+                pressure.refresh()
+                dispatch.linkChanged()
+            }
+            changed()
+        }
+        if !waitsForPeerLink(link) { link.wake.fire() }
+    }
+
+    /// The link's components take up `client`.
+    private func channelUp(_ link: Link, _ client: RemoteHostClient) {
+        link.lastSeen = nil
+        announceRemovals(over: client, to: link.hostID)
+        pressure.refresh()
+        pressure.greet(client)
+        syncEngine.linkUp(peer: link.hostID, client: client)
+        index.linkUp(peer: link.hostID, client: client)
+        pushDevices(only: link.hostID)
+        reportRoutes(over: client)
+        brokerPending()
+        dispatch.linkChanged()
+    }
+
+    /// Closes `client` once nothing is in flight on it, and a while after, so a request sent on it before the peer knew it was let go is
+    /// answered. It stays open if the other connection goes in the meantime and it carries the link again.
+    private func letGo(_ client: RemoteHostClient, of link: Link) {
+        guard link.letGo !== client else { return }
+        link.letGo = client
+        let grace = drainGrace
+        link.closers.append(Task { [weak self, weak link] in
+            await client.waitUntilIdle()
+            try? await Task.sleep(for: grace)
+            await client.waitUntilIdle()
+            guard let self, let link else { return client.disconnect() }
+            self.queue.async {
+                if link.active === client { link.letGo = nil } else { client.disconnect() }
+            }
+        })
     }
 
     private func run(_ link: Link) async {
         var backoff = RemoteReconnectBackoff()
         while !Task.isCancelled {
-            guard let record = await sync({ self.record(for: link) }), let token = record.myToken else { return }
-            await sync { self.setPhase(.connecting, of: link) }
-            var held = false
-            for address in record.addresses {
+            switch await sync({ self.plan(for: link) }) {
+            case .stop: return
+            case .wait:
+                await link.wake.wait()
+                continue
+            case .dial(let routes, let token):
+                var held = false
+                for route in routes {
+                    if Task.isCancelled { return }
+                    guard let dialed = await dial(route, token: token, peer: link.hostID) else { continue }
+                    guard await sync({ self.established(link, dialed) }) else { dialed.client.disconnect(); return }
+                    held = true
+                    backoff.reset()
+                    await hold(link, dialed, token: token)
+                    break
+                }
                 if Task.isCancelled { return }
-                let client = RemoteHostClient()
-                let (dropped, signal) = AsyncStream<Void>.makeStream()
-                // Before connecting, so no drop can slip between the connection and the handler.
-                client.onDisconnected = { _ in signal.yield(); signal.finish() }
-                do {
-                    _ = try await client.connect(host: address.host, port: address.port, token: token, clientName: name,
-                                                 capabilities: [], expectingHostID: link.hostID, fetchesState: false)
-                } catch {
-                    client.disconnect()
-                    continue
-                }
-                guard await sync({ self.established(link, client: client, at: address) }) else { client.disconnect(); return }
-                held = true
-                backoff.reset()
-                await withTaskGroup(of: Void.self) { group in
-                    group.addTask { for await _ in dropped { return } }
-                    group.addTask { await Self.keepAlive(client) }
-                    await group.next()
-                    group.cancelAll()
-                }
-                client.disconnect()
-                await sync { self.lost(link) }
-                break
+                if !held { await sync { self.setDialing(.offline, of: link) } }
+                try? await Task.sleep(for: held ? .seconds(1) : backoff.next())
             }
-            if Task.isCancelled { return }
-            if !held { await sync { self.setPhase(.offline, of: link) } }
-            try? await Task.sleep(for: held ? .seconds(1) : backoff.next())
         }
+    }
+
+    private enum Plan {
+        case stop, wait
+        case dial([FleetRoute], String)
+    }
+
+    private func plan(for link: Link) -> Plan {
+        guard let record = record(for: link), let token = record.myToken else { return .stop }
+        if waitsForPeerLink(link) { return .wait }
+        setDialing(.connecting, of: link)
+        return .dial(record.routes, token)
+    }
+
+    /// A connection this host opened to a route of a peer, ready to be linked.
+    private struct Dialed {
+        let client: RemoteHostClient
+        let dropped: AsyncStream<Void>
+        let route: FleetRoute
+    }
+
+    /// Connects to `route` and says hello with the token this host presents, asking first who answers.
+    private func dial(_ route: FleetRoute, token: String, peer: UUID) async -> Dialed? {
+        let client = RemoteHostClient()
+        let (dropped, signal) = AsyncStream<Void>.makeStream()
+        // Before connecting, so no drop can slip between the connection and the handler.
+        client.onDisconnected = { _ in signal.yield(); signal.finish() }
+        // What the peer sends back over this connection (a peer that can't dial this host).
+        client.onPeerCall = { [weak self] request, reply in self?.serveCall(request, from: peer, reply: reply) }
+        let name = await sync { self.name }
+        do {
+            try await dialer(client, route, token, peer, name)
+        } catch {
+            client.disconnect()
+            return nil
+        }
+        return Dialed(client: client, dropped: dropped, route: route)
+    }
+
+    /// Holds a connection until it drops or the peer stops answering. While it runs on a later route than the first, the earlier ones
+    /// are tried again every `recheckInterval` and when the network changes, and the connection moves to the first that answers.
+    private func hold(_ link: Link, _ first: Dialed, token: String) async {
+        var current = first
+        while true {
+            let held = current
+            let recheck = await sync { self.record(for: link)?.routes.first != held.route }
+            let moved: Dialed? = await withTaskGroup(of: Dialed?.self) { group in
+                group.addTask { for await _ in held.dropped { break }; return nil }
+                group.addTask { await Self.keepAlive(held.client); return nil }
+                if recheck { group.addTask { await self.earlierRoute(link, than: held.route, token: token) } }
+                // The first to finish ends the others; a move that finished with it still counts.
+                var moved: Dialed?
+                var ending = false
+                for await result in group {
+                    if let result { moved = result }
+                    if !ending { ending = true; group.cancelAll() }
+                }
+                return moved
+            }
+            guard let moved else { break }
+            current = moved
+        }
+        let ended = current.client
+        ended.disconnect()
+        await sync { self.lost(link, ended) }
+    }
+
+    /// The first route before `current` that answers, linked; nil once the link is stopped. Waits `recheckInterval` or a network change
+    /// between rounds.
+    private func earlierRoute(_ link: Link, than current: FleetRoute, token: String) async -> Dialed? {
+        while !Task.isCancelled {
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { try? await Task.sleep(for: self.recheckInterval) }
+                group.addTask { await link.networkChanged.wait() }
+                await group.next()
+                group.cancelAll()
+            }
+            guard !Task.isCancelled, let record = await sync({ self.record(for: link) }) else { return nil }
+            for route in record.routes.prefix(while: { $0 != current }) {
+                if Task.isCancelled { return nil }
+                guard let dialed = await dial(route, token: token, peer: link.hostID) else { continue }
+                guard await sync({ self.established(link, dialed) }) else { dialed.client.disconnect(); return nil }
+                return dialed
+            }
+        }
+        return nil
     }
 
     /// Returns when the peer stops answering.
@@ -1056,44 +1299,167 @@ final class FleetService: @unchecked Sendable {
         return record
     }
 
-    private func setPhase(_ phase: FleetPeerStatus.Link, of link: Link) {
-        guard links[link.hostID] === link, link.phase != phase else { return }
-        link.phase = phase
-        changed()
+    private func setDialing(_ phase: FleetPeerStatus.Link, of link: Link) {
+        guard links[link.hostID] === link, link.dialing != phase else { return }
+        link.dialing = phase
+        reassess(link)
     }
 
-    /// A link connected: false if it was replaced or stopped meanwhile.
-    private func established(_ link: Link, client: RemoteHostClient, at address: FleetAddress) -> Bool {
+    /// A connection this host dialed is up: false if the link was replaced or stopped meanwhile. One it replaces (the link moved to an
+    /// earlier route) is let go.
+    private func established(_ link: Link, _ dialed: Dialed) -> Bool {
         guard links[link.hostID] === link, !stopped else { return false }
-        link.client = client
-        link.phase = .connected
-        link.lastSeen = nil
-        if var record = peers.record(link.hostID), record.addresses.first != address {
-            record.reached(at: address)
-            try? save(record)
-        }
-        announceRemovals(over: client, to: link.hostID)
-        pressure.refresh()
-        pressure.greet(client)
-        syncEngine.linkUp(peer: link.hostID, client: client)
-        index.linkUp(peer: link.hostID, client: client)
-        pushDevices(only: link.hostID)
-        changed()
-        brokerPending()
-        dispatch.linkChanged()
+        let previous = link.client
+        link.client = dialed.client
+        link.route = dialed.route
+        link.dialing = .connected
+        if let previous, previous !== dialed.client { letGo(previous, of: link) }
+        reassess(link)
         return true
     }
 
-    private func lost(_ link: Link) {
-        guard links[link.hostID] === link else { return }
-        syncEngine.linkDown(peer: link.hostID)
-        index.linkDown(peer: link.hostID)
+    private func lost(_ link: Link, _ client: RemoteHostClient) {
+        guard links[link.hostID] === link, link.client === client else { return }
         link.client = nil
-        link.phase = .offline
-        link.lastSeen = nowMilliseconds
-        pressure.refresh()
+        link.route = nil
+        link.dialing = .offline
+        reassess(link)
+    }
+
+    // MARK: Over the connection the peer opened
+
+    /// A Mac connected with its token and said it takes calls over its connection (`fleet.link.v1`): the link may run over it.
+    func peerConnected(_ hostID: UUID, connection: Int32, capabilities: Set<String>) {
+        guard membership, !stopped, capabilities.contains(RemoteProtocol.fleetLinkCapability),
+              peers.record(hostID).map({ !$0.revoked }) == true else { return }
+        let channel = InboundChannel(service: self, queue: queue, connection: connection)
+        let client = RemoteHostClient(peerChannel: channel, hostID: hostID, capabilities: capabilities.intersection(RemoteProtocol.fleetLinkClientCapabilities))
+        inboundConnections[connection] = Inbound(hostID: hostID, channel: channel, client: client)
+        currentInbound[hostID] = connection
+        if let link = links[hostID] { reassess(link) }
+    }
+
+    /// The Mac answered a call this host sent it on `connection`.
+    func peerAnswered(connection: Int32, id: Int, reply: RemoteReply) {
+        inboundConnections[connection]?.client.receivePeerAnswer(id: id, reply: reply)
+    }
+
+    /// A connection a peer opened closed.
+    private func inboundClosed(_ connection: Int32) {
+        guard let inbound = inboundConnections.removeValue(forKey: connection) else { return }
+        inbound.channel.markClosed()
+        inbound.client.peerChannelClosed(reason: "the connection closed")
+        guard currentInbound[inbound.hostID] == connection else { return }
+        currentInbound[inbound.hostID] = nil
+        if let link = links[inbound.hostID] { reassess(link) }
+    }
+
+    /// What a peer sends this host back over the connection this host dialed (`RemoteReply.fleetPeerCall`), served as the request of a
+    /// member: the host authenticated the peer when it dialed it. Only the requests a Mac in the fleet sends another.
+    private func serveCall(_ request: RemoteRequest, from peer: UUID, reply: @escaping @Sendable (RemoteReply) -> Void) {
+        queue.async {
+            guard let id = Self.callID(request) else {
+                return reply(Self.refusal(0, FleetProtocol.Code.forbidden, "That request isn't one a Mac sends over a link."))
+            }
+            guard !self.stopped, self.membership, self.peers.record(peer).map({ !$0.revoked }) == true else { return reply(Self.off(id)) }
+            let caller = FleetCaller(connection: -1, isLocal: false, authenticated: true, peerHostID: peer, observedHost: nil, deviceID: nil, clientName: nil)
+            self.serve(request, from: caller, reply: reply)
+        }
+    }
+
+    /// The id of a request one Mac sends another over a link; nil for any other.
+    private static func callID(_ request: RemoteRequest) -> Int? {
+        switch request {
+        case .fleetIntroduce(let id, _), .fleetRevoke(let id, _, _), .fleetSync(let id, _), .fleetPressure(let id, _), .fleetReadiness(let id, _),
+             .fleetPressureNow(let id), .fleetRepoManifest(let id, _), .fleetSnapshotPart(let id, _, _), .fleetBlobPush(let id, _, _),
+             .fleetDispatchCreate(let id, _), .fleetDispatchControl(let id, _, _), .fleetDispatchChanged(let id, _),
+             .fleetDispatchResult(let id, _, _, _), .fleetSyncDevices(let id, _), .fleetRoutes(let id, _):
+            return id
+        default:
+            return nil
+        }
+    }
+
+    /// Sends calls to a Mac over the connection it opened, through the server's connection to it.
+    private final class InboundChannel: RemoteHostClientPeerChannel, @unchecked Sendable {
+        private weak var service: FleetService?
+        private let queue: DispatchQueue
+        private let connection: Int32
+        private var closed = false
+
+        init(service: FleetService, queue: DispatchQueue, connection: Int32) {
+            self.service = service
+            self.queue = queue
+            self.connection = connection
+        }
+
+        func send(callID: Int, request: RemoteRequest) -> Bool {
+            queue.async { [self] in
+                guard !closed else { return }
+                service?.onPeerCall?(connection, callID, request)
+            }
+            return true
+        }
+
+        func close(reason: String) {
+            queue.async { [self] in
+                guard !closed else { return }
+                closed = true
+                service?.onCloseConnection?(connection, reason)
+            }
+        }
+
+        /// The server's connection closed on its own.
+        func markClosed() { closed = true }
+    }
+
+    // MARK: Routes
+
+    /// What this host reports of itself to a peer: every way it can be reached now. Nil while it isn't serving.
+    private func routeReport() -> FleetRouteReport? {
+        listenerPort.map { FleetRouteReport(port: $0, routes: network.routes()) }
+    }
+
+    /// Tells the peer on `client` every way this host can be reached, when the peer takes it.
+    private func reportRoutes(over client: RemoteHostClient) {
+        guard client.capabilities.contains(RemoteProtocol.fleetLinkCapability), let report = routeReport() else { return }
+        lastReport = report
+        Task { try? await client.fleetRoutes(report) }
+    }
+
+    /// The network changed: the links on a later route look at the earlier ones, and the peers are told what changed of this host's
+    /// own addresses.
+    private func networkChanged() {
+        guard !stopped, membership else { return }
+        for link in links.values { link.networkChanged.fire() }
+        guard let report = routeReport(), report != lastReport else { return }
+        lastReport = report
+        for link in links.values where link.phase == .connected {
+            guard let client = link.active, client.capabilities.contains(RemoteProtocol.fleetLinkCapability) else { continue }
+            Task { try? await client.fleetRoutes(report) }
+        }
+    }
+
+    private func startWatchingNetwork() {
+        guard stopWatching == nil else { return }
+        let settle = networkSettle
+        stopWatching = network.watch { [weak self] in
+            // Interfaces change in bursts: what the burst settles on is what is reported.
+            guard let self else { return }
+            self.queue.asyncAfter(deadline: .now() + settle) { [weak self] in self?.networkChanged() }
+        }
+    }
+
+    private func stopWatchingNetwork() {
+        stopWatching?()
+        stopWatching = nil
+    }
+
+    /// A peer reported how it can be reached.
+    private func received(_ report: FleetRouteReport, from hostID: UUID) {
+        guard var record = peers.record(hostID), !record.revoked, record.learn(report) else { return }
+        do { try save(record) } catch { return ShepherdLog.error("fleet: could not save a peer's routes: \(error)") }
         changed()
-        dispatch.linkChanged()
     }
 
     /// A Mac that was offline when someone was removed hears of it as its link comes up.
@@ -1131,4 +1497,37 @@ final class FleetService: @unchecked Sendable {
 
     /// Whether the link to `hostID` is connected.
     func isConnected(_ hostID: UUID) -> Bool { links[hostID]?.phase == .connected }
+
+    /// Which connection carries the link to `hostID` now: the one this host dialed, or the one the Mac opened. Nil without a link.
+    func linkRoute(_ hostID: UUID) -> (route: FleetRoute?, viaItsLink: Bool)? {
+        links[hostID]?.active.map { _ in (links[hostID]?.route, links[hostID]?.activeInbound == true) }
+    }
+
+    /// Whether this host's own connection to `hostID` is open, whichever carries the link.
+    func holdsOwnConnection(to hostID: UUID) -> Bool { links[hostID]?.client != nil }
+
+    /// Whether the Mac's own connection to this host carries calls this host sends it.
+    func holdsConnection(from hostID: UUID) -> Bool { inboundClient(from: hostID) != nil }
+
+    /// The routes this host tries to reach `hostID`, in order.
+    func routes(of hostID: UUID) -> [FleetRoute] { peers.record(hostID)?.routes ?? [] }
+}
+
+/// A wake-up one task waits for and another gives: fired before the wait, it ends the next wait at once; fired twice, once.
+final class FleetSignal: @unchecked Sendable {
+    private let stream: AsyncStream<Void>
+    private let continuation: AsyncStream<Void>.Continuation
+
+    init() { (stream, continuation) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1)) }
+
+    func fire() { continuation.yield() }
+
+    /// Ends every wait for good.
+    func finish() { continuation.finish() }
+
+    /// Returns when the signal is fired or finished, or the task is cancelled.
+    func wait() async {
+        var iterator = stream.makeAsyncIterator()
+        _ = await iterator.next()
+    }
 }

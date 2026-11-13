@@ -118,10 +118,13 @@ public struct FleetPeerStatus: Codable, Hashable, Identifiable, Sendable {
     public var link: Link
     /// Epoch milliseconds of the link's last drop; nil while connected or never connected.
     public var lastSeen: Double?
+    /// How the host reaches it now while linked (`FleetPeerReach`); nil from a host before links ran both ways, and to a client.
+    public var reach: FleetPeerReach?
     public var id: UUID { hostID }
 
     public init(hostID: UUID, name: String, kind: FleetPeerKind = .mac, host: String? = nil, port: UInt16? = nil,
-                pairedAt: Double, link: Link, lastSeen: Double? = nil) {
+                pairedAt: Double, link: Link, lastSeen: Double? = nil, reach: FleetPeerReach? = nil) {
+        self.reach = reach
         self.hostID = hostID
         self.name = name
         self.kind = kind
