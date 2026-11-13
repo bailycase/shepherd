@@ -36,8 +36,12 @@ public func git(_ args: [String], in dir: URL) throws -> String {
     let out = try FileHandle(forWritingTo: outURL), err = try FileHandle(forWritingTo: errURL)
     process.standardOutput = out
     process.standardError = err
+    // Not `waitUntilExit()`: on the main thread it runs the run loop while it waits, and a main-actor test that starts another job there
+    // can only return after every job started inside its wait has returned, however long they take.
+    let exited = DispatchSemaphore(value: 0)
+    process.terminationHandler = { _ in exited.signal() }
     try process.run()
-    process.waitUntilExit()
+    exited.wait()
     try? out.close()
     try? err.close()
     let data = (try? Data(contentsOf: outURL)) ?? Data()
