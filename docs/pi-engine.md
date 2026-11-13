@@ -164,17 +164,18 @@ Native children still launch `dist/bundle/cli.js`, and SDK-only sign-in and
 definition-discovery imports still use `bundle/index.js`; provider patches cover both runtimes.
 
 Anthropic OAuth compatibility automatically uses a full source port of
-[`leohenon/pi-anthropic-oauth` v0.3.4](https://github.com/leohenon/pi-anthropic-oauth/tree/44efe694a3e81a62742cdb3e7ba9da858e191a81)
-(revision `44efe694a3e81a62742cdb3e7ba9da858e191a81`) at both modular and bundled stream
+[`leohenon/pi-anthropic-oauth` v0.3.9](https://github.com/leohenon/pi-anthropic-oauth/tree/0078268804557bbbc82c60e364a34debf0450a90)
+(revision `0078268804557bbbc82c60e364a34debf0450a90`) at both modular and bundled stream
 boundaries, including native children, helpers and launches with extensions disabled. API-key
 requests remain native Pi. `scripts/pi-engine-patches/anthropic-oauth/` carries the upstream
-stream, conversion, prompt, auth and version modules with MIT notices, transpiled by Node 24's
+stream, conversion, prompt, auth, version and usage modules with MIT notices, transpiled by Node 24's
 `stripTypeScriptTypes` (`transform` for auth's parameter property, `strip` for the others).
-`upstream/` retains the original source and hashes as an independent test oracle. The small
-`anthropic-oauth.js` adapter translates pi's auth interaction/credential API (since 1.0); upstream login
+`upstream/` retains the original source and hashes as an independent test oracle. Only the five
+request-path modules ship as engine copies; upstream's `usage` module is oracle-only and its
+extension registration (including the `/usage` command) is replaced by automatic engine routing.
+The small `anthropic-oauth.js` adapter translates pi's auth interaction/credential API (since 1.0); upstream login
 and refresh replace Pi's differing callback validation, fallback and refresh semantics. No new
-runtime dependency is installed. Upstream's extension registration is replaced by automatic
-engine routing; its `~/.Claude Code` symlink setup is deliberately **not** shipped.
+runtime dependency is installed. Its `~/.Claude Code` symlink setup is deliberately **not** shipped.
 
 **Upstream's outgoing prompt rewriting is aggressive, not path-safe.** It removes whole system
 paragraphs containing `you are pi` (case-insensitive), `pi-coding-agent`,

@@ -30,6 +30,12 @@ public struct FoundMac: Identifiable, Equatable, Sendable {
 /// connecting to it once (a connection that sends nothing and closes at once). The host makes the
 /// real connection; this only fills the list. It runs in the app, which holds the Local Network
 /// permission, and stops with the sheet.
+///
+/// A network that reflects mDNS between subnets often passes Apple's own types (`_ssh._tcp`,
+/// `_companion-link._tcp`, `_device-info._tcp`) but not `_shepherd._tcp`. So the browser also
+/// looks at the devices announcing those (`FleetNeighbors`), and asks each address once whether
+/// Shepherd answers (`RemoteHostClient.fleetProbe`). Those that do are listed like any other Mac.
+/// Nothing else is probed: no subnet, port or disk scan.
 @MainActor
 public final class FleetBrowser {
     private var browser: NWBrowser?
@@ -37,20 +43,55 @@ public final class FleetBrowser {
     private var found: [NWEndpoint: FoundMac] = [:]
     private let queue = DispatchQueue(label: "shepherd.fleet.browser")
     private var onChange: (([FoundMac]) -> Void)?
+    private let shepherdType: String?
+    private let neighborTypes: [String]
+    private let probePorts: [UInt16]
+    private let probe: FleetNeighborProber.Probe
+    private var lookup: FleetNeighborLookup?
+    private var prober: FleetNeighborProber?
 
-    public init() {}
+    public convenience init() {
+        self.init(neighborTypes: FleetNeighbors.types, probePorts: FleetNeighbors.ports)
+    }
+
+    /// `neighborTypes` are the Bonjour types whose devices are probed, on `probePorts`; tests pass their own.
+    /// `shepherdType` nil skips `_shepherd._tcp` (a test must not reach a Shepherd that is running on the machine).
+    init(shepherdType: String? = FleetProtocol.bonjourType, neighborTypes: [String], probePorts: [UInt16],
+         probe: @escaping FleetNeighborProber.Probe = { await RemoteHostClient.fleetProbe(host: $0, port: $1) }) {
+        self.shepherdType = shepherdType
+        self.neighborTypes = neighborTypes
+        self.probePorts = probePorts
+        self.probe = probe
+    }
 
     /// Starts browsing; `onChange` hears the list, sorted by name, each time it changes.
     public func start(_ onChange: @escaping ([FoundMac]) -> Void) {
         stop()
         self.onChange = onChange
-        let browser = NWBrowser(for: .bonjourWithTXTRecord(type: FleetProtocol.bonjourType, domain: nil), using: .tcp)
-        browser.browseResultsChangedHandler = { [weak self] results, _ in
-            let entries = results.map { ($0.endpoint, Self.entry(of: $0)) }
-            Task { @MainActor in self?.update(entries) }
+        if let shepherdType {
+            let browser = NWBrowser(for: .bonjourWithTXTRecord(type: shepherdType, domain: nil), using: .tcp)
+            browser.browseResultsChangedHandler = { [weak self] results, _ in
+                let entries = results.map { ($0.endpoint, Self.entry(of: $0)) }
+                Task { @MainActor in self?.update(entries) }
+            }
+            browser.start(queue: queue)
+            self.browser = browser
         }
-        browser.start(queue: queue)
-        self.browser = browser
+        startNeighbors()
+    }
+
+    private func startNeighbors() {
+        guard !neighborTypes.isEmpty else { return }
+        let prober = FleetNeighborProber(
+            ports: probePorts, probe: probe,
+            skip: { [weak self] address in self?.found.values.contains { $0.address == address } ?? true },
+            changed: { [weak self] in self?.publish() })
+        self.prober = prober
+        let lookup = FleetNeighborLookup { address in
+            Task { @MainActor in prober.see(address: address) }
+        }
+        lookup.start(types: neighborTypes)
+        self.lookup = lookup
     }
 
     public func stop() {
@@ -60,6 +101,10 @@ public final class FleetBrowser {
         resolving = [:]
         found = [:]
         onChange = nil
+        lookup?.stop()
+        lookup = nil
+        prober?.stop()
+        prober = nil
     }
 
     private nonisolated static func entry(of result: NWBrowser.Result) -> FoundMac {
@@ -119,6 +164,6 @@ public final class FleetBrowser {
 
     private func publish() {
         // Only Macs that resolved can be picked.
-        onChange?(found.values.filter { $0.address != nil }.sorted { ($0.name, $0.id) < ($1.name, $1.id) })
+        onChange?(FleetNeighbors.merged(bonjour: Array(found.values), probed: prober.map { Array($0.answered.values) } ?? []))
     }
 }

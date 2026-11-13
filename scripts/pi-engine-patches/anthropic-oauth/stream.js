@@ -1,5 +1,5 @@
-// Vendored from leohenon/pi-anthropic-oauth v0.3.4
-// Revision: 44efe694a3e81a62742cdb3e7ba9da858e191a81
+// Vendored from leohenon/pi-anthropic-oauth v0.3.9
+// Revision: 0078268804557bbbc82c60e364a34debf0450a90
 // MIT License
 // 
 // Copyright (c) 2026 Leo Henon
@@ -264,7 +264,14 @@ export function streamAnthropicOAuth(
       if (tools.length)
         params.tools = convertPiToolsToAnthropic(tools, isOAuth);
 
-      if (options?.reasoning && model.reasoning && maxTokens > 1) {
+      // Cache warming replays the request with maxTokens: 1. Adaptive thinking has
+      // no budget to fit under it, so keep it on: dropping it changes the request
+      // and the replay misses the cached messages it is meant to keep warm.
+      if (
+        options?.reasoning &&
+        model.reasoning &&
+        (maxTokens > 1 || usesAdaptiveThinking(model))
+      ) {
         const defaultBudgets                         = {
           minimal: 1024,
           low: 4096,
@@ -306,6 +313,8 @@ export function streamAnthropicOAuth(
         await client.messages
           .create(params, {
             signal: options?.signal,
+            // Let Pi handle retries; SDK quota waits are silent and unabortable.
+            maxRetries: 0,
           })
           .withResponse();
 

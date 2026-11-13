@@ -547,7 +547,11 @@
   everywhere (a tombstone, so a stale pairing never undoes a newer one). `fleetRead` and `fleetAction` (pair, start and
   stop a join window, remove, hand over legacy hosts) are for this Mac's own app over `host.sock`. The host
   advertises `_shepherd._tcp` (TXT: `v`, a hash of its id, name, build; never the id) while Fleet is on; the app browses
-  it for Add a Mac and hands the address to the host. Fleet needs the listener, so it opens it even with Serve this Mac
+  it for Add a Mac and hands the address to the host. Where a router's mDNS reflector passes Apple's own types but not
+  `_shepherd._tcp`, Add a Mac (Mac and iOS) also browses `_ssh._tcp`, `_companion-link._tcp` and `_device-info._tcp` (each is in
+  `NSBonjourServices`), resolves each device to an IPv4 address without connecting to it, and probes each address once, four at
+  a time, with an unauthenticated `fleetIdentify` on the edition's default ports (7434, 7433); a Mac that answers is listed
+  like a Bonjour one and pairs by code as ever. It adds no wire message: an older build answers the same request. Fleet needs the listener, so it opens it even with Serve this Mac
   off. Shepherd adds no TLS: the fleet runs over the user's own network. A paired Mac the app reached with the shared
   token is marked `fleetManaged` in `RemoteHostStore` (its address and token are the fleet's), keeping its `bindingID`.
   **Devices** (phones, iPads and Macs' apps) are clients: `FleetAccess` is `local`, `member` (a peer Mac), `device` or
