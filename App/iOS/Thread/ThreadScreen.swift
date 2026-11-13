@@ -264,12 +264,10 @@ struct ThreadTranscript: View {
 
     private static let bottomID = "thread-bottom"
 
-    // iOS 27.1's bottom anchor can retain a lazy stack's estimated height after a fold, so the size-change anchor
-    // is left to the explicit following of macOS 27. The initial anchor only places a new stack's first layout, so
-    // a transcript with no turn to restore opens at its tail on both.
-    private var nativeTail: Bool {
-        if #available(iOS 27.1, *) { false } else { true }
-    }
+    // iOS 27.1's bottom anchor can retain a lazy stack's estimated height after a fold, so there the size-change anchor
+    // is left to the explicit following of macOS 27, and the initial anchor and the turn kept stay as they were before
+    // a following transcript mounted at its tail (ComposerPresentation.nativeTail).
+    private var nativeTail: Bool { ComposerPresentation.nativeTail }
 
     var body: some View {
         let presentation = presentation
@@ -280,6 +278,8 @@ struct ThreadTranscript: View {
         ScrollViewReader { proxy in
             // Counted here, where the transcript's own state is read: the body above reads the store only.
             let _ = SHRenderProbe.tick("thread.transcript")
+            // iOS 27.1 still draws from every change of the follower (ComposerPresentation.followerChanges).
+            let _ = nativeTail ? 0 : presentation.followerChanges
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: MobileLayout.turnSpacing) {
                     if let banner {
@@ -346,7 +346,7 @@ struct ThreadTranscript: View {
             }
             // A reused view (the design pane's chat has no identity of its own) shows another thread.
             .onChange(of: ref) { _, _ in tailPin.reset() }
-            .defaultScrollAnchor(presentation.restoresTurn ? (nativeTail ? .top : nil) : .bottom, for: .initialOffset)
+            .defaultScrollAnchor(nativeTail ? (presentation.restoresTurn ? .top : .bottom) : nil, for: .initialOffset)
             .defaultScrollAnchor(nativeTail ? (presentation.follows ? .bottom : nil) : (presentation.follows ? nil : .top), for: .sizeChanges)
             .onScrollGeometryChange(for: TailReading.self, of: Self.reading) { old, new in
                 // Insets and row wrapping can settle separately from scroll offsets. While
