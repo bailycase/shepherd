@@ -25,7 +25,7 @@ struct SpacesScreen: View {
 
     var body: some View {
         let store = SettingsStore.of(hosts)
-        let host = store.settingsHost(chosenHost: navigator.settingsSelection.chosenHost)
+        let host = store.settingsHost
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 Text("The folders a host keeps as spaces, and what each one's .shepherd or .pi folder holds. Hidden spaces are listed too.")
@@ -33,7 +33,6 @@ struct SpacesScreen: View {
                     .foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, SH.Space.xs)
-                if store.hosts.count > 1 { HostChooser(store: store) }
                 if let host {
                     if !host.isConnected {
                         SettingsFootnote("\(host.name) is offline. Its spaces show here once it's back.")
@@ -65,7 +64,7 @@ struct SpacesScreen: View {
                         }
                     }
                 } else {
-                    SettingsFootnote("Add a host in Settings ▸ Hosts to see its spaces.")
+                    SettingsFootnote("Add a host in Settings ▸ Fleet to see its spaces.")
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
@@ -110,14 +109,13 @@ struct SpacesScreen: View {
 struct SpaceScreen: View {
     let directory: String
     @Environment(MobileHosts.self) private var hosts
-    @Environment(MobileNavigator.self) private var navigator
     @State private var files: [ProjectFile]?
     @State private var context: ProjectContext?
     @State private var problem: String?
 
     var body: some View {
         let store = SettingsStore.of(hosts)
-        let host = store.settingsHost(chosenHost: navigator.settingsSelection.chosenHost)
+        let host = store.settingsHost
         let sh = Color.sh
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {

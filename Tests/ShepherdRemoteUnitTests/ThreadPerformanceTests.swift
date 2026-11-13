@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Testing
 import ShepherdProtocol
 @testable import ShepherdRemote
@@ -291,6 +292,94 @@ struct ThreadPerformanceTests {
         #expect(store.mountedCost(eagerRows: 7) == costs.reduce(0, +) + edge, "the earlier giant reply adds nothing")
         #expect(store.mountedCost(eagerRows: 2) == costs[6] + costs[5] + edge)
         #expect(store.mountedCost(eagerRows: 1) == costs[6], "the last reply is out of the sum, and so is its next chunk")
+    }
+
+    /// Written once when it changes, so the thread on screen (which never reads it) and a hidden one (which does) hear of nothing more.
+    @Test func releasingTheTranscriptKeepsTheThreadAndCostsNothingUntilItRunsAgain() async {
+        final class Fired: @unchecked Sendable { var count = 0 }
+        let history = (0..<10).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant(NativeMountedCostTests.bigReply(cycles: 2), id: "a\($0)")] }
+        let host = FakeHost(F.snapshot(messages: history))
+        let store = manualStore()
+        let loop = await start(store, host)
+        let rows = store.rows, messages = store.messages, cost = store.mountedCost(eagerRows: 30)
+        #expect(cost > 0 && !store.transcriptReleased)
+
+        let fired = Fired()
+        withObservationTracking { _ = store.transcriptReleased } onChange: { fired.count += 1 }
+        store.draft = "unsent"
+        store.releaseTranscript()
+        #expect(fired.count == 1 && store.transcriptReleased)
+        withObservationTracking { _ = store.transcriptReleased } onChange: { fired.count += 1 }
+        store.releaseTranscript()
+        #expect(fired.count == 1, "released again, nothing is written")
+
+        #expect(store.rows == rows && store.messages == messages && store.holdsHistory && store.draft == "unsent", "only the views' rows go, not the thread")
+        #expect(store.mountedCost(eagerRows: 30) == 0 && store.mountedCostWalk(eagerRows: 30, skipping: { _ in false }).visited == 0, "it holds nothing, and reading says so without a walk")
+
+        loop.cancel()
+        store.stop()
+        #expect(store.transcriptReleased, "stopping the loop does not clear it")
+        let again = await start(store, host)
+        #expect(!store.transcriptReleased, "a run shows the thread again")
+        #expect(store.mountedCost(eagerRows: 30) == cost && store.rows == rows)
+        again.cancel()
+
+        store.releaseTranscript()
+        store.stop()
+        store.release()
+        #expect(!store.transcriptReleased && store.rows.isEmpty, "releasing the history clears it with the rest")
+    }
+
+    /// A thread lets go of its lazy stack's rows first and then of its oldest drawn rows, a step at a time, each step observed
+    /// once, with what the views still hold following it; `.max` lets everything go at once.
+    @Test func releasingTheTranscriptInStepsTakesTheLazyRowsThenTheOldestDrawn() async {
+        final class Fired: @unchecked Sendable { var count = 0 }
+        let history = (0..<10).flatMap { [F.user("prompt \($0)", id: "u\($0)"), F.assistant(NativeMountedCostTests.bigReply(cycles: 2), id: "a\($0)")] }
+        let host = FakeHost(F.snapshot(messages: history))
+        let store = manualStore()
+        let loop = await start(store, host)
+        let rows = store.rows
+        let costs = rows.map { NativeMountedCost.row($0) }
+        #expect(rows.count == 20 && costs.allSatisfy { $0 > 0 })
+        let eager = 6
+        func held(_ drawn: Int) -> Int { costs.suffix(drawn).reduce(0, +) }
+        let whole = store.mountedCost(eagerRows: eager)
+
+        let fired = Fired()
+        withObservationTracking { _ = store.transcriptDrawn } onChange: { fired.count += 1 }
+        store.releaseTranscript(bytes: 1, eagerRows: eager)
+        #expect(fired.count == 1 && store.transcriptDrawn == eager && store.transcriptReleased, "the first step lets go of the lazy stack's rows alone")
+        #expect(store.mountedCost(eagerRows: eager) == held(eager), "the views of the eager tail are all that is left")
+
+        for drawn in stride(from: eager - 1, through: 0, by: -1) {
+            withObservationTracking { _ = store.transcriptDrawn } onChange: { fired.count += 1 }
+            store.releaseTranscript(bytes: 1, eagerRows: eager)
+            #expect(store.transcriptDrawn == drawn, "a step of one byte lets the oldest row go")
+            #expect(store.mountedCost(eagerRows: eager) == held(drawn), "\(drawn) rows are left")
+        }
+        #expect(fired.count == eager + 1)
+        withObservationTracking { _ = store.transcriptDrawn } onChange: { fired.count += 1 }
+        store.releaseTranscript(bytes: 1, eagerRows: eager)
+        #expect(fired.count == eager + 1 && store.transcriptDrawn == 0, "nothing left to let go, nothing written")
+
+        loop.cancel()
+        store.stop()
+        let again = await start(store, host)
+        #expect(store.transcriptDrawn == nil && store.mountedCost(eagerRows: eager) == whole, "a run draws all of it again")
+        again.cancel()
+
+        // A step takes the oldest rows drawn that fit in its bytes, and at least one.
+        store.releaseTranscript(bytes: costs[14], eagerRows: eager)
+        store.releaseTranscript(bytes: costs[14], eagerRows: eager)
+        #expect(store.transcriptDrawn == 5, "a row is as many bytes as the step")
+        store.releaseTranscript(bytes: costs[15] + costs[16] - 1, eagerRows: eager)
+        #expect(store.transcriptDrawn == 4, "one byte short of two rows takes one")
+        store.releaseTranscript(bytes: costs[16] + costs[17], eagerRows: eager)
+        #expect(store.transcriptDrawn == 2, "two rows fit")
+        store.releaseTranscript(eagerRows: eager)
+        #expect(store.transcriptDrawn == 0, "no bytes given lets every row go")
+        #expect(store.rows == rows && store.holdsHistory, "the rows stay")
+        store.stop()
     }
 
     @Test func childProgressInvalidatesItsOwningSuffixRatherThanAllHistory() async {

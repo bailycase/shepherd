@@ -16,6 +16,7 @@ extension FixtureCatalog {
                           prepare: { app in
                               SettingsStore.of(app.hosts).mcpEditor = MCPEditor(replacing: "postgres", json: FixtureData.postgresJSON)
                           }),
+            FixtureScreen(name: "settings-subagents", hosts: FixtureData.configuredHosts(), routes: [.settings(.subagents)], tab: .settings),
             FixtureScreen(name: "settings-subagent-edit", hosts: FixtureData.configuredHosts(),
                           routes: [.settings(.subagents), .settings(.subagent("reviewer.md"))], tab: .settings),
             FixtureScreen(name: "settings-signin-accounts", hosts: FixtureData.configuredHosts(), routes: [.settings(.signIn)], tab: .settings),

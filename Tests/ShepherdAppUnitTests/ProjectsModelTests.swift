@@ -19,10 +19,9 @@ struct ProjectsModelTests {
         await model.load([local, remote])
         #expect(model.rows.count == 2)
         #expect(Set(model.rows.map(\.id)).count == 2)
-        model.host = "remote"
-        #expect(model.visible.map(\.host.name) == ["build-01"])
+        #expect(model.visible.map(\.host.name) == ["This Mac", "build-01"], "the model keeps one row per host and path; the page lists This Mac's")
         model.filter = "  ~/REPO  "
-        #expect(model.visible.count == 1)
+        #expect(model.visible.count == 2)
         model.filter = "missing"
         #expect(model.visible.isEmpty)
         #expect(calls == ["local", "remote"])

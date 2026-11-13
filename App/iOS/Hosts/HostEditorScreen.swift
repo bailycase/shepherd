@@ -3,29 +3,34 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// A host's form (home track): name, address, port and token; Forget for a saved host. The
-/// token goes to the Keychain; a blank token field keeps the saved one.
+/// A paired host's page: its connection, its name (the only thing to edit), its address and port as
+/// paired, and Forget. Adding a host is `HostPairScreen`: a code, never an address or a token.
 /// When the host supports updates, shows version and update status with Check / Update actions.
 struct HostEditorScreen: View {
     let hostID: UUID?
+
+    var body: some View {
+        if let hostID {
+            HostPage(hostID: hostID)
+        } else {
+            HostPairScreen()
+        }
+    }
+}
+
+private struct HostPage: View {
+    let hostID: UUID
     @Environment(MobileHosts.self) private var hosts
     @Environment(\.mobileApp) private var app
     @Environment(\.dismiss) private var dismiss
     @Environment(MobileNavigator.self) private var navigator
     @State private var name = ""
-    @State private var address = ""
-    @State private var port = String(RemoteHostRecord.defaultPort)
-    @State private var token = ""
-    @State private var hasToken = false
     @State private var error: String?
     @State private var confirmingForget = false
-    private enum Field: Hashable { case address, port, token }
-    @FocusState private var focusedField: Field?
-    @State private var validation: RemoteHostEntry.Problem?
 
     var body: some View {
         Form {
-            if let host = hostID.flatMap(hosts.host) {
+            if let host = hosts.host(hostID) {
                 Section {
                     LabeledContent("Connection") {
                         SHStatusPill(host.phase.isConnected ? .done : host.phase == .connecting ? .running : .failed,
@@ -54,49 +59,31 @@ struct HostEditorScreen: View {
                             .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                     }
                 }
-            }
-            Section {
-                LabeledContent("Name") {
-                    TextField("My Mac", text: $name).multilineTextAlignment(.trailing)
+                Section {
+                    LabeledContent("Name") {
+                        TextField("My Mac", text: $name).multilineTextAlignment(.trailing)
+                    }
+                    LabeledContent("Address") {
+                        Text("\(host.record.address):\(String(host.record.port))")
+                            .font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary)
+                    }
+                } footer: {
+                    Text("Paired with a code. If a Mac revokes this device, add that Mac again with a new code.")
+                        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 }
-                LabeledContent("Address") {
-                    TextField("hostname or IP", text: $address)
-                        .keyboardType(.URL).font(.sh(.mono)).multilineTextAlignment(.trailing)
-                        .focused($focusedField, equals: .address)
-                }
-                fieldError(.address)
-                LabeledContent("Port") {
-                    TextField(String(RemoteHostRecord.defaultPort), text: $port)
-                        .keyboardType(.numberPad).font(.sh(.mono)).multilineTextAlignment(.trailing)
-                        .focused($focusedField, equals: .port)
-                }
-                fieldError(.port)
-                LabeledContent("Token") {
-                    SecureField(hasToken ? "Saved" : "Required", text: $token)
-                        .privacySensitive().font(.sh(.mono)).multilineTextAlignment(.trailing)
-                        .focused($focusedField, equals: .token)
-                }
-                fieldError(.token)
-            } footer: {
-                Text("Turn on Settings ▸ Remote ▸ Serve this Mac in Shepherd on the host and copy its token. Use a trusted LAN or VPN: there is no TLS.")
-                    .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-            }
-            if hostID != nil {
                 Section {
                     Button("Forget host", role: .destructive) { confirmingForget = true }
                 }
             }
         }
         .listRowBackground(Color.sh.bgRaised)
-        .textInputAutocapitalization(.never)
-        .autocorrectionDisabled()
         .font(.sh(.ui))
         .scrollContentBackground(.hidden)
         .background(Color.sh.bgWindow)
-        .navigationTitle(hostID == nil ? "Add host" : "Host")
+        .navigationTitle("Host")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // Presented from Home or More, the form is a sheet's root and needs its own way out.
+            // Presented from Home or More, the page is a sheet's root and needs its own way out.
             if navigator.presented?.route == .settings(.host(hostID)) {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -112,9 +99,8 @@ struct HostEditorScreen: View {
         .confirmationDialog("Forget this host and delete its token?", isPresented: $confirmingForget, titleVisibility: .visible) {
             Button("Forget host", role: .destructive, action: forget)
         }
-        .onAppear(perform: load)
-        .onDisappear { token = "" }
-        .task { if hostID != nil { await SettingsStore.of(hosts).watch() } }
+        .onAppear { name = hosts.host(hostID)?.record.name ?? "" }
+        .task { await SettingsStore.of(hosts).watch() }
     }
 
     /// The host's settings, once Settings has read them.
@@ -123,44 +109,21 @@ struct HostEditorScreen: View {
         return store.hosts.first { $0.id == id }.flatMap(store.hostSettings.settings(of:))
     }
 
-    private func load() {
-        guard let id = hostID, let host = hosts.host(id) else { return }
-        name = host.record.name
-        address = host.record.address
-        port = String(host.record.port)
-        hasToken = (try? hosts.token(for: id))??.isEmpty == false
-    }
-
-    @ViewBuilder private func fieldError(_ problem: RemoteHostEntry.Problem) -> some View {
-        if validation == problem {
-            Text(problem.description).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
-        }
-    }
-
     private func save() {
-        validation = nil
+        guard let host = hosts.host(hostID) else { return dismiss() }
         do {
-            let entry = try RemoteHostEntry(name: name, address: address, port: port, token: token, requireToken: hostID == nil || !hasToken)
-            if let id = hostID { try hosts.edit(id, entry) } else { try hosts.add(entry) }
-            token = ""
+            let entry = try RemoteHostEntry(name: name, address: host.record.address, port: String(host.record.port), token: nil)
+            try hosts.edit(hostID, entry)
             dismiss()
-        } catch let problem as RemoteHostEntry.Problem {
-            validation = problem
-            focusedField = switch problem {
-            case .address: .address
-            case .port: .port
-            case .token: .token
-            }
         } catch {
             self.error = error.localizedDescription
         }
     }
 
     private func forget() {
-        guard let id = hostID else { return }
         Task {
             do {
-                try await app?.forget(host: id)
+                try await app?.forget(host: hostID)
                 dismiss()
             } catch {
                 self.error = error.localizedDescription

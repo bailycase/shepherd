@@ -20,6 +20,8 @@ enum MobileLayout {
     static let tailGuardAttempts = 6
     static let tailGuardRest: Duration = .seconds(3)
     static let tailGuardMinimumPage: CGFloat = 50
+    /// How long a transcript counts as just appeared: it goes at once to the rows its stack placed when none is in view (`ThreadTailGuard`).
+    static let tailGuardMount: Duration = .seconds(1)
     /// The parts inside one agent turn.
     static let turnItemSpacing: CGFloat = SH.Space.l
     /// Lines inside a work group.
@@ -45,4 +47,14 @@ enum MobileLayout {
     static let statusDot: CGFloat = 8
     /// A card's corner (the boards' 12pt).
     static let cardRadius: CGFloat = SH.Radius.l
+}
+
+// MARK: Pairing (Add a Mac)
+
+extension MobileLayout {
+    /// A box of the pairing code: the display size in mono, a touch target tall.
+    static let pairDigitWidth: CGFloat = 44
+    static let pairDigitHeight: CGFloat = 56
+    /// The gap between the code's two groups of three.
+    static let pairDigitGroupGap: CGFloat = SH.Space.l
 }

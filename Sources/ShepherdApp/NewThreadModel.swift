@@ -149,6 +149,9 @@ final class NewThreadState {
     /// picked in the last one: a branch of one repository means nothing in another.
     private(set) var place: NewThreadPlace? { didSet { if place != oldValue { worktreeBase = nil; worktreeBranch = nil } } }
     var worktree = false
+    /// Where the thread runs while it starts in one of This Mac's spaces: Auto or a Mac (FleetNewThread). Nil follows Settings ▸ Fleet ▸
+    /// Auto dispatch. It sticks for the page, as the model does.
+    var wherePick: FleetPlacePick?
     /// The branch a new worktree on this Mac starts from, picked in the workplace menu; nil lets
     /// Settings ▸ Worktrees decide. A host's projects keep the base the host resolves.
     var worktreeBase: String?
@@ -241,6 +244,35 @@ final class NewThreadState {
         place?.host == nil ? nil : NewThreadPlaces.referencesNote
     }
 
+    /// Where Auto would send the thread now and every Mac ranked by room (FleetNewThread); empty unless Fleet is on, another Mac is paired and the
+    /// project is one of This Mac's.
+    func fleetPicker(_ vm: ShepherdViewModel) -> FleetWherePicker {
+        guard vm.settings.fleetEnabled, let place, place.host == nil, let id = place.space,
+              let space = vm.state.spaces.first(where: { $0.id == id }) else { return .empty }
+        let snapshot = vm.fleetPage.snapshot
+        return FleetWherePicker.make(
+            snapshot: snapshot, pick: wherePick, repoKey: space.repoKey, repoName: space.name,
+            autoDispatch: vm.settings.autoDispatch(pairedMacs: snapshot.peers.count), weight: { vm.settings.fleetWeight(of: $0) },
+            batteryCountsHalf: vm.settings.fleetBatteryCountsHalf, snapshotAge: max(0, Date().timeIntervalSince(vm.fleetPage.snapshotAt)),
+            baseBranch: workplaceBase(vm), startsInCheckout: !(worktree && offersWorktree(vm)))
+    }
+
+    /// The workplace choice of the form, as the Mac that runs the thread takes it (`FleetThreadStart`). The base a new worktree starts from is
+    /// the one picked, else the project's, else what Settings ▸ Worktrees resolves (without fetching: the Mac that runs it does that).
+    func fleetStart(_ vm: ShepherdViewModel, spaceID: SpaceID, worktree useWorktree: Bool, base picked: String?, branch: NewThreadBranch?) async -> FleetThreadStart {
+        guard useWorktree else { return FleetThreadStart(place: .checkout) }
+        if case .existing(let name)? = branch { return FleetThreadStart(place: .existingBranch, branch: name) }
+        var named: String?
+        if case .named(let name)? = branch { named = name }
+        if let base = picked ?? projectBase(vm) { return FleetThreadStart(place: .newWorktree, base: base, branch: named) }
+        guard let repo = vm.state.spaces.first(where: { $0.id == spaceID })?.path else { return FleetThreadStart(place: .newWorktree, branch: named) }
+        let mode = vm.settings.worktreeBaseMode
+        let resolved = await Task.detached(priority: .userInitiated) {
+            GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: false, projectBase: nil).startPoint
+        }.value
+        return FleetThreadStart(place: .newWorktree, base: resolved, branch: named)
+    }
+
     /// A project from the chip's menu.
     func choose(host: UUID?, space: SpaceID?, vm: ShepherdViewModel) {
         let next = NewThreadPlace(host: host, space: space)
@@ -249,6 +281,12 @@ final class NewThreadState {
         error = nil
         useProjectDefaults(vm)
         loadDefaults(vm)
+    }
+
+    /// What the line under the picker says the thread starts from: the branch picked, the base picked, else the project's.
+    func workplaceBase(_ vm: ShepherdViewModel) -> String? {
+        if case .existing(let name)? = worktreeBranch { return name }
+        return worktreeBase ?? projectBase(vm)
     }
 
     /// The chosen project's default base (`Space.worktreeBase`), on this Mac or its host.
@@ -435,6 +473,11 @@ final class NewThreadState {
         if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, references.isEmpty { return "Describe the task first." }
         if let imagesPending { return imagesPending }
         if let big = attachments.oversize { return ComposerAttachments.oversizeMessage(big.name) }
+        // A thread another Mac starts carries words only.
+        if place.host == nil, fleetPicker(vm).dispatches {
+            if !attachments.images.isEmpty { return "Images go with threads that start on This Mac. Remove them, or choose This Mac." }
+            if !references.isEmpty { return "Design references go with threads that start on This Mac. Remove them, or choose This Mac." }
+        }
         return referencesRefusal() ?? imagesRefusal(vm)
     }
 
@@ -455,11 +498,25 @@ final class NewThreadState {
             ? serviceTier : nil
         let useWorktree = worktree && offersWorktree(vm)
         let images = attachments.images
+        // Where the thread goes when Fleet is on: another Mac, with the words and nothing else. The local host confirms the Mac at send.
+        let picker = place.host == nil ? fleetPicker(vm) : .empty
         starting = true
         error = nil
         Task {
             defer { starting = false }
             do {
+                if picker.dispatches, let spaceID = place.space {
+                    let named: String? = if case .mac(let id)? = wherePick { id.uuidString } else { nil }
+                    // Where the form would have started it here: a new worktree from a base, a new worktree on a branch, or the checkout.
+                    let start = await fleetStart(vm, spaceID: spaceID, worktree: useWorktree, base: submittedBase, branch: submittedBranch)
+                    let user = FleetUserThread(spaceID: spaceID, task: text, host: named, model: chosenModel.isEmpty ? nil : chosenModel,
+                                               thinking: level.rawValue, start: start)
+                    if try await vm.fleet.sendThread(user) != nil {
+                        if prompt == submittedPrompt { prompt = "" }
+                        return
+                    }
+                    // The host kept it on this Mac (it had the room): it starts here as it always did.
+                }
                 if let host = place.host {
                     guard let space = vm.remoteHosts.allConnections.first(where: { $0.id == host })?.state.spaces
                         .first(where: { $0.id == place.space }) else { throw AgentStartFailure(message: "That space is gone.") }

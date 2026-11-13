@@ -78,6 +78,7 @@ enum HostSettingsMapping {
             queueDelivery: app.queueDelivery,
             goalsEnabled: app.goalsEnabled,
             projectsEnabled: app.projectsEnabled,
+            fleetEnabled: app.fleetEnabled,
             worktreeBase: app.worktreeBaseMode == .head ? .head : .fresh,
             fetchBeforeCreating: app.worktreeFetchBeforeCreate,
             generatePRDescriptions: app.worktreeGeneratePRDescription,
@@ -96,7 +97,14 @@ enum HostSettingsMapping {
             // Shepherd's pi updates with Shepherd: nothing runs `pi update` any more.
             bundledExtensions: bundled.map { HostSettings.BundledExtension(id: $0.id, name: $0.name, on: app[keyPath: $0.keyPath]) },
             updatePiDaily: false,
-            updateExtensionsDaily: false
+            updateExtensionsDaily: false,
+            fleetWeights: app.fleetWeights,
+            fleetThreadsCanSend: app.fleetThreadsCanSend,
+            fleetThreadCap: app.fleetThreadCap,
+            fleetAutoDispatch: app.fleetAutoDispatch,
+            fleetBatteryCountsHalf: app.fleetBatteryCountsHalf,
+            fleetUncommitted: app.fleetUncommitted,
+            fleetSnapshotExcludes: app.fleetSnapshotExcludes
         )
     }
 
@@ -117,6 +125,7 @@ enum HostSettingsMapping {
         case .goalCrossProviderEvaluation: break // Legacy: goals no longer use a checker model.
         case .goalsEnabled(let on): app.goalsEnabled = on
         case .projectsEnabled(let on): app.projectsEnabled = on
+        case .fleetEnabled(let on): app.fleetEnabled = on
         case .worktreeBase(let base): app.worktreeBaseMode = base == .head ? .head : .fresh
         case .fetchBeforeCreating(let on): app.worktreeFetchBeforeCreate = on
         case .generatePRDescriptions(let on): app.worktreeGeneratePRDescription = on
@@ -126,6 +135,13 @@ enum HostSettingsMapping {
         case .bundledExtension(let id, let on):
             guard let keyPath = bundled.first(where: { $0.id == id })?.keyPath else { return nil }
             app[keyPath: keyPath] = on
+        case .fleetWeight(let hostID, let weight): app.setFleetWeight(weight, of: hostID)
+        case .fleetThreadsCanSend(let on): app.fleetThreadsCanSend = on
+        case .fleetThreadCap(let cap): app.fleetThreadCap = cap
+        case .fleetUncommitted(let choice): app.fleetUncommitted = choice
+        case .fleetSnapshotExcludes(let spaceID, let excludes): app.setFleetExcludes(excludes, of: SpaceID(rawValue: spaceID))
+        case .fleetAutoDispatch(let on): app.fleetAutoDispatch = on
+        case .fleetBatteryCountsHalf(let on): app.fleetBatteryCountsHalf = on
         case .updatePiDaily, .updateExtensionsDaily:
             // An older client's switches: Shepherd's pi updates only with Shepherd.
             break

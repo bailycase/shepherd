@@ -41,7 +41,6 @@ struct SuggestionsPresentationTests {
         #expect(SuggestionsPresentation.addTitle(.appendSystem) == "Add to APPEND_SYSTEM.md")
         #expect(SuggestionsPresentation.waitingTitle(3) == "Waiting for you · 3")
         #expect(SuggestionsPresentation.waitingTitle(0) == "Waiting for you")
-        #expect(SuggestionsPresentation.hostsWord(sameEverywhere: true) == "every host")
-        #expect(SuggestionsPresentation.hostsWord(sameEverywhere: false) == "This Mac")
+        #expect(SuggestionsPresentation.hostsWord == "every Mac", "Instructions are the fleet's: a line reaches every Mac")
     }
 }

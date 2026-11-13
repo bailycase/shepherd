@@ -166,8 +166,6 @@ private struct SidebarTreeItemView: View, Equatable {
                 // The folder tree is Spaces. The board draws no + here; adding a Space lives in
                 // Settings ▸ Spaces and the project menus, and hidden ones come back from the menu.
                 SHProjectsHeader("Spaces", hasMenu: !hiddenProjects.isEmpty, menu: { ProjectsAddMenu(vm: vm, hidden: hiddenProjects) })
-            case .header(.host(let name, _, let unreachable)):
-                SHSidebarSection(.host(name, unreachable: unreachable))
             case .project(let project):
                 projectRow(project)
             case .runGroup(let group):
@@ -183,7 +181,8 @@ private struct SidebarTreeItemView: View, Equatable {
                     }
             case .row(let row):
                 SHSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
-                             accessory: row.accessory, hasGoal: row.hasGoal, nested: true, badge: row.pullRequest)
+                             accessory: row.accessory, hasGoal: row.hasGoal, nested: true, badge: row.pullRequest,
+                             elbow: row.fleetNested)
                     .padding(.leading, CGFloat(row.projectDepth) * (SHProjectMetrics.chevronSlot + SHProjectMetrics.gap))
                     .help(row.help)
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }

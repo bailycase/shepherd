@@ -84,7 +84,7 @@ struct ProjectsScreen: View {
 
     /// Why nothing is listed, in the order a person would fix it.
     static func emptyMessage(_ owners: [MobileProjectOwner]) -> String {
-        if owners.isEmpty { return "Projects live on a Mac. Pair one in Settings ▸ Hosts to see its projects here." }
+        if owners.isEmpty { return "Projects live on a Mac. Pair one in Settings ▸ Fleet to see its projects here." }
         if !owners.contains(where: \.connected) { return "No host is connected. Projects show here once their Mac is back online." }
         if !owners.contains(where: { $0.connected && $0.supported }) {
             return "No connected host serves Projects. Turn on Projects in Settings ▸ Experiments on the Mac, or update Shepherd there."

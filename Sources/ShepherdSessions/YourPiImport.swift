@@ -29,6 +29,9 @@ public struct YourPiImportState: Codable, Equatable, Sendable {
     /// The entries Shepherd put in its settings.json's `extensions`, so a change replaces exactly
     /// those.
     public var extensionEntries: [String] = []
+    /// Switched-on extensions a fleet's sync is rewriting (some of their files have arrived, not all):
+    /// left out of settings.json `extensions` until the files are whole again, so pi never starts on half an extension.
+    public var extensionsHeld: [String] = []
     /// Version 1's settings.json `skills` and `prompts` entries, which pointed at the user's pi;
     /// removed from Shepherd's settings when their files are copied.
     public var legacySkills: [String] = []
@@ -45,7 +48,7 @@ public struct YourPiImportState: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, copied, copiedAt, from, copies, extensionsOn, extensionFailures, extensionEntries, digests
+        case version, copied, copiedAt, from, copies, extensionsOn, extensionFailures, extensionEntries, extensionsHeld, digests
         // Version 1's.
         case skills, prompts
     }
@@ -61,6 +64,7 @@ public struct YourPiImportState: Codable, Equatable, Sendable {
         extensionsOn = (try? c.decodeIfPresent([String].self, forKey: .extensionsOn)) ?? []
         extensionFailures = (try? c.decodeIfPresent([String: YourPiExtensionFailure].self, forKey: .extensionFailures)) ?? [:]
         extensionEntries = (try? c.decodeIfPresent([String].self, forKey: .extensionEntries)) ?? []
+        extensionsHeld = (try? c.decodeIfPresent([String].self, forKey: .extensionsHeld)) ?? []
         legacySkills = (try? c.decodeIfPresent([String].self, forKey: .skills)) ?? []
         legacyPrompts = (try? c.decodeIfPresent([String].self, forKey: .prompts)) ?? []
         digests = (try? c.decodeIfPresent([String: String].self, forKey: .digests)) ?? [:]
@@ -76,6 +80,7 @@ public struct YourPiImportState: Codable, Equatable, Sendable {
         try c.encode(extensionsOn, forKey: .extensionsOn)
         try c.encode(extensionFailures, forKey: .extensionFailures)
         try c.encode(extensionEntries, forKey: .extensionEntries)
+        if !extensionsHeld.isEmpty { try c.encode(extensionsHeld, forKey: .extensionsHeld) }
         if !digests.isEmpty { try c.encode(digests, forKey: .digests) }
         if !legacySkills.isEmpty { try c.encode(legacySkills, forKey: .skills) }
         if !legacyPrompts.isEmpty { try c.encode(legacyPrompts, forKey: .prompts) }
@@ -625,6 +630,61 @@ public struct YourPiImport: Sendable {
         }
     }
 
+    // MARK: Fleet sync
+
+    /// The extensions as copied here, each with whether it is on: what a fleet syncs (`FleetExtensionsSource`).
+    func syncedExtensions() -> [(copy: YourPiCopy, on: Bool)] {
+        let state = state()
+        return (state?.copies(.extensions) ?? []).map { ($0, state?.extensionsOn.contains($0.destination) == true) }
+    }
+
+    /// Takes an extension another Mac has: records its copy (its files are already under the
+    /// home's `your-extensions`) and switches it on or off, which puts its absolute path here in
+    /// settings.json's `extensions`. A copy made here keeps where it came from. Nothing changes,
+    /// and no failure is forgotten, when it already is as wanted.
+    func applySyncedExtension(destination: String, name: String, entries: [String]?, on: Bool) throws {
+        try updateState { state in
+            state.extensionsHeld.removeAll { $0 == destination }
+            if let index = state.copies.firstIndex(where: { $0.destination == destination }) {
+                state.copies[index].name = name
+                state.copies[index].entries = entries
+            } else {
+                state.copies.append(YourPiCopy(kind: .extensions, name: name, source: "", destination: destination, entries: entries))
+            }
+            let wasOn = state.extensionsOn.contains(destination)
+            if on != wasOn {
+                state.extensionsOn.removeAll { $0 == destination }
+                if on { state.extensionsOn.append(destination) }
+                state.extensionFailures[destination] = nil
+            }
+            try applyExtensions(&state)
+        }
+    }
+
+    /// The extensions held out of settings.json while a sync rewrites their files.
+    func heldExtensions() -> Set<String> { Set(state()?.extensionsHeld ?? []) }
+
+    /// Takes a switched-on extension out of settings.json while a sync rewrites its files; `applySyncedExtension`
+    /// puts it back once they are whole. Nothing changes for one that is off or already held.
+    func holdSyncedExtension(destination: String) throws {
+        try updateState { state in
+            guard state.extensionsOn.contains(destination), !state.extensionsHeld.contains(destination) else { return }
+            state.extensionsHeld.append(destination)
+            try applyExtensions(&state)
+        }
+    }
+
+    /// Forgets an extension that is gone from the fleet: its copy, its switch and its entry in settings.json.
+    func removeSyncedExtension(destination: String) throws {
+        try updateState { state in
+            state.extensionsHeld.removeAll { $0 == destination }
+            state.copies.removeAll { $0.kind == .extensions && $0.destination == destination }
+            state.extensionsOn.removeAll { $0 == destination }
+            state.extensionFailures[destination] = nil
+            try applyExtensions(&state)
+        }
+    }
+
     /// An opted-in extension failed to load at `path` (pi's words: `Failed to load extension
     /// "<path>": <reason>`): it is left out of launches, with `reason`, until its files change or
     /// the user tries again. Returns its name, or nil when `path` isn't one of the user's
@@ -665,7 +725,8 @@ public struct YourPiImport: Sendable {
     private func applyExtensions(_ state: inout YourPiImportState) throws {
         var entries: [String] = []
         for destination in state.extensionsOn {
-            guard let copy = state.copies(.extensions).first(where: { $0.destination == destination }) else { continue }
+            guard !state.extensionsHeld.contains(destination),
+                  let copy = state.copies(.extensions).first(where: { $0.destination == destination }) else { continue }
             let paths = (copy.entries ?? [""]).map { entry in
                 (entry.isEmpty ? home.directory.appendingPathComponent(copy.destination)
                     : home.directory.appendingPathComponent(copy.destination).appendingPathComponent(entry)).standardizedFileURL.path

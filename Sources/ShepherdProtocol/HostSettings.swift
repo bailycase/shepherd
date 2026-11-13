@@ -93,6 +93,9 @@ public struct HostSettings: Codable, Hashable, Sendable {
     public var goalsEnabled: Bool
     /// Settings ▸ Experiments ▸ Projects, default off on each owner and executor.
     public var projectsEnabled: Bool
+    /// Settings ▸ Experiments ▸ Fleet (`fleetExperimentCapability`), default off. Older hosts omit
+    /// it, which reads as off.
+    public var fleetEnabled: Bool
 
     public var worktreeBase: WorktreeBase
     public var fetchBeforeCreating: Bool
@@ -116,7 +119,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
     public var backgroundService: Bool?
     /// Serve this Mac: the port the host's listener is bound to, nil when it isn't. Older hosts omit it.
     public var listenerPort: UInt16?
-    /// Why the host's listener couldn't start: a sentence for Settings ▸ Remote and the technical reason.
+    /// Why the host's listener couldn't start: a sentence for Settings ▸ Fleet and the technical reason.
     public var listenerProblem: String?
     public var listenerProblemDetail: String?
 
@@ -145,11 +148,37 @@ public struct HostSettings: Codable, Hashable, Sendable {
     public var updatePiDaily: Bool
     public var updateExtensionsDaily: Bool
 
+    /// The Fleet page's Send work here choice per Mac: the settings `fleet.weight.<hostID>`
+    /// (`FleetSendWeight.settingKey`), keyed by that name. A Mac with no entry is Normal.
+    public var fleetWeights: [String: FleetSendWeight]
+    /// Settings ▸ Fleet ▸ Threads can send work: a thread may dispatch work to another Mac without being
+    /// asked. The same on every Mac (a synced setting). Off until the person turns it on.
+    public var fleetThreadsCanSend: Bool
+    /// How many dispatches one thread may have in flight (`FleetDispatchState.countsAgainstCap`); more are held.
+    public var fleetThreadCap: Int
+    /// Settings ▸ Fleet ▸ Code ▸ Uncommitted changes: whether a dispatch carries the checkout's edits, new files and ignored files. Synced.
+    public var fleetUncommitted: FleetUncommittedChanges
+    /// Settings ▸ Fleet ▸ Code ▸ Ignored files ▸ Per space: what a space keeps home or sends against the defaults, under the setting
+    /// keys `fleet.snapshotExcludes.<spaceID>` (`FleetSnapshotExcludes.settingKey`). Synced.
+    public var fleetSnapshotExcludes: [String: FleetSnapshotExcludes]
+    /// Settings ▸ Fleet ▸ Auto dispatch: New thread's Auto place sends the work to the Mac with the most room. The
+    /// same on every Mac (a synced setting). Nil until the person chooses: it then reads as on once a second Mac
+    /// is paired (`autoDispatch(pairedMacs:)`).
+    public var fleetAutoDispatch: Bool?
+    /// Settings ▸ Fleet ▸ On battery: a Mac running on battery counts half when Auto picks one (`FleetRoom.score`).
+    public var fleetBatteryCountsHalf: Bool
+
+    public static let fleetThreadCapDefault = 3
+
+    /// Whether Auto places New thread's work: the person's choice, else on once this Mac is paired with another.
+    public func autoDispatch(pairedMacs: Int) -> Bool { fleetAutoDispatch ?? (pairedMacs > 0) }
+    public static let fleetThreadCapRange = 1...10
+
     public init(shepherdVersion: String? = nil, piVersion: String? = nil,
                 defaultModel: String? = nil, defaultThinking: ThinkingLevel = .medium,
                 defaultServiceTier: ServiceTier = .standard, textGenerationModel: String? = nil, visionModel: String? = nil, compactAtPercent: Int? = nil,
                 queueDelivery: NativeQueueMode = .all,
-                goalCrossProviderEvaluation: Bool = false, goalsEnabled: Bool = false, projectsEnabled: Bool = false,
+                goalCrossProviderEvaluation: Bool = false, goalsEnabled: Bool = false, projectsEnabled: Bool = false, fleetEnabled: Bool = false,
                 worktreeBase: WorktreeBase = .fresh, fetchBeforeCreating: Bool = true, commitRemainingWork: Bool = true,
                 generatePRDescriptions: Bool = true, deleteLocalBranch: Bool = true, mergePRAutomatically: Bool = false,
                 mergeMethod: MergeMethod = .squash, closeOnMerge: Bool = false, backgroundService: Bool? = nil,
@@ -158,7 +187,11 @@ public struct HostSettings: Codable, Hashable, Sendable {
                 skillsInSlashMenu: Bool = true, mcpProjectConfig: Bool = false,
                 slashCommands: [NativeCommand] = [], hiddenSlashCommands: [String] = [],
                 bundledExtensions: [BundledExtension] = [], installedExtensions: [String] = [],
-                updatePiDaily: Bool = false, updateExtensionsDaily: Bool = false) {
+                updatePiDaily: Bool = false, updateExtensionsDaily: Bool = false,
+                fleetWeights: [String: FleetSendWeight] = [:], fleetThreadsCanSend: Bool = false,
+                fleetThreadCap: Int = HostSettings.fleetThreadCapDefault, fleetAutoDispatch: Bool? = nil,
+                fleetBatteryCountsHalf: Bool = true, fleetUncommitted: FleetUncommittedChanges = .sendThem,
+                fleetSnapshotExcludes: [String: FleetSnapshotExcludes] = [:]) {
         self.shepherdVersion = shepherdVersion
         self.piVersion = piVersion
         self.defaultModel = defaultModel
@@ -171,6 +204,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         self.goalCrossProviderEvaluation = goalCrossProviderEvaluation
         self.goalsEnabled = goalsEnabled
         self.projectsEnabled = projectsEnabled
+        self.fleetEnabled = fleetEnabled
         self.worktreeBase = worktreeBase
         self.fetchBeforeCreating = fetchBeforeCreating
         self.commitRemainingWork = commitRemainingWork
@@ -191,14 +225,23 @@ public struct HostSettings: Codable, Hashable, Sendable {
         self.installedExtensions = installedExtensions
         self.updatePiDaily = updatePiDaily
         self.updateExtensionsDaily = updateExtensionsDaily
+        self.fleetWeights = fleetWeights
+        self.fleetThreadsCanSend = fleetThreadsCanSend
+        self.fleetThreadCap = Self.clampedThreadCap(fleetThreadCap)
+        self.fleetUncommitted = fleetUncommitted
+        self.fleetSnapshotExcludes = fleetSnapshotExcludes
+        self.fleetAutoDispatch = fleetAutoDispatch
+        self.fleetBatteryCountsHalf = fleetBatteryCountsHalf
     }
+
+    public static func clampedThreadCap(_ cap: Int) -> Int { min(fleetThreadCapRange.upperBound, max(fleetThreadCapRange.lowerBound, cap)) }
 
     private enum CodingKeys: String, CodingKey {
         case shepherdVersion, piVersion, defaultModel, defaultThinking, defaultServiceTier, textGenerationModel, visionModel, compactAtPercent
-        case queueDelivery, goalCrossProviderEvaluation, goalsEnabled, projectsEnabled
+        case queueDelivery, goalCrossProviderEvaluation, goalsEnabled, projectsEnabled, fleetEnabled
         case worktreeBase, fetchBeforeCreating, commitRemainingWork, generatePRDescriptions
         case deleteLocalBranch, mergePRAutomatically, mergeMethod, closeOnMerge, backgroundService, listenerPort, listenerProblem, listenerProblemDetail, bundledExtensions, installedExtensions
-        case updatePiDaily, updateExtensionsDaily
+        case updatePiDaily, updateExtensionsDaily, fleetWeights, fleetThreadsCanSend, fleetThreadCap, fleetAutoDispatch, fleetBatteryCountsHalf, fleetUncommitted, fleetSnapshotExcludes
         case designToolEnabled, subagentDefaults, worktreeDeleteAction
         case skillsInSlashMenu, mcpProjectConfig, slashCommands, hiddenSlashCommands
     }
@@ -218,6 +261,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         goalCrossProviderEvaluation = try c.decodeIfPresent(Bool.self, forKey: .goalCrossProviderEvaluation) ?? false
         goalsEnabled = try c.decodeIfPresent(Bool.self, forKey: .goalsEnabled) ?? false
         projectsEnabled = try c.decodeIfPresent(Bool.self, forKey: .projectsEnabled) ?? false
+        fleetEnabled = try c.decodeIfPresent(Bool.self, forKey: .fleetEnabled) ?? false
         worktreeBase = try c.decode(WorktreeBase.self, forKey: .worktreeBase)
         fetchBeforeCreating = try c.decode(Bool.self, forKey: .fetchBeforeCreating)
         commitRemainingWork = try c.decodeIfPresent(Bool.self, forKey: .commitRemainingWork) ?? true
@@ -241,6 +285,15 @@ public struct HostSettings: Codable, Hashable, Sendable {
         installedExtensions = try c.decode([String].self, forKey: .installedExtensions)
         updatePiDaily = try c.decode(Bool.self, forKey: .updatePiDaily)
         updateExtensionsDaily = try c.decode(Bool.self, forKey: .updateExtensionsDaily)
+        // A weight this client doesn't know reads as Normal (it is left out).
+        fleetWeights = ((try? c.decodeIfPresent([String: String].self, forKey: .fleetWeights)) ?? nil ?? [:])
+            .compactMapValues(FleetSendWeight.init(rawValue:))
+        fleetThreadsCanSend = (try? c.decodeIfPresent(Bool.self, forKey: .fleetThreadsCanSend)) ?? false
+        fleetThreadCap = Self.clampedThreadCap((try? c.decodeIfPresent(Int.self, forKey: .fleetThreadCap)) ?? Self.fleetThreadCapDefault)
+        fleetUncommitted = (try? c.decodeIfPresent(FleetUncommittedChanges.self, forKey: .fleetUncommitted)) ?? .sendThem
+        fleetSnapshotExcludes = (try? c.decodeIfPresent([String: FleetSnapshotExcludes].self, forKey: .fleetSnapshotExcludes)) ?? [:]
+        fleetAutoDispatch = (try? c.decodeIfPresent(Bool.self, forKey: .fleetAutoDispatch)) ?? nil
+        fleetBatteryCountsHalf = (try? c.decodeIfPresent(Bool.self, forKey: .fleetBatteryCountsHalf)) ?? true
     }
 
     /// Applies one change, as the host does.
@@ -256,6 +309,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         case .goalCrossProviderEvaluation(let on): goalCrossProviderEvaluation = on
         case .goalsEnabled(let on): goalsEnabled = on
         case .projectsEnabled(let on): projectsEnabled = on
+        case .fleetEnabled(let on): fleetEnabled = on
         case .worktreeBase(let base): worktreeBase = base
         case .fetchBeforeCreating(let on): fetchBeforeCreating = on
         case .commitRemainingWork(let on): commitRemainingWork = on
@@ -268,6 +322,15 @@ public struct HostSettings: Codable, Hashable, Sendable {
             if let index = bundledExtensions.firstIndex(where: { $0.id == id }) { bundledExtensions[index].on = on }
         case .updatePiDaily(let on): updatePiDaily = on
         case .updateExtensionsDaily(let on): updateExtensionsDaily = on
+        case .fleetWeight(let hostID, let weight): fleetWeights[FleetSendWeight.settingKey(hostID: hostID)] = weight
+        case .fleetThreadsCanSend(let on): fleetThreadsCanSend = on
+        case .fleetThreadCap(let cap): fleetThreadCap = Self.clampedThreadCap(cap)
+        case .fleetUncommitted(let choice): fleetUncommitted = choice
+        case .fleetSnapshotExcludes(let spaceID, let excludes):
+            let key = FleetSnapshotExcludes.settingKey(spaceID: spaceID)
+            if excludes.isEmpty { fleetSnapshotExcludes[key] = nil } else { fleetSnapshotExcludes[key] = excludes }
+        case .fleetAutoDispatch(let on): fleetAutoDispatch = on
+        case .fleetBatteryCountsHalf(let on): fleetBatteryCountsHalf = on
         case .designToolEnabled(let on): designToolEnabled = on
         case .subagentDefaults(var defaults):
             defaults.concurrency = min(SubagentDefaults.concurrencyRange.upperBound, max(SubagentDefaults.concurrencyRange.lowerBound, defaults.concurrency))
@@ -306,6 +369,8 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
     case goalCrossProviderEvaluation(Bool)
     case goalsEnabled(Bool)
     case projectsEnabled(Bool)
+    /// `RemoteProtocol.fleetExperimentCapability`.
+    case fleetEnabled(Bool)
     case worktreeBase(HostSettings.WorktreeBase)
     case fetchBeforeCreating(Bool)
     /// Legacy: older clients' Finalize settings. A host ignores `commitRemainingWork`,
@@ -321,6 +386,20 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
     case bundledExtension(id: String, on: Bool)
     case updatePiDaily(Bool)
     case updateExtensionsDaily(Bool)
+    /// How much auto placed work the Mac `hostID` gets (`RemoteProtocol.fleetViewCapability`: a device sets it too).
+    case fleetWeight(hostID: UUID, weight: FleetSendWeight)
+    /// Threads may send work to other Macs on their own (`RemoteProtocol.fleetDispatchCapability`).
+    case fleetThreadsCanSend(Bool)
+    /// How many dispatches one thread may have in flight (`RemoteProtocol.fleetDispatchCapability`).
+    case fleetThreadCap(Int)
+    /// Whether a dispatch carries the checkout's uncommitted changes (`RemoteProtocol.fleetSnapshotCapability`).
+    case fleetUncommitted(FleetUncommittedChanges)
+    /// What a space keeps home or sends against the defaults, by space id; empty is back to the defaults (`RemoteProtocol.fleetSnapshotCapability`).
+    case fleetSnapshotExcludes(spaceID: String, excludes: FleetSnapshotExcludes)
+    /// New thread's Auto place sends work to the Mac with the most room (`RemoteProtocol.fleetDispatchCapability`).
+    case fleetAutoDispatch(Bool)
+    /// A Mac on battery counts half when Auto picks one (`RemoteProtocol.fleetDispatchCapability`).
+    case fleetBatteryCountsHalf(Bool)
     /// `RemoteProtocol.designToolExperimentCapability`: offered while the tool is off too.
     case designToolEnabled(Bool)
     /// The cases below need `RemoteProtocol.hostSettingsV2Capability`.
@@ -337,6 +416,10 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
         switch self {
         case .goalsEnabled: RemoteProtocol.goalExperimentCapability
         case .projectsEnabled: RemoteProtocol.projectsExperimentCapability
+        case .fleetEnabled: RemoteProtocol.fleetExperimentCapability
+        case .fleetWeight: RemoteProtocol.fleetViewCapability
+        case .fleetThreadsCanSend, .fleetThreadCap, .fleetAutoDispatch, .fleetBatteryCountsHalf: RemoteProtocol.fleetDispatchCapability
+        case .fleetUncommitted, .fleetSnapshotExcludes: RemoteProtocol.fleetSnapshotCapability
         case .defaultServiceTier, .namingModel, .compactAtPercent: RemoteProtocol.hostSettingsAgentDefaultsCapability
         case .textGenerationModel: RemoteProtocol.hostSettingsTextGenerationModelCapability
         case .visionModel: RemoteProtocol.hostSettingsVisionModelCapability

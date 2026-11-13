@@ -18,9 +18,11 @@ struct SettingsView: View {
 
     private var query: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
 
+    private var availableSections: [SettingsSection] { SettingsSection.allCases }
+
     private var matchingSections: [SettingsSection] {
-        guard !query.isEmpty else { return SettingsSection.allCases }
-        return SettingsSection.allCases.filter { !matches($0).isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
+        guard !query.isEmpty else { return availableSections }
+        return availableSections.filter { !matches($0).isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
     }
 
     var body: some View {
@@ -52,18 +54,6 @@ struct SettingsView: View {
         .transition(SH.Motion.content.transition(reduceMotion: reduceMotion)
             .animation(SH.Motion.sheet.animation(reduceMotion: reduceMotion)))
         .onChange(of: searchText) { Self.showFirstMatch(of: matchingSections, in: vm) }
-        // One host choice for Settings: Instructions' chips and Spaces' filter follow the picker,
-        // and move it when they are used.
-        .onChange(of: vm.settingsHostID) { vm.followSettingsHost(on: vm.settingsSection, entering: false) }
-        .onChange(of: vm.settingsSection) { vm.followSettingsHost(on: vm.settingsSection, entering: true) }
-        .onChange(of: vm.instructions.machine) {
-            guard !vm.instructions.sameEverywhere else { return }
-            if case .remote(let id) = vm.instructions.machine { vm.adoptSettingsHost(id) } else { vm.adoptSettingsHost(nil) }
-        }
-        .onChange(of: vm.settingsSection == .projects ? vm.projects.host : nil) { _, host in
-            guard let host, host != "all" else { return }
-            vm.adoptSettingsHost(UUID(uuidString: host))
-        }
         .background {
             // ⌘F focuses the search field.
             Button("Search settings") { searchFocused = true }
@@ -188,40 +178,9 @@ struct SettingsView: View {
         app + (agent.map { " · \(section == .pi ? "pi" : "agent") \($0)" } ?? "")
     }
 
-    /// The page, under the host picker on a host-level page (a remote host draws its own page)
-    /// and a line saying a client-local page is this Mac's own, when there are remote hosts.
+    /// The page: every Settings page is this host's own; Fleet shares the content that crosses hosts.
     @ViewBuilder private var page: some View {
-        let section = vm.settingsSection
-        if section == .skills, !vm.skills.sameEverywhere, !vm.remoteHosts.connections.isEmpty {
-            // Per host, Skills shows and changes the host the picker chose.
-            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
-                SettingsHostPicker(vm: vm)
-                localPage
-            }
-        } else if section == .hooks, !vm.remoteHosts.connections.isEmpty {
-            // One page for every host: this Mac's catalog, or a remote host's over hooks.v1.
-            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
-                SettingsHostPicker(vm: vm)
-                HooksSettings(model: vm.hooks(for: vm.remoteSettingsHost?.id))
-            }
-        } else if section.isHostLevel, !vm.remoteHosts.connections.isEmpty {
-            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
-                SettingsHostPicker(vm: vm)
-                if let host = vm.remoteSettingsHost {
-                    RemoteHostSettingsPage(section: section, host: host, settings: vm.remoteHostSettings, config: vm.remoteHostConfig,
-                                           suggestions: vm.remoteSuggestions)
-                } else {
-                    localPage
-                }
-            }
-        } else if section.isClientLocal, !vm.remoteHosts.connections.isEmpty {
-            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
-                localPage
-                SettingsNote(text: "These settings are this Mac's own. Each host keeps its own.")
-            }
-        } else {
-            localPage
-        }
+        localPage
     }
 
     @ViewBuilder private var localPage: some View {
@@ -232,7 +191,7 @@ struct SettingsView: View {
         case .subagents: SubagentsSettings(model: vm.subagentDefinitions, native: NativeSubagentSettings(pi: vm.pi, settings: vm.settings))
         case .projects: ProjectsSettings(vm: vm, model: vm.projects)
         case .pi: PiSettings(pi: vm.pi, yourPi: vm.yourPi) { vm.settingsSection = .extensions }
-        case .piSignIn: PiSignInSettings(yourPi: vm.yourPi, auth: vm.piAuth)
+        case .piSignIn: PiSignInSettings(yourPi: vm.yourPi, auth: vm.piAuth, inFleet: vm.settings.fleetEnabled)
         case .extensions: ExtensionsSettings(settings: vm.settings)
         case .piSlashCommands: SlashCommandsSettings(model: vm.slashCommands, settings: vm.settings)
         case .apps: AppsSettings(vm: vm, model: vm.apps)
@@ -241,7 +200,28 @@ struct SettingsView: View {
         case .instructions: InstructionsSettings(model: vm.instructions)
         case .skills: SkillsSettings(vm: vm, model: vm.skills)
         case .mcp: MCPSettings(vm: vm, store: vm.mcp, initiallyExpanded: vm.mcpOpenServer)
-        case .remote: RemoteSettings(vm: vm, store: vm.remoteHosts)
+        case .fleet:
+            FleetSettings(model: vm.fleet, serviceKeepsRunning: vm.backgroundServiceStatus?.keepsAgentsRunning, enabled: vm.settings.fleetEnabled,
+                          serve: FleetServe(isOn: Binding(get: { vm.remoteListenerEnabled }, set: { vm.setRemoteListenerEnabled($0) }),
+                                            status: vm.remoteListenerStatus, problem: vm.remoteListenerProblem,
+                                            problemDetail: vm.remoteListenerProblemDetail),
+                          clients: vm.remoteHosts.pairedConnections.filter { !vm.settings.fleetEnabled || !$0.config.fleetManaged }.map {
+                              .client(id: $0.id, name: $0.config.name, host: $0.config.host, port: $0.config.port, phase: $0.phase)
+                          },
+                          removeClient: { vm.remoteHosts.removeHost(id: $0) },
+                          code: FleetCodeSettings(
+                              uncommitted: vm.settings.fleetUncommitted, setUncommitted: { vm.settings.fleetUncommitted = $0 },
+                              spaces: vm.state.spaces.filter { !$0.hidden && $0.repoKey != nil }.map {
+                                  FleetExcludeSpace(id: $0.id, name: $0.name, excludes: vm.settings.fleetExcludes(of: $0.id))
+                              },
+                              setExcludes: { vm.settings.setFleetExcludes($1, of: $0) }),
+                          dispatch: FleetDispatchControls(
+                              autoDispatch: Binding(get: { vm.settings.autoDispatch(pairedMacs: vm.fleetPage.snapshot.peers.count) },
+                                                    set: { vm.settings.fleetAutoDispatch = $0 }),
+                              threadsCanSend: Binding(get: { vm.settings.fleetThreadsCanSend }, set: { vm.settings.fleetThreadsCanSend = $0 }),
+                              threadCap: Binding(get: { vm.settings.fleetThreadCap }, set: { vm.settings.fleetThreadCap = $0 }),
+                              batteryCountsHalf: Binding(get: { vm.settings.fleetBatteryCountsHalf }, set: { vm.settings.fleetBatteryCountsHalf = $0 })))
+                .task { await vm.refreshRemoteListener() }
         case .keyboard: KeyboardSettings(vm: vm)
         case .advanced: AdvancedSettings(vm: vm)
         case .experiments:
@@ -317,7 +297,7 @@ private struct SettingsSearchHit: View {
 
 enum SettingsSection: String, CaseIterable, Identifiable {
     // The nav's order, as every Settings board draws it.
-    case appearance, terminal, agents, subagents, worktrees, projects, piSignIn, pi, instructions, skills, extensions, piSlashCommands, apps, hooks, mcp, remote, keyboard, advanced, experiments
+    case appearance, terminal, agents, subagents, worktrees, projects, piSignIn, pi, instructions, skills, extensions, piSlashCommands, apps, hooks, mcp, fleet, keyboard, advanced, experiments
 
     var id: String { rawValue }
 
@@ -338,7 +318,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .instructions: return "Instructions"
         case .skills: return "Skills"
         case .mcp: return "MCP servers"
-        case .remote: return "Remote"
+        case .fleet: return "Fleet"
         case .keyboard: return "Keyboard"
         case .advanced: return "Advanced"
         case .experiments: return "Experiments"
@@ -348,7 +328,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     /// Row titles on the page, as the search lists them under the section.
     var items: [String] {
         switch self {
-        case .appearance: ["Theme", "Mode", "Organize by", "Group by host", "Keep idle threads", "Sidebar rows", "Density", "Text size",
+        case .appearance: ["Theme", "Mode", "Organize by", "Keep idle threads", "Sidebar rows", "Density", "Text size",
                            "Sidebar width"]
         case .terminal: ["Font family", "Font size", "Shell"]
         case .agents: ["Default model", "Default thinking level", "Speed for new threads", "Text generation model", "Image reading model",
@@ -365,15 +345,15 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .piSlashCommands: ["Search commands", "Extensions", "Prompt templates", "Skills", "Disabled commands"]
         case .apps: ["Add app", "On this Mac", "Run", "Quick action"]
         case .hooks: ["Add hook", "Sources", "Read hooks from Claude Code", "Read hooks from Codex"]
-        case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
+        case .instructions: ["AGENTS.md", "APPEND_SYSTEM.md", "History"]
         case .skills: ["Installed skills", "Browse skills.sh", "Add from repo",
-                       "Skills in the / menu", "Same skills on every host", "Update automatically"]
-        case .mcp: ["Servers", "Add server", "Import…", "How the agent uses them", "Same servers on every host",
-                    "Also use a repo’s .mcp.json", "Hosts"]
-        case .remote: ["Hosts", "Add host", "Listener", "Token"]
+                       "Skills in the / menu", "Update automatically"]
+        case .mcp: ["Servers", "Add server", "Import…", "How the agent uses them",
+                    "Also use a repo’s .mcp.json", "Where they live"]
+        case .fleet: ["Macs", "Add a Mac", "Join a fleet", "Remove", "Devices", "Add a device", "Revoke", "Listener"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Open files in", "Workspace state", "Extension socket", "Update channel", "Check for updates", "Share diagnostics", "Skipped confirmations", "Reset settings"]
-        case .experiments: ["Goals", "Projects", "Suggested instructions", "Learn from", "Can suggest for", "Waiting for you",
+        case .experiments: ["Goals", "Projects", "Fleet", "Suggested instructions", "Learn from", "Can suggest for", "Waiting for you",
                             "Added from suggestions", "Design tool"]
         }
     }
@@ -383,7 +363,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .appearance: ["Mode": ["dark", "light", "color", "shepherd design", "theme"], "Text size": ["font", "zoom", "scale"], "Sidebar rows": ["row height", "comfortable"], "Density": ["compact", "spacing"],
                            "Organize by": ["spaces", "activity", "folders", "sidebar style", "tree"],
-                           "Group by host": ["hosts", "machines"], "Keep idle threads": ["archive", "idle"]]
+                           "Keep idle threads": ["archive", "idle"]]
         case .terminal: ["Font family": ["ghostty", "monospace"], "Shell": ["zsh", "bash", "fish"]]
         case .agents: ["Default model": ["claude", "gpt", "provider"], "Text generation model": ["name", "title", "rename", "haiku", "naming", "session naming", "generate"], "Image reading model": ["vision", "images", "screenshots", "pictures", "describe", "multimodal"], "Default thinking level": ["reasoning", "effort"],
                        "Speed for new threads": ["fast", "fast mode", "priority", "service tier", "codex", "openai", "standard"],
@@ -423,21 +403,25 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                      "Run": ["stop", "running", "start", "localhost", "port"]]
         case .hooks: ["Add hook": ["PreToolUse", "PostToolUse", "Stop", "SessionStart", "UserPromptSubmit", "matcher", "command", "hooks.json"],
                       "Read hooks from Claude Code": ["claude", "settings.json", ".claude"], "Read hooks from Codex": ["codex", "config.toml", ".codex"]]
-        case .instructions: ["Same on every host": ["sync", "hosts"], "AGENTS.md": ["system prompt", "how you work", "context"],
+        case .instructions: ["AGENTS.md": ["system prompt", "how you work", "context"],
                              "APPEND_SYSTEM.md": ["system prompt", "override"], "History": ["restore", "undo"]]
         case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills", "from your pi", "copied", ".pi", ".shepherd"],
                        "Browse skills.sh": ["directory", "search", "install"],
                        "Add from repo": ["github", "git", "folder"], "Skills in the / menu": ["slash", "command", "composer"],
-                       "Same skills on every host": ["sync", "hosts"], "Update automatically": ["update", "upgrade"]]
+                       "Update automatically": ["update", "upgrade"]]
         case .mcp: ["Servers": ["mcp", "model context protocol", "tools", "connectors", "mcp.json"],
                     "Add server": ["remote", "local", "url", "command", "stdio", "http", "sse"],
                     "Import…": ["claude desktop", "cursor", "vs code", "paste json", "mcpServers"],
                     "How the agent uses them": ["tokens", "prompt", "budget", "search", "direct", "tool search", "exposure", "oauth", "sign in", "login"],
                     "Also use a repo’s .mcp.json": ["project", "repository", ".mcp.json"]]
-        case .remote: ["Hosts": ["vpn", "tailscale", "ssh"], "Listener": ["port", "serve"]]
+        case .fleet: ["Macs": ["pair", "code", "bonjour", "peers", "machines", "lan"], "Add a Mac": ["pair", "code", "6 digit"],
+                      "Join a fleet": ["code", "address", "pair"],
+                      "Devices": ["iphone", "ipad", "phone", "tablet", "client", "token", "remote"], "Add a device": ["qr", "code", "pair", "scan"],
+                      "Listener": ["port", "serve", "remote"]]
         case .keyboard: ["Shortcuts": ["hotkey", "keybinding", "chord", "steer", "queue"]]
         case .advanced: ["Open files in": ["editor", "xcode", "zed", "vs code", "textedit", "links"], "Update channel": ["beta", "nightly", "sparkle"], "Workspace state": ["state.json"], "Skipped confirmations": ["don't ask again", "confirm", "dialog"], "Share diagnostics": ["telemetry", "privacy", "errors", "crash", "performance", "memory"]]
         case .experiments: ["Projects": ["coordinate", "project work", "new project"],
+                            "Fleet": ["macs", "pair", "peers", "machines", "bonjour"],
                             "Suggested instructions": ["lessons", "learned"], "Learn from": ["threads", "automations"],
                             "Design tool": ["designs", "boards", "mockups"]]
         }
@@ -472,7 +456,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .instructions: .instructions
         case .skills: .skills
         case .mcp: .mcp
-        case .remote: .remoteConnection
+        case .fleet: .remoteConnection
         case .keyboard: .keyboard
         case .advanced: .advanced
         case .experiments: .experiments
@@ -496,7 +480,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .instructions: return SHGlyph.document.symbolName
         case .skills: return "graduationcap"
         case .mcp: return "server.rack"
-        case .remote: return SHGlyph.remoteConnection.symbolName
+        case .fleet: return SHGlyph.remoteConnection.symbolName
         case .keyboard: return "keyboard"
         case .advanced: return "gearshape"
         case .experiments: return "flask"

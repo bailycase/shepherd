@@ -1,3 +1,4 @@
+import ShepherdSessions
 import Foundation
 
 /// Server names: what a tool prefix looks like, and a suggestion from a URL or a command.

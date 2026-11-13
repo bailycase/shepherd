@@ -16,6 +16,8 @@ struct FixtureScreen {
     var tab: MobileNavigator.Tab = .home
     /// Anything else to set up before the screenshot (a draft, an expanded row).
     var prepare: (@MainActor (MobileApp) async -> Void)? = nil
+    /// Runs before the routes open: seams a screen reads as it appears (the Macs Add a Mac finds).
+    var setup: (@MainActor () -> Void)? = nil
 }
 
 /// A host the harness serves: its state, each agent's thread, and answers for anything else.
@@ -64,6 +66,11 @@ struct FixtureHostData {
     var forge: (@Sendable (RemoteForgeRequest) -> RemoteForgeResult?)? = nil
     /// Issues & PRs' page reads go unanswered, so a page stays loading.
     var forgeHoldsPages = false
+    /// The fleet this Mac serves a phone (`fleet.view.v1`, its Fleet experiment on): what `fleetRead` answers and
+    /// `.watching` asks the host to sample for. nil: Fleet is off here, and the capability isn't offered.
+    var fleet: FleetSnapshot? = nil
+    /// The id this Mac says it has in a fleet (`helloOk.hostID`, offered while its Fleet is on).
+    var fleetID: UUID? = nil
 
     /// Everything this build knows, `designs.v1` only while the host has designs to serve, and
     /// `issuesAndPRs.v1` only while it answers them.
@@ -71,6 +78,7 @@ struct FixtureHostData {
         RemoteProtocol.capabilities.filter {
             (designs != nil || !RemoteProtocol.designCapabilities.contains($0))
                 && (forge != nil || ($0 != RemoteProtocol.forgeCapability && $0 != RemoteProtocol.forgeBrowseCapability))
+                && (fleet != nil || $0 != RemoteProtocol.fleetViewCapability)
         }
     }
 }
@@ -202,7 +210,7 @@ enum FixtureData {
 /// Every screen, by track. A track edits only its own file's list.
 @MainActor enum FixtureCatalog {
     static var all: [FixtureScreen] {
-        home + thread + context + newThread + subagents + review + changes + commit + search + settings + hooks + automations + automationFlow + windows + terminal + clientState + duo
+        home + thread + context + newThread + subagents + review + changes + commit + search + settings + hooks + automations + automationFlow + windows + terminal + clientState + duo + fleetScreens
             + designs + designPad + designPadMarkup + designPages + browser + files + ProjectFixtures.screens + hostConfig + freshness + forge + tailFrames + tail + newTurn + historyRead + composerField
     }
 

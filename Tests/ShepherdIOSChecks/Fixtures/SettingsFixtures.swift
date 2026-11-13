@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 // Home track's settings and hosts screens.
 extension FixtureCatalog {
@@ -12,17 +13,15 @@ extension FixtureCatalog {
             // Threads muted from their long-press menus, found again here with Unmute.
             FixtureScreen(name: "notifications-muted", hosts: FixtureData.mutedThreads(), routes: [.settings(.notifications)], tab: .settings),
             FixtureScreen(name: "diagnostics", routes: [.settings(.diagnostics)], tab: .settings),
-            FixtureScreen(name: "hosts", routes: [.settings(.hosts)], tab: .settings),
-            FixtureScreen(name: "host", routes: [.settings(.hosts), .settings(.host(FixtureData.studio))], tab: .settings),
-            // Its background service turned off in Login Items: agents stop when Shepherd quits.
-            FixtureScreen(name: "host-service-off", hosts: FixtureData.serviceOff(),
-                          routes: [.settings(.hosts), .settings(.host(FixtureData.studio))], tab: .settings),
-            FixtureScreen(name: "host-offline", routes: [.settings(.hosts), .settings(.host(FixtureData.laptop))], tab: .settings),
-            FixtureScreen(name: "hosts-refused", hosts: FixtureData.refusingLaptop(), routes: [.settings(.hosts)], tab: .settings),
-            FixtureScreen(name: "host-refused", hosts: FixtureData.refusingLaptop(),
-                          routes: [.settings(.hosts), .settings(.host(FixtureData.laptop))], tab: .settings),
-            FixtureScreen(name: "addhost", routes: [.settings(.hosts), .settings(.host(nil))], tab: .settings),
-            FixtureScreen(name: "addhost-sheet", presented: .settings(.host(nil))),
+            // Hosts became Fleet (`fleet`, `fleet-off`, `fleet-forget`): a paired host's form is no longer reachable.
+            // Add a Mac: the Macs Bonjour found, the code half entered, and the ways it can go wrong.
+            FixtureScreen(name: "addhost", routes: [.settings(.fleet), .settings(.host(nil))], tab: .settings,
+                          setup: { FixtureData.pairing(code: "4829") }),
+            FixtureScreen(name: "addhost-sheet", presented: .settings(.host(nil)), setup: { FixtureData.pairing(code: "4829") }),
+            FixtureScreen(name: "addhost-refused", routes: [.settings(.fleet), .settings(.host(nil))], tab: .settings,
+                          setup: { FixtureData.pairing(code: "482913", failure: "That code isn't right. 4 tries left.") }),
+            FixtureScreen(name: "addhost-none", routes: [.settings(.fleet), .settings(.host(nil))], tab: .settings,
+                          setup: { FixtureData.pairing(found: [], code: "") }),
             // Each host's own settings (hostSettings.v1).
             FixtureScreen(name: "settings-defaults", routes: [.settings(.defaults)], tab: .settings),
             FixtureScreen(name: "settings-worktrees", routes: [.settings(.worktrees)], tab: .settings),
@@ -30,12 +29,12 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings-worktrees-lower", routes: [.settings(.worktrees)], tab: .settings,
                           prepare: { _ in await TriggerFlowCheck.scrollDown(holding: nil) }),
             FixtureScreen(name: "settings-pi", routes: [.settings(.piExtensions)], tab: .settings),
-            // Root instructions on every host (instructions.v1).
+            // Root instructions, the fleet's (instructions.v1): one copy, no host to pick.
             FixtureScreen(name: "settings-instructions", routes: [.settings(.instructions)], tab: .settings),
             FixtureScreen(name: "settings-instructions-edit", routes: [.settings(.instructions), .settings(.instructionsFile(.agents))],
                           tab: .settings, prepare: { app in await FixtureData.draft(app, .agents, adding: "- Always run `sqlc vet` after a query change.") }),
-            FixtureScreen(name: "settings-instructions-differ", hosts: FixtureData.differingBuildBox(), routes: [.settings(.instructions)],
-                          tab: .settings),
+            // No Mac to read them from: "Add a Mac in Settings ▸ Fleet to start."
+            FixtureScreen(name: "settings-instructions-empty", hosts: [], routes: [.settings(.instructions)], tab: .settings),
             // Agent skills on every host (skills.v1): the list, pdf's detail with its update,
             // and a repository's skills to pick from.
             FixtureScreen(name: "settings-skills", routes: [.settings(.skills)], tab: .settings),
@@ -61,6 +60,19 @@ extension FixtureCatalog {
 }
 
 extension FixtureData {
+    /// Add a Mac's seams: the Macs Bonjour found, and a code (and refusal) already on the screen.
+    @MainActor static func pairing(found: [FoundMac] = [
+        FoundMac(id: "mini", name: "Mac mini", version: "1.9", idHash: "aaaaaaaaaaaaaaaa", address: "192.168.1.52", port: 7434),
+        FoundMac(id: "studio", name: "Mac Studio", version: "1.9", idHash: "bbbbbbbbbbbbbbbb", address: "192.168.1.60", port: 7434),
+    ], code: String, failure: String? = nil) {
+        MobilePairing.source = { update in update(found); return {} }
+        MobilePairing.seed = { model in
+            model.picked = found.first?.id
+            model.code = code
+            if let failure { model.phase = .failed(failure) }
+        }
+    }
+
     /// The usual hosts, with the studio's background service turned off in Login Items.
     /// Two of the studio's threads muted on the host (`Agent.pushMuted`).
     static func mutedThreads() -> [FixtureHostData] {
@@ -144,18 +156,6 @@ extension FixtureData {
         Keep replies short. Lead with what changed.
 
         """
-
-    /// The usual hosts, with build-01's AGENTS.md two lines apart.
-    static func differingBuildBox() -> [FixtureHostData] {
-        hosts().map { host in
-            var host = host
-            if host.id == buildBox {
-                host.instructions = instructions(agents: agentsFile.replacingOccurrences(of: "- Migrations are reversible.\n", with: "")
-                    + "- Use docker compose for local services.\n")
-            }
-            return host
-        }
-    }
 
     /// The suggestion the detail screen opens.
     static let joinKeys = UUID(uuidString: "5A660000-0000-4000-8000-000000000001")!

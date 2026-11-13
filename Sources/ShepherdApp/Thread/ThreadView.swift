@@ -117,6 +117,8 @@ struct ThreadView: View {
     @State private var loopRun = 0
     @Environment(\.designCommentCards) private var commentCards
     @Environment(\.shUserBubbleMetrics) private var bubbleMetrics
+    /// Dispatches: what this thread sent and where it came from (FleetDispatch, FleetRemote).
+    @Environment(\.fleetThread) private var fleetThread
 
     var body: some View {
         let _ = SHRenderProbe.tick("thread.view")
@@ -125,6 +127,13 @@ struct ThreadView: View {
         // The list, not `rows`: the streaming reply is a shell here, and its content (`liveRow`) is
         // read by its own row view, so a streamed chunk redraws that row and not this body.
         let rows: [NativeThreadRow] = origins.runtime.isEmpty ? store.listRows : store.listRows.filter { !($0.isUser && origins.hides($0.turn)) }
+        // A hidden thread whose rows were let go to keep what the hidden views hold within a budget (`NativeThreadStores`) draws
+        // only the last ones it still has, in steps down to none; only the two lists of rows below read this. The thread on
+        // screen never reads it, so it is never redrawn by it, and shown again draws its rows, kept in the store, in the update
+        // that shows it.
+        let kept = active ? nil : store.transcriptDrawn
+        let dormant = kept != nil
+        let drawn = rows.suffix(kept ?? rows.count)
         // A Project's accepted messages the transcript has not taken in: waiting ones go to the composer's Up next, outcomes stay here.
         let held = projectSend?.held() ?? []
         // A row's background needs only the boundary ID, not a captured copy of the transcript.
@@ -149,7 +158,7 @@ struct ThreadView: View {
             let _ = keepTail(proxy)
             ZStack(alignment: .bottom) {
                 let spacing = leadColumn ? SHLeadMetrics.turnGap : AppLayout.turnSpacing
-                let eager = rows.suffix(Self.eagerRows)
+                let eager = drawn.suffix(Self.eagerRows)
                 ScrollView {
                     // Never animated as a whole (rows, their text, and the tail anchor change on
                     // every streamed chunk): turns that arrive make their own entrance.
@@ -168,11 +177,14 @@ struct ThreadView: View {
                         }
                         if let day = leadDayTitle(rows) { SHLeadDaySeparator(word: day) }
                         LazyVStack(alignment: .leading, spacing: spacing) {
-                            ForEach(rows.prefix(rows.count - eager.count)) { row in
+                            ForEach(drawn.prefix(drawn.count - eager.count)) { row in
                                 rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                             }
                         }
                         .scrollTargetLayout()
+                        // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
+                        // that host does not run). Its identity changes only while the rows are let go, and takes them with it.
+                        .id(dormant)
                         ForEach(eager) { row in
                             rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                         }
@@ -189,6 +201,10 @@ struct ThreadView: View {
                         if projectSend == nil { ThreadSubmissions(store: store, input: input) }
                         ThreadWaitLine(store: store, hasLiveRow: liveRowID != nil, active: active, parentCatchingUp: catchingUp, drawn: drawnVersion,
                                        project: projectActionCards != nil || workerStyle != nil)
+                        // Where its last message goes, while the dispatch that started this thread is going (FleetRemote).
+                        if let line = fleetThread?.sentBy?.goesBackLine, fleetThread?.goesBack == true {
+                            FleetGoesBackBanner(line: line).equatable()
+                        }
                         if let authNotice {
                             ThreadAuthNoticeView(notice: authNotice, actions: authActions)
                                 .id(ThreadAuthNotice.rowID)
@@ -223,6 +239,8 @@ struct ThreadView: View {
                     .environment(\.shProseFileLinks, .app)
                 }
                 .id(transcriptRevision)
+                // A dispatched thread whose Mac stopped answering: its words fade under the banner, the composer and header don't (FleetRemote).
+                .opacity(fleetThread?.offline == true ? AppLayout.fleetOfflineOpacity : 1)
                 .scrollPosition($historyAnchor.position)
                 // The composer floats over the scroll view; inset by its real height so "the
                 // bottom" is the last turn, not the space under the card.
@@ -237,6 +255,14 @@ struct ThreadView: View {
                     historyAnchor.prepended(firstID: first, session: store.sessionKey, active: active) { [weak historyAnchor] id in
                         historyAnchor?.position.scrollTo(id: id, anchor: .top)
                     }
+                }
+                .onChange(of: dormant) { _, dormant in
+                    // Its rows gone, a reader left scrolled up would come back at the top of a shrunken scroll view, with nothing
+                    // to anchor it to the bottom: it comes back at its tail, and no longer keeps its history pinned.
+                    guard dormant, !follower.sticky else { return }
+                    historyAnchor.cancel()
+                    follower.jumpToLatest()
+                    readerPins?.unpin(store, owner: storeOwner)
                 }
                 .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
                 .onChange(of: running) { _, running in
@@ -259,6 +285,8 @@ struct ThreadView: View {
                     }
                     tailGuard.distance = new.distance
                     tailGuard.suspect()
+                    // Every reading that can move the boundary row lands here, so the row itself is not measured per frame.
+                    if historyAnchor.isEngaged { historyAnchor.moved() }
                 }
                 .onScrollPhaseChange { old, phase, context in
                     // Only a live finger/wheel counts. Momentum and programmatic phases are not
@@ -416,6 +444,9 @@ struct ThreadView: View {
                               continues: row.commentAnswered)
                     .equatable()
                     .shArrival(arriving, .list, edge: .bottom)
+            } else if let fleet = fleetThread, let message = fleetMessage(row, fleet) {
+                message
+                    .shArrival(arriving, .list, edge: .bottom)
             } else if segments.count == 1, case .person(let person) = segments[0] {
                 UserTurn(turn: person)
                     .equatable()
@@ -434,6 +465,22 @@ struct ThreadView: View {
                 .equatable()
                 .modifier(CommentAnswer(inCard: card != nil))
         }
+    }
+
+    /// A user turn a dispatch wrote: the result a dispatched thread sent back, or the task a dispatched thread started with. Nil for any other.
+    private func fleetMessage(_ row: NativeThreadRow, _ fleet: FleetThreadSurface) -> FleetMessageRow? {
+        let bubbles = row.turn.bubbles
+        guard bubbles.count == 1, let bubble = bubbles.first else { return nil }
+        let time = bubble.sentAt.map { nativeClockText($0, meridiem: false) }
+        if let result = FleetResultMessage.parse(bubble.text) {
+            return FleetMessageRow(kind: .result(result, fleet.card(for: result)), time: time, actions: fleet.actions)
+        }
+        // The first message of a thread another thread sent: the From box, over the words that were sent.
+        if let sentBy = fleet.sentBy, FleetSentBy.isDispatchMessage(bubble.text) {
+            return FleetMessageRow(kind: .from(sentBy, FleetSentBy.task(in: bubble.text)),
+                                   time: sentBy.at > 0 ? nativeClockText(sentBy.at, meridiem: false) : time, actions: fleet.actions)
+        }
+        return nil
     }
 
     /// What this turn's typed Project references resolve to now (empty in an ordinary thread), so its card redraws when they change.
@@ -473,9 +520,6 @@ struct ThreadView: View {
         .background {
             if row.id == historyRowID {
                 ThreadHistoryAnchor.Probe(anchor: historyAnchor, rowID: row.id)
-                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: { _ in
-                        historyAnchor.moved()
-                    }
             }
         }
     }

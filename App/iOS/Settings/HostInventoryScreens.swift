@@ -19,7 +19,7 @@ struct MCPServersScreen: View {
         let config = store.hostConfig
         let editor = store.mcpEditor
         HostConfigPage(store: store, page: .mcp, configPage: .mcp,
-                       explanation: "The MCP servers a host's agents can use, as its last check found them.") { host in
+                       explanation: "The fleet's MCP servers, as the last check found them.") { host in
             if let inventory = config.mcp[host.id] {
                 let editable = config.canEdit(host)
                 if let problem = inventory.problem {
@@ -37,7 +37,7 @@ struct MCPServersScreen: View {
                     } cancel: { store.mcpEditor = nil }
                 }
                 if inventory.servers.isEmpty {
-                    SettingsFootnote("No MCP servers on \(host.name) yet.")
+                    SettingsFootnote("No MCP servers in the fleet yet.")
                 } else {
                     SHListCard {
                         ForEach(inventory.servers) { server in
@@ -66,12 +66,12 @@ struct MCPServersScreen: View {
                             .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
                             .disabled(config.busy.contains(host.id))
                     }
-                    SettingsFootnote("Servers are kept in \(inventory.configPath) on \(host.name). Secrets go to its Keychain.")
+                    SettingsFootnote("Servers are kept in \(inventory.configPath) on each Mac. Secrets go to its Keychain.")
                 } else {
                     SettingsFootnote(HostInventoryPresentation.mcpGuidance(host: host.name, configPath: inventory.configPath))
                 }
                 if let checked = inventory.checkedAt {
-                    SettingsFootnote("Last checked \(Date(timeIntervalSince1970: checked).formatted(date: .omitted, time: .shortened)) on \(host.name).")
+                    SettingsFootnote("Last checked \(Date(timeIntervalSince1970: checked).formatted(date: .omitted, time: .shortened)).")
                 }
             }
         }
@@ -233,10 +233,10 @@ struct SubagentProfilesScreen: View {
         let store = SettingsStore.of(hosts)
         let config = store.hostConfig
         HostConfigPage(store: store, page: .subagents, configPage: .subagents,
-                       explanation: "A subagent is a Markdown file: a name, a description and the instructions it runs with. An agent starts one by name. These are the host's profiles; its live runs show in each thread.") { host in
+                       explanation: "A subagent is a Markdown file: a name, a description and the instructions it runs with. An agent starts one by name. These are the fleet's profiles; live runs show in each thread.") { host in
             if let profiles = config.profiles[host.id] {
                 if profiles.isEmpty {
-                    SettingsFootnote("No subagents on \(host.name).")
+                    SettingsFootnote("No subagents in the fleet yet.")
                 } else {
                     SHListCard {
                         ForEach(profiles) { profile in
@@ -259,7 +259,7 @@ struct SubagentProfilesScreen: View {
                                 .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
                         }
                     }
-                    .confirmationDialog("Restore the default subagents on \(host.name)?", isPresented: $restoring) {
+                    .confirmationDialog("Restore the default subagents?", isPresented: $restoring) {
                         Button("Restore defaults", role: .destructive) {
                             let expected = Dictionary(profiles.filter(\.isDefault).compactMap { p in p.fingerprint.map { (p.file, $0) } },
                                                       uniquingKeysWith: { first, _ in first })
@@ -269,7 +269,7 @@ struct SubagentProfilesScreen: View {
                         Text("scout, reviewer, planner and worker go back to how Shepherd ships them. Your own profiles stay.")
                     }
                 } else {
-                    SettingsFootnote("Edit, add, delete or restore profiles in Settings ▸ Subagents on \(host.name).")
+                    SettingsFootnote("Edit, add, delete or restore profiles in Settings ▸ Subagents on a Mac.")
                 }
             }
         }
@@ -329,7 +329,7 @@ struct SubagentProfileScreen: View {
                             .buttonStyle(.sh(.secondary))
                     }
                 }
-                .confirmationDialog("Delete \(file) on \(host.name)?", isPresented: $deleting) {
+                .confirmationDialog("Delete \(file)?", isPresented: $deleting) {
                     Button("Delete", role: .destructive) {
                         guard let fingerprint = loaded?.fingerprint else { return }
                         Task {
@@ -337,7 +337,7 @@ struct SubagentProfileScreen: View {
                         }
                     }
                 }
-                SettingsFootnote("A file changed on \(host.name) since it was opened here isn't overwritten: open it again.")
+                SettingsFootnote("A file changed since it was opened here isn't overwritten: open it again.")
             } else if let loaded {
                 Text(loaded.text)
                     .font(.sh(.mono))
@@ -347,7 +347,7 @@ struct SubagentProfileScreen: View {
                     .padding(SH.Space.l)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .shCard(radius: SHListMetrics.cardRadius)
-                SettingsFootnote("Edit it in Settings ▸ Subagents on \(host.name).")
+                SettingsFootnote("Edit it in Settings ▸ Subagents on a Mac.")
             }
             Color.clear.frame(height: 0)
                 .task(id: host.id) {
@@ -605,11 +605,10 @@ private struct HostConfigPage<Content: View>: View {
     let explanation: String?
     @ViewBuilder let content: (SettingsHost) -> Content
     @Environment(\.settingsColumn) private var inColumn
-    @Environment(MobileNavigator.self) private var navigator
     @State private var generation = 0
 
     var body: some View {
-        let host = store.settingsHost(chosenHost: navigator.settingsSelection.chosenHost)
+        let host = store.settingsHost
         let config = store.hostConfig
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
@@ -619,9 +618,6 @@ private struct HostConfigPage<Content: View>: View {
                         .foregroundStyle(Color.sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, SH.Space.xs)
-                }
-                if store.hosts.count > 1 {
-                    HostChooser(store: store)
                 }
                 if let host {
                     if let problem = config.problems[host.id] {
@@ -640,7 +636,7 @@ private struct HostConfigPage<Content: View>: View {
                         }
                     }
                 } else {
-                    SettingsFootnote("Add a host in Settings ▸ Hosts to see this.")
+                    SettingsFootnote("Add a host in Settings ▸ Fleet to see this.")
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)

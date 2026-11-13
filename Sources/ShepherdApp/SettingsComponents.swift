@@ -11,21 +11,27 @@ struct SettingsPage<Content: View, Accessory: View>: View {
     let explanation: String
     /// Trailing the header, bottom-aligned (Sign-in's Re-import from your pi).
     let accessory: Accessory
+    /// A line under the explanation (Fleet's sync status), a little closer than the groups.
+    var status: AnyView?
     let content: Content
 
-    init(title: String, explanation: String, @ViewBuilder accessory: () -> Accessory, @ViewBuilder content: () -> Content) {
+    init(title: String, explanation: String, status: AnyView? = nil, @ViewBuilder accessory: () -> Accessory, @ViewBuilder content: () -> Content) {
         self.title = title
         self.explanation = explanation
+        self.status = status
         self.accessory = accessory()
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
-            HStack(alignment: .bottom, spacing: SH.Space.xl) {
-                SettingsHeader(title: title, explanation: explanation)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                accessory.fixedSize()
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                HStack(alignment: .bottom, spacing: SH.Space.xl) {
+                    SettingsHeader(title: title, explanation: explanation)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    accessory.fixedSize()
+                }
+                if let status { status }
             }
             content
         }
@@ -35,8 +41,8 @@ struct SettingsPage<Content: View, Accessory: View>: View {
 }
 
 extension SettingsPage where Accessory == EmptyView {
-    init(title: String, explanation: String, @ViewBuilder content: () -> Content) {
-        self.init(title: title, explanation: explanation, accessory: { EmptyView() }, content: content)
+    init(title: String, explanation: String, status: AnyView? = nil, @ViewBuilder content: () -> Content) {
+        self.init(title: title, explanation: explanation, status: status, accessory: { EmptyView() }, content: content)
     }
 }
 

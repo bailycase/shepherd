@@ -356,13 +356,16 @@ public struct SHSidebarRow: View, Equatable {
     let hasGoal: Bool
     let nested: Bool
     let badge: Badge?
+    let elbow: Bool
     @Environment(\.shDensity) private var density
     @State private var hovering = false
 
     /// `nested` is a thread inside a project of the project tree: its leading slot sits under
-    /// the project's folder (`SHDensity.treeChildLeading`).
+    /// the project's folder (`SHDensity.treeChildLeading`). `elbow` marks a thread under the thread that sent it
+    /// to another Mac (FleetSidebar): a turn arrow before its dot.
     public init(_ title: String, leading: Leading, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none,
-                hasGoal: Bool = false, nested: Bool = false, badge: Badge? = nil) {
+                hasGoal: Bool = false, nested: Bool = false, badge: Badge? = nil, elbow: Bool = false) {
+        self.elbow = elbow
         self.badge = badge
         self.title = title
         self.leading = leading
@@ -375,14 +378,14 @@ public struct SHSidebarRow: View, Equatable {
 
     /// A thread's row: its state dot.
     public init(_ title: String, state: AgentState, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none,
-                hasGoal: Bool = false, nested: Bool = false, badge: Badge? = nil) {
+                hasGoal: Bool = false, nested: Bool = false, badge: Badge? = nil, elbow: Bool = false) {
         self.init(title, leading: .dot(state), selected: selected, dimmed: dimmed, accessory: accessory, hasGoal: hasGoal, nested: nested,
-                  badge: badge)
+                  badge: badge, elbow: elbow)
     }
 
     public nonisolated static func == (a: SHSidebarRow, b: SHSidebarRow) -> Bool {
         a.title == b.title && a.leading == b.leading && a.selected == b.selected && a.dimmed == b.dimmed
-            && a.accessory == b.accessory && a.hasGoal == b.hasGoal && a.nested == b.nested && a.badge == b.badge
+            && a.accessory == b.accessory && a.hasGoal == b.hasGoal && a.nested == b.nested && a.badge == b.badge && a.elbow == b.elbow
     }
 
     public var body: some View {
@@ -390,6 +393,13 @@ public struct SHSidebarRow: View, Equatable {
         // A status report, a settled name, or ⌘ held changes one part in place (`.content`);
         // selection is not animated here, so it lands at once.
         HStack(spacing: density.sidebarRowGap) {
+            if elbow {
+                Image(systemName: "arrow.turn.down.right")
+                    .font(.sh(.micro, weight: .regular))
+                    .foregroundStyle(.sh.textTertiary)
+                    .frame(width: SHSidebarMetrics.rowSlot)
+                    .accessibilityHidden(true)
+            }
             leadingView
                 .frame(width: SHSidebarMetrics.rowSlot)
                 .shAnimation(.content, value: leading)

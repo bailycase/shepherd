@@ -3,7 +3,7 @@ import ShepherdSessions
 import Testing
 @testable import ShepherdApp
 
-/// Settings ▸ Remote says why the listener couldn't start in one plain sentence; the error
+/// Settings ▸ Fleet says why the listener couldn't start in one plain sentence; the error
 /// itself is only the line's tooltip.
 @Suite("Remote listener failures")
 struct RemoteListenerFailureTests {
@@ -32,22 +32,5 @@ struct RemoteListenerFailureTests {
         let failure = RemoteListenerFailure(SessionServerError.conflict("remote listener already running"), port: 7434)
         #expect(failure.sentence == "Couldn't start the listener.")
         #expect(failure.detail.contains("already running"))
-    }
-}
-
-/// Settings ▸ Remote's Add host form refuses a port outside 1–65535 under the field, and says
-/// nothing while the field is empty.
-@Suite("Remote port field")
-struct RemotePortFieldTests {
-    @Test(arguments: [
-        ("7433", UInt16?.some(7433), String?.none),
-        (" 22 ", 22, nil),
-        ("", nil, nil),
-        ("0", nil, "Ports run from 1 to 65535."),
-        ("70000", nil, "Ports run from 1 to 65535."),
-    ])
-    func aPortOutsideTheRangeIsRefusedUnderTheField(text: String, port: UInt16?, problem: String?) {
-        #expect(RemotePortField.port(text) == port)
-        #expect(RemotePortField.problem(text) == problem)
     }
 }

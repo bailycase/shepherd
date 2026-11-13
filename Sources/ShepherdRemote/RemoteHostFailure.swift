@@ -85,11 +85,11 @@ public struct RemoteHostFailure: Hashable, Sendable {
         switch kind {
         case .unreachable: "Shepherd isn't running on \(host), or it can't be reached."
         case .lost: "Lost the connection to \(host)."
-        case .tokenRefused: "\(host) refused the token. Edit the host to paste its current token."
+        case .tokenRefused: "\(host) refused the token. This device may have been revoked, or the Mac may have stopped accepting its old token. Pair it again with a code."
         case .versionMismatch(hostNewer: true): "\(host) runs a newer Shepherd. Update Shepherd here to connect."
         case .versionMismatch(hostNewer: false): "\(host) runs an older Shepherd. Update Shepherd there to connect."
         case .versionMismatch(hostNewer: nil): "\(host) runs another version of Shepherd. Update both to connect."
-        case .tokenMissing: "The token is missing. Edit the host to add it."
+        case .tokenMissing: "No token is saved for \(host). Pair it again with a code."
         case .tokenUnreadable: "The saved token can't be read until this device is unlocked."
         case .other: "Couldn't connect to \(host)."
         }

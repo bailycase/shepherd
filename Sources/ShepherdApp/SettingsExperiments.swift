@@ -29,6 +29,7 @@ struct ExperimentsSettings: View {
                             DesignToolCard(settings: settings)
                             GoalExperimentCard(settings: settings)
                             ProjectsExperimentCard(settings: settings)
+                            FleetExperimentCard(settings: settings)
                             if model.settings.enabled || !model.snapshot.waiting.isEmpty {
                                 WaitingSuggestions(model: model, instructions: instructions, now: context.date)
                                     .shTransition(.disclosure)
@@ -221,8 +222,7 @@ private struct SuggestedInstructionsCard: View {
                         }
                     }
                     ExperimentOptionRow(title: "Hosts",
-                                        note: "Lines go where Settings › Instructions sends them: right now that's "
-                                            + (instructions.sameEverywhere ? "every host." : "This Mac alone.")) {
+                                        note: "Lines go to Settings › Instructions, which the whole fleet shares.") {
                         Button("Open Instructions", action: openInstructions)
                             .buttonStyle(.shLink(font: .shSans(AppLayout.experimentOptionNoteSize)))
                     }
@@ -303,7 +303,7 @@ private struct WaitingSuggestions: View {
             }
             ForEach(waiting) { suggestion in
                 SuggestionCard(model: model, suggestion: suggestion,
-                               hosts: SuggestionsPresentation.hostsWord(sameEverywhere: instructions.sameEverywhere), now: now)
+                               hosts: SuggestionsPresentation.hostsWord, now: now)
                     .shTransition(.list)
             }
         }

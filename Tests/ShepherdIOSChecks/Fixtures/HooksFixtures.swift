@@ -90,11 +90,11 @@ extension FixtureData {
     /// Opens payments' no-env.sh in the edit form and runs its test, as the board shows it.
     @MainActor static func editHook(_ app: MobileApp, json: Bool) async {
         let store = SettingsStore.of(app.hosts)
-        guard let host = store.hosts.first(where: { $0.id == studio }) else { return }
-        await store.hooks.refresh(host)
-        guard let page = store.hooks.state(of: host).page, let entry = page.snapshot.entries.first(where: { $0.matcher == "Edit|Write" }) else { return }
+        guard store.hosts.contains(where: { $0.id == studio }) else { return }
+        await store.hooks.refresh()
+        guard let page = store.hooks.state.page, let entry = page.snapshot.entries.first(where: { $0.matcher == "Edit|Write" }) else { return }
         let editor = ClientHookEditor(editing: entry, in: page.snapshot)
         store.hookEditor = editor
-        if json { editor.pane = .json } else { await editor.test(with: store.hooks, host: host) }
+        if json { editor.pane = .json } else { await editor.test(with: store.hooks) }
     }
 }

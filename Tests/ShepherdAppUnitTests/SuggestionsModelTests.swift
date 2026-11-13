@@ -29,7 +29,7 @@ struct SuggestionsModelTests {
                                   now: Date(timeIntervalSince1970: Double(1_000 + offset)))
         }
         let hosts = RemoteHostStore(defaults: defaults, connects: false)
-        let instructions = InstructionsModel(store: instructionsStore, remoteHosts: hosts, defaults: defaults)
+        let instructions = InstructionsModel(store: instructionsStore, remoteHosts: hosts)
         await instructions.refresh()
         let model = SuggestionsModel(store: store, instructions: instructions, remoteHosts: hosts)
         await model.refresh()
@@ -41,13 +41,13 @@ struct SuggestionsModelTests {
         let suggestion = try #require(model.snapshot.waiting.first)
         await model.add(suggestion)
         #expect(instructionsStore.snapshot().agents == "- Ask for join keys first.\n")
-        #expect(instructions.saved(.agents, on: .local) == "- Ask for join keys first.\n")
+        #expect(instructions.saved(.agents) == "- Ask for join keys first.\n")
         #expect(model.snapshot.waiting.isEmpty)
         #expect(model.snapshot.added.map(\.line) == ["- Ask for join keys first."])
 
         await model.undo(try #require(model.snapshot.added.first))
         #expect(instructionsStore.snapshot().agents.isEmpty)
-        #expect(instructions.saved(.agents, on: .local) == "")
+        #expect(instructions.saved(.agents) == "")
     }
 
     @Test func aLineGoesInAsEditedAndRetargeted() async throws {

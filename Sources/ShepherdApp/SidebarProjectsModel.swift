@@ -10,19 +10,15 @@ import ShepherdUI
 
 /// A project in the tree.
 enum SidebarProjectID: Hashable {
-    /// One of This Mac's spaces; a connected host's threads in a project of the same name join
-    /// it while the tree isn't grouped by host.
+    /// One of This Mac's spaces; a connected host's threads in a project of the same name join it.
     case local(SpaceID)
-    /// A host's space, in its host's section (Group by host).
-    case remote(hostID: UUID, SpaceID)
-    /// A project only hosts have, by name (every host's threads in it), while not grouped.
+    /// A project only hosts have, by name (every host's threads in it).
     case named(String)
 
     /// The key its collapsed state is remembered under.
     var key: String {
         switch self {
         case .local(let space): "local:\(space.rawValue)"
-        case .remote(let host, let space): "\(host.uuidString):\(space.rawValue)"
         case .named(let name): "name:\(name)"
         }
     }
@@ -100,21 +96,18 @@ struct SidebarRunGroupRow: Equatable {
     }
 }
 
-/// A section of the tree: Projects, or a host's (This Mac first) while grouped by host.
+/// A section of the tree: Projects, or This Mac's pinned spaces above them.
 struct SidebarTreeSection: Identifiable, Equatable {
     enum Header: Equatable {
         /// "Projects", with its + (add a project, or bring back a hidden one).
         case projects
         /// This Mac's pinned spaces, above the ordinary space tree.
         case pinnedSpaces
-        /// A host's name; nil `id` is This Mac.
-        case host(name: String, id: UUID?, unreachable: Bool)
 
         var id: String {
             switch self {
             case .projects: "header.projects"
             case .pinnedSpaces: "header.pinnedSpaces"
-            case .host(_, let id, _): "header.host.\(id?.uuidString ?? "local")"
             }
         }
     }
@@ -130,7 +123,6 @@ struct SidebarTreeSection: Identifiable, Equatable {
         func scope(_ project: SidebarProject) -> String {
             switch project.id {
             case .local: "local"
-            case .remote(let host, _): host.uuidString
             case .named: project.places.count == 1 ? project.places.keys.first.flatMap { $0 }?.uuidString ?? project.id.key : project.id.key
             }
         }
@@ -326,7 +318,6 @@ enum SidebarTreeItem: Identifiable, Equatable {
 
 /// What the tree reads beyond the source: Settings ▸ Appearance ▸ Sidebar.
 struct SidebarTreeOptions: Equatable {
-    var groupByHost = false
     /// Idle and finished threads last active before this (ms since 1970) leave the tree; nil
     /// keeps them all.
     var idleCutoff: Double?
@@ -352,7 +343,7 @@ extension SidebarDerivation {
         var builder = TreeBuilder(options: options)
         builder.addLocal(source)
         for (hostIndex, host) in source.hosts.enumerated() {
-            builder.addHost(host, index: hostIndex + 1, local: source.local)
+            builder.addHost(host, index: hostIndex + 1, local: source.local, source: source)
         }
         return builder.finish(source)
     }
@@ -391,13 +382,15 @@ private struct TreeBuilder {
     /// Hosts whose projects dim: every place a named project lives is offline.
     var onlineHosts: [SidebarProjectID: Bool] = [:]
     /// This Mac's projects by name, hidden ones included: a host's project of the same name
-    /// joins it (and hides with it) while not grouped.
+    /// joins it (and hides with it).
     var localByName: [String: SpaceID] = [:]
     var hiddenLocal: Set<SpaceID> = []
     /// Triggered automations with run threads, and what their groups roll up.
     var runGroupNames: [AutomationID: String] = [:]
     var unreadRuns: Set<AgentID> = []
     var pausedGroups: Set<AutomationID> = []
+    /// Each thread another Mac runs for another thread: the row of the one that sent it (`SidebarDerivation.nestDispatched`).
+    var dispatchParents: [SidebarRowID: SidebarRowID] = [:]
 
     init(options: SidebarTreeOptions) { self.options = options }
 
@@ -464,6 +457,7 @@ private struct TreeBuilder {
                                                  notSignedIn: notSignedIn, waiting: source.waiting.contains(agent.id),
                                                  since: source.statusSince[agent.id])
             if let pull = source.pullRequests[agent.id] { row.attach(pull) }
+            if let sender = SidebarDerivation.fleetSender(of: agent, source) { dispatchParents[row.id] = sender }
             if let origin, automation == nil {
                 row.runGroup = origin.id
                 runGroupNames[origin.id] = origin.name
@@ -475,16 +469,13 @@ private struct TreeBuilder {
         }
     }
 
-    mutating func addHost(_ host: SidebarSource.Host, index hostIndex: Int, local: ShepherdState) {
+    mutating func addHost(_ host: SidebarSource.Host, index hostIndex: Int, local: ShepherdState, source: SidebarSource) {
         let state = host.state
         let projectSpaces = state.spaces.filter { !$0.hidden }
         var projectOf: [SpaceID: SidebarProjectID] = [:]
         for space in projectSpaces {
             let id: SidebarProjectID
-            if options.groupByHost {
-                guard !space.sidebarHidden else { continue }
-                id = .remote(hostID: host.id, space.id)
-            } else if let mine = localByName[space.name] {
+            if let mine = localByName[space.name] {
                 id = .local(mine)
             } else {
                 guard !space.sidebarHidden else { continue }
@@ -516,9 +507,8 @@ private struct TreeBuilder {
             }
             guard let project else { continue }
             let waiting = !host.offline && agent.status == .blocked
-            var row = SidebarDerivation.remoteRow(agent, host: host, automation: automation != nil, needsYou: waiting)
-            // Grouped, the section says which host: the row carries no tag.
-            if options.groupByHost, case .tag = row.accessory { row.accessory = .none }
+            let row = SidebarDerivation.remoteRow(agent, host: host, automation: automation != nil, needsYou: waiting)
+            if let sender = SidebarDerivation.fleetSender(of: agent, source) { dispatchParents[row.id] = sender }
             add(Entry(row: row, waiting: waiting, running: !host.offline && agent.status == .working, key: agent.lastActiveAt ?? -1,
                       host: hostIndex, index: index), to: project)
         }
@@ -555,7 +545,12 @@ private struct TreeBuilder {
                 if entry.waiting { group.rollup = .waiting } else if entry.running, group.rollup == .quiet { group.rollup = .running }
                 project.runGroups[automation] = group
             }
-            project.rows = rows.map(\.row)
+            project.rows = SidebarDerivation.nestDispatched(rows.map(\.row), parents: dispatchParents).map { row in
+                // A thread under the one that sent it sits a level in, as a project's child does.
+                var row = row
+                if row.fleetNested { row.projectDepth += 1 }
+                return row
+            }
             project.rollup = rows.contains(where: \.waiting) ? .waiting : rows.contains(where: \.running) ? .running : .quiet
             if case .local = id {} else { project.dimmed = onlineHosts[id] == false }
             built[id] = project
@@ -566,22 +561,7 @@ private struct TreeBuilder {
             if case .local(let space) = id { return !hiddenLocal.contains(space) }
             return true
         }
-        if options.groupByHost {
-            tree.sections.append(SidebarTreeSection(
-                header: .host(name: "This Mac", id: nil, unreachable: false),
-                projects: shown.compactMap { if case .local = $0 { built[$0] } else { nil } }))
-        }
-        if options.groupByHost {
-            for host in source.hosts {
-                tree.sections.append(SidebarTreeSection(
-                    header: .host(name: host.name, id: host.id, unreachable: host.offline),
-                    projects: shown.compactMap { id in
-                        if case .remote(let owner, _) = id, owner == host.id { built[id] } else { nil }
-                    }))
-            }
-        } else {
-            tree.sections = [SidebarTreeSection(header: .projects, projects: shown.compactMap { built[$0] })]
-        }
+        tree.sections = [SidebarTreeSection(header: .projects, projects: shown.compactMap { built[$0] })]
         var pinned: [SidebarProject] = []
         for index in tree.sections.indices {
             tree.sections[index].nestProjects(pinned: options.pinnedSpaces)

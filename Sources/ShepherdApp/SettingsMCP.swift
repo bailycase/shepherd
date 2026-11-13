@@ -1,3 +1,4 @@
+import ShepherdSessions
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -65,6 +66,7 @@ struct MCPSettings: View {
             store.refreshIfStale()
             if expanded == nil { expanded = initiallyExpanded }
         }
+        .onChange(of: vm.settings.fleetEnabled, initial: true) { _, on in store.inFleet = on }
         .sheet(item: $sheet) { sheet in
             switch sheet {
             case .add(let kind):
@@ -317,13 +319,11 @@ private struct MCPRail: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 SHSectionHeader("Options", style: .settings).padding(.horizontal, SH.Space.xxs).padding(.bottom, SH.Space.m)
-                option("Same servers on every host", note: "Adds, edits and removals go to all hosts. For now, only this Mac.",
-                       isOn: $settings.mcpSameEverywhere)
                 option("Also use a repo’s .mcp.json", note: "Off: only the servers on this page, in every repo.",
                        isOn: $settings.mcpProjectConfig)
             }
             VStack(alignment: .leading, spacing: SH.Space.s) {
-                SHSectionHeader("Hosts", style: .settings) {
+                SHSectionHeader("Where they live", style: .settings) {
                     Text(store.configPath)
                         .font(.shMono(AppLayout.mcpPathSize))
                         .foregroundStyle(sh.textTertiary)
@@ -332,8 +332,20 @@ private struct MCPRail: View {
                         .help(store.dependencies.file.url.path)
                 }
                 .padding(.horizontal, SH.Space.xxs)
-                SHHostStateRow("This Mac", detail: "\(store.connectedCount) connected", mark: .done)
-                    .padding(.horizontal, SH.Space.xxs)
+                // One file per Mac, kept the same on every Mac in the fleet: a change here is a change everywhere.
+                HStack(spacing: SH.Space.m) {
+                    Image(systemName: "checkmark")
+                        .font(.shSans(SHSkillMetrics.hostMarkSize - 2, .bold))
+                        .foregroundStyle(sh.done)
+                        .accessibilityHidden(true)
+                    Text("\(store.connectedCount) connected · shared across the fleet")
+                        .font(.shSans(SHSkillMetrics.hostTextSize))
+                        .foregroundStyle(sh.textTertiary)
+                        .lineLimit(1)
+                }
+                .frame(minHeight: SHSkillMetrics.hostRowHeight)
+                .accessibilityElement(children: .combine)
+                .padding(.horizontal, SH.Space.xxs)
             }
         }
     }

@@ -20,7 +20,7 @@ enum WorktreeDeleteAction: String, CaseIterable {
 /// agent or another process makes is confirmed whatever is stored here.
 enum SkippableConfirmation: String, CaseIterable {
     case removeSpace, deleteAgent, deleteDesign, deleteDesignSystem, revertFile, stopAll, quit, removeHost,
-         removeMCPServer, removeSpaceMCPServer, deleteProject, updateHost, forgetSkillReceipt,
+         removeMCPServer, removeSpaceMCPServer, deleteProject, updateHost,
          discardSubagentEdits, restoreSubagents, deleteSubagent
 
     /// Its name in Settings ▸ Advanced ▸ Confirmations.
@@ -38,7 +38,6 @@ enum SkippableConfirmation: String, CaseIterable {
         case .removeSpaceMCPServer: "Remove a space's MCP server"
         case .deleteProject: "Delete project"
         case .updateHost: "Update and restart host"
-        case .forgetSkillReceipt: "Stop waiting for a skill change"
         case .discardSubagentEdits: "Discard subagent edits"
         case .restoreSubagents: "Restore default subagents"
         case .deleteSubagent: "Delete subagent"
@@ -87,7 +86,6 @@ final class AppSettings {
         static let skillsInSlashMenu = "shepherd.skills.slashMenu"
         static let hiddenSlashCommands = "shepherd.pi.slashCommands.hidden"
         static let mcpProjectConfig = "shepherd.mcp.projectConfig"
-        static let mcpSameEverywhere = "shepherd.mcp.sameEverywhere"
         static let queueDelivery = "shepherd.agent.queueDelivery"
         static let trimToolOutput = "shepherd.agent.trimToolOutput"
         static let notifyOnTurnFinished = "shepherd.agent.notifyOnTurnFinished"
@@ -114,7 +112,6 @@ final class AppSettings {
         static let sidebarWidth = "shepherd.ui.sidebarWidth"
         static let sidebarRowDensity = "shepherd.sidebarRowDensity"
         static let sidebarStyle = "shepherd.sidebar.style"
-        static let sidebarGroupByHost = "shepherd.sidebar.groupByHost"
         static let sidebarKeepIdleDays = "shepherd.sidebar.keepIdleDays"
         static let shareDiagnostics = "shepherd.diagnostics.enabled"
         static let remoteListenerEnabled = "shepherd.remote.listener"
@@ -128,6 +125,14 @@ final class AppSettings {
         static let goalsEnabled = "shepherd.experiments.goals"
         static let projectsEnabled = "shepherd.experiments.projects"
         static let designToolEnabled = "shepherd.experiments.designTool"
+        static let fleetEnabled = "shepherd.experiments.fleet"
+        static let fleetWeights = "shepherd.fleet.weights"
+        static let fleetThreadsCanSend = "shepherd.fleet.threadsCanSend"
+        static let fleetThreadCap = "shepherd.fleet.threadCap"
+        static let fleetUncommitted = "shepherd.fleet.uncommitted"
+        static let fleetSnapshotExcludes = "shepherd.fleet.snapshotExcludes"
+        static let fleetAutoDispatch = "shepherd.fleet.autoDispatch"
+        static let fleetBatteryCountsHalf = "shepherd.fleet.batteryCountsHalf"
         static let implementOpensThread = "shepherd.designs.implementOpensThread"
 
         static let all = [
@@ -137,12 +142,12 @@ final class AppSettings {
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
-            sidebarStyle, sidebarGroupByHost, sidebarKeepIdleDays,
+            sidebarStyle, sidebarKeepIdleDays,
             shareDiagnostics, remoteListenerEnabled, remoteListenerPort,
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeGeneratePRDescription, worktreeDeleteAction, worktreeCloseOnMerge, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
-            mcpProjectConfig, mcpSameEverywhere,
-            goalsEnabled, projectsEnabled, designToolEnabled, implementOpensThread,
+            mcpProjectConfig,
+            goalsEnabled, projectsEnabled, designToolEnabled, fleetEnabled, fleetWeights, fleetThreadsCanSend, fleetThreadCap, fleetAutoDispatch, fleetBatteryCountsHalf, fleetUncommitted, fleetSnapshotExcludes, implementOpensThread,
             filesWordWrap, filesMarkdownPreview,
         ]
 
@@ -229,12 +234,6 @@ final class AppSettings {
     /// agents get only the servers on that page. Agents launched after a change follow it.
     var mcpProjectConfig: Bool {
         didSet { store.set(mcpProjectConfig, forKey: Key.mcpProjectConfig) }
-    }
-
-    /// Settings ▸ MCP servers ▸ Same servers on every host. Stored for stage 2; stage 1 has
-    /// only This Mac.
-    var mcpSameEverywhere: Bool {
-        didSet { store.set(mcpSameEverywhere, forKey: Key.mcpSameEverywhere) }
     }
 
     /// How a queue goes when pi settles, as this Mac's default for its agents (an agent's own
@@ -423,12 +422,6 @@ final class AppSettings {
         didSet { store.set(sidebarStyle.rawValue, forKey: Key.sidebarStyle) }
     }
 
-    /// Group by host, for the project tree: a section per host with its projects inside. Off,
-    /// every host's threads sit in their project with the host as a tag on the row.
-    var sidebarGroupByHost: Bool {
-        didSet { store.set(sidebarGroupByHost, forKey: Key.sidebarGroupByHost) }
-    }
-
     /// Keep idle threads, for the project tree: an idle or finished thread leaves its project
     /// after this many days without activity (it stays in the palette). Running threads and
     /// anything waiting on you stay. 0 keeps them all.
@@ -531,6 +524,91 @@ final class AppSettings {
     }
     @ObservationIgnored var onProjectsChange: ((Bool) -> Void)?
 
+    /// Settings ▸ Experiments ▸ Fleet: this Mac's host pairs with other Macs and holds links to
+    /// them (Settings ▸ Fleet). Off by default; off ends the links and leaves what was paired saved.
+    var fleetEnabled: Bool {
+        didSet {
+            store.set(fleetEnabled, forKey: Key.fleetEnabled)
+            if fleetEnabled != oldValue { onFleetChange?(fleetEnabled) }
+        }
+    }
+    @ObservationIgnored var onFleetChange: ((Bool) -> Void)?
+
+    /// The Fleet page's Send work here choice per Mac, under the setting keys `fleet.weight.<hostID>`
+    /// (`FleetSendWeight.settingKey`). A Mac with no entry is Normal.
+    var fleetWeights: [String: FleetSendWeight] {
+        didSet {
+            store.set(fleetWeights.mapValues(\.rawValue), forKey: Key.fleetWeights)
+            if fleetWeights != oldValue { onFleetWeightsChange?() }
+        }
+    }
+    @ObservationIgnored var onFleetWeightsChange: (() -> Void)?
+
+    /// Settings ▸ Fleet ▸ Threads can send work (`HostSettings.fleetThreadsCanSend`): a thread may
+    /// dispatch work to another Mac on its own. Off until turned on. Synced across the fleet.
+    var fleetThreadsCanSend: Bool {
+        didSet { store.set(fleetThreadsCanSend, forKey: Key.fleetThreadsCanSend) }
+    }
+
+    /// How many dispatches one thread may have in flight (`HostSettings.fleetThreadCap`). Synced across the fleet.
+    var fleetThreadCap: Int {
+        didSet {
+            let clamped = HostSettings.clampedThreadCap(fleetThreadCap)
+            if clamped != fleetThreadCap { fleetThreadCap = clamped; return }
+            store.set(fleetThreadCap, forKey: Key.fleetThreadCap)
+        }
+    }
+
+    /// Settings ▸ Fleet ▸ Code ▸ Uncommitted changes (`HostSettings.fleetUncommitted`). Synced across the fleet.
+    var fleetUncommitted: FleetUncommittedChanges {
+        didSet { store.set(fleetUncommitted.rawValue, forKey: Key.fleetUncommitted) }
+    }
+
+    /// Settings ▸ Fleet ▸ Code ▸ Ignored files ▸ Per space, under the setting keys `fleet.snapshotExcludes.<spaceID>`. Synced across the fleet.
+    var fleetSnapshotExcludes: [String: FleetSnapshotExcludes] {
+        didSet {
+            if let data = try? JSONEncoder().encode(fleetSnapshotExcludes) { store.set(data, forKey: Key.fleetSnapshotExcludes) }
+        }
+    }
+
+    func fleetExcludes(of spaceID: SpaceID) -> FleetSnapshotExcludes {
+        fleetSnapshotExcludes[FleetSnapshotExcludes.settingKey(spaceID: spaceID.rawValue)] ?? FleetSnapshotExcludes()
+    }
+
+    func setFleetExcludes(_ excludes: FleetSnapshotExcludes, of spaceID: SpaceID) {
+        let key = FleetSnapshotExcludes.settingKey(spaceID: spaceID.rawValue)
+        if excludes.isEmpty { fleetSnapshotExcludes[key] = nil } else { fleetSnapshotExcludes[key] = excludes }
+    }
+
+    /// Settings ▸ Fleet ▸ Auto dispatch (`HostSettings.fleetAutoDispatch`): New thread's Auto place sends the work to the Mac with
+    /// the most room. Nil until the person chooses; it then reads as on once a second Mac is paired (`autoDispatch(pairedMacs:)`).
+    /// Synced across the fleet.
+    var fleetAutoDispatch: Bool? {
+        didSet {
+            if let fleetAutoDispatch { store.set(fleetAutoDispatch, forKey: Key.fleetAutoDispatch) } else { store.removeObject(forKey: Key.fleetAutoDispatch) }
+            if fleetAutoDispatch != oldValue { onFleetWeightsChange?() }
+        }
+    }
+
+    /// Settings ▸ Fleet ▸ On battery (`HostSettings.fleetBatteryCountsHalf`): a Mac on battery counts half when Auto picks one. Synced.
+    var fleetBatteryCountsHalf: Bool {
+        didSet {
+            store.set(fleetBatteryCountsHalf, forKey: Key.fleetBatteryCountsHalf)
+            if fleetBatteryCountsHalf != oldValue { onFleetWeightsChange?() }
+        }
+    }
+
+    /// Whether Auto places New thread's work: the person's choice, else on while this Mac is paired with another.
+    func autoDispatch(pairedMacs: Int) -> Bool { fleetAutoDispatch ?? (pairedMacs > 0) }
+
+    func fleetWeight(of hostID: UUID) -> FleetSendWeight {
+        fleetWeights[FleetSendWeight.settingKey(hostID: hostID)] ?? .normal
+    }
+
+    func setFleetWeight(_ weight: FleetSendWeight, of hostID: UUID) {
+        fleetWeights[FleetSendWeight.settingKey(hostID: hostID)] = weight
+    }
+
     /// Settings ▸ Experiments ▸ Design tool: the Designs destination, design rows in Recents,
     /// and New thread's "Start a design". Off by default; designs made while it was on keep
     /// their files and agents while it is off.
@@ -566,6 +644,14 @@ final class AppSettings {
             .flatMap(ServiceTier.init(rawValue:)) ?? Defaults.serviceTier
         goalsEnabled = store.object(forKey: Key.goalsEnabled) as? Bool ?? false
         projectsEnabled = store.object(forKey: Key.projectsEnabled) as? Bool ?? false
+        fleetEnabled = store.object(forKey: Key.fleetEnabled) as? Bool ?? false
+        fleetWeights = (store.dictionary(forKey: Key.fleetWeights) as? [String: String] ?? [:]).compactMapValues(FleetSendWeight.init(rawValue:))
+        fleetThreadsCanSend = store.object(forKey: Key.fleetThreadsCanSend) as? Bool ?? false
+        fleetThreadCap = HostSettings.clampedThreadCap(store.object(forKey: Key.fleetThreadCap) as? Int ?? HostSettings.fleetThreadCapDefault)
+        fleetUncommitted = store.string(forKey: Key.fleetUncommitted).flatMap(FleetUncommittedChanges.init(rawValue:)) ?? .sendThem
+        fleetSnapshotExcludes = (store.data(forKey: Key.fleetSnapshotExcludes).flatMap { try? JSONDecoder().decode([String: FleetSnapshotExcludes].self, from: $0) }) ?? [:]
+        fleetAutoDispatch = store.object(forKey: Key.fleetAutoDispatch) as? Bool
+        fleetBatteryCountsHalf = store.object(forKey: Key.fleetBatteryCountsHalf) as? Bool ?? true
         // Naming is always on now; only its model is a setting.
         store.removeObject(forKey: "shepherd.agent.autoName")
         // The session naming model became the text generation model: move its stored choice to
@@ -585,7 +671,6 @@ final class AppSettings {
         // pi reports nothing an agent could open a sign-in page from: Settings ▸ MCP servers shows what needs you.
         store.removeObject(forKey: "shepherd.mcp.openSignInPages")
         mcpProjectConfig = store.object(forKey: Key.mcpProjectConfig) as? Bool ?? false
-        mcpSameEverywhere = store.object(forKey: Key.mcpSameEverywhere) as? Bool ?? true
         queueDelivery = store.string(forKey: Key.queueDelivery)
             .flatMap(NativeQueueMode.init(rawValue:)) ?? Defaults.queueDelivery
         trimToolOutput = store.object(forKey: Key.trimToolOutput) as? Bool ?? true
@@ -618,7 +703,6 @@ final class AppSettings {
         sidebarWidth = Self.clampSidebarWidth(width == 0 ? Self.defaultSidebarWidth : width)
         sidebarRowDensity = store.string(forKey: Key.sidebarRowDensity).flatMap(SHDensity.init(rawValue:)) ?? .standard
         sidebarStyle = store.string(forKey: Key.sidebarStyle).flatMap(SHSidebarStyle.init(rawValue:)) ?? Defaults.sidebarStyle
-        sidebarGroupByHost = store.bool(forKey: Key.sidebarGroupByHost)
         let keep = store.object(forKey: Key.sidebarKeepIdleDays) as? Int
         sidebarKeepIdleDays = keep.flatMap { Self.sidebarKeepIdleChoices.contains($0) ? $0 : nil } ?? Defaults.sidebarKeepIdleDays
         shareDiagnostics = store.bool(forKey: Key.shareDiagnostics)
@@ -691,13 +775,20 @@ final class AppSettings {
         defaultServiceTier = Defaults.serviceTier
         goalsEnabled = false
         projectsEnabled = false
+        fleetEnabled = false
+        fleetWeights = [:]
+        fleetThreadsCanSend = false
+        fleetThreadCap = HostSettings.fleetThreadCapDefault
+        fleetUncommitted = .sendThem
+        fleetSnapshotExcludes = [:]
+        fleetAutoDispatch = nil
+        fleetBatteryCountsHalf = true
         shareDiagnostics = false
         textGenerationModel = ""
         visionModel = ""
         skillsInSlashMenu = Defaults.skillsInSlashMenu
         hiddenSlashCommands = []
         mcpProjectConfig = false
-        mcpSameEverywhere = true
         queueDelivery = Defaults.queueDelivery
         trimToolOutput = true
         notifyOnTurnFinished = true
@@ -709,7 +800,6 @@ final class AppSettings {
         sidebarWidth = Self.defaultSidebarWidth
         sidebarRowDensity = .standard
         sidebarStyle = Defaults.sidebarStyle
-        sidebarGroupByHost = false
         sidebarKeepIdleDays = Defaults.sidebarKeepIdleDays
         piPanesExtension = true
         piReviewExtension = true
@@ -803,6 +893,24 @@ final class AppSettings {
         follower = SettingsFollower(store: store, notice: notice) { [weak self] in self?.reload() }
     }
 
+    /// Calls `changed` once a burst of writes to the store (this process's, or another's that
+    /// `followOtherProcesses` took) has settled: what Fleet's sync reads the settings again on.
+    func observeWrites(settling delay: Duration = .milliseconds(300), _ changed: @escaping @MainActor () -> Void) {
+        writeObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: store, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.writeSettling?.cancel()
+                self?.writeSettling = Task { @MainActor in
+                    try? await Task.sleep(for: delay)
+                    guard !Task.isCancelled else { return }
+                    changed()
+                }
+            }
+        }
+    }
+
+    @ObservationIgnored private var writeObserver: NSObjectProtocol?
+    @ObservationIgnored private var writeSettling: Task<Void, Never>?
+
     /// The Darwin notification this bundle's processes post when they write their settings.
     nonisolated static var changeNotice: String { (Bundle.main.bundleIdentifier ?? "Shepherd") + ".settings-changed" }
 
@@ -829,11 +937,11 @@ final class AppSettings {
     /// Every setting `Key.resettable` stores, as `resetToDefaults` lists them, and Serve this Mac's switch.
     private static let followed: [(AppSettings, AppSettings) -> Void] = [
         take(\.terminalFontFamily), take(\.terminalFontSize), take(\.defaultModel), take(\.defaultThinking),
-        take(\.defaultServiceTier), take(\.goalsEnabled), take(\.projectsEnabled), take(\.shareDiagnostics),
+        take(\.defaultServiceTier), take(\.goalsEnabled), take(\.projectsEnabled), take(\.fleetEnabled), take(\.shareDiagnostics),
         take(\.textGenerationModel), take(\.visionModel), take(\.skillsInSlashMenu), take(\.hiddenSlashCommands), take(\.mcpProjectConfig),
-        take(\.mcpSameEverywhere), take(\.queueDelivery), take(\.trimToolOutput), take(\.notifyOnTurnFinished),
+        take(\.queueDelivery), take(\.trimToolOutput), take(\.notifyOnTurnFinished),
         take(\.deferTools), take(\.codemode), take(\.compactAtPercent), take(\.uiDensity), take(\.uiTextScale),
-        take(\.sidebarWidth), take(\.sidebarRowDensity), take(\.sidebarStyle), take(\.sidebarGroupByHost),
+        take(\.sidebarWidth), take(\.sidebarRowDensity), take(\.sidebarStyle),
         take(\.sidebarKeepIdleDays), take(\.piPanesExtension), take(\.piReviewExtension), take(\.subagentDisplay),
         take(\.piNativeSubagents), take(\.piMCPExtension), take(\.piBrowserExtension), take(\.piDesignReferences),
         take(\.childConcurrency), take(\.childModel), take(\.childThinking), take(\.childContext), take(\.shellPath),

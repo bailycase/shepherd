@@ -1347,6 +1347,7 @@ public final class NativeThreadStore {
     /// changed token always bootstraps fresh, while visibility-only resumes may reuse a revision.
     public func run(request: @escaping Request, preview: Preview? = nil, owner: UUID? = nil, connection: AnyHashable? = nil) async {
         guard !Task.isCancelled else { return }
+        if transcriptDrawn != nil { transcriptDrawn = nil }
         let warm = connection != nil && connection == self.connection && ready && !previewing && loadError == nil
         suspend()
         self.connection = connection
@@ -1554,6 +1555,7 @@ public final class NativeThreadStore {
     public func release() {
         guard canReleaseHistory else { return }
         stop()
+        if transcriptDrawn != nil { transcriptDrawn = nil }
         images.releaseHeld()
         if snapshot != nil { snapshot = nil }
         replaceHistory([])
@@ -1597,22 +1599,54 @@ public final class NativeThreadStore {
     /// Whether `release` has anything to let go.
     public var holdsHistory: Bool { snapshot != nil || !messages.isEmpty || images.heldBytes > 0 }
 
+    /// How many of the thread's last rows its hidden view still draws, once it was told to let rows go (`releaseTranscript`) to
+    /// keep what hidden threads' views hold within a budget; nil while it draws them all. Observed, written only on change, and
+    /// read by a view only while it is hidden, so the thread on screen is never redrawn by it. `run` and `release` clear it.
+    public private(set) var transcriptDrawn: Int?
+
+    /// The thread's hidden view has let some of its rows go, or all of them.
+    public var transcriptReleased: Bool { transcriptDrawn != nil }
+
+    /// Has the thread's hidden view let go of the oldest rows it draws, as many as fit in `bytes` of what `mountedCost` estimates
+    /// for them (and at least one row), so that no one update tears down much; `.max` lets every row go. With more rows than `eagerRows`
+    /// the first call lets go of the lazy stack's alone. The history, the rows, every cache, the draft and the store itself stay,
+    /// so showing the thread draws its rows from them in the update that shows it, with nothing to load or parse.
+    public func releaseTranscript(bytes: Int = .max, eagerRows: Int = .max) {
+        let count = min(rows.count, rowCosts.count)
+        var drawn = min(transcriptDrawn ?? count, count)
+        if transcriptDrawn == nil, count > eagerRows, bytes < .max {
+            drawn = eagerRows
+        } else {
+            var freed = 0
+            while drawn > 0 {
+                let cost = rowCosts[count - drawn]
+                if freed > 0, freed + cost > bytes { break }
+                freed += cost
+                drawn -= 1
+            }
+        }
+        if transcriptDrawn != drawn { transcriptDrawn = drawn }
+    }
+
     /// An estimate of what the views of this thread hold while it is mounted, in bytes (`NativeMountedCost`): the last
     /// `eagerRows` rows the thread's view draws, which it lays out for real whether or not it is on screen, and for the
     /// last reply the chunk its lazy stack builds first beyond its eager tail (a giant reply's). `hidden` names the rows
     /// the view leaves out (a Project's user turns made only of the runtime's wake-ups, `ThreadView`), so the walk
     /// reaches back as far as the view's own last `eagerRows`. It sums costs kept with the rows and reads only the rows
-    /// it passes, never the rest of the history; read it from the owner, never from a view body.
+    /// it passes, never the rest of the history; read it from the owner, never from a view body. A hidden view that let
+    /// rows go (`transcriptDrawn`) holds the ones it still draws, and none of the lazy stack's.
     public func mountedCost(eagerRows: Int, skipping hidden: (NativeThreadRow) -> Bool = { _ in false }) -> Int {
         mountedCostWalk(eagerRows: eagerRows, skipping: hidden).cost
     }
 
     /// `mountedCost` and how many rows it passed to reach it (a test pins that it stays at the tail).
     func mountedCostWalk(eagerRows: Int, skipping hidden: (NativeThreadRow) -> Bool) -> (cost: Int, visited: Int) {
+        guard transcriptDrawn != 0 else { return (0, 0) }
+        let limit = min(eagerRows, transcriptDrawn ?? .max)
         var cost = 0, drawn = 0, visited = 0
         var index = min(rows.count, rowCosts.count)
-        var edgeTaken = false
-        while drawn < eagerRows, index > 0 {
+        var edgeTaken = transcriptDrawn != nil
+        while drawn < limit, index > 0 {
             index -= 1
             visited += 1
             let row = rows[index]

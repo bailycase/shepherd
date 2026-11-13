@@ -17,6 +17,14 @@ public enum SubagentFixtures {
         }
         return store
     }
+    /// The store of a host's own pi home, with the staged engine to check profiles with: what a scratch host's
+    /// fleet writes through, because its own `PiSetup` has no bundled engine.
+    public static func store(piHome: URL) throws -> SubagentDefinitionsStore {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let engine = try #require(BundledPiEngine(contents: root.appendingPathComponent(".build/pi-engine")), "python3 scripts/pi_engine.py stage")
+        let source = try String(contentsOf: root.appendingPathComponent("Extensions/shepherd-children-config.ts"), encoding: .utf8)
+        return SubagentDefinitionsStore(pi: PiSetup(engine: .bundled(engine), home: piHome), parserSource: source)
+    }
     public static let samples = [
         "api-review.md": "---\nname: api-review\ndescription: Checks API contracts and error responses against the existing conventions.\ntools: [read, grep, find, ls]\n---\nInspect the assigned API change. Report contract and error-handling defects with paths and evidence. Do not edit files.\n",
         "test-writer.md": "---\nname: test-writer\ndescription: Adds focused tests for the change. Uses a fork of the parent's conversation.\ntools: [read, grep, find, ls, bash, edit, write]\ndefaultContext: fork\n---\nAdd focused tests for the assigned behavior. Run the relevant checks and return the result.\n",
