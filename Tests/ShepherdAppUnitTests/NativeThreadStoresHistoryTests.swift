@@ -120,6 +120,12 @@ struct NativeThreadStoresHistoryTests {
         newestReads[6] = Mounted(key: "g", cost: 100, pinned: true)
         #expect(releases(newestReads, budget: 0) == ["a", "c", "f", "b", "d"])
         #expect(releases([], budget: 0) == [])
+        // A thread at its last screen counts against the budget but has no more rows to give: the next one goes in its place.
+        var atFloor = entries
+        atFloor[0] = Mounted(key: "a", cost: 100, pinned: false, releasable: false)
+        #expect(releases(atFloor, budget: 500) == ["c", "f"], "a is skipped and still counted: two others go")
+        #expect(releases(atFloor, budget: 0) == ["c", "f", "b"])
+        #expect(releases(entries.map { Mounted(key: $0.key, cost: $0.cost, pinned: $0.pinned, releasable: false) }, budget: 0) == [], "nothing at all to give")
     }
 
     @Test func theDefaultMountedBudgetIsAGigabyteOnEightAndTwoFromSixteen() {
@@ -129,80 +135,123 @@ struct NativeThreadStoresHistoryTests {
         #expect(NativeThreadStores<String>.defaultMountedBudget(physicalMemory: 128 * gigabyte) == 2 * Int(gigabyte))
     }
 
-    @Test func aPassReleasesOneThreadAndKeepsItsHistory() {
+    @Test func aPassReleasesOneThreadDownToItsLastScreenAndKeepsItsHistory() {
         let pauses = Pauses()
         defer { pauses.end() }
-        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses)
+        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses, turns: 6)
+        stores.releaseStep = .max
         let a = stores.store(for: "a"), b = stores.store(for: "b")
         let rows = a.rows, messages = a.messages, cost = a.mountedCost(eagerRows: stores.eagerRows)
-        #expect(cost > 0 && !rows.isEmpty)
+        let kept = a.mountedCost(eagerRows: a.keptRows)
+        #expect(cost > 0 && rows.count == 12 && a.keptRows == 4 && kept > 0 && kept < cost)
 
         let first = stores.enforceMountedBudget(budget: 0)
-        #expect(first.threads == 1 && first.bytes == cost, "the oldest hidden thread goes, alone")
-        #expect(a.transcriptReleased && a.holdsHistory, "its history stays")
+        #expect(first.threads == 1 && first.bytes == cost - kept, "the oldest hidden thread goes, alone, and not its last screen")
+        #expect(a.transcriptReleased && a.transcriptDrawn == a.keptRows && a.holdsHistory, "its history stays")
         #expect(a.rows == rows && a.messages == messages && a.draft == "draft a" && stores.existing(for: "a") === a)
-        #expect(a.mountedCost(eagerRows: stores.eagerRows) == 0, "it holds nothing now")
+        #expect(a.mountedCost(eagerRows: stores.eagerRows) == kept, "it holds its last screen now")
         #expect(!b.transcriptReleased, "one thread a pass")
 
         #expect(stores.enforceMountedBudget(budget: 0).threads == 1)
-        #expect(b.transcriptReleased && b.holdsHistory && b.draft == "draft b")
-        #expect(stores.enforceMountedBudget(budget: 0) == (0, 0), "the newest hidden thread and the selected one are never taken")
+        #expect(b.transcriptDrawn == b.keptRows && b.holdsHistory && b.draft == "draft b")
+        #expect(stores.enforceMountedBudget(budget: 0) == (0, 0), "the newest hidden thread and the selected one are never taken, and a and b have nothing more to give")
         #expect(!stores.store(for: "c").transcriptReleased && !stores.store(for: "d").transcriptReleased)
         #expect(stores.enforceMountedBudget(budget: 0, keep: 0).threads == 1, "with none kept, the newest goes too")
         #expect(stores.store(for: "c").transcriptReleased && !stores.store(for: "d").transcriptReleased, "the selected thread stays")
+    }
+
+    @Test func aPassWaitsWhileThePersonIsAtWork() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses, turns: 6)
+        stores.releaseStep = .max
+        let a = stores.store(for: "a"), b = stores.store(for: "b")
+        #expect(stores.busy == nil && NativeThreadStores<String>().busy == nil, "nothing tells a store's passes to wait unless the app does")
+        stores.mountedBudget = 0
+        #expect(a.transcriptDrawn == a.keptRows && b.transcriptDrawn == nil, "a budget over a pass: the oldest thread goes")
+
+        var atWork = true
+        stores.busy = { atWork }
+        #expect(stores.runMountedPass() == false, "typing, scrolling or a reply streaming in: the pass looks again later")
+        #expect(b.transcriptDrawn == nil, "and takes nothing")
+        atWork = false
+        #expect(stores.runMountedPass() == true)
+        #expect(b.transcriptDrawn == b.keptRows, "once it is quiet, it runs")
+    }
+
+    /// A pass lets go of rows a step at a time, and a step is a row or the bytes the stores give it, whichever is more.
+    @Test func aPassTakesNoMoreThanAStepOfRows() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c"], selected: "c", pauses: pauses, turns: 8)
+        let a = stores.store(for: "a")
+        #expect(stores.releaseStep <= 4 << 20, "about a code-heavy reply's rows")
+        let one = a.mountedCost(eagerRows: 1)
+        stores.eagerRows = 8
+        stores.releaseStep = one
+        let first = stores.enforceMountedBudget(budget: 0)
+        #expect(first.threads == 1 && a.transcriptDrawn == 8, "the first pass takes the lazy stack's rows")
+        var drawn = a.transcriptDrawn ?? 0
+        while a.canReleaseTranscript {
+            let pass = stores.enforceMountedBudget(budget: 0)
+            #expect(pass.threads == 1 && pass.bytes <= one * 2, "a step of the bytes it was given (a row is as many): \(pass.bytes) of \(one)")
+            #expect(a.transcriptDrawn.map { $0 < drawn } == true)
+            drawn = a.transcriptDrawn ?? 0
+        }
+        #expect(drawn == a.keptRows)
     }
 
     @Test func aPassLetsGoOfOneThreadInStepsBeforeItTakesTheNext() {
         let pauses = Pauses()
         defer { pauses.end() }
         let stores = mountedStores(["a", "b", "c"], selected: "c", pauses: pauses, turns: 6)
-        stores.eagerRows = 4
+        stores.eagerRows = 8
         stores.releaseStep = 1
         let a = stores.store(for: "a"), b = stores.store(for: "b")
         let rows = a.rows, messages = a.messages
-        #expect(rows.count == 12 && a.mountedCost(eagerRows: 4) > 0)
+        #expect(rows.count == 12 && a.mountedCost(eagerRows: 8) > 0 && a.keptRows == 4)
 
-        var left = a.mountedCost(eagerRows: 4)
+        var left = a.mountedCost(eagerRows: 8)
         let first = stores.enforceMountedBudget(budget: 0, keep: 0)
-        #expect(first.threads == 1 && a.transcriptDrawn == 4, "the first pass takes the lazy stack's rows")
-        #expect(a.mountedCost(eagerRows: 4) == left, "which are not in the estimate")
-        for drawn in stride(from: 3, through: 0, by: -1) {
+        #expect(first.threads == 1 && a.transcriptDrawn == 8, "the first pass takes the lazy stack's rows")
+        #expect(a.mountedCost(eagerRows: 8) == left, "which are not in the estimate")
+        for drawn in stride(from: 7, through: 4, by: -1) {
             let pass = stores.enforceMountedBudget(budget: 0, keep: 0)
             #expect(pass.threads == 1 && a.transcriptDrawn == drawn, "each pass after takes the oldest row it still draws")
-            #expect(pass.bytes == left - a.mountedCost(eagerRows: 4) && pass.bytes > 0, "and reports what that was")
-            left = a.mountedCost(eagerRows: 4)
+            #expect(pass.bytes == left - a.mountedCost(eagerRows: 8) && pass.bytes > 0, "and reports what that was")
+            left = a.mountedCost(eagerRows: 8)
             #expect(b.transcriptDrawn == nil, "the next thread waits")
         }
-        #expect(left == 0 && a.holdsHistory && a.rows == rows && a.messages == messages && a.draft == "draft a")
-        #expect(stores.enforceMountedBudget(budget: 0, keep: 0).threads == 1 && b.transcriptDrawn == 4, "then the next thread's turn")
+        #expect(left == a.mountedCost(eagerRows: a.keptRows) && a.holdsHistory && a.rows == rows && a.messages == messages && a.draft == "draft a", "a keeps its last screen")
+        #expect(stores.enforceMountedBudget(budget: 0, keep: 0).threads == 1 && b.transcriptDrawn == 8, "then the next thread's turn, a having no more to give")
         let unlimited = stores.enforceMountedBudget(budget: 0, keep: 0, limit: .max, step: .max)
-        #expect(unlimited.threads == 1 && b.transcriptDrawn == 0, "a step of everything lets all of a thread go in one")
+        #expect(unlimited.threads == 1 && b.transcriptDrawn == 4, "a step of everything lets all of a thread but its last screen go in one")
     }
 
     @Test func aBudgetReachedHalfwayThroughAThreadStopsThere() {
         let pauses = Pauses()
         defer { pauses.end() }
         let stores = mountedStores(["a", "b", "c"], selected: "c", pauses: pauses, turns: 6)
-        stores.eagerRows = 4
+        stores.eagerRows = 8
         stores.releaseStep = 1
         let a = stores.store(for: "a"), b = stores.store(for: "b")
-        let heldByB = b.mountedCost(eagerRows: 4)
-        // Room for all of b and part of a.
-        let budget = heldByB + a.mountedCost(eagerRows: 4) / 2
+        let heldByB = b.mountedCost(eagerRows: 8)
+        // Room for all of b and three quarters of a.
+        let budget = heldByB + a.mountedCost(eagerRows: 8) * 3 / 4
         for _ in 0..<12 { stores.enforceMountedBudget(budget: budget, keep: 1) }
-        #expect(a.transcriptDrawn.map { $0 > 0 } == true && a.mountedCost(eagerRows: 4) + heldByB <= budget, "a gave up rows until what is held fits, and no more")
+        #expect(a.transcriptDrawn.map { $0 > a.keptRows } == true && a.mountedCost(eagerRows: 8) + heldByB <= budget, "a gave up rows until what is held fits, and no more")
         #expect(b.transcriptDrawn == nil, "b is the newest hidden thread, and never taken")
     }
 
     @Test func aBudgetAboveWhatTheHiddenThreadsHoldReleasesNothing() {
         let pauses = Pauses()
         defer { pauses.end() }
-        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses)
+        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses, turns: 6)
         let held = ["a", "b", "c"].reduce(0) { $0 + stores.store(for: $1).mountedCost(eagerRows: stores.eagerRows) }
         #expect(stores.enforceMountedBudget(budget: held, limit: .max) == (0, 0))
         #expect(stores.enforceMountedBudget(budget: held - 1, limit: .max).threads == 1, "one byte over takes the oldest")
         let none = NativeThreadStores<String>()
-        none.store(for: "a").preview(snapshot("a"))
+        none.store(for: "a").preview(snapshot("a", turns: 6))
         #expect(none.enforceMountedBudget(budget: 0, keep: 0, limit: .max) == (0, 0), "stores nothing mounts have no views to release")
         #expect(!none.store(for: "a").transcriptReleased)
     }
@@ -210,7 +259,7 @@ struct NativeThreadStoresHistoryTests {
     @Test func readersGoOnlyBeyondTheTwoMostRecentlyShown() {
         let pauses = Pauses()
         defer { pauses.end() }
-        let stores = mountedStores(["a", "b", "c", "d", "e", "f"], selected: "f", pauses: pauses)
+        let stores = mountedStores(["a", "b", "c", "d", "e", "f"], selected: "f", pauses: pauses, turns: 6)
         let pins = ThreadReaderPins()
         stores.pins = pins
         for key in ["a", "b", "c", "d", "e"] { pins.pin(stores.store(for: key), owner: UUID()) }

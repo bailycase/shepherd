@@ -9,8 +9,9 @@ import Testing
 @testable import ShepherdUI
 
 /// Hidden threads' row views are bounded across the mounted layouts of a real workspace: past the budget the
-/// threads shown longest ago let their rows go while their hosts, pages, history and drafts stay, and showing
-/// one again draws its rows from them in the update that shows it.
+/// threads shown longest ago let their rows go, but their last screen, while their hosts, pages, history and drafts stay,
+/// and showing one again draws that last screen in the update that shows it, builds nothing then, and brings the rows
+/// above it back after that frame, bottom first.
 @Suite("Mounted budget", .mainActorExclusive(timeLimit: .seconds(6 * 60)))
 @MainActor
 struct MountedBudgetTests {
@@ -143,9 +144,9 @@ struct MountedBudgetTests {
 
     // MARK: The budget
 
-    /// Eight threads of five long replies, a budget of three and a half threads' rows: once every one has been
+    /// Eight threads of five long replies, a budget for three threads' rows, three last screens and half a thread: once every one has been
     /// shown and the first is on screen again, the hidden threads shown longest ago have let their rows go, a few rows a
-    /// pass, and no further than the budget: three whole threads and part of the fourth, the three shown last keep
+    /// pass, and no further than the budget: three down to their last screen and part of the fourth, the three shown last keep
     /// theirs, and the layouts of the released ones hold no more code fields than that.
     @Test func hiddenThreadsKeepNoMoreRowsThanTheBudget() async throws {
         let app = try AppHarness()
@@ -157,25 +158,29 @@ struct MountedBudgetTests {
         stores.releaseSpacing = .zero
         let one = work.store(0).mountedCost(eagerRows: stores.eagerRows)
         let perThread = try work.fields(0)
-        #expect(one > 0 && perThread > 0, "a thread holds rows that cost something: \(one) bytes, \(perThread) fields")
+        let floor = work.store(0).mountedCost(eagerRows: work.store(0).keptRows)
+        #expect(one > 0 && perThread > 0 && floor > 0 && floor < one / 2, "a thread holds rows that cost something: \(one) bytes, \(perThread) fields, \(floor) in its last screen")
         stores.releaseStep = one / 4
-        stores.mountedBudget = one * 7 / 2
+        // The three shown last keep all they have, the three oldest go down to their last screens, and the fourth stops halfway between.
+        stores.mountedBudget = one * 3 + floor * 3 + (one + floor) / 2
 
         for index in 1..<8 { try await work.show(index) }
         try await work.show(0)
 
         let whole = 1...3, last = 4, kept = 5...7
+        func atLastScreen(_ index: Int) -> Bool { work.store(index).transcriptDrawn == work.store(index).keptRows }
         func hidden() -> Int { (1..<8).reduce(0) { $0 + work.store($1).mountedCost(eagerRows: stores.eagerRows) } }
         try await eventuallyOnMain("the oldest hidden threads to let their rows go, down to the budget, and the others to keep theirs", timeout: .seconds(60)) {
             ListPerf.settle(work.window)
-            return whole.allSatisfy { work.store($0).transcriptDrawn == 0 } && work.store(last).transcriptReleased
+            return whole.allSatisfy(atLastScreen) && work.store(last).transcriptReleased
                 && kept.allSatisfy { !work.store($0).transcriptReleased } && hidden() <= stores.mountedBudget
         }
-        try await eventuallyOnMain("a released layout to hold no code field", timeout: .seconds(60)) {
+        try await eventuallyOnMain("a released layout to hold no more than its last screen's code fields", timeout: .seconds(60)) {
             ListPerf.settle(work.window)
-            return try whole.allSatisfy { try work.fields($0) == 0 }
+            return try whole.allSatisfy { try work.fields($0) < perThread / 2 }
         }
-        #expect(work.store(last).transcriptDrawn != 0, "the fourth stopped when the budget was reached, with rows left")
+        for index in whole { #expect(try work.fields(index) > 0, "agent \(index) keeps the code fields of its last screen") }
+        #expect(!atLastScreen(last), "the fourth stopped when the budget was reached, with rows left")
         for index in kept { #expect(try work.fields(index) > 0, "agent \(index) keeps its fences") }
         let total = try (0..<8).reduce(0) { $0 + (try work.fields($1)) }
         #expect(total <= (1 + kept.count) * perThread * 5 / 4 + perThread, "\(total) fields in the window, a thread holds \(perThread)")
@@ -204,9 +209,9 @@ struct MountedBudgetTests {
 
         let taken = work.releaseHidden()
         #expect(taken.threads == 2 && store.transcriptReleased)
-        try await eventuallyOnMain("agent 1's layout to hold no code field") {
+        try await eventuallyOnMain("agent 1's layout to hold fewer code fields") {
             ListPerf.settle(work.window)
-            return try work.fields(1) == 0
+            return try work.fields(1) < fences
         }
         #expect(store.holdsHistory && store.rows == rows && store.messages == messages && store.draft == "a half-written reply")
         for (index, tab) in tabs.enumerated() {
@@ -216,7 +221,8 @@ struct MountedBudgetTests {
         let parses = store.offMainParses
         try await work.show(1)
         #expect(!store.transcriptReleased && store.offMainParses == parses, "its rows come from what the store kept: nothing is parsed again")
-        #expect(try work.fields(1) == fences, "the same fences are drawn again")
+        let again = try work.fields(1)
+        #expect(again >= fences * 9 / 10, "the fences of its eager tail are drawn again: \(again) of \(fences)")
         #expect(store.rows == rows && store.messages == messages)
         for (index, tab) in tabs.enumerated() {
             #expect(deck.pages[tab]?.host === hosts[index] && deck.pages[tab]?.page === pages[index], "still the same objects for agent \(index)")
@@ -278,7 +284,8 @@ struct MountedBudgetTests {
         #expect(store.transcriptReleased)
         #expect(release["composer.body", default: 0] <= 1, "\(release)")
         #expect(release["thread.view", default: 0] <= 1, "\(release)")
-        #expect(release["thread.rowBuilder", default: 0] == 0, "nothing builds a row: \(release)")
+        #expect(release["thread.agentTurn", default: 0] == 0 && release["thread.userTurn", default: 0] == 0 && release["code.nativeCreated", default: 0] == 0,
+                "no turn is drawn again and nothing is built: \(release)")
         #expect(release["arrival.animates", default: 0] == 0, "\(release)")
 
         SHRenderProbe.start()
@@ -296,39 +303,6 @@ struct MountedBudgetTests {
     }
 
     // MARK: Never blank
-
-    @Test func aReleasedThreadDrawsItsRowsInTheFirstFrameBack() async throws {
-        let app = try AppHarness()
-        defer { app.stop() }
-        let work = try await Workspace.open(2, replies: 4, cycles: 15, in: app)
-        defer { work.window.close() }
-        for index in [1, 0] { try await work.show(index) }
-        let fences = try work.fields(1)
-        #expect(fences > 0)
-        work.releaseHidden()
-        try await eventuallyOnMain("agent 1's layout to hold no code field") {
-            ListPerf.settle(work.window)
-            return try work.fields(1) == 0
-        }
-
-        // Select it and look at the pass that shows its layout: the rows are in it, laid out by the deck as it shows the host.
-        SHRenderProbe.start()
-        defer { SHRenderProbe.stop() }
-        work.vm.selectAgent(work.agents[1].agent.id)
-        var passes = 0
-        while try work.host(1)?.isHidden != false, passes < 50 {
-            ListPerf.settle(work.window)
-            passes += 1
-        }
-        #expect(SHRenderProbe.count("deck.flipLayout") == 1, "the deck laid the host out once as it showed it")
-        let scroll = try #require(try work.transcript(1))
-        #expect(try work.host(1)?.isHidden == false, "the layout is shown after \(passes) passes")
-        let drawn = try work.fields(1)
-        #expect(drawn == fences, "every fence is drawn in the first frame the layout is shown: \(drawn) of \(fences)")
-        let frame = Self.drawing(work.window, in: scroll)
-        #expect(frame.ink > 0, "the thread draws something in its first frame")
-        #expect(frame.longestBlankBand <= ThreadBlankScreenTests.blankBandLimit, "no blank stretch of \(frame.longestBlankBand) points")
-    }
 
     /// Laying the host out in the flip is for a thread that let its rows go, which builds them there: a thread that kept
     /// its rows takes the pass it always did.
@@ -371,11 +345,12 @@ struct MountedBudgetTests {
         let fences = try (2...3).map { try work.fields($0) }
 
         // A budget nothing fits: the newest hidden thread (3) and the two most recent readers (2, 3) stay; 1 is the third.
+        let before = try work.fields(1)
         let taken = work.releaseHidden(keep: 1, keepPinned: 2)
         #expect(taken.threads == 1)
         try await eventuallyOnMain("the oldest reader's rows to go and its place to be given up") {
             ListPerf.settle(work.window)
-            let gone = try work.fields(1) == 0
+            let gone = try work.fields(1) < before
             return work.store(1).transcriptReleased && !pins.isPinned(work.store(1)) && gone
         }
         for (offset, index) in (2...3).enumerated() {
@@ -419,9 +394,11 @@ struct MountedBudgetTests {
         #expect(thread.store.rows == rows && thread.store.transcriptReleased)
 
         try await thread.show(true)
-        let shown = try height()
         #expect(!thread.store.transcriptReleased)
-        #expect(abs(shown - tall) < tall / 10, "shown again it is \(shown) points tall of \(tall)")
+        try await eventuallyOnMain("the thread to be as tall as before") {
+            ListPerf.settle(thread.window)
+            return try abs(height() - tall) < tall / 10
+        }
     }
 
     // MARK: The remote deck
@@ -442,9 +419,9 @@ struct MountedBudgetTests {
 
         let stores = rig.vm.remoteThreadStores
         #expect(stores.enforceMountedBudget(budget: 0, keep: 0, keepPinned: 0, limit: .max, step: .max).threads == 2, "the two hidden pages")
-        try await eventuallyOnMain("the hidden pages to hold no code field") {
+        try await eventuallyOnMain("the hidden pages to hold fewer code fields") {
             ListPerf.settle(rig.window)
-            return try fields(0) == 0 && fields(1) == 0
+            return try fields(0) < fences && fields(1) < second
         }
         #expect(try fields(2) > 0, "the page on screen keeps its rows")
         for index in 0..<3 { #expect(try deck.pages[rig.refs[index]]?.host === hosts[index], "page \(index) is the same host") }
@@ -453,7 +430,7 @@ struct MountedBudgetTests {
         #expect(SHRenderProbe.count("remoteDeck.flipLayout") == 1, "the page that let its rows go is laid out as it is shown")
         try await eventuallyOnMain("page 0 to draw its fences again") {
             ListPerf.settle(rig.window)
-            return try fields(0) > 0
+            return try fields(0) >= fences / 2
         }
         let again = try fields(0)
         #expect(again >= fences / 2, "page 0 draws its fences again: \(again) of \(fences)")
