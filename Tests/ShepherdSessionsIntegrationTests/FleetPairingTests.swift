@@ -36,7 +36,7 @@ struct FleetPairingTests {
             let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             try server.startLocalListener(path: socket, tokenURL: tokenURL)
             // A host always has its fleet service (devices pair with it); `fleet: false` leaves membership off, as a fresh install is.
-            server.setFleetEnabled(fleet)
+            server.setFleetEnabledAndWait(fleet)
             let local = RemoteHostClient(localSocket: socket)
             _ = try await local.connect(host: "", port: 0, token: token, clientName: "Shepherd")
             (self.host, self.port, self.sharedToken, self.local) = (host, port, token, local)

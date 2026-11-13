@@ -333,11 +333,11 @@ struct FleetDevicesIntegrationTests {
         let mac = try await Mac("MacBook Pro")
         defer { mac.stop() }
         _ = try await mac.local.fleetAction(.retireSharedToken)
-        mac.server.setFleetEnabled(false)
+        mac.server.setFleetEnabledAndWait(false)
         try await eventually("Fleet to be off") { try await mac.read().enabled == false }
         let whileOff = await Self.refused(mac.sharedToken, by: mac)
         #expect(whileOff, "turning Fleet off does not open the old token again")
-        mac.server.setFleetEnabled(true)
+        mac.server.setFleetEnabledAndWait(true)
         try await eventually("Fleet to be on") { try await mac.read().devices?.sharedToken.retired == true }
     }
 
@@ -466,11 +466,11 @@ struct FleetDevicesIntegrationTests {
         defer { phone.stop() }
         _ = try await phone.pair(with: mac, code: try #require(try await mac.local.fleetAction(.startDeviceCode).deviceCode).code)
         try await phone.connect(to: mac)
-        mac.server.setFleetEnabled(false)
+        mac.server.setFleetEnabledAndWait(false)
         try await eventually("Fleet to be off") { try await mac.read().enabled == false }
         #expect(!phone.disconnected.current)
         #expect(try await Self.devices(mac).map(\.name) == ["iPhone"])
-        mac.server.setFleetEnabled(true)
+        mac.server.setFleetEnabledAndWait(true)
         try await eventually("Fleet to be on") { try await mac.read().enabled }
         #expect(!phone.disconnected.current)
     }
