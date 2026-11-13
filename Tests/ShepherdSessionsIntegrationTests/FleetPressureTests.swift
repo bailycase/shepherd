@@ -80,7 +80,7 @@ struct FleetPressureIntegrationTests {
             let port = try server.startRemoteListener(port: 0, tokenURL: tokenURL)
             let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             try server.startLocalListener(path: socket, tokenURL: tokenURL)
-            server.setFleetEnabled(true)
+            server.setFleetEnabledAndWait(true)
             let local = RemoteHostClient(localSocket: socket)
             _ = try await local.connect(host: "", port: 0, token: token, clientName: "Shepherd")
             (self.host, self.port, self.sharedToken, self.local) = (host, port, token, local)
@@ -429,7 +429,7 @@ struct FleetPressureIntegrationTests {
         try await eventually("A to sample for its peer") { a.isSampling }
         try await eventually("B to hold A's sample") { try await b.state(of: aID)?.sample != nil }
 
-        a.server.setFleetEnabled(false)
+        a.server.setFleetEnabledAndWait(false)
         try await eventually("A to stop sampling") { !a.isSampling }
         #expect(try await a.read().macs.isEmpty && a.server.queue.sync { a.server.fleet?.pressure.isWatched } == false)
         do { _ = try await a.local.fleetAction(.watching(true)); Issue.record("the page was served with Fleet off") }

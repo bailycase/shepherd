@@ -101,7 +101,7 @@ extension FleetSnapshotIndexTests {
         let status = try #require(try await a.read().index)
         #expect(status.indexing == false && status.repos.first?.name == "acme-web" && status.repos.first?.files == Self.files.count + Self.ignored.count)
         // Fleet off again: the index stops reading, and says nothing.
-        a.server.setFleetEnabled(false)
+        a.server.setFleetEnabledAndWait(false)
         try await eventually("the index to stop") { a.service?.isActive == false }
         #expect(try await a.read().index == nil)
     }
@@ -360,7 +360,7 @@ extension FleetSnapshotIndexTests {
         do { _ = try await asA.fleetRepoManifest(FleetRepoManifestUpdate(repo: "", kind: .head, generation: 1, seq: 0, digest: .empty)); Issue.record("an empty repo name was accepted") }
         catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetSnapshotProtocol.Code.invalid) }
         // Fleet off: no peer connection survives, the index stops, and the manifests of the peers are not served or kept up.
-        b.server.setFleetEnabled(false)
+        b.server.setFleetEnabledAndWait(false)
         try await eventually("B to leave the fleet") { b.service?.isActive == false }
         let status = try await b.read()
         #expect(status.index == nil)

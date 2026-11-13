@@ -11,7 +11,7 @@ import ShepherdTestSupport
 /// "origin"). A Mac that already has a checkout of the repository binds to it; one that hasn't clones it with its own git, from origin
 /// or, when origin can't be reached, from a bundle the sender makes; the snapshot then applies as for any dispatch. The clone goes only
 /// at a folder that did not exist, and Stop leaves nothing behind.
-@Suite("Fleet: any project on any Mac", .integrationTimeLimit, .mainActorExclusive)
+@Suite("Fleet: any project on any Mac", .mainActorExclusive)
 @MainActor
 struct FleetCloneTests {
     typealias D = FleetDispatchTests

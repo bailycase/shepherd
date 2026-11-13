@@ -164,6 +164,10 @@ final class FleetContentIndex: @unchecked Sendable {
             // Without events the index would drift unseen: the periodic check rescans instead.
             onDrift?("events unavailable")
         }
+        // A change made while the host was down is found by looking, not by the system's event history alone, which does not always hold
+        // it: what the index holds is compared with the disk (size and time), and so is every directory (a file made or removed in one
+        // moves its time). An index saved before directory times were kept has none to compare, so the root is walked once.
+        if loadedFromDisk { if dirStamps.isEmpty { rescan() } else { catchUp() } }
     }
 
     /// Asks a scan in progress to end. Safe from any thread; `stop()` then runs on the queue.
@@ -213,6 +217,7 @@ final class FleetContentIndex: @unchecked Sendable {
         // Ids saved against another volume's journal, or none, can't be replayed: walk the tree.
         guard let id = saved.meta.eventID, saved.meta.volume == now, now != nil, !saved.entries.isEmpty else { return false }
         entries = saved.entries
+        dirStamps = saved.meta.directories ?? [:]
         for (path, entry) in entries { tree.set(path, kind: entry.kind, hash: entry.hash) }
         journalLines = saved.journalLines
         loadedFromDisk = true
@@ -822,7 +827,7 @@ final class FleetContentIndex: @unchecked Sendable {
             if force || now.timeIntervalSince(metaSavedAt) > Self.metaInterval {
                 var id = eventID
                 if let latest = events?.latestEventID { id = max(id ?? 0, latest) }
-                try storage.writeMeta(.init(version: FleetIndexStorage.version, root: root, rules: exclusions.key, eventID: id, volume: volume))
+                try storage.writeMeta(.init(version: FleetIndexStorage.version, root: root, rules: exclusions.key, eventID: id, volume: volume, directories: dirStamps))
                 metaSavedAt = now
             }
         } catch {

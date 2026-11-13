@@ -11,7 +11,7 @@ import ShepherdTestSupport
 /// A dispatch that carries the checkout it was sent from (slice 4c), between two real scratch hosts that share an origin: an unpushed
 /// commit, an edit, an untracked file, an ignored `.env` and a `node_modules` arrive in the worktree the other Mac builds, byte for
 /// byte, and the thread there doesn't start until the sender's digest has been checked.
-@Suite("Fleet snapshot transfer", .integrationTimeLimit, .mainActorExclusive)
+@Suite("Fleet snapshot transfer", .mainActorExclusive)
 @MainActor
 struct FleetSnapshotTransferTests {
     typealias Mac = FleetDispatchTests.Mac
@@ -438,7 +438,7 @@ struct FleetSnapshotTransferTests {
 }
 
 /// What a dispatch costs on bigger trees, printed for the PR's table (`SHEPHERD_FLEET_MEASURE=1`). Nothing here asserts a time.
-@Suite("Fleet snapshot measurements", .integrationTimeLimit, .mainActorExclusive, .enabled(if: ProcessInfo.processInfo.environment["SHEPHERD_FLEET_MEASURE"] == "1", "set SHEPHERD_FLEET_MEASURE=1"))
+@Suite("Fleet snapshot measurements", .mainActorExclusive, .enabled(if: ProcessInfo.processInfo.environment["SHEPHERD_FLEET_MEASURE"] == "1", "set SHEPHERD_FLEET_MEASURE=1"))
 @MainActor
 struct FleetSnapshotMeasurementTests {
     /// The file part of a warm dispatch in numbers: the sender's build, the transfer and the receiver's build, by step.

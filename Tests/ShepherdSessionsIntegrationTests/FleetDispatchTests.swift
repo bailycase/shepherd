@@ -11,7 +11,7 @@ import ShepherdTestSupport
 /// work to the other, which makes a fresh worktree at the pinned commit, runs a thread there (a stub pi)
 /// and sends the result back to the parent through the parent's host, with no app attached. Each Mac
 /// has its own counters, clock and pi home; the threads' pis are the stub engine.
-@Suite("Fleet dispatch", .integrationTimeLimit, .mainActorExclusive)
+@Suite("Fleet dispatch", .mainActorExclusive)
 @MainActor
 struct FleetDispatchTests {
     nonisolated static let repoKey = "github.com/acme/web"
@@ -109,7 +109,7 @@ struct FleetDispatchTests {
                 server?.fleetHostSettingsChanged(now)
             }
             server.fleetHostSettingsChanged(settings.current)
-            server.setFleetEnabled(true)
+            server.setFleetEnabledAndWait(true)
             let local = RemoteHostClient(localSocket: socket)
             _ = try await local.connect(host: "", port: 0, token: token, clientName: "Shepherd")
             (self.host, self.port, self.local) = (host, port, local)
@@ -370,7 +370,7 @@ struct FleetDispatchTests {
         a.server.fleetHostSettingsChanged(a.settings.current)
         _ = try parent.info(try await parent.dispatch(key: "on", host: "Mac mini"))
 
-        a.server.setFleetEnabled(false)
+        a.server.setFleetEnabledAndWait(false)
         try await Self.wait("Fleet to be off") { try await a.local.fleetRead().snapshot.enabled == false }
         guard case .error(_, FleetDispatchCode.fleetOff, _) = try await parent.dispatch(key: "fleet-off") else { Issue.record("sent with Fleet off"); return }
         guard case .error(_, FleetDispatchCode.fleetOff, _) = try await parent.call({ .fleetListHosts(id: $0, agentID: parent.agent.id) }) else {

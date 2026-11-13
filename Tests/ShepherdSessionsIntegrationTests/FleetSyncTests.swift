@@ -10,6 +10,16 @@ import ShepherdTestSupport
 /// materializes through its own writers; what a Mac missed it takes when it is back, from any Mac
 /// that has it; two writes to one unit resolve by the later and keep the other in history; and pi's
 /// own rewrite of `settings.json` is imported, never overwritten. Each `Mac` has its own pi home.
+extension SessionServer {
+    /// `setFleetEnabled`, returning once the host has acted on it. A request a client sends afterwards can be served first (the host's
+    /// queue runs a socket's event handler ahead of a block submitted earlier; seen as `fleet_off` for a `startJoin` sent right after
+    /// the Mac was enabled), so a test that talks to the Mac next waits for the switch to have landed.
+    func setFleetEnabledAndWait(_ enabled: Bool) {
+        setFleetEnabled(enabled)
+        queue.sync {}
+    }
+}
+
 @Suite("Fleet sync", .integrationTimeLimit)
 struct FleetSyncTests {
     /// A scratch host in a fleet, with its own pi home and a stand-in for the app's settings.
@@ -48,10 +58,10 @@ struct FleetSyncTests {
                 server?.fleetHostSettingsChanged(now)
             }
             server.fleetHostSettingsChanged(settings.current)
-            if enable { server.setFleetEnabled(true) }
+            if enable { server.setFleetEnabledAndWait(true) }
         }
 
-        func enable() { server.setFleetEnabled(true) }
+        func enable() { server.setFleetEnabledAndWait(true) }
 
         func stop(keepFiles: Bool = false) {
             local.disconnect()
@@ -415,7 +425,7 @@ struct FleetSyncTests {
         try await a.save(.agents, "before")
         try await b.waitForText(.agents, "before")
 
-        b.server.setFleetEnabled(false)
+        b.server.setFleetEnabledAndWait(false)
         try await eventually("B's fleet to be off") { (try? await b.read().enabled) == false }
         let snapshot = try await b.read()
         #expect(snapshot.sync == nil && snapshot.peers.isEmpty)
@@ -425,7 +435,7 @@ struct FleetSyncTests {
         #expect(b.text(.agents) == "B's own edit while out", "an off Mac applies nothing")
         #expect(a.text(.agents) == "while B is out", "and sends nothing")
 
-        b.server.setFleetEnabled(true)
+        b.server.setFleetEnabledAndWait(true)
         try await eventually("both Macs to settle on one text") { a.text(.agents) == b.text(.agents) }
         #expect(["B's own edit while out", "while B is out"].contains(a.text(.agents)), "the later edit won, the other is in history")
     }

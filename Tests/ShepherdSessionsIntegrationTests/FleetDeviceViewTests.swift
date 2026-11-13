@@ -138,7 +138,7 @@ struct FleetDeviceViewTests {
         let (phone, client) = try await Self.phone(port: a.port, local: a.local)
         defer { phone.stop() }
         #expect(client.capabilities.contains(RemoteProtocol.fleetViewCapability))
-        a.server.setFleetEnabled(false)
+        a.server.setFleetEnabledAndWait(false)
         try await eventually("the capability to be withdrawn") { !client.capabilities.contains(RemoteProtocol.fleetViewCapability) }
         for attempt in [{ _ = try await client.fleetRead() }, { _ = try await client.fleetAction(.watching(true)) }] as [() async throws -> Void] {
             do { try await attempt(); Issue.record("a device read a fleet that is off") }
