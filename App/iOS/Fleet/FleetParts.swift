@@ -16,6 +16,7 @@ extension FleetTone {
         case .good: sh.done
         case .warn: sh.lanternText
         case .bad: sh.failed
+        case .active: sh.running
         }
     }
 
@@ -27,6 +28,7 @@ extension FleetTone {
         case .good: sh.done
         case .warn: sh.lantern
         case .bad: sh.failed
+        case .active: sh.running
         }
     }
 }
