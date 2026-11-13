@@ -268,6 +268,9 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
     public var model: String?
     public var thinking: String?
     public var reasonCodes: [FleetPlacementReason]
+    /// The MCP server commands the target lacked when the sender placed this: the thread starts without those servers. The
+    /// sender's own note (the target doesn't set it); empty from an older build.
+    public var without: [String]
     /// The thread on the target.
     public var remoteAgentID: AgentID?
     /// What the thread is doing, in a line, as the target last said.
@@ -298,7 +301,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
                 parentTitle: String = "", targetHostID: UUID? = nil, targetHostName: String? = nil, requestedHost: String? = nil,
                 state: FleetDispatchState = .placing, failure: String? = nil, failureDetail: String? = nil, title: String, task: String,
                 repoKey: String, commitSHA: String? = nil, subdir: String? = nil, branch: String? = nil, model: String? = nil,
-                thinking: String? = nil, reasonCodes: [FleetPlacementReason] = [], remoteAgentID: AgentID? = nil, activity: String? = nil,
+                thinking: String? = nil, reasonCodes: [FleetPlacementReason] = [], without: [String] = [], remoteAgentID: AgentID? = nil, activity: String? = nil,
                 resultText: String? = nil, resultBranchFacts: FleetBranchFacts? = nil, snapshotBytes: UInt64? = nil, snapshotProgress: UInt64? = nil,
                 snapshotFiles: Int? = nil, sendWarning: Bool = false, fileMillis: Int? = nil, spaceID: SpaceID? = nil, origin: String? = nil,
                 clone: FleetCloneProgress? = nil, start: FleetThreadStart? = nil, createdAt: Double, updatedAt: Double? = nil) {
@@ -324,6 +327,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         self.model = model
         self.thinking = thinking
         self.reasonCodes = reasonCodes
+        self.without = without
         self.remoteAgentID = remoteAgentID
         self.activity = activity
         self.resultText = resultText
@@ -342,7 +346,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, kind, parentAgentID, parentHostID, parentHostName, parentTitle, targetHostID, targetHostName, requestedHost, state
-        case failure, failureDetail, title, task, repoKey, commitSHA, subdir, branch, model, thinking, reasonCodes, remoteAgentID
+        case failure, failureDetail, title, task, repoKey, commitSHA, subdir, branch, model, thinking, reasonCodes, without, remoteAgentID
         case activity, resultText, resultBranchFacts, createdAt, updatedAt
         case snapshotBytes, snapshotProgress, snapshotFiles, sendWarning, fileMillis
         case spaceID, origin, clone, start
@@ -372,6 +376,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         model = try c.decodeIfPresent(String.self, forKey: .model)
         thinking = try c.decodeIfPresent(String.self, forKey: .thinking)
         reasonCodes = (try? c.decodeIfPresent([FleetPlacementReason].self, forKey: .reasonCodes)) ?? []
+        without = try c.decodeIfPresent([String].self, forKey: .without) ?? []
         remoteAgentID = try c.decodeIfPresent(AgentID.self, forKey: .remoteAgentID)
         activity = try c.decodeIfPresent(String.self, forKey: .activity)
         resultText = try c.decodeIfPresent(String.self, forKey: .resultText)
@@ -412,6 +417,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(model, forKey: .model)
         try c.encodeIfPresent(thinking, forKey: .thinking)
         if !reasonCodes.isEmpty { try c.encode(reasonCodes, forKey: .reasonCodes) }
+        if !without.isEmpty { try c.encode(without, forKey: .without) }
         try c.encodeIfPresent(remoteAgentID, forKey: .remoteAgentID)
         try c.encodeIfPresent(activity, forKey: .activity)
         try c.encodeIfPresent(resultText, forKey: .resultText)

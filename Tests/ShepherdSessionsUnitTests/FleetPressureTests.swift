@@ -163,8 +163,10 @@ struct FleetPressureTests {
     @Test func gitIsReportedMissingAndXcodeOnlyWhereAProjectNeedsIt() async {
         let without = await report(needsXcode: false, probe: FleetProbeResult(noGit: true, noXcode: true))
         #expect(without.missing == [FleetMissingTool(kind: .git)], "a Mac with no Xcode isn't told so unless a project needs it")
+        #expect(without.noXcode, "but it says so as a fact, for a dispatch of a repository that does")
         let with = await report(needsXcode: true, probe: FleetProbeResult(noGit: false, noXcode: true))
-        #expect(with.missing == [FleetMissingTool(kind: .xcode)])
+        #expect(with.missing == [FleetMissingTool(kind: .xcode)] && with.noXcode)
+        #expect(await !report(needsXcode: true, probe: FleetProbeResult()).noXcode)
     }
 
     @Test func theProjectsAreListedOnceEachSorted() async {

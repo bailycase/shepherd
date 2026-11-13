@@ -9,7 +9,9 @@ extension FleetDispatch {
     func hosts(for agentID: AgentID) -> [FleetHostInfo] {
         let state = host.state()
         let repoKey = state.agents.first { $0.id == agentID }.flatMap { agent in state.spaces.first { $0.id == agent.spaceID }?.repoKey } ?? ""
-        let probe = FleetDispatchRecord(parentHostID: hostID, parentHostName: hostName(), title: "", task: "", repoKey: repoKey, createdAt: now)
+        let probe = FleetDispatchRecord(parentHostID: hostID, parentHostName: hostName(), title: "", task: "", repoKey: repoKey,
+                                        spaceID: state.agents.first { $0.id == agentID }?.spaceID, createdAt: now)
+        let xcode = needsXcode(probe)
         let macs = placementMacs(for: probe)
         let scores: [UUID: Double] = Dictionary(uniqueKeysWithValues: macs.map { mac in
             guard let sample = mac.sample, let age = mac.sampleAge, FleetRoom.skip(sample, age: age, weight: mac.weight) == nil else { return (mac.hostID, 0) }
@@ -27,8 +29,8 @@ extension FleetDispatch {
             } else {
                 room = mac.connected ? "not counted" : "offline"
             }
-            return FleetHostInfo(name: mac.name, isThisMac: mac.isLocal, room: room, connected: mac.connected, problems: mac.problems,
-                                 hasRepo: mac.hasRepo, weight: mac.weight.title)
+            return FleetHostInfo(name: mac.name, isThisMac: mac.isLocal, room: room, connected: mac.connected, problems: mac.problems(needsXcode: xcode),
+                                 without: mac.withoutCommands.isEmpty ? nil : mac.withoutCommands, hasRepo: mac.hasRepo, weight: mac.weight.title)
         }
     }
 

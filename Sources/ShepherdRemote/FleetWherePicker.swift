@@ -53,7 +53,7 @@ public struct FleetWherePicker: Equatable, Sendable {
     /// other Mac can find), `repoName` how to say it. `autoDispatch` is the setting; with it off the chip starts on This
     /// Mac, and Auto is still there to pick.
     public static func make(snapshot: FleetSnapshot, pick: FleetPlacePick?, repoKey: String?, repoName: String,
-                            autoDispatch: Bool, weight: (UUID) -> FleetSendWeight, batteryCountsHalf: Bool = true, snapshotAge: TimeInterval = 0,
+                            autoDispatch: Bool, needsXcode: Bool = false, weight: (UUID) -> FleetSendWeight, batteryCountsHalf: Bool = true, snapshotAge: TimeInterval = 0,
                             baseBranch: String? = nil, startsInCheckout: Bool = false, locale: Locale = .current, calendar: Calendar = .current, now: Date = Date()) -> FleetWherePicker {
         guard snapshot.enabled, let thisID = snapshot.hostID, !snapshot.peers.isEmpty else { return .empty }
         let page = FleetPagePresentation.make(snapshot: snapshot, weight: weight, snapshotAge: snapshotAge, batteryCountsHalf: batteryCountsHalf,
@@ -63,7 +63,7 @@ public struct FleetWherePicker: Equatable, Sendable {
 
         // The same inputs the host places with.
         var macs = [FleetPlacement.Mac(hostID: thisID, name: "This Mac", isLocal: true, connected: true, hasRepo: true,
-                                       problems: states[thisID]?.readiness?.missing.map(missingName) ?? [],
+                                       lacks: states[thisID]?.readiness?.lacks ?? [],
                                        sample: states[thisID]?.sample, sampleAge: states[thisID]?.sampleAge.map { $0 + snapshotAge },
                                        weight: weight(thisID))]
         for peer in snapshot.peers {
@@ -71,11 +71,11 @@ public struct FleetWherePicker: Equatable, Sendable {
             macs.append(FleetPlacement.Mac(
                 hostID: peer.hostID, name: peer.name, connected: peer.link == .connected,
                 hasRepo: repoKey.flatMap { key in state?.readiness.map { $0.repoKeys.contains(key) } },
-                problems: state?.readiness?.missing.map(missingName) ?? [], sample: state?.sample,
+                lacks: state?.readiness?.lacks ?? [], sample: state?.sample,
                 sampleAge: state?.sampleAge.map { $0 + snapshotAge }, weight: weight(peer.hostID)))
         }
         var winnerID: UUID?
-        if repoKey != nil, case .place(let target, _) = FleetPlacement.place(host: nil, macs: macs, batteryCountsHalf: batteryCountsHalf) {
+        if repoKey != nil, case .place(let target, _) = FleetPlacement.place(host: nil, macs: macs, needsXcode: needsXcode, batteryCountsHalf: batteryCountsHalf) {
             winnerID = target
         }
         let winnerName = winnerID.map { id in macs.first { $0.hostID == id }?.name ?? "" }
@@ -181,6 +181,10 @@ public struct FleetWherePicker: Equatable, Sendable {
                     : "Runs on \(name) in a new worktree \(base)."
             }
         }
+        // A Mac missing an MCP server's command still takes the thread: it starts there without that server.
+        if let target, let lacking = macs.first(where: { $0.hostID == target })?.withoutCommands, !lacking.isEmpty {
+            note = (note.map { $0 + " " } ?? "") + "It starts without \(FleetDispatchPresentation.withoutWords(lacking))."
+        }
         return FleetWherePicker(options: options, chip: chip, winner: winnerName, target: target, dispatches: dispatches, note: note, footnote: footnote)
     }
 
@@ -192,13 +196,5 @@ public struct FleetWherePicker: Equatable, Sendable {
         let words = name.split(separator: " ")
         if words.count > 1, words[0] == "Mac" { return words.dropFirst().joined(separator: " ").lowercased() }
         return name.lowercased()
-    }
-
-    static func missingName(_ tool: FleetMissingTool) -> String {
-        switch tool.kind {
-        case .binary: tool.name
-        case .git: "git"
-        case .xcode: "Xcode"
-        }
     }
 }

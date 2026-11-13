@@ -5,8 +5,9 @@ import Foundation
 /// what dispatching needs: the repo, readiness and a named Mac. Every decision carries reason
 /// codes (`FleetPlacementReason`), never prose.
 ///
-/// A named Mac bypasses scoring and nothing else: a named Mac that lacks a tool is refused with that
-/// reason, never quietly swapped for another. A Mac that lacks the repository is not refused: it clones
+/// A named Mac bypasses scoring and nothing else: a named Mac that lacks a tool this dispatch needs is refused with that
+/// reason, never quietly swapped for another. Only git, and Xcode for a repository with an Xcode project, are needed: the
+/// command of an MCP server a Mac lacks never decides where work goes (the thread starts without that server). A Mac that lacks the repository is not refused: it clones
 /// it first (slice 4f), so Auto weighs that as a cost (`cloneMargin`) and a named Mac just clones.
 public enum FleetPlacement {
     /// A Mac without the repository clones it before the work starts: a download and a checkout. Auto counts that as a cost by
@@ -14,6 +15,31 @@ public enum FleetPlacement {
     /// leave this Mac (`FleetRoom.moveMargin`, 1.5x): noisy samples must not send work to a clone for a few points of room.
     public static let cloneMargin = FleetRoom.moveMargin
 
+
+    /// Whether the folder holds an Xcode project or workspace at its top level: what a dispatch of that repository needs Xcode for.
+    public static func hasXcodeProject(atPath folder: String, fileManager: FileManager = .default) -> Bool {
+        let names = (try? fileManager.contentsOfDirectory(atPath: (folder as NSString).expandingTildeInPath)) ?? []
+        return names.contains { $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace") }
+    }
+
+    /// Something a Mac lacks (`FleetReadinessReport`).
+    public enum Lack: Hashable, Sendable {
+        /// Every dispatch needs git.
+        case git
+        /// Only a dispatch of a repository with an Xcode project needs Xcode.
+        case xcode
+        /// The command of an MCP server (its name): never needed to place work; the thread starts without that server.
+        case mcpCommand(String)
+
+        /// What a person or a thread is told it lacks.
+        public var name: String {
+            switch self {
+            case .git: "git"
+            case .xcode: "Xcode"
+            case .mcpCommand(let command): command
+            }
+        }
+    }
 
     /// One Mac as the sender sees it.
     public struct Mac: Sendable, Hashable {
@@ -25,8 +51,8 @@ public enum FleetPlacement {
         public var connected: Bool
         /// It holds a checkout of the repo; nil when it hasn't said (no readiness report yet). False means it would clone it first.
         public var hasRepo: Bool?
-        /// Programs it lacks (`FleetReadinessReport.missing`), by name.
-        public var problems: [String]
+        /// What it lacks (`FleetReadinessReport.lacks`).
+        public var lacks: [Lack]
         public var sample: FleetPressureSample?
         /// Seconds since the sample arrived, by the sender's clock.
         public var sampleAge: TimeInterval?
@@ -36,18 +62,28 @@ public enum FleetPlacement {
         public var inFlight: Int
 
         public init(hostID: UUID, name: String, isLocal: Bool = false, connected: Bool = true, hasRepo: Bool? = nil,
-                    problems: [String] = [], sample: FleetPressureSample? = nil, sampleAge: TimeInterval? = nil,
+                    lacks: [Lack] = [], sample: FleetPressureSample? = nil, sampleAge: TimeInterval? = nil,
                     weight: FleetSendWeight = .normal, inFlight: Int = 0) {
             self.hostID = hostID
             self.name = name
             self.isLocal = isLocal
             self.connected = connected
             self.hasRepo = hasRepo
-            self.problems = problems
+            self.lacks = lacks
             self.sample = sample
             self.sampleAge = sampleAge
             self.weight = weight
             self.inFlight = inFlight
+        }
+
+        /// What it lacks that this dispatch needs: git, and Xcode when the repository has an Xcode project.
+        public func problems(needsXcode: Bool) -> [String] {
+            lacks.filter { $0 == .git || ($0 == .xcode && needsXcode) }.map(\.name)
+        }
+
+        /// The MCP commands it lacks: the thread starts without those servers.
+        public var withoutCommands: [String] {
+            lacks.compactMap { if case .mcpCommand(let command) = $0 { command } else { nil } }
         }
     }
 
@@ -75,18 +111,19 @@ public enum FleetPlacement {
         return word.isEmpty || word == "auto"
     }
 
-    public static func place(host: String?, macs: [Mac], batteryCountsHalf: Bool = true) -> Outcome {
-        isAuto(host) ? auto(macs, batteryCountsHalf: batteryCountsHalf) : named(host ?? "", macs)
+    /// `needsXcode`: the dispatch's repository has an Xcode project at its top level.
+    public static func place(host: String?, macs: [Mac], needsXcode: Bool = false, batteryCountsHalf: Bool = true) -> Outcome {
+        isAuto(host) ? auto(macs, needsXcode: needsXcode, batteryCountsHalf: batteryCountsHalf) : named(host ?? "", macs, needsXcode: needsXcode)
     }
 
     // MARK: Named
 
-    private static func named(_ host: String, _ macs: [Mac]) -> Outcome {
+    private static func named(_ host: String, _ macs: [Mac], needsXcode: Bool) -> Outcome {
         guard let mac = named(host, in: macs) else { return .refuse(code: FleetDispatchCode.noSuchHost, detail: host) }
         let reasons = [FleetPlacementReason(.named)]
         // A Mac that can't be reached is waited for; what it holds is checked when it answers.
         guard mac.connected else { return .waitForWake(hostID: mac.hostID, reasons: reasons) }
-        if let problem = mac.problems.first { return .refuse(code: FleetDispatchCode.hostNotReady, detail: problem) }
+        if let problem = mac.problems(needsXcode: needsXcode).first { return .refuse(code: FleetDispatchCode.hostNotReady, detail: problem) }
         // Connected but not yet heard from: there is nothing to check the repo against.
         if mac.hasRepo == nil { return .refuse(code: FleetDispatchCode.hostNotReady, detail: "unknown") }
         // A Mac without the repo clones it, then runs the work.
@@ -95,14 +132,14 @@ public enum FleetPlacement {
 
     // MARK: Auto
 
-    private static func auto(_ macs: [Mac], batteryCountsHalf: Bool) -> Outcome {
+    private static func auto(_ macs: [Mac], needsXcode: Bool, batteryCountsHalf: Bool) -> Outcome {
         // A Mac that hasn't said whether it has the repo isn't known to take work; one that says it lacks it clones it.
         let withRepo = macs.filter { $0.hasRepo != nil }
         guard !withRepo.isEmpty else { return .refuse(code: FleetDispatchCode.repoMissing, detail: nil) }
-        let usable = withRepo.filter { $0.connected && $0.problems.isEmpty }
+        let usable = withRepo.filter { $0.connected && $0.problems(needsXcode: needsXcode).isEmpty }
         guard !usable.isEmpty else {
             // Every Mac that could take it is up and missing a tool: waiting won't fix that.
-            if withRepo.allSatisfy({ $0.connected && !$0.problems.isEmpty }), let problem = withRepo.first?.problems.first {
+            if withRepo.allSatisfy({ $0.connected && !$0.problems(needsXcode: needsXcode).isEmpty }), let problem = withRepo.first?.problems(needsXcode: needsXcode).first {
                 return .refuse(code: FleetDispatchCode.hostNotReady, detail: problem)
             }
             return .waitForRoom
@@ -123,7 +160,7 @@ public enum FleetPlacement {
             counted.append((mac, FleetRoom.score(sample, weight: mac.weight, batteryCountsHalf: batteryCountsHalf)))
         }
         // A local Mac that isn't usable at all (a tool missing here) is left out for that.
-        if let local = withRepo.first(where: \.isLocal), !usable.contains(where: \.isLocal), !local.problems.isEmpty { localSkip = "notReady" }
+        if let local = withRepo.first(where: \.isLocal), !usable.contains(where: \.isLocal), !local.problems(needsXcode: needsXcode).isEmpty { localSkip = "notReady" }
 
         let local = usable.first(where: \.isLocal)
         // The clone is a cost: a Mac without the repo counts for its score over `cloneMargin`.

@@ -44,6 +44,7 @@ interface FleetHostInfo {
   room: string;
   connected: boolean;
   problems?: string[];
+  without?: string[] | null;
   hasRepo?: boolean | null;
   weight: string;
 }
@@ -59,6 +60,7 @@ interface FleetDispatchInfo {
   branchFacts?: { branch: string; head?: string | null; ahead: number; pushed: boolean; filesChanged: number; insertions: number; deletions: number } | null;
   failure?: string | null;
   detail?: string | null;
+  without?: string[] | null;
 }
 
 interface AgentPeerInfo {
@@ -847,6 +849,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
   function describeDispatch(info: FleetDispatchInfo): string {
     const lines = [`dispatch ${info.dispatchID}: ${info.state}`];
     if (info.host) lines.push(`host: ${info.host}`);
+    if (info.without?.length) lines.push(`Started on ${info.host ?? "that Mac"} without: ${info.without.map((c) => `${c} (MCP)`).join(", ")}`);
     if (info.title) lines.push(`title: ${info.title}`);
     if (info.branch) lines.push(`branch: ${info.branch}`);
     const facts = info.branchFacts;
@@ -880,8 +883,9 @@ export default function shepherdPanes(pi: ExtensionAPI) {
         if (hosts.length === 0) return text("no Macs");
         return text(hosts.map((h) => {
           const ready = !h.connected ? "not connected" : (h.problems ?? []).length > 0 ? `lacks ${h.problems.join(", ")}` : "ready";
+          const without = h.without?.length ? `  without: ${h.without.map((c) => `${c} (MCP)`).join(", ")}` : "";
           const repo = h.hasRepo === true ? "has this repo" : h.hasRepo === false ? "lacks this repo" : "repo unknown";
-          return `${h.name}${h.isThisMac ? " (this Mac)" : ""}  room: ${h.room}  ${ready}  ${repo}  weight: ${h.weight}`;
+          return `${h.name}${h.isThisMac ? " (this Mac)" : ""}  room: ${h.room}  ${ready}${without}  ${repo}  weight: ${h.weight}`;
         }).join("\n"));
       },
     });
@@ -912,7 +916,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
         if (failure) return text(failure);
         const info = reply?.info;
         if (!info) return text("dispatch requested");
-        return text(`dispatched ${info.dispatchID}: ${info.state}, ${info.host ? `to ${info.host}` : "Mac not chosen yet"}`);
+        const without = info.without?.length ? `. Started on ${info.host ?? "that Mac"} without: ${info.without.map((c) => `${c} (MCP)`).join(", ")}` : "";
+        return text(`dispatched ${info.dispatchID}: ${info.state}, ${info.host ? `to ${info.host}` : "Mac not chosen yet"}${without}`);
       },
     });
 
