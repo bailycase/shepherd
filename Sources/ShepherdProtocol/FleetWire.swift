@@ -276,6 +276,9 @@ public enum FleetAction: Codable, Hashable, Sendable {
     case watching(Bool)
     /// Try the link to this Mac again now, without waiting out its backoff.
     case reconnect(hostID: UUID)
+    /// Fleet ▸ Check ▸ Check now (`RemoteProtocol.fleetCheckCapability`): this Mac looks at itself again, and asks each Mac of the fleet that
+    /// can to do the same, read only; answered once they have answered (or after a bound). The snapshot then holds the new reports.
+    case checkNow
     /// Open the code window of Add a device and answer its code (`FleetResult.deviceCode`).
     case startDeviceCode
     /// Close it (the Add a device screen closed).

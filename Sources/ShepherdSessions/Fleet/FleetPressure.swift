@@ -17,6 +17,8 @@ final class FleetPressure: @unchecked Sendable {
         var sample: FleetPressureSample?
         var receivedAt: Date?
         var readiness: FleetReadinessReport?
+        var check: FleetCheckReport?
+        var checkAt: Date?
     }
 
     /// Sampling period.
@@ -25,6 +27,10 @@ final class FleetPressure: @unchecked Sendable {
     static let readinessLifetime: TimeInterval = 24 * 60 * 60
     /// While a report lists a missing tool, it is looked at again this often: installing the tool changes nothing the report is keyed by.
     static let missingRecheckInterval: TimeInterval = 60
+    /// Check (`FleetCheck`) is made again after this long even if nothing it is made of changed.
+    static let checkLifetime: TimeInterval = 24 * 60 * 60
+    /// Check now waits this long for the Macs' answers: each does its login shell, remotes and providers at once, each bounded.
+    static let checkNowTimeout: TimeInterval = 50
     /// A burst of changes reaches the app as one.
     static let notifyDelay: TimeInterval = 0.3
     /// What a peer's report is cut to.
@@ -37,6 +43,8 @@ final class FleetPressure: @unchecked Sendable {
     private let probe: FleetReadiness.Probe
     private let hardware: FleetReadiness.Hardware
     private let interval: TimeInterval
+    /// Where Check reads its facts; nil is a host that makes no Check report (tests that don't look at it).
+    private let checkSources: FleetCheck.Sources?
 
     /// A link to a peer is connected.
     var linkConnected: () -> Bool = { false }
@@ -49,6 +57,13 @@ final class FleetPressure: @unchecked Sendable {
     private(set) var localReadiness: FleetReadinessReport?
     private var readinessKey: String?
     private var readinessAt: Date?
+    /// What this Mac found when it looked at itself for Check, and when, and what it was made from (`checkKey`).
+    private(set) var localCheck: (report: FleetCheckReport, at: Date)?
+    private var checkKey: String?
+    private var checkRunning = false
+    /// Who asked for a run and is waiting for it: the ones of the run going, and the ones that asked after it began (they get the next).
+    private var checkServing: [@Sendable (FleetCheckReport?) -> Void] = []
+    private var checkWaiting: [@Sendable (FleetCheckReport?) -> Void] = []
     private var peers: [UUID: Peer] = [:]
     private var watchers: Set<Int32> = []
     private var timer: DispatchSourceTimer?
@@ -61,7 +76,8 @@ final class FleetPressure: @unchecked Sendable {
          localFacts: @escaping @Sendable () -> FleetLocalFacts = { FleetLocalFacts() },
          probe: @escaping FleetReadiness.Probe = FleetReadiness.systemProbe,
          hardware: @escaping FleetReadiness.Hardware = FleetReadiness.systemHardware,
-         interval: TimeInterval = FleetPressure.defaultInterval) {
+         interval: TimeInterval = FleetPressure.defaultInterval, check: FleetCheck.Sources? = nil) {
+        self.checkSources = check
         self.queue = queue
         self.clock = clock
         self.sampler = sampler
@@ -140,6 +156,7 @@ final class FleetPressure: @unchecked Sendable {
             Task { try? await client.fleetPressure(sample) }
         }
         remakeReadiness(facts)
+        checkIfDue(facts)
         notify()
     }
 
@@ -148,7 +165,9 @@ final class FleetPressure: @unchecked Sendable {
     /// What the readiness report is made of may have changed (the repositories this Mac can bind): it is made again now, and pushed if it did.
     func factsChanged() {
         guard !stopped else { return }
-        remakeReadiness(localFacts())
+        let facts = localFacts()
+        remakeReadiness(facts)
+        checkIfDue(facts)
     }
 
     private func remakeReadiness(_ facts: FleetLocalFacts) {
@@ -192,6 +211,77 @@ final class FleetPressure: @unchecked Sendable {
         notify()
     }
 
+    // MARK: Check
+
+    /// What Check is made from, cheap to make (pi's MCP file is read, nothing else): the same key is the same report.
+    static func checkKey(_ facts: FleetLocalFacts) -> String {
+        let servers = facts.mcpConfig.flatMap { try? Data(contentsOf: $0) }.map(FleetReadiness.mcpServers(in:)) ?? []
+        let spaces = facts.spaces.map { "\($0.name)\u{1}\($0.path)" }.sorted()
+        let commands = servers.map { "\($0.command)\u{1}\($0.servers.joined(separator: ","))" }
+        return (spaces + ["\u{2}"] + commands + ["\u{3}", facts.build ?? ""]).joined(separator: "\u{4}")
+    }
+
+    /// Looks at this Mac when it has never, when a space or an MCP server changed since, and every day.
+    private func checkIfDue(_ facts: FleetLocalFacts) {
+        guard checkSources != nil, !stopped, !checkRunning else { return }
+        if let local = localCheck, Self.checkKey(facts) == checkKey, clock().timeIntervalSince(local.at) <= Self.checkLifetime { return }
+        startCheck(nil)
+    }
+
+    /// Looks at this Mac again now (Check now, a fix that ended) and answers what it found; nil when this host makes no Check. A look
+    /// that is under way when this is asked doesn't answer it: the answer is of a look that began after.
+    func checkNow() async -> FleetCheckReport? {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                guard self.checkSources != nil, !self.stopped else { return continuation.resume(returning: nil) }
+                self.startCheck { continuation.resume(returning: $0) }
+            }
+        }
+    }
+
+    private func startCheck(_ waiter: (@Sendable (FleetCheckReport?) -> Void)?) {
+        if let waiter { checkWaiting.append(waiter) }
+        guard let sources = checkSources, !checkRunning, !stopped else { return }
+        checkRunning = true
+        checkServing = checkWaiting
+        checkWaiting = []
+        let facts = localFacts()
+        let key = Self.checkKey(facts)
+        Task { [weak self] in
+            let report = await FleetCheck.report(facts: facts, sources: sources)
+            self?.queue.async { self?.checked(report, key: key) }
+        }
+    }
+
+    /// Keeps a report, tells whoever asked for it, and pushes it to the peers that take it: they stamp its arrival, so every look is news.
+    private func checked(_ report: FleetCheckReport, key: String) {
+        checkRunning = false
+        let serving = checkServing
+        checkServing = []
+        guard !stopped else {
+            for waiter in serving + checkWaiting { waiter(nil) }
+            checkWaiting = []
+            return
+        }
+        localCheck = (report, clock())
+        checkKey = key
+        for waiter in serving { waiter(report) }
+        for client in pushTargets() where client.capabilities.contains(RemoteProtocol.fleetCheckCapability) {
+            Task { try? await client.fleetCheck(report) }
+        }
+        notify()
+        if !checkWaiting.isEmpty { startCheck(nil) }
+    }
+
+    /// A peer's report (`fleetCheck`, or its answer to `fleetCheckNow`): kept within bounds, stamped by this Mac's clock.
+    func receivedCheck(_ report: FleetCheckReport, from hostID: UUID) {
+        var peer = peers[hostID] ?? Peer()
+        peer.check = report.sanitized()
+        peer.checkAt = clock()
+        peers[hostID] = peer
+        notify()
+    }
+
     /// A sample of this Mac now, for a peer that asked (`fleetPressureNow`). A report that lists a missing tool is looked at again
     /// first: a placement is about to rely on it, and installing the tool changes nothing it is keyed by.
     func sampleNow() async -> (FleetPressureSample, FleetReadinessReport?) {
@@ -217,9 +307,11 @@ final class FleetPressure: @unchecked Sendable {
         guard client.capabilities.contains(RemoteProtocol.fleetPressureCapability) else { return }
         let sample = local?.sample
         let report = localReadiness
+        let check = client.capabilities.contains(RemoteProtocol.fleetCheckCapability) ? localCheck?.report : nil
         Task {
             if let report { try? await client.fleetReadiness(report) }
             if let sample { try? await client.fleetPressure(sample) }
+            if let check { try? await client.fleetCheck(check) }
         }
     }
 
@@ -270,14 +362,15 @@ final class FleetPressure: @unchecked Sendable {
     func macs(thisMac: UUID, peerIDs: [UUID]) -> [FleetMacState] {
         let now = clock()
         var macs: [FleetMacState] = []
-        if local != nil || localReadiness != nil {
+        if local != nil || localReadiness != nil || localCheck != nil {
             macs.append(FleetMacState(hostID: thisMac, sample: local?.sample, sampleAge: local.map { max(0, now.timeIntervalSince($0.at)) },
-                                      readiness: localReadiness))
+                                      readiness: localReadiness, check: localCheck?.report,
+                                      checkAge: localCheck.map { max(0, now.timeIntervalSince($0.at)) }))
         }
         for id in peerIDs {
-            guard let peer = peers[id], peer.sample != nil || peer.readiness != nil else { continue }
+            guard let peer = peers[id], peer.sample != nil || peer.readiness != nil || peer.check != nil else { continue }
             macs.append(FleetMacState(hostID: id, sample: peer.sample, sampleAge: peer.receivedAt.map { now.timeIntervalSince($0) },
-                                      readiness: peer.readiness))
+                                      readiness: peer.readiness, check: peer.check, checkAge: peer.checkAt.map { max(0, now.timeIntervalSince($0)) }))
         }
         return macs
     }

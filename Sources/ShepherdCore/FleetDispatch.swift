@@ -313,6 +313,9 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
     public var move: FleetMoveInfo?
     /// A dispatched thread that moved on to another Mac: the Mac running it says so, and the sender follows it there.
     public var movedOn: FleetMovedOn?
+    /// The Check items the thread is there to fix (`FleetUserThread.fixes`): while it runs the Check tab shows them being fixed, and when it ends the
+    /// host looks at the Mac again. Empty for any other dispatch, and from an older build.
+    public var fixes: [String]
     /// Epoch milliseconds.
     public var createdAt: Double
     public var updatedAt: Double
@@ -324,7 +327,8 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
                 thinking: String? = nil, reasonCodes: [FleetPlacementReason] = [], without: [String] = [], remoteAgentID: AgentID? = nil, activity: String? = nil,
                 resultText: String? = nil, resultBranchFacts: FleetBranchFacts? = nil, snapshotBytes: UInt64? = nil, snapshotProgress: UInt64? = nil,
                 snapshotFiles: Int? = nil, sendWarning: Bool = false, fileMillis: Int? = nil, spaceID: SpaceID? = nil, origin: String? = nil,
-                clone: FleetCloneProgress? = nil, start: FleetThreadStart? = nil, move: FleetMoveInfo? = nil, createdAt: Double, updatedAt: Double? = nil) {
+                clone: FleetCloneProgress? = nil, start: FleetThreadStart? = nil, move: FleetMoveInfo? = nil, fixes: [String] = [], createdAt: Double, updatedAt: Double? = nil) {
+        self.fixes = fixes
         self.start = start
         self.move = move
         self.id = id
@@ -370,7 +374,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         case failure, failureDetail, title, task, repoKey, commitSHA, subdir, branch, model, thinking, reasonCodes, without, remoteAgentID
         case activity, resultText, resultBranchFacts, createdAt, updatedAt
         case snapshotBytes, snapshotProgress, snapshotFiles, sendWarning, fileMillis
-        case spaceID, origin, clone, start, move, movedOn
+        case spaceID, origin, clone, start, fixes, move, movedOn
     }
 
     public init(from decoder: Decoder) throws {
@@ -413,6 +417,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         start = try c.decodeIfPresent(FleetThreadStart.self, forKey: .start)
         move = try? c.decodeIfPresent(FleetMoveInfo.self, forKey: .move)
         movedOn = try? c.decodeIfPresent(FleetMovedOn.self, forKey: .movedOn)
+        fixes = try c.decodeIfPresent([String].self, forKey: .fixes) ?? []
         createdAt = try c.decodeIfPresent(Double.self, forKey: .createdAt) ?? 0
         updatedAt = try c.decodeIfPresent(Double.self, forKey: .updatedAt) ?? createdAt
     }
@@ -456,6 +461,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(start, forKey: .start)
         try c.encodeIfPresent(move, forKey: .move)
         try c.encodeIfPresent(movedOn, forKey: .movedOn)
+        if !fixes.isEmpty { try c.encode(fixes, forKey: .fixes) }
         try c.encode(createdAt, forKey: .createdAt)
         try c.encode(updatedAt, forKey: .updatedAt)
     }

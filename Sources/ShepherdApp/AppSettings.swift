@@ -129,6 +129,7 @@ final class AppSettings {
         static let fleetThreadCap = "shepherd.fleet.threadCap"
         static let fleetUncommitted = "shepherd.fleet.uncommitted"
         static let fleetSnapshotExcludes = "shepherd.fleet.snapshotExcludes"
+        static let fleetCheckIgnores = "shepherd.fleet.checkIgnores"
         static let fleetAutoDispatch = "shepherd.fleet.autoDispatch"
         static let fleetBatteryCountsHalf = "shepherd.fleet.batteryCountsHalf"
         static let implementOpensThread = "shepherd.designs.implementOpensThread"
@@ -145,7 +146,7 @@ final class AppSettings {
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeGeneratePRDescription, worktreeDeleteAction, worktreeCloseOnMerge, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
             mcpProjectConfig,
-            goalsEnabled, projectsEnabled, designToolEnabled, fleetWeights, fleetThreadsCanSend, fleetThreadCap, fleetAutoDispatch, fleetBatteryCountsHalf, fleetUncommitted, fleetSnapshotExcludes, implementOpensThread,
+            goalsEnabled, projectsEnabled, designToolEnabled, fleetWeights, fleetThreadsCanSend, fleetThreadCap, fleetAutoDispatch, fleetBatteryCountsHalf, fleetUncommitted, fleetSnapshotExcludes, fleetCheckIgnores, implementOpensThread,
             filesWordWrap, filesMarkdownPreview,
         ]
 
@@ -568,6 +569,23 @@ final class AppSettings {
         if excludes.isEmpty { fleetSnapshotExcludes[key] = nil } else { fleetSnapshotExcludes[key] = excludes }
     }
 
+    /// Fleet ▸ Check ▸ Ignore on <Mac>: the items set aside for each Mac, under the setting keys `fleet.checkIgnore.<hostID>`. Synced across the fleet.
+    var fleetCheckIgnores: [String: [String]] {
+        didSet {
+            store.set(fleetCheckIgnores, forKey: Key.fleetCheckIgnores)
+            if fleetCheckIgnores != oldValue { onFleetWeightsChange?() }
+        }
+    }
+
+    func fleetCheckIgnored(on hostID: UUID) -> Set<String> {
+        Set(fleetCheckIgnores[FleetCheckIgnoreSetting.settingKey(hostID: hostID)] ?? [])
+    }
+
+    func setFleetCheckIgnored(_ ids: Set<String>, on hostID: UUID) {
+        let key = FleetCheckIgnoreSetting.settingKey(hostID: hostID)
+        if ids.isEmpty { fleetCheckIgnores[key] = nil } else { fleetCheckIgnores[key] = ids.sorted() }
+    }
+
     /// Settings ▸ Fleet ▸ Auto dispatch (`HostSettings.fleetAutoDispatch`): New thread's Auto place sends the work to the Mac with
     /// the most room. Nil until the person chooses; it then reads as on once a second Mac is paired (`autoDispatch(pairedMacs:)`).
     /// Synced across the fleet.
@@ -637,6 +655,7 @@ final class AppSettings {
         fleetThreadCap = HostSettings.clampedThreadCap(store.object(forKey: Key.fleetThreadCap) as? Int ?? HostSettings.fleetThreadCapDefault)
         fleetUncommitted = store.string(forKey: Key.fleetUncommitted).flatMap(FleetUncommittedChanges.init(rawValue:)) ?? .sendThem
         fleetSnapshotExcludes = (store.data(forKey: Key.fleetSnapshotExcludes).flatMap { try? JSONDecoder().decode([String: FleetSnapshotExcludes].self, from: $0) }) ?? [:]
+        fleetCheckIgnores = store.dictionary(forKey: Key.fleetCheckIgnores) as? [String: [String]] ?? [:]
         fleetAutoDispatch = store.object(forKey: Key.fleetAutoDispatch) as? Bool
         fleetBatteryCountsHalf = store.object(forKey: Key.fleetBatteryCountsHalf) as? Bool ?? true
         // Naming is always on now; only its model is a setting.
@@ -767,6 +786,7 @@ final class AppSettings {
         fleetThreadCap = HostSettings.fleetThreadCapDefault
         fleetUncommitted = .sendThem
         fleetSnapshotExcludes = [:]
+        fleetCheckIgnores = [:]
         fleetAutoDispatch = nil
         fleetBatteryCountsHalf = true
         shareDiagnostics = false
