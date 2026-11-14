@@ -186,8 +186,8 @@ struct ThreadView: View {
                             else { emptyState }
                         }
                         if let day = leadDayTitle(rows) { SHLeadDaySeparator(word: day) }
-                        historyColumn(history, spacing: spacing, dormant: dormant, running: running, catchingUp: catchingUp, arrived: arrived,
-                                      settled: settled, historyRowID: historyRowID)
+                        historyColumn(history, tail: eager, spacing: spacing, dormant: dormant, running: running, catchingUp: catchingUp,
+                                      arrived: arrived, settled: settled, historyRowID: historyRowID)
                         ForEach(eager) { row in
                             rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                         }
@@ -458,9 +458,9 @@ struct ThreadView: View {
 
     /// The lazy stack of the rows older than the eager tail, drawn again only when what its rows are built from changes
     /// (`ThreadHistoryCache`).
-    private func historyColumn(_ history: ArraySlice<NativeThreadRow>, spacing: CGFloat, dormant: Bool, running: Bool, catchingUp: Bool,
-                               arrived: Set<String>, settled: Bool, historyRowID: String?) -> some View {
-        let key = historyKey(history, arrived: arrived, dormant: dormant, boundary: historyRowID, running: running, detached: !follower.sticky)
+    private func historyColumn(_ history: ArraySlice<NativeThreadRow>, tail: ArraySlice<NativeThreadRow>, spacing: CGFloat, dormant: Bool,
+                               running: Bool, catchingUp: Bool, arrived: Set<String>, settled: Bool, historyRowID: String?) -> some View {
+        let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, boundary: historyRowID, running: running, detached: !follower.sticky)
         return ThreadHistoryColumn(key: key) {
             AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
                 ForEach(history) { row in
@@ -476,10 +476,11 @@ struct ThreadView: View {
 
     /// What the history's rows are built from. None while there is no history, and for a thread whose rows also read what cannot be
     /// compared (a Project's references, a design's comments): the stack is drawn every time.
-    private func historyKey(_ history: ArraySlice<NativeThreadRow>, arrived: Set<String>, dormant: Bool, boundary: String?, running: Bool, detached: Bool) -> ThreadHistoryCache.Key? {
+    private func historyKey(_ history: ArraySlice<NativeThreadRow>, tail: ArraySlice<NativeThreadRow>, arrived: Set<String>, dormant: Bool,
+                            boundary: String?, running: Bool, detached: Bool) -> ThreadHistoryCache.Key? {
         guard !history.isEmpty, !leadColumn, projectActionCards == nil, commentCards == nil else { return nil }
         return ThreadHistoryCache.Key(rows: history, dormant: dormant, boundary: boundary, running: running, detached: detached,
-                                      arrived: arrived.isEmpty ? [] : arrived.filter { id in history.contains { $0.id == id } },
+                                      arrived: ThreadHistoryCache.Key.arrivals(in: history, tail: tail, among: arrived),
                                       inspected: inspectedRunID, fleet: fleetThread,
                                       actions: [review != nil, turnActions != nil, inspectSubagent != nil, steerSubagent != nil])
     }
@@ -944,6 +945,16 @@ final class ThreadHistoryCache {
         let inspected: String?
         let fleet: FleetThreadSurface?
         let actions: [Bool]
+
+        /// The rows of `arrived` that are among the `history`'s. Rows arrive at the thread's tail, so unless a batch larger than the
+        /// tail arrived at once, every one is in `tail` and only it is looked at; the history is walked only for such a batch.
+        static func arrivals(in history: ArraySlice<NativeThreadRow>, tail: ArraySlice<NativeThreadRow>, among arrived: Set<String>) -> Set<String> {
+            guard !arrived.isEmpty else { return [] }
+            var inTail = 0
+            for row in tail where arrived.contains(row.id) { inTail += 1 }
+            guard inTail < arrived.count else { return [] }
+            return Set(history.lazy.map(\.id).filter(arrived.contains))
+        }
     }
 
     private var key: Key?
