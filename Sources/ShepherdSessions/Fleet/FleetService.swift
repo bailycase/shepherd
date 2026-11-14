@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
@@ -18,6 +19,9 @@ struct FleetCaller: Sendable {
     var deviceID: UUID?
     /// What the client called itself in `hello`.
     var clientName: String?
+    /// It listed `fleet.move.view.v1` in `hello`: its view of the fleet carries the moves of this Mac's threads. A client that did not
+    /// (an older build) would read a move as a failed dispatch.
+    var readsMoves = false
 
     /// What it may do in the fleet, by how it authenticated.
     var access: FleetAccess { isLocal ? .local : peerHostID != nil ? .member : deviceID != nil ? .device : .unauthenticated }
@@ -208,6 +212,8 @@ final class FleetService: @unchecked Sendable {
             return link.active
         }
         dispatch.onChange = { [weak self] in self?.changed() }
+        // A thread that was there to fix something on a Mac has ended: that Mac looks at itself again.
+        dispatch.onFixEnded = { [weak self] hostID in Task { await self?.check(hostID) } }
     }
 
     var hostID: UUID { identity.hostID }
@@ -481,6 +487,16 @@ final class FleetService: @unchecked Sendable {
             guard caller.access == .member, let from = caller.peerHostID else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet reports its readiness.")) }
             pressure.received(report, from: from)
             reply(.ok(id: id))
+        case .fleetCheck(let id, let report):
+            guard caller.access == .member, let from = caller.peerHostID else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet reports what it found.")) }
+            pressure.receivedCheck(report, from: from)
+            reply(.ok(id: id))
+        case .fleetCheckNow(let id):
+            guard caller.access == .member else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet asks another to look again.")) }
+            Task { [pressure] in
+                if let report = await pressure.checkNow() { reply(.fleetCheckReport(id: id, report: report)) }
+                else { reply(Self.refusal(id, "unsupported", "This Mac doesn't make a Check report.")) }
+            }
         case .fleetPressureNow(let id):
             guard caller.access == .member else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet asks for a sample.")) }
             Task { [pressure] in
@@ -573,7 +589,7 @@ final class FleetService: @unchecked Sendable {
                 reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot())))
             } else if caller.authenticated, caller.access.mayViewFleet {
                 // A phone or an iPad reads the Macs, their load and their readiness, and nothing of how they are reached.
-                reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView)))
+                reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView(withMoves: caller.readsMoves))))
             } else {
                 reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only this Mac's app reads its fleet."))
             }
@@ -581,7 +597,7 @@ final class FleetService: @unchecked Sendable {
             // A client that looks at the Fleet page may ask the host to sample while it does; it changes nothing else.
             if !caller.isLocal, caller.authenticated, caller.access.mayViewFleet, case .watching(let on) = action {
                 pressure.watch(on, connection: caller.connection)
-                return reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView)))
+                return reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView(withMoves: caller.readsMoves))))
             }
             guard caller.isLocal else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only this Mac's app changes its fleet.")) }
             perform(action, id: id, caller: caller, reply: reply)
@@ -940,6 +956,12 @@ final class FleetService: @unchecked Sendable {
         case .watching(let on):
             pressure.watch(on, connection: caller.connection)
             reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot())))
+        case .checkNow:
+            Task { [weak self] in
+                guard let self else { return }
+                await self.checkEveryMac()
+                reply(.fleetResult(id: id, result: FleetResult(snapshot: await self.sync { self.snapshot() })))
+            }
         case .reconnect(let hostID):
             guard peers.record(hostID).map({ !$0.revoked }) == true else {
                 return reply(Self.refusal(id, FleetProtocol.Code.invalid, "That Mac isn't in the fleet."))
@@ -1008,6 +1030,14 @@ final class FleetService: @unchecked Sendable {
                 guard let self else { return }
                 switch result {
                 case .success(let record): reply(.fleetResult(id: id, result: FleetResult(snapshot: self.snapshot(), dispatch: record.summary)))
+                case .failure(let refusal): reply(Self.refusal(id, refusal.code, refusal.message))
+                }
+            }
+        case .moveThread(let request):
+            dispatch.moveThread(request) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success(let record): reply(.fleetResult(id: id, result: FleetResult(snapshot: self.snapshot(), dispatch: record)))
                 case .failure(let refusal): reply(Self.refusal(id, refusal.code, refusal.message))
                 }
             }
@@ -1147,7 +1177,15 @@ final class FleetService: @unchecked Sendable {
                              advertising: discovery?.isAdvertising ?? false, peers: statuses, join: window,
                              sync: syncStatus, devices: FleetDevicesSnapshot(devices: clients, code: code),
                              macs: pressure.macs(thisMac: identity.hostID, peerIDs: statuses.map(\.hostID)),
-                             dispatches: dispatch.log(), index: index.status(), members: viewMembers())
+                             dispatches: dispatch.log(), index: index.status(), members: viewMembers(), limits: dispatch.limitStatuses())
+    }
+
+    /// A thread's request to `provider` failed with `error` (server queue): when it is a rate limit or "overloaded", sign-ins are shared, so
+    /// the limit is the fleet's (`FleetPressure.reportLimit`).
+    func providerFailed(provider: String, error: String) {
+        let kind = NativeTurnError(text: String(error.prefix(4096))).kind
+        guard kind == .rateLimit || kind == .overloaded else { return }
+        pressure.reportLimit(provider: provider, retryAfter: FleetProviderLimits.retryAfter(in: error))
     }
 
     private func status(of record: FleetPeerRecord) -> FleetPeerStatus {
@@ -1159,7 +1197,8 @@ final class FleetService: @unchecked Sendable {
         }
         return FleetPeerStatus(hostID: record.hostID, name: record.name, kind: record.kind, host: link?.route?.host ?? record.addresses.first?.host,
                                port: link?.route?.port ?? record.addresses.first?.port, pairedAt: record.pairedAt, link: link?.phase ?? .offline,
-                               lastSeen: link?.lastSeen, reach: reach)
+                               lastSeen: link?.lastSeen, reach: reach,
+                               takesThreads: link?.phase == .connected ? dispatch.capabilities(of: record.hostID)?.contains(RemoteProtocol.fleetMoveCapability) : nil)
     }
 
     // MARK: - Persistence (server queue)
@@ -1524,7 +1563,7 @@ final class FleetService: @unchecked Sendable {
     private static func callID(_ request: RemoteRequest) -> Int? {
         switch request {
         case .fleetIntroduce(let id, _), .fleetRevoke(let id, _, _), .fleetSync(let id, _), .fleetPressure(let id, _), .fleetReadiness(let id, _),
-             .fleetPressureNow(let id), .fleetRepoManifest(let id, _), .fleetSnapshotPart(let id, _, _), .fleetBlobPush(let id, _, _),
+             .fleetPressureNow(let id), .fleetCheck(let id, _), .fleetCheckNow(let id), .fleetRepoManifest(let id, _), .fleetSnapshotPart(let id, _, _), .fleetBlobPush(let id, _, _),
              .fleetDispatchCreate(let id, _), .fleetDispatchControl(let id, _, _), .fleetDispatchChanged(let id, _),
              .fleetDispatchResult(let id, _, _, _), .fleetSyncDevices(let id, _), .fleetRoutes(let id, _):
             return id
@@ -1630,6 +1669,39 @@ final class FleetService: @unchecked Sendable {
         while ContinuousClock.now < deadline {
             if await sync({ self.links[hostID]?.phase == .connected }) { return }
             try? await Task.sleep(for: .milliseconds(50))
+        }
+    }
+
+    // MARK: - Check
+
+    /// This Mac and every Mac of the fleet that takes Check look at themselves, at once, read only; each answer is kept as it comes. Each is bounded.
+    private func checkEveryMac() async {
+        let others = await sync { self.links.compactMap { id, link -> (UUID, RemoteHostClient)? in
+            guard link.phase == .connected, let client = link.active, client.capabilities.contains(RemoteProtocol.fleetCheckCapability) else { return nil }
+            return (id, client)
+        } }
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { _ = await self.pressure.checkNow() }
+            for (id, client) in others { group.addTask { await self.ask(client, toCheck: id) } }
+        }
+    }
+
+    /// The Mac `hostID` (this one included) looks at itself again, and what it found is kept.
+    private func check(_ hostID: UUID) async {
+        if hostID == identity.hostID { _ = await pressure.checkNow(); return }
+        let client = await sync { () -> RemoteHostClient? in
+            guard let link = self.links[hostID], link.phase == .connected, let client = link.active,
+                  client.capabilities.contains(RemoteProtocol.fleetCheckCapability) else { return nil }
+            return client
+        }
+        if let client { await ask(client, toCheck: hostID) }
+    }
+
+    private func ask(_ client: RemoteHostClient, toCheck hostID: UUID) async {
+        guard let report = try? await client.fleetCheckNow() else { return }
+        queue.async { [weak self] in
+            self?.pressure.receivedCheck(report, from: hostID)
+            self?.changed()
         }
     }
 

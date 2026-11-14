@@ -59,7 +59,7 @@ struct FleetPressureIntegrationTests {
         var peersFile: URL { host.dir.appendingPathComponent("fleet/peers.json") }
 
         /// `mcpConfig` stands in for pi's MCP file, and `probe` for the login shell.
-        init(_ name: String, busy: UInt64, clock: TestClock = TestClock(), mcpConfig: URL? = nil,
+        init(_ name: String, busy: UInt64, clock: TestClock = TestClock(), mcpConfig: URL? = nil, facts: (@Sendable () -> FleetLocalFacts)? = nil, check: FleetCheck.Sources? = nil,
              probe: @escaping FleetReadiness.Probe = { _ in FleetProbeResult(noGit: true) }) async throws {
             self.name = name
             self.meter = Meter(busy: busy)
@@ -68,12 +68,12 @@ struct FleetPressureIntegrationTests {
             let server = host.server
             server.configureFleet(name: name, advertises: false)
             let meter = meter
-            let ownFacts: (@Sendable () -> FleetLocalFacts)? = mcpConfig.map { url in { @Sendable in FleetLocalFacts(mcpConfig: url) } }
+            let ownFacts: (@Sendable () -> FleetLocalFacts)? = facts ?? mcpConfig.map { url in { @Sendable in FleetLocalFacts(mcpConfig: url) } }
             server.configureFleet(clock: { clock.now }, pressure: { queue, facts in
                 // An hour between ticks: the timer's first tick is the only one that fires; the tests ask for the rest.
                 FleetPressure(queue: queue, clock: { clock.now }, sampler: FleetPressureSampler(sources: meter.sources),
                               localFacts: ownFacts ?? facts,
-                              probe: probe, hardware: { (name, "M4 Pro") }, interval: 3_600)
+                              probe: probe, hardware: { (name, "M4 Pro") }, interval: 3_600, check: check)
             })
             let tokenURL = host.dir.appendingPathComponent("remote-token")
             let socket = host.dir.appendingPathComponent("h.sock").path

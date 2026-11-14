@@ -863,6 +863,8 @@ final class ShepherdViewModel {
             self?.fleetPage.update($0)
             self?.fleetConnections.snapshotChanged($0)
         }
+        self.fleetPage.checkIgnored = { [weak self] in self?.settings.fleetCheckIgnored(on: $0) ?? [] }
+        self.fleetPage.setCheckIgnored = { [weak self] ids, mac in self?.settings.setFleetCheckIgnored(ids, on: mac) }
         self.settings.onFleetWeightsChange = { [fleetPage] in fleetPage.recompute() }
         self.fleet.browse = { update in
             let browser = FleetBrowser()
@@ -1236,6 +1238,7 @@ final class ShepherdViewModel {
         if old != .blocked, status == .working { resetSidebarActivity(id) }
         // A turn ending reads the branch card again (commits, a push, the PR's checks).
         if old == .working, status != .working { branchCardStores[id]?.requestRefresh() }
+        if old == .working, status == .done || status == .idle { fleetCheckAgentEnded(id) }
         // A session (re)start reports idle; the server still remembers the failure until a turn starts, so the row keeps reading failed.
         let failed = status == .done ? failure != nil : status == .idle && Self.persistedTurnFailed(agent)
         // pi said a subscription's refresh failed: Sign-in says it expired.

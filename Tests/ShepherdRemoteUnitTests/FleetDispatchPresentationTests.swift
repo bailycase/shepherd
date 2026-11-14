@@ -55,6 +55,27 @@ struct FleetDispatchPresentationTests {
         #expect(why([]) == "")
     }
 
+    /// The note on the waiting card: it starts by itself when the limit lifts, and nothing offers another Mac, as every Mac is limited alike.
+    @Test func aDispatchHeldForALimitSaysWhichAndForHowLong() throws {
+        var snapshot = P.snapshot()
+        snapshot.limits = [FleetLimitStatus(provider: "anthropic", seconds: 100, waiting: 1)]
+        var record = Self.record(.waitingRoom, target: nil, host: nil, reasons: [])
+        record.limitProvider = "anthropic"
+        let card = FleetDispatchPresentation.card(record, among: [record], in: FleetCardContext(snapshot: snapshot, locale: P.en, calendar: P.utc, snapshotAge: 15))
+        #expect(card.pill == "Waiting for limit" && card.tone == .warn && card.detail == "Waiting for Anthropic's limit · 1m 25s")
+        #expect(card.actions == [.cancel])
+        // The same record without the limit is a wait for room, as it was.
+        record.limitProvider = nil
+        #expect(Self.cards([record]).first?.pill == "Waiting for room")
+    }
+
+    @Test func whatTheMacItWentToWasRunningRidesTheRowsWhy() {
+        let why = FleetDispatchPresentation.whyWords(Self.record(.running, reasons: [FleetPlacementReason(.mostRoom, ratio: 3.4, commands: 0)]))
+        #expect(why == "Auto: Mac mini had 3.4× the room, no builds running")
+        #expect(FleetDispatchPresentation.whyWords(Self.record(.running, reasons: [FleetPlacementReason(.onlyChoice, commands: 1)]))
+            == "Auto: Mac mini was the only Mac with room, 1 running a build or test")
+    }
+
     @Test func aSleepingTargetWaitsAndOffersAnotherMac() throws {
         let card = try #require(Self.cards([Self.record(.waitingWake, target: P.studio, host: "Mac Studio", reasons: [FleetPlacementReason(.named)])]).first)
         #expect(card.pill == "Waiting" && card.layout == .state)

@@ -86,6 +86,9 @@ public struct FleetMacCard: Identifiable, Equatable, Sendable {
     /// The Mac is one of the fleet's (its id is a fleet host id), so a Send work here weight can be set for it. False for a
     /// Mac this device holds that no fleet Mac has told it about (`FleetDeviceList`).
     public var takesWeight = true
+    /// What Check found that needs something here (not set aside): the Ready line says so and Check… opens the tab on it. Zero from a Mac
+    /// that hasn't reported, and from one that is asleep.
+    public var needs = 0
     /// Names the Mac's weight control for VoiceOver ("Send work to Mac mini").
     public var weightLabel: String { "Send work to \(name)" }
     public var isThisMac: Bool { status == .thisMac }
@@ -171,8 +174,22 @@ public struct FleetPage: Equatable, Sendable {
     public var behind: [FleetDispatchPresentation.BehindMac] = []
     /// Every dispatch this Mac sent, as a card: what a thread draws for the dispatches it made (`FleetDispatchPresentation`).
     public var dispatchCards: [FleetDispatchCard] = []
+    /// Fleet ▸ Check: what each Mac has of what the fleet needs (`FleetCheckPresentation`).
+    public var check = FleetCheckPage.empty
+    /// The providers limiting the fleet's requests now, one strip each (FleetA's throttled state): empty while none is.
+    public var limits: [FleetLimitStrip] = []
 
     public static let empty = FleetPage(cards: [], summary: "", nextGoesTo: nil, footer: .init(dots: [], detail: "", label: "Fleet"))
+}
+
+/// A provider is limiting the fleet's requests: the strip under Auto dispatch.
+public struct FleetLimitStrip: Identifiable, Equatable, Sendable {
+    /// pi's provider id.
+    public var id: String
+    /// "Anthropic is limiting your account. New Claude threads wait about 1m 40s before they start, on every Mac. Other models start now."
+    public var text: String
+    /// "3 waiting": the threads and dispatches held for it; nil while none is.
+    public var waiting: String?
 }
 
 /// The sidebar's Fleet row: a dot per Mac and how many sleep.
@@ -208,7 +225,8 @@ public enum FleetPagePresentation {
     /// `batteryCountsHalf` is the fleet setting that halves a Mac on battery.
     public static func make(snapshot: FleetSnapshot, weight: (UUID) -> FleetSendWeight, snapshotAge: TimeInterval = 0,
                             batteryCountsHalf: Bool = true, autoDispatch: Bool = true, threadCap: Int = HostSettings.fleetThreadCapDefault,
-                            viewer: FleetViewer = .mac,
+                            viewer: FleetViewer = .mac, checkIgnored: (UUID) -> Set<String> = { _ in [] },
+                            checkFixing: [UUID: [String: FleetCheckFixing]] = [:],
                             locale: Locale = .current, calendar: Calendar = .current, now: Date = Date()) -> FleetPage {
         guard snapshot.enabled, let thisID = snapshot.hostID else { return .empty }
         let macs = Dictionary(snapshot.macs.map { ($0.hostID, $0) }, uniquingKeysWith: { first, _ in first })
@@ -274,6 +292,18 @@ public enum FleetPagePresentation {
             cards[index].cloning = Array(Set(snapshot.dispatches.filter { $0.state == .preparing && $0.targetHostID == id }.compactMap { $0.clone?.name })).sorted()
         }
 
+        // Check: what each Mac found of what the fleet needs. A Mac that reported says what needs doing in its Ready line, in place of the readiness words.
+        let check = FleetCheckPresentation.make(snapshot: snapshot, cards: cards, ignored: checkIgnored, snapshotAge: snapshotAge, fixing: checkFixing)
+        for index in cards.indices where cards[index].status != .asleep {
+            let id = cards[index].id
+            guard check.reported(id) else { continue }
+            let gates = (macs[id]?.readiness?.missing ?? []).filter { $0.kind != .binary }.map { $0.kind == .git ? "git" : "Xcode" }
+            let rows = check.shortNames(needing: id)
+            let all = gates + rows
+            cards[index].needs = all.count
+            cards[index].ready = FleetCheckPresentation.needs(all).map { FleetLine(text: $0, tone: .warn) } ?? FleetLine(text: "Every model and tool", tone: .good)
+        }
+
         let winner = FleetRoom.nextGoesTo(zip(entries, scores).map { FleetRoom.Candidate(id: $0.0.id, score: $0.1) }, local: thisID)
         let working = entries.compactMap { $0.sample?.activeAgents }.reduce(0, +)
         let asleep = cards.filter { $0.status == .asleep }
@@ -283,9 +313,9 @@ public enum FleetPagePresentation {
         var page = FleetPage(cards: cards, summary: summary.joined(separator: " · "),
                              nextGoesTo: winner.flatMap { id in cards.first { $0.id == id }?.name },
                              footer: footer(cards, asleep: asleep, viewer: viewer))
-        page.dispatches = snapshot.dispatches.sorted { $0.createdAt > $1.createdAt }.prefix(fleetDispatchLogLimit).map { dispatchRow($0, now: now) }
+        page.dispatches = snapshot.dispatches.sorted { $0.createdAt > $1.createdAt }.prefix(fleetDispatchLogLimit).map { dispatchRow($0, now: now, limits: snapshot.limits, snapshotAge: snapshotAge) }
         page.autoDispatch = autoDispatch
-        let context = FleetCardContext(snapshot: snapshot, cap: threadCap, locale: locale, calendar: calendar)
+        let context = FleetCardContext(snapshot: snapshot, cap: threadCap, locale: locale, calendar: calendar, snapshotAge: snapshotAge)
         page.dispatchCards = FleetDispatchPresentation.cards(Array(snapshot.dispatches.prefix(fleetDispatchLogLimit)), in: context)
         let dayAgo = (now.timeIntervalSince1970 - 86_400) * 1000
         let waiting: Set<FleetDispatchState> = [.waitingRoom, .waitingWake, .heldLimit, .heldRestart, .preparing]
@@ -295,14 +325,47 @@ public enum FleetPagePresentation {
             return waiting.contains(record.state) || (record.state == .failed && record.updatedAt > dayAgo)
         }
         page.behind = FleetDispatchPresentation.behind(snapshot)
+        page.check = check
+        page.limits = limitStrips(snapshot.limits, snapshotAge: snapshotAge)
         return page
     }
 
+    /// The strips for the providers still limited after `snapshotAge` seconds: one provider says what it does to new threads; several, only
+    /// how long each holds.
+    static func limitStrips(_ limits: [FleetLimitStatus], snapshotAge: TimeInterval) -> [FleetLimitStrip] {
+        let live = limits.filter { $0.seconds - snapshotAge >= 1 }
+        return live.map { limit in
+            let name = NativeTurnError.providerName(limit.provider)
+            let wait = NativeTurnError.spanText(limit.seconds - snapshotAge)
+            let text: String
+            if live.count == 1 {
+                text = "\(name) is limiting your account. New \(modelNoun(limit.provider)) threads wait about \(wait) before they start, on every Mac. Other models start now."
+            } else {
+                text = "\(name) is limiting your account. New \(modelNoun(limit.provider)) threads wait about \(wait) before they start, on every Mac."
+            }
+            return FleetLimitStrip(id: limit.provider, text: text, waiting: limit.waiting > 0 ? "\(limit.waiting) waiting" : nil)
+        }
+    }
+
+    /// What a provider's models are called in the strip: "Claude" for Anthropic's, the provider's own name for the rest.
+    static func modelNoun(_ provider: String) -> String {
+        provider.lowercased() == "anthropic" ? "Claude" : NativeTurnError.providerName(provider)
+    }
+
+    /// "Waiting for Anthropic's limit · 1m 40s": what a held dispatch says. Without a time once the limit has lifted and the dispatch is about to start.
+    static func limitWords(_ record: FleetDispatchRecord, limits: [FleetLimitStatus], snapshotAge: TimeInterval) -> String? {
+        guard let provider = record.limitProvider else { return nil }
+        let name = NativeTurnError.providerName(provider)
+        let left = limits.first { $0.provider == provider }.map { $0.seconds - snapshotAge }
+        guard let left, left >= 1 else { return "Waiting for \(name)'s limit to lift" }
+        return "Waiting for \(name)'s limit · \(NativeTurnError.spanText(left))"
+    }
+
     /// The words of one record: the state, why it went where it did (or why it didn't start) and its age.
-    static func dispatchRow(_ record: FleetDispatchRecord, now: Date) -> FleetDispatchRow {
+    static func dispatchRow(_ record: FleetDispatchRecord, now: Date, limits: [FleetLimitStatus] = [], snapshotAge: TimeInterval = 0) -> FleetDispatchRow {
         let (state, tone): (String, FleetTone) = switch record.state {
         case .placing: ("Placing", .tertiary)
-        case .waitingRoom, .waitingWake: ("Waiting", .tertiary)
+        case .waitingRoom, .waitingWake, .waitingTurn: ("Waiting", .tertiary)
         case .heldLimit, .heldRestart: ("Held", .warn)
         case .preparing: (record.clone == nil ? "Preparing" : "Cloning", .active)
         case .running: ("Working", .active)
@@ -314,8 +377,8 @@ public enum FleetPagePresentation {
         let host = record.targetHostName ?? record.requestedHost.flatMap { FleetPlacement.isAuto($0) ? nil : $0 } ?? "No Mac yet"
         return FleetDispatchRow(
             id: record.id, title: record.title.isEmpty ? "Untitled" : record.title,
-            sentBy: record.kind == .userThread ? "Sent by you" : record.parentTitle.isEmpty ? "Sent by a thread" : "Sent by \(record.parentTitle)",
-            host: host, reason: reason(record, host: host), state: state, tone: tone,
+            sentBy: record.kind == .move ? "Moved by you" : record.kind == .userThread ? "Sent by you" : record.parentTitle.isEmpty ? "Sent by a thread" : "Sent by \(record.parentTitle)",
+            host: host, reason: limitWords(record, limits: limits, snapshotAge: snapshotAge) ?? reason(record, host: host), state: state, tone: tone,
             age: ForgePresentation.ago(Date(timeIntervalSince1970: record.createdAt / 1000), now: now))
     }
 
@@ -333,16 +396,19 @@ public enum FleetPagePresentation {
             let why = switch skip {
             case "cpu": "is busy"
             case "memory": "is low on memory"
+            case "memoryPressure": "is under memory pressure"
             case "thermal": "is running hot"
             case "manualOnly": "is set to Manual only"
             default: "isn't counted"
             }
             return "Auto: This Mac \(why)"
         }
+        // What the Mac it went to was running, when it said: "Auto: Mac mini, no builds running".
+        let running = codes.first?.commands.map { FleetDispatchPresentation.commandsWords($0) }
         switch codes.first?.code {
         case .named?: return record.kind == .userThread ? "You picked \(host)" : "Picked \(host)"
-        case .mostRoom?: return "Auto: most room"
-        case .onlyChoice?: return "Auto: the only Mac that counts"
+        case .mostRoom?: return running.map { "Auto: \(host), \($0)" } ?? "Auto: most room"
+        case .onlyChoice?: return running.map { "Auto: \(host), \($0)" } ?? "Auto: the only Mac that counts"
         case .keptLocal?: return "Auto: This Mac has room"
         default: return ""
         }
@@ -403,7 +469,7 @@ public enum FleetPagePresentation {
             switch skip {
             case .manualOnly?, .stale?, .future?:
                 room = FleetMetric(fraction: 0, text: "Not counted", tone: .tertiary)
-            case .cpu?, .memory?, .thermal?:
+            case .cpu?, .memory?, .memoryPressure?, .thermal?:
                 room = FleetMetric(fraction: 0, text: "No room", tone: .bad)
             case nil:
                 if compared {
@@ -412,7 +478,7 @@ public enum FleetPagePresentation {
                     room = FleetMetric(fraction: max(0.04, share), text: text, tone: score >= best ? .good : .warn)
                 } else {
                     // What is free of the CPU and of the memory.
-                    let share = (1 - min(1, max(0, sample?.cpuUtilization ?? 0))) * (sample?.availableShare ?? 0)
+                    let share = (1 - min(1, max(0, sample.map(FleetRoom.smoothedCPU) ?? 0))) * (sample?.availableShare ?? 0)
                     let text = share >= 0.5 ? "Room to spare" : share >= 0.2 ? "Some room" : "Little room"
                     room = FleetMetric(fraction: max(0.04, share), text: text, tone: share >= 0.5 ? .good : .warn)
                 }
@@ -424,7 +490,9 @@ public enum FleetPagePresentation {
         if !asleep, let sample {
             let busy = min(1, max(0, sample.cpuUtilization))
             cpu = FleetMetric(fraction: busy, text: "\(Int((busy * 100).rounded()))%", tone: busy >= FleetRoom.cpuCeiling ? .bad : busy >= 0.6 ? .warn : .good)
-            mem = FleetMetric(fraction: 1 - sample.availableShare, text: "\(memory(sample.availableMemoryBytes)) free", tone: .tertiary)
+            let pressure = sample.memoryPressure ?? .normal
+            mem = FleetMetric(fraction: 1 - sample.availableShare, text: "\(memory(sample.availableMemoryBytes)) free",
+                              tone: pressure >= .critical ? .bad : pressure >= FleetRoom.memoryPressureCutoff ? .warn : .tertiary)
         }
 
         // Power
@@ -466,7 +534,7 @@ public enum FleetPagePresentation {
         }
         var card = FleetMacCard(id: id, name: name, hardware: hardware, status: status, statusText: statusText, room: room, cpu: cpu, memory: mem,
                                 power: power, ready: ready,
-                                agents: asleep || sample == nil ? "—" : sample!.activeAgents == 0 ? "None working" : "\(sample!.activeAgents) working",
+                                agents: asleep || sample == nil ? "—" : agentsWords(sample!),
                                 note: note, weight: weight, repos: readiness?.repos ?? [], canRetry: asleep)
         if !asleep, let sample {
             var fact = sample.onBattery ? (sample.batteryPercent.map { "battery \($0)%" } ?? "on battery") : "plugged in"
@@ -480,6 +548,16 @@ public enum FleetPagePresentation {
     }
 
     // MARK: Words
+
+    /// The Agents row: "None working", "3 working", "3 working · 2 running builds or tests", "3 working · all waiting on the model".
+    /// A Mac that doesn't say which run commands (an older build) says only how many work.
+    static func agentsWords(_ sample: FleetPressureSample) -> String {
+        let working = sample.activeAgents
+        guard working > 0 else { return "None working" }
+        guard let commands = sample.commandAgents else { return "\(working) working" }
+        let rest = commands == 0 ? (working == 1 ? "waiting on the model" : "all waiting on the model") : FleetDispatchPresentation.commandsWords(commands)
+        return "\(working) working · \(rest)"
+    }
 
     /// "via 10.77.20.10 · LAN", "via its link to you", or nil when the Mac isn't reached by either.
     static func reachWords(_ reach: FleetPeerReach?) -> String? {

@@ -59,6 +59,18 @@ extension AppLayout {
     static let fleetFooterGlyph: CGFloat = 16
     static let fleetFooterDotGap: CGFloat = SH.Space.xs
 
+    // The Check tab (FleetCheck): the grid beside a panel.
+    /// The panel's width, the grid's head and its rows' least height.
+    static let fleetCheckPanelWidth: CGFloat = 400
+    static let fleetCheckHeadHeight: CGFloat = 36
+    static let fleetCheckRowHeight: CGFloat = 34
+    /// The grid's columns: the thing's name is this many times a Mac's column.
+    static let fleetCheckNameWeight: CGFloat = 1.5
+    /// A group's label is tracked wide (the board's .05em of 10.5pt).
+    static let fleetCheckGroupTracking: CGFloat = 0.5
+    /// A line of the panel's prose sits at the board's 1.5 line height.
+    static let fleetCheckProseSpacing: CGFloat = 4
+
     // Dispatch cards in a thread (FleetDispatch, FleetStates) and the dispatched thread (FleetRemote).
     /// A dispatch row's tile: 28pt.
     static let fleetRowTile: CGFloat = 28
@@ -73,4 +85,12 @@ extension AppLayout {
     static let fleetOfflineOpacity: Double = 0.6
     /// New thread's Where it runs popover hangs 33pt in from the card's trailing edge (FleetNewThread).
     static let fleetPlaceTrailingInset: CGFloat = 33
+
+    // Moving a thread to another Mac (FleetMove).
+    /// The header chip's menu and its confirmation are 400pt wide; a Mac's room bar is 56 by 4pt.
+    static let fleetMoveMenuWidth: CGFloat = 400
+    static let fleetMoveBarWidth: CGFloat = 56
+    static let fleetMoveBarHeight: CGFloat = 4
+    /// A step's mark column in the progress card.
+    static let fleetMoveMarkWidth: CGFloat = 14
 }

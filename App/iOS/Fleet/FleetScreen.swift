@@ -25,8 +25,12 @@ struct FleetScreen: View {
     @State private var forgetting: FleetListRow?
     @State private var forgetFailure: String?
 
-    /// What a preview shows that a touch would: Forget's confirmation, as a swipe on the row leads to it. Set by the fixtures, never the app.
-    enum Preview { case forgetting(String) }
+    /// The screen's two views: the Macs, or Check (what each has of what the fleet needs, read only).
+    enum Tab: Hashable { case macs, check }
+    @State private var tab = Tab.macs
+
+    /// What a preview shows that a touch would: Forget's confirmation, as a swipe on the row leads to it, or the Check list. Set by the fixtures, never the app.
+    enum Preview { case forgetting(String), check }
     nonisolated(unsafe) static var preview: Preview?
 
     private var wide: Bool { measuredWide ?? (sizeClass == .regular && !inColumn) }
@@ -57,10 +61,19 @@ struct FleetScreen: View {
                 if rows.isEmpty {
                     empty()
                 } else {
-                    Macs(rows: rows, wide: wide, closed: navigator.hingeClosed == true, open: navigator.hingeClosed == false, actions: actions) { weight, id in
-                        fleet.choose(weight, for: id, store.hosts)
+                    if serves, !page.check.columns.isEmpty {
+                        SHSegmentedPicker("Fleet view", selection: $tab, options: [(.macs, "Macs"), (.check, page.check.tabTitle)])
                     }
-                    if serves {
+                    if tab == .check, serves {
+                        FleetCheckList(check: page.check, capitals: navigator.hingeClosed == nil)
+                    } else {
+                        Macs(rows: rows, wide: wide, closed: navigator.hingeClosed == true, open: navigator.hingeClosed == false, actions: actions) { weight, id in
+                            fleet.choose(weight, for: id, store.hosts)
+                        }
+                    }
+                    if tab == .check, serves {
+                        EmptyView()
+                    } else if serves {
                         FleetSectionLabel(title: wide ? "Dispatches today" : "Dispatches", capitals: navigator.hingeClosed == nil)
                             .padding(.top, wide ? SH.Space.s : 0)
                         FleetDispatchesCard()
@@ -88,6 +101,11 @@ struct FleetScreen: View {
             Text("This device stops reading \(row.card.name) and deletes its token. Other Macs in the fleet are unchanged, and the Mac can be added again with a new code.")
         }
         .task { await watch(store) }
+        .task {
+            guard case .check? = Self.preview else { return }
+            Self.preview = nil
+            tab = .check
+        }
         .task(id: rows.count) {
             guard case .forgetting(let name)? = Self.preview, let row = rows.first(where: { $0.card.name == name && $0.held != nil }) else { return }
             Self.preview = nil

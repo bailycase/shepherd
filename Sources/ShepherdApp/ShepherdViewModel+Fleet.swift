@@ -15,6 +15,8 @@ extension ShepherdViewModel {
         actions.openResult = { [weak self] card in self?.openDispatchedThread(card) }
         actions.reviewResult = { [weak self] card in self?.reviewDispatchedThread(card) }
         actions.openSender = { [weak self] from in self?.openSender(of: from) }
+        actions.cancelMove = { [weak self] in self?.cancelMove($0) }
+        actions.dismissMove = { [weak self] in self?.dismissMove($0) }
         actions.retryHost = { [weak self] in
             guard let self, let selected = self.selectedRemoteAgent else { return }
             self.remoteHosts.reconnect(id: selected.hostID)
@@ -34,10 +36,12 @@ extension ShepherdViewModel {
 
     /// What a thread draws of dispatches: where it came from if it was sent, and the cards of what it sent. Nil for a thread with neither
     /// (an ordinary thread), so it reads nothing.
-    func fleetSurface(for agent: Agent, onRemote remoteName: String? = nil) -> FleetThreadSurface? {
+    func fleetSurface(for agent: Agent, onRemote remoteName: String? = nil, hostID: UUID? = nil) -> FleetThreadSurface? {
         let cards = remoteName == nil ? fleetPage.dispatchCards.filter { $0.parentAgentID == agent.id } : []
-        guard agent.dispatchedFrom != nil || !cards.isEmpty else { return nil }
+        let move = moveCard(for: agent.id, on: hostID)
+        guard agent.dispatchedFrom != nil || !cards.isEmpty || move != nil else { return nil }
         var surface = FleetThreadSurface(cards: cards, parent: agent.id, actions: fleetThreadActions)
+        surface.move = move
         if let from = agent.dispatchedFrom {
             var sentBy = FleetSentBy(from, host: remoteName ?? "This Mac", viewer: thisFleetID)
             sentBy.senderOpens = senderRow(of: from) != nil

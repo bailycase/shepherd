@@ -369,3 +369,119 @@ struct ActionProblemSheet: View {
         .presentationDetents(navigator.layout == .pad ? [.large] : [.medium])
     }
 }
+
+/// Move to Mac: the Macs of the thread's host's fleet with their room and a note, as the Mac's header menu lists them. A pick while a turn runs
+/// asks what to do with it (stop and move, or move when it's done). The host does the move; the thread then runs on the other Mac and shows
+/// under it.
+struct MoveToMacSheet: View {
+    let ref: AgentRef
+    @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileNavigator.self) private var navigator
+    @State private var menu: FleetMoveMenu?
+    @State private var phase = Phase.loading
+    @State private var asking: FleetMoveMenu.Target?
+    @State private var moving = false
+    @State private var error: String?
+
+    private enum Phase { case loading, loaded, unavailable(String) }
+
+    var body: some View {
+        let host = hosts.host(ref.host)
+        let agent = host?.agent(ref.agent)
+        let working = agent?.status == .working || agent?.status == .blocked
+        Form {
+            switch phase {
+            case .loading:
+                Section { HStack { ProgressView().progressViewStyle(SHSpinnerStyle()); Text("Reading the fleet…").font(.sh(.ui)) } }
+            case .unavailable(let why):
+                Section { Text(why).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary) }
+            case .loaded:
+                if let menu {
+                    Section("Runs on") {
+                        LabeledContent(menu.here.name) { Text(menu.here.detail).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
+                    }
+                    Section {
+                        ForEach(menu.targets) { target in
+                            Button { pick(target, working: working) } label: {
+                                HStack(spacing: SH.Space.m) {
+                                    VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                                        Text(target.name).font(.sh(.ui)).foregroundStyle(target.enabled ? Color.sh.textPrimary : Color.sh.textTertiary)
+                                        Text(target.note).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                                    }
+                                    Spacer(minLength: 0)
+                                    ProgressView(value: target.room).frame(width: SH.Height.touch)
+                                        .tint(Color.sh.done).accessibilityHidden(true)
+                                }
+                            }
+                            .disabled(!target.enabled || moving)
+                            .accessibilityLabel(target.accessibilityLabel)
+                        }
+                    } header: {
+                        Text("Move to")
+                    } footer: {
+                        Text(FleetMoveMenu.footnote).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                    }
+                }
+            }
+            if let error {
+                Section { Text(error).font(.sh(.caption)).foregroundStyle(Color.sh.failed) }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color.sh.bgWindow)
+        .navigationTitle("Move to Mac")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { navigator.dismissPresented() } } }
+        .presentationDetents(navigator.layout == .pad ? [.large] : [.medium, .large])
+        .confirmationDialog(asking.map { _ in "It’s working" } ?? "", isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } }),
+                            titleVisibility: .visible, presenting: asking) { target in
+            Button("Stop and move") { move(target, .now) }
+            Button("Move when it’s done") { move(target, .whenDone) }
+            Button("Cancel", role: .cancel) {}
+        } message: { target in
+            Text(FleetMoveConfirm.make(running: nil, host: target.name).message)
+        }
+        .task { await load() }
+    }
+
+    private func load() async {
+        guard let host = hosts.host(ref.host), let client = host.connectedClient, let agent = host.agent(ref.agent) else {
+            phase = .unavailable("This thread’s host isn’t connected.")
+            return
+        }
+        do {
+            let snapshot = try await client.fleetRead().snapshot
+            let space = host.state.spaces.first { $0.id == agent.spaceID }
+            guard let here = snapshot.hostID,
+                  let made = FleetMoveMenu.make(snapshot: snapshot, currentHostID: here, repoKey: space?.repoKey, repoName: space?.name ?? "this folder",
+                                                weight: { _ in .normal }) else {
+                phase = .unavailable("\(host.name) has no other Mac in its fleet to move this thread to.")
+                return
+            }
+            menu = made
+            phase = .loaded
+        } catch {
+            phase = .unavailable(String(describing: error))
+        }
+    }
+
+    private func pick(_ target: FleetMoveMenu.Target, working: Bool) {
+        if working { asking = target } else { move(target, .now) }
+    }
+
+    private func move(_ target: FleetMoveMenu.Target, _ when: FleetMoveRequest.When) {
+        guard !moving else { return }
+        moving = true
+        error = nil
+        let (ref, hosts) = (ref, hosts)
+        Task {
+            do {
+                try await AgentActions.moveToMac(ref, FleetMoveRequest(agentID: ref.agent, host: target.id.uuidString, when: when), hosts: hosts)
+                navigator.dismissPresented()
+            } catch {
+                self.error = String(describing: error)
+            }
+            moving = false
+        }
+    }
+}

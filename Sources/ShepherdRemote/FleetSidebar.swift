@@ -270,6 +270,9 @@ public struct FleetThreadAbilities: Equatable, Sendable {
     /// Whether the thread's pushes are muted on its host (`Agent.pushMuted`); nil while Mute isn't offered (an
     /// older or offline host).
     public var muted: Bool?
+    /// Move to Mac: the host moves its threads to another Mac of its fleet (`RemoteProtocol.fleetMoveViewCapability`). Not offered for a
+    /// thread that has moved, an automation's run, a design's agent or a project's thread, which the host refuses.
+    public var moveToMac: Bool
 
     public init(agent: Agent, state: ShepherdState, connected: Bool, capabilities: Set<String>) {
         let ordinary = state.isSidebarThread(agent)
@@ -285,5 +288,7 @@ public struct FleetThreadAbilities: Equatable, Sendable {
         review = connected && (capabilities.contains(RemoteProtocol.changesCapability)
             || capabilities.contains(RemoteProtocol.agentInspectionCapability))
         muted = connected && capabilities.contains(RemoteProtocol.pushMuteCapability) ? agent.pushMuted : nil
+        moveToMac = actions && capabilities.contains(RemoteProtocol.fleetMoveViewCapability) && !run && agent.movedTo == nil
+            && !state.isProjectWorker(agent.id) && !state.isProjectCoordinator(agent) && !state.isDesignAgent(agent)
     }
 }

@@ -163,6 +163,8 @@ final class RemoteHostStore {
         var supportsInspection: Bool { client?.capabilities.contains(RemoteProtocol.agentInspectionCapability) == true }
         var supportsThreadMove: Bool { client?.capabilities.contains(RemoteProtocol.moveThreadCapability) == true }
         var supportsPushMute: Bool { client?.capabilities.contains(RemoteProtocol.pushMuteCapability) == true }
+        /// The host moves its threads to another Mac of its fleet when asked (`fleet.move.view.v1`).
+        var supportsFleetMove: Bool { client?.capabilities.contains(RemoteProtocol.fleetMoveViewCapability) == true }
         /// The host deletes a design for this Mac, with Undo (`design.delete.v1`, while it serves
         /// designs).
         var supportsDesignDelete: Bool {
@@ -806,6 +808,14 @@ final class RemoteHostStore {
             expectedSessionID: snapshot.piSessionID, generation: snapshot.generation,
             operationID: UUID(), text: text, delivery: .followUp))
         if case .failure(let code, let message) = result { throw RemoteHostClientError.rejected(code: code, message: message) }
+    }
+
+    /// A host's fleet as a client reads it (`fleet.view.v1`): the moves of its threads, with how they stand.
+    func fleetRead(hostID: UUID) async throws -> FleetSnapshot {
+        guard let connection = allConnections.first(where: { $0.id == hostID }),
+              connection.phase == .connected, let client = connection.client,
+              client.capabilities.contains(RemoteProtocol.fleetViewCapability) else { throw RemoteHostClientError.disconnected }
+        return try await client.fleetRead().snapshot
     }
 
     func agentAction(_ target: RemoteAgentRef, action: RemoteAgentAction) async throws {

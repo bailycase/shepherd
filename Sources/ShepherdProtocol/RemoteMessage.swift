@@ -54,7 +54,7 @@ public enum RemoteProtocol {
     /// And it answers what a background host's agent asks of Shepherd's window (`AppRelayJob`),
     /// which a host asks only of a local client that lists it.
     public static let appRelayCapability = "appRelay.v1"
-    public static let clientCapabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability, designRelayCapability, appRelayCapability, appsV2Capability]
+    public static let clientCapabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability, designRelayCapability, appRelayCapability, appsV2Capability, fleetMoveViewCapability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -255,6 +255,9 @@ public enum RemoteProtocol {
     /// Pressure and readiness: Macs in a fleet push `fleetPressure` and `fleetReadiness` to each
     /// other and answer `fleetPressureNow` (`FleetPressureWire.swift`).
     public static let fleetPressureCapability = "fleet.pressure.v1"
+    /// Fleet ▸ Check: Macs in a fleet push `fleetCheck` (a `FleetCheckReport`) to each other and answer `fleetCheckNow`
+    /// (`FleetCheckWire.swift`). A Mac without it is neither sent a report nor asked for one, and its Check column says it has none.
+    public static let fleetCheckCapability = "fleet.check.v1"
     /// The host syncs settings and content with the Macs it is paired with (`FleetSyncWire.swift`):
     /// `fleetSync` after `hello` with a peer's token.
     public static let fleetSyncCapability = "fleet.sync.v1"
@@ -265,12 +268,20 @@ public enum RemoteProtocol {
     /// Macs in a fleet push what they hold of each repository to each other as manifests (`fleetRepoManifest`,
     /// `FleetSnapshotWire.swift`). Offered with `fleet.v1`, so to members only.
     public static let fleetSnapshotCapability = "fleet.snapshot.v1"
+    /// A thread moves from one Mac to another (`FleetMoveWire.swift`): a dispatch of `kind: .move` carrying the conversation and the
+    /// worktree, then `FleetDispatchControl.commit` once the sender has handed over. Offered with `fleet.v1`, so to members only; a Mac
+    /// that doesn't list it is never sent a move.
+    public static let fleetMoveCapability = "fleet.move.v1"
+    /// A client may ask the host to move one of its threads to another Mac (`RemoteAgentAction.moveToMac`) and read the progress of a move
+    /// (`FleetSnapshot.clientView` carries the move records). Offered to every client, devices included, while Fleet runs; it gives no part
+    /// in the fleet's store. A client lists it in `hello` (`clientCapabilities`) to be sent the moves in `fleetRead`.
+    public static let fleetMoveViewCapability = "fleet.move.view.v1"
     /// A link between two Macs works whichever of them opened it: the host sends a peer's requests back over the connection that peer
     /// opened (`RemoteReply.fleetPeerCall`, answered `RemoteRequest.fleetPeerAnswer`) and takes `fleetRoutes` (`FleetRoutesWire.swift`).
     /// Offered with `fleet.v1`; a peer lists it in `hello` to say its own connection may carry such calls.
     public static let fleetLinkCapability = "fleet.link.v1"
     /// What a Mac that dials a peer lists in `hello`: it takes the peer's requests back over that connection.
-    public static let fleetLinkClientCapabilities = [fleetLinkCapability, fleetSyncCapability, fleetPressureCapability, fleetSnapshotCapability, fleetDispatchCapability]
+    public static let fleetLinkClientCapabilities = [fleetLinkCapability, fleetSyncCapability, fleetPressureCapability, fleetCheckCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetMoveCapability]
     /// The host finds Macs through the person's own iCloud: it keeps a Join record while its code is shown and looks one up
     /// for `FleetAction.findAndPair`, and a presence record lets paired Macs find each other after an address change. Nothing
     /// new crosses between Macs, so a Mac without it pairs and links as before. Offered with `fleet.v1`, so to members only.
@@ -293,9 +304,9 @@ public enum RemoteProtocol {
     /// Capabilities a client device is never offered (`FleetAccess`): the ones for taking part in the
     /// fleet's store (`fleet.v1`, sync), and the one for enrolling (a device already has its token). Later fleet
     /// units (credentials, dispatch) add theirs here.
-    public static let fleetMemberCapabilities: Set<String> = [fleetCapability, fleetSyncCapability, fleetDevicesCapability, fleetPressureCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetRendezvousCapability, fleetLinkCapability, fleetPairLinkCapability]
+    public static let fleetMemberCapabilities: Set<String> = [fleetCapability, fleetSyncCapability, fleetDevicesCapability, fleetPressureCapability, fleetCheckCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetMoveCapability, fleetRendezvousCapability, fleetLinkCapability, fleetPairLinkCapability]
     /// Every capability of the fleet service: offered by a host whose service runs, which is every host that started.
-    public static let fleetServiceCapabilities: Set<String> = fleetMemberCapabilities.union([fleetViewCapability, fleetFollowCapability])
+    public static let fleetServiceCapabilities: Set<String> = fleetMemberCapabilities.union([fleetViewCapability, fleetFollowCapability, fleetMoveViewCapability])
     /// Settings ▸ Experiments ▸ Design tool switched from a client (`HostSettingChange.designToolEnabled`).
     /// Offered while the tool is off too: it is not one of `designCapabilities`.
     public static let designToolExperimentCapability = "experiments.designTool.v1"
@@ -316,7 +327,7 @@ public enum RemoteProtocol {
     /// The host saves a file of a thread's folder (`RemoteAgentQuery.fileWrite`), only over the text the client
     /// edited from (`ThreadFileSaveResult.changed` otherwise). Served only to a client offered `filesCapability`.
     public static let filesWriteCapability = "files.write.v1"
-    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostSettingsTextGenerationModelCapability, hostSettingsVisionModelCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, checkoutReadCapability, pullRequestLinkCapability, fleetCapability, fleetSyncCapability, fleetDevicesCapability, fleetPressureCapability, fleetViewCapability, fleetFollowCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetRendezvousCapability, fleetLinkCapability, fleetPairLinkCapability]
+    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostSettingsTextGenerationModelCapability, hostSettingsVisionModelCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, checkoutReadCapability, pullRequestLinkCapability, fleetCapability, fleetSyncCapability, fleetDevicesCapability, fleetPressureCapability, fleetCheckCapability, fleetViewCapability, fleetFollowCapability, fleetMoveViewCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetMoveCapability, fleetRendezvousCapability, fleetLinkCapability, fleetPairLinkCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -466,6 +477,10 @@ public enum RemoteAgentAction: Codable, Hashable, Sendable {
     /// Reads the thread's branch and changed files again, after a change no state carries (a
     /// file saved in the app) (`checkoutReadCapability`).
     case readCheckout
+    /// Moves the thread to another Mac of the host's fleet (`FleetMoveWire.swift`, `fleetMoveViewCapability`): the host stops it, sends its
+    /// conversation and worktree, and starts it there. The progress is the move's record in `fleetRead`. Refused with the reason when it
+    /// can't (a Mac that is asleep or older, work the thread sent that is still running).
+    case moveToMac(FleetMoveRequest)
 
     /// The capability a host must advertise before the action is sent to it.
     public var capability: String {
@@ -479,6 +494,7 @@ public enum RemoteAgentAction: Codable, Hashable, Sendable {
         case .markSeen: RemoteProtocol.completionSeenCapability
         case .mutePushes: RemoteProtocol.pushMuteCapability
         case .readCheckout: RemoteProtocol.checkoutReadCapability
+        case .moveToMac: RemoteProtocol.fleetMoveViewCapability
         }
     }
 }
@@ -789,6 +805,12 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// After `hello` with a peer's token: ask for a sample now, because the newest is stale.
     /// Answered `fleetPressureSample`.
     case fleetPressureNow(id: Int)
+    /// After `hello` with a peer's token (`fleetCheckCapability`): what this Mac found when it looked at itself, pushed when it
+    /// changes and each day. Answered `ok`.
+    case fleetCheck(id: Int, report: FleetCheckReport)
+    /// After `hello` with a peer's token (`fleetCheckCapability`): look again now (read only) and say what was found.
+    /// Answered `fleetCheckReport`.
+    case fleetCheckNow(id: Int)
     /// After `hello` with a peer's token (`fleetDispatchCapability`): start this work on this Mac
     /// (`FleetDispatchCreate`). Idempotent on its `dispatchID`. Answered `fleetDispatchAccepted`.
     case fleetDispatchCreate(id: Int, create: FleetDispatchCreate)
@@ -969,7 +991,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     private enum Kind: String, Codable {
         case pushRegistration, pushUnregister
         case fleetIdentify, fleetPair, fleetIntroduce, fleetRevoke, fleetRead, fleetAction
-        case fleetPressure, fleetReadiness, fleetPressureNow, fleetRepoManifest, fleetSnapshotPart, fleetBlobPush
+        case fleetPressure, fleetReadiness, fleetPressureNow, fleetCheck, fleetCheckNow, fleetRepoManifest, fleetSnapshotPart, fleetBlobPush
         case fleetDispatchCreate, fleetDispatchControl, fleetDispatchChanged, fleetDispatchResult
         case fleetRoutes, fleetPeerAnswer
         case fleetSync
@@ -1028,6 +1050,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             self = .fleetReadiness(id: try c.decode(Int.self, forKey: .id), report: try c.decode(FleetReadinessReport.self, forKey: .report))
         case .fleetPressureNow:
             self = .fleetPressureNow(id: try c.decode(Int.self, forKey: .id))
+        case .fleetCheck:
+            self = .fleetCheck(id: try c.decode(Int.self, forKey: .id), report: try c.decode(FleetCheckReport.self, forKey: .report))
+        case .fleetCheckNow:
+            self = .fleetCheckNow(id: try c.decode(Int.self, forKey: .id))
         case .fleetDispatchCreate:
             self = .fleetDispatchCreate(id: try c.decode(Int.self, forKey: .id), create: try c.decode(FleetDispatchCreate.self, forKey: .create))
         case .fleetDispatchControl:
@@ -1277,6 +1303,13 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(report, forKey: .report)
         case .fleetPressureNow(let id):
             try c.encode(Kind.fleetPressureNow, forKey: .type)
+            try c.encode(id, forKey: .id)
+        case .fleetCheck(let id, let report):
+            try c.encode(Kind.fleetCheck, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(report, forKey: .report)
+        case .fleetCheckNow(let id):
+            try c.encode(Kind.fleetCheckNow, forKey: .type)
             try c.encode(id, forKey: .id)
         case .fleetDispatchCreate(let id, let create):
             try c.encode(Kind.fleetDispatchCreate, forKey: .type)
@@ -1597,6 +1630,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case fleetResult(id: Int, result: FleetResult)
     /// This Mac's newest sample and readiness report (`RemoteRequest.fleetPressureNow`).
     case fleetPressureSample(id: Int, sample: FleetPressureSample, readiness: FleetReadinessReport?)
+    /// What this Mac found when it looked at itself now (`RemoteRequest.fleetCheckNow`).
+    case fleetCheckReport(id: Int, report: FleetCheckReport)
     /// The answer to `RemoteRequest.fleetSync`.
     case fleetSyncReply(id: Int, reply: FleetSyncReply)
     /// The answer to `RemoteRequest.fleetDispatchCreate`: the receiving Mac's record (`preparing` once it
@@ -1750,7 +1785,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case type, id, protocolVersion, capabilities, code, message, state
         case sessionID, data, exitCode, spaceID, agentID, paneID
         case hostBuild, hostID, name, build, fleetEnabled, myTokenHash, sync, manifest
-        case sample, readiness, record
+        case sample, readiness, record, check
         case path, parent, dirs, models, defaultModel, withoutThinking, thinkingLevels, serviceTiers, contexts, withoutImages, attachment, options
         case snapshot, settings, status
         case designID, revision, commentsRevision
@@ -1765,7 +1800,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
 
     private enum Kind: String, Codable {
         case nativeThread, nativeThreadChanged, fleetDigest, projectExecution, projectExecutionChanged
-        case fleetIdentity, fleetPaired, fleetResult, fleetDevices, fleetPressureSample
+        case fleetIdentity, fleetPaired, fleetResult, fleetDevices, fleetPressureSample, fleetCheckReport
         case fleetSyncReply, fleetRepoManifestAck, fleetSnapshotAck, fleetDispatchAccepted, fleetDispatchState
         case fleetPeerCall
         case agentResult, helloOk, ok, paneOpened, error, state, stateChanged, attached, output, sessionExited
@@ -1858,6 +1893,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .fleetPressureSample:
             self = .fleetPressureSample(id: try c.decode(Int.self, forKey: .id), sample: try c.decode(FleetPressureSample.self, forKey: .sample),
                                         readiness: try c.decodeIfPresent(FleetReadinessReport.self, forKey: .readiness))
+        case .fleetCheckReport:
+            self = .fleetCheckReport(id: try c.decode(Int.self, forKey: .id), report: try c.decode(FleetCheckReport.self, forKey: .check))
         case .fleetSyncReply:
             self = .fleetSyncReply(id: try c.decode(Int.self, forKey: .id), reply: try c.decode(FleetSyncReply.self, forKey: .sync))
         case .fleetDispatchAccepted:
@@ -2036,6 +2073,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(sample, forKey: .sample)
             try c.encodeIfPresent(readiness, forKey: .readiness)
+        case .fleetCheckReport(let id, let report):
+            try c.encode(Kind.fleetCheckReport, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(report, forKey: .check)
         case .fleetSyncReply(let id, let reply):
             try c.encode(Kind.fleetSyncReply, forKey: .type)
             try c.encode(id, forKey: .id)

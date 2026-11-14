@@ -74,6 +74,9 @@ struct ThreadRowMenuItems: View {
                         }
                     }
                 }
+                if abilities.moveToMac {
+                    Button("Move to Mac…", systemImage: "macbook.and.iphone") { navigator.present(.search(.moveToMac(thread))) }
+                }
                 if !abilities.moveSpaces.isEmpty {
                     Menu("Move to Space", systemImage: "folder") {
                         ForEach(abilities.moveSpaces) { space in

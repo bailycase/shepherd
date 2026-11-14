@@ -14,6 +14,8 @@ struct FleetPageActions {
     var retry: (UUID) -> Void
     var openSettings: () -> Void
     var addMac: () -> Void
+    /// A Mac card's Check…: the Check tab, on the first thing that Mac needs.
+    var openCheck: (UUID) -> Void = { _ in }
 }
 
 extension FleetTone {
@@ -51,50 +53,78 @@ struct FleetPageContent: View {
     var chrome = PageHeaderChrome()
     /// What the buttons on dispatch cards do (FleetStates).
     var cardActions: FleetThreadActions?
+    /// Macs or Check.
+    var tab: Binding<FleetPageModel.Tab> = .constant(.macs)
+    var check = FleetCheckState()
+    var checkActions = FleetCheckActions.none
 
     var body: some View {
         VStack(spacing: 0) {
-            DestinationPageHeader(title: "Fleet", subtitle: page.summary, chrome: chrome) {
-                Button("Fleet settings", action: actions.openSettings)
-                    .buttonStyle(.sh(.secondary))
-                Button("Add a Mac", systemImage: "plus", action: actions.addMac)
-                    .buttonStyle(.sh(.primary))
-            }
-            ScrollView {
-                VStack(alignment: .leading, spacing: SH.Space.xl) {
-                    FleetPlacementCard(autoDispatch: page.autoDispatch, nextGoesTo: page.nextGoesTo)
-                    if !page.attention.isEmpty || !page.behind.isEmpty {
-                        VStack(spacing: SH.Space.l) {
-                            ForEach(page.attention) { card in
-                                FleetDispatchCardView(card: card, actions: cardActions).equatable()
-                            }
-                            ForEach(page.behind) { mac in
-                                FleetBehindMacCard(mac: mac)
-                            }
-                        }
+            DestinationPageHeader(title: "Fleet", subtitle: tab.wrappedValue == .check ? page.check.summary : page.summary, chrome: chrome) {
+                SHSegmentedPicker("Fleet view", selection: tab, options: [(.macs, "Macs"), (.check, page.check.tabTitle)])
+            } trailing: {
+                switch tab.wrappedValue {
+                case .macs:
+                    Button("Fleet settings", action: actions.openSettings)
+                        .buttonStyle(.sh(.secondary))
+                    Button("Add a Mac", systemImage: "plus", action: actions.addMac)
+                        .buttonStyle(.sh(.primary))
+                case .check:
+                    if let ago = page.check.checkedAgo {
+                        Text(ago).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
                     }
-                    Grid(horizontalSpacing: SH.Space.xl, verticalSpacing: SH.Space.xl) {
-                        ForEach(rows, id: \.first?.id) { row in
-                            GridRow {
-                                ForEach(row) { card in
-                                    FleetMacCardView(card: card, actions: actions)
-                                        .equatable()
-                                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                                }
-                                ForEach(0..<(AppLayout.fleetColumns - row.count), id: \.self) { _ in
-                                    Color.clear.frame(maxWidth: .infinity).gridCellUnsizedAxes(.vertical)
-                                }
-                            }
-                        }
-                    }
-                    FleetDispatchesCard(rows: page.dispatches)
+                    Button(check.checking ? "Checking…" : "Check now", action: checkActions.checkNow)
+                        .buttonStyle(.sh(.secondary))
+                        .disabled(check.checking)
                 }
-                .padding(.vertical, SH.Space.xxl)
-                .padding(.horizontal, SH.Space.xxxl)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if tab.wrappedValue == .check {
+                FleetCheckContent(check: page.check, state: check, actions: checkActions)
+            } else {
+                macsBody
             }
         }
         .background(Color.sh.bgWindow)
+    }
+
+    /// The Macs tab: the Auto card, a card per Mac and the Dispatches log.
+    private var macsBody: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: SH.Space.xl) {
+                FleetPlacementCard(autoDispatch: page.autoDispatch, nextGoesTo: page.nextGoesTo)
+                ForEach(page.limits) { strip in
+                    FleetLimitStripView(strip: strip)
+                }
+                if !page.attention.isEmpty || !page.behind.isEmpty {
+                    VStack(spacing: SH.Space.l) {
+                        ForEach(page.attention) { card in
+                            FleetDispatchCardView(card: card, actions: cardActions).equatable()
+                        }
+                        ForEach(page.behind) { mac in
+                            FleetBehindMacCard(mac: mac)
+                        }
+                    }
+                }
+                Grid(horizontalSpacing: SH.Space.xl, verticalSpacing: SH.Space.xl) {
+                    ForEach(rows, id: \.first?.id) { row in
+                        GridRow {
+                            ForEach(row) { card in
+                                FleetMacCardView(card: card, actions: actions)
+                                    .equatable()
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            }
+                            ForEach(0..<(AppLayout.fleetColumns - row.count), id: \.self) { _ in
+                                Color.clear.frame(maxWidth: .infinity).gridCellUnsizedAxes(.vertical)
+                            }
+                        }
+                    }
+                }
+                FleetDispatchesCard(rows: page.dispatches)
+            }
+            .padding(.vertical, SH.Space.xxl)
+            .padding(.horizontal, SH.Space.xxxl)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var rows: [[FleetMacCard]] {
@@ -138,6 +168,29 @@ private struct FleetPlacementCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: sh.lineSubtle)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// "Anthropic is limiting your account…": a provider is limiting the fleet's requests, so new threads for it wait on every Mac.
+struct FleetLimitStripView: View {
+    let strip: FleetLimitStrip
+
+    var body: some View {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.l) {
+            Circle().fill(sh.lantern).frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
+            Text(strip.text).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.lanternText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let waiting = strip.waiting {
+                Text(waiting).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary).fixedSize()
+            }
+        }
+        .padding(.vertical, SH.Space.m)
+        .padding(.horizontal, SH.Space.xl)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(sh.lanternTint, in: RoundedRectangle(cornerRadius: SH.Radius.l))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel([strip.text, strip.waiting].compactMap { $0 }.joined(separator: ". "))
     }
 }
 
@@ -323,6 +376,11 @@ struct FleetMacCardView: View, Equatable {
                 Button("Retry") { actions.retry(card.id) }
                     .buttonStyle(.sh(.secondary))
                     .accessibilityLabel("Retry \(card.name)")
+            }
+            if card.needs > 0 {
+                Button("Check…") { actions.openCheck(card.id) }
+                    .buttonStyle(.sh(.secondary))
+                    .accessibilityLabel("See what \(card.name) needs")
             }
         }
         .padding(.top, SH.Space.m)
@@ -580,8 +638,9 @@ struct FleetDestination: View {
 
     var body: some View {
         let _ = SHRenderProbe.tick("page.fleet")
-        FleetPageContent(page: vm.fleetPage.page, actions: FleetPageActions(
-            choose: { vm.fleetPage.choose($0, for: $1) },
+        let model = vm.fleetPage
+        FleetPageContent(page: model.page, actions: FleetPageActions(
+            choose: { model.choose($0, for: $1) },
             retry: { id in Task { await vm.fleet.reconnect(id) } },
             openSettings: {
                 vm.settingsSection = .fleet
@@ -590,7 +649,20 @@ struct FleetDestination: View {
             addMac: {
                 vm.fleet.openPairing()
                 adding = true
-            }), chrome: chrome)
+            },
+            openCheck: { model.openCheck(for: $0) }), chrome: chrome,
+            tab: Binding(get: { model.tab }, set: { model.tab = $0 }),
+            check: FleetCheckState(row: model.checkRow, mac: model.checkMac, checking: model.checking, problem: model.checkProblem),
+            checkActions: FleetCheckActions(
+                select: { model.selectCheck(row: $0, mac: $1) },
+                checkNow: { vm.checkFleetNow() },
+                copy: { text in
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                },
+                fix: { vm.startFleetFix($0) },
+                ignore: { model.ignoreCheck($0, on: $1, $2) },
+                openThread: { vm.openFleetFix($0) }))
             .task {
                 await vm.fleet.refresh()
                 await vm.fleet.watch(true)

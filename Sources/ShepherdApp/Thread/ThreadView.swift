@@ -249,7 +249,13 @@ struct ThreadView: View {
                 }
                 .id(transcriptRevision)
                 // A dispatched thread whose Mac stopped answering: its words fade under the banner, the composer and header don't (FleetRemote).
-                .opacity(fleetThread?.offline == true ? AppLayout.fleetOfflineOpacity : 1)
+                .opacity(fleetThread?.offline == true || fleetThread?.move?.phase == .moving ? AppLayout.fleetOfflineOpacity : 1)
+                // A move of this thread, going or waiting or failed, sits above the conversation (FleetMove).
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if let move = fleetThread?.move, let actions = fleetThread?.actions {
+                        FleetMoveCardView(card: move, cancel: { actions.cancelMove($0) }, dismiss: { actions.dismissMove($0) }).equatable()
+                    }
+                }
                 .scrollPosition($historyAnchor.position)
                 // The composer floats over the scroll view; inset by its real height so "the
                 // bottom" is the last turn, not the space under the card.

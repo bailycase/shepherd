@@ -32,6 +32,8 @@ struct FleetPressureSources: Sendable {
     var power: @Sendable () -> (onBattery: Bool, percent: Int?)
     /// Waits between the two CPU readings.
     var pause: @Sendable (Duration) async -> Void
+    /// The kernel's memory pressure level.
+    var memoryPressure: @Sendable () -> FleetMemoryPressure = { .normal }
 
     static let system = FleetPressureSources(
         cpuTicks: FleetPressureSampler.systemCPUTicks,
@@ -48,19 +50,21 @@ struct FleetPressureSources: Sendable {
             }
         },
         power: FleetPressureSampler.systemPower,
-        pause: { try? await Task.sleep(for: $0) })
+        pause: { try? await Task.sleep(for: $0) },
+        memoryPressure: FleetPressureSampler.systemMemoryPressure)
 }
 
 /// Takes `FleetPressureSample`s in process, with no subprocess: CPU from two tick readings 200 ms
 /// apart, memory from the VM counters with t3's darwin formula (free + inactive + speculative
-/// pages), the thermal state and the power source. Agent counts come from the caller.
+/// pages) and the kernel's pressure level, the thermal state and the power source. Agent counts come from the caller.
+/// The 60 s CPU average is the host's (`FleetPressure`): a sampler keeps nothing between samples.
 struct FleetPressureSampler: Sendable {
     /// The wait between the two CPU readings.
     static let window: Duration = .milliseconds(200)
 
     var sources: FleetPressureSources = .system
 
-    func sample(activeAgents: Int, reserved: Int = 0) async -> FleetPressureSample {
+    func sample(activeAgents: Int, commandAgents: Int? = nil, reserved: Int = 0) async -> FleetPressureSample {
         let first = sources.cpuTicks()
         await sources.pause(Self.window)
         let second = sources.cpuTicks()
@@ -75,7 +79,9 @@ struct FleetPressureSampler: Sendable {
             onBattery: power.onBattery,
             batteryPercent: power.percent,
             activeAgents: max(0, activeAgents),
-            reserved: max(0, reserved))
+            reserved: max(0, reserved),
+            commandAgents: commandAgents.map { min(max(0, activeAgents), max(0, $0)) },
+            memoryPressure: sources.memoryPressure())
     }
 
     /// The share of ticks between two readings spent busy (user, system and nice), 0...1; 0 when
@@ -117,6 +123,14 @@ struct FleetPressureSampler: Sendable {
         guard host_page_size(mach_host_self(), &pageSize) == KERN_SUCCESS else { return nil }
         return FleetMemoryPages(free: UInt64(stats.free_count), inactive: UInt64(stats.inactive_count),
                                 speculative: UInt64(stats.speculative_count), pageSize: UInt64(pageSize))
+    }
+
+    /// `kern.memorystatus_vm_pressure_level`: 1 normal, 2 warning, 4 critical. A Mac that won't say is normal.
+    static func systemMemoryPressure() -> FleetMemoryPressure {
+        var level: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        guard sysctlbyname("kern.memorystatus_vm_pressure_level", &level, &size, nil, 0) == 0 else { return .normal }
+        return FleetMemoryPressure(kernelLevel: Int(level))
     }
 
     static func systemPower() -> (onBattery: Bool, percent: Int?) {

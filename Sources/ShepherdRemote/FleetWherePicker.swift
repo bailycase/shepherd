@@ -53,7 +53,7 @@ public struct FleetWherePicker: Equatable, Sendable {
     /// other Mac can find), `repoName` how to say it. `autoDispatch` is the setting; with it off the chip starts on This
     /// Mac, and Auto is still there to pick.
     public static func make(snapshot: FleetSnapshot, pick: FleetPlacePick?, repoKey: String?, repoName: String,
-                            autoDispatch: Bool, needsXcode: Bool = false, weight: (UUID) -> FleetSendWeight, batteryCountsHalf: Bool = true, snapshotAge: TimeInterval = 0,
+                            autoDispatch: Bool, needsXcode: Bool = false, provider: String? = nil, weight: (UUID) -> FleetSendWeight, batteryCountsHalf: Bool = true, snapshotAge: TimeInterval = 0,
                             baseBranch: String? = nil, startsInCheckout: Bool = false, locale: Locale = .current, calendar: Calendar = .current, now: Date = Date()) -> FleetWherePicker {
         guard snapshot.enabled, let thisID = snapshot.hostID, !snapshot.peers.isEmpty else { return .empty }
         let page = FleetPagePresentation.make(snapshot: snapshot, weight: weight, snapshotAge: snapshotAge, batteryCountsHalf: batteryCountsHalf,
@@ -63,7 +63,7 @@ public struct FleetWherePicker: Equatable, Sendable {
 
         // The same inputs the host places with.
         var macs = [FleetPlacement.Mac(hostID: thisID, name: "This Mac", isLocal: true, connected: true, hasRepo: true,
-                                       lacks: states[thisID]?.readiness?.lacks ?? [],
+                                       lacks: (states[thisID]?.readiness?.lacks ?? []) + (states[thisID]?.check?.lacks ?? []),
                                        sample: states[thisID]?.sample, sampleAge: states[thisID]?.sampleAge.map { $0 + snapshotAge },
                                        weight: weight(thisID))]
         for peer in snapshot.peers {
@@ -71,11 +71,11 @@ public struct FleetWherePicker: Equatable, Sendable {
             macs.append(FleetPlacement.Mac(
                 hostID: peer.hostID, name: peer.name, connected: peer.link == .connected,
                 hasRepo: repoKey.flatMap { key in state?.readiness.map { $0.repoKeys.contains(key) } },
-                lacks: state?.readiness?.lacks ?? [], sample: state?.sample,
+                lacks: (state?.readiness?.lacks ?? []) + (state?.check?.lacks ?? []), sample: state?.sample,
                 sampleAge: state?.sampleAge.map { $0 + snapshotAge }, weight: weight(peer.hostID)))
         }
         var winnerID: UUID?
-        if repoKey != nil, case .place(let target, _) = FleetPlacement.place(host: nil, macs: macs, needsXcode: needsXcode, batteryCountsHalf: batteryCountsHalf) {
+        if repoKey != nil, case .place(let target, _) = FleetPlacement.place(host: nil, macs: macs, needsXcode: needsXcode, provider: provider, batteryCountsHalf: batteryCountsHalf) {
             winnerID = target
         }
         let winnerName = winnerID.map { id in macs.first { $0.hostID == id }?.name ?? "" }
