@@ -64,7 +64,7 @@ extension FleetDispatch {
         guard let target = FleetPlacement.named(request.host, in: macs) else { return refuse(FleetDispatchCode.noSuchHost, "No Mac named \(request.host) is in the fleet.", request.host) }
         guard !target.isLocal else { return refuse(FleetDispatchCode.moveRefused, "That thread already runs on this Mac.") }
         guard target.connected else { return refuse(FleetDispatchCode.hostNotReady, "\(target.name) isn't answering. Move the thread when it is back.", "unreachable") }
-        guard client(target.hostID)?.capabilities.contains(RemoteProtocol.fleetMoveCapability) == true else {
+        guard capabilities(of: target.hostID)?.contains(RemoteProtocol.fleetMoveCapability) == true else {
             return refuse(FleetDispatchCode.targetOld, "\(target.name) runs a Shepherd that can't take a thread yet. Update it.")
         }
         if let problem = target.problems(needsXcode: needsXcode(probe)).first {
@@ -72,7 +72,7 @@ extension FleetDispatch {
         }
         // A thread another Mac sent work to follows its sender, which has to know how.
         if let from = agent.dispatchedFrom, from.hostID != hostID, from.hostID != target.hostID,
-           let sender = client(from.hostID), !sender.capabilities.contains(RemoteProtocol.fleetMoveCapability) {
+           let senderCapabilities = capabilities(of: from.hostID), !senderCapabilities.contains(RemoteProtocol.fleetMoveCapability) {
             return refuse(FleetDispatchCode.senderOld, "\(from.hostName) sent this thread and runs a Shepherd that can't follow it to another Mac. Update it.")
         }
         var record = FleetDispatchRecord(
@@ -84,6 +84,11 @@ extension FleetDispatch {
         save()
         reply(.success(record.summary))
         advanceMove(request.moveID)
+    }
+
+    /// What the link to a Mac says it can do; nil while it isn't up. Tests stand in for a Mac on an older Shepherd with `capabilityOverride`.
+    func capabilities(of peer: UUID) -> Set<String>? {
+        capabilityOverride?(peer) ?? client(peer)?.capabilities
     }
 
     /// The sender's record of work this Mac runs in `agent`, while it hasn't returned its result.
@@ -105,6 +110,7 @@ extension FleetDispatch {
             // A dispatched thread's own result isn't sent for the turn that is cut short here: the sender is told it moved on instead.
             for key in inbound.keys where inbound[key]?.record.remoteAgentID == agent.id && inbound[key]?.record.kind != .move { inbound[key]?.expectsResult = false }
             info.stage = .stopping
+            stopStarted[id] = .now
             record.move = info
             record.state = .preparing
             record.updatedAt = now
@@ -123,7 +129,8 @@ extension FleetDispatch {
     func continueStop(_ id: UUID) {
         guard let record = outbound[id], record.kind == .move, record.move?.stage == .stopping, !placing.contains(id),
               let agent = host.state().agents.first(where: { $0.id == record.move?.agentID }) else { return }
-        if agent.status == .working || agent.status == .blocked, now - record.updatedAt < moveStopGrace * 1000 {
+        // The grace is real time: the clock this engine stamps records with is a test's to move.
+        if agent.status == .working || agent.status == .blocked, let began = stopStarted[id], ContinuousClock.now - began < .seconds(moveStopGrace) {
             scheduleEvaluation()
             return
         }
@@ -302,7 +309,7 @@ extension FleetDispatch {
     func sendCommit(_ id: UUID) {
         guard let record = outbound[id], record.kind == .move, record.move?.committed == true, record.state == .preparing,
               let target = record.targetHostID, !sending.contains(id) else { return }
-        guard let link = client(target) else { return }
+        guard !holdHandover, let link = client(target) else { return }
         sending.insert(id)
         let finish: @Sendable (Result<FleetDispatchRecord, Error>) -> Void = { [weak self] result in
             self?.queue.async { self?.committed(id, result) }

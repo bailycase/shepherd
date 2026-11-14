@@ -197,8 +197,14 @@ final class FleetDispatch: @unchecked Sendable {
     var incrementalBundles: Set<UUID> = []
     /// How long a stopped turn is given to end before the thread's pi is stopped anyway (seconds). Tests shorten it.
     var moveStopGrace: TimeInterval = 10
+    /// When each move began stopping its thread's turn (in memory: a restart ends a move that hadn't handed over).
+    var stopStarted: [UUID: ContinuousClock.Instant] = [:]
     /// Tests: a move that is ready to hand the thread over waits (it is held at the point its tombstone would be written).
     var holdCommit = false
+    /// Tests: a move that wrote its tombstone doesn't tell the other Mac yet.
+    var holdHandover = false
+    /// Tests: what a Mac is taken to offer, in place of what its link says (a Mac on an older Shepherd).
+    var capabilityOverride: ((UUID) -> Set<String>?)?
     /// Sender: the conversation each move sends, copied to a file of its own.
     var moveTranscripts: [UUID: (ref: FleetBlobRef, url: URL)] = [:]
     /// Receiver: answers waiting for a move's thread to start (`FleetDispatchControl.commit`).
