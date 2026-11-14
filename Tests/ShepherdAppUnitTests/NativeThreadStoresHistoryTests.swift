@@ -365,10 +365,10 @@ struct NativeThreadStoresHistoryTests {
         stores.eagerRows = 8
         let a = stores.store(for: "a"), b = stores.store(for: "b")
         #expect(a.rows.count == 16 && a.transcriptDrawn == nil && b.transcriptDrawn == nil)
-        #expect(stores.enforceMountedBudget(budget: 0, limit: .max, quiet: true).threads == 1)
+        #expect(stores.enforceMountedBudget(budget: 0, limit: .max, ceiling: stores.releaseCeiling).threads == 1)
         #expect(a.transcriptDrawn == a.keptRows, "a's lazy stack and its rows, in one pass")
         #expect(b.transcriptDrawn == nil, "b's lazy stack waits for the next pass")
-        #expect(stores.enforceMountedBudget(budget: 0, limit: .max, quiet: true).threads == 1 && b.transcriptDrawn == b.keptRows)
+        #expect(stores.enforceMountedBudget(budget: 0, limit: .max, ceiling: stores.releaseCeiling).threads == 1 && b.transcriptDrawn == b.keptRows)
     }
 
     /// A step of everything lets go of the lazy stack with the rows, thread after thread: the room it has left after one is still everything.
@@ -405,7 +405,7 @@ struct NativeThreadStoresHistoryTests {
         let before = ["a", "b", "c"].reduce(0) { $0 + stores.store(for: $1).mountedCost(eagerRows: stores.eagerRows) }
         #expect(stores.runMountedPass() == true, "far over, a stream holds none off")
         let taken = before - ["a", "b", "c"].reduce(0) { $0 + stores.store(for: $1).mountedCost(eagerRows: stores.eagerRows) }
-        #expect(taken >= row * 3 - row && taken > row * 2, "a pass of the quiet kind: the ceiling, not a step: \(taken) of \(row)")
+        #expect(taken > row * 5, "what they are over by, which is more than the quiet ceiling of three rows, and not a step: \(taken) of \(row)")
         wait = .input
         #expect(stores.runMountedPass() == false, "typing holds it off all the same")
     }

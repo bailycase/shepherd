@@ -180,8 +180,10 @@ caught up with the shows. A pass never runs while the person types or scrolls, h
 lasts, nor while a thread on screen, local or remote, streams (`NativeThreadStores.busy`); only a
 stream gives out, after ten seconds of passes, which take a step, so that a long one cannot hold the
 budget off for good, or at once while the hidden threads hold more over the budget than a quarter of
-it or the ceiling, whichever is more (`farOverBudget`), when the pass is a quiet one's and the first
-follows a show after half a second. Unpinned threads go first, then readers left
+it or the ceiling, whichever is more (`farOverBudget`), when the pass lets go of what they are over
+by, at most `releaseFarCeiling` (a gibibyte: letting rows go costs a sixth of building them, and a
+pass of one row between two restore steps of one never caught up), and the first follows a show
+after half a second. Unpinned threads go first, then readers left
 scrolled up beyond the two most recently shown; the thread shown before the current one, and the one
 on screen, never. A thread keeps its last screen built (`NativeThreadStore.keptRows`: at most four
 rows within 16 MiB, or a last row of up to 64 MiB alone; a larger reply goes with the rest), which
