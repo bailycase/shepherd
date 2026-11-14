@@ -54,7 +54,7 @@ public enum RemoteProtocol {
     /// And it answers what a background host's agent asks of Shepherd's window (`AppRelayJob`),
     /// which a host asks only of a local client that lists it.
     public static let appRelayCapability = "appRelay.v1"
-    public static let clientCapabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability, designRelayCapability, appRelayCapability, appsV2Capability]
+    public static let clientCapabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability, designRelayCapability, appRelayCapability, appsV2Capability, fleetMoveViewCapability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -271,7 +271,7 @@ public enum RemoteProtocol {
     public static let fleetMoveCapability = "fleet.move.v1"
     /// A client may ask the host to move one of its threads to another Mac (`RemoteAgentAction.moveToMac`) and read the progress of a move
     /// (`FleetSnapshot.clientView` carries the move records). Offered to every client, devices included, while Fleet runs; it gives no part
-    /// in the fleet's store.
+    /// in the fleet's store. A client lists it in `hello` (`clientCapabilities`) to be sent the moves in `fleetRead`.
     public static let fleetMoveViewCapability = "fleet.move.view.v1"
     /// A link between two Macs works whichever of them opened it: the host sends a peer's requests back over the connection that peer
     /// opened (`RemoteReply.fleetPeerCall`, answered `RemoteRequest.fleetPeerAnswer`) and takes `fleetRoutes` (`FleetRoutesWire.swift`).

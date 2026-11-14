@@ -18,6 +18,9 @@ struct FleetCaller: Sendable {
     var deviceID: UUID?
     /// What the client called itself in `hello`.
     var clientName: String?
+    /// It listed `fleet.move.view.v1` in `hello`: its view of the fleet carries the moves of this Mac's threads. A client that did not
+    /// (an older build) would read a move as a failed dispatch.
+    var readsMoves = false
 
     /// What it may do in the fleet, by how it authenticated.
     var access: FleetAccess { isLocal ? .local : peerHostID != nil ? .member : deviceID != nil ? .device : .unauthenticated }
@@ -573,7 +576,7 @@ final class FleetService: @unchecked Sendable {
                 reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot())))
             } else if caller.authenticated, caller.access.mayViewFleet {
                 // A phone or an iPad reads the Macs, their load and their readiness, and nothing of how they are reached.
-                reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView)))
+                reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView(withMoves: caller.readsMoves))))
             } else {
                 reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only this Mac's app reads its fleet."))
             }
@@ -581,7 +584,7 @@ final class FleetService: @unchecked Sendable {
             // A client that looks at the Fleet page may ask the host to sample while it does; it changes nothing else.
             if !caller.isLocal, caller.authenticated, caller.access.mayViewFleet, case .watching(let on) = action {
                 pressure.watch(on, connection: caller.connection)
-                return reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView)))
+                return reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView(withMoves: caller.readsMoves))))
             }
             guard caller.isLocal else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only this Mac's app changes its fleet.")) }
             perform(action, id: id, caller: caller, reply: reply)

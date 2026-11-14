@@ -1759,7 +1759,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         let caller = FleetCaller(connection: client.fd, isLocal: client.isLocal, authenticated: client.authenticated,
                                  peerHostID: client.fleetPeerID, observedHost: client.peerHost, deviceID: client.fleetDeviceID,
-                                 clientName: client.clientName)
+                                 clientName: client.clientName, readsMoves: client.clientCapabilities.contains(RemoteProtocol.fleetMoveViewCapability))
         let connection = ChangesUnchecked(value: client)
         fleet.serve(request, from: caller) { [weak self] reply in
             self?.queue.async {

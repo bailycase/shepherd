@@ -461,5 +461,50 @@ struct FleetMoveTests {
         #expect(b.server.state.agents.filter { $0.id == agent.id }.count == 1)
     }
 
+    // MARK: From a phone
+
+    @Test func aPhoneMovesAThreadAndReadsItsProgressOnlyIfItListsTheCapability() async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let (agent, _) = try await Self.thread(on: a)
+        let phone = FleetDevicesIntegrationTests.Device("Ada's iPhone"), old = FleetDevicesIntegrationTests.Device("Old iPhone")
+        defer { phone.stop(); old.stop() }
+        for device in [phone, old] {
+            let code = try #require(try await a.local.fleetAction(.startDeviceCode).deviceCode).code
+            _ = try await RemoteHostClient.fleetPairDevice(host: "127.0.0.1", port: a.port, code: code, device: device.intro)
+        }
+        _ = try await phone.client.connect(host: "127.0.0.1", port: a.port, token: phone.token, clientName: phone.intro.name,
+                                           capabilities: RemoteProtocol.clientCapabilities)
+        _ = try await old.client.connect(host: "127.0.0.1", port: a.port, token: old.token, clientName: old.intro.name,
+                                         capabilities: RemoteProtocol.clientCapabilities.filter { $0 != RemoteProtocol.fleetMoveViewCapability })
+        #expect(phone.client.capabilities.contains(RemoteProtocol.fleetMoveViewCapability))
+
+        // The phone asks the thread's host to move it, by the Mac's fleet id as its menu would.
+        let miniID = try #require(try await b.local.fleetRead().snapshot.hostID)
+        let id = UUID()
+        try await phone.client.agentAction(agentID: agent.id, action: .moveToMac(FleetMoveRequest(moveID: id, agentID: agent.id, host: miniID.uuidString)))
+        try await Self.finish(id, from: a)
+        #expect(Self.copy(of: agent.id, on: b) != nil && Self.copy(of: agent.id, on: a)?.movedTo != nil)
+        // The tombstone is the host's own: no client is shown the thread there.
+        let later = RemoteHostClient()
+        defer { later.disconnect() }
+        let state = try await later.connect(host: "127.0.0.1", port: a.port, token: phone.token, clientName: phone.intro.name, capabilities: RemoteProtocol.clientCapabilities)
+        #expect(state.agents.contains { $0.id == agent.id } == false)
+
+        // It reads the move's record, and nothing else a Mac sent; a client of an older build is sent no dispatches at all.
+        let view = try await phone.client.fleetRead().snapshot
+        #expect(view.dispatches.map(\.id) == [id] && view.dispatches.allSatisfy { $0.kind == .move })
+        #expect(view.peers.first { $0.hostID == miniID }?.takesThreads == true)
+        #expect(try await old.client.fleetRead().snapshot.dispatches.isEmpty)
+
+        // A refusal is the host's own sentence.
+        do {
+            try await phone.client.agentAction(agentID: agent.id, action: .moveToMac(FleetMoveRequest(agentID: agent.id, host: "Mac mini")))
+            Issue.record("the thread had moved already")
+        } catch RemoteHostClientError.rejected(_, let message) {
+            #expect(!message.isEmpty)
+        }
+    }
+
     static func engineOf<T>(_ mac: Mac, _ body: (FleetDispatch) -> T) -> T? { FleetSnapshotTransferTests.engine(mac, body) }
 }

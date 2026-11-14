@@ -245,14 +245,18 @@ extension FleetSnapshot {
     /// What a client (a phone or an iPad) may read: the Macs, whether each is reachable, and their load and
     /// readiness, and the routes to each (`members`: what it needs to keep its own list of Macs). Not the addresses this Mac lists for
     /// itself, a code window, the devices, the sync state, the dispatches or the build.
-    public var clientView: FleetSnapshot {
+    public var clientView: FleetSnapshot { clientView(withMoves: false) }
+
+    /// `clientView`, with the moves of this Mac's threads for a client that reads them (`fleet.move.view.v1`: one that doesn't would draw a
+    /// move as a failed dispatch).
+    public func clientView(withMoves moves: Bool) -> FleetSnapshot {
         FleetSnapshot(enabled: enabled, hostID: hostID, name: name,
                       peers: peers.map {
                           FleetPeerStatus(hostID: $0.hostID, name: $0.name, kind: $0.kind, pairedAt: $0.pairedAt, link: $0.link, lastSeen: $0.lastSeen,
                                           takesThreads: $0.takesThreads)
                       },
-                      // A thread that is moving shows its progress wherever it is open (`fleet.move.view.v1`); nothing else a Mac sent.
-                      macs: macs, dispatches: dispatches.filter { $0.kind == .move }, members: members)
+                      // A thread that is moving shows its progress wherever it is open; nothing else a Mac sent.
+                      macs: macs, dispatches: moves ? dispatches.filter { $0.kind == .move } : [], members: members)
     }
 }
 

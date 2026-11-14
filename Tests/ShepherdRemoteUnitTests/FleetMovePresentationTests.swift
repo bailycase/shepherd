@@ -134,4 +134,24 @@ struct FleetMovePresentationTests {
         #expect(confirm.message.hasSuffix("has been running for 2 minutes. Moving now stops it; the thread picks up on Mac mini and can run it again there."))
         #expect(FleetMoveConfirm.make(running: nil, host: "Mac mini").title == "It’s working")
     }
+
+    // MARK: The phone's menu
+
+    @Test func moveToMacIsOfferedOnlyWhereTheHostWouldTakeIt() {
+        let space = Space(name: "orders-svc", path: "/Users/dev/orders-svc")
+        let agent = Agent(name: "Speed up checkout CI", spaceID: space.id, tabID: TabID())
+        let state = ShepherdState(spaces: [space], agents: [agent])
+        let caps: Set<String> = [RemoteProtocol.agentActionsCapability, RemoteProtocol.fleetMoveViewCapability]
+        func offered(_ agent: Agent = agent, state: ShepherdState = state, connected: Bool = true, _ capabilities: Set<String> = caps) -> Bool {
+            FleetThreadAbilities(agent: agent, state: state, connected: connected, capabilities: capabilities).moveToMac
+        }
+        #expect(offered())
+        #expect(!offered(connected: false) && !offered([RemoteProtocol.agentActionsCapability]), "an offline or older host")
+        var moved = agent
+        moved.movedTo = MovedTo(hostID: P.mini, hostName: "Mac mini", at: 1, moveID: UUID())
+        #expect(!offered(moved))
+        var run = state
+        run.automations = [Automation(id: AutomationID(rawValue: "a1"), name: "Nightly", prompt: "p", cwd: "/src", agentID: agent.id)]
+        #expect(!offered(state: run), "an automation's run stays where it runs")
+    }
 }
