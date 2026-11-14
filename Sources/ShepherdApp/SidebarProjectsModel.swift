@@ -566,12 +566,7 @@ private struct TreeBuilder {
             }
             var arranged = [rows.map(\.row)]
             SidebarSent.arrange(&arranged, by: sent, keepsNeedsYou: false)
-            project.rows = arranged[0].map { row in
-                // A thread under the one that sent it sits a level in, as a project's child does.
-                var row = row
-                if row.fleetNested { row.projectDepth += 1 }
-                return row
-            }
+            project.rows = arranged[0]
             project.rollup = rows.contains(where: \.waiting) ? .waiting : rows.contains(where: \.running) ? .running : .quiet
             if case .local = id {} else { project.dimmed = onlineHosts[id] == false }
             built[id] = project

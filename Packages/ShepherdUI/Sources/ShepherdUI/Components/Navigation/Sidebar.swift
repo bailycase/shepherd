@@ -440,16 +440,20 @@ public struct SHSidebarRow: View, Equatable {
         // A status report, a settled name, or ⌘ held changes one part in place (`.content`);
         // selection is not animated here, so it lands at once.
         HStack(spacing: density.sidebarRowGap) {
-            if elbow {
-                Image(systemName: "arrow.turn.down.right")
-                    .font(.sh(.micro, weight: .regular))
-                    .foregroundStyle(.sh.textTertiary)
+            // A sent thread: the elbow sits in its sender's dot column and its own dot follows close, so its title starts 18pt right of the sender's
+            // (FleetCornerFull, FleetSubthreads: x57 against x39 at 232pt).
+            HStack(spacing: elbow ? SH.Space.xs : density.sidebarRowGap) {
+                if elbow {
+                    Image(systemName: "arrow.turn.down.right")
+                        .font(.sh(.micro, weight: .regular))
+                        .foregroundStyle(.sh.textTertiary)
+                        .frame(width: SHSidebarMetrics.rowSlot)
+                        .accessibilityHidden(true)
+                }
+                leadingView
                     .frame(width: SHSidebarMetrics.rowSlot)
-                    .accessibilityHidden(true)
+                    .shAnimation(.content, value: leading)
             }
-            leadingView
-                .frame(width: SHSidebarMetrics.rowSlot)
-                .shAnimation(.content, value: leading)
             VStack(alignment: .leading, spacing: 0) {
                 Text(title)
                     .font(density.rowTitleFont(weight: selected ? .semibold : .regular))
@@ -481,7 +485,7 @@ public struct SHSidebarRow: View, Equatable {
                 .accessibilityLabel(fold.open ? "Hide sent threads" : "Show sent threads")
             }
         }
-        .padding(.leading, nested ? density.treeChildLeading : density.sidebarRowPadding)
+        .padding(.leading, (nested ? density.treeChildLeading : density.sidebarRowPadding))
         .padding(.trailing, density.sidebarRowPadding)
         .padding(.vertical, subtitle == nil ? 0 : SHSidebarMetrics.subtitleRowPadding)
         .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)

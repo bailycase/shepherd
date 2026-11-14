@@ -162,7 +162,7 @@ private struct SidebarItemView: View, Equatable {
             case .row(let row):
                 // A run under its automation's row sits a level in (`nested`), as in the space tree.
                 SHSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
-                             accessory: accessory(row), hasGoal: row.hasGoal, nested: row.foldedUnder != nil || row.fleetNested,
+                             accessory: accessory(row), hasGoal: row.hasGoal, nested: row.foldedUnder != nil,
                              badge: row.pullRequest, elbow: row.fleetNested, subtitle: row.subtitle,
                              fold: row.fold.map { fold in SHSidebarRow.Fold(open: fold.open) { vm.toggleRunGroup(fold.key) } })
                     .help(row.help)
