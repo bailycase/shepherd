@@ -86,6 +86,9 @@ public struct FleetMacCard: Identifiable, Equatable, Sendable {
     /// The Mac is one of the fleet's (its id is a fleet host id), so a Send work here weight can be set for it. False for a
     /// Mac this device holds that no fleet Mac has told it about (`FleetDeviceList`).
     public var takesWeight = true
+    /// What Check found that needs something here (not set aside): the Ready line says so and Check… opens the tab on it. Zero from a Mac
+    /// that hasn't reported, and from one that is asleep.
+    public var needs = 0
     /// Names the Mac's weight control for VoiceOver ("Send work to Mac mini").
     public var weightLabel: String { "Send work to \(name)" }
     public var isThisMac: Bool { status == .thisMac }
@@ -171,6 +174,8 @@ public struct FleetPage: Equatable, Sendable {
     public var behind: [FleetDispatchPresentation.BehindMac] = []
     /// Every dispatch this Mac sent, as a card: what a thread draws for the dispatches it made (`FleetDispatchPresentation`).
     public var dispatchCards: [FleetDispatchCard] = []
+    /// Fleet ▸ Check: what each Mac has of what the fleet needs (`FleetCheckPresentation`).
+    public var check = FleetCheckPage.empty
 
     public static let empty = FleetPage(cards: [], summary: "", nextGoesTo: nil, footer: .init(dots: [], detail: "", label: "Fleet"))
 }
@@ -208,7 +213,8 @@ public enum FleetPagePresentation {
     /// `batteryCountsHalf` is the fleet setting that halves a Mac on battery.
     public static func make(snapshot: FleetSnapshot, weight: (UUID) -> FleetSendWeight, snapshotAge: TimeInterval = 0,
                             batteryCountsHalf: Bool = true, autoDispatch: Bool = true, threadCap: Int = HostSettings.fleetThreadCapDefault,
-                            viewer: FleetViewer = .mac,
+                            viewer: FleetViewer = .mac, checkIgnored: (UUID) -> Set<String> = { _ in [] },
+                            checkFixing: [UUID: [String: FleetCheckFixing]] = [:],
                             locale: Locale = .current, calendar: Calendar = .current, now: Date = Date()) -> FleetPage {
         guard snapshot.enabled, let thisID = snapshot.hostID else { return .empty }
         let macs = Dictionary(snapshot.macs.map { ($0.hostID, $0) }, uniquingKeysWith: { first, _ in first })
@@ -274,6 +280,18 @@ public enum FleetPagePresentation {
             cards[index].cloning = Array(Set(snapshot.dispatches.filter { $0.state == .preparing && $0.targetHostID == id }.compactMap { $0.clone?.name })).sorted()
         }
 
+        // Check: what each Mac found of what the fleet needs. A Mac that reported says what needs doing in its Ready line, in place of the readiness words.
+        let check = FleetCheckPresentation.make(snapshot: snapshot, cards: cards, ignored: checkIgnored, snapshotAge: snapshotAge, fixing: checkFixing)
+        for index in cards.indices where cards[index].status != .asleep {
+            let id = cards[index].id
+            guard check.reported(id) else { continue }
+            let gates = (macs[id]?.readiness?.missing ?? []).filter { $0.kind != .binary }.map { $0.kind == .git ? "git" : "Xcode" }
+            let rows = check.shortNames(needing: id)
+            let all = gates + rows
+            cards[index].needs = all.count
+            cards[index].ready = FleetCheckPresentation.needs(all).map { FleetLine(text: $0, tone: .warn) } ?? FleetLine(text: "Every model and tool", tone: .good)
+        }
+
         let winner = FleetRoom.nextGoesTo(zip(entries, scores).map { FleetRoom.Candidate(id: $0.0.id, score: $0.1) }, local: thisID)
         let working = entries.compactMap { $0.sample?.activeAgents }.reduce(0, +)
         let asleep = cards.filter { $0.status == .asleep }
@@ -295,6 +313,7 @@ public enum FleetPagePresentation {
             return waiting.contains(record.state) || (record.state == .failed && record.updatedAt > dayAgo)
         }
         page.behind = FleetDispatchPresentation.behind(snapshot)
+        page.check = check
         return page
     }
 

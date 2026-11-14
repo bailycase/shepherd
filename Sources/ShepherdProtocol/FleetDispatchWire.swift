@@ -164,9 +164,13 @@ public struct FleetUserThread: Codable, Hashable, Sendable {
     /// The form's workplace choice: a new worktree from a base, a new worktree on an existing branch, or the space's own checkout. Nil is a
     /// new worktree from the base Settings ▸ Worktrees and the project give (as a form left at its defaults would).
     public var start: FleetThreadStart?
+    /// The Check items this thread is there to fix (their ids, `FleetCheckItem.id`): the Check tab shows them as being fixed while it runs, and
+    /// the host looks at the Mac again when it ends. Empty for any other thread.
+    public var fixes: [String]
 
     public init(dispatchID: UUID = UUID(), spaceID: SpaceID, task: String, title: String? = nil, host: String? = nil,
-                model: String? = nil, thinking: String? = nil, start: FleetThreadStart? = nil) {
+                model: String? = nil, thinking: String? = nil, start: FleetThreadStart? = nil, fixes: [String] = []) {
+        self.fixes = fixes
         self.start = start
         self.dispatchID = dispatchID
         self.spaceID = spaceID
@@ -175,6 +179,34 @@ public struct FleetUserThread: Codable, Hashable, Sendable {
         self.host = host
         self.model = model
         self.thinking = thinking
+    }
+
+    private enum CodingKeys: String, CodingKey { case dispatchID, spaceID, task, title, host, model, thinking, start, fixes }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dispatchID = try c.decode(UUID.self, forKey: .dispatchID)
+        spaceID = try c.decode(SpaceID.self, forKey: .spaceID)
+        task = try c.decode(String.self, forKey: .task)
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        host = try c.decodeIfPresent(String.self, forKey: .host)
+        model = try c.decodeIfPresent(String.self, forKey: .model)
+        thinking = try c.decodeIfPresent(String.self, forKey: .thinking)
+        start = try c.decodeIfPresent(FleetThreadStart.self, forKey: .start)
+        fixes = try c.decodeIfPresent([String].self, forKey: .fixes) ?? []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(dispatchID, forKey: .dispatchID)
+        try c.encode(spaceID, forKey: .spaceID)
+        try c.encode(task, forKey: .task)
+        try c.encodeIfPresent(title, forKey: .title)
+        try c.encodeIfPresent(host, forKey: .host)
+        try c.encodeIfPresent(model, forKey: .model)
+        try c.encodeIfPresent(thinking, forKey: .thinking)
+        try c.encodeIfPresent(start, forKey: .start)
+        if !fixes.isEmpty { try c.encode(fixes, forKey: .fixes) }
     }
 }
 
