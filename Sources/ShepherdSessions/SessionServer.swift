@@ -1580,7 +1580,12 @@ public final class SessionServer: @unchecked Sendable {
                 return FleetThreadFacts(status: agent.status, waitingOn: agent.waitingOn, lastText: lastText, worktree: agent.worktreePath)
             },
             repoPlaces: { [weak self] in self?.fleetRepoPlaces() ?? [] },
-            bindSpace: { [weak self] binding in self?.bindFleetCheckout(binding) })
+            bindSpace: { [weak self] binding in self?.bindFleetCheckout(binding) },
+            unattended: { [weak self] in self.map { Self.unattendedAgentIDs(in: $0.store.state) } ?? [] },
+            moveSource: { [weak self] agentID in self?.fleetMoveSource(agentID) },
+            stopPiForMove: { [weak self] agentID in await self?.stopPiForMove(agentID) },
+            tombstone: { [weak self] agentID, moved in self?.fleetTombstone(agentID, moved) ?? false },
+            untombstone: { [weak self] agentID, moveID in self?.fleetUntombstone(agentID, moveID: moveID) ?? false })
     }
 
     /// An agent's `fleet_*` tool. Refused unless Fleet is on and the thread may send work at all (`fleet_scope`:
@@ -1762,7 +1767,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         let caller = FleetCaller(connection: client.fd, isLocal: client.isLocal, authenticated: client.authenticated,
                                  peerHostID: client.fleetPeerID, observedHost: client.peerHost, deviceID: client.fleetDeviceID,
-                                 clientName: client.clientName)
+                                 clientName: client.clientName, readsMoves: client.clientCapabilities.contains(RemoteProtocol.fleetMoveViewCapability))
         let connection = ChangesUnchecked(value: client)
         fleet.serve(request, from: caller) { [weak self] reply in
             self?.queue.async {
@@ -5069,7 +5074,8 @@ public final class SessionServer: @unchecked Sendable {
             let view = RemoteStateView(designs: designs, legacy: legacy, whole: whole)
             if payloads[view] == nil {
                 encodedStateFramesLock.withLock { encodedStateFramesCount += 1 }
-                let shown = designs ? full : full.withoutDesigns
+                // A thread that moved to another Mac is this host's tombstone, never a thread a client sees.
+                let shown = (designs ? full : full.withoutDesigns).withoutMoved
                 let state = whole ? shown : shown.withoutProjectCoordinators.withoutProjectExecutions
                 payloads[view] = .some(Self.stateChangedPayload(legacy && !state.usesOnlyLegacyThinkingLevels
                     ? state.legacyThinkingLevels() : state))
@@ -5116,7 +5122,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// The workspace as `client` is sent it (`seesDesigns`).
     private func remoteState(_ state: ShepherdState, for client: ExtensionConnection) -> ShepherdState {
-        let shown = seesDesigns(client) ? state : state.withoutDesigns
+        let shown = (seesDesigns(client) ? state : state.withoutDesigns).withoutMoved
         return takesWholeWorkspace(client) ? shown : shown.withoutProjectCoordinators.withoutProjectExecutions
     }
 
@@ -7953,6 +7959,57 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Server queue: a move to another Mac handed the thread over. Writes its tombstone (`Agent.movedTo`), which nothing starts again, closes
+    /// its terminals and its pi's session, and keeps the thread's own layout, so the thread has its place back when it returns. One saved
+    /// step: false, with nothing changed, when the workspace can't be saved.
+    func fleetTombstone(_ agentID: AgentID, _ moved: MovedTo) -> Bool {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }), agent.movedTo == nil,
+              let tab = store.state.tabs.first(where: { $0.id == agent.tabID }) else { return false }
+        let others = tab.layout.leaves.filter { $0.id != agent.paneID }
+        var layout = tab.layout
+        for leaf in others { layout = layout.closing(pane: leaf.id) ?? layout }
+        let inspectors = store.state.tabs.filter { $0.inspectorFor == agentID }
+        let inspectorIDs = Set(inspectors.map(\.id))
+        let threadSession = agent.paneID.flatMap { tab.layout.leaf(withID: $0)?.sessionID }
+        let sessions = others.compactMap(\.sessionID) + inspectors.flatMap { $0.layout.leaves.compactMap(\.sessionID) } + [threadSession].compactMap { $0 }
+        do {
+            try mutateState { state in
+                guard let index = state.agents.firstIndex(where: { $0.id == agentID }) else { return }
+                state.agents[index].movedTo = moved
+                state.agents[index].status = .idle
+                state.agents[index].waitingOn = nil
+                state.agents[index].waitingReason = nil
+                if let tabIndex = state.tabs.firstIndex(where: { $0.id == tab.id }) {
+                    state.tabs[tabIndex].layout = layout
+                    if let paneID = agent.paneID { state.tabs[tabIndex].layout = layout.updatingLeaf(paneID) { $0.sessionID = nil } }
+                }
+                state.tabs.removeAll { inspectorIDs.contains($0.id) }
+            }
+        } catch {
+            ShepherdLog.warning("couldn't save the tombstone of \(agentID): \(error)")
+            return false
+        }
+        for session in sessions {
+            keptStarts.removeValue(forKey: session)
+            killSessionOnQueue(session)
+        }
+        return true
+    }
+
+    /// Server queue: takes the tombstone of `moveID` away, because the other Mac answered that it started no thread.
+    func fleetUntombstone(_ agentID: AgentID, moveID: UUID) -> Bool {
+        guard store.state.agents.first(where: { $0.id == agentID })?.movedTo?.moveID == moveID else { return false }
+        do {
+            try mutateState { state in
+                if let index = state.agents.firstIndex(where: { $0.id == agentID }) { state.agents[index].movedTo = nil }
+            }
+            return true
+        } catch {
+            ShepherdLog.warning("couldn't take the tombstone of \(agentID) away: \(error)")
+            return false
+        }
+    }
+
     // MARK: - Designs
 
     /// Makes a design: its folder with a new canvas.json titled with its name, then its record.
@@ -9342,6 +9399,12 @@ public final class SessionServer: @unchecked Sendable {
             if let raw = params.env?["SHEPHERD_AGENT_ID"] {
                 let agent = AgentID(rawValue: raw)
                 guard !movingThreads.contains(agent) else { throw ProjectFileError("thread_moving", "This thread is moving to another space.") }
+                // The fence of a move to another Mac: a tombstone never starts a pi again, and a thread being moved starts none either
+                // (its conversation and worktree are on their way out).
+                guard store.state.agents.first(where: { $0.id == agent })?.movedTo == nil else {
+                    throw ProjectFileError("thread_moved", "This thread moved to another Mac.")
+                }
+                guard fleet?.dispatch.isMoving(agent) != true else { throw ProjectFileError("thread_moving", "This thread is moving to another Mac.") }
                 if store.state.isProjectCoordinator(agent) || projectLaunches.contains(agent) || executionWorkers.contains(agent) {
                     try requireProjectsEnabled()
                     if store.state.isProjectCoordinator(agent) || projectLaunches.contains(agent) {
@@ -9816,7 +9879,7 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    private func killSessionOnQueue(_ sessionID: SessionID) {
+    func killSessionOnQueue(_ sessionID: SessionID) {
         clearAgentRecovery(sessionID: sessionID)
         guard let session = sessions[sessionID] else { return }
         if session.isAlive {

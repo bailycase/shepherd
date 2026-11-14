@@ -127,10 +127,14 @@ public struct FleetPeerStatus: Codable, Hashable, Identifiable, Sendable {
     public var lastSeen: Double?
     /// How the host reaches it now while linked (`FleetPeerReach`); nil from a host before links ran both ways, and to a client.
     public var reach: FleetPeerReach?
+    /// Whether this Mac can take a thread that moves to it (`RemoteProtocol.fleetMoveCapability`): false only while its link is up and it
+    /// lacks the capability (it runs an older Shepherd); nil while the link is down or from a host that doesn't say.
+    public var takesThreads: Bool?
     public var id: UUID { hostID }
 
     public init(hostID: UUID, name: String, kind: FleetPeerKind = .mac, host: String? = nil, port: UInt16? = nil,
-                pairedAt: Double, link: Link, lastSeen: Double? = nil, reach: FleetPeerReach? = nil) {
+                pairedAt: Double, link: Link, lastSeen: Double? = nil, reach: FleetPeerReach? = nil, takesThreads: Bool? = nil) {
+        self.takesThreads = takesThreads
         self.reach = reach
         self.hostID = hostID
         self.name = name
@@ -273,12 +277,18 @@ extension FleetSnapshot {
     /// What a client (a phone or an iPad) may read: the Macs, whether each is reachable, and their load and
     /// readiness, and the routes to each (`members`: what it needs to keep its own list of Macs). Not the addresses this Mac lists for
     /// itself, a code window, the devices, the sync state, the dispatches or the build.
-    public var clientView: FleetSnapshot {
+    public var clientView: FleetSnapshot { clientView(withMoves: false) }
+
+    /// `clientView`, with the moves of this Mac's threads for a client that reads them (`fleet.move.view.v1`: one that doesn't would draw a
+    /// move as a failed dispatch).
+    public func clientView(withMoves moves: Bool) -> FleetSnapshot {
         FleetSnapshot(enabled: enabled, hostID: hostID, name: name,
                       peers: peers.map {
-                          FleetPeerStatus(hostID: $0.hostID, name: $0.name, kind: $0.kind, pairedAt: $0.pairedAt, link: $0.link, lastSeen: $0.lastSeen)
+                          FleetPeerStatus(hostID: $0.hostID, name: $0.name, kind: $0.kind, pairedAt: $0.pairedAt, link: $0.link, lastSeen: $0.lastSeen,
+                                          takesThreads: $0.takesThreads)
                       },
-                      macs: macs, members: members, limits: limits)
+                      // A thread that is moving shows its progress wherever it is open; nothing else a Mac sent.
+                      macs: macs, dispatches: moves ? dispatches.filter { $0.kind == .move } : [], members: members, limits: limits)
     }
 }
 
@@ -328,6 +338,9 @@ public enum FleetAction: Codable, Hashable, Sendable {
     /// the code is still the only proof. `expiresAt` (epoch milliseconds) is when the code stops working; an expired one is refused
     /// without a connection. Answered with the Mac (`FleetResult.paired`).
     case pairAt(hostID: UUID, port: UInt16, routes: [FleetReportedRoute], code: String, expiresAt: Double?)
+    /// Move a thread of this Mac to another Mac (`RemoteProtocol.fleetMoveCapability`, `FleetMoveWire.swift`). Answered with the move's
+    /// record (`FleetResult.dispatch`), or refused with the reason. Cancelling it is `cancelDispatch`.
+    case moveThread(FleetMoveRequest)
 }
 
 /// The answer to `fleetRead` and `fleetAction`: the snapshot after it, plus what the action made.

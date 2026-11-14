@@ -18,6 +18,9 @@ final class FleetThreadActions: @unchecked Sendable {
     var openSender: @MainActor (DispatchedFrom) -> Void = { _ in }
     /// Tries the Mac's link again now (the offline banner's Retry).
     var retryHost: @MainActor () -> Void = {}
+    /// The move card's Cancel (a move waiting for the turn to end) and Dismiss (a failed one).
+    var cancelMove: @MainActor (UUID) -> Void = { _ in }
+    var dismissMove: @MainActor (UUID) -> Void = { _ in }
 }
 
 /// What a thread draws about dispatches (`ThreadView`): the one that sent work shows its dispatches' cards where it sent them and the
@@ -34,10 +37,12 @@ struct FleetThreadSurface: Equatable {
     var actions: FleetThreadActions?
     /// The Mac running it stopped answering: the transcript fades under the offline banner.
     var offline = false
+    /// This thread is moving to another Mac, or waits to, or a move of it failed (FleetMove): the card drawn above its conversation.
+    var move: FleetMoveCard?
 
     static func == (a: FleetThreadSurface, b: FleetThreadSurface) -> Bool {
         a.sentBy == b.sentBy && a.dispatched == b.dispatched && a.goesBack == b.goesBack && a.cards == b.cards && a.parent == b.parent
-            && a.actions === b.actions && a.offline == b.offline
+            && a.actions === b.actions && a.offline == b.offline && a.move == b.move
     }
 
     /// The card a `fleet_dispatch` call at `toolCallID` made.
@@ -397,23 +402,27 @@ struct FleetSentByHeader: View, Equatable {
     let sentBy: FleetSentBy
     let online: Bool
     var openSender: (() -> Void)?
+    /// The Mac's pill: the header's own chip (FleetMove) says it when the thread can move.
+    var showsHost = true
 
     nonisolated static func == (a: FleetSentByHeader, b: FleetSentByHeader) -> Bool {
-        a.sentBy == b.sentBy && a.online == b.online && (a.openSender == nil) == (b.openSender == nil)
+        a.sentBy == b.sentBy && a.online == b.online && (a.openSender == nil) == (b.openSender == nil) && a.showsHost == b.showsHost
     }
 
     var body: some View {
         let sh = Color.sh
         HStack(spacing: SH.Space.m) {
-            HStack(spacing: SH.Space.s) {
-                Circle().fill(online ? sh.done : sh.textTertiary).frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
-                Text(sentBy.host).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary).lineLimit(1)
+            if showsHost {
+                HStack(spacing: SH.Space.s) {
+                    Circle().fill(online ? sh.done : sh.textTertiary).frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
+                    Text(sentBy.host).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                }
+                .padding(.horizontal, SH.Space.m)
+                .frame(height: AppLayout.fleetHeaderPillHeight)
+                .shBorder(sh.lineStrong, radius: SH.Radius.s)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(online ? "Runs on \(sentBy.host)" : "Runs on \(sentBy.host), offline")
             }
-            .padding(.horizontal, SH.Space.m)
-            .frame(height: AppLayout.fleetHeaderPillHeight)
-            .shBorder(sh.lineStrong, radius: SH.Radius.s)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(online ? "Runs on \(sentBy.host)" : "Runs on \(sentBy.host), offline")
             HStack(spacing: SH.Space.xs) {
                 Text("sent by").foregroundStyle(sh.textTertiary)
                 if let openSender, sentBy.fromThread {
