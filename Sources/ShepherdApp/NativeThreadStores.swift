@@ -279,9 +279,9 @@ final class NativeThreadStores<Key: Hashable> {
         return (entries, costs)
     }
 
-    /// The hidden threads hold so much more than the budget (a quarter of it, and a step more than the ceiling) that waiting for a stream to
-    /// end, or for the show that came before to settle, means more rows built meanwhile than the passes then let go of: the abort
-    /// this budget exists to prevent.
+    /// The hidden threads hold more over the budget than a quarter of it or the ceiling, whichever is more: waiting for a stream to end,
+    /// or for the show that came before to settle, means more rows built meanwhile than the passes then let go of, and the abort this
+    /// budget exists to prevent.
     var farOverBudget: Bool {
         guard let held = mountedEntries()?.entries.reduce(0, { $0 + $1.cost }) else { return false }
         return held - mountedBudget > max(mountedBudget / 4, releaseCeiling)
