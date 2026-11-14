@@ -82,12 +82,14 @@ struct FleetDeviceViewTests {
         await Self.forbidden("fleetPressure") { try await client.fleetPressure(sample) }
         await Self.forbidden("fleetReadiness") { try await client.fleetReadiness(FleetReadinessReport(model: "Mac Pro")) }
         await Self.forbidden("fleetPressureNow") { _ = try await client.fleetPressureNow() }
+        await Self.forbidden("fleetCheck") { try await client.fleetCheck(FleetCheckReport(items: [FleetCheckItem(id: "disk", group: .system, name: "Free disk", state: .warn, value: "1 GB")])) }
+        await Self.forbidden("fleetCheckNow") { _ = try await client.fleetCheckNow() }
         await Self.forbidden("fleetRevoke") { try await client.fleetRevoke(hostID: bID, at: 1) }
         // The app's actions: no pairing, joining, removing, reconnecting, or managing devices and tokens.
         let actions: [FleetAction] = [
             .startJoin, .stopJoin, .pair(host: "127.0.0.1", port: b.port, code: "000000"), .remove(hostID: bID),
             .reconnect(hostID: bID), .startDeviceCode, .stopDeviceCode, .revokeDevice(UUID()),
-            .enrollApp(name: "Mac app"),
+            .enrollApp(name: "Mac app"), .checkNow,
         ]
         for action in actions { await Self.forbidden("\(action)") { _ = try await client.fleetAction(action) } }
 
@@ -97,6 +99,24 @@ struct FleetDeviceViewTests {
         #expect(after.join == nil && after.devices?.code == nil && after.devices?.devices.count == 1)
         #expect(try await b.read().peers.map(\.hostID) == [try await a.hostID()], "the other Mac never heard of a removal")
         #expect(try await a.state(of: try await a.hostID())?.sample?.cpuCount == 8, "no reading was filed in a Mac's name")
+    }
+
+    /// A device reads what each Mac found for Check, read only: it sees the reports and the age of each, and (above) can neither push one nor ask for one.
+    @Test func aPairedDeviceReadsWhatEachMacFoundForCheck() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("chk-\(UUID().uuidString.prefix(6))", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let (one, two) = (FleetCheckIntegrationTests.Looks(node: "v22.11.0"), FleetCheckIntegrationTests.Looks(node: "v20.18.1"))
+        let a = try await FleetCheckIntegrationTests.mac("MacBook Pro", busy: 30, one, in: dir), b = try await FleetCheckIntegrationTests.mac("Mac mini", busy: 60, two, in: dir)
+        defer { a.stop(); b.stop() }
+        try await FleetPressureIntegrationTests.pair(a, b)
+        let bID = try await b.hostID()
+        let (phone, client) = try await Self.phone(port: a.port, local: a.local)
+        defer { phone.stop() }
+        try await eventually("the device to read Mac mini's report") { try await client.fleetRead().snapshot.macs.first { $0.hostID == bID }?.check != nil }
+        let mini = try #require(try await client.fleetRead().snapshot.macs.first { $0.hostID == bID })
+        #expect(mini.check?.items.first { $0.id == "need:node:22" }?.value == "Has 20.18" && mini.checkAge != nil)
+        let page = FleetPagePresentation.make(snapshot: try await client.fleetRead().snapshot, weight: { _ in .normal }, viewer: .client)
+        #expect(page.check.count == 1 && page.check.summary.hasPrefix("1 thing differs"), Comment(rawValue: page.check.summary))
     }
 
     @Test func aClientOnADevicesTokenReadsTheSameView() async throws {

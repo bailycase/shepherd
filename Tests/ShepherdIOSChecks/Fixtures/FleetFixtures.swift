@@ -39,6 +39,9 @@ extension FixtureCatalog {
             // Forget this Mac, as a swipe on its row (or its context menu) leads to it.
             FixtureScreen(name: "fleet-forget", hosts: FleetFixtureData.hosts(), routes: [.settings(.fleet)], tab: .settings,
                           prepare: { app in await FleetFixtureData.settle(app) }, setup: { FleetScreen.preview = .forgetting("Mac Studio") }),
+            // Check, read only: what the fleet needs against each Mac (the phone's list form of FleetCheck).
+            FixtureScreen(name: "fleet-check", hosts: FleetFixtureData.hosts(snapshot: FleetFixtureData.checked()), routes: [.settings(.fleet)], tab: .settings,
+                          prepare: { app in await FleetFixtureData.settle(app) }, setup: { FleetScreen.preview = .check }),
             FixtureScreen(name: "fleet-busy", hosts: FleetFixtureData.hosts(snapshot: FleetFixtureData.busy()), routes: [.settings(.fleet)],
                           tab: .settings, prepare: { app in await FleetFixtureData.settle(app) }),
         ]
@@ -72,6 +75,33 @@ enum FleetFixtureData {
                               readiness: FleetReadinessReport(model: "Mac mini", chip: "M4 Pro", repos: ["acme-web", "payments-api", "orders-svc"])),
                 FleetMacState(hostID: studio, readiness: FleetReadinessReport(model: "Mac Studio", chip: "M3 Ultra", repos: ["acme-web"])),
             ])
+    }
+
+    /// The fleet with what each Mac found when it looked at itself (`FleetCheckReport`): Mac mini has node 20 where the repos pin 22 and no muse CLI,
+    /// a Mac Studio that sleeps after 10 minutes is shown from its last look.
+    static func checked() -> FleetSnapshot {
+        func need(_ value: String, _ state: FleetCheckItem.State = .ok) -> FleetCheckItem {
+            FleetCheckItem(id: "need:node:22", group: .needs, name: "node 22", state: state, value: value, kind: .tool, tool: "node", want: "22",
+                           subjects: ["payments-api", "acme-web"], sources: [".nvmrc"])
+        }
+        func muse(_ state: FleetCheckItem.State) -> FleetCheckItem {
+            FleetCheckItem(id: "tool:muse", group: .tools, name: "muse CLI", state: state, value: state == .ok ? "Installed" : "Missing", kind: .command,
+                           tool: "muse", subjects: ["muse"])
+        }
+        func disk(_ gb: String, _ state: FleetCheckItem.State = .ok) -> FleetCheckItem {
+            FleetCheckItem(id: "disk", group: .system, name: "Free disk", state: state, value: gb, kind: .disk)
+        }
+        func sleep(_ value: String, _ state: FleetCheckItem.State = .ok) -> FleetCheckItem {
+            FleetCheckItem(id: "sleep", group: .system, name: "Stays awake", state: state, value: value, kind: .sleep)
+        }
+        var snapshot = snapshot()
+        snapshot.macs[0].check = FleetCheckReport(items: [need("22.11"), muse(.ok), disk("312 GB"), sleep("On battery")], packageManager: "nix")
+        snapshot.macs[0].checkAge = 120
+        snapshot.macs[1].check = FleetCheckReport(items: [need("Has 20.18", .warn), muse(.warn), disk("38 GB", .warn), sleep("Never sleeps")], packageManager: "nix")
+        snapshot.macs[1].checkAge = 110
+        snapshot.macs[2].check = FleetCheckReport(items: [need("22.4"), muse(.ok), disk("1.2 TB"), sleep("Sleeps after 10 min", .warn)], packageManager: "brew")
+        snapshot.macs[2].checkAge = 7_200
+        return snapshot
     }
 
     /// Only the Mac the phone asks.
