@@ -45,6 +45,21 @@ struct RemoteHostRecordTests {
         #expect(RemoteHostRecord.decodeList(RemoteHostRecord.encodeList(records)) == records)
     }
 
+    @Test func aRecordSavedBeforeRoutesIsOneRouteAndItsRoutesRoundTrip() throws {
+        let id = UUID()
+        let old = Data(#"[{"id":"\#(id.uuidString)","name":"Mac mini","address":"10.77.20.10","port":7434}]"#.utf8)
+        let migrated = try #require(RemoteHostRecord.decodeList(old).first)
+        #expect(migrated.routes == [RemoteHostRoute(host: "10.77.20.10", port: 7434)] && migrated.address == "10.77.20.10" && migrated.port == 7434)
+
+        let fleet = RemoteHostRecord(id: id, name: "Mac mini", routes: [RemoteHostRoute(host: "10.77.20.10", port: 7434, kind: .lan),
+                                                                         RemoteHostRoute(host: "mac-mini.local", port: 7434, kind: .hostname)])
+        let saved = RemoteHostRecord.encodeList([fleet])
+        #expect(RemoteHostRecord.decodeList(saved) == [fleet])
+        // The first route is still the address and port a build before routes reads.
+        let object = try #require(try JSONSerialization.jsonObject(with: saved) as? [[String: Any]])
+        #expect(object[0]["address"] as? String == "10.77.20.10" && object[0]["port"] as? Int == 7434)
+    }
+
     @Test(arguments: [nil, Data(), Data("{".utf8), Data("{\"name\":\"x\"}".utf8)] as [Data?])
     func unreadableRecordsAreNoHosts(data: Data?) {
         #expect(RemoteHostRecord.decodeList(data).isEmpty)

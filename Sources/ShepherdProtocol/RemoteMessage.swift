@@ -284,6 +284,10 @@ public enum RemoteProtocol {
     /// choose where work is sent (`HostSettingChange.fleetWeight`). Offered to every client, devices
     /// included, while Fleet is on; it gives no part in the fleet's store.
     public static let fleetViewCapability = "fleet.view.v1"
+    /// A client keeps up with the fleet's Macs: `FleetSnapshot.members` (each Mac's id, name, port and routes, in the answer to
+    /// `fleetRead`) and the push `fleetViewChanged` when they change, sent only to a client that lists this in `hello`. Offered to every
+    /// client, devices included, while Fleet is on. A host without it says nothing of the members, so a client never prunes from its answer.
+    public static let fleetFollowCapability = "fleet.follow.v1"
     /// Capabilities a client device is never offered (`FleetAccess`): the ones for taking part in the
     /// fleet's store (`fleet.v1`, sync), and the one for enrolling (a device already has its token). Later fleet
     /// units (credentials, dispatch) add theirs here.
@@ -308,7 +312,7 @@ public enum RemoteProtocol {
     /// The host saves a file of a thread's folder (`RemoteAgentQuery.fileWrite`), only over the text the client
     /// edited from (`ThreadFileSaveResult.changed` otherwise). Served only to a client offered `filesCapability`.
     public static let filesWriteCapability = "files.write.v1"
-    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostSettingsTextGenerationModelCapability, hostSettingsVisionModelCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, checkoutReadCapability, pullRequestLinkCapability, fleetExperimentCapability, fleetCapability, fleetSyncCapability, fleetDevicesCapability, fleetPressureCapability, fleetViewCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetRendezvousCapability, fleetLinkCapability, fleetPairLinkCapability]
+    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostSettingsTextGenerationModelCapability, hostSettingsVisionModelCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, checkoutReadCapability, pullRequestLinkCapability, fleetExperimentCapability, fleetCapability, fleetSyncCapability, fleetDevicesCapability, fleetPressureCapability, fleetViewCapability, fleetFollowCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetRendezvousCapability, fleetLinkCapability, fleetPairLinkCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -1685,6 +1689,9 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// Pushed to a client that lists `designSystemsCapability` after the host's design systems
     /// changed (one added, renamed, re-synced or deleted): a hint to list them again.
     case designSystemsChanged
+    /// Pushed to a client that lists `fleetFollowCapability` when the fleet's Macs or the routes to them changed: a hint to read
+    /// `fleetRead` again. It carries nothing of the fleet.
+    case fleetViewChanged
     /// Pushed to a client that lists `designsCapability` when what the host offers changes (its
     /// Design tool experiment turned on or off): the whole list, as `helloOk` gave it.
     case capabilitiesChanged(capabilities: [String])
@@ -1780,7 +1787,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case automationResult, forgeResult
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
         case hostConfig, hooks, apps
-        case design, designChanged, designSystemsChanged, capabilitiesChanged
+        case design, designChanged, designSystemsChanged, fleetViewChanged, capabilitiesChanged
         case tunnel
         case browserClaimed, browserDrive, logicalProjectRuntime
         case designRelay, agentNotify, appRelay, settingsChanged, toolFinished, threadNotice, agentStartProblem, automationsChanged, automationNotify, designNotesChanged, designGitChanged, designImportProgress, appsChanged
@@ -1841,6 +1848,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
                                   commentsRevision: try c.decodeIfPresent(UInt64.self, forKey: .commentsRevision))
         case .designSystemsChanged:
             self = .designSystemsChanged
+        case .fleetViewChanged:
+            self = .fleetViewChanged
         case .capabilitiesChanged:
             self = .capabilitiesChanged(capabilities: try c.decode([String].self, forKey: .capabilities))
         case .helloOk:
@@ -2155,6 +2164,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encodeIfPresent(commentsRevision, forKey: .commentsRevision)
         case .designSystemsChanged:
             try c.encode(Kind.designSystemsChanged, forKey: .type)
+        case .fleetViewChanged:
+            try c.encode(Kind.fleetViewChanged, forKey: .type)
         case .capabilitiesChanged(let capabilities):
             try c.encode(Kind.capabilitiesChanged, forKey: .type)
             try c.encode(capabilities, forKey: .capabilities)
