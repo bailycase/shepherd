@@ -24,7 +24,7 @@ enum MainDestination: Hashable, CaseIterable {
     /// Issues & PRs (PRReview, IssueReview, PRSidebarPinned): GitHub through the host's gh. The
     /// sidebar shows its list in place of the destinations and groups.
     case forge
-    /// FleetA (Settings ▸ Experiments ▸ Fleet): the Macs paired with this one, their room and what
+    /// FleetA: the Macs paired with this one, their room and what
     /// was sent between them. The sidebar's Fleet footer row and the palette's Open Fleet open it.
     case fleet
     /// A Project (ProjectLead boards): its Overview and conversation page, in the main column. Which

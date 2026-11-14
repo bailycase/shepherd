@@ -221,12 +221,36 @@ final class FleetService: @unchecked Sendable {
 
     /// Opens a link to every Mac this host is paired with.
     func start() {
-        syncEngine.start()
-        dispatch.start()
-        startWatchingNetwork()
-        for record in peers.members where record.isLinkable { startLink(record.hostID) }
+        updateEngines()
         advertise()
         changed()
+    }
+
+    /// Sync, dispatch, the network watch and the links run only while a Mac is paired, or this Mac is pairing (it enters a code on
+    /// another: its settings must be read before the other Mac's, so the Mac that was already in use is the reference of the first sync).
+    /// A host with no Mac paired reads nothing and keeps nothing of the fleet's, and asks for no port.
+    private(set) var isActive = false
+    /// Server queue: the engines have just started, so what only they need is looked at (the spaces' repository keys).
+    var onActive: (() -> Void)?
+
+    private func updateEngines() {
+        let want = !stopped && (!peers.members.isEmpty || pairingsInFlight > 0)
+        guard want != isActive else { return }
+        isActive = want
+        if want {
+            syncEngine.start()
+            dispatch.start()
+            startWatchingNetwork()
+            for record in peers.members where record.isLinkable { startLink(record.hostID) }
+            onActive?()
+        } else {
+            dispatch.stop()
+            stopWatchingNetwork()
+            for id in Array(links.keys) { stopLink(id) }
+            // No peer to sample for.
+            pressure.reset()
+            syncEngine.stop()
+        }
     }
 
     /// Ends every link, the advertisement and the code window. Saved state stays.
@@ -269,6 +293,7 @@ final class FleetService: @unchecked Sendable {
     }
 
     private func changed() {
+        updateEngines()
         updateIndexing()
         refreshPresence()
         onChange?()
@@ -1176,6 +1201,8 @@ final class FleetService: @unchecked Sendable {
     /// host (`peerConnected`): whichever of the two Macs can reach the other carries it.
     private func startLink(_ hostID: UUID) {
         guard !stopped, peers.record(hostID)?.isLinkable == true else { return }
+        // The first Mac paired starts the engines, which start every link, this one too.
+        if !isActive { return updateEngines() }
         stopLink(hostID)
         let link = Link(hostID: hostID)
         links[hostID] = link

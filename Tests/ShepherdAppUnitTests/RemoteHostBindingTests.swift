@@ -40,7 +40,7 @@ struct RemoteHostBindingTests {
     func changingADestinationInvalidatesItsBindingAcrossReloads(field: String) throws {
         let defaults = ScratchDefaults()
         let store = RemoteHostStore(defaults: defaults, connects: false)
-        store.addHost(name: "Builder", host: "builder.test", port: 7433, token: "fixture")
+        store.addHost(name: "Builder", host: "builder.test", port: 7433, token: "fixture", fleetManaged: true)
         let before = try #require(store.hosts.first)
         store.updateHost(id: before.id, name: before.name,
                          host: field == "address" ? "replacement.test" : before.host,
@@ -56,7 +56,7 @@ struct RemoteHostBindingTests {
     @Test func renamingOrReconnectingAHostPreservesItsBinding() throws {
         let defaults = ScratchDefaults()
         let store = RemoteHostStore(defaults: defaults, connects: false)
-        store.addHost(name: "Builder", host: "builder.test", port: 7433, token: "fixture")
+        store.addHost(name: "Builder", host: "builder.test", port: 7433, token: "fixture", fleetManaged: true)
         let original = try #require(store.hosts.first)
         store.updateHost(id: original.id, name: "Studio", host: original.host,
                          port: original.port, token: original.token)

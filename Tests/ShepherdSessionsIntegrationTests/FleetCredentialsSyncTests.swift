@@ -220,9 +220,8 @@ struct FleetCredentialsSyncTests {
         defer { a.stop(); b.stop() }
         try Self.piWrites(Self.acme, Self.oauth(1), in: Self.auth(a))
         try Self.piWrites(Self.acme, Self.oauth(9), in: Self.auth(b))
+        // The Mac that enters the code reads first, so its sign-in is the reference.
         a.enable()
-        // The Mac where Fleet was first switched on is the reference.
-        try await eventually("the MacBook to hold its sign-in as a seed") { a.server.fleetSyncWinner("credential:\(Self.acme)") != nil }
         b.enable()
         try await Self.enabled(a, b)
         try await a.pair(with: b)

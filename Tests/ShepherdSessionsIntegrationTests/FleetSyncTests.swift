@@ -343,17 +343,14 @@ struct FleetSyncTests {
 
     // MARK: First sync
 
-    @Test func theMacWhereFleetWasFirstOnIsTheReferenceAndTheOthersCopyIsKeptInHistory() async throws {
+    @Test func theMacThatEntersTheCodeIsTheReferenceAndTheOthersCopyIsKeptInHistory() async throws {
         let a = try await Mac("MacBook Pro", enable: false), b = try await Mac("Mac mini", enable: false)
         defer { a.stop(); b.stop() }
         try a.server.instructions.save(.agents, content: "# MacBook Pro's instructions")
         try b.server.instructions.save(.agents, content: "# Mac mini's own, different")
         try b.server.instructions.save(.appendSystem, content: "Only the mini has this.")
+        // Nothing is read until a Mac is paired; the Mac that enters the code reads first, so its copies are the reference.
         a.enable()
-        try await eventually("A to seed the fleet") { a.server.fleetSyncWinner(Self.agents) != nil }
-        // B's seed must be a later clock reading than A's, whatever the millisecond.
-        let before = Int(Date().timeIntervalSince1970 * 1000)
-        try await eventually("the clock to move on") { Int(Date().timeIntervalSince1970 * 1000) > before }
         b.enable()
         try await a.pair(with: b)
         try await a.waitForLink(to: b)

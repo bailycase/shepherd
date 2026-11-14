@@ -33,8 +33,8 @@ final class RemoteHostStore {
         var localSocket: String?
         /// This Mac's host holds this one as a fleet peer (`FleetService`): its address and
         /// token are the fleet's. The app keeps this direct connection for drawing the Mac's threads;
-        /// `bindingID` stays, so Project executor references survive. Every connection is one now; a saved
-        /// config without it is a Mac this app was a client of before Fleet was how Macs connect (`notInFleet`).
+        /// `bindingID` stays, so Project executor references survive. A saved config without it is a Mac this app
+        /// was a client of before Fleet was how Macs connect (`notInFleet`).
         var fleetManaged: Bool
         /// `token` is this app's own (a fleet device token its host gave it), not the Mac's shared one,
         /// which a Mac can stop accepting.
@@ -284,6 +284,13 @@ final class RemoteHostStore {
     /// Macs this app was a client of before Fleet was how Macs connect: not connected any more, listed under Settings ▸ Fleet ▸ Macs
     /// until each is added to the fleet (its saved address is a route to it) or dismissed.
     private(set) var notInFleet: [HostConfig] = []
+    static let fleetMembersKey = "shepherd.remote.hosts.fleetMembers"
+    /// The connections that stand for a Mac of the fleet (`FleetConnections` matched or made them): only these are dropped when their Mac
+    /// leaves it. Saved, so a Mac removed while the app was closed is dropped at the next launch.
+    var fleetMembers: Set<UUID> {
+        get { Set((defaults.stringArray(forKey: Self.fleetMembersKey) ?? []).compactMap(UUID.init(uuidString:))) }
+        set { defaults.set(newValue.map(\.uuidString).sorted(), forKey: Self.fleetMembersKey) }
+    }
 
     @ObservationIgnored var onProjectionChanged: (() -> Void)?
     /// Whether the app leaves the next workspace the background host on this Mac pushes unadopted when a newer
@@ -435,10 +442,13 @@ final class RemoteHostStore {
         return connection
     }
 
-    /// Connects a Mac of the fleet (`id` is its fleet id when it has one).
+    /// Connects a host. `FleetConnections` adds a Mac of the fleet this way (`fleetManaged`, `id` its fleet id), and follows it as the fleet
+    /// changes; nothing else adds a host (a Mac is added to the fleet, never as a client), so a connection that isn't `fleetManaged` is
+    /// one a test makes, and the fleet leaves it alone.
     @discardableResult
-    func addHost(id: UUID = UUID(), name: String, host: String, port: UInt16, token: String, ownToken: Bool = false) -> UUID {
-        let config = HostConfig(id: id, name: name, host: host, port: port, token: token, fleetManaged: true, ownToken: ownToken)
+    func addHost(id: UUID = UUID(), name: String, host: String, port: UInt16, token: String, ownToken: Bool = false,
+                 fleetManaged: Bool = false) -> UUID {
+        let config = HostConfig(id: id, name: name, host: host, port: port, token: token, fleetManaged: fleetManaged, ownToken: ownToken)
         let connection = Connection(config: config, designCache: designCache)
         allConnections.append(connection)
         persist()

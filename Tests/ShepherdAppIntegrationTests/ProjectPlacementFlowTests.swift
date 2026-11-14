@@ -37,7 +37,7 @@ struct ProjectPlacementFlowTests {
             let tokenURL = executor.dir.appendingPathComponent("placement-token")
             let port = try executor.server.startRemoteListener(port: 0, tokenURL: tokenURL)
             let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-            owner.remoteHosts.addHost(name: "Executor", host: "127.0.0.1", port: port, token: token)
+            owner.remoteHosts.addHost(name: "Executor", host: "127.0.0.1", port: port, token: token, fleetManaged: true)
             try await eventuallyOnMain("authenticated executor") { self.owner.remoteHosts.connections.first?.phase == .connected }
             let config = try #require(owner.remoteHosts.connections.first?.config)
             host = .remote(hostID: config.id, bindingID: config.bindingID)

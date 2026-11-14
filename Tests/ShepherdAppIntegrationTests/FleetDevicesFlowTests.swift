@@ -107,7 +107,7 @@ struct FleetDevicesFlowTests {
         #expect(await a.model.pair(with: b.found, code: try #require(b.model.join?.code)))
         let defaults = ScratchDefaults()
         let store = RemoteHostStore(defaults: defaults, connects: false)
-        store.addHost(name: "mini", host: "127.0.0.1", port: try #require(b.port), token: b.token)
+        store.addHost(name: "mini", host: "127.0.0.1", port: try #require(b.port), token: b.token, fleetManaged: true)
         let config = try #require(store.hosts.first)
         #expect(!config.ownToken)
 

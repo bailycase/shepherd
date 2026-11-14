@@ -1318,7 +1318,7 @@ public final class SessionServer: @unchecked Sendable {
     /// Returns at once with Fleet off or no peer connected, and after a few seconds at most. Any actor.
     func fleetCredentialFence() async {
         let engine = await withCheckedContinuation { (continuation: CheckedContinuation<FleetSync?, Never>) in
-            queue.async { [self] in continuation.resume(returning: fleet?.syncEngine) }
+            queue.async { [self] in continuation.resume(returning: fleet?.isActive == true ? fleet?.syncEngine : nil) }
         }
         await engine?.catchUpCredentials()
     }
@@ -1474,6 +1474,7 @@ public final class SessionServer: @unchecked Sendable {
                         return FleetExclusions.Overrides(excluded: excludes.excluded, included: excludes.included)
                     },
                     worktrees: { [weak self] in self?.store.state.agents.compactMap { agent in agent.worktreePath.map { (agent.spaceID, $0) } } ?? [] })
+                service.onActive = { [weak self] in self?.fleetSpacesChanged() }
                 service.onListenerNeed = { [weak self] need in self?.fleetListenerNeed?(need) }
                 service.start()
                 announceFleetCapabilities()
@@ -1660,7 +1661,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Server queue: the spaces changed, so their repo keys may have, and the fleet may have something to say.
     func fleetSpacesChanged() {
-        guard let fleet else { return }
+        guard let fleet, fleet.isActive else { return }
         refreshRepoKeys()
         fleet.index.reconcile()
         fleet.syncEngine.localChanged()
@@ -1670,7 +1671,7 @@ public final class SessionServer: @unchecked Sendable {
     /// runs git) and records the new `repoKey`s through the usual state mutation.
     private func refreshRepoKeys() {
         refreshRepoCandidates()
-        guard let keys = fleetRepoKeys, !repoKeysRefreshing, fleet != nil else { return }
+        guard let keys = fleetRepoKeys, !repoKeysRefreshing, fleet?.isActive == true else { return }
         let spaces = store.state.spaces.filter(FleetSpacesSource.syncs).map { (id: $0.id, path: $0.path, key: $0.repoKey) }
         guard !spaces.isEmpty else { return }
         repoKeysRefreshing = true
@@ -1696,7 +1697,7 @@ public final class SessionServer: @unchecked Sendable {
     /// space with no folder here binds to a checkout this Mac already has. Says so to the sync when what can be found changed. A place
     /// that appears while a look is under way is looked at when it ends.
     private func refreshRepoCandidates() {
-        guard let finder = fleet?.dispatch.finder else { return }
+        guard let finder = fleet?.dispatch.finder, fleet?.isActive == true else { return }
         guard !repoCandidatesRefreshing else { repoCandidatesAgain = true; return }
         let places = fleetRepoPlaces()
         guard !places.isEmpty else { return }
@@ -1706,7 +1707,10 @@ public final class SessionServer: @unchecked Sendable {
             self?.queue.async {
                 guard let self else { return }
                 self.repoCandidatesRefreshing = false
-                if changed { self.fleet?.syncEngine.localChanged() }
+                if changed {
+                    self.fleet?.syncEngine.localChanged()
+                    self.fleet?.pressure.factsChanged()
+                }
                 if self.repoCandidatesAgain {
                     self.repoCandidatesAgain = false
                     self.refreshRepoCandidates()

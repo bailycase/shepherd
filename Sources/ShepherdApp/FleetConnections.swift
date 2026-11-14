@@ -45,14 +45,20 @@ final class FleetConnections {
             hosts.pairedConnections.first { $0.id == peer.hostID || $0.fleetID == peer.hostID }
                 ?? hosts.pairedConnections.first { $0.config.host == peer.host && $0.config.port == peer.port }
         }
-        for held in hosts.pairedConnections where !snapshot.peers.contains(where: { connection(of: $0) === held }) {
+        var members = hosts.fleetMembers
+        for held in hosts.pairedConnections where members.contains(held.id) && !snapshot.peers.contains(where: { connection(of: $0) === held }) {
             hosts.removeHost(id: held.id)
+            members.remove(held.id)
         }
+        defer { if members != hosts.fleetMembers { hosts.fleetMembers = members } }
         var owed = false
         var token = hosts.pairedConnections.first { $0.config.ownToken }?.config.token
         for peer in snapshot.peers where peer.kind == .mac {
             guard let host = peer.host, let port = peer.port else { continue }
             let held = connection(of: peer)
+            // A connection the fleet didn't make is not the fleet's to follow.
+            if let held, !held.config.fleetManaged { continue }
+            if let held { members.insert(held.id) }
             if let held, held.config.ownToken {
                 if held.config.host != host || held.config.port != port || held.config.name != peer.name {
                     hosts.follow(id: held.id, name: peer.name, host: host, port: port)
@@ -71,7 +77,8 @@ final class FleetConnections {
                 // A Mac reached with the shared token moves to the app's own, so it can stop accepting the shared one.
                 hosts.useOwnToken(id: held.id, token: token)
             } else if connection(of: peer) == nil {
-                hosts.addHost(id: peer.hostID, name: peer.name, host: host, port: port, token: token, ownToken: true)
+                hosts.addHost(id: peer.hostID, name: peer.name, host: host, port: port, token: token, ownToken: true, fleetManaged: true)
+                members.insert(peer.hostID)
             }
         }
         retry?.cancel()
