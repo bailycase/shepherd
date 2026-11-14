@@ -327,13 +327,14 @@ struct NativeThreadStoresHistoryTests {
         #expect(!stores.store(for: "e").transcriptReleased, "the newest hidden thread stays")
     }
 
-    /// The bite is what the threads are over by and no more than the ceiling, a row over at the most (a row goes whole).
+    /// A quiet pass takes what the threads are over by, no more than the ceiling (a row over at the most, the row that crosses it goes), and a
+    /// pass while a thread streams, the step.
     @Test func aQuietPassTakesNoMoreThanTheCeilingAndAStreamingOneNoMoreThanAStep() {
         let pauses = Pauses()
         defer { pauses.end() }
         let stores = mountedStores(["a", "b", "c", "d", "e", "f"], selected: "f", pauses: pauses, turns: 6)
-        let a = stores.store(for: "a"), b = stores.store(for: "b")
-        let row = a.mountedCost(eagerRows: 1)
+        let b = stores.store(for: "b")
+        let row = stores.store(for: "a").mountedCost(eagerRows: 1)
         func hidden() -> Int { ["a", "b", "c", "d", "e"].reduce(0) { $0 + stores.store(for: $1).mountedCost(eagerRows: stores.eagerRows) } }
         let whole = hidden()
         stores.releaseStep = row
@@ -348,12 +349,16 @@ struct NativeThreadStoresHistoryTests {
         let streaming = afterBudget - hidden()
         #expect(streaming > 0 && streaming <= row * 2 && b.transcriptDrawn == nil, "a stream gives it a step, a row over at the most, of one thread: \(streaming) of \(row)")
 
+        // Over the budget by more than the ceiling and not far over: the ceiling is what it takes.
         wait = .idle
-        stores.releaseCeiling = row * 5
+        stores.releaseCeiling = row
+        stores.mountedBudget = hidden() - row * 7 / 2
+        let over = hidden() - stores.mountedBudget
+        #expect(over > stores.releaseCeiling && !stores.farOverBudget, "over by \(over), a ceiling of \(row), not far over")
         let before = hidden()
         #expect(stores.runMountedPass() == true)
         let quiet = before - hidden()
-        #expect(quiet >= row * 5 && quiet <= row * 6, "a quiet pass takes the ceiling, a row over at the most: \(quiet) of \(row * 5)")
+        #expect(quiet > 0 && quiet <= row * 2 && quiet < over, "a quiet pass takes the ceiling, a row over at the most: \(quiet) of \(row), over by \(over)")
     }
 
     /// A step that lets go of a thread's lazy stack costs a layout of its whole host: a quiet pass lets go of one lazy stack and goes on to the
@@ -408,6 +413,30 @@ struct NativeThreadStoresHistoryTests {
         #expect(taken > row * 5, "what they are over by, which is more than the quiet ceiling of three rows, and not a step: \(taken) of \(row)")
         wait = .input
         #expect(stores.runMountedPass() == false, "typing holds it off all the same")
+    }
+
+    /// Far over the budget the pass of a quiet app lets go of what they are over by too, not only the quiet ceiling's: the one that took a
+    /// row between two steps of a restore that builds one never caught up with it.
+    @Test func aQuietPassFarOverTheBudgetLetsGoOfMoreThanTheCeiling() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses, turns: 6)
+        let row = stores.store(for: "a").mountedCost(eagerRows: 1)
+        let held = ["a", "b", "c"].reduce(0) { $0 + stores.store(for: $1).mountedCost(eagerRows: stores.eagerRows) }
+        func hidden() -> Int { ["a", "b", "c"].reduce(0) { $0 + stores.store(for: $1).mountedCost(eagerRows: stores.eagerRows) } }
+        stores.releaseStep = row
+        stores.releaseCeiling = row * 3
+        stores.busy = { .idle }
+        stores.mountedBudget = held - row * 6
+        #expect(!stores.farOverBudget, "six rows over, with a ceiling of three, is not far over")
+        var before = hidden()
+        #expect(stores.runMountedPass() == true)
+        #expect(before - hidden() <= row * 4, "near the budget a pass takes the ceiling at most: \(before - hidden()) of \(row)")
+        stores.mountedBudget = 0
+        #expect(stores.farOverBudget)
+        before = hidden()
+        #expect(stores.runMountedPass() == true)
+        #expect(before - hidden() > row * 5, "far over it takes what they are over by: \(before - hidden()) of \(row)")
     }
 
     /// A step that crosses goes on to the row that does not fit, so that it is not spent on small rows ahead of a large one.

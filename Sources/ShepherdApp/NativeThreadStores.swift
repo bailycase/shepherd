@@ -363,7 +363,7 @@ final class NativeThreadStores<Key: Hashable> {
     func runMountedPass() -> Bool {
         let wait = busy?() ?? .idle
         // Typing and scrolling hold a pass off whatever the threads hold; a stream does not once they hold far more than the budget.
-        let farOver = wait == .streaming && farOverBudget
+        let farOver = farOverBudget
         switch wait {
         case .input:
             scheduleMountedPass(after: releaseSpacing)
