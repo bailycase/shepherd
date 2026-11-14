@@ -121,6 +121,10 @@ final class FleetDispatch: @unchecked Sendable {
     var pressure: FleetPressure
     /// Server queue: the Fleet page should read again.
     var onChange: (() -> Void)?
+    /// Server queue: a thread that was there to fix something on the Mac `hostID` ended (`FleetDispatchRecord.fixes`).
+    var onFixEnded: ((UUID) -> Void)?
+    /// Fix dispatches whose end has been told of.
+    var fixesEnded: Set<UUID> = []
 
     let directory: URL
     var outbound: [UUID: FleetDispatchRecord] = [:]
@@ -254,6 +258,8 @@ final class FleetDispatch: @unchecked Sendable {
            let saved = try? JSONDecoder().decode([Inbound].self, from: data) {
             inbound = Dictionary(saved.map { ($0.record.id, $0) }) { first, _ in first }
         }
+        // A fix that ended before this host started is not news.
+        fixesEnded = Set(outbound.values.filter { !$0.fixes.isEmpty && Self.fixEnded.contains($0.state) }.map(\.id))
         var changed = false
         for (id, record) in outbound {
             switch record.state {
@@ -284,6 +290,7 @@ final class FleetDispatch: @unchecked Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         prune()
+        notifyFixesEnded()
         if let data = try? encoder.encode(outbound.values.sorted { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }) {
             FleetStore.write(data, to: directory.appendingPathComponent(Self.outboundFile))
         }
@@ -293,6 +300,17 @@ final class FleetDispatch: @unchecked Sendable {
         updateReserved()
         onChange?()
     }
+
+    /// A thread that was there to fix something on a Mac (`FleetDispatchRecord.fixes`) has ended, however it did: the Mac is asked to look at
+    /// itself again, once per dispatch. A record that had already ended when this host started is not news.
+    private func notifyFixesEnded() {
+        for (id, record) in outbound where !record.fixes.isEmpty && Self.fixEnded.contains(record.state) && !fixesEnded.contains(id) {
+            fixesEnded.insert(id)
+            if let target = record.targetHostID { onFixEnded?(target) }
+        }
+    }
+
+    private static let fixEnded: Set<FleetDispatchState> = [.delivering, .done, .failed, .cancelled]
 
     private func prune() {
         // A clone is something a dispatch that is still preparing is doing.
@@ -549,7 +567,8 @@ final class FleetDispatch: @unchecked Sendable {
         guard [.placing, .waitingRoom, .heldLimit].contains(record.state) else { return completion?(.success(record)) ?? () }
         let macs = placementMacs(for: record)
         let batteryHalf = host.settings()?.fleetBatteryCountsHalf ?? true
-        let outcome = FleetPlacement.place(host: record.requestedHost, macs: macs, needsXcode: needsXcode(record), batteryCountsHalf: batteryHalf)
+        let outcome = FleetPlacement.place(host: record.requestedHost, macs: macs, needsXcode: needsXcode(record),
+                                           provider: FleetPlacement.provider(ofModel: record.model), batteryCountsHalf: batteryHalf)
         switch outcome {
         case .place(let target, let reasons):
             // A thread the person started that stays on this Mac isn't a dispatch: the app starts it itself.
@@ -615,7 +634,7 @@ final class FleetDispatch: @unchecked Sendable {
         let local = states.first { $0.hostID == hostID }
         macs.append(FleetPlacement.Mac(
             hostID: hostID, name: hostName(), isLocal: true, connected: true, hasRepo: true,
-            lacks: (local?.readiness ?? pressure.localReadiness)?.lacks ?? [],
+            lacks: ((local?.readiness ?? pressure.localReadiness)?.lacks ?? []) + ((local?.check ?? pressure.localCheck?.report)?.lacks ?? []),
             sample: local?.sample, sampleAge: local?.sampleAge, weight: weight(hostID), inFlight: inFlight(hostID)))
         for peer in peers() {
             let state = states.first { $0.hostID == peer.hostID }
@@ -625,7 +644,7 @@ final class FleetDispatch: @unchecked Sendable {
             let hasRepo: Bool? = readiness.map { $0.repoKeys.contains(record.repoKey) }
             macs.append(FleetPlacement.Mac(
                 hostID: peer.hostID, name: peer.name, isLocal: false, connected: peer.connected, hasRepo: hasRepo,
-                lacks: readiness?.lacks ?? [], sample: state?.sample, sampleAge: state?.sampleAge,
+                lacks: (readiness?.lacks ?? []) + (state?.check?.lacks ?? []), sample: state?.sample, sampleAge: state?.sampleAge,
                 weight: weight(peer.hostID), inFlight: inFlight(peer.hostID)))
         }
         return macs

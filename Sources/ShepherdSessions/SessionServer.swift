@@ -1380,7 +1380,8 @@ public final class SessionServer: @unchecked Sendable {
                                    // dispatch would bind to (`FleetRepoFinder`, from what it last saw: no look at the disk here).
                                    repoKeys: Array(Set(spaces.filter { FleetDispatch.folderExists($0.path) }.compactMap(\.repoKey))
                                        .union(self.fleetRepoFinder.value?.knownKeys() ?? [])).sorted(),
-                                   reserved: self.fleetReserved.value)
+                                   reserved: self.fleetReserved.value,
+                                   build: self.hostBuild)
         }
     }
 
@@ -1404,7 +1405,9 @@ public final class SessionServer: @unchecked Sendable {
             do {
                 let clock = fleetClock ?? Date.init
                 let facts = fleetLocalFacts
-                let pressure = fleetPressureMaker?(queue, facts) ?? FleetPressure(queue: queue, clock: clock, localFacts: facts)
+                let providers = FleetCheckProviders(pi: pi, support: supportDirectory)
+                let pressure = fleetPressureMaker?(queue, facts)
+                    ?? FleetPressure(queue: queue, clock: clock, localFacts: facts, check: .system(providers: { await providers.answers() }))
                 // iCloud is where a Mac that Bonjour can't reach is found; a build without the entitlement gets a store that says
                 // unavailable, so everything else works as it does without it.
                 let rendezvous: FleetRendezvousStore? = fleetRendezvousSetup?.store ?? (fleetOptions.advertises ? FleetCloudKitStore.forThisBuild : nil)
@@ -1735,7 +1738,7 @@ public final class SessionServer: @unchecked Sendable {
         switch request {
         case .fleetIdentify(let value), .fleetPair(let value, _, _), .fleetIntroduce(let value, _),
              .fleetRevoke(let value, _, _), .fleetRead(let value), .fleetAction(let value, _), .fleetSync(let value, _),
-             .fleetPressure(let value, _), .fleetReadiness(let value, _), .fleetPressureNow(let value), .fleetRepoManifest(let value, _),
+             .fleetPressure(let value, _), .fleetReadiness(let value, _), .fleetPressureNow(let value), .fleetCheck(let value, _), .fleetCheckNow(let value), .fleetRepoManifest(let value, _),
              .fleetSnapshotPart(let value, _, _), .fleetBlobPush(let value, _, _),
              .fleetDispatchCreate(let value, _), .fleetDispatchControl(let value, _, _), .fleetDispatchChanged(let value, _),
              .fleetDispatchResult(let value, _, _, _), .fleetRoutes(let value, _),
@@ -3004,7 +3007,7 @@ public final class SessionServer: @unchecked Sendable {
 
         switch request {
         case .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
-             .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
+             .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetCheck, .fleetCheckNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
              .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult, .fleetRoutes,
              .fleetPairDevice, .fleetSyncDevices:
             serveFleet(request, from: client)

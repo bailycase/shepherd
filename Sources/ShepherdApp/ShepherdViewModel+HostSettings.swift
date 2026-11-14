@@ -103,7 +103,8 @@ enum HostSettingsMapping {
             fleetAutoDispatch: app.fleetAutoDispatch,
             fleetBatteryCountsHalf: app.fleetBatteryCountsHalf,
             fleetUncommitted: app.fleetUncommitted,
-            fleetSnapshotExcludes: app.fleetSnapshotExcludes
+            fleetSnapshotExcludes: app.fleetSnapshotExcludes,
+            fleetCheckIgnores: app.fleetCheckIgnores
         )
     }
 
@@ -138,6 +139,7 @@ enum HostSettingsMapping {
         case .fleetThreadCap(let cap): app.fleetThreadCap = cap
         case .fleetUncommitted(let choice): app.fleetUncommitted = choice
         case .fleetSnapshotExcludes(let spaceID, let excludes): app.setFleetExcludes(excludes, of: SpaceID(rawValue: spaceID))
+        case .fleetCheckIgnore(let hostID, let ids): app.setFleetCheckIgnored(Set(ids), on: hostID)
         case .fleetAutoDispatch(let on): app.fleetAutoDispatch = on
         case .fleetBatteryCountsHalf(let on): app.fleetBatteryCountsHalf = on
         case .updatePiDaily, .updateExtensionsDaily:
