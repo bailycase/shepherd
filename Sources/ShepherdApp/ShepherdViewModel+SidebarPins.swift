@@ -20,7 +20,7 @@ extension ShepherdViewModel {
             guard let state = remoteHosts.allConnections.first(where: { $0.id == ref.hostID })?.state,
                   let agent = state.agents.first(where: { $0.id == ref.agentID }) else { return false }
             return state.isSidebarThread(agent) && !state.automations.contains { $0.agentID == ref.agentID }
-        case .design, .remoteDesign:
+        case .design, .remoteDesign, .dispatch:
             return false
         }
     }
@@ -67,7 +67,7 @@ extension ShepherdViewModel {
         case .remote(let ref):
             guard takesMute(ref.hostID) else { return nil }
             return remoteHosts.allConnections.first { $0.id == ref.hostID }?.state.agents.first { $0.id == ref.agentID }?.pushMuted
-        case .design, .remoteDesign:
+        case .design, .remoteDesign, .dispatch:
             return nil
         }
     }
@@ -87,7 +87,7 @@ extension ShepherdViewModel {
             Task {
                 do { try await hosts.agentAction(ref, action: .mutePushes(!muted)) } catch { fail(title, error) }
             }
-        case .design, .remoteDesign:
+        case .design, .remoteDesign, .dispatch:
             break
         }
     }

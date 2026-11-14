@@ -17,6 +17,11 @@ final class FleetPressure: @unchecked Sendable {
         var sample: FleetPressureSample?
         var receivedAt: Date?
         var readiness: FleetReadinessReport?
+        var check: FleetCheckReport?
+        var checkAt: Date?
+        /// The providers it said are limiting its requests, until when by this Mac's clock; replaced by each sample it sends, so a limit
+        /// ends here when it stops saying it.
+        var limits: [String: Date] = [:]
     }
 
     /// Sampling period.
@@ -25,10 +30,14 @@ final class FleetPressure: @unchecked Sendable {
     static let readinessLifetime: TimeInterval = 24 * 60 * 60
     /// While a report lists a missing tool, it is looked at again this often: installing the tool changes nothing the report is keyed by.
     static let missingRecheckInterval: TimeInterval = 60
+    /// Check (`FleetCheck`) is made again after this long even if nothing it is made of changed.
+    static let checkLifetime: TimeInterval = 24 * 60 * 60
+    /// Check now waits this long for the Macs' answers: each does its login shell, remotes and providers at once, each bounded.
+    static let checkNowTimeout: TimeInterval = 50
     /// A burst of changes reaches the app as one.
     static let notifyDelay: TimeInterval = 0.3
     /// What a peer's report is cut to.
-    static let reportLimits = (repos: 200, missing: 50, text: 100)
+    static let reportLimits = (repos: 200, missing: 50, text: 100, limits: 16)
 
     private let queue: DispatchQueue
     private let clock: @Sendable () -> Date
@@ -37,6 +46,8 @@ final class FleetPressure: @unchecked Sendable {
     private let probe: FleetReadiness.Probe
     private let hardware: FleetReadiness.Hardware
     private let interval: TimeInterval
+    /// Where Check reads its facts; nil is a host that makes no Check report (tests that don't look at it).
+    private let checkSources: FleetCheck.Sources?
 
     /// A link to a peer is connected.
     var linkConnected: () -> Bool = { false }
@@ -49,7 +60,18 @@ final class FleetPressure: @unchecked Sendable {
     private(set) var localReadiness: FleetReadinessReport?
     private var readinessKey: String?
     private var readinessAt: Date?
+    /// What this Mac found when it looked at itself for Check, and when, and what it was made from (`checkKey`).
+    private(set) var localCheck: (report: FleetCheckReport, at: Date)?
+    private var checkKey: String?
+    private var checkRunning = false
+    /// Who asked for a run and is waiting for it: the ones of the run going, and the ones that asked after it began (they get the next).
+    private var checkServing: [@Sendable (FleetCheckReport?) -> Void] = []
+    private var checkWaiting: [@Sendable (FleetCheckReport?) -> Void] = []
     private var peers: [UUID: Peer] = [:]
+    /// The last `FleetRoom.cpuWindow` of this Mac's own CPU readings.
+    private var cpuReadings = FleetCPUAverage()
+    /// The providers this Mac itself saw limit its requests, until when (`reportLimit`); only these ride its samples.
+    private var ownLimits: [String: Date] = [:]
     private var watchers: Set<Int32> = []
     private var timer: DispatchSourceTimer?
     private var taking = false
@@ -61,7 +83,8 @@ final class FleetPressure: @unchecked Sendable {
          localFacts: @escaping @Sendable () -> FleetLocalFacts = { FleetLocalFacts() },
          probe: @escaping FleetReadiness.Probe = FleetReadiness.systemProbe,
          hardware: @escaping FleetReadiness.Hardware = FleetReadiness.systemHardware,
-         interval: TimeInterval = FleetPressure.defaultInterval) {
+         interval: TimeInterval = FleetPressure.defaultInterval, check: FleetCheck.Sources? = nil) {
+        self.checkSources = check
         self.queue = queue
         self.clock = clock
         self.sampler = sampler
@@ -127,19 +150,21 @@ final class FleetPressure: @unchecked Sendable {
         taking = true
         let facts = localFacts()
         Task { [weak self, sampler] in
-            let sample = await sampler.sample(activeAgents: facts.activeAgents, reserved: facts.reserved)
+            let sample = await sampler.sample(activeAgents: facts.activeAgents, commandAgents: facts.commandAgents, reserved: facts.reserved)
             self?.queue.async { self?.took(sample, facts: facts) }
         }
     }
 
-    private func took(_ sample: FleetPressureSample, facts: FleetLocalFacts) {
+    private func took(_ reading: FleetPressureSample, facts: FleetLocalFacts) {
         taking = false
         guard !stopped else { return }
+        let sample = decorated(reading)
         local = (sample, clock())
         for client in pushTargets() where client.capabilities.contains(RemoteProtocol.fleetPressureCapability) {
             Task { try? await client.fleetPressure(sample) }
         }
         remakeReadiness(facts)
+        checkIfDue(facts)
         notify()
     }
 
@@ -148,7 +173,9 @@ final class FleetPressure: @unchecked Sendable {
     /// What the readiness report is made of may have changed (the repositories this Mac can bind): it is made again now, and pushed if it did.
     func factsChanged() {
         guard !stopped else { return }
-        remakeReadiness(localFacts())
+        let facts = localFacts()
+        remakeReadiness(facts)
+        checkIfDue(facts)
     }
 
     private func remakeReadiness(_ facts: FleetLocalFacts) {
@@ -192,15 +219,95 @@ final class FleetPressure: @unchecked Sendable {
         notify()
     }
 
+    // MARK: Check
+
+    /// What Check is made from, cheap to make (pi's MCP file is read, nothing else): the same key is the same report.
+    static func checkKey(_ facts: FleetLocalFacts) -> String {
+        let servers = facts.mcpConfig.flatMap { try? Data(contentsOf: $0) }.map(FleetReadiness.mcpServers(in:)) ?? []
+        let spaces = facts.spaces.map { "\($0.name)\u{1}\($0.path)" }.sorted()
+        let commands = servers.map { "\($0.command)\u{1}\($0.servers.joined(separator: ","))" }
+        return (spaces + ["\u{2}"] + commands + ["\u{3}", facts.build ?? ""]).joined(separator: "\u{4}")
+    }
+
+    /// Looks at this Mac when it has never, when a space or an MCP server changed since, and every day.
+    private func checkIfDue(_ facts: FleetLocalFacts) {
+        guard checkSources != nil, !stopped, !checkRunning else { return }
+        if let local = localCheck, Self.checkKey(facts) == checkKey, clock().timeIntervalSince(local.at) <= Self.checkLifetime { return }
+        startCheck(nil)
+    }
+
+    /// Looks at this Mac again now (Check now, a fix that ended) and answers what it found; nil when this host makes no Check. A look
+    /// that is under way when this is asked doesn't answer it: the answer is of a look that began after.
+    func checkNow() async -> FleetCheckReport? {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                guard self.checkSources != nil, !self.stopped else { return continuation.resume(returning: nil) }
+                self.startCheck { continuation.resume(returning: $0) }
+            }
+        }
+    }
+
+    private func startCheck(_ waiter: (@Sendable (FleetCheckReport?) -> Void)?) {
+        if let waiter { checkWaiting.append(waiter) }
+        guard let sources = checkSources, !checkRunning, !stopped else { return }
+        checkRunning = true
+        checkServing = checkWaiting
+        checkWaiting = []
+        let facts = localFacts()
+        let key = Self.checkKey(facts)
+        Task { [weak self] in
+            let report = await FleetCheck.report(facts: facts, sources: sources)
+            self?.queue.async { self?.checked(report, key: key) }
+        }
+    }
+
+    /// Keeps a report, tells whoever asked for it, and pushes it to the peers that take it: they stamp its arrival, so every look is news.
+    private func checked(_ report: FleetCheckReport, key: String) {
+        checkRunning = false
+        let serving = checkServing
+        checkServing = []
+        guard !stopped else {
+            for waiter in serving + checkWaiting { waiter(nil) }
+            checkWaiting = []
+            return
+        }
+        localCheck = (report, clock())
+        checkKey = key
+        for waiter in serving { waiter(report) }
+        for client in pushTargets() where client.capabilities.contains(RemoteProtocol.fleetCheckCapability) {
+            Task { try? await client.fleetCheck(report) }
+        }
+        notify()
+        if !checkWaiting.isEmpty { startCheck(nil) }
+    }
+
+    /// A peer's report (`fleetCheck`, or its answer to `fleetCheckNow`): kept within bounds, stamped by this Mac's clock.
+    func receivedCheck(_ report: FleetCheckReport, from hostID: UUID) {
+        var peer = peers[hostID] ?? Peer()
+        peer.check = report.sanitized()
+        peer.checkAt = clock()
+        peers[hostID] = peer
+        notify()
+    }
+
+    /// A reading with what only this host knows: its CPU averaged over `FleetRoom.cpuWindow` and the providers it saw limited. Server queue.
+    private func decorated(_ reading: FleetPressureSample) -> FleetPressureSample {
+        var sample = reading
+        sample.cpuAverage = cpuReadings.add(reading.cpuUtilization, at: clock())
+        sample.limits = ownLimitList()
+        return sample
+    }
+
     /// A sample of this Mac now, for a peer that asked (`fleetPressureNow`). A report that lists a missing tool is looked at again
     /// first: a placement is about to rely on it, and installing the tool changes nothing it is keyed by.
     func sampleNow() async -> (FleetPressureSample, FleetReadinessReport?) {
         let facts = localFacts()
-        let sample = await sampler.sample(activeAgents: facts.activeAgents, reserved: facts.reserved)
-        let known: (key: String?, at: Date?, lacking: Bool) = await withCheckedContinuation { continuation in
+        let reading = await sampler.sample(activeAgents: facts.activeAgents, commandAgents: facts.commandAgents, reserved: facts.reserved)
+        let (sample, known): (FleetPressureSample, (key: String?, at: Date?, lacking: Bool)) = await withCheckedContinuation { continuation in
             queue.async {
+                let sample = self.decorated(reading)
                 self.local = (sample, self.clock())
-                continuation.resume(returning: (self.readinessKey, self.readinessAt, self.localReadiness.map { !$0.missing.isEmpty || $0.noXcode } ?? false))
+                continuation.resume(returning: (sample, (self.readinessKey, self.readinessAt, self.localReadiness.map { !$0.missing.isEmpty || $0.noXcode } ?? false)))
             }
         }
         let fresh = known.lacking ? await makeReadiness(facts, known: (known.key, known.at), now: clock(), force: true) : nil
@@ -217,9 +324,11 @@ final class FleetPressure: @unchecked Sendable {
         guard client.capabilities.contains(RemoteProtocol.fleetPressureCapability) else { return }
         let sample = local?.sample
         let report = localReadiness
+        let check = client.capabilities.contains(RemoteProtocol.fleetCheckCapability) ? localCheck?.report : nil
         Task {
             if let report { try? await client.fleetReadiness(report) }
             if let sample { try? await client.fleetPressure(sample) }
+            if let check { try? await client.fleetCheck(check) }
         }
     }
 
@@ -227,8 +336,11 @@ final class FleetPressure: @unchecked Sendable {
 
     func received(_ sample: FleetPressureSample, from hostID: UUID) {
         var peer = peers[hostID] ?? Peer()
-        peer.sample = Self.sanitized(sample)
-        peer.receivedAt = clock()
+        let kept = Self.sanitized(sample)
+        let now = clock()
+        peer.sample = kept
+        peer.receivedAt = now
+        peer.limits = Dictionary((kept.limits ?? []).map { ($0.provider, now.addingTimeInterval($0.seconds)) }) { first, second in max(first, second) }
         peers[hostID] = peer
         notify()
     }
@@ -252,6 +364,15 @@ final class FleetPressure: @unchecked Sendable {
         sample.batteryPercent = sample.batteryPercent.map { min(100, max(0, $0)) }
         sample.activeAgents = min(100_000, max(0, sample.activeAgents))
         sample.reserved = min(100_000, max(0, sample.reserved))
+        sample.commandAgents = sample.commandAgents.map { min(sample.activeAgents, max(0, $0)) }
+        sample.cpuAverage = sample.cpuAverage.map { $0.isFinite ? min(1, max(0, $0)) : 0 }
+        sample.limits = sample.limits.map { limits in
+            limits.prefix(reportLimits.limits).compactMap { limit in
+                let provider = normalized(limit.provider)
+                guard !provider.isEmpty, limit.seconds.isFinite, limit.seconds > 0 else { return nil }
+                return FleetProviderLimit(provider: provider, seconds: min(FleetProviderLimits.maxHold, limit.seconds))
+            }
+        }
         return sample
     }
 
@@ -264,20 +385,68 @@ final class FleetPressure: @unchecked Sendable {
             noXcode: report.noXcode)
     }
 
+    // MARK: Provider limits
+
+    /// pi's provider ids are lowercase words ("anthropic", "openai-codex"); what a peer sends is cut and lowercased like one.
+    static func normalized(_ provider: String) -> String {
+        String(provider.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().prefix(reportLimits.text))
+    }
+
+    /// pi said `provider` limited a request (a 429 or "overloaded"): this Mac holds new work for it for what the error asks, or
+    /// `FleetProviderLimits.defaultHold`, and tells the Macs it is linked to at once, not at the next sample. Server queue.
+    func reportLimit(provider: String, retryAfter: TimeInterval?) {
+        let id = Self.normalized(provider)
+        guard !stopped, !id.isEmpty else { return }
+        let now = clock()
+        let until = now.addingTimeInterval(FleetProviderLimits.hold(retryAfter: retryAfter))
+        let held = ownLimits[id].map { $0.timeIntervalSince(now) } ?? 0
+        // An error that asks for less than the hold already running doesn't shorten it.
+        ownLimits[id] = max(ownLimits[id] ?? until, until)
+        guard held <= 0 || until.timeIntervalSince(now) > held + 1 else { return }
+        if linkConnected() { tick() }
+        notify()
+    }
+
+    /// The providers this Mac saw limited and that still are, as a sample carries them.
+    private func ownLimitList() -> [FleetProviderLimit] {
+        let now = clock()
+        ownLimits = ownLimits.filter { $0.value > now }
+        return ownLimits.map { FleetProviderLimit(provider: $0.key, seconds: $0.value.timeIntervalSince(now)) }.sorted { $0.provider < $1.provider }
+    }
+
+    /// How long `provider` is limited for, by any Mac of the fleet (this one's own errors, and what each peer says of its own); nil when it isn't.
+    func limitRemaining(_ provider: String) -> TimeInterval? {
+        let now = clock()
+        let id = Self.normalized(provider)
+        let untils = [ownLimits[id]] + peers.values.map { $0.limits[id] }
+        return untils.compactMap { $0 }.map { $0.timeIntervalSince(now) }.filter { $0 > 0 }.max()
+    }
+
+    /// Every provider limiting the fleet now, with the time left, sorted by provider.
+    func limits() -> [FleetProviderLimit] {
+        let now = clock()
+        var until = ownLimits
+        for peer in peers.values { until.merge(peer.limits) { max($0, $1) } }
+        return until.compactMap { provider, end in
+            end.timeIntervalSince(now) > 0 ? FleetProviderLimit(provider: provider, seconds: end.timeIntervalSince(now)) : nil
+        }.sorted { $0.provider < $1.provider }
+    }
+
     // MARK: Reading
 
     /// This Mac and each of `peerIDs` with what is known of them, ages by this host's clock.
     func macs(thisMac: UUID, peerIDs: [UUID]) -> [FleetMacState] {
         let now = clock()
         var macs: [FleetMacState] = []
-        if local != nil || localReadiness != nil {
+        if local != nil || localReadiness != nil || localCheck != nil {
             macs.append(FleetMacState(hostID: thisMac, sample: local?.sample, sampleAge: local.map { max(0, now.timeIntervalSince($0.at)) },
-                                      readiness: localReadiness))
+                                      readiness: localReadiness, check: localCheck?.report,
+                                      checkAge: localCheck.map { max(0, now.timeIntervalSince($0.at)) }))
         }
         for id in peerIDs {
-            guard let peer = peers[id], peer.sample != nil || peer.readiness != nil else { continue }
+            guard let peer = peers[id], peer.sample != nil || peer.readiness != nil || peer.check != nil else { continue }
             macs.append(FleetMacState(hostID: id, sample: peer.sample, sampleAge: peer.receivedAt.map { now.timeIntervalSince($0) },
-                                      readiness: peer.readiness))
+                                      readiness: peer.readiness, check: peer.check, checkAge: peer.checkAt.map { max(0, now.timeIntervalSince($0)) }))
         }
         return macs
     }

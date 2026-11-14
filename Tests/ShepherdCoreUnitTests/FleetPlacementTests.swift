@@ -31,6 +31,24 @@ struct FleetPlacementTests {
         #expect((reasons[0].ratio ?? 0) > FleetRoom.moveMargin, "the drawn \"3.4x the room\" is the winner's score over this Mac's")
     }
 
+    /// Two Macs with the same threads: the one whose threads wait on the model has the room, and the log can say what the winner runs.
+    @Test func autoPrefersTheMacWhoseThreadsWaitOnTheModelOverOneRunningBuilds() throws {
+        let building = FleetRoomTests.sample(agents: 3, commands: 3), waiting = FleetRoomTests.sample(agents: 3, commands: 0)
+        let macs = [Self.mac(Self.here, "MacBook Pro", local: true, sample: building), Self.mac(Self.mini, "Mac mini", sample: waiting)]
+        let (id, reasons) = try #require(Self.placed(FleetPlacement.place(host: nil, macs: macs)))
+        #expect(id == Self.mini && reasons.first?.commands == 0)
+        // An older Mac says nothing of commands, so the reason doesn't either.
+        let older = [Self.mac(Self.here, "MacBook Pro", local: true, sample: Self.busy()), Self.mac(Self.mini, "Mac mini")]
+        #expect(Self.placed(FleetPlacement.place(host: nil, macs: older))?.1.first?.commands == nil)
+    }
+
+    @Test func aMacUnderMemoryPressureIsLeftOutAndTheLocalReasonSaysSo() throws {
+        let squeezed = FleetRoomTests.sample(agents: 0, commands: nil, pressure: .warn)
+        let macs = [Self.mac(Self.here, "MacBook Pro", local: true, sample: squeezed), Self.mac(Self.mini, "Mac mini")]
+        let (id, reasons) = try #require(Self.placed(FleetPlacement.place(host: nil, macs: macs)))
+        #expect(id == Self.mini && reasons.first == FleetPlacementReason(.localIneligible, skip: FleetRoom.Skip.memoryPressure.rawValue))
+    }
+
     @Test func autoKeepsWorkHereUnlessTheBestPeerClearsTheMargin() throws {
         // 1.2x: a peer is ahead but not by 1.5x.
         let close = FleetRoomTests.sample(cpu: 0.0, agents: 1)

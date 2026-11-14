@@ -109,6 +109,11 @@ extension ShepherdViewModel {
                                              icon: "sidebar.right"))
                 }
             }
+            // Another Mac of the fleet, when the thread can go there (FleetMove).
+            for (_, target) in movePaletteTargets() {
+                items.append(PaletteItem(id: "action.fleetMove.\(target.id.uuidString)", kind: .action("fleetMove.\(target.id.uuidString)"),
+                                         section: .thisThread, title: "Move to \(target.name)", subtitle: agent.name, icon: "macbook.and.iphone"))
+            }
             // This Mac's thread: the sidebar row's commands (ThreadCommand), and Move to space.
             if selectedRemoteAgent == nil {
                 for command in ThreadCommand.allCases where command != .reviewChanges {
@@ -321,6 +326,8 @@ extension ShepherdViewModel {
         case "move":
             guard let id = selectedAgentID, selectedRemoteAgent == nil else { return }
             requestThreadMove(.local(id), to: SpaceID(rawValue: value))
+        case "fleetMove":
+            if let (row, target) = movePaletteTargets().first(where: { $0.target.id.uuidString == value }) { requestFleetMove(row, to: target) }
         case "sidePane":
             if let tab = SidePaneTab(rawValue: value) { selectSidePaneTab(tab) }
         case "appearance":

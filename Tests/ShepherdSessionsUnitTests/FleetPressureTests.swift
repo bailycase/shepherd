@@ -48,6 +48,33 @@ struct FleetPressureTests {
         #expect(counters.pauses == [.milliseconds(200)], "the two readings are 200 ms apart")
     }
 
+    @Test func aSampleCarriesWhichThreadsRunCommandsAndTheKernelsMemoryPressure() async {
+        var sources = Self.sources(Counters([FleetCPUTicks(user: 0, system: 0, idle: 0, nice: 0), FleetCPUTicks(user: 1, system: 0, idle: 1, nice: 0)]))
+        sources.memoryPressure = { .warn }
+        let sample = await FleetPressureSampler(sources: sources).sample(activeAgents: 3, commandAgents: 2)
+        #expect(sample.commandAgents == 2 && sample.memoryPressure == .warn)
+        // A count above the threads is cut to them; a sampler with no pressure source says normal.
+        let cut = await FleetPressureSampler(sources: Self.sources(Counters([]))).sample(activeAgents: 1, commandAgents: 5)
+        #expect(cut.commandAgents == 1 && cut.memoryPressure == .normal)
+        #expect(await FleetPressureSampler(sources: Self.sources(Counters([]))).sample(activeAgents: 1).commandAgents == nil)
+    }
+
+    @Test func theKernelsPressureLevelReadsAsOneOfTheThreeOnThisMac() {
+        // The real sysctl: whatever level this Mac is at is one of the three names, and never throws.
+        #expect([FleetMemoryPressure.normal, .warn, .critical].contains(FleetPressureSampler.systemMemoryPressure()))
+    }
+
+    /// What a peer sends is kept within bounds.
+    @Test func aPeersLimitsAndCommandCountAreCutToWhatIsSane() {
+        var sample = FleetPressureSample(cpuUtilization: 0.5, cpuCount: 8, totalMemoryBytes: 100, availableMemoryBytes: 50, activeAgents: 2, commandAgents: 9,
+                                         cpuAverage: .infinity, limits: [
+            FleetProviderLimit(provider: " Anthropic ", seconds: 90_000), FleetProviderLimit(provider: "", seconds: 5),
+            FleetProviderLimit(provider: "openai", seconds: -3), FleetProviderLimit(provider: "x", seconds: .nan)])
+        sample = FleetPressure.sanitized(sample)
+        #expect(sample.commandAgents == 2 && sample.cpuAverage == 0)
+        #expect(sample.limits == [FleetProviderLimit(provider: "anthropic", seconds: FleetProviderLimits.maxHold)])
+    }
+
     @Test func niceTimeCountsAsBusyAndAllIdleIsZero() async {
         let nice = await FleetPressureSampler(sources: Self.sources(Counters([
             FleetCPUTicks(user: 0, system: 0, idle: 0, nice: 0), FleetCPUTicks(user: 0, system: 0, idle: 50, nice: 50)]))).sample(activeAgents: 0)

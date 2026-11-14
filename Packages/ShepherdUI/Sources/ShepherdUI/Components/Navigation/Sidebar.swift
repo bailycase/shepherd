@@ -62,6 +62,8 @@ public enum SHSidebarMetrics {
     public static let footerAboveRule: CGFloat = 6
     public static let footerRuleToContent: CGFloat = 9
     public static let footerBottom: CGFloat = 10
+    /// A row with a second line is padded this much above and below, so it stands about 34pt tall at Standard (FleetSubthreads).
+    public static let subtitleRowPadding: CGFloat = 2
     /// The trailing reason a Needs you row shows ("retention?") is cut to this many characters.
     public static let reasonLength = 14
 }
@@ -348,6 +350,44 @@ public struct SHSidebarRow: View, Equatable {
         }
     }
 
+    /// A second line under the title in `caption` (FleetSubthreads): "3 sent · 1 back", "mini · delivering". Sans, `textTertiary` unless its
+    /// tone says more.
+    public struct Subtitle: Equatable, Sendable {
+        public enum Tone: Equatable, Sendable {
+            case quiet
+            /// Work in progress: `running`.
+            case running
+            /// Waiting on you: `lanternText`.
+            case attention
+            case failed
+        }
+
+        public let text: String
+        public let tone: Tone
+        /// When set, the line ends with how long since then ("mini · running 4m"), counting on by itself.
+        public let since: Date?
+
+        public init(_ text: String, tone: Tone = .quiet, since: Date? = nil) {
+            self.text = text
+            self.tone = tone
+            self.since = since
+        }
+    }
+
+    /// A chevron at the row's trailing edge that folds what is under it (a thread's sent threads): its own button, so a tap on it never opens the
+    /// row. Compared by `open` alone.
+    public struct Fold: Equatable {
+        public let open: Bool
+        public let toggle: () -> Void
+
+        public init(open: Bool, toggle: @escaping () -> Void) {
+            self.open = open
+            self.toggle = toggle
+        }
+
+        public nonisolated static func == (a: Fold, b: Fold) -> Bool { a.open == b.open }
+    }
+
     let title: String
     let leading: Leading
     let selected: Bool
@@ -357,6 +397,8 @@ public struct SHSidebarRow: View, Equatable {
     let nested: Bool
     let badge: Badge?
     let elbow: Bool
+    let subtitle: Subtitle?
+    let fold: Fold?
     @Environment(\.shDensity) private var density
     @State private var hovering = false
 
@@ -364,7 +406,10 @@ public struct SHSidebarRow: View, Equatable {
     /// the project's folder (`SHDensity.treeChildLeading`). `elbow` marks a thread under the thread that sent it
     /// to another Mac (FleetSidebar): a turn arrow before its dot.
     public init(_ title: String, leading: Leading, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none,
-                hasGoal: Bool = false, nested: Bool = false, badge: Badge? = nil, elbow: Bool = false) {
+                hasGoal: Bool = false, nested: Bool = false, badge: Badge? = nil, elbow: Bool = false, subtitle: Subtitle? = nil,
+                fold: Fold? = nil) {
+        self.subtitle = subtitle
+        self.fold = fold
         self.elbow = elbow
         self.badge = badge
         self.title = title
@@ -378,14 +423,16 @@ public struct SHSidebarRow: View, Equatable {
 
     /// A thread's row: its state dot.
     public init(_ title: String, state: AgentState, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none,
-                hasGoal: Bool = false, nested: Bool = false, badge: Badge? = nil, elbow: Bool = false) {
+                hasGoal: Bool = false, nested: Bool = false, badge: Badge? = nil, elbow: Bool = false, subtitle: Subtitle? = nil,
+                fold: Fold? = nil) {
         self.init(title, leading: .dot(state), selected: selected, dimmed: dimmed, accessory: accessory, hasGoal: hasGoal, nested: nested,
-                  badge: badge, elbow: elbow)
+                  badge: badge, elbow: elbow, subtitle: subtitle, fold: fold)
     }
 
     public nonisolated static func == (a: SHSidebarRow, b: SHSidebarRow) -> Bool {
         a.title == b.title && a.leading == b.leading && a.selected == b.selected && a.dimmed == b.dimmed
             && a.accessory == b.accessory && a.hasGoal == b.hasGoal && a.nested == b.nested && a.badge == b.badge && a.elbow == b.elbow
+            && a.subtitle == b.subtitle && a.fold == b.fold
     }
 
     public var body: some View {
@@ -393,23 +440,30 @@ public struct SHSidebarRow: View, Equatable {
         // A status report, a settled name, or ⌘ held changes one part in place (`.content`);
         // selection is not animated here, so it lands at once.
         HStack(spacing: density.sidebarRowGap) {
-            if elbow {
-                Image(systemName: "arrow.turn.down.right")
-                    .font(.sh(.micro, weight: .regular))
-                    .foregroundStyle(.sh.textTertiary)
+            // A sent thread: the elbow sits in its sender's dot column and its own dot follows close, so its title starts 18pt right of the sender's
+            // (FleetCornerFull, FleetSubthreads: x57 against x39 at 232pt).
+            HStack(spacing: elbow ? SH.Space.xs : density.sidebarRowGap) {
+                if elbow {
+                    Image(systemName: "arrow.turn.down.right")
+                        .font(.sh(.micro, weight: .regular))
+                        .foregroundStyle(.sh.textTertiary)
+                        .frame(width: SHSidebarMetrics.rowSlot)
+                        .accessibilityHidden(true)
+                }
+                leadingView
                     .frame(width: SHSidebarMetrics.rowSlot)
-                    .accessibilityHidden(true)
+                    .shAnimation(.content, value: leading)
             }
-            leadingView
-                .frame(width: SHSidebarMetrics.rowSlot)
-                .shAnimation(.content, value: leading)
-            Text(title)
-                .font(density.rowTitleFont(weight: selected ? .semibold : .regular))
-                .foregroundStyle(.sh.textPrimary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .shContentTransition(.crossFade)
-                .shAnimation(.content, value: title)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title)
+                    .font(density.rowTitleFont(weight: selected ? .semibold : .regular))
+                    .foregroundStyle(.sh.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .shContentTransition(.crossFade)
+                    .shAnimation(.content, value: title)
+                if let subtitle { SHSidebarSubtitleView(subtitle: subtitle) }
+            }
             Spacer(minLength: SH.Space.xs)
             if hasGoal { SHGoalGlyph().foregroundStyle(Color.sh.textTertiary) }
             if let badge {
@@ -418,9 +472,22 @@ public struct SHSidebarRow: View, Equatable {
             }
             SHSidebarAccessoryView(accessory: accessory)
                 .shAnimation(.content, value: accessory.motionKey)
+            // An open sender's chevron shows while the pointer is over it, so its title and sparkline keep their room.
+            if let fold, !fold.open || hovering {
+                Button(action: fold.toggle) {
+                    SHTurningChevron(isOpen: fold.open)
+                        .font(.sh(.micro, weight: .semibold))
+                        .foregroundStyle(.sh.textTertiary)
+                        .frame(width: SHSidebarMetrics.rowSlot, height: SHSidebarMetrics.rowSlot)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(fold.open ? "Hide threads it started" : "Show threads it started")
+            }
         }
-        .padding(.leading, nested ? density.treeChildLeading : density.sidebarRowPadding)
+        .padding(.leading, (nested ? density.treeChildLeading : density.sidebarRowPadding))
         .padding(.trailing, density.sidebarRowPadding)
+        .padding(.vertical, subtitle == nil ? 0 : SHSidebarMetrics.subtitleRowPadding)
         .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
         .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.m)
         .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
@@ -443,6 +510,41 @@ public struct SHSidebarRow: View, Equatable {
                 .font(.system(size: density.rowGlyph - 2, weight: .regular))
                 .foregroundStyle(Color.sh.textSecondary)
                 .accessibilityHidden(true)
+        }
+    }
+}
+
+/// A row's second line.
+private struct SHSidebarSubtitleView: View {
+    let subtitle: SHSidebarRow.Subtitle
+    /// While the sidebar cannot be seen its clock stops ticking, and starts again when it shows.
+    @Environment(\.shMotionPaused) private var motionPaused
+
+    var body: some View {
+        if let since = subtitle.since {
+            TimelineView(SHElapsedSchedule(start: since, aligned: true, paused: motionPaused)) { context in
+                let _ = SHRenderProbe.tick("sidebar.clock")
+                text("\(subtitle.text) \(SHDuration.text(max(0, context.date.timeIntervalSince(since))))")
+            }
+        } else {
+            text(subtitle.text)
+        }
+    }
+
+    private func text(_ string: String) -> some View {
+        Text(string)
+            .font(.sh(.caption, weight: .regular))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+
+    private var color: Color {
+        switch subtitle.tone {
+        case .quiet: .sh.textTertiary
+        case .running: .sh.running
+        case .attention: .sh.lanternText
+        case .failed: .sh.failed
         }
     }
 }

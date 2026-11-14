@@ -250,6 +250,12 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// The Mac and thread that sent this thread's work (Fleet), nil for every other thread. Persisted,
     /// written only when set, and sent to every client with the rest of the state.
     public var dispatchedFrom: DispatchedFrom? = nil
+    /// Where this thread went when it moved to another Mac (`FleetMove.swift`): the tombstone this Mac keeps. A thread with one is
+    /// never started, resumed or recovered here, and no client is sent it. Persisted, written only when set.
+    public var movedTo: MovedTo? = nil
+    /// Where this thread came from when another Mac moved it here, for its header and the divider in its conversation. Persisted,
+    /// written only when set, and sent to every client with the rest of the state.
+    public var movedFrom: MovedFrom? = nil
 
     /// What the host says of the latest completion: true once it was opened on some device, false
     /// while it wasn't, nil when the host doesn't track it (an older host: each device decides).
@@ -316,7 +322,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
         case piSessionID, worktreeBranch, worktreeOriginalBranch, reviewTarget, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, coordinatorFor, projectWorkerFor, executionFor, runtime
-        case designGrants, serviceTier, goalState, lastFailure, automationOrigin, completedAt, seenCompletedAt, pushMuted, dispatchedFrom
+        case designGrants, serviceTier, goalState, lastFailure, automationOrigin, completedAt, seenCompletedAt, pushMuted, dispatchedFrom, movedTo, movedFrom
     }
 
     public init(from decoder: Decoder) throws {
@@ -367,6 +373,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         seenCompletedAt = try c.decodeIfPresent(Double.self, forKey: .seenCompletedAt)
         pushMuted = (try? c.decodeIfPresent(Bool.self, forKey: .pushMuted)) ?? false
         dispatchedFrom = try? c.decodeIfPresent(DispatchedFrom.self, forKey: .dispatchedFrom)
+        movedTo = try? c.decodeIfPresent(MovedTo.self, forKey: .movedTo)
+        movedFrom = try? c.decodeIfPresent(MovedFrom.self, forKey: .movedFrom)
         // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
         // the same pi session, which is the whole migration.
     }
@@ -405,6 +413,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(seenCompletedAt, forKey: .seenCompletedAt)
         if pushMuted { try c.encode(true, forKey: .pushMuted) }
         try c.encodeIfPresent(dispatchedFrom, forKey: .dispatchedFrom)
+        try c.encodeIfPresent(movedTo, forKey: .movedTo)
+        try c.encodeIfPresent(movedFrom, forKey: .movedFrom)
         // Older remote clients default a missing runtime to terminal and would try to attach a
         // PTY that does not exist.
         try c.encode(SessionRuntime.rpc, forKey: .runtime)

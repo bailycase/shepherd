@@ -1299,6 +1299,8 @@ public final class SessionServer: @unchecked Sendable {
     private var fleetSettings: HostSettings?
     /// Places promised to dispatches that haven't started (`FleetPressureSample.reserved`), for any thread.
     private let fleetReserved = FleetCounter()
+    /// The agents whose pi is running a shell command now (`FleetPressureSample.commandAgents`), for any thread.
+    private let fleetCommandAgents = FleetAgentSet()
 
     /// Server queue: a skill was written by the fleet's sync. One push covers the files a pass wrote.
     private var skillsSyncPushPending = false
@@ -1373,14 +1375,17 @@ public final class SessionServer: @unchecked Sendable {
             guard let self else { return FleetLocalFacts() }
             let state = self.store.committed
             let spaces = state.spaces.filter { !$0.hidden }
-            return FleetLocalFacts(activeAgents: state.agents.filter { $0.status == .working }.count,
+            let working = state.agents.filter { $0.status == .working }
+            let commands = self.fleetCommandAgents.members
+            return FleetLocalFacts(activeAgents: working.count, commandAgents: working.filter { commands.contains($0.id) }.count,
                                    spaces: spaces.map { (name: $0.name, path: $0.path) },
                                    mcpConfig: self.pi.files.mcpConfig,
                                    // The repositories this Mac can serve: its spaces', and every other checkout it already has that a
                                    // dispatch would bind to (`FleetRepoFinder`, from what it last saw: no look at the disk here).
                                    repoKeys: Array(Set(spaces.filter { FleetDispatch.folderExists($0.path) }.compactMap(\.repoKey))
                                        .union(self.fleetRepoFinder.value?.knownKeys() ?? [])).sorted(),
-                                   reserved: self.fleetReserved.value)
+                                   reserved: self.fleetReserved.value,
+                                   build: self.hostBuild)
         }
     }
 
@@ -1404,7 +1409,9 @@ public final class SessionServer: @unchecked Sendable {
             do {
                 let clock = fleetClock ?? Date.init
                 let facts = fleetLocalFacts
-                let pressure = fleetPressureMaker?(queue, facts) ?? FleetPressure(queue: queue, clock: clock, localFacts: facts)
+                let providers = FleetCheckProviders(pi: pi, support: supportDirectory)
+                let pressure = fleetPressureMaker?(queue, facts)
+                    ?? FleetPressure(queue: queue, clock: clock, localFacts: facts, check: .system(providers: { await providers.answers() }))
                 // iCloud is where a Mac that Bonjour can't reach is found; a build without the entitlement gets a store that says
                 // unavailable, so everything else works as it does without it.
                 let rendezvous: FleetRendezvousStore? = fleetRendezvousSetup?.store ?? (fleetOptions.advertises ? FleetCloudKitStore.forThisBuild : nil)
@@ -1538,6 +1545,7 @@ public final class SessionServer: @unchecked Sendable {
             state: { [weak self] in self?.store.state ?? ShepherdState() },
             settings: { [weak self] in self?.fleetSettings },
             wakeParent: { [weak self] agentID, text in await self?.pushMessage(toAgent: agentID, text: text, delivery: .task) ?? false },
+            defaultModel: { [home = pi.home] in PiConfig.defaultModel(in: home) },
             createThread: { [weak self] request in
                 await withCheckedContinuation { continuation in
                     self?.queue.async {
@@ -1572,7 +1580,12 @@ public final class SessionServer: @unchecked Sendable {
                 return FleetThreadFacts(status: agent.status, waitingOn: agent.waitingOn, lastText: lastText, worktree: agent.worktreePath)
             },
             repoPlaces: { [weak self] in self?.fleetRepoPlaces() ?? [] },
-            bindSpace: { [weak self] binding in self?.bindFleetCheckout(binding) })
+            bindSpace: { [weak self] binding in self?.bindFleetCheckout(binding) },
+            unattended: { [weak self] in self.map { Self.unattendedAgentIDs(in: $0.store.state) } ?? [] },
+            moveSource: { [weak self] agentID in self?.fleetMoveSource(agentID) },
+            stopPiForMove: { [weak self] agentID in await self?.stopPiForMove(agentID) },
+            tombstone: { [weak self] agentID, moved in self?.fleetTombstone(agentID, moved) ?? false },
+            untombstone: { [weak self] agentID, moveID in self?.fleetUntombstone(agentID, moveID: moveID) ?? false })
     }
 
     /// An agent's `fleet_*` tool. Refused unless Fleet is on and the thread may send work at all (`fleet_scope`:
@@ -1735,7 +1748,7 @@ public final class SessionServer: @unchecked Sendable {
         switch request {
         case .fleetIdentify(let value), .fleetPair(let value, _, _), .fleetIntroduce(let value, _),
              .fleetRevoke(let value, _, _), .fleetRead(let value), .fleetAction(let value, _), .fleetSync(let value, _),
-             .fleetPressure(let value, _), .fleetReadiness(let value, _), .fleetPressureNow(let value), .fleetRepoManifest(let value, _),
+             .fleetPressure(let value, _), .fleetReadiness(let value, _), .fleetPressureNow(let value), .fleetCheck(let value, _), .fleetCheckNow(let value), .fleetRepoManifest(let value, _),
              .fleetSnapshotPart(let value, _, _), .fleetBlobPush(let value, _, _),
              .fleetDispatchCreate(let value, _), .fleetDispatchControl(let value, _, _), .fleetDispatchChanged(let value, _),
              .fleetDispatchResult(let value, _, _, _), .fleetRoutes(let value, _),
@@ -1754,7 +1767,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         let caller = FleetCaller(connection: client.fd, isLocal: client.isLocal, authenticated: client.authenticated,
                                  peerHostID: client.fleetPeerID, observedHost: client.peerHost, deviceID: client.fleetDeviceID,
-                                 clientName: client.clientName)
+                                 clientName: client.clientName, readsMoves: client.clientCapabilities.contains(RemoteProtocol.fleetMoveViewCapability))
         let connection = ChangesUnchecked(value: client)
         fleet.serve(request, from: caller) { [weak self] reply in
             self?.queue.async {
@@ -3004,7 +3017,7 @@ public final class SessionServer: @unchecked Sendable {
 
         switch request {
         case .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
-             .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
+             .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetCheck, .fleetCheckNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
              .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult, .fleetRoutes,
              .fleetPairDevice, .fleetSyncDevices:
             serveFleet(request, from: client)
@@ -5061,7 +5074,8 @@ public final class SessionServer: @unchecked Sendable {
             let view = RemoteStateView(designs: designs, legacy: legacy, whole: whole)
             if payloads[view] == nil {
                 encodedStateFramesLock.withLock { encodedStateFramesCount += 1 }
-                let shown = designs ? full : full.withoutDesigns
+                // A thread that moved to another Mac is this host's tombstone, never a thread a client sees.
+                let shown = (designs ? full : full.withoutDesigns).withoutMoved
                 let state = whole ? shown : shown.withoutProjectCoordinators.withoutProjectExecutions
                 payloads[view] = .some(Self.stateChangedPayload(legacy && !state.usesOnlyLegacyThinkingLevels
                     ? state.legacyThinkingLevels() : state))
@@ -5108,7 +5122,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// The workspace as `client` is sent it (`seesDesigns`).
     private func remoteState(_ state: ShepherdState, for client: ExtensionConnection) -> ShepherdState {
-        let shown = seesDesigns(client) ? state : state.withoutDesigns
+        let shown = (seesDesigns(client) ? state : state.withoutDesigns).withoutMoved
         return takesWholeWorkspace(client) ? shown : shown.withoutProjectCoordinators.withoutProjectExecutions
     }
 
@@ -7922,6 +7936,7 @@ public final class SessionServer: @unchecked Sendable {
             // A thread that is closed sends nothing more: its dispatches end, and a dispatched thread's ends too.
             self.fleet?.dispatch.cancelDispatches(ownedBy: agentID)
             self.fleet?.dispatch.agentRemoved(agentID)
+            self.fleetCommandAgents.set(agentID, false)
             try self.mutateState {
                 $0.agents.removeAll { $0.id == agentID }
                 $0.tabs.removeAll { doomedTabIDs.contains($0.id) }
@@ -7941,6 +7956,57 @@ public final class SessionServer: @unchecked Sendable {
                 self.keptStarts.removeValue(forKey: sessionID)
                 self.killSessionOnQueue(sessionID)
             }
+        }
+    }
+
+    /// Server queue: a move to another Mac handed the thread over. Writes its tombstone (`Agent.movedTo`), which nothing starts again, closes
+    /// its terminals and its pi's session, and keeps the thread's own layout, so the thread has its place back when it returns. One saved
+    /// step: false, with nothing changed, when the workspace can't be saved.
+    func fleetTombstone(_ agentID: AgentID, _ moved: MovedTo) -> Bool {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }), agent.movedTo == nil,
+              let tab = store.state.tabs.first(where: { $0.id == agent.tabID }) else { return false }
+        let others = tab.layout.leaves.filter { $0.id != agent.paneID }
+        var layout = tab.layout
+        for leaf in others { layout = layout.closing(pane: leaf.id) ?? layout }
+        let inspectors = store.state.tabs.filter { $0.inspectorFor == agentID }
+        let inspectorIDs = Set(inspectors.map(\.id))
+        let threadSession = agent.paneID.flatMap { tab.layout.leaf(withID: $0)?.sessionID }
+        let sessions = others.compactMap(\.sessionID) + inspectors.flatMap { $0.layout.leaves.compactMap(\.sessionID) } + [threadSession].compactMap { $0 }
+        do {
+            try mutateState { state in
+                guard let index = state.agents.firstIndex(where: { $0.id == agentID }) else { return }
+                state.agents[index].movedTo = moved
+                state.agents[index].status = .idle
+                state.agents[index].waitingOn = nil
+                state.agents[index].waitingReason = nil
+                if let tabIndex = state.tabs.firstIndex(where: { $0.id == tab.id }) {
+                    state.tabs[tabIndex].layout = layout
+                    if let paneID = agent.paneID { state.tabs[tabIndex].layout = layout.updatingLeaf(paneID) { $0.sessionID = nil } }
+                }
+                state.tabs.removeAll { inspectorIDs.contains($0.id) }
+            }
+        } catch {
+            ShepherdLog.warning("couldn't save the tombstone of \(agentID): \(error)")
+            return false
+        }
+        for session in sessions {
+            keptStarts.removeValue(forKey: session)
+            killSessionOnQueue(session)
+        }
+        return true
+    }
+
+    /// Server queue: takes the tombstone of `moveID` away, because the other Mac answered that it started no thread.
+    func fleetUntombstone(_ agentID: AgentID, moveID: UUID) -> Bool {
+        guard store.state.agents.first(where: { $0.id == agentID })?.movedTo?.moveID == moveID else { return false }
+        do {
+            try mutateState { state in
+                if let index = state.agents.firstIndex(where: { $0.id == agentID }) { state.agents[index].movedTo = nil }
+            }
+            return true
+        } catch {
+            ShepherdLog.warning("couldn't take the tombstone of \(agentID) away: \(error)")
+            return false
         }
     }
 
@@ -9333,6 +9399,12 @@ public final class SessionServer: @unchecked Sendable {
             if let raw = params.env?["SHEPHERD_AGENT_ID"] {
                 let agent = AgentID(rawValue: raw)
                 guard !movingThreads.contains(agent) else { throw ProjectFileError("thread_moving", "This thread is moving to another space.") }
+                // The fence of a move to another Mac: a tombstone never starts a pi again, and a thread being moved starts none either
+                // (its conversation and worktree are on their way out).
+                guard store.state.agents.first(where: { $0.id == agent })?.movedTo == nil else {
+                    throw ProjectFileError("thread_moved", "This thread moved to another Mac.")
+                }
+                guard fleet?.dispatch.isMoving(agent) != true else { throw ProjectFileError("thread_moving", "This thread is moving to another Mac.") }
                 if store.state.isProjectCoordinator(agent) || projectLaunches.contains(agent) || executionWorkers.contains(agent) {
                     try requireProjectsEnabled()
                     if store.state.isProjectCoordinator(agent) || projectLaunches.contains(agent) {
@@ -9470,6 +9542,10 @@ public final class SessionServer: @unchecked Sendable {
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
                 Task { await server.withdrawDesignReferences(payloads, from: agentID) }
             }
+            thread.onCommandActivity = { [weak serverWeak] running in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                server.fleetCommandAgents.set(agentID, running)
+            }
             thread.onToolFinished = { [weak serverWeak] name in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
                 server.sendToLocalApps(.toolFinished(agentID: agentID, tool: name))
@@ -9481,6 +9557,7 @@ public final class SessionServer: @unchecked Sendable {
                    let provider = message.provider, let error = message.errorMessage, let server = serverWeak,
                    let agentID = server.agentID(forSession: sid) {
                     server.hopToMain { [weak server] in server?.onAgentProviderError?(agentID, provider, error) }
+                    server.fleet?.providerFailed(provider: provider, error: error)
                 }
                 // pi emits custom message_end only after appending it to session history. A
                 // report receipt on the extension socket alone would not prove that append.
@@ -9802,7 +9879,7 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    private func killSessionOnQueue(_ sessionID: SessionID) {
+    func killSessionOnQueue(_ sessionID: SessionID) {
         clearAgentRecovery(sessionID: sessionID)
         guard let session = sessions[sessionID] else { return }
         if session.isAlive {
@@ -9942,6 +10019,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         peerDeliveries = peerDeliveries.filter { $0.value.sessionID != sessionID }
         let agent = agentID(forSession: sessionID)
+        if let agent { fleetCommandAgents.set(agent, false) }
         if let agent {
             if let thread = sessions[sessionID]?.thread, thread.pushRunArmed, !thread.stopRequested, isStarted {
                 thread.pushRunArmed = false

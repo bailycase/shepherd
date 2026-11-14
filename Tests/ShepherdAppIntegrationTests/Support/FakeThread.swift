@@ -36,6 +36,7 @@ final class FakeThread {
         let input: ThreadInput
         /// The thread opens subagents in an inspector, so the composer docks their tray.
         let showsTray: Bool
+        let tailGuard: ThreadTailGuard?
 
         var body: some View {
             VStack(spacing: 0) {
@@ -46,7 +47,7 @@ final class FakeThread {
                 }
                 ThreadView(store: store, active: visibility.active, isFocused: visibility.focused, request: request, commandKey: "fake",
                            inspectSubagent: showsTray ? { _ in } : nil, listModels: { .empty }, designChat: designCards != nil,
-                           retainedInput: input)
+                           retainedInput: input, retainedTailGuard: tailGuard)
                     .environment(\.designCommentCards, designCards)
                     .environment(\.projectActionCards, projectCards)
                     .shComposerSize(designCards == nil ? .regular : .compact)
@@ -82,18 +83,20 @@ final class FakeThread {
     /// `reduceMotion` pins Reduce Motion for a test that needs motion whatever the machine's
     /// setting (CI's VM has it on). `subagentTray` has the thread open subagents in an inspector (a
     /// no-op here), so the composer docks their tray. `windowVisible: false` mounts the thread in a window
-    /// nobody can see.
+    /// nobody can see. `deckHosting` hosts it as the workspace does (`OffscreenWindow`). `tailGuard` is the thread's own watcher of a
+    /// stranded scroll position, for a test that holds it.
     init(_ snapshot: NativeThreadSnapshot, history: [NativeThreadMessage]? = nil, starting: Bool = false,
          store: NativeThreadStore = NativeThreadStore(), size: CGSize = CGSize(width: 900, height: 800), dark: Bool = true,
          header: Bool = false, focused: Bool = false, reduceMotion: Bool? = nil, designCards: DesignCommentCards? = nil,
-         projectCards: ProjectActionCards? = nil, subagentTray: Bool = false, windowVisible: Bool = true) {
+         projectCards: ProjectActionCards? = nil, subagentTray: Bool = false, windowVisible: Bool = true, deckHosting: Bool = false,
+         tailGuard: ThreadTailGuard? = nil) {
         self.snapshot = snapshot
         self.history = history
         self.starting = starting
         self.store = store
         visibility.focused = focused
         visibility.windowVisible = windowVisible
-        window = OffscreenWindow(size: size, dark: dark)
+        window = OffscreenWindow(size: size, dark: dark, deckHosting: deckHosting)
         let request: NativeThreadStore.Request = { [weak self] value in
             guard let self else { return .failure(code: "gone", message: "harness released") }
             switch value {
@@ -120,7 +123,7 @@ final class FakeThread {
         }
         window.show(Hosted(visibility: visibility, store: store, request: request, header: header, commands: commands,
                            reduceMotion: reduceMotion, designCards: designCards, projectCards: projectCards, input: input,
-                           showsTray: subagentTray))
+                           showsTray: subagentTray, tailGuard: tailGuard))
     }
 
     /// Serves `next` and has the store pull it now, outside any animation.

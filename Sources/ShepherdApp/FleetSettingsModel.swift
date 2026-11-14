@@ -392,6 +392,18 @@ final class FleetSettingsModel {
         apply(result)
     }
 
+    /// Check now: this Mac and each Mac of the fleet look at themselves again, read only. False when the host couldn't be asked.
+    func checkNow() async -> Bool {
+        do {
+            guard let client = try host() else { return false }
+            apply(try await client.fleetAction(.checkNow))
+            return true
+        } catch {
+            problem = Self.words(error)
+            return false
+        }
+    }
+
     // MARK: Dispatches
 
     /// Starts the thread the person wrote in New thread on the Mac Auto (or `thread.host`) picks. The record it made, or nil when the work

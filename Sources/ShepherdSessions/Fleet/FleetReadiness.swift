@@ -6,8 +6,12 @@ import ShepherdProtocol
 struct FleetLocalFacts: Sendable {
     /// Threads working now.
     var activeAgents: Int
+    /// Of them, the threads running a tool command now (`FleetPressureSample.commandAgents`).
+    var commandAgents: Int
     /// Each project (space) this Mac has a folder for.
     var spaces: [(name: String, path: String)]
+    /// This Mac's build of Shepherd ("675"), for Check.
+    var build: String?
     /// pi's MCP file on this Mac: the commands of the local servers in it are what a thread may run.
     var mcpConfig: URL?
     /// The repositories those projects are (`Space.repoKey`), sorted: what dispatches are matched against.
@@ -15,8 +19,11 @@ struct FleetLocalFacts: Sendable {
     /// Dispatches this host promised a place to that haven't started (`FleetPressureSample.reserved`).
     var reserved: Int
 
-    init(activeAgents: Int = 0, spaces: [(name: String, path: String)] = [], mcpConfig: URL? = nil, repoKeys: [String] = [], reserved: Int = 0) {
+    init(activeAgents: Int = 0, commandAgents: Int = 0, spaces: [(name: String, path: String)] = [], mcpConfig: URL? = nil, repoKeys: [String] = [], reserved: Int = 0,
+         build: String? = nil) {
+        self.build = build
         self.activeAgents = activeAgents
+        self.commandAgents = commandAgents
         self.spaces = spaces
         self.mcpConfig = mcpConfig
         self.repoKeys = repoKeys
@@ -64,6 +71,24 @@ enum FleetReadiness {
             names.insert(command)
         }
         return names.sorted()
+    }
+
+    /// The same servers with their names: each command once, sorted, with the servers that run it (Check says which server needs a program).
+    static func mcpServers(in config: Data) -> [(command: String, servers: [String])] {
+        guard let root = (try? JSONSerialization.jsonObject(with: config)) as? [String: Any],
+              let servers = root["mcpServers"] as? [String: Any] else { return [] }
+        var byCommand: [String: [String]] = [:]
+        for (name, value) in servers {
+            guard let entry = value as? [String: Any], let command = (entry["command"] as? String)?.trimmingCharacters(in: .whitespaces), !command.isEmpty,
+                  (entry["shepherd"] as? [String: Any])?["enabled"] as? Bool != false else { continue }
+            byCommand[command, default: []].append(name)
+        }
+        return byCommand.keys.sorted().map { ($0, byCommand[$0]!.sorted()) }
+    }
+
+    /// A name the shell may be asked about: no quoting, no expansion.
+    static func isSafeCommand(_ command: String) -> Bool {
+        safeCommand.firstMatch(in: command, range: NSRange(command.startIndex..., in: command)) != nil
     }
 
     /// Whether any project folder holds an Xcode project at its top level.

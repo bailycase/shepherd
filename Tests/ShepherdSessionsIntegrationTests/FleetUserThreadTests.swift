@@ -23,15 +23,38 @@ struct FleetUserThreadTests {
         #expect(record.reasonCodes.first?.code == .mostRoom)
         #expect(record.task.isEmpty, "the reply, like the log, leaves the task out")
 
-        // The Mac that took it runs a thread nobody's thread sent: its header reads "sent by you".
+        // The Mac that took it runs a thread nobody's thread sent: its header names no thread.
         try await D.wait("B to run the thread") { !b.dispatched.isEmpty }
         let running = try #require(b.dispatched.first)
         let from = try #require(running.dispatchedFrom)
         #expect(from.hostID == aID && from.hostName == "MacBook Pro" && from.agentID == nil && from.dispatchID == thread.dispatchID)
         let sentBy = FleetSentBy(from, host: "Mac mini", viewer: aID)
-        #expect(sentBy.sentByLine == "sent by you" && sentBy.goesBackLine == nil)
+        #expect(sentBy.sender == "you" && !sentBy.fromThread && sentBy.goesBackLine == nil)
         #expect(a.dispatched.isEmpty, "nothing started on the Mac that sent it")
         try await D.wait("A to follow it as running") { a.sent().first?.state == .running && a.sent().first?.remoteAgentID == running.id }
+    }
+
+    /// A thread that was there to fix something on a Mac (Check's Fix with an agent) names its items, and when it ends the Mac that sent it is told, once.
+    @Test func aFixThreadThatEndsMakesItsMacLookAgainOnce() async throws {
+        let (a, b, _) = try await D.pair(busyA: 90, busyB: 10)
+        defer { a.stop(); b.stop() }
+        let bID = try await b.hostID()
+        let ended = FixEnds()
+        a.server.queue.sync { a.server.fleet?.dispatch.onFixEnded = { ended.add($0) } }
+        let thread = FleetUserThread(spaceID: a.space.id, task: "Install node 22.", title: "Install node 22 on Mac mini", host: "Mac mini", fixes: ["need:node:22"])
+        let record = try #require(try await a.local.fleetAction(.sendThread(thread)).dispatch)
+        #expect(record.fixes == ["need:node:22"])
+        try await D.wait("B to run the thread") { !b.dispatched.isEmpty }
+        let running = try #require(b.dispatched.first)
+        #expect(ended.all.isEmpty, "a fix that is running is not news")
+        try await D.wait("A to follow it as running") { a.sent().first?.state == .running && a.sent().first?.remoteAgentID == running.id }
+        try b.report(running.id, .working)
+        try await D.wait("A to see it working") { a.sent().first?.activity == "working" }
+        #expect(ended.all.isEmpty, "a fix that is working is not news")
+        try b.report(running.id, .done)
+        try await D.wait("A to be told the fix ended") { ended.all == [bID] }
+        try await D.wait("A's record to end") { a.sent().first?.state == .done }
+        #expect(ended.all == [bID], "once per dispatch")
     }
 
     @Test func autoKeepsTheThreadOnThisMacWhenItHasTheRoomAndMakesNoRecord() async throws {
@@ -100,4 +123,12 @@ struct FleetUserThreadTests {
         // An unknown dispatch is refused too.
         await #expect(throws: RemoteHostClientError.self) { _ = try await a.local.fleetAction(.cancelDispatch(id: UUID())) }
     }
+}
+
+/// The Macs a fix ended on, as the dispatch told of them.
+private final class FixEnds: @unchecked Sendable {
+    private let lock = NSLock()
+    private var ids: [UUID] = []
+    func add(_ id: UUID) { lock.withLock { ids.append(id) } }
+    var all: [UUID] { lock.withLock { ids } }
 }

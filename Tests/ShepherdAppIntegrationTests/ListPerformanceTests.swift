@@ -905,7 +905,8 @@ struct ListPerformanceTests {
                                               provisional: running && streaming ? [ThreadFixture.streaming("Streaming")] : [], running: running,
                                               stats: NativeThreadStats(contextTokens: 42_000))
         snapshot.context = Self.context(42_000)
-        let thread = FakeThread(snapshot, header: true)
+        // Hosted as the workspace hosts a layout: a window measuring the thread at other sizes would re-estimate its lazy rows.
+        let thread = FakeThread(snapshot, header: true, deckHosting: true)
         try await thread.waitUntilReady()
         // What loading sets off (the catch-up, the composer's models) lands before counting.
         try await Task.sleep(for: .milliseconds(200))
@@ -1303,8 +1304,9 @@ struct ListPerformanceTests {
             #expect(rows["thread.view", default: 0] <= 1, "\(name): \(rows)")
             #expect(rows["composer.body", default: 0] <= 1, "\(name): \(rows)")
         }
-        // An 800pt window shows a few turns; the lazy stack builds some ahead.
-        #expect(show["thread.rowBuilder", default: 0] <= 40, "\(show)")
+        // The last `eagerRows` turns are laid out for real on every show; above them, an 800pt window shows a few
+        // turns and the lazy stack builds some ahead (a hundred and twenty turns are held).
+        #expect(show["thread.rowBuilder", default: 0] <= ThreadView.eagerRows + 40, "\(show)")
     }
 
     // MARK: Code blocks

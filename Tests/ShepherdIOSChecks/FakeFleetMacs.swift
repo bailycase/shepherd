@@ -171,7 +171,7 @@ final class FakeMac: @unchecked Sendable {
                     settings.apply(change)
                 }
                 write(client, .hostSettings(id: id, settings: settings))
-            case .fleetSync(let id, _), .fleetPressure(let id, _), .fleetReadiness(let id, _), .fleetPressureNow(let id), .fleetAction(let id, _):
+            case .fleetSync(let id, _), .fleetPressure(let id, _), .fleetReadiness(let id, _), .fleetPressureNow(let id), .fleetCheck(let id, _), .fleetCheckNow(let id), .fleetAction(let id, _):
                 write(client, .error(id: id, code: FleetProtocol.Code.forbidden, message: "A device is not a member."))
             default:
                 break

@@ -30,6 +30,8 @@ public enum FleetPlacement {
         case xcode
         /// The command of an MCP server (its name): never needed to place work; the thread starts without that server.
         case mcpCommand(String)
+        /// A model provider (its id) that can't start or refuses its sign-in there (Fleet ▸ Check): a thread on one of its models isn't placed on that Mac.
+        case provider(String)
 
         /// What a person or a thread is told it lacks.
         public var name: String {
@@ -37,6 +39,7 @@ public enum FleetPlacement {
             case .git: "git"
             case .xcode: "Xcode"
             case .mcpCommand(let command): command
+            case .provider(let id): "\(id) models"
             }
         }
     }
@@ -76,9 +79,17 @@ public enum FleetPlacement {
             self.inFlight = inFlight
         }
 
-        /// What it lacks that this dispatch needs: git, and Xcode when the repository has an Xcode project.
-        public func problems(needsXcode: Bool) -> [String] {
-            lacks.filter { $0 == .git || ($0 == .xcode && needsXcode) }.map(\.name)
+        /// What it lacks that this dispatch needs: git, Xcode when the repository has an Xcode project, and the provider of the thread's model
+        /// when it can't start there.
+        public func problems(needsXcode: Bool, provider: String? = nil) -> [String] {
+            lacks.filter { lack in
+                switch lack {
+                case .git: true
+                case .xcode: needsXcode
+                case .provider(let id): id == provider
+                case .mcpCommand: false
+                }
+            }.map(\.name)
         }
 
         /// The MCP commands it lacks: the thread starts without those servers.
@@ -111,19 +122,27 @@ public enum FleetPlacement {
         return word.isEmpty || word == "auto"
     }
 
-    /// `needsXcode`: the dispatch's repository has an Xcode project at its top level.
-    public static func place(host: String?, macs: [Mac], needsXcode: Bool = false, batteryCountsHalf: Bool = true) -> Outcome {
-        isAuto(host) ? auto(macs, needsXcode: needsXcode, batteryCountsHalf: batteryCountsHalf) : named(host ?? "", macs, needsXcode: needsXcode)
+    /// `needsXcode`: the dispatch's repository has an Xcode project at its top level. `provider`: the provider of the thread's model
+    /// (the part of "anthropic/claude-x" before the slash), nil when the thread takes the default.
+    public static func place(host: String?, macs: [Mac], needsXcode: Bool = false, provider: String? = nil, batteryCountsHalf: Bool = true) -> Outcome {
+        isAuto(host) ? auto(macs, needsXcode: needsXcode, provider: provider, batteryCountsHalf: batteryCountsHalf)
+            : named(host ?? "", macs, needsXcode: needsXcode, provider: provider)
+    }
+
+    /// The provider of a model id: "anthropic" for "anthropic/claude-x"; nil for a bare name.
+    public static func provider(ofModel model: String?) -> String? {
+        guard let model, let slash = model.firstIndex(of: "/"), slash != model.startIndex else { return nil }
+        return String(model[..<slash])
     }
 
     // MARK: Named
 
-    private static func named(_ host: String, _ macs: [Mac], needsXcode: Bool) -> Outcome {
+    private static func named(_ host: String, _ macs: [Mac], needsXcode: Bool, provider: String?) -> Outcome {
         guard let mac = named(host, in: macs) else { return .refuse(code: FleetDispatchCode.noSuchHost, detail: host) }
         let reasons = [FleetPlacementReason(.named)]
         // A Mac that can't be reached is waited for; what it holds is checked when it answers.
         guard mac.connected else { return .waitForWake(hostID: mac.hostID, reasons: reasons) }
-        if let problem = mac.problems(needsXcode: needsXcode).first { return .refuse(code: FleetDispatchCode.hostNotReady, detail: problem) }
+        if let problem = mac.problems(needsXcode: needsXcode, provider: provider).first { return .refuse(code: FleetDispatchCode.hostNotReady, detail: problem) }
         // Connected but not yet heard from: there is nothing to check the repo against.
         if mac.hasRepo == nil { return .refuse(code: FleetDispatchCode.hostNotReady, detail: "unknown") }
         // A Mac without the repo clones it, then runs the work.
@@ -132,14 +151,14 @@ public enum FleetPlacement {
 
     // MARK: Auto
 
-    private static func auto(_ macs: [Mac], needsXcode: Bool, batteryCountsHalf: Bool) -> Outcome {
+    private static func auto(_ macs: [Mac], needsXcode: Bool, provider: String?, batteryCountsHalf: Bool) -> Outcome {
         // A Mac that hasn't said whether it has the repo isn't known to take work; one that says it lacks it clones it.
         let withRepo = macs.filter { $0.hasRepo != nil }
         guard !withRepo.isEmpty else { return .refuse(code: FleetDispatchCode.repoMissing, detail: nil) }
-        let usable = withRepo.filter { $0.connected && $0.problems(needsXcode: needsXcode).isEmpty }
+        let usable = withRepo.filter { $0.connected && $0.problems(needsXcode: needsXcode, provider: provider).isEmpty }
         guard !usable.isEmpty else {
             // Every Mac that could take it is up and missing a tool: waiting won't fix that.
-            if withRepo.allSatisfy({ $0.connected && !$0.problems(needsXcode: needsXcode).isEmpty }), let problem = withRepo.first?.problems(needsXcode: needsXcode).first {
+            if withRepo.allSatisfy({ $0.connected && !$0.problems(needsXcode: needsXcode, provider: provider).isEmpty }), let problem = withRepo.first?.problems(needsXcode: needsXcode, provider: provider).first {
                 return .refuse(code: FleetDispatchCode.hostNotReady, detail: problem)
             }
             return .waitForRoom
@@ -160,7 +179,7 @@ public enum FleetPlacement {
             counted.append((mac, FleetRoom.score(sample, weight: mac.weight, batteryCountsHalf: batteryCountsHalf)))
         }
         // A local Mac that isn't usable at all (a tool missing here) is left out for that.
-        if let local = withRepo.first(where: \.isLocal), !usable.contains(where: \.isLocal), !local.problems(needsXcode: needsXcode).isEmpty { localSkip = "notReady" }
+        if let local = withRepo.first(where: \.isLocal), !usable.contains(where: \.isLocal), !local.problems(needsXcode: needsXcode, provider: provider).isEmpty { localSkip = "notReady" }
 
         let local = usable.first(where: \.isLocal)
         // The clone is a cost: a Mac without the repo counts for its score over `cloneMargin`.
@@ -172,17 +191,19 @@ public enum FleetPlacement {
         let localScore = local.flatMap { scores[$0.hostID] }
         if let localSkip, localScore == nil || localScore == 0 { reasons.append(FleetPlacementReason(.localIneligible, skip: localSkip)) }
         let others = counted.filter { $0.score > 0 && $0.mac.hostID != winnerID }
+        // What the winner is running, as it said: the log says "no builds running" of it.
+        let commands = counted.first { $0.mac.hostID == winnerID }?.mac.sample?.commandAgents
         if winnerID == local?.hostID, let localScore, localScore > 0 {
             // Stayed here: because nothing else counted, or because the best peer didn't clear the margin.
             if let best = others.map(\.score).max(), best > localScore {
-                reasons.append(FleetPlacementReason(.keptLocal, ratio: best / localScore))
+                reasons.append(FleetPlacementReason(.keptLocal, ratio: best / localScore, commands: commands))
             } else {
-                reasons.append(FleetPlacementReason(others.isEmpty ? .onlyChoice : .mostRoom))
+                reasons.append(FleetPlacementReason(others.isEmpty ? .onlyChoice : .mostRoom, commands: commands))
             }
         } else if let localScore, localScore > 0, let winnerScore = scores[winnerID] {
-            reasons.append(FleetPlacementReason(.mostRoom, ratio: winnerScore / localScore))
+            reasons.append(FleetPlacementReason(.mostRoom, ratio: winnerScore / localScore, commands: commands))
         } else {
-            reasons.append(FleetPlacementReason(others.isEmpty ? .onlyChoice : .mostRoom))
+            reasons.append(FleetPlacementReason(others.isEmpty ? .onlyChoice : .mostRoom, commands: commands))
         }
         if counted.first(where: { $0.mac.hostID == winnerID })?.mac.hasRepo == false { reasons.append(FleetPlacementReason(.willClone)) }
         return .place(hostID: winnerID, reasons: reasons)

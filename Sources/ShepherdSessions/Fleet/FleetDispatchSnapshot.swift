@@ -21,7 +21,9 @@ extension FleetDispatch {
     /// setting on.
     func wantsSnapshot(_ record: FleetDispatchRecord) -> Bool {
         // A thread the person started carries the checkout's edits only when it starts in the checkout; on a base or a branch it starts clean.
-        (record.kind == .agentDispatch || record.start?.place == .checkout) && record.commitSHA != nil && pins[record.id] != nil && indexService != nil
+        // A move always carries the thread's worktree, whatever Settings ▸ Fleet says about uncommitted changes.
+        if record.kind == .move { return record.commitSHA != nil && pins[record.id] != nil && indexService != nil }
+        return (record.kind == .agentDispatch || record.start?.place == .checkout) && record.commitSHA != nil && pins[record.id] != nil && indexService != nil
             && (host.settings()?.fleetUncommitted ?? .sendThem) == .sendThem
     }
 
@@ -101,6 +103,13 @@ extension FleetDispatch {
             if let bundle = built.bundle { try? FileManager.default.removeItem(at: bundle.url) }
             return done(.failure(.init(code: FleetDispatchCode.invalid, message: "The dispatch ended.")))
         }
+        var built = built
+        // A move's conversation goes with the worktree: named in the header, asked for by the receiver first, sent before the files.
+        if let transcript = moveTranscripts[id] {
+            built.transcript = transcript
+            built.header.transcript = transcript.ref
+            built.header.bytes += transcript.ref.size
+        }
         snapshots[id] = built
         senderLog[id] = (built.phases, built.git)
         outbound[id]?.snapshotBytes = built.header.bytes
@@ -128,6 +137,7 @@ extension FleetDispatch {
     /// The pieces of a snapshot the sender holds go when the dispatch is past needing them.
     func releaseSnapshot(id: UUID) {
         if let built = snapshots.removeValue(forKey: id), let bundle = built.bundle { try? FileManager.default.removeItem(at: bundle.url) }
+        if let transcript = moveTranscripts.removeValue(forKey: id) { try? FileManager.default.removeItem(at: transcript.url) }
         pins[id] = nil
         transferring.remove(id)
         repoBundles.remove(id)
@@ -234,6 +244,7 @@ extension FleetDispatch {
         @Sendable func push(_ hash: FleetHash) async throws {
             let path: String
             if let bundle = built.bundle, bundle.ref.hash == hash { path = bundle.url.path }
+            else if let transcript = built.transcript, transcript.ref.hash == hash { path = transcript.url.path }
             else if let source = built.plan.sources[hash] { path = built.root + "/" + source }
             else { throw RemoteHostClientError.rejected(code: FleetDispatchCode.snapshotFailed, message: "The target asked for a content this checkout doesn't have.") }
             try await FleetSnapshotReader.chunks(path: path, hash: hash, link: links.contains(hash)) { chunk in
@@ -253,7 +264,7 @@ extension FleetDispatch {
                 var inFlight = 0
                 for hash in ack.needs {
                     guard await live() else { ended = true; break }
-                    if let size = sizes[hash], size <= UInt64(FleetSnapshotTransfer.chunkBytes), built.bundle?.ref.hash != hash {
+                    if let size = sizes[hash], size <= UInt64(FleetSnapshotTransfer.chunkBytes), built.bundle?.ref.hash != hash, built.transcript?.ref.hash != hash {
                         if inFlight >= Self.pushWindow { try await group.next(); inFlight -= 1 }
                         group.addTask { try await push(hash) }
                         inFlight += 1
@@ -273,12 +284,13 @@ extension FleetDispatch {
     private func progressed(_ id: UUID, _ sent: UInt64) {
         guard outbound[id]?.state == .preparing, let total = outbound[id]?.snapshotBytes else { return }
         outbound[id]?.snapshotProgress = min(sent, total)
+        moveProgressed(id, sent)
         if now - progressSavedAt > 500 { progressSavedAt = now; save() } else { onChange?() }
     }
 
     /// Reads the target's record of `id` and takes what it says (`merge`); a target that can't be asked leaves the dispatch as it is for
     /// `reconcile` to settle.
-    private func askTarget(_ id: UUID, _ target: UUID) {
+    func askTarget(_ id: UUID, _ target: UUID) {
         let take: @Sendable (Result<FleetDispatchRecord, Error>) -> Void = { [weak self] result in
             self?.queue.async {
                 guard let self, var record = self.outbound[id], record.state == .preparing, case .success(let theirs) = result else { return }
@@ -446,6 +458,8 @@ extension FleetDispatch {
         for directory in manifest.directories where directories[directory.hash] == nil { return bad("stale manifest: directory \(directory.path.prefix(80))") }
         var needs: [FleetHash] = []
         var seen = Set<FleetHash>()
+        // A move's conversation is asked for first, so the sender can say it has sent it before the worktree is.
+        if let transcript = header.transcript { if blobs.has(transcript.hash) { blobs.touch(transcript.hash) } else { needs.append(transcript.hash) } }
         for file in manifest.files where seen.insert(file.hash).inserted {
             if blobs.has(file.hash) { blobs.touch(file.hash); continue }
             if let held = files[file.hash], FleetSnapshotApply.unchanged(held, size: file.size) { continue }

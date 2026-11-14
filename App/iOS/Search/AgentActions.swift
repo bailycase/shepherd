@@ -45,6 +45,11 @@ enum AgentActions {
         try await perform(ref, .mutePushes(muted), hosts: hosts)
     }
 
+    /// Move to Mac: the thread's host stops the turn (now, or when it ends), sends the conversation and the worktree and starts it on `host`.
+    static func moveToMac(_ ref: AgentRef, _ request: FleetMoveRequest, hosts: MobileHosts) async throws {
+        try await perform(ref, .moveToMac(request), hosts: hosts)
+    }
+
     /// Retires the agent only; a worktree checkout and its branch stay on the host.
     static func delete(_ ref: AgentRef, hosts: MobileHosts) async throws {
         try await perform(ref, .deleteKeepingWorktree, hosts: hosts)

@@ -10,7 +10,7 @@ import Testing
 /// the newest page then starts inside the turn. The thread must keep the prompt and the history
 /// above it: before the fix it shrank to the last reply, so the transcript looked emptied until the
 /// reader scrolled up for older pages (the Dev app showed 5 rows drop to 1 after a 30-call turn).
-@Suite("A long turn keeps its history", .serialized, .mainActorExclusive, .integrationTimeLimit)
+@Suite("A long turn keeps its history", .serialized, .mainActorExclusive)
 @MainActor
 struct ThreadLongTurnHistoryTests {
     @Test func aTurnLongerThanAPageKeepsItsPromptAndTheHistoryAboveIt() async throws {

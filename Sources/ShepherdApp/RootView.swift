@@ -329,7 +329,7 @@ struct WorkspaceHeaderView: View {
                                  branch: AgentBranchLabel(agent: agent, host: connection.config.name), directory: nil,
                                  showChanges: { vm.openRemoteReview(remote, path: nil) }, rename: { vm.remoteRenameTarget = remote },
                                  pin: vm.offersPin(for: .remote(remote)) ? .remote(remote) : nil, row: .remote(remote),
-                                 fleet: vm.fleetSurface(for: agent, onRemote: connection.config.name), online: connection.phase == .connected)
+                                 fleet: vm.fleetSurface(for: agent, onRemote: connection.config.name, hostID: connection.id), online: connection.phase == .connected)
                         .id(remote)
                 }
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID, let design = vm.design(drawnBy: agent),
@@ -399,6 +399,8 @@ struct WorkspaceHeaderView: View {
                             togglePane: { vm.toggleRightPane() }, showChanges: showChanges, rename: rename,
                             pinned: pin.map { vm.isPinned($0) }, togglePin: pin.map { row in { vm.togglePin(row) } },
                             muted: muted, toggleMute: muted == nil ? nil : { vm.togglePushMuted(row) },
+                            move: vm.fleetMoveHeader(for: row), moveWorking: vm.moveSubject(row)?.agent.status == .working || vm.moveSubject(row)?.agent.status == .blocked,
+                            moveTo: { vm.moveThread(row, to: $0, when: $1) },
                             sentBy: fleet?.sentBy, sentByOnline: online,
                             openSender: fleet?.sentBy?.senderOpens == true ? fleet?.dispatched.map { from in { vm.openSender(of: from) } } : nil,
                             apps: apps, runApp: { vm.runQuickApp($0, showOutput: true) }, stopApp: { vm.stopApp($0) },

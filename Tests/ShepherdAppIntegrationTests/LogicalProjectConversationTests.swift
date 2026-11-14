@@ -2016,8 +2016,8 @@ private static func chipsAndLinks() async throws {
         #expect(r.vm.logicalProjects.failure == nil, "no refused action was sent: \(r.vm.logicalProjects.failure?.message ?? "")")
     }
 
-    /// The positive control for the resolved menu: an unresolved (settled) task's More menu still offers Open as a thread and Mark
-    /// resolved, and choosing Mark resolved resolves it on the owner.
+    /// The positive control for the resolved menu: an unresolved (settled) task's More menu still offers Open as a thread, Run on another host and
+    /// Mark resolved, and choosing Mark resolved resolves it on the owner.
     private static func settledMenuResolves() async throws {
         let r = try await rig()
         defer { r.app.stop() }
@@ -2031,7 +2031,7 @@ private static func chipsAndLinks() async throws {
         defer { window.close() }
         try await eventuallyOnMain("the settled worker's detail") { window.layout(); return window.element("Mark resolved") != nil }
         let offered = try await NativeMenuChoice.choose("Mark resolved", from: try detailMore(window))
-        #expect(offered == ["Open as a thread", "Mark resolved"], "the settled task's More menu: \(offered)")
+        #expect(offered == ["Open as a thread", "Run on another host…", "Mark resolved"], "the settled task's More menu: \(offered)")
         try await eventuallyOnMain("resolved on the owner from the menu") { r.app.server.state.projects.first?.tasks.first?.phase == .resolved }
     }
 

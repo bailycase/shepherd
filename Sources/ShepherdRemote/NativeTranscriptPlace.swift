@@ -15,7 +15,8 @@ import Foundation
 /// out 5,563 pt short of the tail (the view sat 9,000 to 12,000 pt away for 0.2 s on a phone, and 80,000 pt for 0.5 s on a Duo's open
 /// display). So `position(tail:)` hands the marker to SwiftUI only while the last row is the one it was kept for, and `hold(tail:)`
 /// keeps it again for the tail as it is once the landings after the new rows have settled. That is only ever the marker taken from a
-/// follower who had it: one who never kept it (a first open, a re-open, a follower SwiftUI reported a row for) is left as it was.
+/// follower who had it, whether rows joined after it or the transcript left and mounts again (`leave()`): one who never kept it (a first
+/// open, a re-open, a follower SwiftUI reported a row for) is left as it was.
 public struct NativeTranscriptPlace: Equatable, Sendable {
     public private(set) var follower = NativeScrollFollower()
     /// The turn SwiftUI keeps under the top edge. Nil while following where `mountsAtTail`.
@@ -51,16 +52,21 @@ public struct NativeTranscriptPlace: Equatable, Sendable {
     /// detached with nothing kept (SwiftUI can leave the position nil, as after a jump) would sit there without following the tail,
     /// with the jump pill showing while the agent runs. Nothing changes where a turn is kept or where the transcript does not mount
     /// at its tail.
-    ///
-    /// A follower who left holding the bottom marker comes back to it, whatever joined while the transcript was away: a mount is not
-    /// rows joining after the marker, and handing nothing would open the stack at the top of its content where there is no initial
-    /// anchor. `tail` is the transcript's last row now.
-    public mutating func mount(tail: String?) {
-        if follower.sticky, !mountsAtTail, turn == Self.bottomMarker { markerTail = tail }
+    public mutating func mount() {
         guard mountsAtTail, turn == nil, !follower.sticky else { return }
         var next = follower
         next.jumpToLatest()
         follow(next)
+    }
+
+    /// The transcript left the screen. A follower who holds the bottom marker is not handed it at the next mount, which on iOS 27.1
+    /// opens a lazy stack at the marker's estimated place, among rows built nowhere near it (the Duo's cover display did it on every
+    /// re-open), for the tail guard to jump out of, and once 39 pt past the end. The marker is withheld as it is after rows joined
+    /// (`withholdsMarker`): the pin lands the view at the mount, and `hold(tail:)` keeps the marker again once that landing has settled.
+    /// A follower who keeps a row, a detached reader and a transcript that mounts at its tail are unchanged.
+    public mutating func leave() {
+        guard follower.sticky, !mountsAtTail, turn == Self.bottomMarker else { return }
+        markerTail = nil
     }
 
     /// SwiftUI's write through the position binding: kept unless the reader follows where `mountsAtTail`. Nil clears, as another

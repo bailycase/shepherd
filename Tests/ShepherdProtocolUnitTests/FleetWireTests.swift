@@ -46,6 +46,33 @@ struct FleetWireTests {
         #expect(snapshot.enabled && snapshot.macs.isEmpty)
     }
 
+    /// Dispatch signals ride the pressure sample with no new message, so a Mac on the previous Nightly sends none and ignores ours.
+    @Test func aSampleFromAnOlderMacDecodesWithoutTheSignalsAndANewOneRoundTripsThem() throws {
+        let old = Data(#"{"cpuUtilization":0.3,"cpuCount":8,"totalMemoryBytes":100,"availableMemoryBytes":50,"thermal":"nominal","onBattery":false,"activeAgents":2,"reserved":0}"#.utf8)
+        let sample = try JSONDecoder().decode(FleetPressureSample.self, from: old)
+        #expect(sample.commandAgents == nil && sample.cpuAverage == nil && sample.memoryPressure == nil && sample.limits == nil)
+        let object = try Wire.object(sample)
+        #expect(Set(object.keys).isDisjoint(with: ["commandAgents", "cpuAverage", "memoryPressure", "limits"]), "an unset signal is left out, as an older Mac would")
+        let full = FleetPressureSample(cpuUtilization: 0.9, cpuCount: 8, totalMemoryBytes: 100, availableMemoryBytes: 50, activeAgents: 3, commandAgents: 2, cpuAverage: 0.4,
+                                       memoryPressure: .critical, limits: [FleetProviderLimit(provider: "anthropic", seconds: 100)])
+        #expect(try Wire.roundTrip(full) == full)
+    }
+
+    @Test func aSnapshotAndADispatchRecordFromAnOlderHostDecodeWithoutLimits() throws {
+        let snapshot = try JSONDecoder().decode(FleetSnapshot.self, from: Data(#"{"enabled":true,"name":"Mac mini","addresses":[],"advertising":false,"peers":[]}"#.utf8))
+        #expect(snapshot.limits.isEmpty)
+        let record = FleetDispatchRecord(parentHostID: UUID(), parentHostName: "MacBook Pro", state: .waitingRoom, title: "t", task: "", repoKey: "k",
+                                         reasonCodes: [FleetPlacementReason(.mostRoom, ratio: 2, commands: 0)], limitProvider: "anthropic", createdAt: 1)
+        #expect(try Wire.roundTrip(record) == record)
+        var object = try Wire.object(record)
+        object["limitProvider"] = nil
+        let older = try JSONDecoder().decode(FleetDispatchRecord.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(older.limitProvider == nil && older.state == .waitingRoom, "an older host's record waits for room, as it always did")
+        // A client (a phone) is told which providers are limited, and nothing else of the dispatches.
+        let limited = FleetSnapshot(enabled: true, limits: [FleetLimitStatus(provider: "anthropic", seconds: 9, waiting: 1)])
+        #expect(limited.clientView.limits == limited.limits)
+    }
+
     @Test func aReadinessReportWithMissingFieldsDecodesWithDefaults() throws {
         let report = try JSONDecoder().decode(FleetReadinessReport.self, from: Data("{}".utf8))
         #expect(report == FleetReadinessReport())

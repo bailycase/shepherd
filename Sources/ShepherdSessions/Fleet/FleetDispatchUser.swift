@@ -5,7 +5,7 @@ import ShepherdProtocol
 /// What the person does about dispatches from this Mac's app (`FleetAction.sendThread`, `retryDispatch`,
 /// `cancelDispatch`; server queue): start a thread on the Mac Auto picks, and decide what becomes of a dispatch that
 /// waits, is held or wasn't sent. A thread the person starts is a `userThread` dispatch: no parent thread, its result
-/// is the thread, and it shows in the Dispatches log as "sent by you".
+/// is the thread, and it shows in the Recent work log as "started by you".
 extension FleetDispatch {
     /// The code a first placement answers with when the work stays on this Mac: not a failure, the app starts the thread.
     static let keptHere = "kept_here"
@@ -21,8 +21,10 @@ extension FleetDispatch {
             return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "The task is empty or longer than \(FleetDispatchProtocol.maxTaskBytes / 1024) KiB.")))
         }
         let requested = FleetPlacement.isAuto(thread.host) ? nil : thread.host?.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Named for this very Mac: nothing to send.
-        if let requested, requested.lowercased() == hostName().lowercased() || requested.lowercased() == hostID.uuidString.lowercased() {
+        // Named for this very Mac: nothing to send, unless the provider of its model is limited and the thread has to wait for that: a
+        // dispatch to this Mac holds it as it would hold one to any other.
+        let limited = FleetPlacement.provider(ofModel: thread.model?.fleetNonEmpty ?? host.defaultModel()).flatMap { pressure.limitRemaining($0) } != nil
+        if let requested, requested.lowercased() == hostName().lowercased() || requested.lowercased() == hostID.uuidString.lowercased(), !limited {
             return reply(.success(nil))
         }
         // A space that isn't one of this Mac's, or whose folder is no repository another Mac could find, stays here when Auto chose it and is
@@ -39,7 +41,7 @@ extension FleetDispatch {
         var record = FleetDispatchRecord(
             id: id, kind: .userThread, parentHostID: hostID, parentHostName: hostName(), requestedHost: requested, state: .placing,
             title: Self.title(thread.title, task: task), task: task, repoKey: space.repoKey ?? "", model: thread.model?.fleetNonEmpty,
-            thinking: thread.thinking?.fleetNonEmpty, spaceID: space.id, start: start, createdAt: now)
+            thinking: thread.thinking?.fleetNonEmpty, spaceID: space.id, start: start, fixes: thread.fixes, createdAt: now)
         record.updatedAt = record.createdAt
         outbound[id] = record
         firstPlacements.insert(id)
@@ -99,10 +101,10 @@ extension FleetDispatch {
     /// try, which would answer for the second.
     func retry(_ id: UUID, host target: UUID?, reply: @escaping (Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void) {
         guard var record = outbound[id] else {
-            return reply(.failure(.init(code: FleetDispatchProtocol.Code.unknownDispatch, message: "This Mac has no such dispatch.")))
+            return reply(.failure(.init(code: FleetDispatchProtocol.Code.unknownDispatch, message: "This Mac has no such thread.")))
         }
         guard [.waitingRoom, .waitingWake, .heldLimit, .heldRestart, .failed].contains(record.state), !placing.contains(id), !sending.contains(id) else {
-            return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "That dispatch isn't waiting for anything (it is \(record.state.rawValue)).")))
+            return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "That thread isn't waiting for anything (it is \(record.state.rawValue)).")))
         }
         if record.state == .failed {
             outbound[id] = nil

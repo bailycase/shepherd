@@ -58,10 +58,16 @@ final class ComposerPresentation {
         publish()
     }
 
-    /// A transcript mounting with no turn to restore must follow its tail, and one that left holding the bottom marker finds it
-    /// again whatever joined meanwhile (`NativeTranscriptPlace.mount(tail:)`). `tail` is the transcript's last row.
-    func mount(tail: String?) {
-        place.mount(tail: tail)
+    /// A transcript mounting with no turn to restore must follow its tail (`NativeTranscriptPlace.mount()`).
+    func mount() {
+        place.mount()
+        publish()
+    }
+
+    /// The transcript left the screen: a follower who holds the bottom marker is handed it again once the landing after the next mount
+    /// has settled, not at the mount (`NativeTranscriptPlace.leave()`).
+    func leave() {
+        place.leave()
         publish()
     }
 

@@ -69,7 +69,8 @@ struct TurnDeadEndTests {
         let h = try await PiAgent.launch(on: host)
         #expect(try await h.send("hello", from: try await h.ready()).wasAccepted)
         host.server.continueAfterAccountSwitch(h.agent.id)
-        _ = try await h.snapshot("the turn to finish", timeout: .seconds(30)) { !$0.running && $0.messages.last?.role == "assistant" }
+        // The stub's plain turn ends on its tool's result, which it now saves with the rest.
+        _ = try await h.snapshot("the turn to finish", timeout: .seconds(30)) { !$0.running && $0.messages.contains { $0.role == "assistant" } }
         try await h.server.enqueue {}
         #expect(h.stdin("recover_checkpoint").isEmpty)
     }

@@ -888,7 +888,7 @@ extension RemoteLayoutModel {
                 sideMaximized: panes.maximized.contains(owner), review: reviews[ref],
                 panel: { terminals.panel(TerminalPanelKey(host: ref.hostID, tab: $0)) }, terminalHeight: terminals.height,
                 designReferences: vm.remoteDesignReferenceChips(for: ref),
-                fleet: connection.state.agents.first { $0.id == ref.agentID }.flatMap { vm.fleetSurface(for: $0, onRemote: connection.config.name) })
+                fleet: connection.state.agents.first { $0.id == ref.agentID }.flatMap { vm.fleetSurface(for: $0, onRemote: connection.config.name, hostID: connection.id) })
             return RemoteLayoutModel.presentation(ref: ref, host: host, screen: screen)
         }
     }

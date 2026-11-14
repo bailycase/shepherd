@@ -64,7 +64,7 @@ struct FleetDispatchPreviewTests {
         for (name, state, done) in [("fleet4d-dispatch-working", FleetDispatchState.running, false), ("fleet4d-dispatch-result", .done, true)] {
             let fixture = ThreadFixture(Self.parentSnapshot(done: done))
             defer { fixture.store.stop() }
-            let surface = Self.surface([Self.record(state, id: id)])
+            let surface = Self.surface([Self.record(state, id: id, at: Date().timeIntervalSince1970 * 1000 - 120_000)])
             try await Preview.renderMatrix(name, size: CGSize(width: 1000, height: 820), ready: { fixture.store.ready }) {
                 fixture.thread(title: Self.senderTitle).environment(\.fleetThread, surface)
             }

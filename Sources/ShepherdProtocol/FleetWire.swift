@@ -127,10 +127,14 @@ public struct FleetPeerStatus: Codable, Hashable, Identifiable, Sendable {
     public var lastSeen: Double?
     /// How the host reaches it now while linked (`FleetPeerReach`); nil from a host before links ran both ways, and to a client.
     public var reach: FleetPeerReach?
+    /// Whether this Mac can take a thread that moves to it (`RemoteProtocol.fleetMoveCapability`): false only while its link is up and it
+    /// lacks the capability (it runs an older Shepherd); nil while the link is down or from a host that doesn't say.
+    public var takesThreads: Bool?
     public var id: UUID { hostID }
 
     public init(hostID: UUID, name: String, kind: FleetPeerKind = .mac, host: String? = nil, port: UInt16? = nil,
-                pairedAt: Double, link: Link, lastSeen: Double? = nil, reach: FleetPeerReach? = nil) {
+                pairedAt: Double, link: Link, lastSeen: Double? = nil, reach: FleetPeerReach? = nil, takesThreads: Bool? = nil) {
+        self.takesThreads = takesThreads
         self.reach = reach
         self.hostID = hostID
         self.name = name
@@ -153,6 +157,33 @@ public struct FleetJoinStatus: Codable, Hashable, Sendable {
     public init(expiresAt: Double, attemptsLeft: Int) {
         self.expiresAt = expiresAt
         self.attemptsLeft = attemptsLeft
+    }
+}
+
+/// A provider that is limiting the fleet's requests now, for the Fleet page's strip: from this Mac's own reports and every Mac's samples
+/// (`FleetPressureSample.limits`).
+public struct FleetLimitStatus: Codable, Hashable, Sendable, Identifiable {
+    /// pi's provider id ("anthropic").
+    public var provider: String
+    /// How long it lasts from the moment the host answered; the viewer counts down from when it received this.
+    public var seconds: Double
+    /// Dispatches and new threads of this Mac held for it (`FleetDispatchRecord.limitProvider`).
+    public var waiting: Int
+    public var id: String { provider }
+
+    public init(provider: String, seconds: Double, waiting: Int = 0) {
+        self.provider = provider
+        self.seconds = seconds
+        self.waiting = waiting
+    }
+
+    private enum CodingKeys: String, CodingKey { case provider, seconds, waiting }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try c.decode(String.self, forKey: .provider)
+        seconds = try c.decodeIfPresent(Double.self, forKey: .seconds) ?? 0
+        waiting = try c.decodeIfPresent(Int.self, forKey: .waiting) ?? 0
     }
 }
 
@@ -189,11 +220,15 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
     /// This Mac and the Macs of its fleet with how each is reached (`RemoteProtocol.fleetFollowCapability`): what a phone or an iPad that
     /// is paired with any of them keeps its list of Macs from. Empty from a host without the capability, and while Fleet is off.
     public var members: [FleetViewMember]
+    /// The providers limiting the fleet's requests now (`FleetLimitStatus`), sorted by provider. Empty from a host that doesn't say.
+    public var limits: [FleetLimitStatus]
 
     public init(enabled: Bool = false, hostID: UUID? = nil, name: String = "", build: String? = nil, addresses: [String] = [],
                 port: UInt16? = nil, routes: [FleetReportedRoute] = [], advertising: Bool = false, peers: [FleetPeerStatus] = [], join: FleetJoinStatus? = nil,
                 sync: FleetSyncStatus? = nil, devices: FleetDevicesSnapshot? = nil, macs: [FleetMacState] = [],
-                dispatches: [FleetDispatchRecord] = [], index: FleetIndexStatus? = nil, members: [FleetViewMember] = []) {
+                dispatches: [FleetDispatchRecord] = [], index: FleetIndexStatus? = nil, members: [FleetViewMember] = [],
+                limits: [FleetLimitStatus] = []) {
+        self.limits = limits
         self.members = members
         self.routes = routes
         self.index = index
@@ -212,7 +247,7 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         self.sync = sync
     }
 
-    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, routes, advertising, peers, join, macs, devices, sync, dispatches, index, members }
+    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, routes, advertising, peers, join, macs, devices, sync, dispatches, index, members, limits }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -234,6 +269,7 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         dispatches = (try? c.decodeIfPresent([FleetDispatchRecord].self, forKey: .dispatches)) ?? []
         index = try c.decodeIfPresent(FleetIndexStatus.self, forKey: .index)
         members = (try? c.decodeIfPresent([FleetViewMember].self, forKey: .members)) ?? []
+        limits = (try? c.decodeIfPresent([FleetLimitStatus].self, forKey: .limits)) ?? []
     }
 }
 
@@ -241,12 +277,18 @@ extension FleetSnapshot {
     /// What a client (a phone or an iPad) may read: the Macs, whether each is reachable, and their load and
     /// readiness, and the routes to each (`members`: what it needs to keep its own list of Macs). Not the addresses this Mac lists for
     /// itself, a code window, the devices, the sync state, the dispatches or the build.
-    public var clientView: FleetSnapshot {
+    public var clientView: FleetSnapshot { clientView(withMoves: false) }
+
+    /// `clientView`, with the moves of this Mac's threads for a client that reads them (`fleet.move.view.v1`: one that doesn't would draw a
+    /// move as a failed dispatch).
+    public func clientView(withMoves moves: Bool) -> FleetSnapshot {
         FleetSnapshot(enabled: enabled, hostID: hostID, name: name,
                       peers: peers.map {
-                          FleetPeerStatus(hostID: $0.hostID, name: $0.name, kind: $0.kind, pairedAt: $0.pairedAt, link: $0.link, lastSeen: $0.lastSeen)
+                          FleetPeerStatus(hostID: $0.hostID, name: $0.name, kind: $0.kind, pairedAt: $0.pairedAt, link: $0.link, lastSeen: $0.lastSeen,
+                                          takesThreads: $0.takesThreads)
                       },
-                      macs: macs, members: members)
+                      // A thread that is moving shows its progress wherever it is open; nothing else a Mac sent.
+                      macs: macs, dispatches: moves ? dispatches.filter { $0.kind == .move } : [], members: members, limits: limits)
     }
 }
 
@@ -266,6 +308,9 @@ public enum FleetAction: Codable, Hashable, Sendable {
     case watching(Bool)
     /// Try the link to this Mac again now, without waiting out its backoff.
     case reconnect(hostID: UUID)
+    /// Fleet ▸ Check ▸ Check now (`RemoteProtocol.fleetCheckCapability`): this Mac looks at itself again, and asks each Mac of the fleet that
+    /// can to do the same, read only; answered once they have answered (or after a bound). The snapshot then holds the new reports.
+    case checkNow
     /// Open the code window of Add a device and answer its code (`FleetResult.deviceCode`).
     case startDeviceCode
     /// Close it (the Add a device screen closed).
@@ -293,6 +338,9 @@ public enum FleetAction: Codable, Hashable, Sendable {
     /// the code is still the only proof. `expiresAt` (epoch milliseconds) is when the code stops working; an expired one is refused
     /// without a connection. Answered with the Mac (`FleetResult.paired`).
     case pairAt(hostID: UUID, port: UInt16, routes: [FleetReportedRoute], code: String, expiresAt: Double?)
+    /// Move a thread of this Mac to another Mac (`RemoteProtocol.fleetMoveCapability`, `FleetMoveWire.swift`). Answered with the move's
+    /// record (`FleetResult.dispatch`), or refused with the reason. Cancelling it is `cancelDispatch`.
+    case moveThread(FleetMoveRequest)
 }
 
 /// The answer to `fleetRead` and `fleetAction`: the snapshot after it, plus what the action made.

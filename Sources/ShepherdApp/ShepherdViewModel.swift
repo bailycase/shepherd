@@ -249,6 +249,19 @@ final class ShepherdViewModel {
         didSet { sidebarDefaults.set(collapsedProjects.sorted(), forKey: Self.collapsedProjectsKey) }
     }
     static let collapsedProjectsKey = "shepherd.sidebar.collapsedProjects"
+    /// Previews and tests: changes the sidebar's inputs before the lists are derived, where a connected host's fleet identity can't be made up.
+    @ObservationIgnored var sidebarSourceAdjust: ((SidebarSource) -> SidebarSource)?
+    /// The Fleet corner is minimized to its one line (FleetCornerMin). This Mac app's own choice, never synced.
+    var fleetCornerMinimized = false {
+        didSet { sidebarDefaults.set(fleetCornerMinimized, forKey: Self.fleetCornerMinimizedKey) }
+    }
+    static let fleetCornerMinimizedKey = "shepherd.sidebar.fleetCornerMinimized"
+    /// Failed threads with no Mac to run on that the person deleted from the sidebar (`SidebarFleet.dismissed`). Hidden on this Mac only,
+    /// never synced.
+    var dismissedDispatches: Set<UUID> = [] {
+        didSet { sidebarDefaults.set(dismissedDispatches.map(\.uuidString).sorted(), forKey: Self.dismissedDispatchesKey) }
+    }
+    static let dismissedDispatchesKey = "shepherd.sidebar.dismissedDispatches"
     static let designJumpRecentsKey = "shepherd.designs.jumpRecents"
     var collapsedActivitySections: Set<SidebarActivitySection> = [] {
         didSet { sidebarDefaults.set(collapsedActivitySections.map(\.rawValue).sorted(), forKey: Self.collapsedActivitySectionsKey) }
@@ -351,7 +364,7 @@ final class ShepherdViewModel {
     let apps: AppsModel
     /// Settings ▸ Fleet: this Mac's fleet as its host reports it.
     let fleet = FleetSettingsModel()
-    /// The Fleet page and the sidebar's Fleet row: the cards derived from `fleet`'s snapshot.
+    /// The Fleet page and the sidebar's Fleet corner: the cards derived from `fleet`'s snapshot.
     let fleetPage = FleetPageModel()
     /// What the buttons on dispatch cards do (`configureFleetThreadActions`).
     let fleetThreadActions = FleetThreadActions()
@@ -726,6 +739,8 @@ final class ShepherdViewModel {
         // footer) stay in older preferences and are no longer read.
         sidebarHidden = sidebarDefaults.bool(forKey: "shepherd.sidebarHidden")
         collapsedProjects = Set(sidebarDefaults.stringArray(forKey: Self.collapsedProjectsKey) ?? [])
+        fleetCornerMinimized = sidebarDefaults.bool(forKey: Self.fleetCornerMinimizedKey)
+        dismissedDispatches = Set((sidebarDefaults.stringArray(forKey: Self.dismissedDispatchesKey) ?? []).compactMap(UUID.init(uuidString:)))
         if let data = sidebarDefaults.data(forKey: Self.designJumpRecentsKey),
            let recents = try? JSONDecoder().decode(DesignJumpRecents.self, from: data) {
             designJumpRecents = recents
@@ -811,7 +826,6 @@ final class ShepherdViewModel {
         applyRemoteListenerSetting()
         // The `/` menu of every thread leaves out what Settings ▸ Pi ▸ Slash commands turned off.
         self.settings.onHiddenSlashCommandsChange = { [weak model = self.slashCommands] names in model?.setHidden(names) }
-        installCompactionThreshold()
 
         flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             MainActor.assumeIsolated {
@@ -863,6 +877,8 @@ final class ShepherdViewModel {
             self?.fleetPage.update($0)
             self?.fleetConnections.snapshotChanged($0)
         }
+        self.fleetPage.checkIgnored = { [weak self] in self?.settings.fleetCheckIgnored(on: $0) ?? [] }
+        self.fleetPage.setCheckIgnored = { [weak self] ids, mac in self?.settings.setFleetCheckIgnored(ids, on: mac) }
         self.settings.onFleetWeightsChange = { [fleetPage] in fleetPage.recompute() }
         self.fleet.browse = { update in
             let browser = FleetBrowser()
@@ -1236,6 +1252,7 @@ final class ShepherdViewModel {
         if old != .blocked, status == .working { resetSidebarActivity(id) }
         // A turn ending reads the branch card again (commits, a push, the PR's checks).
         if old == .working, status != .working { branchCardStores[id]?.requestRefresh() }
+        if old == .working, status == .done || status == .idle { fleetCheckAgentEnded(id) }
         // A session (re)start reports idle; the server still remembers the failure until a turn starts, so the row keeps reading failed.
         let failed = status == .done ? failure != nil : status == .idle && Self.persistedTurnFailed(agent)
         // pi said a subscription's refresh failed: Sign-in says it expired.

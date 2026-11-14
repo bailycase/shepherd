@@ -271,17 +271,17 @@ struct RemoteBrowserTests {
         let (s, _) = try await setup()
         defer { s.stop() }
         #expect(s.connection.supportsBrowser)
-        #expect(s.vm.sidePaneTabs(for: .remote(s.ref)) == [.changes, .browser])
+        #expect(s.vm.sidePaneTabs(for: .remote(s.ref)) == [.changes, .browser, .files])
         s.vm.showSidePane(.remote(s.ref), tab: .browser)
         #expect(s.vm.subagentInspector.open.contains(.remote(s.ref)) && s.vm.subagentInspector.tab(for: .remote(s.ref)) == .browser)
 
         let (old, _) = try await setup(capabilities: RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.browserTunnelCapability })
         defer { old.stop() }
         #expect(!old.connection.supportsBrowser)
-        #expect(old.vm.sidePaneTabs(for: .remote(old.ref)) == [.changes], "no tab, as before")
+        #expect(old.vm.sidePaneTabs(for: .remote(old.ref)) == [.changes, .files], "no Browser tab, as before")
         old.vm.showSidePane(.remote(old.ref), tab: .browser)
         #expect(!old.vm.subagentInspector.open.contains(.remote(old.ref)), "⌃2 does nothing there")
-        #expect(old.vm.sidePaneTabs(for: .local(AgentID())) == [.changes, .browser])
+        #expect(old.vm.sidePaneTabs(for: .local(AgentID())) == [.changes, .browser, .files])
     }
 
     /// Each page holds a port and has its web view (made, not loaded: what this checks is what goes

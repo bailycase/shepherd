@@ -290,7 +290,8 @@ struct ThreadSendScrollTests {
 
     // MARK: A send that does not go in
 
-    /// A host that refuses the message: the draft stays, the thread stays where it was.
+    /// A host that refuses the message: the words leave the composer and stay in the thread as a refused send (restore or
+    /// discard), and the thread stays on its tail as that row arrives.
     @Test(arguments: T.sizes)
     func aRefusedSendLeavesTheThreadWhereItWas(size: CGSize) async throws {
         try await T.withDeck(size: size, turns: 40, configure: { host in
@@ -307,10 +308,12 @@ struct ThreadSendScrollTests {
             trace.mark("send")
             await deck.store.send()
             try await Self.wait(deck, .milliseconds(600))
-            #expect(deck.store.draft == "A message the host will not take.", "the draft was kept")
+            #expect(deck.store.draft.isEmpty, "the words left the composer")
+            #expect(deck.store.submissions.map(\.typed) == ["A message the host will not take."], "the refused words are kept in the thread")
+            #expect(deck.store.submissions.map(\.state) == [.failed], "and say they were refused")
             #expect(deck.store.notice != nil, "the refusal was said")
             #expect(trace.retreats(from: "send").isEmpty)
-            #expect(abs(try #require(deck.reading).offset - before) <= 90, "a refused send moved the thread from \(Int(before)) to \(Int(deck.reading?.offset ?? 0))")
+            #expect(try #require(deck.reading).offset >= before, "a refused send never takes the thread up from \(Int(before)) to \(Int(deck.reading?.offset ?? 0))")
             Self.expectRestingOnTheTail(trace, "a refused send")
         }
     }

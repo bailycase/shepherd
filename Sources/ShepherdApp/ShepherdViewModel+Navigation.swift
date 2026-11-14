@@ -68,6 +68,11 @@ extension ShepherdViewModel {
 
     /// The activity groups' inputs, including remote hosts and completion generations.
     var sidebarSource: SidebarSource {
+        let source = derivedSidebarSource
+        return sidebarSourceAdjust?(source) ?? source
+    }
+
+    private var derivedSidebarSource: SidebarSource {
         SidebarSource(
             local: SidebarSource.presentationState(state, children: childRuns.rows), localFleetID: thisFleetID,
             openingTurns: sidebarOpeningTurns, completions: sidebarCompletions.records, failedTurns: failedTurns, cannotStart: cannotStart,
@@ -85,7 +90,15 @@ extension ShepherdViewModel {
                 SidebarSource.Host(id: $0.id, name: $0.config.name,
                     state: SidebarSource.presentationState($0.state, children: $0.children), offline: $0.phase != .connected,
                     fleetID: $0.fleetID)
-            }, designs: designToolEnabled, missingSpaces: missingSpaces, pullRequests: sidebarPullRequests)
+            }, designs: designToolEnabled, missingSpaces: missingSpaces, pullRequests: sidebarPullRequests,
+            fleet: sidebarFleet)
+    }
+
+    /// What the sidebar reads of the dispatches this Mac sent, less the failures the person dismissed.
+    private var sidebarFleet: SidebarFleet {
+        var fleet = fleetPage.sidebarFleet
+        fleet.dismissed = dismissedDispatches
+        return fleet
     }
 
     /// Activity groups, derived again only when their inputs change.
@@ -103,7 +116,7 @@ extension ShepherdViewModel {
     /// held.
     var presentedSidebarLists: SidebarLists {
         sidebarLists.presented(selected: selectedSidebarRow, shortcuts: showAgentShortcutBadges,
-                               collapsed: collapsedActivitySections)
+                               collapsed: collapsedActivitySections, openFolds: collapsedProjects)
     }
 
     /// The row whose thread is on screen; none while a page is.
@@ -192,6 +205,7 @@ extension ShepherdViewModel {
         case .remote(let ref): selectRemoteAgent(hostID: ref.hostID, agentID: ref.agentID)
         case .design(let id): openDesign(id)
         case .remoteDesign(let ref): openRemoteDesign(ref)
+        case .dispatch: openFleet()
         }
     }
 

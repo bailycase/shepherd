@@ -9,6 +9,8 @@ enum SearchRoute: Hashable, Codable {
     /// iPad: the ⌘K palette over search and actions, presented.
     case palette(query: String)
     case rename(AgentRef)
+    /// Move to Mac: the Macs of the thread's host's fleet, and what moving costs the turn.
+    case moveToMac(AgentRef)
     /// Delete, or Delete Worktree Agent for a worktree agent.
     case delete(AgentRef)
     /// An action from a menu or the palette failed.
@@ -45,6 +47,7 @@ struct SearchDestination: View {
         case .search(let query): MobileSearchScreen(initialQuery: query)
         case .palette(let query): SearchPalette(initialQuery: query)
         case .rename(let ref): RenameAgentSheet(ref: ref)
+        case .moveToMac(let ref): MoveToMacSheet(ref: ref)
         case .delete(let ref): DeleteAgentSheet(ref: ref)
         case .problem(let title, let message): ActionProblemSheet(title: title, message: message)
         }

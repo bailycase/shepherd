@@ -196,6 +196,11 @@ final class RPCThreadState {
     var recoveryWaiting: Bool { !dialogs.isEmpty || !askingCalls.isEmpty }
     /// Called on the session queue when pi finishes a tool call, with the tool's name.
     var onToolFinished: ((String) -> Void)?
+    /// Called on the session queue when the thread starts running a shell command (`true`) and when its last one ends (`false`): what
+    /// the fleet weighs a thread by (`FleetRoom.commandWeight`). A pi that ends the run without ending its calls ends them here too.
+    var onCommandActivity: ((Bool) -> Void)?
+    /// The shell commands running now, by call id (a codemode script's nested ones count).
+    private var runningCommands: Set<String> = []
     private var signature = 0
     /// From `agent_start` until `agent_settled`: pi's own `isStreaming`. A run's `agent_end` is not
     /// its end: pi may retry, compact, or continue before it settles, and until then a prompt
@@ -851,6 +856,7 @@ final class RPCThreadState {
             if let stallMessage, !runFailed { runFailed = true; runError = stallMessage }
             stallMessage = nil
             runningTools.removeAll()
+            commandsEnded()
             recoveryResumePending = false
             if !runFailed, !stopRequested {
                 recoveryAttempts = 0
@@ -983,6 +989,7 @@ final class RPCThreadState {
         case .toolExecutionStart(let id, let name, let args, let parent):
             if let parent { rememberParent(parent, of: id) }
             runningTools.insert(id)
+            if Self.runsCommands(name) { commandStarted(id) }
             let operation = "tool." + DiagnosticFailureDetails.ToolKind(name: name).rawValue
             beginDiagnostic("tool:" + id, operation: operation)
             if Self.asksUser(name) {
@@ -1000,6 +1007,7 @@ final class RPCThreadState {
             upsertTool(id: id, name: name, args: args, content: partial?.content ?? [], isError: nil, status: "running")
         case .toolExecutionEnd(let id, let name, let result, let isError, _):
             runningTools.remove(id)
+            commandEnded(id)
             endDiagnostic("tool:" + id)
             let stopped = isError && stopRequested
             if isError, !stopRequested {
@@ -1053,6 +1061,26 @@ final class RPCThreadState {
         }
         runDueFold()
         commit()
+    }
+
+    /// The tools that run a shell command.
+    static func runsCommands(_ tool: String) -> Bool { tool == "bash" || tool == "powershell" }
+
+    private func commandStarted(_ id: String) {
+        let first = runningCommands.isEmpty
+        runningCommands.insert(id)
+        if first { onCommandActivity?(true) }
+    }
+
+    private func commandEnded(_ id: String) {
+        guard runningCommands.remove(id) != nil, runningCommands.isEmpty else { return }
+        onCommandActivity?(false)
+    }
+
+    private func commandsEnded() {
+        guard !runningCommands.isEmpty else { return }
+        runningCommands.removeAll()
+        onCommandActivity?(false)
     }
 
     private func diagnosticActivity(_ name: String, details: DiagnosticFailureDetails = .init()) {

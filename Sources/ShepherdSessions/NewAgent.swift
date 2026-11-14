@@ -51,6 +51,11 @@ public struct NewAgentConfig {
     public var automationOrigin: AutomationOrigin?
     /// A thread Fleet started for another Mac's work (`Agent.dispatchedFrom`).
     public var dispatchedFrom: DispatchedFrom?
+    /// A thread another Mac moved here keeps what it was (`FleetMove.swift`).
+    public var movedFrom: MovedFrom?
+    public var nameIsFinal: Bool?
+    public var pushMuted = false
+    public var lastActiveAt: Double?
 
     public init(spaceID: SpaceID, workingDirectory: String, reservedAgentID: AgentID? = nil, coordinatorFor: ProjectID? = nil,
                 model: String? = nil, thinking: ThinkingLevel, initialPrompt: String? = nil, initialImages: [NativeImage] = [],
@@ -114,19 +119,21 @@ public struct NewAgentConfig {
             // Provisional: pi's namer replaces it with a real title from the
             // agent's opening prompt, whether that prompt came from the sheet
             // or was typed into the TUI afterwards (⌘N). A design names itself.
-            nameIsFinal: designID != nil || coordinatorFor != nil,
+            nameIsFinal: nameIsFinal ?? (designID != nil || coordinatorFor != nil),
             piSessionID: piSessionID,
             worktreeBranch: worktreeBranch,
             worktreeBase: worktreeBase,
             worktreePath: worktreePath,
             // A new agent leads its activity group.
-            lastActiveAt: SessionServer.nowMilliseconds(),
+            lastActiveAt: lastActiveAt ?? SessionServer.nowMilliseconds(),
             designID: designID,
             coordinatorFor: coordinatorFor,
             serviceTier: serviceTier ?? defaultServiceTier
         )
         agent.automationOrigin = automationOrigin
         agent.dispatchedFrom = dispatchedFrom
+        agent.movedFrom = movedFrom
+        agent.pushMuted = pushMuted
         return (agent, tab, primary)
     }
 }

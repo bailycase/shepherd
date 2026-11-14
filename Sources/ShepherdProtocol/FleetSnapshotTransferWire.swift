@@ -61,14 +61,18 @@ public struct FleetSnapshotHeader: Codable, Hashable, Sendable {
     /// repository, for a Mac with no checkout to clone from; without it, only the commits the Mac lacks, for one that has the repository.
     /// The receiver gets the commit from it, then makes the worktree at the commit as for a dispatch with no snapshot.
     public var repoOnly: Bool
+    /// A move: the thread's conversation (pi's session file), one more content the receiver asks for like the bundle.
+    public var transcript: FleetBlobRef?
 
     public init(commit: String, rootHash: FleetHash, digest: FleetHash, files: Int, directories: Int, deletions: Int, parts: Int,
-                fileCount: Int, bytes: UInt64, bundle: FleetBlobRef? = nil, repoBundle: Bool = false, repoOnly: Bool = false) {
+                fileCount: Int, bytes: UInt64, bundle: FleetBlobRef? = nil, repoBundle: Bool = false, repoOnly: Bool = false,
+                transcript: FleetBlobRef? = nil) {
+        self.transcript = transcript
         (self.commit, self.rootHash, self.digest, self.files, self.directories, self.deletions, self.parts) = (commit, rootHash, digest, files, directories, deletions, parts)
         (self.fileCount, self.bytes, self.bundle, self.repoBundle, self.repoOnly) = (fileCount, bytes, bundle, repoBundle, repoOnly)
     }
 
-    private enum CodingKeys: String, CodingKey { case commit, rootHash, digest, files, directories, deletions, parts, fileCount, bytes, bundle, repoBundle, repoOnly }
+    private enum CodingKeys: String, CodingKey { case commit, rootHash, digest, files, directories, deletions, parts, fileCount, bytes, bundle, repoBundle, repoOnly, transcript }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -84,6 +88,7 @@ public struct FleetSnapshotHeader: Codable, Hashable, Sendable {
         bundle = try c.decodeIfPresent(FleetBlobRef.self, forKey: .bundle)
         repoBundle = try c.decodeIfPresent(Bool.self, forKey: .repoBundle) ?? false
         repoOnly = try c.decodeIfPresent(Bool.self, forKey: .repoOnly) ?? false
+        transcript = try c.decodeIfPresent(FleetBlobRef.self, forKey: .transcript)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -100,6 +105,7 @@ public struct FleetSnapshotHeader: Codable, Hashable, Sendable {
         try c.encodeIfPresent(bundle, forKey: .bundle)
         if repoBundle { try c.encode(repoBundle, forKey: .repoBundle) }
         if repoOnly { try c.encode(repoOnly, forKey: .repoOnly) }
+        try c.encodeIfPresent(transcript, forKey: .transcript)
     }
 
     /// Whether the numbers are ones a receiver will work with.
@@ -108,6 +114,7 @@ public struct FleetSnapshotHeader: Codable, Hashable, Sendable {
             && files + directories + deletions <= FleetSnapshotTransfer.maxEntries
             && (bundle.map { $0.size <= FleetSnapshotTransfer.maxBlobBytes } ?? true) && (!repoBundle || bundle != nil)
             && (!repoOnly || (bundle != nil && files == 0 && directories == 0 && deletions == 0 && parts == 0))
+            && (transcript.map { $0.size <= FleetSnapshotTransfer.maxBlobBytes } ?? true)
     }
 }
 

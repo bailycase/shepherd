@@ -18,6 +18,9 @@ final class FleetThreadActions: @unchecked Sendable {
     var openSender: @MainActor (DispatchedFrom) -> Void = { _ in }
     /// Tries the Mac's link again now (the offline banner's Retry).
     var retryHost: @MainActor () -> Void = {}
+    /// The move card's Cancel (a move waiting for the turn to end) and Dismiss (a failed one).
+    var cancelMove: @MainActor (UUID) -> Void = { _ in }
+    var dismissMove: @MainActor (UUID) -> Void = { _ in }
 }
 
 /// What a thread draws about dispatches (`ThreadView`): the one that sent work shows its dispatches' cards where it sent them and the
@@ -34,10 +37,12 @@ struct FleetThreadSurface: Equatable {
     var actions: FleetThreadActions?
     /// The Mac running it stopped answering: the transcript fades under the offline banner.
     var offline = false
+    /// This thread is moving to another Mac, or waits to, or a move of it failed (FleetMove): the card drawn above its conversation.
+    var move: FleetMoveCard?
 
     static func == (a: FleetThreadSurface, b: FleetThreadSurface) -> Bool {
         a.sentBy == b.sentBy && a.dispatched == b.dispatched && a.goesBack == b.goesBack && a.cards == b.cards && a.parent == b.parent
-            && a.actions === b.actions && a.offline == b.offline
+            && a.actions === b.actions && a.offline == b.offline && a.move == b.move
     }
 
     /// The card a `fleet_dispatch` call at `toolCallID` made.
@@ -94,13 +99,21 @@ private struct FleetCardButton: View {
 struct FleetDispatchCardView: View, Equatable {
     let card: FleetDispatchCard
     var actions: FleetThreadActions?
+    /// The thread that sent it draws what a card can say in a few words as one line (FleetDispatch); the Fleet page keeps the full card.
+    var compactRows = false
 
-    nonisolated static func == (a: FleetDispatchCardView, b: FleetDispatchCardView) -> Bool { a.card == b.card && a.actions === b.actions }
+    nonisolated static func == (a: FleetDispatchCardView, b: FleetDispatchCardView) -> Bool {
+        a.card == b.card && a.actions === b.actions && a.compactRows == b.compactRows
+    }
 
     var body: some View {
-        switch card.layout {
-        case .row: row
-        case .state: state
+        if compactRows, let compact = card.compact {
+            FleetCompactDispatchRow(card: card, compact: compact, actions: actions)
+        } else {
+            switch card.layout {
+            case .row: row
+            case .state: state
+            }
         }
     }
 
@@ -212,6 +225,90 @@ struct FleetDispatchCardView: View, Equatable {
         .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: sh.lineSubtle)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(card.accessibilityLabel)
+    }
+}
+
+/// A sent thread as one line (FleetDispatch, in the thread that sent it): an arrow, the title, the Mac's tag and where it stands ("back · 2m",
+/// "delivering · 4m", "goes when studio wakes"). Its buttons (Open, Stop, Cancel, Run on This Mac) appear while the pointer is over it and are
+/// always in its menu; the row opens the thread that runs it.
+struct FleetCompactDispatchRow: View {
+    let card: FleetDispatchCard
+    let compact: FleetDispatchCard.Compact
+    var actions: FleetThreadActions?
+    @State private var hovering = false
+    @Environment(\.shMotionPaused) private var motionPaused
+
+    var body: some View {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m) {
+            Image(systemName: "arrow.up.right")
+                .font(.sh(.caption, weight: .regular))
+                .foregroundStyle(sh.textTertiary)
+                .frame(width: AppLayout.fleetCompactRowGlyph)
+                .accessibilityHidden(true)
+            Text(card.title).font(.sh(.body)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: SH.Space.l)
+            if hovering {
+                ForEach(card.actions.filter { buttonWorthy($0) }, id: \.self) { action in
+                    Button(action.title) { actions?.card(action, card) }
+                        .buttonStyle(.sh(.secondary, size: .s))
+                }
+            }
+            if let host = card.host { FleetHostTag(name: host) }
+            words
+        }
+        .padding(.horizontal, SH.Space.l)
+        .frame(maxWidth: .infinity, minHeight: AppLayout.fleetCompactRowHeight, alignment: .leading)
+        .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: sh.lineSubtle)
+        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.l))
+        .onHover { hovering = $0 }
+        .shAnimation(.hover, value: hovering)
+        .onTapGesture { if card.remoteAgentID != nil { actions?.card(.open, card) } }
+        .contextMenu {
+            ForEach(card.actions.filter { if case .openOthers = $0 { false } else { true } }, id: \.self) { action in
+                Button(action.title) { actions?.card(action, card) }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(card.accessibilityLabel)
+        .accessibilityAddTraits(card.remoteAgentID == nil ? [] : .isButton)
+        .modifier(FleetCardAccessibilityActions(card: card, actions: actions))
+    }
+
+    /// The buttons a row shows on hover: the ones that act on it, not the long ways around.
+    private func buttonWorthy(_ action: FleetCardAction) -> Bool {
+        switch action {
+        case .open, .stop, .cancel, .runHereNow: true
+        case .runHere, .tryAgain, .sendTo, .send, .openOthers: false
+        }
+    }
+
+    @ViewBuilder private var words: some View {
+        let color = compact.tone.textColor
+        if compact.timed, card.updatedAt > 0 {
+            let since = Date(timeIntervalSince1970: card.updatedAt / 1000)
+            TimelineView(SHElapsedSchedule(start: since, aligned: true, paused: motionPaused)) { context in
+                text("\(compact.words) · \(SHDuration.text(max(0, context.date.timeIntervalSince(since))))", color)
+            }
+        } else {
+            text(compact.words, color)
+        }
+    }
+
+    private func text(_ string: String, _ color: Color) -> some View {
+        Text(string).font(.sh(.mono)).foregroundStyle(color).lineLimit(1).fixedSize()
+    }
+}
+
+/// Every button of a card as a named VoiceOver action, so nothing on hover is only on hover.
+private struct FleetCardAccessibilityActions: ViewModifier {
+    let card: FleetDispatchCard
+    var actions: FleetThreadActions?
+
+    func body(content: Content) -> some View {
+        card.actions.reduce(AnyView(content)) { view, action in
+            AnyView(view.accessibilityAction(named: action.title) { actions?.card(action, card) })
+        }
     }
 }
 
@@ -392,40 +489,48 @@ struct FleetGoesBackBanner: View, Equatable {
     }
 }
 
-/// The dispatched thread's header, after its title: the Mac it runs on as a pill with a dot, and "sent by <thread>" as a link.
+/// The header of a thread another Mac or thread started, after its title: the Mac it runs on as a pill with a dot, and "started by <thread>" as a link
+/// when a thread started it.
 struct FleetSentByHeader: View, Equatable {
     let sentBy: FleetSentBy
     let online: Bool
     var openSender: (() -> Void)?
+    /// The Mac's pill: the header's own chip (FleetMove) says it when the thread can move.
+    var showsHost = true
 
     nonisolated static func == (a: FleetSentByHeader, b: FleetSentByHeader) -> Bool {
-        a.sentBy == b.sentBy && a.online == b.online && (a.openSender == nil) == (b.openSender == nil)
+        a.sentBy == b.sentBy && a.online == b.online && (a.openSender == nil) == (b.openSender == nil) && a.showsHost == b.showsHost
     }
 
     var body: some View {
         let sh = Color.sh
         HStack(spacing: SH.Space.m) {
-            HStack(spacing: SH.Space.s) {
-                Circle().fill(online ? sh.done : sh.textTertiary).frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
-                Text(sentBy.host).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary).lineLimit(1)
-            }
-            .padding(.horizontal, SH.Space.m)
-            .frame(height: AppLayout.fleetHeaderPillHeight)
-            .shBorder(sh.lineStrong, radius: SH.Radius.s)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(online ? "Runs on \(sentBy.host)" : "Runs on \(sentBy.host), offline")
-            HStack(spacing: SH.Space.xs) {
-                Text("sent by").foregroundStyle(sh.textTertiary)
-                if let openSender, sentBy.fromThread {
-                    Button(action: openSender) { Text(sentBy.sender).foregroundStyle(sh.running) }
-                        .buttonStyle(.plain)
-                        .help("Open \(sentBy.sender)")
-                } else {
-                    Text(sentBy.sender).foregroundStyle(sentBy.fromThread ? sh.textSecondary : sh.textTertiary)
+            if showsHost {
+                HStack(spacing: SH.Space.s) {
+                    Circle().fill(online ? sh.done : sh.textTertiary).frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
+                    Text(sentBy.host).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary).lineLimit(1)
                 }
+                .padding(.horizontal, SH.Space.m)
+                .frame(height: AppLayout.fleetHeaderPillHeight)
+                .shBorder(sh.lineStrong, radius: SH.Radius.s)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(online ? "Runs on \(sentBy.host)" : "Runs on \(sentBy.host), offline")
             }
-            .font(.sh(.caption, weight: .regular))
-            .lineLimit(1)
+            // A thread the person started on another Mac is a thread like any other: only one that a thread started says who.
+            if sentBy.fromThread {
+                HStack(spacing: SH.Space.xs) {
+                    Text("started by").foregroundStyle(sh.textTertiary)
+                    if let openSender {
+                        Button(action: openSender) { Text(sentBy.sender).foregroundStyle(sh.running) }
+                            .buttonStyle(.plain)
+                            .help("Open \(sentBy.sender)")
+                    } else {
+                        Text(sentBy.sender).foregroundStyle(sh.textSecondary)
+                    }
+                }
+                .font(.sh(.caption, weight: .regular))
+                .lineLimit(1)
+            }
         }
     }
 }

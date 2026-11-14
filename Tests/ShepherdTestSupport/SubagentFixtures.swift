@@ -4,9 +4,18 @@ import Testing
 
 /// Real Markdown and the shipped parser, always under a test-owned pi home. No launch or model.
 public enum SubagentFixtures {
+    /// The staged engine (`python3 scripts/pi_engine.py stage`) that checks the profiles. A test that needs it is skipped,
+    /// saying so, where none is staged.
+    private static func stagedEngine(under root: URL) throws -> BundledPiEngine {
+        guard let engine = BundledPiEngine(contents: root.appendingPathComponent(".build/pi-engine")) else {
+            try Test.cancel("needs the staged engine: python3 scripts/pi_engine.py stage")
+        }
+        return engine
+    }
+
     public static func store(in directory: URL, populated: Bool = false, seed: Bool = true) throws -> SubagentDefinitionsStore {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let engine = try #require(BundledPiEngine(contents: root.appendingPathComponent(".build/pi-engine")), "python3 scripts/pi_engine.py stage")
+        let engine = try stagedEngine(under: root)
         let source = try String(contentsOf: root.appendingPathComponent("Extensions/shepherd-children-config.ts"), encoding: .utf8)
         let store = SubagentDefinitionsStore(pi: PiSetup(engine: .bundled(engine), home: directory.appendingPathComponent("subagents-pi")), parserSource: source)
         if seed || populated { _ = try store.snapshot() }
@@ -21,7 +30,7 @@ public enum SubagentFixtures {
     /// fleet writes through, because its own `PiSetup` has no bundled engine.
     public static func store(piHome: URL) throws -> SubagentDefinitionsStore {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let engine = try #require(BundledPiEngine(contents: root.appendingPathComponent(".build/pi-engine")), "python3 scripts/pi_engine.py stage")
+        let engine = try stagedEngine(under: root)
         let source = try String(contentsOf: root.appendingPathComponent("Extensions/shepherd-children-config.ts"), encoding: .utf8)
         return SubagentDefinitionsStore(pi: PiSetup(engine: .bundled(engine), home: piHome), parserSource: source)
     }

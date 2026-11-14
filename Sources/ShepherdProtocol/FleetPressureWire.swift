@@ -87,12 +87,41 @@ public struct FleetMacState: Codable, Hashable, Identifiable, Sendable {
     /// sample. This Mac's own sample is 0.
     public var sampleAge: Double?
     public var readiness: FleetReadinessReport?
+    /// What the Mac found when it looked at itself (`FleetCheckWire.swift`); nil from a Mac that doesn't (an older build) or hasn't yet.
+    public var check: FleetCheckReport?
+    /// Seconds since this host last had `check` (this Mac's own is when it made it), by this host's clock; nil without a report.
+    public var checkAge: Double?
     public var id: UUID { hostID }
 
-    public init(hostID: UUID, sample: FleetPressureSample? = nil, sampleAge: Double? = nil, readiness: FleetReadinessReport? = nil) {
+    public init(hostID: UUID, sample: FleetPressureSample? = nil, sampleAge: Double? = nil, readiness: FleetReadinessReport? = nil,
+                check: FleetCheckReport? = nil, checkAge: Double? = nil) {
         self.hostID = hostID
         self.sample = sample
         self.sampleAge = sampleAge
         self.readiness = readiness
+        self.check = check
+        self.checkAge = checkAge
+    }
+
+    private enum CodingKeys: String, CodingKey { case hostID, sample, sampleAge, readiness, check, checkAge }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        hostID = try c.decode(UUID.self, forKey: .hostID)
+        sample = try c.decodeIfPresent(FleetPressureSample.self, forKey: .sample)
+        sampleAge = try c.decodeIfPresent(Double.self, forKey: .sampleAge)
+        readiness = try c.decodeIfPresent(FleetReadinessReport.self, forKey: .readiness)
+        check = (try? c.decodeIfPresent(FleetCheckReport.self, forKey: .check)) ?? nil
+        checkAge = try c.decodeIfPresent(Double.self, forKey: .checkAge)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(hostID, forKey: .hostID)
+        try c.encodeIfPresent(sample, forKey: .sample)
+        try c.encodeIfPresent(sampleAge, forKey: .sampleAge)
+        try c.encodeIfPresent(readiness, forKey: .readiness)
+        try c.encodeIfPresent(check, forKey: .check)
+        try c.encodeIfPresent(checkAge, forKey: .checkAge)
     }
 }

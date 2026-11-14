@@ -189,7 +189,7 @@ struct TestIsolationTests {
         let decoy = TestProcess.piDecoyDirectory.path
         #expect(agent.lines == [
             String(cString: real),
-            "--mode", "rpc", "--session-dir", home.sessionDirectory(forCwd: cwd.path).path, "--session-id", "s-1",
+            "--mode", "rpc", "--session-dir", home.sessionDirectory(forCwd: cwd.path).path, "--session-id", "s-1", "--approve",
             "-e", "/e.ts",
             "PI_CODING_AGENT_DIR=\(home.directory.path)", "PI_PACKAGE_DIR=unset", "PI_OFFLINE=1", "NODE_OPTIONS=unset", "JITI_ALIAS=unset",
             "PI_EXPERIMENTAL=unset", "_SHEPHERD_STASH_NODE_OPTIONS=--require=\(decoy)/node-options.cjs",

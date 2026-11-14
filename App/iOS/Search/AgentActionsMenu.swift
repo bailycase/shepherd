@@ -25,6 +25,9 @@ struct AgentActionsMenu: View {
                         sidebar.togglePin(thread)
                     }
                 }
+                if FleetThreadAbilities(agent: agent, state: host.state, connected: host.phase.isConnected, capabilities: host.capabilities).moveToMac {
+                    Button("Move to Mac…", systemImage: "macbook.and.iphone") { navigator.present(.search(.moveToMac(thread))) }
+                }
                 if actions.canMoveUp || actions.canMoveDown {
                     Button("Move up", systemImage: "arrow.up") { move(.up) }
                         .disabled(!actions.canMoveUp)

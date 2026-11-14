@@ -14,6 +14,8 @@ struct FleetPageActions {
     var retry: (UUID) -> Void
     var openSettings: () -> Void
     var addMac: () -> Void
+    /// A Mac card's Check…: the Check tab, on the first thing that Mac needs.
+    var openCheck: (UUID) -> Void = { _ in }
 }
 
 extension FleetTone {
@@ -51,50 +53,91 @@ struct FleetPageContent: View {
     var chrome = PageHeaderChrome()
     /// What the buttons on dispatch cards do (FleetStates).
     var cardActions: FleetThreadActions?
+    /// Macs or Check.
+    var tab: Binding<FleetPageModel.Tab> = .constant(.macs)
+    var check = FleetCheckState()
+    var checkActions = FleetCheckActions.none
+    /// The Mac the sidebar's Fleet corner opened the page on: its card is scrolled into view and marked.
+    var focusedMac: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
-            DestinationPageHeader(title: "Fleet", subtitle: page.summary, chrome: chrome) {
-                Button("Fleet settings", action: actions.openSettings)
-                    .buttonStyle(.sh(.secondary))
-                Button("Add a Mac", systemImage: "plus", action: actions.addMac)
-                    .buttonStyle(.sh(.primary))
-            }
-            ScrollView {
-                VStack(alignment: .leading, spacing: SH.Space.xl) {
-                    FleetPlacementCard(autoDispatch: page.autoDispatch, nextGoesTo: page.nextGoesTo)
-                    if !page.attention.isEmpty || !page.behind.isEmpty {
-                        VStack(spacing: SH.Space.l) {
-                            ForEach(page.attention) { card in
-                                FleetDispatchCardView(card: card, actions: cardActions).equatable()
-                            }
-                            ForEach(page.behind) { mac in
-                                FleetBehindMacCard(mac: mac)
-                            }
-                        }
+            DestinationPageHeader(title: "Fleet", subtitle: tab.wrappedValue == .check ? page.check.summary : page.summary, chrome: chrome) {
+                SHSegmentedPicker("Fleet view", selection: tab, options: [(.macs, "Macs"), (.check, page.check.tabTitle)])
+            } trailing: {
+                switch tab.wrappedValue {
+                case .macs:
+                    Button("Fleet settings", action: actions.openSettings)
+                        .buttonStyle(.sh(.secondary))
+                    Button("Add a Mac", systemImage: "plus", action: actions.addMac)
+                        .buttonStyle(.sh(.primary))
+                case .check:
+                    if let ago = page.check.checkedAgo {
+                        Text(ago).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
                     }
-                    Grid(horizontalSpacing: SH.Space.xl, verticalSpacing: SH.Space.xl) {
-                        ForEach(rows, id: \.first?.id) { row in
-                            GridRow {
-                                ForEach(row) { card in
-                                    FleetMacCardView(card: card, actions: actions)
-                                        .equatable()
-                                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                                }
-                                ForEach(0..<(AppLayout.fleetColumns - row.count), id: \.self) { _ in
-                                    Color.clear.frame(maxWidth: .infinity).gridCellUnsizedAxes(.vertical)
-                                }
-                            }
-                        }
-                    }
-                    FleetDispatchesCard(rows: page.dispatches)
+                    Button(check.checking ? "Checking…" : "Check now", action: checkActions.checkNow)
+                        .buttonStyle(.sh(.secondary))
+                        .disabled(check.checking)
                 }
-                .padding(.vertical, SH.Space.xxl)
-                .padding(.horizontal, SH.Space.xxxl)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if tab.wrappedValue == .check {
+                FleetCheckContent(check: page.check, state: check, actions: checkActions)
+            } else {
+                macsBody
             }
         }
         .background(Color.sh.bgWindow)
+    }
+
+    /// The Macs tab: the Auto card, a card per Mac and the Dispatches log.
+    private var macsBody: some View {
+        ScrollViewReader { proxy in
+            macsScroll
+                .task(id: focusedMac) {
+                    guard let focusedMac else { return }
+                    withSHAnimation(.scroll) { proxy.scrollTo(focusedMac, anchor: .center) }
+                }
+        }
+    }
+
+    private var macsScroll: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: SH.Space.xl) {
+                FleetPlacementCard(autoDispatch: page.autoDispatch, nextGoesTo: page.nextGoesTo)
+                ForEach(page.limits) { strip in
+                    FleetLimitStripView(strip: strip)
+                }
+                if !page.attention.isEmpty || !page.behind.isEmpty {
+                    VStack(spacing: SH.Space.l) {
+                        ForEach(page.attention) { card in
+                            FleetDispatchCardView(card: card, actions: cardActions).equatable()
+                        }
+                        ForEach(page.behind) { mac in
+                            FleetBehindMacCard(mac: mac)
+                        }
+                    }
+                }
+                Grid(horizontalSpacing: SH.Space.xl, verticalSpacing: SH.Space.xl) {
+                    ForEach(rows, id: \.first?.id) { row in
+                        GridRow {
+                            ForEach(row) { card in
+                                FleetMacCardView(card: card, actions: actions, focused: card.id == focusedMac)
+                                    .equatable()
+                                    .id(card.id)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            }
+                            ForEach(0..<(AppLayout.fleetColumns - row.count), id: \.self) { _ in
+                                Color.clear.frame(maxWidth: .infinity).gridCellUnsizedAxes(.vertical)
+                            }
+                        }
+                    }
+                }
+                FleetDispatchesCard(rows: page.dispatches)
+            }
+            .padding(.vertical, SH.Space.xxl)
+            .padding(.horizontal, SH.Space.xxxl)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var rows: [[FleetMacCard]] {
@@ -104,7 +147,7 @@ struct FleetPageContent: View {
     }
 }
 
-/// "Auto dispatch is on": where work would go now. Nothing is sent from here.
+/// "Auto is on": where work would go now. Nothing is sent from here.
 private struct FleetPlacementCard: View {
     let autoDispatch: Bool
     let nextGoesTo: String?
@@ -122,9 +165,9 @@ private struct FleetPlacementCard: View {
                 }
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(autoDispatch ? "Auto dispatch is on" : "Auto dispatch is off").font(.sh(.headline)).foregroundStyle(sh.textPrimary)
-                Text(autoDispatch ? "New and sent work goes to the Mac with the most room that has the thread’s models and tools."
-                     : "New threads start on This Mac. Pick a Mac in the composer, or turn Auto dispatch on in Fleet settings.")
+                Text(autoDispatch ? "Auto is on" : "Auto is off").font(.sh(.headline)).foregroundStyle(sh.textPrimary)
+                Text(autoDispatch ? "New threads go to the Mac with the most room that has the thread’s models and tools."
+                     : "New threads start on This Mac. Pick a Mac in the composer, or turn Auto on in Fleet settings.")
                     .font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
             }
             Spacer(minLength: SH.Space.xl)
@@ -138,6 +181,29 @@ private struct FleetPlacementCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: sh.lineSubtle)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// "Anthropic is limiting your account…": a provider is limiting the fleet's requests, so new threads for it wait on every Mac.
+struct FleetLimitStripView: View {
+    let strip: FleetLimitStrip
+
+    var body: some View {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.l) {
+            Circle().fill(sh.lantern).frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
+            Text(strip.text).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.lanternText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let waiting = strip.waiting {
+                Text(waiting).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary).fixedSize()
+            }
+        }
+        .padding(.vertical, SH.Space.m)
+        .padding(.horizontal, SH.Space.xl)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(sh.lanternTint, in: RoundedRectangle(cornerRadius: SH.Radius.l))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel([strip.text, strip.waiting].compactMap { $0 }.joined(separator: ". "))
     }
 }
 
@@ -175,8 +241,9 @@ struct FleetPill: View {
 struct FleetMacCardView: View, Equatable {
     let card: FleetMacCard
     let actions: FleetPageActions
+    var focused = false
 
-    nonisolated static func == (a: FleetMacCardView, b: FleetMacCardView) -> Bool { a.card == b.card }
+    nonisolated static func == (a: FleetMacCardView, b: FleetMacCardView) -> Bool { a.card == b.card && a.focused == b.focused }
 
     var body: some View {
         let sh = Color.sh
@@ -202,7 +269,7 @@ struct FleetMacCardView: View, Equatable {
             footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: sh.lineSubtle)
+        .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: focused ? sh.lineStrong : sh.lineSubtle)
         .opacity(card.status == .asleep ? AppLayout.fleetAsleepOpacity : 1)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(card.name)
@@ -324,6 +391,11 @@ struct FleetMacCardView: View, Equatable {
                     .buttonStyle(.sh(.secondary))
                     .accessibilityLabel("Retry \(card.name)")
             }
+            if card.needs > 0 {
+                Button("Check…") { actions.openCheck(card.id) }
+                    .buttonStyle(.sh(.secondary))
+                    .accessibilityLabel("See what \(card.name) needs")
+            }
         }
         .padding(.top, SH.Space.m)
         .padding(.horizontal, SH.Space.xl)
@@ -423,14 +495,14 @@ struct FleetWeightPicker: View {
 
 // MARK: Dispatches
 
-/// The Dispatches log (FleetA): one line per dispatch, newest first, with where it went and why.
+/// The Recent work log (FleetA): one line per thread started on a Mac, newest first, with where it went and why.
 struct FleetDispatchesCard: View {
     let rows: [FleetDispatchRow]
 
     var body: some View {
         let sh = Color.sh
         VStack(alignment: .leading, spacing: 0) {
-            Text("Dispatches")
+            Text("Recent work")
                 .font(.sh(.headline))
                 .foregroundStyle(sh.textPrimary)
                 .padding(.vertical, SH.Space.l)
@@ -438,7 +510,7 @@ struct FleetDispatchesCard: View {
                 .accessibilityAddTraits(.isHeader)
             SHHairline()
             if rows.isEmpty {
-                Text("Nothing sent yet. When a thread sends work to another Mac, it shows here with why it went there.")
+                Text("Nothing yet. When a thread starts work on another Mac, it shows here with why it went there.")
                     .font(.sh(.ui, weight: .regular))
                     .foregroundStyle(sh.textTertiary)
                     .padding(.vertical, SH.Space.xl)
@@ -513,62 +585,6 @@ struct FleetDispatchStatePill: View {
     }
 }
 
-// MARK: The sidebar's Fleet row
-
-/// The footer while Fleet is on (FleetSidebar): the Fleet row, a dot per Mac and how many sleep,
-/// and Settings.
-struct SidebarFleetFooter: View, Equatable {
-    let footer: FleetFooter
-    let selected: Bool
-    let open: () -> Void
-    let settings: () -> Void
-
-    nonisolated static func == (a: SidebarFleetFooter, b: SidebarFleetFooter) -> Bool { a.footer == b.footer && a.selected == b.selected }
-
-    var body: some View {
-        let sh = Color.sh
-        HStack(spacing: SH.Space.m) {
-            Button(action: open) {
-                HStack(spacing: SH.Space.m) {
-                    Image(systemName: "macbook.and.iphone")
-                        .font(.sh(.ui, weight: .regular))
-                        .foregroundStyle(sh.textSecondary)
-                        .frame(width: AppLayout.fleetFooterGlyph)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                        Text("Fleet").font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary)
-                        HStack(spacing: AppLayout.fleetFooterDotGap) {
-                            ForEach(Array(footer.dots.enumerated()), id: \.offset) { _, dot in
-                                switch dot {
-                                case .thisMac: SHStatusDot(.done, size: AppLayout.fleetDotSize, color: sh.lantern)
-                                case .connected: SHStatusDot(.done, size: AppLayout.fleetDotSize)
-                                case .connecting: SHStatusDot(.running, size: AppLayout.fleetDotSize)
-                                case .asleep: SHStatusDot(.queued, size: AppLayout.fleetDotSize)
-                                }
-                            }
-                            Text(footer.detail).font(.sh(.micro, weight: .regular)).foregroundStyle(sh.textTertiary).lineLimit(1)
-                        }
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, SH.Space.m)
-                .frame(maxWidth: .infinity, minHeight: AppLayout.fleetFooterRowHeight, maxHeight: AppLayout.fleetFooterRowHeight, alignment: .leading)
-                .background(selected ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(footer.label)
-            Button(action: settings) { Image(systemName: "gearshape") }
-                .buttonStyle(.shIcon(size: SHSidebarMetrics.footerAvatar))
-                .shHelp("Settings", shortcut: "⌘,")
-                .accessibilityLabel("Settings")
-        }
-        .padding(.vertical, SH.Space.m)
-        .padding(.horizontal, SH.Space.l)
-        .overlay(alignment: .top) { SHHairline() }
-    }
-}
-
 // MARK: Destination
 
 /// The Fleet page in the main column: the model's cards, Add a Mac over the settings' own sheet
@@ -580,8 +596,9 @@ struct FleetDestination: View {
 
     var body: some View {
         let _ = SHRenderProbe.tick("page.fleet")
-        FleetPageContent(page: vm.fleetPage.page, actions: FleetPageActions(
-            choose: { vm.fleetPage.choose($0, for: $1) },
+        let model = vm.fleetPage
+        FleetPageContent(page: model.page, actions: FleetPageActions(
+            choose: { model.choose($0, for: $1) },
             retry: { id in Task { await vm.fleet.reconnect(id) } },
             openSettings: {
                 vm.settingsSection = .fleet
@@ -590,12 +607,29 @@ struct FleetDestination: View {
             addMac: {
                 vm.fleet.openPairing()
                 adding = true
-            }), chrome: chrome)
+            },
+            openCheck: { model.openCheck(for: $0) }), chrome: chrome,
+            tab: Binding(get: { model.tab }, set: { model.tab = $0 }),
+            check: FleetCheckState(row: model.checkRow, mac: model.checkMac, checking: model.checking, problem: model.checkProblem),
+            checkActions: FleetCheckActions(
+                select: { model.selectCheck(row: $0, mac: $1) },
+                checkNow: { vm.checkFleetNow() },
+                copy: { text in
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                },
+                fix: { vm.startFleetFix($0) },
+                ignore: { model.ignoreCheck($0, on: $1, $2) },
+                openThread: { vm.openFleetFix($0) }),
+            focusedMac: model.focusedMac)
             .task {
                 await vm.fleet.refresh()
                 await vm.fleet.watch(true)
             }
-            .onDisappear { Task { await vm.fleet.watch(false) } }
+            .onDisappear {
+                model.focusedMac = nil
+                Task { await vm.fleet.watch(false) }
+            }
             .sheet(isPresented: $adding) {
                 FleetPairSheet(model: vm.fleet) { adding = false }
             }

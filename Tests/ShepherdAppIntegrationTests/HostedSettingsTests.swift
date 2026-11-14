@@ -39,9 +39,9 @@ struct HostedSettingsTests {
         #expect(changed.designToolEnabled && settings.designToolEnabled)
         try await eventuallyOnMain("the host to serve designs") { client.capabilities.contains(RemoteProtocol.designsCapability) }
 
-        // An iPhone reaches the same host over TCP, with the same token.
+        // An iPhone reaches the same host over TCP, with a device token of its own: the local socket takes none.
         let phone = RemoteHostClient()
-        _ = try await phone.connect(host: "127.0.0.1", port: port, token: token, clientName: "iPhone")
+        _ = try await phone.connect(host: "127.0.0.1", port: port, token: host.server.clientTokenForTests(), clientName: "iPhone")
         defer { phone.disconnect() }
         #expect(try await phone.hostSettings().designToolEnabled)
         // From the host's launchd status: on, off in Login Items, no job.

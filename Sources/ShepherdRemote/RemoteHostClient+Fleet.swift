@@ -150,6 +150,21 @@ extension RemoteHostClient {
         }
     }
 
+    /// Pushes what this Mac found when it looked at itself (`FleetCheckReport`) to the host this client authenticated to as a peer.
+    public func fleetCheck(_ report: FleetCheckReport) async throws {
+        try expectFleetOk(try await request { .fleetCheck(id: $0, report: report) })
+    }
+
+    /// Asks the peer to look at itself again now (read only) and answer what it found. It runs a login shell, `git ls-remote` and a
+    /// provider's check, each bounded, so it is given longer than an ordinary request.
+    public func fleetCheckNow() async throws -> FleetCheckReport {
+        switch try await request(timeout: Self.fleetCheckTimeout, { .fleetCheckNow(id: $0) }) {
+        case .fleetCheckReport(_, let report): return report
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected fleet reply")
+        }
+    }
+
     /// Sends work to the Mac this client is linked to (`FleetDispatchCreate`). Answers with that Mac's record:
     /// `preparing` once it took the work, `waitingRoom` when it is full and kept nothing.
     public func fleetDispatchCreate(_ create: FleetDispatchCreate) async throws -> FleetDispatchRecord {
@@ -182,6 +197,8 @@ extension RemoteHostClient {
 
     /// An action that reaches other Macs takes longer than a read.
     static let fleetActionTimeout: TimeInterval = 60
+    /// Check now: the Mac looks at itself (its shell, remotes and providers at once, each bounded) before it answers.
+    static let fleetCheckTimeout: TimeInterval = 55
 
     private static func pairing(from reply: RemoteReply) throws -> FleetPairing {
         switch reply {
