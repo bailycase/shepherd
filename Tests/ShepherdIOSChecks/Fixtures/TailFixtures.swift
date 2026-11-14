@@ -401,6 +401,8 @@ extension TailFixture {
     static let firstFrameReach = NativeScrollFollower.threshold
     /// Whether this runs on iOS 27.1 or later, where `ComposerPresentation.nativeTail` is off and a re-open was measured on a Duo.
     static let fromIOS271: Bool = { if #available(iOS 27.1, *) { true } else { false } }()
+    /// How far past the tail a view may rest: a point or two of rounding.
+    static let overshootTolerance = 2
     /// The row's top may sit this far from the top edge once a detached reader's row is restored.
     static let restoreTolerance: CGFloat = 8
     /// Renders of the transcript that a drag inside one row may cause: the detach, the two turns SwiftUI reports after it, and
@@ -454,7 +456,7 @@ extension TailFixture {
     }
 
     /// The scroll view of the thread on screen: the tallest one that is not transparent (a retained thread's is).
-    @MainActor fileprivate static func shownThreadScroll() -> UIScrollView? {
+    @MainActor static func shownThreadScroll() -> UIScrollView? {
         var found: [UIScrollView] = []
         func opaque(_ view: UIView) -> Bool {
             var current: UIView? = view
@@ -477,7 +479,7 @@ extension TailFixture {
 
     /// How many built rows show in `scroll`. Each row carries a native marker (`TailRowMarker`: a plain view that takes no touch, hides
     /// from accessibility and is as tall as its row), which says a row was placed where the scroll view's numbers cannot.
-    @MainActor fileprivate static func builtRows(in scroll: UIScrollView) -> Int {
+    @MainActor static func builtRows(in scroll: UIScrollView) -> Int {
         let visible = scroll.bounds.inset(by: scroll.adjustedContentInset)
         let limit = scroll.contentSize.height * 0.9
         var count = 0
@@ -525,7 +527,7 @@ extension TailFixture {
         return frames.sorted { $0.minY < $1.minY }
     }
 
-    @MainActor fileprivate static func tailDistance(of scroll: UIScrollView) -> CGFloat {
+    @MainActor static func tailDistance(of scroll: UIScrollView) -> CGFloat {
         scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.contentOffset.y - scroll.bounds.height
     }
 
@@ -541,15 +543,26 @@ extension TailFixture {
     /// iOS 27.1) the distance and landings are reported too; on iOS 27.1 a blank frame or a repair fails the open whichever way
     /// `nativeTail` goes, which is what lifting it does until the last turns are laid out for real. Set `TAIL_TRACE` in the launch
     /// environment to have every frame of a mount described.
-    @MainActor static func remountTail(_ app: MobileApp, rows: Int = 150) async {
+    @MainActor static func remountTail(_ app: MobileApp, rows: Int = 150, holdingMarker: Bool = false) async {
         let ref = FixtureData.ref(FixtureData.preview)
         await ready(app, rows: rows)
         MainQueueWatchdog.start(limit: 5)
+        var verdicts: [(ok: Bool, line: String)] = []
+        if holdingMarker {
+            // A reader who drags to the end leaves holding the bottom marker, which SwiftUI reports there (not where `nativeTail`).
+            guard let scroll = FollowFixture.threadScrollView() else { return FixtureCheck.report("FIXTURE CHECK FAILED: no thread scroll view") }
+            await Finger(scroll: scroll).toEnd()
+            try? await Task.sleep(for: .seconds(1.5))
+            let kept = app.navigator.composerPresentation.state(for: ref).visibleTurn
+            FixtureCheck.report("FIXTURE CHECK ok: the reader leaves holding \(kept ?? "no turn")")
+            if !ComposerPresentation.nativeTail { verdicts.append((kept == NativeTranscriptPlace.bottomMarker, "the reader holds the bottom marker when they leave")) }
+        }
         let pad = app.navigator.layout == .pad
         var measured: [String] = []
-        var verdicts: [(ok: Bool, line: String)] = []
         var onlyInkAndRest = 0
         let gap = shownThreadScroll().map(gutter(of:)) ?? 0
+        let place = app.navigator.composerPresentation.state(for: ref)
+        FixtureCheck.report("FIXTURE CHECK ok: before the re-opens the reader follows \(place.follows) and keeps \(place.visibleTurn.map { "turn \($0)" } ?? "no turn")")
         for cycle in 1...remountCycles {
             await leave(app)
             // What the thread gave back when it left is read after a pause, for the views to be freed.
@@ -571,13 +584,17 @@ extension TailFixture {
             let percent = Int(((first?.ink ?? 0) * 100).rounded())
             if result.blank > 0 { measured.append("  cycle \(cycle) blank frames (content height:offset): \(result.blankTrace.prefix(6) + result.blankTrace.suffix(2))") }
             result.placementTrace.forEach { measured.append("  cycle \(cycle) \($0)") }
-            measured.append("cycle \(cycle) (\(pad ? "pad" : "phone")): first row at frame \(first?.frame ?? -1) (\(Int((first?.milliseconds ?? -1).rounded())) ms), "
+            measured.append("cycle \(cycle) (\(pad ? "pad" : "phone"), keeps \(place.visibleTurn ?? "no turn")): first row at frame \(first?.frame ?? -1) (\(Int((first?.milliseconds ?? -1).rounded())) ms), "
                 + "\(result.blank) blank frames, \(reach.map { Int($0.rounded()) } ?? -1)pt from the tail, \(percent)% ink, \(landings) landings, "
-                + "\(counts["thread.tailRepair", default: 0]) repairs, \(counts["thread.transcript", default: 0]) renders, \(result.away) frames away from the tail after it (worst \(result.farthest)pt); "
+                + "\(counts["thread.tailRepair", default: 0]) repairs, \(counts["thread.tailMountJump", default: 0]) mount jumps, \(counts["thread.transcript", default: 0]) renders, \(result.away) frames away from the tail after it (worst \(result.farthest)pt); "
                 + "at rest \(rest.distance)pt from the tail, \(Int((rest.ink * 100).rounded()))% ink; "
                 + "footprint \(Int(away.rounded())) MB away, \(Int(mounted.rounded())) MB mounted (+\(Int((mounted - away).rounded())))")
             let repaired = counts["thread.tailRepair", default: 0] > 0
+            // A view that rests past the end of its content shows a blank band: the guard's jump left one 39 pt past the tail on iOS 27.1.
+            verdicts.append((Int(gap) - rest.distance <= overshootTolerance, "cycle \(cycle): the thread rests on its tail, not past it"))
             if Self.fromIOS271 {
+                // iOS 27.1 opens at the tail through the pin's landings, so a re-open has no stranded stack for the guard to jump out of.
+                verdicts.append((counts["thread.tailMountJump", default: 0] == 0, "cycle \(cycle): the re-open needed no mount jump"))
                 // iOS 27.1 opens as the merge base did, which needs no repair and shows no blank frame, whichever way `nativeTail` goes.
                 // Mounting it at its tail there stranded the stack at the end of its estimated height: 26 blank frames (about 840 ms) and a
                 // repair on every re-open on the Duo's cover display, and two repairs on the open one. Its first frame with a row has drawn
