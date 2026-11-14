@@ -66,7 +66,7 @@ struct MobileHostsCheck {
 
         let liveID = try hosts.add(RemoteHostEntry(name: " Studio ", address: "127.0.0.1", port: String(server.port), token: "test-token"))
         let saved = try JSONSerialization.jsonObject(with: defaults.data(forKey: MobileHosts.recordsKey)!) as! [[String: Any]]
-        check(saved.count == 2 && saved.allSatisfy { Set($0.keys) == ["id", "name", "address", "port"] }, "records hold no token")
+        check(saved.count == 2 && saved.allSatisfy { Set($0.keys) == ["id", "name", "address", "port", "routes"] }, "records hold no token")
         try check(tokens.read(liveID) == "test-token", "token saved apart")
         let live = hosts.host(liveID)!
         check(live.name == "Studio" && live.phase == .disconnected, "nothing connects in the background")

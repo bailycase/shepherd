@@ -57,6 +57,11 @@ DYLD_LIBRARY_PATH="$build" "$build/fleet-view-check"
 
 xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -parse-as-library \
     App/iOS/Hosts/MobileHosts.swift App/iOS/Hosts/HostTokens.swift App/iOS/Support/AgentRef.swift \
+    Tests/ShepherdIOSChecks/FakeFleetMacs.swift Tests/ShepherdIOSChecks/FleetFollowCheck.swift -o "$build/fleet-follow-check"
+DYLD_LIBRARY_PATH="$build" "$build/fleet-follow-check"
+
+xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -parse-as-library \
+    App/iOS/Hosts/MobileHosts.swift App/iOS/Hosts/HostTokens.swift App/iOS/Support/AgentRef.swift \
     App/iOS/Files/ThreadFilesStores.swift App/iOS/Review/ReviewRetention.swift \
     Tests/ShepherdIOSChecks/FilesRetentionCheck.swift -o "$build/files-retention-check"
 DYLD_LIBRARY_PATH="$build" "$build/files-retention-check" | tee "$build/files-retention.log"

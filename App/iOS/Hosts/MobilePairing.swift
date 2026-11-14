@@ -77,10 +77,13 @@ final class MobilePairing {
         linkProblem = nil
     }
 
-    /// Macs this device already holds (same address and port) aren't offered again.
+    /// Macs this device already holds (by id, or any route it has for them) aren't offered again.
     private func filter() {
-        let held = Set(hosts.hosts.map { "\($0.record.address):\($0.record.port)" })
-        let shown = every.filter { mac in mac.address.map { !held.contains("\($0):\(mac.port ?? 0)") } ?? true }
+        let held = Set(hosts.hosts.flatMap { $0.record.routes.map { "\($0.host):\($0.port)" } })
+        let heldIDs = Set(hosts.hosts.compactMap { $0.fleetID.map(FleetProtocol.advertisedIDHash) })
+        let shown = every.filter { mac in
+            !(mac.idHash.map(heldIDs.contains) ?? false) && (mac.address.map { !held.contains("\($0):\(mac.port ?? 0)") } ?? true)
+        }
         if shown != found { found = shown }
         if let picked, !shown.contains(where: { $0.id == picked }) { self.picked = nil }
     }

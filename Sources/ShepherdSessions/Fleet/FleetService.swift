@@ -51,6 +51,8 @@ final class FleetService: @unchecked Sendable {
 
     /// Server queue: something the app draws changed.
     var onChange: (() -> Void)?
+    /// Server queue: the Macs a client is told of, or the routes to them, changed (`viewMembers`): clients that follow the fleet read it again.
+    var onViewChange: (() -> Void)?
     /// Server queue: `hostID` left the fleet, so any connection that authenticated as it must end.
     var onPeerRemoved: ((UUID) -> Void)?
     /// Server queue: a device was revoked (here or on another Mac), so any connection of it must end.
@@ -287,7 +289,37 @@ final class FleetService: @unchecked Sendable {
     private func changed() {
         updateIndexing()
         refreshPresence()
+        announceView()
         onChange?()
+    }
+
+    /// What a client was last told of the fleet's Macs.
+    private var announcedView: [FleetViewMember] = []
+
+    /// Tells the clients that follow the fleet when its Macs or their routes are not what they were last told.
+    private func announceView() {
+        let current = viewMembers()
+        guard current != announcedView else { return }
+        announcedView = current
+        onViewChange?()
+    }
+
+    /// This Mac and the Macs of its fleet, each with the routes this Mac knows to reach it: what a phone or an iPad keeps its Macs from
+    /// (`FleetSnapshot.members`). Empty while Fleet is off. A Mac this host has no address for is left out.
+    func viewMembers() -> [FleetViewMember] {
+        guard membership else { return [] }
+        var members: [FleetViewMember] = []
+        if let port = listenerPort {
+            members.append(FleetViewMember(hostID: identity.hostID, name: name, port: port,
+                                           routes: ownRoutes(port).prefix(FleetRouteReport.maxRoutes).map { FleetReportedRoute(host: $0.host, kind: $0.kind) }))
+        }
+        for record in peers.members.sorted(by: { ($0.pairedAt, $0.hostID.uuidString) < ($1.pairedAt, $1.hostID.uuidString) }).prefix(FleetViewMember.maxMembers - 1) {
+            // The port the Mac last said it listens on, else the one it was given.
+            guard let port = record.learned.first?.port ?? record.addresses.first?.port else { continue }
+            members.append(FleetViewMember(hostID: record.hostID, name: record.name, port: port,
+                                           routes: record.routes.filter { $0.port == port }.prefix(FleetRouteReport.maxRoutes).map { FleetReportedRoute(host: $0.host, kind: $0.kind) }))
+        }
+        return members
     }
 
     // MARK: iCloud rendezvous (server queue)
@@ -1186,7 +1218,7 @@ final class FleetService: @unchecked Sendable {
                              advertising: discovery?.isAdvertising ?? false, peers: statuses, join: window,
                              sync: membership ? syncStatus : nil, devices: FleetDevicesSnapshot(devices: clients, code: code, sharedToken: sharedToken),
                              macs: membership ? pressure.macs(thisMac: identity.hostID, peerIDs: statuses.map(\.hostID)) : [],
-                             dispatches: membership ? dispatch.log() : [], index: membership ? index.status() : nil)
+                             dispatches: membership ? dispatch.log() : [], index: membership ? index.status() : nil, members: viewMembers())
     }
 
     private func status(of record: FleetPeerRecord) -> FleetPeerStatus {
@@ -1620,6 +1652,7 @@ final class FleetService: @unchecked Sendable {
     private func networkChanged() {
         guard !stopped, membership else { return }
         if watchesNetwork { refreshPresence() }
+        announceView()
         for link in links.values { link.networkChanged.fire() }
         guard !predatesLinks, let report = routeReport(), report != lastReport else { return }
         lastReport = report
