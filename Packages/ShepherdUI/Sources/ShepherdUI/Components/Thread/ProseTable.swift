@@ -12,6 +12,10 @@ import UIKit
 /// one that cannot fit without squeezing a column under `tableColumnMin` scrolls sideways inside
 /// its card, never widening the thread. Copy (on hover on the Mac, always on iOS) copies it as
 /// Markdown.
+///
+/// A table holds a view for every cell, and a thread holds hundreds of tables, so what a cell holds is what opening a
+/// thread costs. The header's fill and the rows' hairlines are views of the table (`SHTableLayout` lays them under the
+/// cells), not a fill, a frame and a rule of each cell.
 struct SHProseTableView: View, Equatable {
     let table: SHProseTable
     @Environment(\.shProseSize) private var size
@@ -53,11 +57,15 @@ struct SHProseTableView: View, Equatable {
         let rows = table.rows.count
         return SHTableLayout(columns: columns, fitting: true, table: table, size: size, dynamicType: dynamicType,
                              viewportWidth: availableWidth) {
+            // The rules under the cells: the header's fill, then a hairline under every row but the last, which the
+            // card's border closes. `SHTableLayout` places them across the whole table.
+            Color.sh.bgSunken
+            ForEach(0..<rows, id: \.self) { _ in SHHairline() }
             ForEach(0..<(columns * (rows + 1)), id: \.self) { index in
                 let row = index / columns - 1
                 let column = index % columns
                 SHTableCell(text: row < 0 ? table.header[column] : table.rows[row][column],
-                            header: row < 0, alignment: table.alignments[column], last: row == rows - 1,
+                            header: row < 0, alignment: table.alignments[column],
                             copyInset: SHPlatform.showsHoverDetails && column == columns - 1)
             }
         }
@@ -86,8 +94,8 @@ struct SHProseTableView: View, Equatable {
     }
 }
 
-/// One cell: its text wraps at the column's width, and it fills its row so the header's fill
-/// and the row's hairline span the whole row.
+/// One cell: its text wraps at the column's width. The table's layout puts it in its column and row, and draws the header's
+/// fill and the rows' hairlines behind it.
 struct SHTableCell: View {
     static let verticalPadding = SH.Space.m
     static let horizontalPadding = SH.Space.l * 2
@@ -95,8 +103,6 @@ struct SHTableCell: View {
     let text: AttributedString
     let header: Bool
     let alignment: SHProseTable.Alignment
-    /// The last row: the card's border closes it, so it draws no hairline.
-    let last: Bool
     /// Where Copy always shows (iOS), the last column leaves room for it, so it never covers
     /// the header and the column's alignment holds. On the Mac it shows on hover, over the
     /// header's end.
@@ -116,12 +122,8 @@ struct SHTableCell: View {
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
             .modifier(SHFileLinkTargets(actions: SHProseFileLinks.targets(text, root: fileRoot, actions: fileLinks)))
-            .padding(.vertical, Self.verticalPadding)
-            .padding(.leading, SH.Space.l)
-            .padding(.trailing, SH.Space.l + (copyInset ? SHThreadMetrics.codeCopyButton : 0))
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment.frame)
-            .background(header ? sh.bgSunken : .clear)
-            .overlay(alignment: .bottom) { if !last { SHHairline() } }
+            .padding(EdgeInsets(top: Self.verticalPadding, leading: SH.Space.l,
+                                bottom: Self.verticalPadding, trailing: SH.Space.l + (copyInset ? SHThreadMetrics.codeCopyButton : 0)))
             .accessibilityAddTraits(header ? .isHeader : [])
     }
 }
@@ -135,11 +137,12 @@ extension SHProseTable.Alignment {
         }
     }
 
-    var frame: Alignment {
+    /// How much of a column's spare width lies before the content of a cell aligned this way.
+    var share: CGFloat {
         switch self {
-        case .leading: .topLeading
-        case .center: .top
-        case .trailing: .topTrailing
+        case .leading: 0
+        case .center: 0.5
+        case .trailing: 1
         }
     }
 }
@@ -149,6 +152,9 @@ extension SHProseTable.Alignment {
 /// content, lets capped columns grow into spare room, and shrinks columns toward
 /// `tableColumnMin` when it must. If the viewport cannot fit the column floors, columns
 /// keep their natural widths and scroll. Every row is as tall as its tallest cell.
+///
+/// The views before the cells are the table's rules: the header's fill, laid over the header row, and a hairline under each
+/// row but the last, laid across the table (`SHProseTableView`). A layout of cells alone has none.
 struct SHTableLayout: Layout {
     /// What a table's measurements depend on: its cells and the type they are set in.
     /// `markdown` alone is no key (a table built without it is still a table), so the cells are.
@@ -187,9 +193,14 @@ struct SHTableLayout: Layout {
         var measured: (widths: [CGFloat], heights: [CGFloat])?
     }
 
+    /// How many of `subviews` come before the cells: the cells are the last `columns` of every row of the table.
+    private func ruleCount(_ subviews: Subviews) -> Int {
+        max(0, subviews.count - columns * (inputs.table.rows.count + 1))
+    }
+
     func makeCache(subviews: Subviews) -> Cache {
         var ideal = Array(repeating: CGFloat.zero, count: columns)
-        for (index, subview) in subviews.enumerated() {
+        for (index, subview) in subviews.dropFirst(ruleCount(subviews)).enumerated() {
             SHRenderProbe.tick("prose.tableMeasure")
             ideal[index % columns] = max(ideal[index % columns], subview.sizeThatFits(.unspecified).width.rounded(.up))
         }
@@ -212,17 +223,36 @@ struct SHTableLayout: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
         let widths = widths(for: proposal.width, cache: cache)
         let heights = heights(for: widths, subviews: subviews, cache: &cache)
+        let rules = ruleCount(subviews)
+        if rules > 0 { placeRules(subviews.prefix(rules), in: bounds, widths: widths, heights: heights) }
         var y = bounds.minY
         for (row, height) in heights.enumerated() {
             var x = bounds.minX
             for column in 0..<columns {
-                let index = row * columns + column
+                let index = rules + row * columns + column
                 guard index < subviews.count else { return }
-                subviews[index].place(at: CGPoint(x: x, y: y), anchor: .topLeading,
-                                      proposal: ProposedViewSize(width: widths[column], height: height))
+                // A cell is as wide as its content and sits in its column as its alignment says (at the start when it is wider).
+                let cell = subviews[index]
+                let spare = max(0, widths[column] - cell.dimensions(in: ProposedViewSize(width: widths[column], height: nil)).width)
+                cell.place(at: CGPoint(x: x + spare * inputs.table.alignments[column].share, y: y), anchor: .topLeading,
+                           proposal: ProposedViewSize(width: widths[column], height: height))
                 x += widths[column]
             }
             y += height
+        }
+    }
+
+    /// The header's fill over the header row, and a hairline at the bottom of every row but the last.
+    private func placeRules(_ rules: Subviews.SubSequence, in bounds: CGRect, widths: [CGFloat], heights: [CGFloat]) {
+        let width = widths.reduce(0, +)
+        let across = ProposedViewSize(width: width, height: nil)
+        if let fill = rules.first {
+            fill.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(width: width, height: heights.first ?? 0))
+        }
+        var bottom = bounds.minY
+        for (row, rule) in rules.dropFirst().enumerated() where row < heights.count {
+            bottom += heights[row]
+            rule.place(at: CGPoint(x: bounds.minX, y: bottom - rule.dimensions(in: across).height), anchor: .topLeading, proposal: across)
         }
     }
 
@@ -261,9 +291,10 @@ struct SHTableLayout: Layout {
 
     private func heights(for widths: [CGFloat], subviews: Subviews, cache: inout Cache) -> [CGFloat] {
         if let measured = cache.measured, measured.widths == widths { return measured.heights }
-        let rows = columns == 0 ? 0 : subviews.count / columns
+        let cells = subviews.dropFirst(ruleCount(subviews))
+        let rows = columns == 0 ? 0 : cells.count / columns
         var heights = Array(repeating: CGFloat.zero, count: rows)
-        for (index, subview) in subviews.enumerated() where index / columns < rows {
+        for (index, subview) in cells.enumerated() where index / columns < rows {
             let height = subview.sizeThatFits(ProposedViewSize(width: widths[index % columns], height: nil)).height
             heights[index / columns] = max(heights[index / columns], height.rounded(.up))
         }
