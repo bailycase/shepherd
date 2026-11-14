@@ -905,7 +905,8 @@ struct ListPerformanceTests {
                                               provisional: running && streaming ? [ThreadFixture.streaming("Streaming")] : [], running: running,
                                               stats: NativeThreadStats(contextTokens: 42_000))
         snapshot.context = Self.context(42_000)
-        let thread = FakeThread(snapshot, header: true)
+        // Hosted as the workspace hosts a layout: a window measuring the thread at other sizes would re-estimate its lazy rows.
+        let thread = FakeThread(snapshot, header: true, deckHosting: true)
         try await thread.waitUntilReady()
         // What loading sets off (the catch-up, the composer's models) lands before counting.
         try await Task.sleep(for: .milliseconds(200))

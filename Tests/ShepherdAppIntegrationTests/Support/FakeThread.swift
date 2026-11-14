@@ -82,18 +82,18 @@ final class FakeThread {
     /// `reduceMotion` pins Reduce Motion for a test that needs motion whatever the machine's
     /// setting (CI's VM has it on). `subagentTray` has the thread open subagents in an inspector (a
     /// no-op here), so the composer docks their tray. `windowVisible: false` mounts the thread in a window
-    /// nobody can see.
+    /// nobody can see. `deckHosting` hosts it as the workspace does (`OffscreenWindow`).
     init(_ snapshot: NativeThreadSnapshot, history: [NativeThreadMessage]? = nil, starting: Bool = false,
          store: NativeThreadStore = NativeThreadStore(), size: CGSize = CGSize(width: 900, height: 800), dark: Bool = true,
          header: Bool = false, focused: Bool = false, reduceMotion: Bool? = nil, designCards: DesignCommentCards? = nil,
-         projectCards: ProjectActionCards? = nil, subagentTray: Bool = false, windowVisible: Bool = true) {
+         projectCards: ProjectActionCards? = nil, subagentTray: Bool = false, windowVisible: Bool = true, deckHosting: Bool = false) {
         self.snapshot = snapshot
         self.history = history
         self.starting = starting
         self.store = store
         visibility.focused = focused
         visibility.windowVisible = windowVisible
-        window = OffscreenWindow(size: size, dark: dark)
+        window = OffscreenWindow(size: size, dark: dark, deckHosting: deckHosting)
         let request: NativeThreadStore.Request = { [weak self] value in
             guard let self else { return .failure(code: "gone", message: "harness released") }
             switch value {
