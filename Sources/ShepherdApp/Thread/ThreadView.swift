@@ -920,10 +920,12 @@ private final class ThreadRowMemory {
 }
 
 /// The lazy stack of the rows older than the eager tail, kept as the view it was while what its rows are built from has not changed (`Key`:
-/// the rows, the boundary row's probe, the arrivals among them, the run open in the inspector, the dispatches, and which actions the thread
-/// was given). The thread's body runs for much else (it is shown or hidden, a turn starts or ends, it catches up), which nothing in the stack
-/// reads; handed the same rows in a new closure, the stack builds them again and moves its estimate of the rows it has not measured, and a
-/// reader in the eager tail below it has nothing to hold their rows where they were. A reference, so keeping it never draws the thread.
+/// the rows, the boundary row's probe, whether a turn runs and whether the reader has left the tail, the arrivals among the rows, the run open
+/// in the inspector, the dispatches, and which actions the thread was given). The thread's body runs for much else (it is shown or hidden, it
+/// catches up), which nothing in the stack reads; handed the same rows in a new closure, the stack builds them again and moves its estimate of
+/// the rows it has not measured, and a reader in the eager tail below it has nothing to hold their rows where they were. A turn ending is
+/// not ignored: the stack's estimates are replaced as it does, and a reply landing at the tail was blank for a frame without it. A
+/// reference, so keeping it never draws the thread.
 @MainActor
 final class ThreadHistoryCache {
     struct Key: Equatable {
