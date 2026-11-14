@@ -1631,6 +1631,12 @@ public final class NativeThreadStore {
         return min(transcriptDrawn ?? count, count) > keptRows
     }
 
+    /// Whether the next `releaseTranscript` of less than everything lets go of the lazy stack's rows alone: the thread has more rows than
+    /// `eagerRows` and its hidden view still draws all of them.
+    public func releasesLazyStackFirst(eagerRows: Int) -> Bool {
+        transcriptDrawn == nil && min(rows.count, rowCosts.count) > eagerRows
+    }
+
     /// Has the thread's hidden view let go of the oldest rows it draws, as many as fit in `bytes` of what `mountedCost` estimates
     /// for them (and at least one row), so that no one update tears down much; `.max` lets every row go. With more rows than `eagerRows`
     /// the first call lets go of the lazy stack's alone. `keepingLastScreen` stops at the rows of `keptRows`, which stay built.
@@ -1640,7 +1646,7 @@ public final class NativeThreadStore {
         let count = min(rows.count, rowCosts.count)
         let floor = keepingLastScreen ? keptRows : 0
         var drawn = min(transcriptDrawn ?? count, count)
-        if transcriptDrawn == nil, count > eagerRows, bytes < .max {
+        if releasesLazyStackFirst(eagerRows: eagerRows), bytes < .max {
             drawn = max(eagerRows, floor)
         } else {
             var freed = 0

@@ -357,20 +357,45 @@ struct NativeThreadStoresHistoryTests {
         #expect(b.transcriptReleased, "from more than one thread")
     }
 
-    /// A thread whose first step is its lazy stack's (rows the estimate does not count) takes that step alone, as it always did.
-    @Test func aQuietPassEndsAfterAThreadsFirstStep() {
+    /// A step that lets go of a thread's lazy stack costs a layout of its whole host: a quiet pass lets go of one lazy stack and goes on to the
+    /// rows after it, which a pass that only waited for its turn would have taken a pass later; any other pass takes the lazy stack alone.
+    @Test func aQuietPassLetsGoOfOneLazyStackAndTheRowsAfterIt() {
         let pauses = Pauses()
         defer { pauses.end() }
         let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses, turns: 8)
         stores.eagerRows = 8
-        stores.busy = { .idle }
         let a = stores.store(for: "a"), b = stores.store(for: "b")
-        #expect(a.rows.count == 16 && a.transcriptDrawn == nil)
+        #expect(a.rows.count == 16 && a.transcriptDrawn == nil && b.transcriptDrawn == nil)
+        #expect(stores.enforceMountedBudget(budget: 0, limit: .max, quiet: true).threads == 1)
+        #expect(a.transcriptDrawn == a.keptRows, "a's lazy stack and its rows, in one pass")
+        #expect(b.transcriptDrawn == nil, "b's lazy stack waits for the next pass")
+        #expect(stores.enforceMountedBudget(budget: 0, limit: .max, quiet: true).threads == 1 && b.transcriptDrawn == b.keptRows)
+    }
+
+    /// A step of everything lets go of the lazy stack with the rows, thread after thread: the room it has left after one is still everything.
+    @Test func aStepOfEverythingTakesEveryThreadDownToItsLastScreenInOnePass() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses, turns: 8)
+        stores.eagerRows = 8
+        #expect(stores.enforceMountedBudget(budget: 0, keep: 0, limit: .max, step: .max).threads == 3)
+        for key in ["a", "b", "c"] {
+            let store = stores.store(for: key)
+            #expect(store.transcriptDrawn == store.keptRows, "\(key) goes whole, a lazy stack and all")
+        }
+    }
+
+    /// A stream never holds the passes off for good: after the default patience (forty looks, ten seconds at the default spacing) a pass runs.
+    @Test func aStreamHoldsAPassOffForTenSecondsAtMost() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses, turns: 6)
+        #expect(stores.releaseSpacing * stores.patience == .seconds(10))
+        stores.busy = { .streaming }
+        let b = stores.store(for: "b")
         stores.mountedBudget = 0
-        #expect(a.transcriptDrawn == 8, "the lazy stack's rows went first")
-        #expect(stores.runMountedPass() == true)
-        #expect(a.transcriptDrawn == a.keptRows, "then its rows, what it is over by")
-        #expect(b.transcriptDrawn == 8, "and b's lazy stack, which ends the pass")
+        for look in 1...stores.patience { #expect(stores.runMountedPass() == false && b.transcriptDrawn == nil, "look \(look): a stream holds it off") }
+        #expect(stores.runMountedPass() == true && b.transcriptReleased, "and the next look runs, whatever else streams")
     }
 
     @Test func aBudgetReachedHalfwayThroughAThreadStopsThere() {

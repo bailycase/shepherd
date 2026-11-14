@@ -263,6 +263,28 @@ struct MountedBudgetTests {
         #expect(SHRenderProbe.count("deck.unmount") == 0 && SHRenderProbe.count("deck.mount") == 0, "no layout was removed or mounted")
     }
 
+    /// What a pass lets go of is freed, and not only taken out of the window: the views of the rows it took are gone once the layout has drawn without them.
+    @Test func aReleasedThreadsRowViewsAreFreed() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let work = try await Workspace.open(3, replies: 6, cycles: 10, in: app)
+        defer { work.window.close() }
+        for index in [1, 2, 0] { try await work.show(index) }
+        final class Held {
+            weak var view: NSView?
+            init(_ view: NSView) { self.view = view }
+        }
+        func fields(in view: NSView) -> [NSView] { (view is SHNativeCodeText.Field ? [view] : []) + view.subviews.flatMap(fields) }
+        var held: [Held] = []
+        for index in [1, 2] { held += fields(in: try #require(try work.host(index))).map(Held.init) }
+        #expect(held.count > 20, "two threads draw their fences: \(held.count)")
+        work.releaseHidden()
+        try await eventuallyOnMain("the views of the rows that went to be freed", timeout: .seconds(60)) {
+            ListPerf.settle(work.window)
+            return held.filter { $0.view != nil }.count <= held.count / 2
+        }
+    }
+
     /// Shown again halfway through its release, a thread draws the rows it still had at once and every row it had after that, from what the store kept.
     @Test func aThreadLeftHalfwayReleasedDrawsEverythingWhenShown() async throws {
         let app = try AppHarness()

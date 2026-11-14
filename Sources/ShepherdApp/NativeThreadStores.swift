@@ -257,14 +257,16 @@ final class NativeThreadStores<Key: Hashable> {
         return released
     }
 
-    /// Lets the rows of the hidden threads go while their estimated views (`mountedCost`) add up to more than the budget: `step` bytes
-    /// of them in all (`releaseStep`, or what the threads are over by if that is more, at most `ceiling`, unless given), the oldest
-    /// rows of the thread `viewReleases` names first, from at most `limit` threads, then the next pass `releaseSpacing` later while it
-    /// is still over, so that no one pass tears down much. A thread's first step lets go of its lazy stack's rows, which the estimate
-    /// does not count, and ends the pass. Threads on screen, selected or holding nothing (released whole already) are not asked.
-    /// Costs are read here, in a pass, never in a view body. Returns the threads it took from and the bytes it took.
+    /// Lets the rows of the hidden threads go while their estimated views (`mountedCost`) add up to more than the budget: `step`
+    /// bytes of them in all (`releaseStep` unless given), the oldest rows of the thread `viewReleases` names first, from at most
+    /// `limit` threads, then the next pass `releaseSpacing` later while it is still over, so that no one pass tears down much. A thread's
+    /// first step lets go of its lazy stack's rows, which the estimate does not count, and ends the pass (the thread's own rows
+    /// are for the next). `quiet`, for a pass while the app is idle: what the threads are over by is the step if that is more, at
+    /// most `releaseCeiling`, and a thread goes on to its rows in the pass that let go of its lazy stack, but one lazy stack a pass.
+    /// Threads on screen, selected or holding nothing (released whole already) are not asked. Costs are read here, in a pass,
+    /// never in a view body. Returns the threads it took from and the bytes it took.
     @discardableResult
-    func enforceMountedBudget(budget: Int? = nil, keep: Int = 1, keepPinned: Int? = nil, limit: Int = 1, step: Int? = nil, ceiling: Int? = nil) -> (threads: Int, bytes: Int) {
+    func enforceMountedBudget(budget: Int? = nil, keep: Int = 1, keepPinned: Int? = nil, limit: Int = 1, step: Int? = nil, quiet: Bool = false) -> (threads: Int, bytes: Int) {
         guard let mounted = mounted?() else { return (0, 0) }
         recent.removeAll { stores[$0] == nil }
         let onScreen = self.onScreen
@@ -281,23 +283,33 @@ final class NativeThreadStores<Key: Hashable> {
         let budget = budget ?? mountedBudget
         let held = entries.reduce(0) { $0 + $1.cost }
         let releases = Self.viewReleases(entries, keep: keep, keepPinned: keepPinned ?? self.keepPinned, budget: budget)
-        var room = step ?? max(releaseStep, min(held - budget, ceiling ?? releaseStep))
-        var freed = 0, taken = 0, more = false
+        var room = step ?? (quiet ? max(releaseStep, min(held - budget, releaseCeiling)) : releaseStep)
+        var freed = 0, taken = 0, more = false, lazy = false
         for key in releases {
             guard let store = stores[key] else { continue }
             guard taken < limit, room > 0 else {
                 more = true
                 break
             }
+            // A step of everything (`.max`) lets go of the lazy stack with the rows.
+            let first = room < .max && store.releasesLazyStackFirst(eagerRows: eagerRows)
+            if quiet, first, lazy {
+                more = true
+                continue
+            }
             store.releaseTranscript(bytes: room, eagerRows: eagerRows, keepingLastScreen: true)
+            if quiet, first {
+                lazy = true
+                store.releaseTranscript(bytes: room, eagerRows: eagerRows, keepingLastScreen: true)
+            }
             let gone = (costs[key] ?? 0) - store.mountedCost(eagerRows: eagerRows)
             freed += gone
-            room -= gone
+            if room < .max { room -= gone }
             taken += 1
             if store.canReleaseTranscript { more = true }
             SHRenderProbe.tick("thread.rowsReleased")
             AppSignposts.thread.emitEvent("thread rows released")
-            if gone == 0 { break }
+            if first, !quiet { break }
         }
         if more, held - freed > budget { scheduleMountedPass(after: releaseSpacing) }
         return (taken, freed)
@@ -334,7 +346,7 @@ final class NativeThreadStores<Key: Hashable> {
             break
         }
         putOff = 0
-        enforceMountedBudget(limit: .max, ceiling: wait == .idle ? releaseCeiling : nil)
+        enforceMountedBudget(limit: .max, quiet: wait == .idle)
         return true
     }
 
