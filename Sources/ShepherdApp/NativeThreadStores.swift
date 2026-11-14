@@ -27,9 +27,10 @@ enum ThreadPassWait: Equatable {
 ///
 /// Row views: a hidden layout stays mounted and its thread keeps the views of its last rows, which are most of what the
 /// app holds (`NativeThreadStore.mountedCost` estimates them). Past `mountedBudget` bytes of them in all, the least
-/// recently shown hidden threads let their rows go (`NativeThreadStore.releaseTranscript`), one thread a pass and `releaseStep`
-/// bytes of its rows at a time, unpinned ones first, then readers left scrolled up beyond the `keepPinned` most recently
-/// shown. The newest hidden thread, the ones on screen and the selected one are never taken. Only the thread view's rows go,
+/// recently shown hidden threads let their rows go (`NativeThreadStore.releaseTranscript`), a pass at a time and the oldest
+/// rows of the thread shown longest ago first (`releaseStep` bytes of them, or what the hidden threads are over by, at most
+/// `releaseCeiling`, while the app is quiet), unpinned ones first, then readers left scrolled up beyond the `keepPinned` most
+/// recently shown. The newest hidden thread, the ones on screen and the selected one are never taken. Only the thread view's rows go,
 /// and not its last screen (`NativeThreadStore.keptRows`): the host, the page, the history, the caches, the draft and the rows
 /// at the end of the thread stay, so showing a thread draws its tail in the update that shows it, never blank and with nothing
 /// to build, and the rows above it come back after that frame (`ThreadView`). A reader taken this way comes back at the tail of
@@ -66,10 +67,16 @@ final class NativeThreadStores<Key: Hashable> {
     /// How long after the last show the first pass runs, and between the passes that follow while the budget is over.
     var releaseDelay: Duration = .seconds(2)
     var releaseSpacing: Duration = .milliseconds(250)
-    /// The estimated bytes of one thread's rows a pass lets go of, at most (a row larger than it goes whole, as a pass lets go
-    /// of at least one). A pass costs the main thread a layout of the whole mounted tree, tens of milliseconds, whether it takes
-    /// one row or eight, so a smaller step makes more passes and more of those stalls for the same memory, and shortens none.
+    /// The estimated bytes of rows a pass lets go of, at most (a row larger than it goes whole, as a pass lets go of at least one):
+    /// always while a thread on screen streams, and while the hidden threads are no more than a step over the budget. A pass costs
+    /// the main thread a layout of the whole mounted tree, tens of milliseconds, whether it takes one row or eight, so a smaller
+    /// step makes more passes and more of those stalls for the same memory, and shortens none.
     var releaseStep = 32 << 20
+    /// What a pass lets go of, at most, while the app is quiet (no key or scroll, no thread on screen streaming) and the hidden threads
+    /// are more than a step over the budget: what they are over by. Showing a thread builds its rows again, hundreds of megabytes of them
+    /// in a few seconds, and the time to the next show gives the passes a few looks: a step a pass never caught up with the shows
+    /// while the person switched from one thread to the next, and the hidden threads grew to the abort.
+    var releaseCeiling = 128 << 20
     /// What the app is doing that a pass waits for (`ThreadPassWait`): it waits `releaseSpacing` and looks again.
     var busy: (() -> ThreadPassWait)?
     /// How many looks in a row a pass waits for a thread on screen to stop streaming before it runs anyway (ten seconds at the default
@@ -250,12 +257,14 @@ final class NativeThreadStores<Key: Hashable> {
         return released
     }
 
-    /// Lets the rows of the hidden threads go while their estimated views (`mountedCost`) add up to more than the budget:
-    /// `step` bytes of at most `limit` threads (`releaseStep` unless given), then the next pass `releaseSpacing` later while it is
-    /// still over, so that no one pass tears down much. Threads on screen, selected or holding nothing (released whole already)
-    /// are not asked. Costs are read here, in a pass, never in a view body. Returns the threads it took from and the bytes it took.
+    /// Lets the rows of the hidden threads go while their estimated views (`mountedCost`) add up to more than the budget: `step` bytes
+    /// of them in all (`releaseStep`, or what the threads are over by if that is more, at most `ceiling`, unless given), the oldest
+    /// rows of the thread `viewReleases` names first, from at most `limit` threads, then the next pass `releaseSpacing` later while it
+    /// is still over, so that no one pass tears down much. A thread's first step lets go of its lazy stack's rows, which the estimate
+    /// does not count, and ends the pass. Threads on screen, selected or holding nothing (released whole already) are not asked.
+    /// Costs are read here, in a pass, never in a view body. Returns the threads it took from and the bytes it took.
     @discardableResult
-    func enforceMountedBudget(budget: Int? = nil, keep: Int = 1, keepPinned: Int? = nil, limit: Int = 1, step: Int? = nil) -> (threads: Int, bytes: Int) {
+    func enforceMountedBudget(budget: Int? = nil, keep: Int = 1, keepPinned: Int? = nil, limit: Int = 1, step: Int? = nil, ceiling: Int? = nil) -> (threads: Int, bytes: Int) {
         guard let mounted = mounted?() else { return (0, 0) }
         recent.removeAll { stores[$0] == nil }
         let onScreen = self.onScreen
@@ -270,18 +279,28 @@ final class NativeThreadStores<Key: Hashable> {
             return MountedEntry(key: key, cost: cost, pinned: pins?.isPinned(store) == true, releasable: store.canReleaseTranscript)
         }
         let budget = budget ?? mountedBudget
+        let held = entries.reduce(0) { $0 + $1.cost }
         let releases = Self.viewReleases(entries, keep: keep, keepPinned: keepPinned ?? self.keepPinned, budget: budget)
-        var freed = 0, more = releases.count > limit
-        for key in releases.prefix(limit) {
+        var room = step ?? max(releaseStep, min(held - budget, ceiling ?? releaseStep))
+        var freed = 0, taken = 0, more = false
+        for key in releases {
             guard let store = stores[key] else { continue }
-            store.releaseTranscript(bytes: step ?? releaseStep, eagerRows: eagerRows, keepingLastScreen: true)
-            freed += (costs[key] ?? 0) - store.mountedCost(eagerRows: eagerRows)
+            guard taken < limit, room > 0 else {
+                more = true
+                break
+            }
+            store.releaseTranscript(bytes: room, eagerRows: eagerRows, keepingLastScreen: true)
+            let gone = (costs[key] ?? 0) - store.mountedCost(eagerRows: eagerRows)
+            freed += gone
+            room -= gone
+            taken += 1
             if store.canReleaseTranscript { more = true }
             SHRenderProbe.tick("thread.rowsReleased")
             AppSignposts.thread.emitEvent("thread rows released")
+            if gone == 0 { break }
         }
-        if more, entries.reduce(0, { $0 + $1.cost }) - freed > budget { scheduleMountedPass(after: releaseSpacing) }
-        return (min(limit, releases.count), freed)
+        if more, held - freed > budget { scheduleMountedPass(after: releaseSpacing) }
+        return (taken, freed)
     }
 
     /// The next pass, `delay` from now in place of any waiting.
@@ -302,7 +321,8 @@ final class NativeThreadStores<Key: Hashable> {
     /// the person types or scrolls, and while a thread streams up to `patience` times in a row. Returns whether it ran.
     @discardableResult
     func runMountedPass() -> Bool {
-        switch busy?() ?? .idle {
+        let wait = busy?() ?? .idle
+        switch wait {
         case .input:
             scheduleMountedPass(after: releaseSpacing)
             return false
@@ -314,7 +334,7 @@ final class NativeThreadStores<Key: Hashable> {
             break
         }
         putOff = 0
-        enforceMountedBudget()
+        enforceMountedBudget(limit: .max, ceiling: wait == .idle ? releaseCeiling : nil)
         return true
     }
 
