@@ -260,6 +260,7 @@ struct SidebarRowMenu: View {
                     .keyboardShortcut(KeybindingsStore.shared.shortcut(.renameAgent))
                 PinMenuItem(vm: vm, row: row)
                 if !row.worktree { ThreadMoveMenu(vm: vm, row: row.id) }
+                FleetMoveMenuItems(vm: vm, row: row.id)
                 // The same list the Agent menu and ⌘K offer (ThreadCommand).
                 ForEach(ThreadCommand.allCases.filter { $0 != .delete }) { command in
                     Button(command.title, systemImage: command.symbol) { vm.perform(command, on: id) }
@@ -336,6 +337,7 @@ private struct RemoteRowMenu: View {
         if !row.worktree, vm.remoteHosts.allConnections.first(where: { $0.id == ref.hostID })?.supportsThreadMove == true {
             ThreadMoveMenu(vm: vm, row: row.id)
         }
+        FleetMoveMenuItems(vm: vm, row: row.id)
         Divider()
         Button("Review Uncommitted Changes") { vm.openRemoteReview(ref, pullRequest: false) }
         Button("Review PR Changes") { vm.openRemoteReview(ref, pullRequest: true) }

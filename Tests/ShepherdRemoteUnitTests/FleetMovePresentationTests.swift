@@ -123,4 +123,15 @@ struct FleetMovePresentationTests {
         guard case .goalRecord(_, let text) = nativeTurnPresentation([message], live: false).items.first else { Issue.record("no divider"); return }
         #expect(text == note && NativeGoalRecord(text).line == note && NativeGoalRecord(text).evidence == nil)
     }
+
+    @Test func movingWhileACommandRunsNamesItAndHowLongItHasRun() {
+        let message = NativeThreadMessage(entryID: "e", role: "toolResult", blocks: [], toolName: "bash", toolCallID: "c",
+                                          argumentsText: #"{"command":"swift test --filter CheckoutIntegration"}"#, status: "running")
+        var call = NativeActivityCall(message)
+        call.startedAt = 1_000_000
+        let confirm = FleetMoveConfirm.make(running: call, host: "Mac mini", now: Date(timeIntervalSince1970: 1_000 + 120))
+        #expect(confirm.title == "It’s running a command")
+        #expect(confirm.message.hasSuffix("has been running for 2 minutes. Moving now stops it; the thread picks up on Mac mini and can run it again there."))
+        #expect(FleetMoveConfirm.make(running: nil, host: "Mac mini").title == "It’s working")
+    }
 }

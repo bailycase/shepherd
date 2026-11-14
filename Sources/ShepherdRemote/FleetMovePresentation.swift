@@ -205,3 +205,34 @@ public struct FleetMoveChip: Equatable, Sendable {
         return FleetMoveChip(text: host, tone: tone, movedFrom: line)
     }
 }
+
+/// What the thread says when it is moved while a turn runs ("It's running a command"): what runs and for how long, and that moving stops it.
+public struct FleetMoveConfirm: Equatable, Sendable {
+    public var title: String
+    public var message: String
+
+    /// `call` is the tool call running now, when the thread is in one; nil while the model is writing.
+    public static func make(running call: NativeActivityCall?, host: String, now: Date = Date()) -> FleetMoveConfirm {
+        guard let call, call.running else {
+            return FleetMoveConfirm(title: "It’s working",
+                                    message: "Moving now stops the turn. The thread picks up on \(host) and carries on from the conversation.")
+        }
+        let what = call.detail.isEmpty ? call.label : call.detail
+        let since = call.startedAt.map { Date(timeIntervalSince1970: $0 / 1000) }
+        var duration = ""
+        if let since {
+            let seconds = max(0, Int(now.timeIntervalSince(since)))
+            duration = seconds < 60 ? " for \(nativeCount(max(1, seconds), "second"))" : " for \(nativeCount(seconds / 60, "minute"))"
+        }
+        return FleetMoveConfirm(title: "It’s running a command",
+                                message: "\(what) has been running\(duration). Moving now stops it; the thread picks up on \(host) and can run it again there.")
+    }
+
+    /// The call a thread's last turn is running now, if any.
+    public static func runningCall(in items: [NativeTurnPresentation.Item]) -> NativeActivityCall? {
+        for item in items.reversed() {
+            if case .activity(_, let bursts) = item, let call = bursts.reversed().lazy.compactMap({ $0.calls.last { $0.running } }).first { return call }
+        }
+        return nil
+    }
+}
