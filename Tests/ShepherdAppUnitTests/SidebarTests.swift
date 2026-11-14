@@ -329,9 +329,9 @@ struct SidebarDestinationTests {
     }
 
     @Test func noRowIsMoreHostsOrExtensions() {
-        let rows = SidebarDerivation.destinations(shown: .hosts, newThreadChord: "⌘N", designs: true)
+        let rows = SidebarDerivation.destinations(shown: .fleet, newThreadChord: "⌘N", designs: true)
         #expect(!rows.contains { ["More", "Hosts", "Extensions", "Design systems"].contains($0.title) })
-        #expect(rows.allSatisfy { !$0.selected }, "the Hosts page is open and no destination row claims it")
+        #expect(rows.allSatisfy { !$0.selected }, "the Fleet page is open and no destination row claims it")
     }
 
     @Test(arguments: [("demo-mac", "This Mac · demo-mac"), ("  ", "This Mac"), (nil, "This Mac")] as [(String?, String)])

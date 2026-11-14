@@ -91,10 +91,6 @@ final class MCPStore {
     private(set) var invalidLine: Int?
     private(set) var rows: [MCPServerRowModel] = []
     private(set) var details: [String: MCPServerDetailModel] = [:]
-    /// Fleet is on: a server's sign-in in pi's `mcp-auth.json` is the same on every Mac, and the detail says so.
-    var inFleet = false {
-        didSet { if inFleet != oldValue { rebuild() } }
-    }
     private(set) var budget = Budget(tokens: "~0 tokens", fraction: 0, note: "")
     private(set) var connectedCount = 0
     private(set) var listing = Listing.never
@@ -369,7 +365,7 @@ final class MCPStore {
             if state == .needsSignIn {
                 signIn = .needsSignIn(title: "Not signed in", note: "It uses OAuth: sign in once and pi keeps the token fresh.", again: false)
             } else if isSignedIn(entry) {
-                signIn = .signedIn(account: nil, scopes: [], note: inFleet ? "OAuth · kept fresh by pi · shared across the fleet" : "OAuth · kept fresh by pi")
+                signIn = .signedIn(account: nil, scopes: [], note: "OAuth · kept fresh by pi · shared across the fleet")
             } else {
                 signIn = .none
             }

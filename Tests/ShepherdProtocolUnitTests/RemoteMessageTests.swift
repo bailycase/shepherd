@@ -25,8 +25,7 @@ enum RemoteSamples {
     static let fleetDevicesSnapshot = FleetDevicesSnapshot(
         devices: [FleetDeviceStatus(deviceID: fleetDevice.deviceID, name: "iPhone", kind: .iphone, pairedAt: 1_790_000_000_000, connected: true, lastSeen: 1_790_000_002_000),
                   FleetDeviceStatus(deviceID: UUID(uuidString: "00000000-0000-0000-0000-0000000000D3")!, name: "Mac mini", kind: .macApp, pairedAt: 1_790_000_000_100, connected: false)],
-        code: FleetJoinStatus(expiresAt: 1_790_000_300_000, attemptsLeft: 5),
-        sharedToken: FleetSharedTokenStatus(retired: false, waiting: [FleetLegacyClient(id: "Shepherd iOS@192.168.1.31", name: "Shepherd iOS", lastSeen: 1_790_000_002_000)], switched: 2))
+        code: FleetJoinStatus(expiresAt: 1_790_000_300_000, attemptsLeft: 5))
     static let fleetSnapshot = FleetSnapshot(
         enabled: true, hostID: fleetHost, name: "MacBook Pro", build: "412", addresses: ["192.168.1.20"], port: 7434, advertising: true,
         peers: [FleetPeerStatus(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F2")!, name: "Mac mini", host: "192.168.1.40", port: 7434,
@@ -347,7 +346,7 @@ enum RemoteSamples {
     static let hostSettings = HostSettings(
         shepherdVersion: "0.4.2", piVersion: "0.87.1", defaultModel: "anthropic/claude-opus", defaultThinking: .high,
         defaultServiceTier: .fast, textGenerationModel: "anthropic/claude-haiku", visionModel: "google/gemini-flash", compactAtPercent: 80,
-        queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true, projectsEnabled: true, fleetEnabled: true,
+        queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true, projectsEnabled: true,
         worktreeBase: .head, fetchBeforeCreating: false, mergePRAutomatically: true, mergeMethod: .rebase, closeOnMerge: true,
         backgroundService: true, designToolEnabled: true,
         subagentDefaults: HostSettings.SubagentDefaults(concurrency: 6, model: "openai/gpt-5-mini", thinking: .low, context: .fork),
@@ -378,7 +377,7 @@ enum RemoteSamples {
     static let hostSettingChanges: [HostSettingChange] = [
         .defaultModel("openai/gpt-5"), .defaultModel(nil), .defaultThinking(.low), .queueDelivery(.all),
         .defaultServiceTier(.fast), .textGenerationModel("openai/gpt-5-mini"), .textGenerationModel(nil), .namingModel("openai/gpt-5-mini"), .compactAtPercent(70), .compactAtPercent(nil),
-        .goalCrossProviderEvaluation(true), .goalCrossProviderEvaluation(false), .goalsEnabled(true), .goalsEnabled(false), .projectsEnabled(true), .projectsEnabled(false), .fleetEnabled(true), .fleetEnabled(false),
+        .goalCrossProviderEvaluation(true), .goalCrossProviderEvaluation(false), .goalsEnabled(true), .goalsEnabled(false), .projectsEnabled(true), .projectsEnabled(false),
         .fleetWeight(hostID: RemoteSamples.fleetHost, weight: .prefer), .fleetWeight(hostID: RemoteSamples.fleetHost, weight: .manualOnly),
         .fleetThreadsCanSend(true), .fleetThreadCap(5), .fleetAutoDispatch(true), .fleetAutoDispatch(false), .fleetBatteryCountsHalf(false),
         .worktreeBase(.fresh), .fetchBeforeCreating(true), .commitRemainingWork(false), .generatePRDescriptions(false),
@@ -516,14 +515,14 @@ struct RemoteRequestTests {
              .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .projectRequest, .startThread, .focusThread, .projectExecutors, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps,
-             .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
+             .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
              .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
              .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult, .fleetRoutes, .fleetPeerAnswer,
-             .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
+             .fleetPairDevice, .fleetSyncDevices:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 76
+    static let caseCount = 74
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -536,7 +535,6 @@ struct RemoteRequestTests {
         .pushUnregister(id: 94, registrationID: "11111111-2222-3333-4444-555555555555"),
         .fleetIdentify(id: 70),
         .fleetPair(id: 71, code: "482913", from: RemoteSamples.fleetIntroduction),
-        .fleetEstablish(id: 72, from: RemoteSamples.fleetIntroduction),
         .fleetIntroduce(id: 73, introduction: FleetIntroduce(member: RemoteSamples.fleetMember, theirTokenHash: nil)),
         .fleetIntroduce(id: 74, introduction: FleetIntroduce(member: RemoteSamples.fleetMember, theirTokenHash: RemoteSamples.fleetHash)),
         .fleetRevoke(id: 75, hostID: RemoteSamples.fleetHost, at: 1_790_000_000_123),
@@ -557,7 +555,6 @@ struct RemoteRequestTests {
         .fleetAction(id: 132, action: .pairAt(hostID: UUID(uuidString: "5B1F7A52-0F3C-4C55-A5A3-61C0E3F2B9D4")!, port: 7434,
                                               routes: [FleetReportedRoute(host: "100.86.12.4", kind: .tailscale)], code: "482913", expiresAt: nil)),
         .fleetAction(id: 80, action: .remove(hostID: RemoteSamples.fleetHost)),
-        .fleetAction(id: 81, action: .adopt([FleetLegacyHost(id: RemoteSamples.fleetHost, name: "Mac mini", host: "192.168.1.40", port: 7434, token: "shared")])),
         .fleetAction(id: 101, action: .watching(true)),
         .fleetAction(id: 102, action: .watching(false)),
         .fleetAction(id: 103, action: .reconnect(hostID: RemoteSamples.fleetHost)),
@@ -598,14 +595,11 @@ struct RemoteRequestTests {
         .fleetPeerAnswer(id: 143, reply: .fleetSyncReply(id: 143, reply: .state(vector: RemoteSamples.fleetVector))),
         .fleetPeerAnswer(id: 144, reply: .error(id: 144, code: "forbidden", message: "Only a Mac in the fleet syncs.")),
         .fleetPairDevice(id: 82, code: "482913", device: RemoteSamples.fleetDevice),
-        .fleetEnrollDevice(id: 83, device: RemoteSamples.fleetDevice),
         .fleetSyncDevices(id: 84, devices: RemoteSamples.fleetDeviceEntries),
         .fleetSyncDevices(id: 85, devices: []),
         .fleetAction(id: 86, action: .startDeviceCode),
         .fleetAction(id: 87, action: .stopDeviceCode),
         .fleetAction(id: 88, action: .revokeDevice(RemoteSamples.fleetDevice.deviceID)),
-        .fleetAction(id: 89, action: .forgetLegacyClient("Shepherd iOS@192.168.1.31")),
-        .fleetAction(id: 99, action: .retireSharedToken),
         .fleetAction(id: 100, action: .enrollApp(name: "MacBook Pro")),
         .fleetAction(id: 101, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", host: nil))),
         .fleetAction(id: 102, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", title: "Profile import",
@@ -964,10 +958,7 @@ struct RemoteReplyTests {
         .fleetRepoManifestAck(id: 16, ack: FleetRepoManifestAck(repo: "space:2F1D", generation: 7, seq: 0, resend: true)),
         .fleetSnapshotAck(id: 17, ack: FleetSnapshotAck(dispatchID: RemoteSamples.dispatchID, parts: 2, needs: [RemoteSamples.snapshotHash], needsCount: 1)),
         .fleetSnapshotAck(id: 18, ack: FleetSnapshotAck(dispatchID: RemoteSamples.dispatchID, parts: 2, complete: true)),
-        .fleetResult(id: 10, result: FleetResult(snapshot: S.fleetSnapshot, adopted: [
-            FleetAdoption(id: S.fleetHost, outcome: .established(hostID: S.fleetHost, name: "Mac mini")),
-            FleetAdoption(id: S.fleetHost, outcome: .notFleet), FleetAdoption(id: S.fleetHost, outcome: .unreachable),
-            FleetAdoption(id: S.fleetHost, outcome: .refused(code: "unauthorized"))])),
+        .fleetResult(id: 10, result: FleetResult(snapshot: S.fleetSnapshot)),
         .agentResult(id: 60, result: .ok),
         .ok(id: 12),
         .paneOpened(id: 14, paneID: S.pane),
@@ -1257,19 +1248,16 @@ struct RemoteReplyTests {
         #expect(settings == HostSettings())
     }
 
-    @Test func anOlderHostsSettingsLeaveFleetOff() throws {
-        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(RemoteSamples.hostSettings)) as? [String: Any])
-        json.removeValue(forKey: "fleetEnabled")
-        var expected = RemoteSamples.hostSettings
-        expected.fleetEnabled = false
-        #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
-        json["fleetEnabled"] = NSNull()
-        #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
-        var settings = HostSettings()
-        #expect(!settings.fleetEnabled)
-        settings.apply(.fleetEnabled(true))
-        #expect(settings.fleetEnabled)
-        #expect(HostSettingChange.fleetEnabled(true).capability == RemoteProtocol.fleetExperimentCapability)
+    /// Fleet is not an experiment any more: a settings payload from before (a host that still says `fleetEnabled`, on or off, or null)
+    /// decodes as it always did, the key ignored, and the host no longer says it.
+    @Test func aFleetEnabledValueInOlderSettingsIsIgnored() throws {
+        let json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(RemoteSamples.hostSettings)) as? [String: Any])
+        #expect(json["fleetEnabled"] == nil, "the host stopped saying it")
+        for value: Any in [true, false, NSNull()] {
+            var older = json
+            older["fleetEnabled"] = value
+            #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: older)) == RemoteSamples.hostSettings)
+        }
     }
 
     /// The Dispatch settings: Auto dispatch is unset until the person chooses (it reads as on with a second Mac paired); battery counts half.
@@ -1507,13 +1495,12 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.appsV2Capability, RemoteProtocol.agentRestartCapability, RemoteProtocol.completionSeenCapability,
             RemoteProtocol.pushMuteCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
-            RemoteProtocol.fleetExperimentCapability,
-            // Offered only while the host's Fleet experiment is on (SessionServer.setFleetEnabled).
+            // Offered whenever the host's fleet service runs, which is every host that started (SessionServer.startFleet).
             RemoteProtocol.fleetCapability, RemoteProtocol.fleetPressureCapability, RemoteProtocol.fleetDispatchCapability,
             RemoteProtocol.fleetSyncCapability, RemoteProtocol.fleetSnapshotCapability, RemoteProtocol.fleetRendezvousCapability, RemoteProtocol.fleetLinkCapability, RemoteProtocol.fleetPairLinkCapability,
-            // Offered to every client, a device included, while the host's Fleet experiment is on.
+            // Offered to every client, a device included.
             RemoteProtocol.fleetViewCapability, RemoteProtocol.fleetFollowCapability,
-            // Offered whenever the host runs, Fleet on or off, and never to a client device (FleetAccess).
+            // Offered whenever the host runs, and never to a client device (FleetAccess).
             RemoteProtocol.fleetDevicesCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
@@ -1539,7 +1526,6 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.fleetDispatchCapability == "fleet.dispatch.v1")
         #expect(RemoteProtocol.fleetDevicesCapability == "fleet.devices.v1")
         #expect(RemoteProtocol.fleetFollowCapability == "fleet.follow.v1")
-        #expect(RemoteProtocol.fleetExperimentCapability == "experiments.fleet.v1")
         #expect(RemoteProtocol.logicalProjectsCapability == "logicalProjects.v1")
         #expect(RemoteProtocol.projectMessageImagesCapability == "logicalProjectRuntime.images.v1")
         #expect(RemoteProtocol.projectConversationThinkingCapability == "logicalProjects.conversationThinking.v1")

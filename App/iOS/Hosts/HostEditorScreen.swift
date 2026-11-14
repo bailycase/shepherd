@@ -43,7 +43,9 @@ private struct HostPage: View {
                                 .textSelection(.enabled)
                         }
                     }
-                    if !host.phase.isConnected {
+                    if host.phase.failure?.kind == .sharedTokenRetired {
+                        Button("Add a Mac", systemImage: "plus") { navigator.present(.settings(.host(nil))) }
+                    } else if !host.phase.isConnected {
                         Button("Retry", systemImage: "arrow.clockwise") { hosts.retry(host.id) }
                     }
                     if host.phase.isConnected, host.supports(RemoteProtocol.hostSettingsBackgroundServiceCapability),

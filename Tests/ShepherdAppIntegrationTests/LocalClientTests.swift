@@ -28,7 +28,7 @@ struct LocalClientTests {
             remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in },
             hooks: hooks ?? HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
-        let connection = vm.connectLocalHost(socket: socket, token: token)
+        let connection = vm.connectLocalHost(socket: socket)
         try await eventuallyOnMain("the host's workspace", timeout: .seconds(30)) {
             // Designs reach a client only while the host serves them, so they aren't compared.
             connection.phase == RemoteHostStore.Phase.connected && connection.state.spaces == host.server.state.spaces
@@ -50,7 +50,7 @@ struct LocalClientTests {
 
         let hosts = RemoteHostStore(defaults: ScratchDefaults(), childRefreshInterval: .milliseconds(200))
         hosts.appBuild = "1202"
-        let connection = hosts.addLocalHost(name: "This Mac", socket: socket, token: token)
+        let connection = hosts.addLocalHost(name: "This Mac", socket: socket)
         defer { hosts.removeHost(id: connection.id) }
         try await eventuallyOnMain("the app to connect") { connection.phase == .connected }
         try await eventuallyOnMain("the older host to be asked to drain") { asked.current == 1 }
@@ -511,13 +511,11 @@ struct LocalClientTests {
         let ref = RemoteAgentRef(hostID: connection.id, agentID: try #require(vm.selectedAgentID))
         let row = try #require((vm.sidebarLists.needsYou + vm.sidebarLists.working + vm.sidebarLists.done + vm.sidebarLists.recents)
             .first { $0.id == .local(ref.agentID) })
-        // The host on this Mac is This Mac itself: a local row, one This Mac to start threads on,
-        // the Hosts page's This Mac card counts its threads, and it isn't a host to remove.
+        // The host on this Mac is This Mac itself: a local row, one This Mac to start threads on, and it isn't a host to remove.
         if case .tag = row.accessory { Issue.record("a thread of this Mac's host wears a host tag") }
         #expect(NewThreadState.hosts(vm).map(\.name) == ["This Mac"])
         #expect(hosts.connections.isEmpty, "This Mac is no host the UI lists")
         try await eventuallyOnMain("the host to leave its threads' banners to the app") { host.server.localAppConnected }
-        #expect(vm.hostsPageModel(agentVersion: nil).cards.count == 1)
         #expect(hosts.pairedConnections.isEmpty)
 
         // A send, as the composer sends it.

@@ -26,11 +26,4 @@ extension AppLayout {
     static let automationEmptyMaxWidth: CGFloat = 420
     /// The editor's fields scroll past this, so the sheet fits a laptop screen with its footer.
     static let automationSheetBodyMaxHeight: CGFloat = 560
-
-    // Hosts
-    /// Cards per row.
-    static let hostColumns = 3
-    /// The explainer's measure, and the space under it.
-    static let hostExplainerMaxWidth: CGFloat = 720
-    static let hostExplainerSpacing: CGFloat = 14
 }

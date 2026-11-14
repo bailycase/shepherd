@@ -25,13 +25,13 @@ public enum FleetWhereCommand {
         }
     }
 
-    /// Asks the host whose local socket is `socket` (opened with `token`) who and where it is.
-    public static func read(socket: String, token: String, app: String? = nil, version: String? = nil) async -> Outcome {
+    /// Asks the host whose local socket is `socket` who and where it is.
+    public static func read(socket: String, app: String? = nil, version: String? = nil) async -> Outcome {
         let client = RemoteHostClient(localSocket: socket)
         defer { client.disconnect() }
         let snapshot: FleetSnapshot
         do {
-            _ = try await client.connect(host: "", port: 0, token: token, clientName: "Shepherd")
+            _ = try await client.connect(host: "", port: 0, token: "", clientName: "Shepherd")
             snapshot = try await client.fleetRead().snapshot
         } catch {
             return .notRunning
@@ -41,11 +41,11 @@ public enum FleetWhereCommand {
     }
 
     /// The command: prints the answer (or why there is none, on stderr) and exits.
-    public static func main(socket: String, token: String, app: String?, version: String?) -> Never {
+    public static func main(socket: String, app: String?, version: String?) -> Never {
         let done = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var outcome = Outcome.notRunning
         Task {
-            outcome = await read(socket: socket, token: token, app: app, version: version)
+            outcome = await read(socket: socket, app: app, version: version)
             done.signal()
         }
         done.wait()

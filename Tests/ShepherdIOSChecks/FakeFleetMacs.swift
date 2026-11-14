@@ -7,16 +7,17 @@ import ShepherdRemote
 // Fake Macs of a fleet for the iOS client checks (`FleetDevicePairingCheck`, `FleetViewCheck`): a listener per Mac over
 // real TCP, answering what a host answers a device. Shared by the checks that name it in run.sh.
 
-/// What the fake Macs of one fleet share: the code showing, the devices known (hashes of their tokens), the shared
-/// token, and what was heard.
+/// What the fake Macs of one fleet share: the code showing, the devices known (hashes of their tokens), a token
+/// another pairing gave the phone, and what was heard.
 final class FakeFleet: @unchecked Sendable {
     private let lock = NSLock()
     var hostID = UUID()
-    let sharedToken = "shared-token"
+    /// A token the Macs take that isn't this device's own (one pasted, or from another fleet).
+    let pastedToken = "pasted-token"
     var members: [FakeMac] = []
     private var _code = "", _accepted: [String] = [], _devices: [FleetDeviceIntroduction] = [], _revoked = Set<UUID>()
     private var _refused = Set<String>()
-    private var _enrollments = 0, _retired = false, _refuses = false, _heard: [String] = []
+    private var _heard: [String] = []
     /// The Macs offer `fleet.follow.v1` with their view (a build before it doesn't).
     var follows = true
     private var _view: FleetSnapshot?, _weights: [String: FleetSendWeight] = [:], _watching: [Bool] = [], _changes: [HostSettingChange] = []
@@ -39,9 +40,6 @@ final class FakeFleet: @unchecked Sendable {
     var code: String { get { lock.withLock { _code } } set { lock.withLock { _code = newValue } } }
     var accepted: [String] { lock.withLock { _accepted } }
     var devices: [FleetDeviceIntroduction] { lock.withLock { _devices } }
-    var enrollments: Int { get { lock.withLock { _enrollments } } set { lock.withLock { _enrollments = newValue } } }
-    var sharedTokenRetired: Bool { get { lock.withLock { _retired } } set { lock.withLock { _retired = newValue } } }
-    var refusesEnrollment: Bool { get { lock.withLock { _refuses } } set { lock.withLock { _refuses = newValue } } }
     var heard: [String] { lock.withLock { _heard } }
 
     func heard(_ line: String) { lock.withLock { _heard.append(line) } }
@@ -55,7 +53,7 @@ final class FakeFleet: @unchecked Sendable {
     /// A device's token the Macs refuse from now on (the device was revoked on another Mac).
     func refuse(token: String) { lock.withLock { _refused.insert(FleetProtocol.hash(token)) } }
     func accepts(_ token: String) -> Bool {
-        lock.withLock { !_refused.contains(FleetProtocol.hash(token)) && ((token == sharedToken && !_retired) || _accepted.contains(FleetProtocol.hash(token))) }
+        lock.withLock { !_refused.contains(FleetProtocol.hash(token)) && (token == pastedToken || _accepted.contains(FleetProtocol.hash(token))) }
     }
 }
 
@@ -131,7 +129,6 @@ final class FakeMac: @unchecked Sendable {
             open.value.removeAll { $0 == client }
             close(client)
         }
-        var shared = false
         while let line = readLine(client) {
             fleet.heard(String(decoding: line, as: UTF8.self))
             guard let request = try? NDJSON.decode(RemoteRequest.self, from: line) else { return }
@@ -148,23 +145,12 @@ final class FakeMac: @unchecked Sendable {
                     let members = fleet.members.filter { $0 !== self }.map { FleetMember(hostID: $0.hostID, name: $0.name, host: "127.0.0.1", port: $0.port) }
                     write(client, .fleetDevices(id: id, result: FleetDevicesResult(hostID: hostID, name: name, members: members)))
                 }
-            case .fleetEnrollDevice(let id, let device):
-                fleet.enrollments += 1
-                if fleet.refusesEnrollment {
-                    write(client, .error(id: id, code: "save_failed", message: "No."))
-                } else if fleet.isRevoked(device.deviceID) {
-                    write(client, .error(id: id, code: FleetProtocol.Code.deviceRevoked, message: "revoked"))
-                } else {
-                    fleet.take(device)
-                    write(client, .fleetDevices(id: id, result: FleetDevicesResult(hostID: hostID, name: name)))
-                }
             case .hello(let id, let token, _, _, _):
                 guard fleet.accepts(token) else {
-                    write(client, .error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token"))
+                    write(client, .error(id: id, code: RemoteProtocol.sharedTokenRetiredCode, message: RemoteProtocol.sharedTokenRetiredMessage))
                     return
                 }
-                shared = token == fleet.sharedToken
-                var capabilities = [RemoteProtocol.nativeThreadCapability] + (shared ? [RemoteProtocol.fleetDevicesCapability] : [])
+                var capabilities = [RemoteProtocol.nativeThreadCapability]
                 if view ?? fleet.view != nil {
                     capabilities += [RemoteProtocol.fleetViewCapability, RemoteProtocol.hostSettingsCapability]
                     if fleet.follows { capabilities.append(RemoteProtocol.fleetFollowCapability) }

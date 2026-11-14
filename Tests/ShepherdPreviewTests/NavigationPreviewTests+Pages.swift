@@ -81,23 +81,6 @@ extension PreviewTests {
         }
     }
 
-    /// This Mac, a connected host, and one that dropped: what waits on it and when it was last seen.
-    @Test func hostsPage() async throws {
-        let (workspace, host, _) = try await automationsWorkspace()
-        let horizon = try await AutomationHostFixture()
-        defer { workspace.stop(); host.server.stop(); horizon.server.stop() }
-        let vm = workspace.vm
-        let dropped = try await horizon.connect(workspace, name: "horizon")
-        horizon.server.stop()
-        try await eventuallyOnMain("horizon to drop", timeout: .seconds(30)) {
-            if case .failed = dropped.phase { dropped.lastSeen != nil } else { false }
-        }
-        try await Preview.render("page-hosts", size: Self.pageSize) {
-            HostsPage(model: vm.hostsPageModel(agentVersion: "0.8.2"),
-                      actions: HostsPageActions(retry: { _ in }, remove: { _ in }, addHost: {}))
-        }
-    }
-
     // The whole window as the boards draw it: the sidebar with its destination selected and the
     // page beside it, reached the way the sidebar reaches it.
 
@@ -111,24 +94,6 @@ extension PreviewTests {
         #expect(vm.shownDestination == .automations)
         try await Preview.render("app-window-automations", size: CGSize(width: 1440, height: 900),
                                  ready: { vm.automationsPageModel().detail?.runsNote == nil }) {
-            RootView(vm: vm)
-        }
-    }
-
-    /// More ▸ Hosts with a host that dropped: the badge in the sidebar and its card on the page agree.
-    @Test func appWindowHosts() async throws {
-        let (workspace, host, _) = try await automationsWorkspace()
-        let horizon = try await AutomationHostFixture()
-        defer { workspace.stop(); host.server.stop(); horizon.server.stop() }
-        let vm = workspace.vm
-        let dropped = try await horizon.connect(workspace, name: "horizon")
-        horizon.server.stop()
-        try await eventuallyOnMain("horizon to drop", timeout: .seconds(30)) {
-            if case .failed = dropped.phase { dropped.lastSeen != nil } else { false }
-        }
-        vm.openDestination(.hosts)
-        #expect(vm.offlineHostCount == 1 && vm.hostsPageModel(agentVersion: nil).offlineCount == 1)
-        try await Preview.render("app-window-hosts", size: CGSize(width: 1440, height: 900)) {
             RootView(vm: vm)
         }
     }

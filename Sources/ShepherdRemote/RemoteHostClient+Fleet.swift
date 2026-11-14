@@ -18,12 +18,13 @@ extension RemoteHostClient {
         public var hostID: UUID
         public var name: String
         public var build: String?
+        /// False only from a Mac on a Shepherd from when Fleet was an experiment and was off.
         public var fleetEnabled: Bool
     }
 
     /// Pairs with the Mac at `host`:`port` using the code its Join screen shows. The connection
     /// never authenticates: it asks who answers, refuses to go on when that isn't `expecting`
-    /// (when given) or has Fleet off, and then sends the code with `introduction`. Closes when done. An address that
+    /// (when given) or runs an older Shepherd with Fleet off, and then sends the code with `introduction`. Closes when done. An address that
     /// doesn't answer within `connectTimeout` seconds is given up on.
     public static func fleetPair(host: String, port: UInt16, code: String, introduction: FleetIntroduction,
                                  expecting: UUID? = nil, connectTimeout: TimeInterval = 10) async throws -> (pairing: FleetPairing, identity: FleetPeerIdentity) {
@@ -35,7 +36,7 @@ extension RemoteHostClient {
             throw RemoteHostClientError.rejected(code: FleetProtocol.Code.wrongHost, message: "Another Mac answers at this address.")
         }
         guard identity.fleetEnabled else {
-            throw RemoteHostClientError.rejected(code: FleetProtocol.Code.off, message: "Fleet is off on that Mac.")
+            throw RemoteHostClientError.rejected(code: FleetProtocol.Code.off, message: "Fleet is turned off on that Mac. It runs an older Shepherd where Fleet is under Settings ▸ Experiments: turn it on there, or update it.")
         }
         let reply = try await client.request { .fleetPair(id: $0, code: code, from: introduction) }
         return (try Self.pairing(from: reply), identity)
@@ -71,11 +72,6 @@ extension RemoteHostClient {
         }
     }
 
-    /// Becomes a peer of the host this client authenticated to with the shared token.
-    public func fleetEstablish(from introduction: FleetIntroduction) async throws -> FleetPairing {
-        try Self.pairing(from: try await request { .fleetEstablish(id: $0, from: introduction) })
-    }
-
     /// One step of introducing `introduction.member` to this host. Nil: the host already knows it.
     public func fleetIntroduce(_ introduction: FleetIntroduce) async throws -> FleetPairing? {
         let reply = try await request { .fleetIntroduce(id: $0, introduction: introduction) }
@@ -90,24 +86,19 @@ extension RemoteHostClient {
 
     /// Pairs this device with the Mac at `host`:`port` using the code its Add a device screen shows. Like
     /// `fleetPair`, it asks who answers first and goes on only when that is `expecting` (when given) and
-    /// (Fleet is not required). The answer lists the Macs in its fleet, none with Fleet off. Closes when done.
+    /// (it need not have a Mac paired). The answer lists the Macs in its fleet. Closes when done.
     public static func fleetPairDevice(host: String, port: UInt16, code: String, device: FleetDeviceIntroduction,
                                        expecting: UUID? = nil) async throws -> (result: FleetDevicesResult, identity: FleetPeerIdentity) {
         let client = RemoteHostClient()
         defer { client.disconnect() }
         try await client.openUnauthenticated(host: host, port: port)
         let identity = try await client.fleetIdentify()
-        // Fleet need not be on: a device pairs with a Mac that serves, whether or not it is in a fleet.
+        // A device pairs with a Mac that serves, whether or not it has a Mac paired.
         if let expecting, identity.hostID != expecting {
             throw RemoteHostClientError.rejected(code: FleetProtocol.Code.wrongHost, message: "Another Mac answers at this address.")
         }
         let reply = try await client.request { .fleetPairDevice(id: $0, code: code, device: device) }
         return (try Self.devices(from: reply), identity)
-    }
-
-    /// A client on the shared token asks for a token of its own (the host keeps only its hash).
-    public func fleetEnrollDevice(_ device: FleetDeviceIntroduction) async throws -> FleetDevicesResult {
-        try Self.devices(from: try await request { .fleetEnrollDevice(id: $0, device: device) })
     }
 
     /// Sends the devices this Mac holds to a member and reads back the ones it holds.

@@ -43,7 +43,7 @@ struct ProjectWorkerOpenThreadTests {
             let tokenURL = executor.dir.appendingPathComponent("open-thread-token")
             let port = try executor.server.startRemoteListener(port: 0, tokenURL: tokenURL)
             let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-            owner.remoteHosts.addHost(name: "Fixture executor", host: "127.0.0.1", port: port, token: token)
+            owner.remoteHosts.addHost(name: "Fixture executor", host: "127.0.0.1", port: port, token: token, fleetManaged: true)
             try await eventuallyOnMain("loopback executor connected") { self.owner.remoteHosts.connections.first?.phase == .connected }
             let config = try #require(owner.remoteHosts.connections.first?.config)
             executorHostID = config.id
@@ -177,7 +177,7 @@ struct ProjectWorkerOpenThreadTests {
         let tokenURL = r.owner.dir.appendingPathComponent("viewer-token")
         let port = try r.owner.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-        viewer.remoteHosts.addHost(name: "Owner Mac", host: "127.0.0.1", port: port, token: token)
+        viewer.remoteHosts.addHost(name: "Owner Mac", host: "127.0.0.1", port: port, token: token, fleetManaged: true)
         let ownerHost = try #require(viewer.remoteHosts.connections.first?.config).id
         let ref = LogicalProjectRef(home: .host(ownerHost), id: r.projectID)
         try await eventuallyOnMain("the viewer sees the owner's resolved tasks and its worker") {

@@ -191,18 +191,4 @@ struct FleetDeviceFollowTests {
         // Nothing to read from, and no route is reached with that token.
         do { _ = try await phone.reach(mini); Issue.record("a revoked device reached a Mac") } catch is WireError {}
     }
-
-    // MARK: Fleet off
-
-    @Test func withFleetOffTheCapabilityIsNotOfferedAndTheViewIsRefused() async throws {
-        let a = try await Mac("MacBook Pro", fleet: false)
-        defer { a.stop() }
-        let phone = Phone()
-        defer { phone.stop() }
-        _ = try await phone.pair(with: a, code: try #require(try await a.local.fleetAction(.startDeviceCode).deviceCode).code)
-        _ = try await phone.client.connect(host: "127.0.0.1", port: a.port, token: phone.token, clientName: "iPhone", capabilities: Self.clientCapabilities)
-        #expect(!phone.client.capabilities.contains(RemoteProtocol.fleetFollowCapability))
-        do { _ = try await phone.client.fleetRead(); Issue.record("a Mac with Fleet off answered the view") }
-        catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetProtocol.Code.off) }
-    }
 }

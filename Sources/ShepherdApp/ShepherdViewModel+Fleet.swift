@@ -30,12 +30,11 @@ extension ShepherdViewModel {
     }
 
     /// This Mac's own fleet host id, once its host has said it.
-    var thisFleetID: UUID? { settings.fleetEnabled ? fleetPage.snapshot.hostID : nil }
+    var thisFleetID: UUID? { fleetPage.snapshot.hostID }
 
     /// What a thread draws of dispatches: where it came from if it was sent, and the cards of what it sent. Nil for a thread with neither
-    /// (every thread while Fleet is off), so an ordinary thread reads nothing.
+    /// (an ordinary thread), so it reads nothing.
     func fleetSurface(for agent: Agent, onRemote remoteName: String? = nil) -> FleetThreadSurface? {
-        guard settings.fleetEnabled else { return nil }
         let cards = remoteName == nil ? fleetPage.dispatchCards.filter { $0.parentAgentID == agent.id } : []
         guard agent.dispatchedFrom != nil || !cards.isEmpty else { return nil }
         var surface = FleetThreadSurface(cards: cards, parent: agent.id, actions: fleetThreadActions)
@@ -103,3 +102,4 @@ extension ShepherdViewModel {
         }
     }
 }
+

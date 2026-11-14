@@ -99,7 +99,7 @@ struct LocalHostRuntimeTests {
             remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in },
             hooks: HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
-        vm.connectLocalHost(socket: socket, token: token)
+        vm.connectLocalHost(socket: socket)
         try await eventuallyOnMain("the host's workspace as the app's", timeout: .seconds(30)) {
             vm.state.spaces == host.server.state.spaces && hosts.localHost?.phase == .connected
         }

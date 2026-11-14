@@ -83,29 +83,29 @@ struct FleetDeviceViewTests {
         await Self.forbidden("fleetReadiness") { try await client.fleetReadiness(FleetReadinessReport(model: "Mac Pro")) }
         await Self.forbidden("fleetPressureNow") { _ = try await client.fleetPressureNow() }
         await Self.forbidden("fleetRevoke") { try await client.fleetRevoke(hostID: bID, at: 1) }
-        // The app's actions: no pairing, joining, removing, reconnecting, handing over, or managing devices and tokens.
+        // The app's actions: no pairing, joining, removing, reconnecting, or managing devices and tokens.
         let actions: [FleetAction] = [
-            .startJoin, .stopJoin, .pair(host: "127.0.0.1", port: b.port, code: "000000"), .remove(hostID: bID), .adopt([]),
-            .reconnect(hostID: bID), .startDeviceCode, .stopDeviceCode, .revokeDevice(UUID()), .forgetLegacyClient("x"), .retireSharedToken,
+            .startJoin, .stopJoin, .pair(host: "127.0.0.1", port: b.port, code: "000000"), .remove(hostID: bID),
+            .reconnect(hostID: bID), .startDeviceCode, .stopDeviceCode, .revokeDevice(UUID()),
             .enrollApp(name: "Mac app"),
         ]
         for action in actions { await Self.forbidden("\(action)") { _ = try await client.fleetAction(action) } }
 
-        // Nothing moved: the same Macs, no code window, no device gone, the shared token still accepted.
+        // Nothing moved: the same Macs, no code window, no device gone.
         let after = try await a.read()
         #expect(after.peers.map(\.hostID) == before.peers.map(\.hostID) && after.peers.allSatisfy { $0.link == .connected })
-        #expect(after.join == nil && after.devices?.code == nil && after.devices?.devices.count == 1 && after.devices?.sharedToken.retired == false)
+        #expect(after.join == nil && after.devices?.code == nil && after.devices?.devices.count == 1)
         #expect(try await b.read().peers.map(\.hostID) == [try await a.hostID()], "the other Mac never heard of a removal")
         #expect(try await a.state(of: try await a.hostID())?.sample?.cpuCount == 8, "no reading was filed in a Mac's name")
     }
 
-    @Test func aClientOnTheSharedTokenReadsTheSameView() async throws {
+    @Test func aClientOnADevicesTokenReadsTheSameView() async throws {
         let a = try await FleetPressureIntegrationTests.Mac("MacBook Pro", busy: 30), b = try await FleetPressureIntegrationTests.Mac("Mac mini", busy: 60)
         defer { a.stop(); b.stop() }
         try await FleetPressureIntegrationTests.pair(a, b)
         let client = RemoteHostClient()
         defer { client.disconnect() }
-        _ = try await client.connect(host: "127.0.0.1", port: a.port, token: a.sharedToken, clientName: "Shepherd iOS")
+        _ = try await client.connect(host: "127.0.0.1", port: a.port, token: a.clientToken, clientName: "Shepherd iOS")
         let view = try await client.fleetRead().snapshot
         #expect(view.peers.map(\.name) == ["Mac mini"] && view.addresses.isEmpty && view.devices == nil)
         await Self.forbidden("fleetAction") { _ = try await client.fleetAction(.startJoin) }
@@ -130,21 +130,6 @@ struct FleetDeviceViewTests {
         try await eventually("the Mac to sample again") { a.isSampling }
         phone.stop()
         try await eventually("sampling to stop when the device's connection closes") { !a.isSampling }
-    }
-
-    @Test func withFleetOffADeviceIsOfferedNoViewAndIsRefused() async throws {
-        let a = try await FleetPressureIntegrationTests.Mac("MacBook Pro", busy: 30)
-        defer { a.stop() }
-        let (phone, client) = try await Self.phone(port: a.port, local: a.local)
-        defer { phone.stop() }
-        #expect(client.capabilities.contains(RemoteProtocol.fleetViewCapability))
-        a.server.setFleetEnabledAndWait(false)
-        try await eventually("the capability to be withdrawn") { !client.capabilities.contains(RemoteProtocol.fleetViewCapability) }
-        for attempt in [{ _ = try await client.fleetRead() }, { _ = try await client.fleetAction(.watching(true)) }] as [() async throws -> Void] {
-            do { try await attempt(); Issue.record("a device read a fleet that is off") }
-            catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetProtocol.Code.off) }
-        }
-        #expect(!a.isSampling)
     }
 
     // MARK: The one write

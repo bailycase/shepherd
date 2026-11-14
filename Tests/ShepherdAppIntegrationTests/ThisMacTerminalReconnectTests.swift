@@ -28,7 +28,7 @@ struct ThisMacTerminalReconnectTests {
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
 
         let hosts = RemoteHostStore(defaults: ScratchDefaults(), childRefreshInterval: .milliseconds(200))
-        let connection = hosts.addLocalHost(name: "This Mac", socket: socket, token: token)
+        let connection = hosts.addLocalHost(name: "This Mac", socket: socket)
         defer { hosts.removeHost(id: connection.id) }
         try await eventuallyOnMain("the app to connect") { connection.phase == .connected && !connection.state.tabs.isEmpty }
         let pane = try #require(hosts.paneSession(connection: connection, sessionID: info.id))

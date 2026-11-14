@@ -4,7 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import dnssd
 
-/// Advertises this host as `_shepherd._tcp` while Fleet is on, so another Mac's Add a Mac list
+/// Advertises this host as `_shepherd._tcp` while its listener is open, so another Mac's Add a Mac list
 /// can find it. The listener is the host's own (`SessionServer.startRemoteListener`); this only
 /// registers its port with the system's mDNS responder, which needs no socket here and no
 /// Local Network prompt for advertising. The TXT record says only what a person sees in the

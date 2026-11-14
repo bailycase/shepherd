@@ -193,6 +193,7 @@ struct AttentionReplies: View {
 struct HostNotice: View, Equatable {
     let card: FleetHostCard
     @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileNavigator.self) private var navigator
     @Environment(\.dynamicTypeSize) private var typeSize
 
     static func == (a: HostNotice, b: HostNotice) -> Bool { a.card == b.card }
@@ -223,7 +224,12 @@ struct HostNotice: View, Equatable {
     }
 
     @ViewBuilder private var retry: some View {
-        if card.canRetry {
+        if card.needsPairing {
+            // The Mac no longer accepts the old shared token: only a new pairing gets back in.
+            Button("Add a Mac", systemImage: "plus") { navigator.present(.settings(.host(nil))) }
+                .buttonStyle(.sh(.primary, size: .s))
+                .accessibilityLabel("Add \(card.name) again with a code")
+        } else if card.canRetry {
             Button("Retry", systemImage: "arrow.clockwise") { hosts.retry(card.id) }
                 .buttonStyle(.sh(.secondary, size: .s))
                 .accessibilityLabel("Retry \(card.name)")

@@ -82,17 +82,6 @@ struct DesignIsolationTests {
         #expect(!ShepherdViewModel.notifiesAsThread(drawer.id, in: state))
     }
 
-    /// The Hosts page counts threads: a design's agent at work is none of them, here or on a
-    /// host's last pushed state.
-    @Test func theHostsPageNeverCountsADesignsAgentAsAThread() {
-        var (state, _, _) = workspace()
-        state.agents[1].status = .working
-        #expect(HostsPageModel.connectedFacts(state, address: nil).first { $0.label == "Running" }?.value == "none")
-        let offline = HostsPageModel.offlineFacts(state, lastSeen: nil, address: "horizon:7433",
-                                                  timeZone: .gmt, locale: Locale(identifier: "en_US"))
-        #expect(offline.first { $0.label == "Waiting" }?.value == "1 thread")
-    }
-
     /// A host that sends its design agents gives them no thread row, no ⌘-digit, and no Needs
     /// you; with the Design tool on, its design is a design row that opens that agent.
     @Test(arguments: [false, true])

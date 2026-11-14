@@ -67,8 +67,8 @@ final class AppHarness {
             apps: AppsModel(home: dir.appendingPathComponent("apps-home").path)
         )
         self.vm = vm
-        let token = try await serveHost(mcp: mcp, piAuth: piAuth, recovering: restoringAgents)
-        let connection = vm.connectLocalHost(socket: hostSocket, token: token)
+        try await serveHost(mcp: mcp, piAuth: piAuth, recovering: restoringAgents)
+        let connection = vm.connectLocalHost(socket: hostSocket)
         let server = server
         try await eventuallyOnMain("the view model to adopt the host's workspace", timeout: .seconds(30)) {
             connection.phase == .connected && vm.state == server.state
@@ -86,9 +86,8 @@ final class AppHarness {
 
     /// Serves the scratch server as the app's host, as `Shepherd --host` does, on `hostSocket`.
     /// `recovering` respawns unfinished work as the host does at its start. `piAuth` is the host's sign-in store too, so
-    /// a client's provider requests run the test's bridge. Returns the token.
-    private func serveHost(mcp: MCPStore?, piAuth: PiAuthStore?, recovering: Bool) async throws -> String {
-        let tokenURL = dir.appendingPathComponent("remote-token")
+    /// a client's provider requests run the test's bridge.
+    private func serveHost(mcp: MCPStore?, piAuth: PiAuthStore?, recovering: Bool) async throws {
         if host == nil {
             let notice = "shepherd-test-settings-\(UUID().uuidString)"
             settings.followOtherProcesses(notice: notice)
@@ -104,14 +103,13 @@ final class AppHarness {
             // No `gh` on this Mac: a test that wants a pull request stands one in.
             services.pullRequestLookup = { _ in nil }
             host = services
-            hostBanners = await services.serve(server, socket: hostSocket, tokenURL: tokenURL, recovering: recovering)
+            hostBanners = await services.serve(server, socket: hostSocket, recovering: recovering)
             if let piAuth {
                 let pi = server.pi
                 HostStores(mcp: services.mcpStore, subagents: { SubagentDefinitionsModel(pi: pi) }, piAuth: piAuth, yourPi: YourPiModel(pi: pi),
                            remoteSignIns: RemoteSignIns()).serve(on: server)
             }
         }
-        return try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Waits for every queued optimistic write to reach the server.

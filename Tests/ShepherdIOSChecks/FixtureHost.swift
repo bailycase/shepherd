@@ -107,6 +107,7 @@ final class FixtureHost: @unchecked Sendable {
                 for reply in answer(request) {
                     guard let encoded = try? NDJSON.encode(reply), write(fd, encoded) else { return }
                     // A refused hello is a final reply, as on a real host.
+                    if case .error(_, RemoteProtocol.sharedTokenRetiredCode, _) = reply { return }
                     if case .error(_, RemoteProtocol.unauthorizedCode, _) = reply { return }
                 }
             }
@@ -155,7 +156,8 @@ final class FixtureHost: @unchecked Sendable {
             note("hello")
             if lock.withLock({ holdsHello }) { return [] }
             guard token == FixtureHostData.token, !data.refusesToken else {
-                return [.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token")]
+                // A host refuses a token that is no device's with this, the old shared token's too.
+                return [.error(id: id, code: RemoteProtocol.sharedTokenRetiredCode, message: RemoteProtocol.sharedTokenRetiredMessage)]
             }
             let capabilities = (data.capabilities ?? data.defaultCapabilities).filter { $0 != RemoteProtocol.projectMessageImagesCapability && $0 != RemoteProtocol.logicalProjectsCapability && $0 != RemoteProtocol.projectWorkerCapability && $0 != RemoteProtocol.logicalProjectFilesCapability && $0 != RemoteProtocol.projectExecutionCapability }
             return [.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: capabilities, hostID: data.fleetID)]
@@ -239,10 +241,6 @@ final class FixtureHost: @unchecked Sendable {
              .apps(let id, _):
             note(Self.kind(request))
             return [.error(id: id, code: "fixture", message: "No fixture answer for this request.")]
-        case .fleetEnrollDevice(let id, _):
-            // Offered on every connect once hello advertises `fleetDevicesCapability`; left unanswered it times out after 10 s and the
-            // host's connection is torn down, which shows the thread's offline banner at the top of a long transcript.
-            return [.error(id: id, code: "unsupported", message: "The fixture host enrolls no device.")]
         default:
             return []
         }
@@ -388,7 +386,7 @@ final class FixtureHost: @unchecked Sendable {
         case .fleetRead where data.fleet != nil, .fleetAction(_, .watching) where data.fleet != nil:
             // A read the host serves a phone (`fleet.view.v1`).
             return nil
-        case .drain(let id), .fleetIdentify(let id), .fleetPair(let id, _, _), .fleetEstablish(let id, _), .fleetIntroduce(let id, _),
+        case .drain(let id), .fleetIdentify(let id), .fleetPair(let id, _, _), .fleetIntroduce(let id, _),
              .fleetRevoke(let id, _, _), .fleetSync(let id, _), .fleetRead(let id), .fleetAction(let id, _),
              .fleetPressure(let id, _), .fleetReadiness(let id, _), .fleetPressureNow(let id), .fleetRepoManifest(let id, _),
              .fleetSnapshotPart(let id, _, _), .fleetBlobPush(let id, _, _), .fleetDispatchCreate(let id, _), .fleetDispatchControl(let id, _, _),
@@ -401,7 +399,7 @@ final class FixtureHost: @unchecked Sendable {
             note("pushUnregister")
             return [.ok(id: id)]
         case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .creationBranches, .agentQuery, .nativeThreadSubscribe, .fleetDigest,
-             .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
+             .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetPairDevice, .fleetSyncDevices:
             return nil
         }
     }

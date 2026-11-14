@@ -7,8 +7,10 @@
 #   scripts/perf/stress.sh <label> [agents=8] [rows,rounds,deltas,ms=150,200,600,30]
 #   python3 scripts/perf/summarize_traces.py <label>      # from the work dir
 #
-# Work dir: /tmp/shepherd-perf/stress (support dir, traces). Needs the Dev remote listener on
-# (Settings ▸ Remote, port 7435) and System Events access for the window resize. Nothing here
+# Work dir: /tmp/shepherd-perf/stress (support dir, traces). The host takes no shared token: this script
+# makes a token and writes its hash into the scratch support dir's fleet/devices.json as a paired device,
+# which also opens the listener (a paired device needs it); the driver presents the token. The port is the
+# Dev app's (7435). Needs System Events access for the window resize. Nothing here
 # touches the user's Shepherd support directories or pi home.
 set -e
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
@@ -26,11 +28,22 @@ pkill -f "$APP/Contents/MacOS/Shepherd" 2>/dev/null || true; sleep 2
 rm -rf support && mkdir -p support/pi
 # A copied import state skips the first-launch sheet.
 python3 -c "import json,datetime;json.dump({'version':2,'copied':True,'copiedAt':datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%dT%H:%M:%SZ')},open('support/pi/.shepherd-imports.json','w'))"
+# A device of the scratch fleet: the driver's own token (SHEPHERD_REMOTE_TOKEN), only its hash on disk.
+export SHEPHERD_REMOTE_TOKEN=$(python3 -c "import secrets;print(secrets.token_hex(32))")
+mkdir -p support/fleet && chmod 700 support/fleet
+python3 - <<'PY'
+import hashlib, json, os, uuid
+path = "support/fleet/devices.json"
+record = {"deviceID": str(uuid.uuid4()).upper(), "name": "stress driver", "kind": "macApp", "pairedAt": 0,
+          "tokenHash": hashlib.sha256(os.environ["SHEPHERD_REMOTE_TOKEN"].encode()).hexdigest()}
+fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w") as f: json.dump({"devices": [record]}, f)
+PY
 SHEPHERD_SUPPORT_DIR="$WORK/support" SHEPHERD_PI_ENGINE="$WORK/bin/pi" STUB_PI_STRESS="$STRESS" \
   nohup "$APP/Contents/MacOS/Shepherd" > "app-$LABEL.log" 2>&1 &
 sleep 8
 PID=$(pgrep -f "$APP/Contents/MacOS/Shepherd")
-python3 "$REPO/scripts/perf/remote_drive.py" 7435 support/remote-token "$WORK/space" "$N" > /dev/null
+python3 "$REPO/scripts/perf/remote_drive.py" 7435 "$WORK/space" "$N" > /dev/null
 for _ in 1 2 3 4 5 6 7 8 9 10; do
   osascript -e "tell application \"System Events\" to set size of window 1 of (first process whose unix id is $PID) to {1600, 1000}" 2>/dev/null && break
   sleep 2

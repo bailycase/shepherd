@@ -50,7 +50,7 @@ public struct FleetSSHFinder: Sendable {
             case .connection(let reason): reason
             case .notInstalled: "Shepherd isn't installed in Applications on that Mac, or is too old to answer over ssh. Update it, or use a pairing link."
             case .notRunning: "Shepherd isn't running on that Mac. Open it there, then try again."
-            case .notServing: "Shepherd is open on that Mac but isn't serving. Turn on Settings ▸ Experiments ▸ Fleet there, then try again."
+            case .notServing: "Shepherd is open on that Mac but isn't listening yet. Open Settings ▸ Fleet ▸ Join a fleet there, then try again."
             case .unreadable: "That Mac answered, but not as Shepherd does. Use a pairing link instead."
             }
         }

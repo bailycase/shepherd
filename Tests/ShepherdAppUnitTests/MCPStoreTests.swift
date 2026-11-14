@@ -205,11 +205,8 @@ struct MCPStoreTests {
         harness.store.refresh()
         await harness.store.settle()
         #expect(try row(harness.store, "linear").signIn == .account("Signed in"))
-        #expect(harness.store.details["linear"]?.signIn == .signedIn(account: nil, scopes: [], note: "OAuth · kept fresh by pi"))
-        // In a fleet the sign-in is every Mac's (it is a unit of the fleet's store).
-        harness.store.inFleet = true
+        // The sign-in is every Mac's in the fleet (it is a unit of the fleet's store).
         #expect(harness.store.details["linear"]?.signIn == .signedIn(account: nil, scopes: [], note: "OAuth · kept fresh by pi · shared across the fleet"))
-        harness.store.inFleet = false
         // Another server of the same name and a different URL is not the same sign-in.
         harness.auth = Data(#"{"mcp__linear|https://elsewhere/mcp": {}}"#.utf8)
         harness.store.refresh()

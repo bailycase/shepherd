@@ -81,9 +81,10 @@ struct ProjectExecutorSpaceReadTests {
         gate.signal()
         if change == "restart" {
             await #expect(throws: Error.self) { try await raw.frames(until: { if case .projectExecution(70, _) = $0 { return true }; return false }) }
-            let port = try remote.server.startRemoteListener(port: 0, tokenURL: remote.host.dir.appendingPathComponent("remote-token"))
+            let tokenURL = remote.host.dir.appendingPathComponent("remote-token")
+            let port = try remote.server.startRemoteListener(port: 0, tokenURL: tokenURL)
             let fresh = RemoteHostClient(); defer { fresh.disconnect() }
-            _ = try await fresh.connect(host: "127.0.0.1", port: port, token: remote.token, clientName: "result restart fixture")
+            _ = try await fresh.connect(host: "127.0.0.1", port: port, token: try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), clientName: "result restart fixture")
             #expect(try await fresh.projectExecution(continuation).resultPage == expected)
             return
         }

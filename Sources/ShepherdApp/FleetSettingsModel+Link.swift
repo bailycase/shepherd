@@ -41,9 +41,9 @@ extension FleetSettingsModel {
 
     // MARK: Pairing links
 
-    /// Reads the text of the link field. A link this app opens fills in the Mac and its code; any other says why it can't be used. Which
-    /// links fit depends on the sheet: a Mac joining a fleet takes a Join link, an app added as a client (Fleet off) a device link.
-    func readLink(_ text: String, asClient: Bool) {
+    /// Reads the text of the link field. A link this app opens fills in the Mac and its code; any other says why it can't be used. A link that adds a device
+    /// to a Mac is for an iPhone or iPad, so Add a Mac refuses it.
+    func readLink(_ text: String) {
         linkText = text
         link = nil
         linkProblem = nil
@@ -54,9 +54,7 @@ extension FleetSettingsModel {
                 linkProblem = "That link has expired. Open Join a fleet on the other Mac for a new one."
             } else if read.hostID == snapshot.hostID {
                 linkProblem = "That link is for this Mac."
-            } else if read.purpose == .join && asClient {
-                linkProblem = "That link adds a Mac to a fleet. Turn on Settings ▸ Experiments ▸ Fleet to use it."
-            } else if read.purpose == .device && !asClient {
+            } else if read.purpose == .device {
                 linkProblem = "That link adds a device to a Mac. To add a Mac to this fleet, use the link under Join a fleet on the other Mac."
             } else {
                 link = read
@@ -108,22 +106,18 @@ extension FleetSettingsModel {
 
     // MARK: Pairing with a named Mac
 
-    /// Enters `code` on the Mac the link or the SSH find named. The host (or, with Fleet off, this app) tries each route in turn and
+    /// Enters `code` on the Mac the link or the SSH find named. The host tries each route in turn and
     /// sends the code only to a Mac that answers as the one named. True when it paired.
-    func pair(at target: PairTarget, code: String, asClient: Bool) async -> Bool {
+    func pair(at target: PairTarget, code: String) async -> Bool {
         pairing = .working
         do {
-            if asClient {
-                try await pairClient(over: target, code: code)
-            } else {
-                guard let client = try host() else { pairing = .failed("Shepherd's background service isn't answering."); return false }
-                guard findsByLink else {
-                    pairing = .failed("Shepherd's background service is older than this app. Quit and reopen Shepherd, then try again.")
-                    return false
-                }
-                apply(try await client.fleetAction(.pairAt(hostID: target.hostID, port: target.port, routes: target.routes, code: code,
-                                                           expiresAt: target.expiresAt)))
+            guard let client = try host() else { pairing = .failed("Shepherd's background service isn't answering."); return false }
+            guard findsByLink else {
+                pairing = .failed("Shepherd's background service is older than this app. Quit and reopen Shepherd, then try again.")
+                return false
             }
+            apply(try await client.fleetAction(.pairAt(hostID: target.hostID, port: target.port, routes: target.routes, code: code,
+                                                       expiresAt: target.expiresAt)))
             pairing = .idle
             return true
         } catch let error as RemoteHostClientError {
@@ -137,20 +131,6 @@ extension FleetSettingsModel {
             pairing = .failed(Self.words(error))
             return false
         }
-    }
-
-    private func pairClient(over target: PairTarget, code: String) async throws {
-        var failure: Error = RemoteHostClientError.timeout
-        for route in target.routes {
-            do {
-                return try await pairClient(route.host, target.port, code, target.hostID)
-            } catch RemoteHostClientError.rejected(let reason, let message) where reason != FleetProtocol.Code.wrongHost {
-                throw RemoteHostClientError.rejected(code: reason, message: message)
-            } catch {
-                failure = error
-            }
-        }
-        throw failure
     }
 }
 

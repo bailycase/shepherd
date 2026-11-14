@@ -123,15 +123,16 @@ herdr workspaces and pi sessions.
 
 ## Remote access
 
-1. **On the Mac that runs the agents (the host):** turn on Settings ▸ Fleet ▸ Serve this Mac (Fleet itself
-   is Settings ▸ Experiments ▸ Fleet, which opens the listener too). It listens on TCP port 7433 on all
+1. **On the Mac that runs the agents (the host):** nothing listens on a fresh Mac. The listener opens by itself
+   once a Mac or a device is paired or a code is showing (Settings ▸ Fleet ▸ Join a fleet, Add a device), and
+   Settings ▸ Fleet ▸ Serve this Mac keeps it open all the time. It listens on TCP port 7433 on all
    interfaces (Shepherd Nightly: 7434).
 2. **On the other Mac, iPhone or iPad:** on the host, Settings ▸ Fleet ▸ Add a device shows a 6 digit code (and a
    QR for a phone). On another Mac, Settings ▸ Fleet ▸ Add a Mac takes it; on an iPhone or iPad, Add a Mac in
    the app does. Both need to be on the same local network. There is no address or token to type: each client gets
-   a token of its own, which the host revokes from Settings ▸ Fleet ▸ Devices. With Fleet on, Add a Mac pairs
-   Macs into the fleet instead, with the code from Join a fleet. The host's agents appear as their own section in
-   the sidebar, with the same rows and threads.
+   a token of its own, which the host revokes from Settings ▸ Fleet ▸ Devices. A Mac connects to another only by
+   joining its fleet: Add a Mac takes the code from Join a fleet, and the Mac's threads then appear as their own
+   section in the sidebar, with the same rows and threads.
 
 A connected Mac can:
 

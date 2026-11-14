@@ -88,11 +88,13 @@ struct WorkspaceNavigationTests {
             #expect(vm.activeTabID == nil && vm.selectedSidebarRow == nil)
             #expect(vm.mountedTabs.map(\.id) == mounted, "nothing unmounts behind a page")
         }
-        // Hosts and Extensions have no sidebar row (the boards draw three destinations); the palette opens them.
+        // Fleet and Extensions have no sidebar row (the boards draw three destinations); the palette opens them. There is no Open Hosts: a
+        // Mac is added to the fleet in Settings ▸ Fleet.
         vm.openDestination(.newThread)
-        let hosts = try #require(vm.paletteItems.first { $0.title == "Open Hosts" })
-        vm.runPaletteItem(hosts)
-        #expect(vm.shownDestination == .hosts)
+        #expect(!vm.paletteItems.contains { $0.title == "Open Hosts" })
+        let fleet = try #require(vm.paletteItems.first { $0.title == "Open Fleet" })
+        vm.runPaletteItem(fleet)
+        #expect(vm.shownDestination == .fleet)
         let extensions = try #require(vm.paletteItems.first { $0.title == "Open Extensions" })
         vm.runPaletteItem(extensions)
         #expect(vm.showSettings && vm.settingsSection == .extensions)

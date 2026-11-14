@@ -125,7 +125,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         set { capabilityLock.lock(); storedHostBuild = newValue; capabilityLock.unlock() }
     }
     private var storedHostBuild: String?
-    /// The host's fleet identity, as its `helloOk` said (nil from an older host, or with Fleet off). Behind the same lock.
+    /// The host's fleet identity, as its `helloOk` said (nil from an older host). Behind the same lock.
     public private(set) var hostID: UUID? {
         get { capabilityLock.lock(); defer { capabilityLock.unlock() }; return storedHostID }
         set { capabilityLock.lock(); storedHostID = newValue; capabilityLock.unlock() }
@@ -1222,7 +1222,6 @@ public final class RemoteHostClient: @unchecked Sendable {
             let what = switch change {
             case .goalsEnabled: "toggle the Goals experiment"
             case .projectsEnabled: "toggle the Projects experiment"
-            case .fleetEnabled: "toggle the Fleet experiment"
             case .fleetWeight: "change where Fleet sends work"
             case .fleetThreadsCanSend, .fleetThreadCap: "change what threads may send"
             case .fleetUncommitted, .fleetSnapshotExcludes: "change what a dispatch carries"

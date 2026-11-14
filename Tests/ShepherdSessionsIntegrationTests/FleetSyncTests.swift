@@ -11,11 +11,11 @@ import ShepherdTestSupport
 /// that has it; two writes to one unit resolve by the later and keep the other in history; and pi's
 /// own rewrite of `settings.json` is imported, never overwritten. Each `Mac` has its own pi home.
 extension SessionServer {
-    /// `setFleetEnabled`, returning once the host has acted on it. A request a client sends afterwards can be served first (the host's
-    /// queue runs a socket's event handler ahead of a block submitted earlier; seen as `fleet_off` for a `startJoin` sent right after
-    /// the Mac was enabled), so a test that talks to the Mac next waits for the switch to have landed.
-    func setFleetEnabledAndWait(_ enabled: Bool) {
-        setFleetEnabled(enabled)
+    /// `startFleet`, returning once the host has acted on it. A request a client sends afterwards can be served first (the host's
+    /// queue runs a socket's event handler ahead of a block submitted earlier), so a test that talks to the Mac next waits for the
+    /// fleet to have started.
+    func startFleetAndWait() {
+        startFleet()
         queue.sync {}
     }
 }
@@ -28,13 +28,13 @@ struct FleetSyncTests {
         let port: UInt16
         let name: String
         let local: RemoteHostClient
-        let sharedToken: String
+        let clientToken: String
         /// The host settings the app would hold, as the app reports and applies them.
         let settings = Locked(HostSettings())
         var server: SessionServer { host.server }
         var piSettings: URL { server.pi.files.settings }
 
-        /// `enable: false` leaves Fleet off so a test can set this Mac's files first.
+        /// `enable: false` leaves the fleet not started yet so a test can set this Mac's files first; `enable()` starts it.
         init(_ name: String, dir: URL? = nil, port: UInt16 = 0, enable: Bool = true) async throws {
             self.name = name
             let scratch = try dir ?? makeScratchDirectory("sync")
@@ -51,17 +51,17 @@ struct FleetSyncTests {
             try server.startLocalListener(path: socket, tokenURL: tokenURL)
             let local = RemoteHostClient(localSocket: socket)
             _ = try await local.connect(host: "", port: 0, token: token, clientName: "Shepherd")
-            (self.host, self.port, self.sharedToken, self.local) = (host, port, token, local)
+            (self.host, self.port, self.clientToken, self.local) = (host, port, token, local)
             let settings = settings
             server.setFleetHostSettings { [weak server] change in
                 let now = settings.withValue { $0.apply(change); return $0 }
                 server?.fleetHostSettingsChanged(now)
             }
             server.fleetHostSettingsChanged(settings.current)
-            if enable { server.setFleetEnabledAndWait(true) }
+            if enable { server.startFleetAndWait() }
         }
 
-        func enable() { server.setFleetEnabledAndWait(true) }
+        func enable() { server.startFleetAndWait() }
 
         func stop(keepFiles: Bool = false) {
             local.disconnect()
@@ -309,9 +309,9 @@ struct FleetSyncTests {
         b.change(.defaultModel(nil))
         try await eventually("A to follow B's later change") { a.settings.current.defaultModel == nil && a.settings.current.defaultThinking == .high }
         // Per Mac settings never travel.
-        a.change(.fleetEnabled(true))
-        try await eventually("A to report it") { a.settings.current.fleetEnabled }
-        #expect(!b.settings.current.fleetEnabled)
+        a.change(.goalsEnabled(true))
+        try await eventually("A to report it") { a.settings.current.goalsEnabled }
+        #expect(!b.settings.current.goalsEnabled)
     }
 
     /// Where Fleet sends work (`fleet.weight.<hostID>`) is chosen once for the fleet: a Mac that never heard
@@ -343,17 +343,14 @@ struct FleetSyncTests {
 
     // MARK: First sync
 
-    @Test func theMacWhereFleetWasFirstOnIsTheReferenceAndTheOthersCopyIsKeptInHistory() async throws {
+    @Test func theMacThatEntersTheCodeIsTheReferenceAndTheOthersCopyIsKeptInHistory() async throws {
         let a = try await Mac("MacBook Pro", enable: false), b = try await Mac("Mac mini", enable: false)
         defer { a.stop(); b.stop() }
         try a.server.instructions.save(.agents, content: "# MacBook Pro's instructions")
         try b.server.instructions.save(.agents, content: "# Mac mini's own, different")
         try b.server.instructions.save(.appendSystem, content: "Only the mini has this.")
+        // Nothing is read until a Mac is paired; the Mac that enters the code reads first, so its copies are the reference.
         a.enable()
-        try await eventually("A to seed the fleet") { a.server.fleetSyncWinner(Self.agents) != nil }
-        // B's seed must be a later clock reading than A's, whatever the millisecond.
-        let before = Int(Date().timeIntervalSince1970 * 1000)
-        try await eventually("the clock to move on") { Int(Date().timeIntervalSince1970 * 1000) > before }
         b.enable()
         try await a.pair(with: b)
         try await a.waitForLink(to: b)
@@ -382,7 +379,7 @@ struct FleetSyncTests {
         defer { a.stop(); b.stop() }
         // A phone or a legacy Mac holds the shared token, which is no fleet membership.
         let phone = RemoteHostClient()
-        _ = try await phone.connect(host: "127.0.0.1", port: b.port, token: b.sharedToken, clientName: "iPhone")
+        _ = try await phone.connect(host: "127.0.0.1", port: b.port, token: b.clientToken, clientName: "iPhone")
         defer { phone.disconnect() }
         await #expect(throws: RemoteHostClientError.self) { _ = try await phone.fleetSyncState(.hello(vector: FleetVersionVector())) }
         await #expect(throws: RemoteHostClientError.self) { _ = try await phone.fleetBlob(hash: String(repeating: "0", count: 64), size: 1) }
@@ -415,40 +412,6 @@ struct FleetSyncTests {
             catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetProtocol.Code.forbidden) }
         }
         #expect(a.text(.agents) == "kept on the Macs")
-    }
-
-    /// Fleet off is membership off: the engine stops (nothing watched, nothing served), a member that asks is told
-    /// Fleet is off, and turning it on again picks up what changed meanwhile.
-    @Test func syncRunsOnlyWhileFleetIsOn() async throws {
-        let (a, b) = try await Self.pair()
-        defer { a.stop(); b.stop() }
-        try await a.save(.agents, "before")
-        try await b.waitForText(.agents, "before")
-
-        b.server.setFleetEnabledAndWait(false)
-        try await eventually("B's fleet to be off") { (try? await b.read().enabled) == false }
-        let snapshot = try await b.read()
-        #expect(snapshot.sync == nil && snapshot.peers.isEmpty)
-        try await a.save(.agents, "while B is out")
-        try await b.save(.agents, "B's own edit while out")
-        try await Task.sleep(for: .milliseconds(300))
-        #expect(b.text(.agents) == "B's own edit while out", "an off Mac applies nothing")
-        #expect(a.text(.agents) == "while B is out", "and sends nothing")
-
-        b.server.setFleetEnabledAndWait(true)
-        try await eventually("both Macs to settle on one text") { a.text(.agents) == b.text(.agents) }
-        #expect(["B's own edit while out", "while B is out"].contains(a.text(.agents)), "the later edit won, the other is in history")
-    }
-
-    @Test func withFleetOffNothingIsKeptAndNoSavesAreWatched() async throws {
-        let a = try await Mac("MacBook Pro", enable: false)
-        defer { a.stop() }
-        try await a.save(.agents, "plain, as today")
-        a.change(.defaultThinking(.low))
-        #expect(a.text(.agents) == "plain, as today")
-        #expect(!FileManager.default.fileExists(atPath: a.host.dir.appendingPathComponent("fleet/store").path), "no store until Fleet is on")
-        let snapshot = try await a.read()
-        #expect(!snapshot.enabled && snapshot.sync == nil)
     }
 
     @Test func theStoresFilesArePrivate() async throws {
