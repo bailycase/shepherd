@@ -20,12 +20,12 @@ extension ShepherdViewModel {
 
     /// Connects the background host on this Mac (`ShepherdApp`), its workspace taken as the app's own.
     @discardableResult
-    func connectLocalHost(socket: String, token: String) -> RemoteHostStore.Connection {
+    func connectLocalHost(socket: String) -> RemoteHostStore.Connection {
         // The host keeps its designs beside its socket, in its support folder on this Mac.
         localHostDesigns = DesignStore(directory: URL(fileURLWithPath: socket).deletingLastPathComponent()
             .appendingPathComponent("designs", isDirectory: true))
         adoptLocalHost()
-        return remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac, socket: socket, token: token)
+        return remoteHosts.addLocalHost(name: NewThreadPlaces.thisMac, socket: socket)
     }
 
     /// Takes the background host's workspace as the app's own (`connectLocalHost`, before the host

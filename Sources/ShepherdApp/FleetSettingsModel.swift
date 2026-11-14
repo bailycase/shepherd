@@ -282,16 +282,6 @@ final class FleetSettingsModel {
         await deviceAction(.revokeDevice(id))
     }
 
-    /// Stops accepting the shared token. The host refuses while a device that used it hasn't switched.
-    func retireSharedToken() async {
-        await deviceAction(.retireSharedToken)
-    }
-
-    /// Stops waiting for a client that connected with the shared token and may never come back.
-    func forgetWaiting(_ id: String) async {
-        await deviceAction(.forgetLegacyClient(id))
-    }
-
     private func deviceAction(_ action: FleetAction) async {
         do {
             guard let client = try host() else { return }

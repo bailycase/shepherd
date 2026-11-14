@@ -86,26 +86,26 @@ struct FleetDeviceViewTests {
         // The app's actions: no pairing, joining, removing, reconnecting, or managing devices and tokens.
         let actions: [FleetAction] = [
             .startJoin, .stopJoin, .pair(host: "127.0.0.1", port: b.port, code: "000000"), .remove(hostID: bID),
-            .reconnect(hostID: bID), .startDeviceCode, .stopDeviceCode, .revokeDevice(UUID()), .forgetLegacyClient("x"), .retireSharedToken,
+            .reconnect(hostID: bID), .startDeviceCode, .stopDeviceCode, .revokeDevice(UUID()),
             .enrollApp(name: "Mac app"),
         ]
         for action in actions { await Self.forbidden("\(action)") { _ = try await client.fleetAction(action) } }
 
-        // Nothing moved: the same Macs, no code window, no device gone, the shared token still accepted.
+        // Nothing moved: the same Macs, no code window, no device gone.
         let after = try await a.read()
         #expect(after.peers.map(\.hostID) == before.peers.map(\.hostID) && after.peers.allSatisfy { $0.link == .connected })
-        #expect(after.join == nil && after.devices?.code == nil && after.devices?.devices.count == 1 && after.devices?.sharedToken.retired == false)
+        #expect(after.join == nil && after.devices?.code == nil && after.devices?.devices.count == 1)
         #expect(try await b.read().peers.map(\.hostID) == [try await a.hostID()], "the other Mac never heard of a removal")
         #expect(try await a.state(of: try await a.hostID())?.sample?.cpuCount == 8, "no reading was filed in a Mac's name")
     }
 
-    @Test func aClientOnTheSharedTokenReadsTheSameView() async throws {
+    @Test func aClientOnADevicesTokenReadsTheSameView() async throws {
         let a = try await FleetPressureIntegrationTests.Mac("MacBook Pro", busy: 30), b = try await FleetPressureIntegrationTests.Mac("Mac mini", busy: 60)
         defer { a.stop(); b.stop() }
         try await FleetPressureIntegrationTests.pair(a, b)
         let client = RemoteHostClient()
         defer { client.disconnect() }
-        _ = try await client.connect(host: "127.0.0.1", port: a.port, token: a.sharedToken, clientName: "Shepherd iOS")
+        _ = try await client.connect(host: "127.0.0.1", port: a.port, token: a.clientToken, clientName: "Shepherd iOS")
         let view = try await client.fleetRead().snapshot
         #expect(view.peers.map(\.name) == ["Mac mini"] && view.addresses.isEmpty && view.devices == nil)
         await Self.forbidden("fleetAction") { _ = try await client.fleetAction(.startJoin) }

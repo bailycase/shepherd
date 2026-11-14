@@ -33,7 +33,7 @@ struct FleetConnectionsFlowTests {
         let connection = try #require(store.pairedConnections.first)
         #expect(store.pairedConnections.count == 1 && connection.id == miniID, "the fleet's own id for the Mac")
         #expect(connection.config.name == "Mac mini" && connection.config.fleetManaged && connection.config.ownToken)
-        #expect(connection.config.token != b.token && connection.config.token != a.token, "not the shared token of either Mac")
+        #expect(connection.config.token != b.token && connection.config.token != a.token, "the app's own token, not what a Mac's local socket was given")
         #expect(connection.fleetID == miniID)
 
         // The Mac leaves the fleet: so does its connection.

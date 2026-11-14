@@ -156,27 +156,17 @@ struct FleetPreviewTests {
             FleetDeviceStatus(deviceID: UUID(), name: "Ada's iPhone", kind: .iphone, pairedAt: ms - 6 * 86_400_000, connected: true),
             FleetDeviceStatus(deviceID: UUID(), name: "Studio iPad", kind: .ipad, pairedAt: ms - 4 * 86_400_000, connected: false, lastSeen: ms - 3_600_000),
             FleetDeviceStatus(deviceID: UUID(), name: "Mac mini", kind: .macApp, pairedAt: ms - 2 * 86_400_000, connected: false),
-        ],
-        sharedToken: FleetSharedTokenStatus(waiting: [FleetLegacyClient(id: "Shepherd iOS@192.168.1.31", name: "Shepherd iOS", lastSeen: ms - 7_200_000)], switched: 3))
+        ])
 
-    @Test func settingsFleetWithDevicesAndAClientStillOnTheSharedToken() async throws {
+    @Test func settingsFleetWithDevices() async throws {
         let model = Self.model(peers: Self.peers, devices: Self.devices)
         try await Preview.renderMatrix("fleet-settings-devices", size: CGSize(width: 1000, height: 1180)) {
             FleetSettings(model: model, serviceKeepsRunning: true).frame(width: 1000, height: 1180).background(Color.sh.bgWindow)
         }
     }
 
-    @Test func settingsFleetDevicesWhenEveryClientHasSwitched() async throws {
-        var snapshot = Self.devices
-        snapshot.sharedToken = FleetSharedTokenStatus(waiting: [], switched: 3)
-        let model = Self.model(peers: Self.peers, devices: snapshot)
-        try await Preview.render("fleet-settings-devices-switched", size: CGSize(width: 1000, height: 1000)) {
-            FleetSettings(model: model, serviceKeepsRunning: true).frame(width: 1000, height: 1000).background(Color.sh.bgWindow)
-        }
-    }
-
-    @Test func settingsFleetDevicesWithNoneAndTheSharedTokenRetired() async throws {
-        let model = Self.model(peers: [], devices: FleetDevicesSnapshot(sharedToken: FleetSharedTokenStatus(retired: true)))
+    @Test func settingsFleetDevicesWithNone() async throws {
+        let model = Self.model(peers: [], devices: FleetDevicesSnapshot())
         try await Preview.render("fleet-settings-devices-none", size: CGSize(width: 1000, height: 640)) {
             FleetSettings(model: model, serviceKeepsRunning: true).frame(width: 1000, height: 640).background(Color.sh.bgWindow)
         }

@@ -28,7 +28,7 @@ struct FleetSyncTests {
         let port: UInt16
         let name: String
         let local: RemoteHostClient
-        let sharedToken: String
+        let clientToken: String
         /// The host settings the app would hold, as the app reports and applies them.
         let settings = Locked(HostSettings())
         var server: SessionServer { host.server }
@@ -51,7 +51,7 @@ struct FleetSyncTests {
             try server.startLocalListener(path: socket, tokenURL: tokenURL)
             let local = RemoteHostClient(localSocket: socket)
             _ = try await local.connect(host: "", port: 0, token: token, clientName: "Shepherd")
-            (self.host, self.port, self.sharedToken, self.local) = (host, port, token, local)
+            (self.host, self.port, self.clientToken, self.local) = (host, port, token, local)
             let settings = settings
             server.setFleetHostSettings { [weak server] change in
                 let now = settings.withValue { $0.apply(change); return $0 }
@@ -379,7 +379,7 @@ struct FleetSyncTests {
         defer { a.stop(); b.stop() }
         // A phone or a legacy Mac holds the shared token, which is no fleet membership.
         let phone = RemoteHostClient()
-        _ = try await phone.connect(host: "127.0.0.1", port: b.port, token: b.sharedToken, clientName: "iPhone")
+        _ = try await phone.connect(host: "127.0.0.1", port: b.port, token: b.clientToken, clientName: "iPhone")
         defer { phone.disconnect() }
         await #expect(throws: RemoteHostClientError.self) { _ = try await phone.fleetSyncState(.hello(vector: FleetVersionVector())) }
         await #expect(throws: RemoteHostClientError.self) { _ = try await phone.fleetBlob(hash: String(repeating: "0", count: 64), size: 1) }

@@ -66,8 +66,6 @@ struct FleetDevicesTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         var devices = FleetDevices()
         devices.add(Self.device("iPhone"))
-        devices.sighted(name: "Shepherd iOS", host: "192.168.1.31", now: 5_000)
-        devices.sharedTokenRetired = true
         try devices.save(to: dir)
         #expect(try FleetDevices.load(from: dir) == devices)
 
@@ -76,32 +74,15 @@ struct FleetDevicesTests {
 
         try Data("{}".utf8).write(to: dir.appendingPathComponent("devices.json"))
         let bare = try FleetDevices.load(from: dir)
-        #expect(bare.devices.isEmpty && bare.legacy.isEmpty && !bare.sharedTokenRetired)
+        #expect(bare.devices.isEmpty)
+        // A file from when a shared token was accepted keeps what it held of devices and ignores the rest.
+        let old = #"{"legacy":[{"id":"Shepherd iOS@192.168.1.31","name":"Shepherd iOS","lastSeen":5000}],"sharedTokenRetired":true,"devices":[]}"#
+        try Data(old.utf8).write(to: dir.appendingPathComponent("devices.json"))
+        #expect(try FleetDevices.load(from: dir) == FleetDevices())
         let sparse = #"{"devices":[{"deviceID":"00000000-0000-0000-0000-0000000000D1"}]}"#
         try Data(sparse.utf8).write(to: dir.appendingPathComponent("devices.json"))
         let loaded = try FleetDevices.load(from: dir).devices
         #expect(loaded.count == 1 && loaded[0].name == "" && loaded[0].kind == .iphone && loaded[0].revokedAt == nil)
-    }
-
-    @Test func aClientOnTheSharedTokenIsWaitedForUntilItSwitchesOrIsForgottenOrIsGone() {
-        var devices = FleetDevices()
-        let now = 100.0 * 24 * 3600 * 1000
-        devices.sighted(name: "Shepherd iOS", host: "192.168.1.31", now: now)
-        devices.sighted(name: "Shepherd iOS", host: "192.168.1.32", now: now)
-        devices.sighted(name: "Shepherd iOS", host: "192.168.1.31", now: now + 1)
-        #expect(devices.waiting(now: now + 2).count == 2, "two phones with the same name are told apart by where they connect from")
-
-        let switched = devices.switched(name: "Shepherd iOS", host: "192.168.1.31")
-        #expect(switched)
-        #expect(devices.waiting(now: now + 2).map(\.id) == ["Shepherd iOS@192.168.1.32"])
-        let switchedAgain = devices.switched(name: "Shepherd iOS", host: "192.168.1.31")
-        #expect(!switchedAgain)
-
-        let month = FleetDevices.sightingLifetime * 1000
-        #expect(devices.waiting(now: now + month - 1).count == 1)
-        #expect(devices.waiting(now: now + month + 1).isEmpty, "a client not seen for a month stops holding the token back")
-        let forgotten = devices.forget(legacy: "Shepherd iOS@192.168.1.32")
-        #expect(forgotten && devices.waiting(now: now).isEmpty)
     }
 
     @Test func theCodeOfAddADeviceIsTheJoinWindowWithItsFiveTries() {
@@ -121,13 +102,13 @@ struct FleetDevicesTests {
         #expect(FleetProtocol.parsePairLink("shepherd-pair://device?code=482913") == nil, "without a Mac it can't be aimed")
     }
 
-    @Test func aDeviceIsOfferedNoFleetCapabilityAndAnOldClientOnTheSharedTokenStillIs() {
+    @Test func aDeviceIsOfferedNoFleetCapability() {
         for capability in RemoteProtocol.fleetMemberCapabilities {
             #expect(!FleetAccess.device.isOffered(capability))
-            #expect(FleetAccess.shared.isOffered(capability) && FleetAccess.member.isOffered(capability) && FleetAccess.local.isOffered(capability))
+            #expect(FleetAccess.member.isOffered(capability) && FleetAccess.local.isOffered(capability))
         }
         #expect(FleetAccess.device.isOffered(RemoteProtocol.nativeThreadCapability), "everything a client does today stays")
         #expect(FleetAccess.local.takesPartInFleet && FleetAccess.member.takesPartInFleet)
-        #expect(!FleetAccess.device.takesPartInFleet && !FleetAccess.shared.takesPartInFleet)
+        #expect(!FleetAccess.device.takesPartInFleet && !FleetAccess.unauthenticated.takesPartInFleet)
     }
 }

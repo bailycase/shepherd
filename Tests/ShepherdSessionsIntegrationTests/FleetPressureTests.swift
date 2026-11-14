@@ -52,7 +52,7 @@ struct FleetPressureIntegrationTests {
         let port: UInt16
         let name: String
         let local: RemoteHostClient
-        let sharedToken: String
+        let clientToken: String
         let meter: Meter
         let clock: TestClock
         var server: SessionServer { host.server }
@@ -83,7 +83,7 @@ struct FleetPressureIntegrationTests {
             server.startFleetAndWait()
             let local = RemoteHostClient(localSocket: socket)
             _ = try await local.connect(host: "", port: 0, token: token, clientName: "Shepherd")
-            (self.host, self.port, self.sharedToken, self.local) = (host, port, token, local)
+            (self.host, self.port, self.clientToken, self.local) = (host, port, token, local)
         }
 
         func stop(keepFiles: Bool = false) {
@@ -363,7 +363,7 @@ struct FleetPressureIntegrationTests {
         defer { a.stop(); b.stop() }
         try await Self.pair(a, b)
         let client = RemoteHostClient()
-        _ = try await client.connect(host: "127.0.0.1", port: b.port, token: b.sharedToken, clientName: "phone")
+        _ = try await client.connect(host: "127.0.0.1", port: b.port, token: b.clientToken, clientName: "phone")
         defer { client.disconnect() }
         for attempt in [
             { try await client.fleetPressure(FleetPressureSample(cpuUtilization: 0, cpuCount: 1, totalMemoryBytes: 1, availableMemoryBytes: 1)) },
@@ -415,7 +415,7 @@ struct FleetPressureIntegrationTests {
         defer { a.stop() }
         let socket = a.host.dir.appendingPathComponent("h.sock").path
         let viewer = RemoteHostClient(localSocket: socket)
-        _ = try await viewer.connect(host: "", port: 0, token: a.sharedToken, clientName: "Shepherd")
+        _ = try await viewer.connect(host: "", port: 0, token: a.clientToken, clientName: "Shepherd")
         _ = try await viewer.fleetAction(.watching(true))
         try await eventually("sampling to start") { a.isSampling }
         viewer.disconnect()
@@ -427,7 +427,7 @@ struct FleetPressureIntegrationTests {
         defer { a.stop() }
         // The app's own connection: the host pushes settings pages to the apps that list local threads.
         let app = RemoteHostClient(localSocket: a.host.dir.appendingPathComponent("h.sock").path)
-        _ = try await app.connect(host: "", port: 0, token: a.sharedToken, clientName: "Shepherd",
+        _ = try await app.connect(host: "", port: 0, token: a.clientToken, clientName: "Shepherd",
                                   capabilities: RemoteProtocol.clientCapabilities + [RemoteProtocol.localThreadsCapability])
         defer { app.disconnect() }
         let pushes = Locked(0)

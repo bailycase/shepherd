@@ -6,8 +6,8 @@ import ShepherdRemote
 import ShepherdTestSupport
 
 /// Phones, iPads and Macs' apps as clients of a fleet, between real scratch hosts: pairing a device by
-/// code, what it can and cannot reach, revoking it mid connection from any Mac, and retiring the shared
-/// token once every client has its own. Reuses `FleetPairingTests.Mac`.
+/// code, what it can and cannot reach, revoking it mid connection from any Mac, and what a client that
+/// presents the old shared token is told. Reuses `FleetPairingTests.Mac`.
 @Suite("Fleet devices on hosts", .integrationTimeLimit)
 struct FleetDevicesIntegrationTests {
     typealias Mac = FleetPairingTests.Mac
@@ -54,7 +54,7 @@ struct FleetDevicesIntegrationTests {
             _ = try await client.connect(host: "127.0.0.1", port: mac.port, token: token, clientName: "probe", capabilities: [], fetchesState: false)
             return false
         } catch RemoteHostClientError.rejected(let code, _) {
-            return code == RemoteProtocol.unauthorizedCode
+            return code == RemoteProtocol.sharedTokenRetiredCode
         } catch { return false }
     }
 
@@ -131,18 +131,12 @@ struct FleetDevicesIntegrationTests {
 
         #expect(!client.capabilities.contains(RemoteProtocol.fleetCapability))
         #expect(client.capabilities.contains(RemoteProtocol.nativeThreadCapability), "what a client does today is unchanged")
-        // The same host offers it to a client still on the shared token (to be given its own).
-        let legacy = try await RemoteHostClient.connected(to: a)
-        defer { legacy.disconnect() }
-        #expect(legacy.capabilities.contains(RemoteProtocol.fleetCapability))
-
         // The fleet's requests are a member's: a device can't read the store, pair, remove or sync (what it may read is `fleet.view.v1`: `FleetDeviceViewTests`).
         let attempts: [(String, () async throws -> Void)] = [
-            ("fleetAction", { _ = try await client.fleetAction(.retireSharedToken) }),
+            ("fleetAction", { _ = try await client.fleetAction(.startJoin) }),
             ("fleetRevoke", { try await client.fleetRevoke(hostID: UUID(), at: 1) }),
             ("fleetSyncDevices", { _ = try await client.fleetSyncDevices([]) }),
             ("fleetIntroduce", { _ = try await client.fleetIntroduce(FleetIntroduce(member: FleetMember(hostID: UUID(), name: "x", host: "127.0.0.1", port: 7434), theirTokenHash: nil)) }),
-            ("fleetEnrollDevice", { _ = try await client.fleetEnrollDevice(Device("other").intro) }),
         ]
         for (name, attempt) in attempts {
             do { try await attempt(); Issue.record("\(name): a device used a member's request") }
@@ -268,98 +262,44 @@ struct FleetDevicesIntegrationTests {
         #expect(try await Self.devices(back).map(\.name) == ["iPhone"])
     }
 
-    // MARK: The shared token
+    // MARK: The old shared token
 
-    /// An older iPhone on the shared token is offered a token of its own, stores it and carries on; its
-    /// shared token stays good until retired.
-    @Test func aClientOnTheSharedTokenIsOfferedItsOwnAndRetiringTheSharedTokenIsRefusedUntilItHasOne() async throws {
+    /// A host takes no token shared by every client: a client that presents one is told so, and what to do, and the file a
+    /// host once kept it in is never read, so even a client that has its content is refused.
+    @Test func aClientPresentingTheOldSharedTokenIsRefusedEvenIfTheFileStillExists() async throws {
         let mac = try await Mac("MacBook Pro")
         defer { mac.stop() }
-        let old = try await RemoteHostClient.connected(to: mac)
-        defer { old.disconnect() }
-        #expect(old.capabilities.contains(RemoteProtocol.fleetCapability))
-        var shared = try #require(try await mac.read().devices?.sharedToken)
-        #expect(shared.waiting.map(\.name) == ["iPhone"] && !shared.retired && shared.switched == 0)
-
-        // Not yet: the client hasn't switched.
-        do { _ = try await mac.local.fleetAction(.retireSharedToken); Issue.record("retired with a client waiting") }
-        catch RemoteHostClientError.rejected(let code, let message) { #expect(code == "devices_waiting" && message.contains("One device")) }
-        let still = try await RemoteHostClient.connected(to: mac)
-        still.disconnect()
-
-        // It is given a token of its own and stores it (here: the test is the device).
-        let phone = Device("iPhone")
-        defer { phone.stop() }
-        let answer = try await old.fleetEnrollDevice(phone.intro)
-        #expect(answer.name == "MacBook Pro")
-        shared = try #require(try await mac.read().devices?.sharedToken)
-        #expect(shared.waiting.isEmpty && shared.switched == 1)
-        _ = try await phone.connect(to: mac)
-        #expect(try await Self.devices(mac).map(\.name) == ["iPhone"])
-
-        // Asking again with the same identity changes nothing (a lost answer).
-        _ = try await old.fleetEnrollDevice(phone.intro)
-        #expect(try await Self.devices(mac).count == 1)
-        // The shared token still works until it is retired.
-        let another = try await RemoteHostClient.connected(to: mac)
-        another.disconnect()
-    }
-
-    @Test func theSharedTokenIsRefusedOnlyAfterItIsRetired() async throws {
-        let mac = try await Mac("MacBook Pro")
-        defer { mac.stop() }
-        let old = try await RemoteHostClient.connected(to: mac)
+        let old = FleetProtocol.makeToken()
+        try Data(old.utf8).write(to: mac.host.dir.appendingPathComponent("remote-token"))
+        let client = RemoteHostClient()
+        defer { client.disconnect() }
+        do {
+            _ = try await client.connect(host: "127.0.0.1", port: mac.port, token: old, clientName: "Shepherd iOS")
+            Issue.record("the old shared token was accepted")
+        } catch RemoteHostClientError.rejected(let code, let message) {
+            #expect(code == RemoteProtocol.sharedTokenRetiredCode)
+            #expect(message == "This Mac no longer accepts the old shared token. Pair again with a code.")
+        }
+        let failure = RemoteHostFailure(RemoteHostClientError.rejected(code: RemoteProtocol.sharedTokenRetiredCode, message: ""))
+        #expect(failure.kind == .sharedTokenRetired && !failure.retries)
+        // Nothing was written back or made of the file.
+        #expect(try String(contentsOf: mac.host.dir.appendingPathComponent("remote-token"), encoding: .utf8) == old)
+        // A device's own token and this Mac's own app are unchanged.
         let phone = Device()
         defer { phone.stop() }
-        _ = try await old.fleetEnrollDevice(phone.intro)
-        let connection = Locked(false)
-        old.onDisconnected = { _ in connection.withValue { $0 = true } }
+        _ = try await phone.pair(with: mac, code: try #require(try await mac.local.fleetAction(.startDeviceCode).deviceCode).code)
         try await phone.connect(to: mac)
-        let before = await Self.refused(mac.sharedToken, by: mac)
-        #expect(!before, "accepted before retirement")
-
-        let after = try await mac.local.fleetAction(.retireSharedToken)
-        #expect(after.snapshot.devices?.sharedToken.retired == true)
-        try await eventually("what connected on the shared token to end") { connection.current }
-        let after2 = await Self.refused(mac.sharedToken, by: mac)
-        #expect(after2, "refused after retirement")
-        #expect(!phone.disconnected.current, "a device on its own token stays")
-        #expect(try await mac.read().hostID != nil, "this Mac's own app stays")
-        try await phone.connect(to: mac)
+        #expect(try await mac.read().hostID != nil)
     }
 
-    @Test func aClientThatConnectsWithItsOwnTokenIsNoLongerWaitedFor() async throws {
-        let a = try await Mac("MacBook Pro"), b = try await Mac("Mac mini")
-        defer { a.stop(); b.stop() }
-        try await a.pair(with: b, code: try await b.startJoin())
-        try await a.waitForLink(to: b)
-        try await b.waitForLink(to: a)
-
-        // One phone on the shared token at both Macs; enrolling at A tells B by sync, and its first
-        // connection to B with the new token is what stops B waiting for it.
-        let atA = try await RemoteHostClient.connected(to: a), atB = try await RemoteHostClient.connected(to: b)
-        defer { atA.disconnect(); atB.disconnect() }
-        let phone = Device("iPhone")
-        defer { phone.stop() }
-        _ = try await atA.fleetEnrollDevice(phone.intro)
-        #expect(try await b.read().devices?.sharedToken.waiting.count == 1)
-        try await eventually("B to hold the device") { try await Self.devices(b).count == 1 }
-        try await phone.connect(to: b)
-        #expect(try await b.read().devices?.sharedToken.waiting.isEmpty == true)
-        _ = try await a.local.fleetAction(.retireSharedToken)
-        _ = try await b.local.fleetAction(.retireSharedToken)
-    }
-
-    @Test func aWaitingClientCanBeForgottenSoTheSharedTokenCanBeRetired() async throws {
+    /// The `hello` of a client that has no token at all, or the wrong one, is refused the same way.
+    @Test func aTokenThatIsNoDevicesAndNoMacsIsRefusedWithTheSamePairAgainMessage() async throws {
         let mac = try await Mac("MacBook Pro")
         defer { mac.stop() }
-        let old = try await RemoteHostClient.connected(to: mac)
-        defer { old.disconnect() }
-        let waiting = try #require(try await mac.read().devices?.sharedToken.waiting.first)
-        let forgotten = try await mac.local.fleetAction(.forgetLegacyClient(waiting.id))
-        #expect(forgotten.snapshot.devices?.sharedToken.waiting.isEmpty == true)
-        let retired = try await mac.local.fleetAction(.retireSharedToken)
-        #expect(retired.snapshot.devices?.sharedToken.retired == true)
+        for token in ["", "not-a-token", String(repeating: "0", count: 64)] {
+            let refused = await Self.refused(token, by: mac)
+            #expect(refused, "\(token.isEmpty ? "empty" : token)")
+        }
     }
 
     /// A Mac's own app gets a token from its own host for its direct connections to the Macs of the fleet.
@@ -388,8 +328,8 @@ struct FleetDevicesIntegrationTests {
 
     // MARK: A Mac with no other Mac
 
-    /// A device needs no other Mac: a Mac that has none still takes a phone by code, lists it, revokes it and retires the shared
-    /// token, and its fleet is there for the Macs that come.
+    /// A device needs no other Mac: a Mac that has none still takes a phone by code, lists it and revokes it, and its fleet is
+    /// there for the Macs that come.
     @Test func aPhonePairsByCodeWithAMacThatHasNoOtherMac() async throws {
         let mac = try await Mac("MacBook Pro")
         defer { mac.stop() }
@@ -406,32 +346,13 @@ struct FleetDevicesIntegrationTests {
         let listed = try await Self.devices(mac)
         #expect(listed.map(\.name) == ["iPhone"] && listed.first?.connected == true)
 
-        let identity = try await RemoteHostClient.connected(to: mac)
-        defer { identity.disconnect() }
-        #expect(identity.capabilities.contains(RemoteProtocol.fleetCapability), "fleet.v1 is offered by every host")
-        #expect(try await identity.fleetIdentify().fleetEnabled)
+        let identity = try #require(await RemoteHostClient.fleetProbe(host: "127.0.0.1", port: mac.port))
+        #expect(identity.fleetEnabled, "every host says Fleet is on")
 
         // Revoke works, and ends the connection.
         _ = try await mac.local.fleetAction(.revokeDevice(phone.intro.deviceID))
         try await eventually("the phone's connection to end") { phone.disconnected.current }
         let refusedAfter = await Self.refused(phone.token, by: mac)
         #expect(refusedAfter)
-    }
-
-    /// An older phone on the shared token is offered its own token, and the shared token can be retired.
-    @Test func aClientOnTheSharedTokenIsOfferedItsOwnAndTheSharedTokenRetires() async throws {
-        let mac = try await Mac("MacBook Pro")
-        defer { mac.stop() }
-        let old = try await RemoteHostClient.connected(to: mac)
-        defer { old.disconnect() }
-        #expect(old.capabilities.contains(RemoteProtocol.fleetDevicesCapability))
-        let phone = Device()
-        defer { phone.stop() }
-        _ = try await old.fleetEnrollDevice(phone.intro)
-        try await phone.connect(to: mac)
-        _ = try await mac.local.fleetAction(.retireSharedToken)
-        let refusedShared = await Self.refused(mac.sharedToken, by: mac)
-        #expect(refusedShared)
-        try await eventually("the phone to stay") { !phone.disconnected.current }
     }
 }

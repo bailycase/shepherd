@@ -20,7 +20,8 @@ struct FleetPairingTests {
         let port: UInt16
         let name: String
         let local: RemoteHostClient
-        let sharedToken: String
+        /// What a test's client presents to this Mac's listener (`clientTokenForTests`): `connected(to:)` is one, as a phone is.
+        let clientToken: String
         var server: SessionServer { host.server }
         var peersFile: URL { host.dir.appendingPathComponent("fleet/peers.json") }
 
@@ -40,7 +41,7 @@ struct FleetPairingTests {
             server.startFleetAndWait()
             let local = RemoteHostClient(localSocket: socket)
             _ = try await local.connect(host: "", port: 0, token: token, clientName: "Shepherd")
-            (self.host, self.port, self.sharedToken, self.local) = (host, port, token, local)
+            (self.host, self.port, self.clientToken, self.local) = (host, port, token, local)
         }
 
         func stop(keepFiles: Bool = false) {
@@ -197,7 +198,7 @@ struct FleetPairingTests {
                                        fetchesState: false)
             Issue.record("a removed Mac's token was accepted")
         } catch RemoteHostClientError.rejected(let code, _) {
-            #expect(code == RemoteProtocol.unauthorizedCode)
+            #expect(code == RemoteProtocol.sharedTokenRetiredCode)
         }
         // The Mac that was removed is told, and drops what it paired.
         try await eventually("the removed Mac to leave the fleet") { try await b.peers().isEmpty }
@@ -295,7 +296,7 @@ struct FleetPairingTests {
         let a = try await Mac("MacBook Pro")
         defer { a.stop() }
         let raw = try RawRemote(port: a.port)
-        try await raw.hello(token: a.sharedToken)
+        try await raw.hello(token: a.clientToken)
         try raw.send(.fleetPair(id: 5, code: "482913", from: FleetIntroduction(hostID: UUID(), name: "x", myTokenHash: FleetProtocol.hash("t"), port: 7434)))
         guard case .error(5, let code, _) = try await raw.next() else { Issue.record("expected a refusal"); return }
         #expect(code == FleetProtocol.Code.forbidden)
@@ -331,10 +332,10 @@ struct FleetPairingTests {
 }
 
 extension RemoteHostClient {
-    /// A client of `mac`'s listener with the shared token, as a phone or an older Mac is.
+    /// A client of `mac`'s listener with a device's token, as a phone is.
     static func connected(to mac: FleetPairingTests.Mac) async throws -> RemoteHostClient {
         let client = RemoteHostClient()
-        _ = try await client.connect(host: "127.0.0.1", port: mac.port, token: mac.sharedToken, clientName: "iPhone")
+        _ = try await client.connect(host: "127.0.0.1", port: mac.port, token: mac.clientToken, clientName: "iPhone")
         return client
     }
 }

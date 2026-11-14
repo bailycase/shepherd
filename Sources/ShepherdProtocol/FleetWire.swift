@@ -179,7 +179,7 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
     public var macs: [FleetMacState]
     /// Where sync stands with each Mac (`FleetSyncStatus`); nil while this host doesn't sync.
     public var sync: FleetSyncStatus?
-    /// Phones, iPads and Mac apps paired as clients, and the shared token's state; nil from a host without them.
+    /// Phones, iPads and Mac apps paired as clients; nil from a host without them.
     public var devices: FleetDevicesSnapshot?
     /// The dispatches this Mac sent, newest first, without their task and result text (the Fleet page's
     /// Dispatches log); empty from a host that doesn't dispatch.
@@ -266,10 +266,6 @@ public enum FleetAction: Codable, Hashable, Sendable {
     case stopDeviceCode
     /// Revoke a phone, iPad or Mac app, here and on every member (`FleetDevices`).
     case revokeDevice(UUID)
-    /// Stop waiting for a client the host saw on the shared token (`FleetLegacyClient.id`).
-    case forgetLegacyClient(String)
-    /// Stop accepting the shared token (`FleetSharedTokenStatus`).
-    case retireSharedToken
     /// This Mac's app asks for a token of its own for its direct connections to the Macs of the fleet
     /// (a device of kind `macApp`); answered with it (`FleetResult.appToken`).
     case enrollApp(name: String)
@@ -376,7 +372,7 @@ public struct FleetDeviceEntry: Codable, Hashable, Sendable {
     }
 }
 
-/// The answer to `fleetPairDevice`, `fleetEnrollDevice` and `fleetSyncDevices`: who answers, the
+/// The answer to `fleetPairDevice` and `fleetSyncDevices`: who answers, the
 /// Macs it is in a fleet with (a device reaches each of them with the token it just made), and
 /// the devices it holds (the answer to a sync).
 public struct FleetDevicesResult: Codable, Hashable, Sendable {
@@ -416,49 +412,15 @@ public struct FleetDeviceStatus: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
-/// A client the host saw connect with the shared token and that hasn't been given its own yet.
-/// An old client says only its name, so it is told apart by where it connected from.
-public struct FleetLegacyClient: Codable, Hashable, Identifiable, Sendable {
-    /// Name and address together.
-    public var id: String
-    public var name: String
-    /// Epoch milliseconds of its last connection.
-    public var lastSeen: Double
-
-    public init(id: String, name: String, lastSeen: Double) {
-        self.id = id
-        self.name = name
-        self.lastSeen = lastSeen
-    }
-}
-
-/// Where retiring the shared token stands. It is accepted until the user stops it, and stopping
-/// is refused while a client seen on it hasn't been given its own token.
-public struct FleetSharedTokenStatus: Codable, Hashable, Sendable {
-    public var retired: Bool
-    /// Clients seen on it that haven't switched.
-    public var waiting: [FleetLegacyClient]
-    /// Devices that have switched.
-    public var switched: Int
-
-    public init(retired: Bool = false, waiting: [FleetLegacyClient] = [], switched: Int = 0) {
-        self.retired = retired
-        self.waiting = waiting
-        self.switched = switched
-    }
-}
-
 /// The part of `FleetSnapshot` about client devices.
 public struct FleetDevicesSnapshot: Codable, Hashable, Sendable {
     public var devices: [FleetDeviceStatus]
     /// The window of Add a device, while it is open.
     public var code: FleetJoinStatus?
-    public var sharedToken: FleetSharedTokenStatus
 
-    public init(devices: [FleetDeviceStatus] = [], code: FleetJoinStatus? = nil, sharedToken: FleetSharedTokenStatus = FleetSharedTokenStatus()) {
+    public init(devices: [FleetDeviceStatus] = [], code: FleetJoinStatus? = nil) {
         self.devices = devices
         self.code = code
-        self.sharedToken = sharedToken
     }
 }
 
@@ -472,18 +434,18 @@ public enum FleetAccess: Sendable, Hashable {
     case member
     /// A phone, iPad or Mac app with a token of its own.
     case device
-    /// A client on the shared token, until the shared token is retired.
-    case shared
+    /// Not yet authenticated: it may only identify the Mac and pair with a code.
+    case unauthenticated
 
     /// Sync, credential and dispatch units, and the requests that pair or remove Macs.
     public var takesPartInFleet: Bool { self == .local || self == .member }
 
     /// May read the fleet's Macs, load and readiness (`FleetSnapshot.clientView`) and ask for it to be
-    /// sampled while it looks. A device and a client on the shared token do; nothing else of the fleet.
-    public var mayViewFleet: Bool { self == .device || self == .shared }
+    /// sampled while it looks. A device does; nothing else of the fleet.
+    public var mayViewFleet: Bool { self == .device }
 
     /// Whether `capability` is offered to a connection with this access. A device is offered no
-    /// fleet capability; the shared token still is, so an old client can be given its own token.
+    /// fleet capability.
     public func isOffered(_ capability: String) -> Bool {
         self != .device || !RemoteProtocol.fleetMemberCapabilities.contains(capability)
     }

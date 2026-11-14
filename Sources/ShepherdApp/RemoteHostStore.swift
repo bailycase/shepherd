@@ -434,8 +434,8 @@ final class RemoteHostStore {
 
     /// The background host on this Mac, through its local socket at `socket`; not persisted.
     @discardableResult
-    func addLocalHost(name: String, socket: String, token: String) -> Connection {
-        let connection = Connection(config: HostConfig(name: name, host: "", port: 0, token: token, localSocket: socket),
+    func addLocalHost(name: String, socket: String) -> Connection {
+        let connection = Connection(config: HostConfig(name: name, host: "", port: 0, token: "", localSocket: socket),
                                     designCache: designCache)
         allConnections.insert(connection, at: 0)
         connect(connection)

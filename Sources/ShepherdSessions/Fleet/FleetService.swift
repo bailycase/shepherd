@@ -20,10 +20,7 @@ struct FleetCaller: Sendable {
     var clientName: String?
 
     /// What it may do in the fleet, by how it authenticated.
-    var access: FleetAccess { isLocal ? .local : peerHostID != nil ? .member : deviceID != nil ? .device : .shared }
-
-    /// Authenticated with the shared remote token: a legacy Mac or a phone.
-    var viaSharedToken: Bool { authenticated && access == .shared }
+    var access: FleetAccess { isLocal ? .local : peerHostID != nil ? .member : deviceID != nil ? .device : .unauthenticated }
 }
 
 /// The host's part of a fleet: who this Mac is, which Macs it is paired with, a link to each, and
@@ -53,8 +50,6 @@ final class FleetService: @unchecked Sendable {
     var onPeerRemoved: ((UUID) -> Void)?
     /// Server queue: a device was revoked (here or on another Mac), so any connection of it must end.
     var onDeviceRevoked: ((UUID) -> Void)?
-    /// Server queue: the shared token was retired, so the connections that used it must end.
-    var onSharedTokenRetired: (() -> Void)?
     /// Server queue: send the Mac that opened `connection` a call (`RemoteReply.fleetPeerCall`) with this id.
     var onPeerCall: ((Int32, Int, RemoteRequest) -> Void)?
     /// Server queue: close `connection`, a Mac's link that stopped answering.
@@ -395,33 +390,19 @@ final class FleetService: @unchecked Sendable {
     func authenticate(token: String) -> UUID? { peers.authenticate(token: token) }
 
     /// The device whose own token this is.
-    func authenticateDevice(token: String) -> UUID? { devices.authenticate(token: token) }
-
-    /// A device connected on `connection` with its own token: it is no longer waited for on the shared one.
-    func deviceAuthenticated(_ deviceID: UUID, connection: Int32, clientName: String, from host: String?) {
-        deviceConnections[deviceID, default: []].insert(connection)
-        var updated = devices
-        if updated.switched(name: String(clientName.prefix(100)), host: host), (try? updated.save(to: directory)) != nil { devices = updated }
-        changed()
+    func authenticateDevice(token: String) -> UUID? {
+        devices.authenticate(token: token) ?? (testClients.isEmpty ? nil : testClients[FleetProtocol.hash(token)])
     }
 
-    /// Whether the shared token is retired: it is refused until Fleet is turned off, which
-    /// puts everything back as it was.
-    var sharedTokenRetired: Bool { devices.sharedTokenRetired }
+    /// Tests: tokens a test's clients present (`SessionServer.clientTokenForTests`), as a device's own. They are in this process's
+    /// memory only: no device is made, listed, saved or synced, and the listener isn't needed for them.
+    private var testClients: [String: UUID] = [:]
+    func addTestClient(tokenHash: String) { testClients[tokenHash] = UUID() }
 
-    /// A client connected with the shared token: it is waited for until it has a token of its own.
-    func sharedTokenUsed(clientName: String, host: String?) {
-        guard !devices.sharedTokenRetired else { return }
-        let now = nowMilliseconds
-        let key = FleetDevices.key(name: clientName, host: host)
-        let recent = devices.legacy.first { $0.id == key }.map { now - $0.lastSeen < 3_600_000 } ?? false
-        guard !recent else { return }
-        var updated = devices
-        updated.sighted(name: String(clientName.prefix(100)), host: host, now: now)
-        if (try? updated.save(to: directory)) != nil {
-            devices = updated
-            changed()
-        }
+    /// A device connected on `connection` with its own token.
+    func deviceAuthenticated(_ deviceID: UUID, connection: Int32) {
+        deviceConnections[deviceID, default: []].insert(connection)
+        changed()
     }
 
     /// A Mac connected with its token from `host`: where to reach it if its address changed.
@@ -551,10 +532,7 @@ final class FleetService: @unchecked Sendable {
                                    notOpen: "That Mac isn't showing a code. Open Add a device on it.") {
                 return reply(refusal)
             }
-            takeDevice(id: id, device, caller: caller, reply: reply)
-        case .fleetEnrollDevice(let id, let device):
-            guard caller.access == .shared else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a client on the shared token is given a token of its own.")) }
-            takeDevice(id: id, device, caller: caller, reply: reply)
+            takeDevice(id: id, device, reply: reply)
         case .fleetSyncDevices(let id, let entries):
             guard caller.access == .member else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet syncs devices.")) }
             mergeDevices(entries, from: caller.peerHostID)
@@ -729,12 +707,12 @@ final class FleetService: @unchecked Sendable {
 
     // MARK: Devices
 
-    /// Takes a client device into the fleet: pairing with a code or being given its own token
-    /// (`fleetPairDevice`, `fleetEnrollDevice`). The device made the token; only its hash is kept here and
+    /// Takes a client device into the fleet: pairing with a code, or this Mac's app asking for a device of its own
+    /// (`fleetPairDevice`, `FleetAction.enrollApp`). The device made the token; only its hash is kept here and
     /// on every other Mac (`pushDevices`). Answers with the Macs the device can now reach.
     /// The answer waits (a few seconds at most) for the other Macs to take the device in, so the device
     /// can connect to each of them the moment it hears of them.
-    private func takeDevice(id: Int, _ introduction: FleetDeviceIntroduction, caller: FleetCaller,
+    private func takeDevice(id: Int, _ introduction: FleetDeviceIntroduction,
                             reply: @escaping @Sendable (RemoteReply) -> Void) {
         let name = Self.cleaned(introduction.name)
         guard !name.isEmpty, Self.isHash(introduction.tokenHash) else {
@@ -751,9 +729,6 @@ final class FleetService: @unchecked Sendable {
                                            tokenHash: introduction.tokenHash, pairedAt: nowMilliseconds)
             guard updated.add(record) else {
                 return reply(Self.refusal(id, FleetProtocol.Code.deviceRevoked, "That device was removed from the fleet. Pairing again makes it a new one."))
-            }
-            if caller.access == .shared, let clientName = caller.clientName {
-                updated.switched(name: clientName, host: caller.observedHost)
             }
             do { try updated.save(to: directory) } catch {
                 ShepherdLog.error("fleet: could not save a device: \(error)")
@@ -976,33 +951,10 @@ final class FleetService: @unchecked Sendable {
             pushDevices()
             changed()
             reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot())))
-        case .forgetLegacyClient(let key):
-            var updated = devices
-            if updated.forget(legacy: key), (try? updated.save(to: directory)) != nil {
-                devices = updated
-                changed()
-            }
-            reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot())))
-        case .retireSharedToken:
-            let waiting = devices.waiting(now: nowMilliseconds)
-            guard waiting.isEmpty else {
-                return reply(Self.refusal(id, "devices_waiting", waiting.count == 1
-                    ? "One device hasn't been given its own token yet. Open Shepherd on it, or forget it."
-                    : "\(waiting.count) devices haven't been given their own token yet. Open Shepherd on them, or forget them."))
-            }
-            var updated = devices
-            updated.sharedTokenRetired = true
-            do { try updated.save(to: directory) } catch {
-                return reply(Self.refusal(id, "save_failed", "This Mac couldn't save the change."))
-            }
-            devices = updated
-            onSharedTokenRetired?()
-            changed()
-            reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot())))
         case .enrollApp(let appName):
             let token = FleetProtocol.makeToken()
             let app = FleetDeviceIntroduction(deviceID: UUID(), name: appName, kind: .macApp, tokenHash: FleetProtocol.hash(token))
-            takeDevice(id: id, app, caller: caller) { [weak self] answer in
+            takeDevice(id: id, app) { [weak self] answer in
                 guard case .fleetDevices = answer else { return reply(answer) }
                 self?.queue.async {
                     guard let self else { return }
@@ -1152,7 +1104,6 @@ final class FleetService: @unchecked Sendable {
             FleetJoinStatus(expiresAt: (($0.window.expiresAt).timeIntervalSince1970 * 1000).rounded(), attemptsLeft: $0.window.attemptsLeft)
         }
         let syncStatus = syncEngine.status(peers: statuses.map { ($0.hostID, $0.name, $0.link == .connected) })
-        let now = nowMilliseconds
         let clients = devices.active.map {
             FleetDeviceStatus(deviceID: $0.deviceID, name: $0.name, kind: $0.kind, pairedAt: $0.pairedAt,
                               connected: deviceConnections[$0.deviceID]?.isEmpty == false, lastSeen: $0.lastSeen)
@@ -1160,12 +1111,10 @@ final class FleetService: @unchecked Sendable {
         let code = deviceCode.map {
             FleetJoinStatus(expiresAt: (($0.window.expiresAt).timeIntervalSince1970 * 1000).rounded(), attemptsLeft: $0.window.attemptsLeft)
         }
-        let sharedToken = FleetSharedTokenStatus(retired: devices.sharedTokenRetired, waiting: devices.waiting(now: now).map(\.client),
-                                                 switched: clients.count)
         return FleetSnapshot(enabled: true, hostID: identity.hostID, name: name, build: build, addresses: FleetAddresses.local(),
                              port: listenerPort, routes: listenerPort.map { ownRoutes($0).map { FleetReportedRoute(host: $0.host, kind: $0.kind) } } ?? [],
                              advertising: discovery?.isAdvertising ?? false, peers: statuses, join: window,
-                             sync: syncStatus, devices: FleetDevicesSnapshot(devices: clients, code: code, sharedToken: sharedToken),
+                             sync: syncStatus, devices: FleetDevicesSnapshot(devices: clients, code: code),
                              macs: pressure.macs(thisMac: identity.hostID, peerIDs: statuses.map(\.hostID)),
                              dispatches: dispatch.log(), index: index.status())
     }

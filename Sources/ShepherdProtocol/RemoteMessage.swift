@@ -58,6 +58,11 @@ public enum RemoteProtocol {
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
+    /// A host's final reply to a `hello` on its network listener whose token is none of a device's or a Mac's own: the host no longer
+    /// accepts the one shared token it once had (an old client's), and can't tell it from a revoked device's, so it says what to do.
+    /// The client pairs again with a code.
+    public static let sharedTokenRetiredCode = "shared_token_retired"
+    public static let sharedTokenRetiredMessage = "This Mac no longer accepts the old shared token. Pair again with a code."
     /// A host's final reply to a `hello` with another `version`; the message ends with the
     /// host's own ("host speaks protocol 1").
     public static let versionMismatchCode = "protocol_version"
@@ -274,8 +279,7 @@ public enum RemoteProtocol {
     /// (`FleetSnapshot.routes`). Nothing new crosses between Macs: the other Mac sees the ordinary `fleetIdentify` and `fleetPair`.
     /// Offered with `fleet.v1`, so to members only.
     public static let fleetPairLinkCapability = "fleet.pairlink.v1"
-    /// The host takes client devices by code (`fleetPairDevice`) and offers a client on the shared token its own
-    /// token (`fleetEnrollDevice`). Offered whenever the host runs; never to a device.
+    /// The host takes client devices by code (`fleetPairDevice`). Offered whenever the host runs; never to a device.
     public static let fleetDevicesCapability = "fleet.devices.v1"
     /// A client may read the fleet's Macs, their load and readiness (`fleetRead`, answered with
     /// `FleetSnapshot.clientView`), ask the host to sample while it looks (`FleetAction.watching`) and
@@ -764,9 +768,6 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// Before `hello`: a phone, iPad or Mac app pairs with the code Add a device shows (it asked who
     /// answers first, like `fleetPair`). Answered `fleetDevices` with the Macs it can now reach.
     case fleetPairDevice(id: Int, code: String, device: FleetDeviceIntroduction)
-    /// After `hello` with the shared token: a client is given a token of its own, made by the client.
-    /// Answered `fleetDevices`.
-    case fleetEnrollDevice(id: Int, device: FleetDeviceIntroduction)
     /// After `hello` with a peer's token: the devices the sender holds, merged here (a revoked one wins).
     /// Answered `fleetDevices` with the ones this host holds.
     case fleetSyncDevices(id: Int, devices: [FleetDeviceEntry])
@@ -811,8 +812,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// After `hello` with a peer's token (`fleetLinkCapability`): the answer to a `RemoteReply.fleetPeerCall` the host sent over this
     /// connection, which this Mac opened to it. `id` is the call's.
     indirect case fleetPeerAnswer(id: Int, reply: RemoteReply)
-    /// Authenticate with the host's shared token (`remote-token` in its
-    /// support directory). `capabilities` says what the client understands
+    /// Authenticate with a token a client or a Mac made for itself and the host holds the hash of (a device's or a
+    /// Mac's, after pairing with a code); the local socket needs none. `capabilities` says what the client understands
     /// (`RemoteProtocol.clientCapabilities`); older clients send none.
     case hello(id: Int, token: String, clientName: String, protocolVersion: Int, capabilities: [String]? = nil)
     /// Full state snapshot.
@@ -968,7 +969,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case fleetDispatchCreate, fleetDispatchControl, fleetDispatchChanged, fleetDispatchResult
         case fleetRoutes, fleetPeerAnswer
         case fleetSync
-        case fleetPairDevice, fleetEnrollDevice, fleetSyncDevices
+        case fleetPairDevice, fleetSyncDevices
         case nativeThread, nativeThreadSubscribe, fleetDigest, projectExecution
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
@@ -1011,8 +1012,6 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case .fleetPairDevice:
             self = .fleetPairDevice(id: try c.decode(Int.self, forKey: .id), code: try c.decode(String.self, forKey: .code),
                                     device: try c.decode(FleetDeviceIntroduction.self, forKey: .device))
-        case .fleetEnrollDevice:
-            self = .fleetEnrollDevice(id: try c.decode(Int.self, forKey: .id), device: try c.decode(FleetDeviceIntroduction.self, forKey: .device))
         case .fleetSyncDevices:
             self = .fleetSyncDevices(id: try c.decode(Int.self, forKey: .id), devices: try c.decode([FleetDeviceEntry].self, forKey: .devices))
         case .fleetRead:
@@ -1252,10 +1251,6 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.fleetPairDevice, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(code, forKey: .code)
-            try c.encode(device, forKey: .device)
-        case .fleetEnrollDevice(let id, let device):
-            try c.encode(Kind.fleetEnrollDevice, forKey: .type)
-            try c.encode(id, forKey: .id)
             try c.encode(device, forKey: .device)
         case .fleetSyncDevices(let id, let devices):
             try c.encode(Kind.fleetSyncDevices, forKey: .type)
@@ -1612,7 +1607,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case fleetRepoManifestAck(id: Int, ack: FleetRepoManifestAck)
     /// The answer to `RemoteRequest.fleetSnapshotPart` and `fleetBlobPush`: what the receiving Mac holds of the snapshot.
     case fleetSnapshotAck(id: Int, ack: FleetSnapshotAck)
-    /// A device paired or was given its token, or devices were synced (`fleetPairDevice`, `fleetEnrollDevice`, `fleetSyncDevices`).
+    /// A device paired, or devices were synced (`fleetPairDevice`, `fleetSyncDevices`).
     case fleetDevices(id: Int, result: FleetDevicesResult)
     /// Generic success for acked requests with no payload (paste).
     case agentResult(id: Int, result: RemoteAgentResult)

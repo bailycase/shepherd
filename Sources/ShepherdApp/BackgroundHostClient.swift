@@ -30,10 +30,4 @@ enum BackgroundHostClient {
               let app = appBuild.flatMap(Int.init), let host = hostBuild.flatMap(Int.init) else { return false }
         return app > host
     }
-
-    /// The host's token: the remote one, which only this user can read.
-    static func token(environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
-        (try? String(contentsOf: ShepherdPaths.remoteTokenURL(environment: environment), encoding: .utf8))?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
 }

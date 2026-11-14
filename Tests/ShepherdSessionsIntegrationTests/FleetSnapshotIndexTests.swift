@@ -334,7 +334,7 @@ extension FleetSnapshotIndexTests {
         let host = try await FleetPairingTests.Mac("Mac mini")
         defer { host.stop() }
         let shared = RemoteHostClient()
-        _ = try await shared.connect(host: "127.0.0.1", port: host.port, token: host.sharedToken, clientName: "iPhone")
+        _ = try await shared.connect(host: "127.0.0.1", port: host.port, token: host.clientToken, clientName: "iPhone")
         defer { shared.disconnect() }
         do { _ = try await shared.fleetRepoManifest(Self.step); Issue.record("the shared token sent a manifest") }
         catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetProtocol.Code.forbidden) }

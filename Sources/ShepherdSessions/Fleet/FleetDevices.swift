@@ -48,50 +48,25 @@ struct FleetDeviceRecord: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
-/// A client seen on the shared token that hasn't been given a token of its own.
-struct FleetLegacySighting: Codable, Equatable, Identifiable, Sendable {
-    /// Name and address together: an old client says only its name ("Shepherd iOS" for every
-    /// phone), so where it connected from tells two of them apart.
-    var id: String
-    var name: String
-    /// Epoch milliseconds.
-    var lastSeen: Double
-
-    var client: FleetLegacyClient { FleetLegacyClient(id: id, name: name, lastSeen: lastSeen) }
-}
-
 /// `<support>/fleet/devices.json`: the client devices of the fleet (the same list on every Mac, kept
-/// equal by `merge`), the clients still on the shared token, and whether the shared token is
-/// retired. Plain values; `FleetService` owns the one copy on the server queue.
+/// equal by `merge`). A file from when a shared token was accepted may hold `legacy` and `sharedTokenRetired`; they are ignored. Plain values; `FleetService` owns the one copy on the server queue.
 struct FleetDevices: Codable, Equatable, Sendable {
     var devices: [FleetDeviceRecord] = []
-    var legacy: [FleetLegacySighting] = []
-    var sharedTokenRetired = false
 
     static let fileName = "devices.json"
-    /// A sighting older than this stops holding the shared token back: the client is gone.
-    static let sightingLifetime: TimeInterval = 30 * 24 * 3600
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case devices, legacy, sharedTokenRetired }
+    private enum CodingKeys: String, CodingKey { case devices }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         devices = try c.decodeIfPresent([FleetDeviceRecord].self, forKey: .devices) ?? []
-        legacy = try c.decodeIfPresent([FleetLegacySighting].self, forKey: .legacy) ?? []
-        sharedTokenRetired = try c.decodeIfPresent(Bool.self, forKey: .sharedTokenRetired) ?? false
     }
 
     static func load(from directory: URL) throws -> FleetDevices {
         guard let data = try? Data(contentsOf: directory.appendingPathComponent(fileName)) else { return FleetDevices() }
         return try JSONDecoder().decode(FleetDevices.self, from: data)
-    }
-
-    /// Whether the shared token was retired here, read without a `FleetService`: retiring it holds before
-    /// the service exists, so the old token is never open again.
-    static func sharedTokenRetired(in directory: URL) -> Bool {
-        (try? load(from: directory))?.sharedTokenRetired ?? false
     }
 
     func save(to directory: URL) throws {
@@ -162,39 +137,4 @@ struct FleetDevices: Codable, Equatable, Sendable {
         }
         return (changed, revoked)
     }
-
-    // MARK: The shared token
-
-    /// A client connected with the shared token and may still need a token of its own.
-    mutating func sighted(name: String, host: String?, now: Double) {
-        let key = Self.key(name: name, host: host)
-        if let index = legacy.firstIndex(where: { $0.id == key }) {
-            legacy[index].lastSeen = now
-        } else {
-            legacy.append(FleetLegacySighting(id: key, name: name, lastSeen: now))
-        }
-    }
-
-    /// The client at `key` has a token of its own now.
-    @discardableResult
-    mutating func switched(name: String, host: String?) -> Bool {
-        let key = Self.key(name: name, host: host)
-        let before = legacy.count
-        legacy.removeAll { $0.id == key }
-        return legacy.count != before
-    }
-
-    @discardableResult
-    mutating func forget(legacy key: String) -> Bool {
-        let before = legacy.count
-        legacy.removeAll { $0.id == key }
-        return legacy.count != before
-    }
-
-    /// Clients seen on the shared token within `sightingLifetime` that haven't switched.
-    func waiting(now: Double) -> [FleetLegacySighting] {
-        legacy.filter { now - $0.lastSeen < Self.sightingLifetime * 1000 }.sorted { ($0.name, $0.id) < ($1.name, $1.id) }
-    }
-
-    static func key(name: String, host: String?) -> String { "\(name)@\(host ?? "")" }
 }

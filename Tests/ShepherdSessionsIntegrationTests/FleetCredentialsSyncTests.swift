@@ -321,7 +321,7 @@ struct FleetCredentialsSyncTests {
         // The shared token is not a member either, nor is this Mac's own app: sync is a member's.
         let shared = RemoteHostClient()
         defer { shared.disconnect() }
-        _ = try await shared.connect(host: "127.0.0.1", port: a.port, token: a.sharedToken, clientName: "Old client")
+        _ = try await shared.connect(host: "127.0.0.1", port: a.port, token: a.clientToken, clientName: "Old client")
         let stolen = FleetOp(mac: UUID(), seq: 1, hlc: FleetHLC(wallMs: 9_999_999_999_999), unit: "credential:\(Self.acme)",
                              change: .value(#"{"type":"oauth","access":"fake-evil","refresh":"fake-evil","expires":1}"#))
         for (name, client) in [("a device", phone), ("the shared token", shared), ("this Mac's app", a.local)] {
@@ -339,6 +339,6 @@ struct FleetCredentialsSyncTests {
         // Nothing the host pushed to the phone held a token.
         let seen = heard.current.joined()
         #expect(!seen.contains("fake-refresh") && !seen.contains("fake-access"))
-        #expect(!FleetAccess.device.takesPartInFleet && !FleetAccess.shared.takesPartInFleet && FleetAccess.member.takesPartInFleet)
+        #expect(!FleetAccess.device.takesPartInFleet && !FleetAccess.unauthenticated.takesPartInFleet && FleetAccess.member.takesPartInFleet)
     }
 }

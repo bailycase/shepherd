@@ -86,32 +86,9 @@ struct RemoteFileUploadTests {
     }
 }
 
-/// The remote listener's shared secret and the extension socket's address.
-@Suite("Server credentials and addresses")
+/// The extension socket's address.
+@Suite("Server addresses")
 struct ServerCredentialTests {
-    @Test func theRemoteTokenIsGeneratedOnceAsOwnerOnlyHex() throws {
-        let dir = try makeTempDirectory()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let url = dir.appendingPathComponent("remote-token")
-
-        let token = try SessionServer.loadOrCreateRemoteToken(at: url)
-        #expect(token.count == 64)
-        #expect(token.allSatisfy { $0.isHexDigit })
-        #expect(try posixPermissions(url) == 0o600)
-        #expect(try SessionServer.loadOrCreateRemoteToken(at: url) == token)
-    }
-
-    @Test func anExistingTokenIsReadTrimmedAndABlankOneIsReplaced() throws {
-        let dir = try makeTempDirectory()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let url = dir.appendingPathComponent("remote-token")
-        try Data("  my-token \n".utf8).write(to: url)
-        #expect(try SessionServer.loadOrCreateRemoteToken(at: url) == "my-token")
-
-        try Data("\n".utf8).write(to: url)
-        #expect(try SessionServer.loadOrCreateRemoteToken(at: url).count == 64)
-    }
-
     @Test func socketPathsBeyondSunPathAreRejected() throws {
         let fits = "/tmp/" + String(repeating: "s", count: 90)
         #expect(throws: Never.self) { _ = try SessionServer.socketAddress(for: fits) }

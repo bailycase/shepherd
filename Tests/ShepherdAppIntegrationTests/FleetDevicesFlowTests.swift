@@ -78,43 +78,24 @@ struct FleetDevicesFlowTests {
         #expect(app.model.deviceRows.isEmpty)
     }
 
-    @Test func theSharedTokenStaysUntilEveryClientOnItHasSwitchedOrWasForgotten() async throws {
-        let app = try await FleetApp("MacBook Pro", serving: true)
-        defer { app.stop() }
-        let old = RemoteHostClient()
-        defer { old.disconnect() }
-        _ = try await old.connect(host: "127.0.0.1", port: try #require(app.port), token: app.token, clientName: "Shepherd iOS")
-        await app.model.refresh()
-        let waiting = try #require(app.model.snapshot.devices?.sharedToken.waiting.first)
-        #expect(waiting.name == "Shepherd iOS")
-
-        await app.model.retireSharedToken()
-        #expect(app.model.deviceProblem?.contains("One device") == true, "the host says who holds it back")
-        #expect(app.model.snapshot.devices?.sharedToken.retired == false)
-
-        await app.model.forgetWaiting(waiting.id)
-        #expect(app.model.deviceProblem == nil && app.model.snapshot.devices?.sharedToken.waiting.isEmpty == true)
-        await app.model.retireSharedToken()
-        #expect(app.model.snapshot.devices?.sharedToken.retired == true)
-    }
-
-    /// The app's connection to a Mac of the fleet that it reached with the shared token moves to a token of its own, which every Mac of
-    /// the fleet takes; the id and the binding stay.
-    @Test func aConnectionOnTheSharedTokenMovesToATokenTheAppsHostMade() async throws {
+    /// The app's connection to a Mac of the fleet that doesn't hold a token of the app's own (one an earlier version made with the old
+    /// shared token, which the Mac no longer takes) moves to a token the app's host made, which every Mac of the fleet takes; the id and
+    /// the binding stay.
+    @Test func aConnectionWithoutATokenOfTheAppsOwnMovesToOneTheAppsHostMade() async throws {
         let a = try await FleetApp("MacBook Pro"), b = try await FleetApp("Mac mini")
         defer { a.stop(); b.stop() }
         await b.model.startJoin()
         #expect(await a.model.pair(with: b.found, code: try #require(b.model.join?.code)))
         let defaults = ScratchDefaults()
         let store = RemoteHostStore(defaults: defaults, connects: false)
-        store.addHost(name: "mini", host: "127.0.0.1", port: try #require(b.port), token: b.token, fleetManaged: true)
+        store.addHost(name: "mini", host: "127.0.0.1", port: try #require(b.port), token: "an-old-shared-token", fleetManaged: true)
         let config = try #require(store.hosts.first)
         #expect(!config.ownToken)
 
         await a.model.refresh()
         await FleetConnections(hosts: store, fleet: a.model).sync(a.model.snapshot)
         let reloaded = try #require(RemoteHostStore(defaults: defaults, connects: false).hosts.first)
-        #expect(reloaded.ownToken && reloaded.token != b.token && reloaded.bindingID == config.bindingID && reloaded.id == config.id)
+        #expect(reloaded.ownToken && reloaded.token != "an-old-shared-token" && reloaded.bindingID == config.bindingID && reloaded.id == config.id)
         #expect(store.hosts.count == 1, "the Mac it already held is not added twice")
         let probe = RemoteHostClient()
         defer { probe.disconnect() }

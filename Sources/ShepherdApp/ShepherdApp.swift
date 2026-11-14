@@ -107,7 +107,7 @@ public struct ShepherdMacApp: App {
                 // App-side diagnostics only; the host's server metrics aren't reported to the app (#561 Q5).
                 ShepherdDiagnostics.shared.start(settings: .shared)
                 let vm = ShepherdViewModel(welcomesYourPi: true, browserData: .persistent)
-                vm.connectLocalHost(socket: BackgroundHostClient.socketPath(), token: BackgroundHostClient.token() ?? "")
+                vm.connectLocalHost(socket: BackgroundHostClient.socketPath())
                 vm.backgroundService = service
                 vm.backgroundServiceStatus = status
                 // The supervisor starts the host again; the store reconnects on its own.
@@ -301,8 +301,7 @@ extension ShepherdHost {
                 return nil
             }
             do {
-                let port = try server.startRemoteListener(port: UInt16(clamping: settings.remoteListenerPort),
-                                                          tokenURL: server.supportDirectory.appendingPathComponent("remote-token"))
+                let port = try server.startRemoteListener(port: UInt16(clamping: settings.remoteListenerPort))
                 listener?(port, nil)
                 return port
             } catch {
@@ -418,8 +417,8 @@ public enum ShepherdHost {
 
         /// `SessionHost.serve` with these services, for a host the test process runs.
         @discardableResult
-        func serve(_ server: SessionServer, socket: String, tokenURL: URL, recovering: Bool = true) async -> ThreadBanners? {
-            await SessionHost.serve(server, socket: socket, tokenURL: tokenURL, recovering: recovering, respawn: respawn, configure: configure,
+        func serve(_ server: SessionServer, socket: String, recovering: Bool = true) async -> ThreadBanners? {
+            await SessionHost.serve(server, socket: socket, recovering: recovering, respawn: respawn, configure: configure,
                                     threads: threads, automations: automations, pullRequests: pullRequests, banners: banners)
         }
 

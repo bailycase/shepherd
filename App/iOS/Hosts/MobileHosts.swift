@@ -84,24 +84,19 @@ extension MobileHost {
 /// in the foreground and reconnecting with backoff (1, 2, 4… up to 30 s) when one drops or cannot
 /// be reached. A host that refuses the token or speaks another protocol waits for Edit or Retry.
 /// Records are saved in preferences (`shepherd.ios.hosts`), tokens through `HostTokens` (the
-/// Keychain). The first client's single saved host migrates on first launch.
+/// Keychain). The first client's single saved host migrates on first launch, without a token: there is no token shared by every
+/// client any more, so it pairs again with a code (and so does a host whose saved token was that one: the Mac says so, `RemoteHostFailure`).
 @MainActor
 @Observable
 final class MobileHosts {
     static let recordsKey = "shepherd.ios.hosts"
     /// The first client's one host (`{name, host, port}`).
     static let legacyKey = "shepherd.ios.host"
-    /// The migrated host whose token has not moved yet: the Keychain refuses reads while the
-    /// device is locked, and the app can launch then, so the move is retried until it lands.
-    static let legacyTokenKey = "shepherd.ios.host.pendingToken"
     /// When each host's connection last ended, by id (seconds since 1970): "Last seen" for a host
     /// the phone cannot reach now. Apart from the records, which hold only what the user entered.
     static let lastSeenKey = "shepherd.ios.hosts.lastSeen"
     /// Each host's fleet host id, by id.
     static let fleetIDKey = "shepherd.ios.hosts.fleetID"
-    /// The hosts (by id) whose saved token is this device's own, given by a pairing or by a Mac that
-    /// offered it, and not the Mac's shared token (which a Mac can stop accepting).
-    static let ownTokenKey = "shepherd.ios.hosts.ownToken"
 
     private(set) var hosts: [MobileHost] = []
 
@@ -132,10 +127,6 @@ final class MobileHosts {
     @ObservationIgnored private let tokens: HostTokens
     @ObservationIgnored private let clientName: String
     @ObservationIgnored private let device: DeviceDescription
-    /// Hosts whose token is this device's own; saved apart from the records, which hold nothing secret.
-    @ObservationIgnored private var ownTokens: Set<UUID> = []
-    /// Offers in flight, so one host is offered a token once at a time.
-    @ObservationIgnored private var offering: Set<UUID> = []
     @ObservationIgnored private let makeClient: () -> RemoteHostClient
     @ObservationIgnored private let pause: (Duration) async throws -> Void
     @ObservationIgnored private(set) var foreground = false
@@ -163,35 +154,13 @@ final class MobileHosts {
         if records.isEmpty, let legacy = RemoteHostRecord.migrating(legacy: defaults.data(forKey: Self.legacyKey), id: UUID()) {
             records = [legacy]
             defaults.set(RemoteHostRecord.encodeList(records), forKey: Self.recordsKey)
-            defaults.set(legacy.id.uuidString, forKey: Self.legacyTokenKey)
         }
         defaults.removeObject(forKey: Self.legacyKey)
-        ownTokens = Set((defaults.stringArray(forKey: Self.ownTokenKey) ?? []).compactMap(UUID.init(uuidString:)))
         hosts = records.map(MobileHost.init)
         let seen = defaults.dictionary(forKey: Self.lastSeenKey) as? [String: Double] ?? [:]
         for host in hosts { host.lastSeen = seen[host.id.uuidString].map(Date.init(timeIntervalSince1970:)) }
         let fleetIDs = defaults.dictionary(forKey: Self.fleetIDKey) as? [String: String] ?? [:]
         for host in hosts { host.fleetID = fleetIDs[host.id.uuidString].flatMap(UUID.init(uuidString:)) }
-        moveLegacyToken()
-    }
-
-    /// Moves the first client's token to its migrated host. A read or save that fails (a locked
-    /// device) leaves it pending for the next foreground; a missing token ends the move.
-    private func moveLegacyToken() {
-        guard let pending = defaults.string(forKey: Self.legacyTokenKey) else { return }
-        guard let id = UUID(uuidString: pending), host(id) != nil else {
-            defaults.removeObject(forKey: Self.legacyTokenKey)
-            return
-        }
-        do {
-            if let token = try tokens.readLegacy(), !token.isEmpty, try tokens.read(id) == nil {
-                try tokens.save(token, id)
-            }
-            try? tokens.removeLegacy()
-            defaults.removeObject(forKey: Self.legacyTokenKey)
-        } catch {
-            return
-        }
     }
 
     // MARK: Reading
@@ -251,48 +220,14 @@ final class MobileHosts {
         for mac in found {
             if let existing = hosts.first(where: { $0.record.address == mac.address && $0.record.port == mac.port }) {
                 try tokens.save(identity.token, existing.id)
-                markOwnToken(existing.id)
                 if foreground { retry(existing.id) }
                 ids.append(existing.id)
             } else if let entry = try? RemoteHostEntry(name: mac.name, address: mac.address, port: String(mac.port), token: identity.token) {
                 let id = try add(entry)
-                markOwnToken(id)
                 ids.append(id)
             }
         }
         return ids
-    }
-
-    private func markOwnToken(_ id: UUID) {
-        guard ownTokens.insert(id).inserted else { return }
-        defaults.set(ownTokens.map(\.uuidString).sorted(), forKey: Self.ownTokenKey)
-    }
-
-    /// A host that offers fleet and is reached with its shared token (an older pairing) is given this
-    /// device's own token: the device's identity is sent, the Mac keeps its hash, and the next connection
-    /// uses it. The shared token stays in the Keychain until the new one is saved, so a failure on the way
-    /// leaves the host working and the offer is made again at the next connection.
-    private func offerOwnToken(_ host: MobileHost, over client: RemoteHostClient) {
-        guard client.capabilities.contains(RemoteProtocol.fleetDevicesCapability), !ownTokens.contains(host.id), offering.insert(host.id).inserted else { return }
-        let id = host.id
-        Task { [weak self, weak client] in
-            guard let self, let client else { return }
-            defer { self.offering.remove(id) }
-            do {
-                var identity = try self.deviceIdentity()
-                do {
-                    _ = try await client.fleetEnrollDevice(self.introduction(identity))
-                } catch RemoteHostClientError.rejected(FleetProtocol.Code.deviceRevoked, _) {
-                    identity = try self.deviceIdentity(renew: true)
-                    _ = try await client.fleetEnrollDevice(self.introduction(identity))
-                }
-                guard self.host(id) != nil else { return }
-                try self.tokens.save(identity.token, id)
-                self.markOwnToken(id)
-            } catch {
-                // Offered again at the next connection.
-            }
-        }
     }
 
     // MARK: Editing
@@ -335,13 +270,8 @@ final class MobileHosts {
     func forget(_ id: UUID) throws {
         guard let index = hosts.firstIndex(where: { $0.id == id }) else { return }
         try tokens.remove(id)
-        if defaults.string(forKey: Self.legacyTokenKey) == id.uuidString {
-            try? tokens.removeLegacy()
-            defaults.removeObject(forKey: Self.legacyTokenKey)
-        }
         let host = hosts.remove(at: index)
         disconnect(host)
-        if ownTokens.remove(id) != nil { defaults.set(ownTokens.map(\.uuidString).sorted(), forKey: Self.ownTokenKey) }
         persist()
         persistLastSeen()
         persistFleetIDs()
@@ -491,7 +421,6 @@ final class MobileHosts {
                 }
                 host.set(.connected)
                 host.backoff.reset()
-                if let self { self.offerOwnToken(host, over: client) }
                 self?.onHostConnected?(host)
             } catch {
                 client.disconnect()

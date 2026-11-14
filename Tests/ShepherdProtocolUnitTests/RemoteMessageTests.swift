@@ -25,8 +25,7 @@ enum RemoteSamples {
     static let fleetDevicesSnapshot = FleetDevicesSnapshot(
         devices: [FleetDeviceStatus(deviceID: fleetDevice.deviceID, name: "iPhone", kind: .iphone, pairedAt: 1_790_000_000_000, connected: true, lastSeen: 1_790_000_002_000),
                   FleetDeviceStatus(deviceID: UUID(uuidString: "00000000-0000-0000-0000-0000000000D3")!, name: "Mac mini", kind: .macApp, pairedAt: 1_790_000_000_100, connected: false)],
-        code: FleetJoinStatus(expiresAt: 1_790_000_300_000, attemptsLeft: 5),
-        sharedToken: FleetSharedTokenStatus(retired: false, waiting: [FleetLegacyClient(id: "Shepherd iOS@192.168.1.31", name: "Shepherd iOS", lastSeen: 1_790_000_002_000)], switched: 2))
+        code: FleetJoinStatus(expiresAt: 1_790_000_300_000, attemptsLeft: 5))
     static let fleetSnapshot = FleetSnapshot(
         enabled: true, hostID: fleetHost, name: "MacBook Pro", build: "412", addresses: ["192.168.1.20"], port: 7434, advertising: true,
         peers: [FleetPeerStatus(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F2")!, name: "Mac mini", host: "192.168.1.40", port: 7434,
@@ -519,11 +518,11 @@ struct RemoteRequestTests {
              .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
              .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
              .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult, .fleetRoutes, .fleetPeerAnswer,
-             .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
+             .fleetPairDevice, .fleetSyncDevices:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 75
+    static let caseCount = 74
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -596,14 +595,11 @@ struct RemoteRequestTests {
         .fleetPeerAnswer(id: 143, reply: .fleetSyncReply(id: 143, reply: .state(vector: RemoteSamples.fleetVector))),
         .fleetPeerAnswer(id: 144, reply: .error(id: 144, code: "forbidden", message: "Only a Mac in the fleet syncs.")),
         .fleetPairDevice(id: 82, code: "482913", device: RemoteSamples.fleetDevice),
-        .fleetEnrollDevice(id: 83, device: RemoteSamples.fleetDevice),
         .fleetSyncDevices(id: 84, devices: RemoteSamples.fleetDeviceEntries),
         .fleetSyncDevices(id: 85, devices: []),
         .fleetAction(id: 86, action: .startDeviceCode),
         .fleetAction(id: 87, action: .stopDeviceCode),
         .fleetAction(id: 88, action: .revokeDevice(RemoteSamples.fleetDevice.deviceID)),
-        .fleetAction(id: 89, action: .forgetLegacyClient("Shepherd iOS@192.168.1.31")),
-        .fleetAction(id: 99, action: .retireSharedToken),
         .fleetAction(id: 100, action: .enrollApp(name: "MacBook Pro")),
         .fleetAction(id: 101, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", host: nil))),
         .fleetAction(id: 102, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", title: "Profile import",

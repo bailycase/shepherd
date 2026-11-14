@@ -101,11 +101,6 @@ extension RemoteHostClient {
         return (try Self.devices(from: reply), identity)
     }
 
-    /// A client on the shared token asks for a token of its own (the host keeps only its hash).
-    public func fleetEnrollDevice(_ device: FleetDeviceIntroduction) async throws -> FleetDevicesResult {
-        try Self.devices(from: try await request { .fleetEnrollDevice(id: $0, device: device) })
-    }
-
     /// Sends the devices this Mac holds to a member and reads back the ones it holds.
     public func fleetSyncDevices(_ devices: [FleetDeviceEntry]) async throws -> FleetDevicesResult {
         try Self.devices(from: try await request { .fleetSyncDevices(id: $0, devices: devices) })

@@ -28,7 +28,7 @@ struct LocalClientTests {
             remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in },
             hooks: hooks ?? HooksModel(home: clientDir.appendingPathComponent("hooks-home").path, support: clientDir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
-        let connection = vm.connectLocalHost(socket: socket, token: token)
+        let connection = vm.connectLocalHost(socket: socket)
         try await eventuallyOnMain("the host's workspace", timeout: .seconds(30)) {
             // Designs reach a client only while the host serves them, so they aren't compared.
             connection.phase == RemoteHostStore.Phase.connected && connection.state.spaces == host.server.state.spaces
@@ -50,7 +50,7 @@ struct LocalClientTests {
 
         let hosts = RemoteHostStore(defaults: ScratchDefaults(), childRefreshInterval: .milliseconds(200))
         hosts.appBuild = "1202"
-        let connection = hosts.addLocalHost(name: "This Mac", socket: socket, token: token)
+        let connection = hosts.addLocalHost(name: "This Mac", socket: socket)
         defer { hosts.removeHost(id: connection.id) }
         try await eventuallyOnMain("the app to connect") { connection.phase == .connected }
         try await eventuallyOnMain("the older host to be asked to drain") { asked.current == 1 }

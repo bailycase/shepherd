@@ -184,10 +184,10 @@ public final class SessionServer: @unchecked Sendable {
         /// Connected through the local socket (`host.sock`): the app itself, offered `local.v1`.
         var isLocal = false
         /// The Mac this connection authenticated as, with its fleet token (`FleetService`); nil for
-        /// the shared token and the local app. Such a connection is sent no workspace state.
+        /// a device and the local app. Such a connection is sent no workspace state.
         var fleetPeerID: UUID?
         /// The client device this connection authenticated as, with its own token (`FleetDevices`): a
-        /// client, offered no fleet capability (`FleetAccess`). nil for the shared token, a peer and the local app.
+        /// client, offered no fleet capability (`FleetAccess`). nil for a peer and the local app.
         var fleetDeviceID: UUID?
         /// What a remote client called itself in `hello`.
         var clientName: String?
@@ -835,11 +835,9 @@ public final class SessionServer: @unchecked Sendable {
     /// `Closed` belongs to the listener that is open, `Closing` to one that was stopped and is awaited.
     private var remoteListenerClosed: DispatchSemaphore?
     private var remoteListenerClosing: DispatchSemaphore?
-    private var remoteToken: String?
-    /// The local socket (`host.sock`) the app connects to a background host through, and its token.
+    /// The local socket (`host.sock`) the app connects to a background host through.
     private var localAcceptSource: DispatchSourceRead?
     private var localSocketPath: String?
-    private var localToken: String?
     /// This host's fleet (`FleetService`), present from `startFleet` on. Server queue.
     var fleet: FleetService?
     /// Told, once the fleet is started and then on each change, whether this host needs its listener for the fleet: a Mac or a
@@ -1386,6 +1384,17 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Tests: a token a test's client can present to this host's listener, which takes only a device's or a Mac's own, treated as a
+    /// device's. It lives in memory (no device is made, listed or saved) and the fleet is started, without Bonjour or iCloud, if it
+    /// isn't running.
+    public func clientTokenForTests() -> String {
+        let token = FleetProtocol.makeToken()
+        queue.sync { if fleet == nil { fleetOptions.advertises = false } }
+        startFleet()
+        queue.sync { fleet?.addTestClient(tokenHash: FleetProtocol.hash(token)) }
+        return token
+    }
+
     /// Starts this host's fleet (`FleetService`): its identity, its links to the Macs it is paired with, its Bonjour advertisement,
     /// the pairing of Macs and devices and the fleet requests. There is no off state. It opens no port by itself: it says when it
     /// needs the listener (`onFleetListenerNeed`). `name` is what other Macs call this one (the Mac's own name unless a test names it).
@@ -1434,14 +1443,6 @@ public final class SessionServer: @unchecked Sendable {
                 service.onDeviceRevoked = { [weak self] deviceID in
                     guard let self else { return }
                     for client in Array(self.clients.values) where client.fleetDeviceID == deviceID { self.disconnect(client, reason: "device revoked") }
-                }
-                service.onSharedTokenRetired = { [weak self] in
-                    guard let self else { return }
-                    // What connected on the shared token ends; peers, devices and this Mac's app stay.
-                    for client in Array(self.clients.values) where client.isRemote && !client.isLocal && client.authenticated
-                        && client.fleetPeerID == nil && client.fleetDeviceID == nil {
-                        self.disconnect(client, reason: "shared token retired")
-                    }
                 }
                 fleet = service
                 fleetRepoFinder.value = service.dispatch.finder
@@ -1737,16 +1738,16 @@ public final class SessionServer: @unchecked Sendable {
              .fleetSnapshotPart(let value, _, _), .fleetBlobPush(let value, _, _),
              .fleetDispatchCreate(let value, _), .fleetDispatchControl(let value, _, _), .fleetDispatchChanged(let value, _),
              .fleetDispatchResult(let value, _, _, _), .fleetRoutes(let value, _),
-             .fleetPairDevice(let value, _, _), .fleetEnrollDevice(let value, _), .fleetSyncDevices(let value, _):
+             .fleetPairDevice(let value, _, _), .fleetSyncDevices(let value, _):
             id = value
         default: return
         }
         guard let fleet else {
-            // Off: the app still reads an empty fleet to draw the switch's state.
+            // Before the fleet is started the app still reads an empty one.
             if case .fleetRead = request, client.isLocal {
                 send(.fleetResult(id: id, result: FleetResult(snapshot: FleetSnapshot())), to: client)
             } else {
-                send(.error(id: id, code: FleetProtocol.Code.off, message: "Enable Fleet in Settings ▸ Experiments."), to: client)
+                send(.error(id: id, code: FleetProtocol.Code.off, message: "This Mac's fleet isn't running yet."), to: client)
             }
             return
         }
@@ -2711,12 +2712,13 @@ public final class SessionServer: @unchecked Sendable {
     // MARK: - Remote listener (server queue)
 
     /// Bind the TCP listener for remote Shepherd clients. Pass port 0 to bind
-    /// an ephemeral port; the bound port is returned either way. The token is
-    /// loaded from `tokenURL`, generated (0600) on first use. The listener
-    /// binds all interfaces — the user's VPN is the reachability and security
-    /// boundary; the token keeps other devices on that network honest.
-    public func startRemoteListener(port: UInt16, tokenURL: URL) throws -> UInt16 {
-        try queue.sync { try startRemoteListenerOnQueue(port: port, tokenURL: tokenURL) }
+    /// an ephemeral port; the bound port is returned either way. A client
+    /// gets in only with a token of its own (a device's, or a Mac's of the fleet)
+    /// after pairing with a code; there is no token shared by every client. The
+    /// listener binds all interfaces — the user's VPN is the reachability and
+    /// security boundary; the tokens keep other devices on that network honest.
+    public func startRemoteListener(port: UInt16) throws -> UInt16 {
+        try queue.sync { try startRemoteListenerOnQueue(port: port) }
     }
 
     /// Close the TCP listener and every remote client connection. Extension
@@ -2733,13 +2735,11 @@ public final class SessionServer: @unchecked Sendable {
         _ = closing.wait(timeout: .now() + 5)
     }
 
-    private func startRemoteListenerOnQueue(port: UInt16, tokenURL: URL) throws -> UInt16 {
+    private func startRemoteListenerOnQueue(port: UInt16) throws -> UInt16 {
         try requireStarted()
         guard remoteListenFD < 0 else {
             throw SessionServerError.conflict("remote listener already running")
         }
-        remoteToken = try Self.loadOrCreateRemoteToken(at: tokenURL)
-
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { throw SessionServerError.system(call: "socket", errno: errno) }
         var one: Int32 = 1
@@ -2807,46 +2807,23 @@ public final class SessionServer: @unchecked Sendable {
         if let closed = remoteListenerClosed { remoteListenerClosing = closed }
         remoteListenerClosed = nil
         remoteListenFD = -1
-        remoteToken = nil
         remoteListenPort = nil
         fleet?.listenerChanged(nil)
-    }
-
-    /// Load the shared remote token, generating one (32 random bytes as hex,
-    /// mode 0600) on first use.
-    static func loadOrCreateRemoteToken(at url: URL) throws -> String {
-        if let data = try? Data(contentsOf: url) {
-            let token = String(decoding: data, as: UTF8.self)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !token.isEmpty { return token }
-        }
-        var bytes = [UInt8](repeating: 0, count: 32)
-        arc4random_buf(&bytes, bytes.count)
-        let token = bytes.map { String(format: "%02x", $0) }.joined()
-        let directory = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try Data(token.utf8).write(to: url, options: .atomic)
-        guard chmod(url.path, 0o600) == 0 else {
-            throw SessionServerError.system(call: "chmod", errno: errno)
-        }
-        return token
     }
 
     // MARK: - Local socket (server queue)
 
     /// Bind the local socket (`<support>/host.sock`, 0600) the app uses as a background host's
     /// client: the remote protocol over a unix socket, offered `local.v1`. Only this user's
-    /// processes running this app's own code get past accept (`LocalPeer`); they then say `hello`
-    /// with the token at `tokenURL` (the remote token, created on first use). Off unless the host
-    /// entry starts it.
-    public func startLocalListener(path: String, tokenURL: URL) throws {
+    /// processes running this app's own code get past accept (`LocalPeer`), and that is all the proof
+    /// they give: the `hello` token is not looked at. Off unless the host entry starts it.
+    public func startLocalListener(path: String) throws {
         try queue.sync {
             try requireStarted()
             guard localAcceptSource == nil else { throw SessionServerError.conflict("local listener already running") }
             // This Mac's app reads the run log again after each change (`automationsChanged`).
             runLog.changed = { [weak self] in self?.sendToLocalApps(.automationsChanged) }
             var addr = try Self.socketAddress(for: path)
-            localToken = try Self.loadOrCreateRemoteToken(at: tokenURL)
             // Only the workspace's owner binds here, and this server holds the ownership lock: any
             // socket file left is a dead host's.
             unlink(path)
@@ -2885,7 +2862,6 @@ public final class SessionServer: @unchecked Sendable {
         localAcceptSource = nil
         if let localSocketPath { unlink(localSocketPath) }
         localSocketPath = nil
-        localToken = nil
     }
 
     private func acceptLocalPending(on listenFD: Int32) {
@@ -2988,16 +2964,14 @@ public final class SessionServer: @unchecked Sendable {
                 ), to: client)
                 return
             }
-            // The shared token (until it is retired, while Fleet is on), a paired Mac's own (a fleet
-            // peer) or a client device's own; the last two never on the local socket.
-            let sharedMatches = (client.isLocal ? localToken : remoteToken).map { RemoteToken.matches(token, expected: $0) } ?? false
-            let retired = fleet?.sharedTokenRetired ?? FleetDevices.sharedTokenRetired(in: supportDirectory.appendingPathComponent("fleet", isDirectory: true))
-            let shared = sharedMatches && (client.isLocal || !retired)
-            let peer = sharedMatches || client.isLocal ? nil : fleet?.authenticate(token: token)
-            let device = sharedMatches || client.isLocal || peer != nil ? nil : fleet?.authenticateDevice(token: token)
-            guard shared || peer != nil || device != nil else {
-                ShepherdLog.warning("remote client '\(clientName)' rejected: bad token (fd \(client.fd))")
-                sendFinal(.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token"), to: client)
+            // This Mac's app (past `LocalPeer` at accept), a paired Mac's own token (a fleet peer) or a client
+            // device's own; the last two never on the local socket. There is no token shared by every client: one
+            // that isn't either is an old client's shared token, or a revoked device's.
+            let peer = client.isLocal ? nil : fleet?.authenticate(token: token)
+            let device = client.isLocal || peer != nil ? nil : fleet?.authenticateDevice(token: token)
+            guard client.isLocal || peer != nil || device != nil else {
+                ShepherdLog.warning("remote client '\(clientName)' rejected: no token of its own (fd \(client.fd))")
+                sendFinal(.error(id: id, code: RemoteProtocol.sharedTokenRetiredCode, message: RemoteProtocol.sharedTokenRetiredMessage), to: client)
                 return
             }
             // What the other clients are owed goes out first: the new one reads its state from its fetch.
@@ -3006,9 +2980,7 @@ public final class SessionServer: @unchecked Sendable {
             client.fleetDeviceID = device
             client.clientName = clientName
             if let peer { fleet?.peerAuthenticated(peer, from: client.peerHost) }
-            if let device { fleet?.deviceAuthenticated(device, connection: client.fd, clientName: clientName, from: client.peerHost) }
-            // A connection that lists no capabilities is a Mac's host establishing a peer, not a client someone uses.
-            if shared, !client.isLocal, capabilities?.isEmpty == false { fleet?.sharedTokenUsed(clientName: clientName, host: client.peerHost) }
+            if let device { fleet?.deviceAuthenticated(device, connection: client.fd) }
             client.authenticated = true
             client.clientCapabilities = Set(capabilities ?? [])
             if client.isLocal { localAppsChanged() }
@@ -3033,7 +3005,7 @@ public final class SessionServer: @unchecked Sendable {
         case .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
              .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
              .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult, .fleetRoutes,
-             .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
+             .fleetPairDevice, .fleetSyncDevices:
             serveFleet(request, from: client)
         case .fleetPeerAnswer(let id, let reply):
             // The answer of a Mac to a call this host sent over the connection it opened: only that Mac's.

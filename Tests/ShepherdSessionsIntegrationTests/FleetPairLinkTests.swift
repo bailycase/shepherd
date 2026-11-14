@@ -250,7 +250,7 @@ struct FleetPairLinkTests {
         defer { a.stop(); b.stop() }
         // What `Shepherd --fleet-where` prints on the Mac, read from its real host over its local socket.
         let socket = b.host.dir.appendingPathComponent("h.sock").path
-        let outcome = await FleetWhereCommand.read(socket: socket, token: b.sharedToken, app: "Shepherd Nightly")
+        let outcome = await FleetWhereCommand.read(socket: socket, app: "Shepherd Nightly")
         guard case .found(let answer) = outcome else { Issue.record("the host didn't say where it is: \(outcome)"); return }
         #expect(answer.name == "Mac mini" && answer.port == b.port && answer.routes == [FleetReportedRoute(host: "127.0.0.1", kind: .lan)] && answer.app == "Shepherd Nightly")
         let canned = FileManager.default.temporaryDirectory.appendingPathComponent("fleet-where-\(UUID().uuidString.prefix(8)).json")
@@ -330,11 +330,11 @@ struct FleetPairLinkTests {
     // MARK: Where a host says it listens
 
     @Test func aHostThatIsNotRunningOrNotListeningHasNothingToSay() async throws {
-        let none = await FleetWhereCommand.read(socket: "/tmp/no-such-\(UUID().uuidString.prefix(6)).sock", token: "x")
+        let none = await FleetWhereCommand.read(socket: "/tmp/no-such-\(UUID().uuidString.prefix(6)).sock")
         #expect(none == .notRunning && none.status == FleetWhereCommand.notRunningStatus)
         let alone = try await Self.mac("Mac mini")
         defer { alone.stop() }
-        let read = await FleetWhereCommand.read(socket: alone.host.dir.appendingPathComponent("h.sock").path, token: alone.sharedToken)
+        let read = await FleetWhereCommand.read(socket: alone.host.dir.appendingPathComponent("h.sock").path)
         guard case .found(let found) = read else { Issue.record("a Mac with no other Mac still says where it listens: \(read)"); return }
         #expect(found.port == alone.port, "an iPhone is added to a Mac that is in no fleet, too")
     }

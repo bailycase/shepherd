@@ -83,10 +83,8 @@ struct FleetSettingsFlowTests {
         let code = try #require(b.model.join?.code)
         let port = try #require(b.port, "the code is shown once the listener it is entered against is open")
         #expect(b.model.snapshot.port == port && !b.settings.remoteListenerEnabled)
-        let phone = RemoteHostClient()
-        _ = try await phone.connect(host: "127.0.0.1", port: port, token: b.token, clientName: "peer")
-        #expect(phone.capabilities.contains(RemoteProtocol.fleetCapability) && phone.hostID == b.model.snapshot.hostID)
-        phone.disconnect()
+        let identity = try #require(await RemoteHostClient.fleetProbe(host: "127.0.0.1", port: port))
+        #expect(identity.fleetEnabled && identity.hostID == b.model.snapshot.hostID)
 
         // A Mac that pairs keeps it open on both sides, though the code is spent, and the one that entered it opens its own.
         #expect(await a.model.pair(with: b.found, code: code))
