@@ -69,6 +69,8 @@ public final class RemoteHostClient: @unchecked Sendable {
     public var onDesignChanged: ((DesignID, UInt64?, UInt64?) -> Void)?
     /// The host's design systems changed (`designSystemsCapability`): list them again. Main queue.
     public var onDesignSystemsChanged: (() -> Void)?
+    /// The fleet's Macs or their routes changed (`fleetFollowCapability`): read `fleetRead` again. Main queue.
+    public var onFleetViewChanged: (() -> Void)?
     public var onProjectExecutionChanged: ((ProjectExecutionKey, UInt64) -> Void)?
     /// What the host offers changed while connected (its Design tool turned on or off);
     /// `capabilities` already holds the new list. Main queue.
@@ -192,6 +194,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case exited(SessionID, Int32?)
         case designChanged(DesignID, UInt64?, UInt64?)
         case designSystemsChanged
+        case fleetViewChanged
         case projectExecutionChanged(ProjectExecutionKey, UInt64)
         case capabilities(Set<String>)
         case browserDrive(BrowserDrivePush)
@@ -1824,6 +1827,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             push(.designChanged(designID, revision, commentsRevision))
         case .designSystemsChanged:
             push(.designSystemsChanged)
+        case .fleetViewChanged:
+            push(.fleetViewChanged)
         case .tunnel(let frame):
             tunnels.receive(frame)
         case .browserDrive(let push):
@@ -1892,7 +1897,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         func replaces(_ previous: PushedEvent) -> Bool {
             switch (previous, event) {
             case (.nativeThreadChanged(let a), .nativeThreadChanged(let b)): return a == b
-            case (.state, .state), (.capabilities, .capabilities), (.designSystemsChanged, .designSystemsChanged), (.appsChanged, .appsChanged): return true
+            case (.state, .state), (.capabilities, .capabilities), (.designSystemsChanged, .designSystemsChanged), (.fleetViewChanged, .fleetViewChanged), (.appsChanged, .appsChanged): return true
             case (.designChanged(let a, _, _), .designChanged(let b, _, _)): return a == b
             case (.projectExecutionChanged(let a, _), .projectExecutionChanged(let b, _)): return a == b
             default: return false
@@ -1982,6 +1987,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .projectExecutionChanged(let key, let revision): self.onProjectExecutionChanged?(key, revision)
                 case .designChanged(let designID, let revision, let comments): self.onDesignChanged?(designID, revision, comments)
                 case .designSystemsChanged: self.onDesignSystemsChanged?()
+                case .fleetViewChanged: self.onFleetViewChanged?()
                 case .capabilities(let capabilities): self.onCapabilitiesChanged?(capabilities)
                 case .browserDrive(let push): self.onBrowserDrive?(push)
                 case .designRelay(let token, let job): self.onDesignRelay?(token, job)

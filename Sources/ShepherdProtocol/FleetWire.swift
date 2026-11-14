@@ -186,11 +186,15 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
     public var dispatches: [FleetDispatchRecord]
     /// Where this Mac's content index stands (`FleetSnapshotWire.swift`); nil while it isn't indexing (no Mac paired).
     public var index: FleetIndexStatus?
+    /// This Mac and the Macs of its fleet with how each is reached (`RemoteProtocol.fleetFollowCapability`): what a phone or an iPad that
+    /// is paired with any of them keeps its list of Macs from. Empty from a host without the capability, and while Fleet is off.
+    public var members: [FleetViewMember]
 
     public init(enabled: Bool = false, hostID: UUID? = nil, name: String = "", build: String? = nil, addresses: [String] = [],
                 port: UInt16? = nil, routes: [FleetReportedRoute] = [], advertising: Bool = false, peers: [FleetPeerStatus] = [], join: FleetJoinStatus? = nil,
                 sync: FleetSyncStatus? = nil, devices: FleetDevicesSnapshot? = nil, macs: [FleetMacState] = [],
-                dispatches: [FleetDispatchRecord] = [], index: FleetIndexStatus? = nil) {
+                dispatches: [FleetDispatchRecord] = [], index: FleetIndexStatus? = nil, members: [FleetViewMember] = []) {
+        self.members = members
         self.routes = routes
         self.index = index
         self.devices = devices
@@ -208,7 +212,7 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         self.sync = sync
     }
 
-    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, routes, advertising, peers, join, macs, devices, sync, dispatches, index }
+    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, routes, advertising, peers, join, macs, devices, sync, dispatches, index, members }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -229,18 +233,20 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         sync = try c.decodeIfPresent(FleetSyncStatus.self, forKey: .sync)
         dispatches = (try? c.decodeIfPresent([FleetDispatchRecord].self, forKey: .dispatches)) ?? []
         index = try c.decodeIfPresent(FleetIndexStatus.self, forKey: .index)
+        members = (try? c.decodeIfPresent([FleetViewMember].self, forKey: .members)) ?? []
     }
 }
 
 extension FleetSnapshot {
     /// What a client (a phone or an iPad) may read: the Macs, whether each is reachable, and their load and
-    /// readiness. Not where any Mac listens, a code window, the devices, the sync state, the dispatches or the build.
+    /// readiness, and the routes to each (`members`: what it needs to keep its own list of Macs). Not the addresses this Mac lists for
+    /// itself, a code window, the devices, the sync state, the dispatches or the build.
     public var clientView: FleetSnapshot {
         FleetSnapshot(enabled: enabled, hostID: hostID, name: name,
                       peers: peers.map {
                           FleetPeerStatus(hostID: $0.hostID, name: $0.name, kind: $0.kind, pairedAt: $0.pairedAt, link: $0.link, lastSeen: $0.lastSeen)
                       },
-                      macs: macs)
+                      macs: macs, members: members)
     }
 }
 

@@ -1,3 +1,4 @@
+import Network
 import SwiftUI
 import ShepherdUI
 
@@ -22,6 +23,8 @@ final class MobileApp {
     let readiness: MobileReadiness
     /// Each host's revision hints for the threads on screen in any window.
     let hints: ThreadRevisionHints
+    /// Tells the hosts the network changed, so one on a later route looks at the earlier ones. Nothing polls: it fires on a change.
+    private let network = NWPathMonitor()
 
     init(hosts: MobileHosts, appearance: MobileAppearance, push: PushManager? = nil) {
         SHFonts.register()
@@ -58,6 +61,21 @@ final class MobileApp {
             HomeFeed.of(hosts).invalidate(ref.fleetRef)
             threads?.existingStore(for: ref)?.historyChanged()
         }
+        // A Mac the fleet no longer has: its token and record are gone, so there is no host to revoke push on.
+        hosts.onFleetLeft = { [weak self] id in self?.clear(host: id) }
+        network.pathUpdateHandler = { [weak self] path in
+            let usable = path.status == .satisfied
+            Task { @MainActor in self?.pathChanged(usable: usable) }
+        }
+        network.start(queue: DispatchQueue(label: "shepherd.ios.network"))
+    }
+
+    private var sawPath = false
+
+    /// The path monitor's report: the first is the network at launch, the ones after it are changes.
+    private func pathChanged(usable: Bool) {
+        defer { sawPath = true }
+        if sawPath, usable { hosts.networkChanged() }
     }
 
     /// The shipped app: preferences and the Keychain.
@@ -69,6 +87,11 @@ final class MobileApp {
     func forget(host: UUID) async throws {
         // Revoke push before removing host connectivity.
         try await push.forget(host: host) { try hosts.forget(host) }
+        clear(host: host)
+    }
+
+    /// What the app kept for a host that is gone.
+    private func clear(host: UUID) {
         navigator.forget(host: host)
         windows.forget(host: host)
         threads.forget(host: host)

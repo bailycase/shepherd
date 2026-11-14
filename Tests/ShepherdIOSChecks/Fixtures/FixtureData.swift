@@ -78,7 +78,7 @@ struct FixtureHostData {
         RemoteProtocol.capabilities.filter {
             (designs != nil || !RemoteProtocol.designCapabilities.contains($0))
                 && (forge != nil || ($0 != RemoteProtocol.forgeCapability && $0 != RemoteProtocol.forgeBrowseCapability))
-                && (fleet != nil || $0 != RemoteProtocol.fleetViewCapability)
+                && (fleet != nil || ($0 != RemoteProtocol.fleetViewCapability && $0 != RemoteProtocol.fleetFollowCapability))
         }
     }
 }
@@ -211,7 +211,7 @@ enum FixtureData {
 @MainActor enum FixtureCatalog {
     static var all: [FixtureScreen] {
         home + thread + context + newThread + subagents + review + changes + commit + search + settings + hooks + automations + automationFlow + windows + terminal + clientState + duo + fleetScreens
-            + designs + designPad + designPadMarkup + designPages + browser + files + ProjectFixtures.screens + hostConfig + freshness + forge + tailFrames + tail + historyRead + composerField
+            + designs + designPad + designPadMarkup + designPages + browser + files + ProjectFixtures.screens + hostConfig + freshness + forge + tailFrames + tail + newTurn + historyRead + composerField
     }
 
     static func screen(named name: String) -> FixtureScreen? {

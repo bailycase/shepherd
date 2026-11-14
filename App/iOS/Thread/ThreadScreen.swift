@@ -261,10 +261,12 @@ struct ThreadTranscript: View {
     @State private var tailPin = ThreadTailPin()
     /// Gets a following transcript out of a stranded scroll position, where no row is realized (ThreadTailGuard).
     @State private var tailGuard = ThreadTailGuard()
+    /// Hands the bottom marker back to SwiftUI once the landings after new rows have settled (ThreadTailHold).
+    @State private var tailHold = ThreadTailHold()
     /// Whether this mount has appeared: `onAppear` also fires when a screen pushed over the thread is popped, which is no mount.
     @State private var appeared = false
 
-    private static let bottomID = "thread-bottom"
+    private static let bottomID = NativeTranscriptPlace.bottomMarker
 
     // iOS 27.1's bottom anchor can retain a lazy stack's estimated height after a fold, so there the size-change anchor
     // is left to the explicit following of macOS 27, and the initial anchor and the turn kept stay as they were before
@@ -277,6 +279,7 @@ struct ThreadTranscript: View {
         let running = store.running
         let thinking = store.showsThinking
         let liveRow = rows.last(where: \.live)
+        let tail = rows.last?.id
         ScrollViewReader { proxy in
             // Counted here, where the transcript's own state is read: the body above reads the store only.
             let _ = SHRenderProbe.tick("thread.transcript")
@@ -338,18 +341,18 @@ struct ThreadTranscript: View {
             }
             // Open at the tail and stay pinned while it grows; only the reader's own drag
             // detaches, and sending re-attaches.
-            .scrollPosition(id: Binding(get: { presentation.visibleTurn }, set: { presentation.noteVisibleTurn($0) }), anchor: .top)
+            .scrollPosition(id: Binding(get: { presentation.position(tail: tail) }, set: { presentation.noteVisibleTurn($0, tail: tail) }), anchor: .top)
             .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
             .onChange(of: store.sessionKey) { old, _ in
                 tailPin.reset()
                 // Another session has other turns, so the one kept is gone; the first key a new store learns is the same thread's.
-                if old != nil { presentation.noteVisibleTurn(nil) }
+                if old != nil { presentation.newSession() }
                 loadVisibleHistory()
             }
             // A reused view (the design pane's chat has no identity of its own) shows another thread, which mounts as a new transcript does.
             .onChange(of: ref) { _, _ in
                 tailPin.reset()
-                presentation.mount()
+                presentation.mount(tail: tail)
             }
             .defaultScrollAnchor(nativeTail ? (presentation.restoresTurn ? .top : .bottom) : nil, for: .initialOffset)
             .defaultScrollAnchor(nativeTail ? (presentation.follows ? .bottom : nil) : (presentation.follows ? nil : .top), for: .sizeChanges)
@@ -417,11 +420,13 @@ struct ThreadTranscript: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .onAppear {
+                tailHold.resume()
                 guard !appeared else { return }
                 appeared = true
-                presentation.mount()
+                presentation.mount(tail: tail)
             }
             .onDisappear {
+                tailHold.stop()
                 tailPin.stop()
                 tailGuard.stop()
             }
@@ -474,7 +479,14 @@ struct ThreadTranscript: View {
     /// the view, so a landing asked for before a remount reads the follower it was asked for.
     private func lander(_ proxy: ScrollViewProxy) -> ThreadTailPin.Land {
         let presentation = presentation
-        return { resized in Self.land(proxy, presentation: presentation, resized: resized) }
+        let store = store
+        let hold = tailHold
+        return { resized in
+            Self.land(proxy, presentation: presentation, resized: resized)
+            let tail = store.rows.last?.id
+            guard presentation.withholdsMarker(tail: tail) else { return }
+            hold.landed { if store.rows.last?.id == tail { presentation.hold(tail: tail) } }
+        }
     }
 
     /// Lands on the tail while the reader still follows it and has not taken hold of the thread.

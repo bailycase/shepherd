@@ -6,8 +6,8 @@ import ShepherdRemote
 
 // App/iOS/Hosts/MobileHosts.swift and MobilePairing.swift against fake Macs of a fleet over real TCP, with
 // tokens in memory (never the Keychain) and a scratch preferences domain. Built and run by run.sh on macOS.
-// The fake Macs answer what a host answers (`fleetIdentify`, `fleetPairDevice`, `fleetEnrollDevice`, `hello`
-// with the shared token or a device token), so this is the device side of pairing: what it sends, what it
+// The fake Macs answer what a host answers (`fleetIdentify`, `fleetPairDevice`, `hello`
+// with a device token), so this is the device side of pairing: what it sends, what it
 // stores and where, and that an older pairing is offered its own token and keeps working throughout.
 @main
 struct FleetDevicePairingCheck {
@@ -19,7 +19,7 @@ struct FleetDevicePairingCheck {
         func scratchDefaults(_ name: String) -> UserDefaults { UserDefaults(suiteName: scratch.appendingPathComponent(name).path)! }
 
         let fleet = FakeFleet()
-        let mini = try FakeMac(name: "Mac mini", fleet: fleet), studio = try FakeMac(name: "Mac Studio", fleet: fleet)
+        let mini = try FakeMac(name: "Mac mini", fleet: fleet), studio = try FakeMac(name: "Mac Studio", fleet: fleet, hostID: UUID())
         fleet.members = [studio]
         defer { mini.stop(); studio.stop() }
         let defaults = scratchDefaults("defaults")
@@ -47,14 +47,12 @@ struct FleetDevicePairingCheck {
               "the Mac was sent the hash, the name and the kind, never the token")
         check(!fleet.heard.contains { $0.contains(identity.token) && !$0.contains("\"hello\"") }, "the token only travels in hello")
         let saved = try JSONSerialization.jsonObject(with: defaults.data(forKey: MobileHosts.recordsKey)!) as! [[String: Any]]
-        check(saved.count == 2 && saved.allSatisfy { Set($0.keys) == ["id", "name", "address", "port"] }, "records hold no token")
-        check(Set(defaults.stringArray(forKey: MobileHosts.ownTokenKey) ?? []) == Set(ids.map(\.uuidString)), "both hosts are marked as on the device's own token")
+        check(saved.count == 2 && saved.allSatisfy { Set($0.keys) == ["id", "name", "address", "port", "routes"] }, "records hold no token")
 
-        // Connected, a device is offered no fleet capability (and so is never offered a token again).
+        // Connected, a device is offered no fleet capability.
         hosts.setForeground(true)
         try await waitUntil("both Macs connected") { hosts.hosts.allSatisfy { $0.phase == .connected } }
         check(hosts.hosts.allSatisfy { !$0.supports(RemoteProtocol.fleetCapability) && !$0.supports(RemoteProtocol.fleetDevicesCapability) }, "no fleet capability for a device")
-        check(fleet.enrollments == 0, "a device on its own token is not offered one")
 
         // Pairing again with the same Mac updates it: no duplicate.
         fleet.code = "111222"
@@ -70,44 +68,16 @@ struct FleetDevicePairingCheck {
         try check(tokens.read(ids[0]) == renewed.token && fleet.accepted.contains(FleetProtocol.hash(renewed.token)), "the new token is saved and known to the Mac")
         hosts.setForeground(false)
 
-        // An older pairing on the shared token is offered the device's own token, saves it, and carries on.
-        let legacyDefaults = scratchDefaults("legacy")
-        let legacyTokens = HostTokens.memory()
-        let legacy = MobileHosts(defaults: legacyDefaults, tokens: legacyTokens, device: .phone, pause: { _ in try await Task.sleep(for: .milliseconds(20)) })
-        let legacyID = try legacy.add(RemoteHostEntry(name: "Mac mini", address: "127.0.0.1", port: String(mini.port), token: fleet.sharedToken))
-        fleet.enrollments = 0
-        legacy.setForeground(true)
-        let old = legacy.host(legacyID)!
-        try await waitUntil("the old pairing connected on the shared token") { old.phase == .connected }
-        check(old.supports(RemoteProtocol.fleetDevicesCapability), "a Mac offers devices to a client on the shared token")
-        let own = try legacy.deviceIdentity()
-        try await waitUntil("the own token saved") { (try? legacyTokens.read(legacyID)) == own.token }
-        check(fleet.enrollments == 1 && fleet.accepted.contains(FleetProtocol.hash(own.token)), "the Mac was given the hash of the new token")
-        check(Set(legacyDefaults.stringArray(forKey: MobileHosts.ownTokenKey) ?? []) == [legacyID.uuidString], "the host is marked as on its own token")
-        check(old.phase == .connected, "the connection in use was not interrupted")
-
-        // The shared token is retired: the next connection uses the device's token and works.
-        fleet.sharedTokenRetired = true
-        legacy.retry(legacyID)
-        try await waitUntil("reconnected on the own token") { old.phase == .connected }
-        check(fleet.enrollments == 1, "it is offered once")
-        legacy.setForeground(false)
-
-        // A Mac that never answers the offer leaves the shared token in place and the host working.
-        let quietFleet = FakeFleet()
-        quietFleet.refusesEnrollment = true
-        let quiet = try FakeMac(name: "Mac mini", fleet: quietFleet)
-        defer { quiet.stop() }
-        let quietTokens = HostTokens.memory()
-        let quietHosts = MobileHosts(defaults: scratchDefaults("quiet"), tokens: quietTokens, device: .phone, pause: { _ in try await Task.sleep(for: .milliseconds(20)) })
-        let quietID = try quietHosts.add(RemoteHostEntry(name: "Mac mini", address: "127.0.0.1", port: String(quiet.port), token: quietFleet.sharedToken))
-        quietHosts.setForeground(true)
-        try await waitUntil("the quiet host connected") { quietHosts.host(quietID)?.phase == .connected }
-        try await waitUntil("the offer was refused") { quietFleet.enrollments == 1 }
-        try await Task.sleep(for: .milliseconds(200))
-        try check(quietTokens.read(quietID) == quietFleet.sharedToken, "a refused offer leaves the shared token")
-        check(quietHosts.host(quietID)?.phase == .connected, "and the host keeps working")
-        quietHosts.setForeground(false)
+        // A Mac that no longer accepts what the device saved for it (the old shared token) says so, and what to do: pair again with a code.
+        let staleDefaults = scratchDefaults("stale")
+        let stale = MobileHosts(defaults: staleDefaults, tokens: HostTokens.memory(), device: .phone, pause: { _ in try await Task.sleep(for: .milliseconds(20)) })
+        let staleID = try stale.add(RemoteHostEntry(name: "Mac mini", address: "127.0.0.1", port: String(mini.port), token: "an-old-shared-token"))
+        stale.setForeground(true)
+        let old = stale.host(staleID)!
+        try await waitUntil("the old shared token refused") { old.phase.failure?.kind == .sharedTokenRetired }
+        check(old.phase.failure?.retries == false, "it waits for a new pairing instead of retrying")
+        check(!fleet.heard.contains { $0.contains("fleetEnrollDevice") }, "the device never offers a token of its own to a Mac")
+        stale.setForeground(false)
 
         // The pairing screen's model: found Macs minus the ones held, a scanned QR chooses its Mac and enters its code.
         let model = MobilePairing(hosts: hosts) { update in
@@ -160,7 +130,7 @@ struct FleetDevicePairingCheck {
         check(names == ["Mac mini", "Mac Studio"] && fleet.accepted.count == accepted + 1 && linking.link == nil && linking.code.isEmpty, "the Mac and its fleet were added over the second route")
         model.stop()
         check(model.found.isEmpty, "stopping clears the list")
-        print("PASS: device pairing: the Mac and its fleet added with one token, wrong code, repeated pairing, revoked identity renewed, an older pairing offered its own token and keeping the shared one until it is saved, scanned QR, a pairing link opened, refused and paired")
+        print("PASS: device pairing: the Mac and its fleet added with one token, wrong code, repeated pairing, revoked identity renewed, a Mac that no longer accepts the old shared token says to pair again, scanned QR, a pairing link opened, refused and paired")
     }
 
     static func check(_ condition: @autoclosure () throws -> Bool, _ what: String) rethrows {

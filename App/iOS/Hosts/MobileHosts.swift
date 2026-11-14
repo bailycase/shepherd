@@ -28,6 +28,18 @@ final class MobileHost: Identifiable {
     /// The Mac's fleet host id, as its `helloOk` said, kept across launches (`MobileHosts.fleetIDKey`): how the Fleet screen
     /// finds this pairing among the fleet's Macs while the Mac is away. nil until it has said.
     fileprivate(set) var fleetID: UUID?
+    /// Which fleet this device learned the Mac from (`FleetFollowPlan.group`), kept across launches (`MobileHosts.fleetGroupKey`); nil for a
+    /// Mac the user added themselves.
+    fileprivate(set) var fleetGroup: UUID?
+    /// The index in `record.routes` of the route the live connection runs on.
+    @ObservationIgnored fileprivate(set) var routeIndex: Int?
+    /// Reading the fleet is under way (and, when set, wanted again once it ends).
+    @ObservationIgnored fileprivate var following = false
+    @ObservationIgnored fileprivate var followAgain = false
+    /// Looking at the routes before the one in use.
+    @ObservationIgnored fileprivate var recheck: Task<Void, Never>?
+    /// Refusals of the token still to be retried: a Mac the fleet just added may not have taken this device in yet.
+    @ObservationIgnored fileprivate var tokenGrace = 0
 
     @ObservationIgnored fileprivate(set) var client: RemoteHostClient? {
         didSet { tunnelSlot.hub = client?.tunnels }
@@ -97,6 +109,10 @@ final class MobileHosts {
     static let lastSeenKey = "shepherd.ios.hosts.lastSeen"
     /// Each host's fleet host id, by id.
     static let fleetIDKey = "shepherd.ios.hosts.fleetID"
+    /// Each host's fleet group (`FleetFollowPlan.group`), by id: the Macs this device learned from one fleet, which it keeps in step with it.
+    static let fleetGroupKey = "shepherd.ios.hosts.fleetGroup"
+    /// The fleet Macs (by their fleet id) the user forgot: they are not added again when the fleet lists them.
+    static let fleetIgnoredKey = "shepherd.ios.hosts.fleetIgnored"
 
     private(set) var hosts: [MobileHost] = []
 
@@ -119,7 +135,7 @@ final class MobileHosts {
 
     /// What the phone tells a host it reads: the client's list, and previews of idle threads
     /// (`nativeThreadPreviewCapability`), so Home reads a thread without starting its pi.
-    static let clientCapabilities = RemoteProtocol.clientCapabilities + [RemoteProtocol.nativeThreadPreviewCapability]
+    static let clientCapabilities = RemoteProtocol.clientCapabilities + [RemoteProtocol.nativeThreadPreviewCapability, RemoteProtocol.fleetFollowCapability]
 
     /// Where the phone keeps its preferences: the hosts' records here, and Settings' own
     /// (`SettingsStore`).
@@ -128,12 +144,20 @@ final class MobileHosts {
     @ObservationIgnored private let clientName: String
     @ObservationIgnored private let device: DeviceDescription
     @ObservationIgnored private let makeClient: () -> RemoteHostClient
+    /// Asks whether the Mac `host:port` is the one at the other end (its fleet id), without a token.
+    @ObservationIgnored private let probe: (String, UInt16) async -> UUID?
+    /// The fleet Macs the user forgot, by fleet id.
+    @ObservationIgnored private var ignoredFleetIDs: Set<UUID> = []
+    /// What each connected host last said its fleet holds (its Macs' fleet ids), by saved id: a Mac that left the fleet says a smaller one.
+    @ObservationIgnored private var fleetViews: [UUID: Set<UUID>] = [:]
     @ObservationIgnored private let pause: (Duration) async throws -> Void
     @ObservationIgnored private(set) var foreground = false
     /// Called when a host transitions to `.connected`: PushManager renews, a Browser page takes its ports again.
     @ObservationIgnored var onHostConnected: ((MobileHost) -> Void)?
     /// A host's connection ended (it dropped, the app went to the background, Retry, Forget).
     @ObservationIgnored var onHostDisconnected: ((MobileHost) -> Void)?
+    /// The fleet no longer has a Mac and it was dropped (its record and token are gone): the app clears what it kept for it.
+    @ObservationIgnored var onFleetLeft: ((UUID) -> Void)?
     /// The app came to the foreground or left it (`setForeground`).
     @ObservationIgnored var onForegroundChanged: ((Bool) -> Void)?
     /// A thread a host watches for this device moved (`native.revisions.v1`): a hint to read
@@ -143,7 +167,9 @@ final class MobileHosts {
     init(defaults: UserDefaults = .standard, tokens: HostTokens = .keychain, clientName: String = "Shepherd iOS",
          device: DeviceDescription = .phone,
          makeClient: @escaping () -> RemoteHostClient = { RemoteHostClient() },
-         pause: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+         pause: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+         probe: @escaping (String, UInt16) async -> UUID? = { await RemoteHostClient.fleetProbe(host: $0, port: $1)?.hostID }) {
+        self.probe = probe
         self.defaults = defaults
         self.tokens = tokens
         self.clientName = clientName
@@ -161,6 +187,9 @@ final class MobileHosts {
         for host in hosts { host.lastSeen = seen[host.id.uuidString].map(Date.init(timeIntervalSince1970:)) }
         let fleetIDs = defaults.dictionary(forKey: Self.fleetIDKey) as? [String: String] ?? [:]
         for host in hosts { host.fleetID = fleetIDs[host.id.uuidString].flatMap(UUID.init(uuidString:)) }
+        let groups = defaults.dictionary(forKey: Self.fleetGroupKey) as? [String: String] ?? [:]
+        for host in hosts { host.fleetGroup = groups[host.id.uuidString].flatMap(UUID.init(uuidString:)) }
+        ignoredFleetIDs = Set((defaults.stringArray(forKey: Self.fleetIgnoredKey) ?? []).compactMap(UUID.init(uuidString:)))
     }
 
     // MARK: Reading
@@ -211,22 +240,31 @@ final class MobileHosts {
             // The QR named another Mac than the one that answered. Its code was spent, so say so.
             throw RemoteHostClientError.rejected(code: FleetProtocol.Code.wrongHost, message: "Another Mac answered at that address.")
         }
-        var found = [(name: answered.result.name, address: address, port: port)]
+        var found = [(fleetID: answered.identity.hostID, name: answered.result.name, address: address, port: port)]
         for member in answered.result.members {
             guard let host = member.host else { continue }
-            found.append((member.name, host, member.port))
+            found.append((member.hostID, member.name, host, member.port))
         }
         var ids: [UUID] = []
         for mac in found {
-            if let existing = hosts.first(where: { $0.record.address == mac.address && $0.record.port == mac.port }) {
+            ignoredFleetIDs.remove(mac.fleetID)
+            if let existing = hosts.first(where: { $0.fleetID == mac.fleetID }) ?? hosts.first(where: { $0.record.address == mac.address && $0.record.port == mac.port }) {
                 try tokens.save(identity.token, existing.id)
+                existing.fleetID = mac.fleetID
                 if foreground { retry(existing.id) }
                 ids.append(existing.id)
             } else if let entry = try? RemoteHostEntry(name: mac.name, address: mac.address, port: String(mac.port), token: identity.token) {
                 let id = try add(entry)
+                host(id)?.fleetID = mac.fleetID
                 ids.append(id)
             }
         }
+        // The Macs one pairing brought are one fleet, which a later read of it keeps them in step with.
+        let group = ids.lazy.compactMap { self.host($0)?.fleetGroup }.first ?? UUID()
+        for id in ids { host(id)?.fleetGroup = group }
+        persistFleetIDs()
+        persistFleetGroups()
+        defaults.set(ignoredFleetIDs.map(\.uuidString).sorted(), forKey: Self.fleetIgnoredKey)
         return ids
     }
 
@@ -252,11 +290,17 @@ final class MobileHosts {
         if let token = entry.token { try tokens.save(token, id) }
         var record = host.record
         record.name = entry.name
-        let moved = record.address != entry.address || record.port != entry.port || entry.token != nil
-        record.address = entry.address
-        record.port = entry.port
+        let retargeted = record.address != entry.address || record.port != entry.port
+        let moved = retargeted || entry.token != nil
+        // An address the user typed is the one way to reach it; the fleet lists the others again when it next reads it.
+        if retargeted { record.routes = [RemoteHostRoute(host: entry.address, port: entry.port)] }
         if host.record != record { host.record = record }
         persist()
+        if retargeted, host.fleetID != nil {
+            // Whatever answers there may not be the Mac it was: its id is learned again at the next connection.
+            host.fleetID = nil
+            persistFleetIDs()
+        }
         if moved {
             host.projectBinding = UUID()
             var state = host.state
@@ -266,15 +310,31 @@ final class MobileHosts {
         }
     }
 
-    /// Disconnects, deletes the token, and drops the host with its last known state.
+    /// Disconnects, deletes the token, and drops the host with its last known state. A Mac of a fleet that the user forgets is not
+    /// added again when the fleet lists it.
     func forget(_ id: UUID) throws {
+        if let host = host(id), let fleetID = host.fleetID, host.fleetGroup != nil {
+            ignoredFleetIDs.insert(fleetID)
+            defaults.set(ignoredFleetIDs.map(\.uuidString).sorted(), forKey: Self.fleetIgnoredKey)
+        }
+        try drop(id)
+    }
+
+    private func drop(_ id: UUID) throws {
         guard let index = hosts.firstIndex(where: { $0.id == id }) else { return }
         try tokens.remove(id)
         let host = hosts.remove(at: index)
         disconnect(host)
+        fleetViews[id] = nil
         persist()
         persistLastSeen()
         persistFleetIDs()
+        persistFleetGroups()
+    }
+
+    private func persistFleetGroups() {
+        defaults.set(Dictionary(uniqueKeysWithValues: hosts.compactMap { host in host.fleetGroup.map { (host.id.uuidString, $0.uuidString) } }),
+                     forKey: Self.fleetGroupKey)
     }
 
     private func persistFleetIDs() {
@@ -293,6 +353,114 @@ final class MobileHosts {
         defaults.set(seen, forKey: Self.lastSeenKey)
     }
 
+    // MARK: The fleet
+
+    /// This device's own token, nil while there is no identity yet or the Keychain can't be read.
+    private func deviceToken() -> String? {
+        guard let saved = try? tokens.readDevice(), let identity = try? JSONDecoder().decode(DeviceIdentity.self, from: Data(saved.utf8)) else { return nil }
+        return identity.token
+    }
+
+    /// Keeps the saved Macs in step with the fleet the connected host `host` is in (`RemoteProtocol.fleetFollowCapability`): reads its Macs
+    /// and their routes, and applies what changed. Runs when a host connects and again when it says the fleet changed; a host that
+    /// doesn't offer it, or that this device reaches with a token it wasn't given by a fleet, is left as it is.
+    private func follow(_ host: MobileHost) {
+        guard host.supports(RemoteProtocol.fleetFollowCapability), host.supports(RemoteProtocol.fleetViewCapability),
+              let client = host.connectedClient, let token = deviceToken(), (try? tokens.read(host.id)) == token else { return }
+        guard !host.following else {
+            host.followAgain = true
+            return
+        }
+        host.following = true
+        let attempt = host.attempt
+        Task { [weak self, weak host] in
+            defer { host?.following = false }
+            while let self, let host, host.attempt == attempt {
+                host.followAgain = false
+                // A Mac with Fleet off, or one that fails this read, changes nothing; the next connection or push reads again.
+                if let members = try? await client.fleetRead().snapshot.members, host.attempt == attempt { self.reconcile(from: host, members) }
+                guard host.followAgain else { return }
+            }
+        }
+    }
+
+    private func reconcile(from source: MobileHost, _ members: [FleetViewMember]) {
+        guard let token = deviceToken() else { return }
+        let saved = hosts.map {
+            FleetFollowSaved(id: $0.id, fleetID: $0.fleetID, name: $0.record.name, routes: $0.record.routes, group: $0.fleetGroup,
+                             ownsToken: (try? tokens.read($0.id)) == token)
+        }
+        // A Mac that hasn't said yet what its fleet holds might hold the bigger half of a split: it is waited for, not removed.
+        let awaiting = Set(hosts.filter { $0 !== source && ($0.phase == .connecting || ($0.phase == .connected && $0.supports(RemoteProtocol.fleetFollowCapability) && fleetViews[$0.id] == nil)) }.map(\.id))
+        let view = Set(members.map(\.hostID))
+        let heard = source.phase == .connected && fleetViews[source.id] != view
+        if source.phase == .connected { fleetViews[source.id] = view }
+        defer { if heard { refollow(except: source) } }
+        guard let plan = FleetFollow.plan(source: source.id, members: members, saved: saved, ignored: ignoredFleetIDs, views: fleetViews, awaiting: awaiting) else { return }
+        for id in plan.remove {
+            guard (try? drop(id)) != nil else { continue }
+            onFleetLeft?(id)
+        }
+        for change in plan.update {
+            guard let host = host(change.id) else { continue }
+            let routed = host.record.routes != change.routes
+            var record = host.record
+            record.name = change.name
+            record.routes = change.routes
+            if host.record != record { host.record = record }
+            host.fleetGroup = change.group
+            // A Mac that couldn't be reached by what was saved is tried by what the fleet says now.
+            if routed, foreground, !host.phase.isConnected { retry(host.id) }
+        }
+        for member in plan.add {
+            let record = RemoteHostRecord(name: member.name, routes: FleetFollow.routes(of: member))
+            guard (try? tokens.save(token, record.id)) != nil else { continue }
+            let host = MobileHost(record: record)
+            host.fleetID = member.hostID
+            host.fleetGroup = plan.group
+            host.tokenGrace = 5
+            hosts.append(host)
+            connect(host)
+        }
+        source.fleetGroup = plan.group
+        persist()
+        persistFleetIDs()
+        persistFleetGroups()
+    }
+
+    /// What a Mac says of its fleet is what the others are weighed against, so each connected one reads it again when one of them says
+    /// something new or can't be reached.
+    private func refollow(except host: MobileHost) {
+        for other in hosts where other !== host && other.phase == .connected { follow(other) }
+    }
+
+    /// The network changed (the app's path monitor says so): a host carried by a later route than its first looks at the earlier ones and
+    /// moves to the first that answers as the Mac it should be; a host that is down tries again now rather than at the end of its backoff.
+    /// Nothing runs while the app is in the background.
+    func networkChanged() {
+        guard foreground else { return }
+        for host in hosts {
+            switch host.phase {
+            case .connected:
+                guard let carried = host.routeIndex, carried > 0, host.recheck == nil else { continue }
+                let attempt = host.attempt, expected = host.fleetID, earlier = host.record.routes[..<carried]
+                host.recheck = Task { [weak self, weak host] in
+                    for route in earlier {
+                        guard let answered = await self?.probe(route.host, route.port), expected == nil || answered == expected else { continue }
+                        guard let self, let host, !Task.isCancelled, host.attempt == attempt else { return }
+                        self.retry(host.id)
+                        return
+                    }
+                    host?.recheck = nil
+                }
+            case .failed(let failure) where failure.retries:
+                retry(host.id)
+            case .failed, .disconnected, .connecting:
+                break
+            }
+        }
+    }
+
     // MARK: Connections
 
     /// The app came to the foreground (connect every host) or went to the background (drop
@@ -300,7 +468,6 @@ final class MobileHosts {
     func setForeground(_ active: Bool) {
         guard active != foreground else { return }
         foreground = active
-        if active { moveLegacyToken() }
         for host in hosts {
             if active { retry(host.id) } else { disconnect(host) }
         }
@@ -330,6 +497,10 @@ final class MobileHosts {
         host.connectTask = nil
         host.retryTask?.cancel()
         host.retryTask = nil
+        host.recheck?.cancel()
+        host.recheck = nil
+        host.routeIndex = nil
+        fleetViews[host.id] = nil
         let client = host.client
         host.client = nil
         client?.disconnect()
@@ -344,6 +515,8 @@ final class MobileHosts {
         onHostDisconnected?(host)
     }
 
+    /// Connects to the first of the host's routes that answers (`RemoteHostRecord.routes`, in order). A refused token or another
+    /// protocol fails the same way on every route, so it ends the round; any other failure goes on to the next route.
     private func connect(_ host: MobileHost) {
         guard foreground, hosts.contains(where: { $0 === host }) else { return }
         let token: String
@@ -359,11 +532,54 @@ final class MobileHosts {
         }
         let attempt = UUID()
         host.attempt = attempt
-        let client = makeClient()
-        host.client = client
         host.set(.connecting)
         let revision = host.stateRevision
         let record = host.record
+        // A Mac of a fleet is asked who it is before the token is sent, so a stale route that now leads to another Mac never gets it.
+        let expecting = host.fleetID != nil && token == deviceToken() ? host.fleetID : nil
+        host.connectTask = Task { [weak self, weak host] in
+            var failure: RemoteHostFailure?
+            for (index, route) in record.routes.enumerated() {
+                guard let self, let host, !Task.isCancelled, host.attempt == attempt else { return }
+                let client = self.makeClient(for: host, attempt: attempt)
+                host.client = client
+                do {
+                    let state = try await client.connect(host: route.host, port: route.port, token: token, clientName: self.clientName,
+                                                         capabilities: Self.clientCapabilities, expectingHostID: expecting)
+                    guard !Task.isCancelled, host.attempt == attempt else {
+                        client.disconnect()
+                        return
+                    }
+                    // A push can land before the handshake's own fetch resumes here.
+                    if host.stateRevision == revision { host.adopt(state) }
+                    if host.capabilities != client.capabilities { host.capabilities = client.capabilities }
+                    host.session = UUID()
+                    host.routeIndex = index
+                    if let fleetID = client.hostID, host.fleetID != fleetID {
+                        host.fleetID = fleetID
+                        self.persistFleetIDs()
+                    }
+                    host.set(.connected)
+                    host.backoff.reset()
+                    host.tokenGrace = 0
+                    self.onHostConnected?(host)
+                    self.follow(host)
+                    return
+                } catch {
+                    client.disconnect()
+                    guard !Task.isCancelled, host.attempt == attempt else { return }
+                    failure = RemoteHostFailure(error)
+                    if failure?.retries == false { break }
+                }
+            }
+            guard let self, let host, !Task.isCancelled, let failure else { return }
+            self.failed(host, failure, attempt: attempt)
+        }
+    }
+
+    /// A client for one connection of `host`, with the host's pushes handled for it.
+    private func makeClient(for host: MobileHost, attempt: UUID) -> RemoteHostClient {
+        let client = makeClient()
         // The client calls back on the main queue.
         client.onStateChanged = { [weak host] state in
             MainActor.assumeIsolated {
@@ -397,44 +613,32 @@ final class MobileHosts {
                 host.onDesignSystemsChanged?()
             }
         }
+        client.onFleetViewChanged = { [weak self, weak host] in
+            MainActor.assumeIsolated {
+                guard let self, let host, host.attempt == attempt, host.phase == .connected else { return }
+                self.follow(host)
+            }
+        }
         client.onDisconnected = { [weak self, weak host] reason in
             MainActor.assumeIsolated {
                 guard let self, let host, host.attempt == attempt else { return }
                 self.failed(host, RemoteHostFailure(disconnect: reason), attempt: attempt)
             }
         }
-        host.connectTask = Task { [weak self, weak host] in
-            do {
-                let state = try await client.connect(host: record.address, port: record.port, token: token, clientName: self?.clientName ?? "Shepherd iOS",
-                                                     capabilities: Self.clientCapabilities)
-                guard let host, !Task.isCancelled, host.attempt == attempt else {
-                    client.disconnect()
-                    return
-                }
-                // A push can land before the handshake's own fetch resumes here.
-                if host.stateRevision == revision { host.adopt(state) }
-                if host.capabilities != client.capabilities { host.capabilities = client.capabilities }
-                host.session = UUID()
-                if let fleetID = client.hostID, host.fleetID != fleetID {
-                    host.fleetID = fleetID
-                    self?.persistFleetIDs()
-                }
-                host.set(.connected)
-                host.backoff.reset()
-                self?.onHostConnected?(host)
-            } catch {
-                client.disconnect()
-                guard !Task.isCancelled, let self, let host else { return }
-                self.failed(host, RemoteHostFailure(error), attempt: attempt)
-            }
-        }
+        return client
     }
 
     private func failed(_ host: MobileHost, _ failure: RemoteHostFailure, attempt: UUID) {
         guard host.attempt == attempt else { return }
+        let firstFailure = host.backoff.upcoming == host.backoff.initial
         disconnect(host)
         host.set(.failed(failure))
-        guard foreground, failure.retries else { return }
+        // Macs that were waiting for this one to say what its fleet holds weigh it as gone.
+        if firstFailure { refollow(except: host) }
+        // A Mac the fleet just added may not have taken this device in yet: its first refusals are tried again.
+        let retried = failure.retries || ((failure.kind == .tokenRefused || failure.kind == .sharedTokenRetired) && host.tokenGrace > 0)
+        if !failure.retries && retried { host.tokenGrace -= 1 }
+        guard foreground, retried else { return }
         let retryAttempt = host.attempt
         let delay = host.backoff.next()
         let pause = self.pause

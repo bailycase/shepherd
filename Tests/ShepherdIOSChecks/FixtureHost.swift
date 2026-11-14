@@ -82,6 +82,12 @@ final class FixtureHost: @unchecked Sendable {
         for fd in lock.withLock({ connections }) { _ = write(fd, encoded) }
     }
 
+    /// Tells every connected client that a thread changed, as a pushing host does after each step of a live turn.
+    func pushThreadChanged(_ agent: AgentID) {
+        guard let encoded = try? NDJSON.encode(RemoteReply.nativeThreadChanged(agentID: agent)) else { return }
+        for fd in lock.withLock({ connections }) { _ = write(fd, encoded) }
+    }
+
     private func serve(_ fd: Int32) {
         lock.withLock { _ = connections.insert(fd) }
         defer {
@@ -378,10 +384,11 @@ final class FixtureHost: @unchecked Sendable {
         case .fleetRead where data.fleet != nil, .fleetAction(_, .watching) where data.fleet != nil:
             // A read the host serves a phone (`fleet.view.v1`).
             return nil
-        case .drain(let id), .fleetIdentify(let id), .fleetPair(let id, _, _), .fleetEstablish(let id, _), .fleetIntroduce(let id, _),
+        case .drain(let id), .fleetIdentify(let id), .fleetPair(let id, _, _), .fleetIntroduce(let id, _),
              .fleetRevoke(let id, _, _), .fleetSync(let id, _), .fleetRead(let id), .fleetAction(let id, _),
              .fleetPressure(let id, _), .fleetReadiness(let id, _), .fleetPressureNow(let id), .fleetRepoManifest(let id, _),
-             .fleetSnapshotPart(let id, _, _), .fleetBlobPush(let id, _, _):
+             .fleetSnapshotPart(let id, _, _), .fleetBlobPush(let id, _, _), .fleetDispatchCreate(let id, _), .fleetDispatchControl(let id, _, _),
+             .fleetDispatchChanged(let id, _), .fleetDispatchResult(let id, _, _, _), .fleetRoutes(let id, _), .fleetPeerAnswer(let id, _):
             return [.error(id: id, code: "unsupported", message: refused)]
         case .pushRegistration(let id, _):
             note("pushRegistration")
@@ -390,7 +397,7 @@ final class FixtureHost: @unchecked Sendable {
             note("pushUnregister")
             return [.ok(id: id)]
         case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .creationBranches, .agentQuery, .nativeThreadSubscribe, .fleetDigest,
-             .fleetIdentify, .fleetPair, .fleetEstablish, .fleetIntroduce, .fleetRevoke, .fleetPairDevice, .fleetEnrollDevice, .fleetSyncDevices:
+             .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetPairDevice, .fleetSyncDevices:
             return nil
         }
     }

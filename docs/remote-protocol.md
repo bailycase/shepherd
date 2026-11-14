@@ -708,12 +708,32 @@
   `fleetMemberCapabilities`): a phone or an iPad reads the Macs, their load and readiness, and chooses where work is sent, and
   does nothing else of the fleet. `fleetRead` from a `device` (or a client on the shared token) is answered with
   `FleetSnapshot.clientView`: this Mac's id and name, each peer's name, link and last seen, and `macs` (samples and readiness
-  reports); never an address or port, a code window, the devices, the sync state or the build. `fleetAction(.watching(_))` is
+  reports); never a peer's address or port in `peers`, a code window, the devices, the sync state or the build (the routes a phone keeps its
+  Macs by are `members`, below). `fleetAction(.watching(_))` is
   served to it too (the host samples while the screen is open and stops when the connection closes); every other action, and
   `fleetPressure`, `fleetReadiness`, `fleetPressureNow`, `fleetSync`, pairing, removing and introducing, stay refused with
   `forbidden`. The weight is written with the existing `hostSettings` change `fleetWeight(hostID:weight:)` (capability
   `fleet.view.v1` rather than `fleet.pressure.v1`, so a device can send it); the Mac applies it as its own Settings would and
   the weights sync from there.
+- **A phone follows its fleet** (`fleet.follow.v1`, `FleetFollowWire.swift`, `FleetFollow.swift`): a phone or an iPad paired once with any Mac
+  keeps its saved Macs in step with the fleet. The capability is offered to every client (a device included, as it
+  is not one of `fleetMemberCapabilities`) and a client lists it in `hello` to say it reads it. `FleetSnapshot.members` (in the
+  client view; empty from a host without the capability) lists this Mac and each Mac of its fleet as `FleetViewMember`: its id, name, listener
+  port and the routes this Mac holds for it (`FleetReportedRoute`, kinds included, most useful first, at most 32 each and 64 Macs: for a peer,
+  the addresses it was given, then what it reported, then its iCloud presence, kept to the port it last reported; for this Mac, its own).
+  When the Macs or their routes change (a Mac joins or leaves, a peer reports another route, this Mac's addresses change) the host pushes
+  `RemoteReply.fleetViewChanged` to each connected client that listed the capability: a hint with nothing in it, so the client reads
+  `fleetRead` again and what it may know stays what that answers. Nothing is polled; a client reads at connect and on the hint. A client on a
+  build without the capability is never sent the push, and a host without it says no members, which a client never prunes from.
+  The client (`MobileHosts`, deciding with `FleetFollow.plan`) only follows from a Mac it reaches with its own device token: it matches Macs by
+  fleet id, never by address; adds one the fleet lists with that same token (no pairing: every Mac of the fleet already accepts it); updates names and
+  routes (a Mac that is connected and reads its own fleet speaks for itself); and removes a Mac it learned from that fleet that is no longer in the
+  list. A Mac it was given another way (a pasted token, or from another fleet) is never touched, and one the user forgot isn't added
+  again. A Mac that left the fleet still answers with a fleet of one, so a source never removes a Mac whose own fleet is larger, or as large and saved
+  first. A phone tries a Mac's routes in order and takes the first that answers as that Mac (`expectingHostID`, so a stale address that now leads to another
+  Mac never receives the token); it tries them again from the first when the app comes to the foreground and, while it is on a later one, when the
+  network changes (`NWPathMonitor`, an unauthenticated `fleetIdentify` of each earlier route), never in the background. A token a Mac refuses (a device revoked anywhere, or the old shared token) is
+  answered `shared_token_retired`, which the phone shows as "Pair again" with an Add a Mac button: a revoked device reads nothing more.
 - **Protocol changes** touch the request and reply enums with every Codable arm, `RemoteProtocol`
   capabilities where relevant, server handling, `RemoteHostClient` (Mac and iOS), and the
   round-trip and listener tests.

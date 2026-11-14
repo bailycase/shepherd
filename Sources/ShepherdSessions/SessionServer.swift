@@ -1426,6 +1426,7 @@ public final class SessionServer: @unchecked Sendable {
                     service.watchesNetwork = fleetOptions.advertises
                 }
                 service.onChange = { [weak self] in self?.pushSettingsChanged(.fleet) }
+                service.onViewChange = { [weak self] in self?.pushFleetViewChanged() }
                 // A Mac that can't be dialed sends its requests over the connection it opened (`fleet.link.v1`).
                 service.onPeerCall = { [weak self] connection, id, request in
                     guard let self, let client = self.clients[connection], client.fleetPeerID != nil else { return }
@@ -4793,6 +4794,17 @@ public final class SessionServer: @unchecked Sendable {
                 && client.clientCapabilities.contains(RemoteProtocol.designSystemsCapability) {
                 self.enqueuePayload(payload, to: client)
             }
+        }
+    }
+
+    /// The fleet's Macs or their routes changed: each remote client that follows the fleet (`fleetFollowCapability`) reads it again.
+    /// It is a hint with nothing in it, so what a client may know of the fleet stays what `fleetRead` answers it. Server queue.
+    private func pushFleetViewChanged() {
+        guard offeredCapabilities.contains(RemoteProtocol.fleetFollowCapability),
+              let payload = try? NDJSON.encode(RemoteReply.fleetViewChanged) else { return }
+        for client in clients.values where client.isRemote && client.authenticated && client.fleetPeerID == nil
+            && client.clientCapabilities.contains(RemoteProtocol.fleetFollowCapability) {
+            enqueuePayload(payload, to: client)
         }
     }
 
