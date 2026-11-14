@@ -7,7 +7,7 @@ import Testing
 @testable import ShepherdApp
 
 /// `HostSupervisor` against a stand-in host: a small Python script that takes the workspace lock
-/// (exiting owned when it can't), answers on the socket, and stops at its stdin's end of file.
+/// (exiting owned when it can't), answers on the socket (not in `silent` mode), and stops at its stdin's end of file.
 @Suite("Host supervisor", .integrationTimeLimit)
 struct HostSupervisorIntegrationTests {
     static let standIn = """
@@ -22,6 +22,9 @@ struct HostSupervisorIntegrationTests {
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         sys.exit(\(SessionHost.ownedExitStatus))
+    if mode == "silent":
+        while True:
+            signal.pause()
     try:
         os.unlink(path)
     except FileNotFoundError:

@@ -1303,8 +1303,9 @@ struct ListPerformanceTests {
             #expect(rows["thread.view", default: 0] <= 1, "\(name): \(rows)")
             #expect(rows["composer.body", default: 0] <= 1, "\(name): \(rows)")
         }
-        // An 800pt window shows a few turns; the lazy stack builds some ahead.
-        #expect(show["thread.rowBuilder", default: 0] <= 40, "\(show)")
+        // The last `eagerRows` turns are laid out for real on every show; above them, an 800pt window shows a few
+        // turns and the lazy stack builds some ahead (a hundred and twenty turns are held).
+        #expect(show["thread.rowBuilder", default: 0] <= ThreadView.eagerRows + 40, "\(show)")
     }
 
     // MARK: Code blocks

@@ -12,7 +12,7 @@ import Testing
 /// key is checked before it is saved, a second key is added beside the first as the Mac's own
 /// Add account does, the saved accounts are switched, renamed, rotated and removed, and signing
 /// out removes Shepherd's credential. No reply carries a key.
-@Suite("Remote provider sign-in", .mainActorExclusive, .integrationTimeLimit, .enabled(if: TestNode.url != nil, "needs node 22.6 or later"))
+@Suite("Remote provider sign-in", .mainActorExclusive, .enabled(if: TestNode.url != nil, "needs node 22.6 or later"))
 @MainActor
 struct RemoteProviderConfigFlowTests {
     @Test func aClientSavesAddsSwitchesAndSignsOutOfKeys() async throws {

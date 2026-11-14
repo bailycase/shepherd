@@ -811,7 +811,6 @@ final class ShepherdViewModel {
         applyRemoteListenerSetting()
         // The `/` menu of every thread leaves out what Settings ▸ Pi ▸ Slash commands turned off.
         self.settings.onHiddenSlashCommandsChange = { [weak model = self.slashCommands] names in model?.setHidden(names) }
-        installCompactionThreshold()
 
         flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             MainActor.assumeIsolated {

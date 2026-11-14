@@ -8,7 +8,7 @@ import Testing
 /// real files: a page is captured at the desktop width down its whole length, and a PDF goes
 /// as its first page, a PNG the composer reads.
 @MainActor
-@Suite("Page capture", .mainActorExclusive, .integrationTimeLimit)
+@Suite("Page capture", .mainActorExclusive)
 struct PageCaptureTests {
     private func folder() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("page-capture-\(UUID().uuidString)")

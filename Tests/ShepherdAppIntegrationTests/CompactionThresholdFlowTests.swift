@@ -4,10 +4,10 @@ import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
-/// Settings ▸ Agents ▸ Compact at, from the setting to the file pi reads: the view model asks the
-/// stub engine for its catalog, and writes each model's reserve into Shepherd's pi home. The
+/// Settings ▸ Agents ▸ Compact at, from the setting to the file pi reads: the host, which follows the
+/// app's settings, asks the stub engine for its catalog and writes each model's reserve into Shepherd's pi home. The
 /// controls themselves are pressed in `AgentSettingsContextTests`.
-@Suite("Compact at, written for pi", .mainActorExclusive, .integrationTimeLimit)
+@Suite("Compact at, written for pi", .mainActorExclusive)
 @MainActor
 struct CompactionThresholdFlowTests {
     /// A pi home of its own: the process-wide scratch home is shared with every harness that starts a view model,
@@ -57,7 +57,7 @@ struct CompactionThresholdFlowTests {
         try await eventuallyAsync("the record gone with it") { PiCompactionThreshold.written(in: home) == nil }
     }
 
-    /// A launch with a share chosen covers a model added since: the view model writes it again at start.
+    /// A launch with a share chosen covers a model added since: the host writes it again at start.
     @Test func aShareChosenEarlierIsWrittenAgainAtStart() async throws {
         try StubPi.installAsEngine()
         let (dir, pi) = try Self.privateSetup()
