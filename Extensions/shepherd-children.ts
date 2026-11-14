@@ -452,6 +452,15 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       });
     });
     pi.on("session_shutdown", continueRun);
+    // A helper's own pi loads this file and nothing of the status extension's, so it sets the command limit itself (see shepherd-status.ts).
+    pi.on("tool_call", (event) => {
+      try {
+        const input = event.input as { timeout?: unknown } | undefined;
+        if (event.toolName === "bash" && input && typeof input === "object" && input.timeout == null) {
+          input.timeout = Number(process.env.SHEPHERD_COMMAND_LIMIT_SECONDS) > 0 ? Number(process.env.SHEPHERD_COMMAND_LIMIT_SECONDS) : 20 * 60;
+        }
+      } catch {}
+    });
     if (process.env.SHEPHERD_CHILD_CLI !== "1") pi.registerTool(createBashTool(process.cwd(), { operations: childBashOperations() }));
     if (process.env.SHEPHERD_CHILD_RELAY) registerRelayTools(pi);
     if (process.env.SHEPHERD_CHILD_TOOLS) {
