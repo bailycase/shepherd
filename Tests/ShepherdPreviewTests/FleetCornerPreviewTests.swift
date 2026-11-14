@@ -7,6 +7,7 @@ import ShepherdTestSupport
 import ShepherdUI
 import SwiftUI
 import Testing
+import Vision
 @testable import ShepherdApp
 
 /// The user's sidebar redesign in light and dark (FleetCornerFull, FleetCornerMin, FleetCornerMany, FleetCornerManyMin, FleetSubthreads, SidebarTree): the
@@ -240,6 +241,63 @@ struct FleetCornerPreviewTests {
         // The same threads under Spaces.
         workspace.settings.sidebarStyle = .projects
         try await Preview.renderMatrix("fleet-corner-sidebar-spaces", size: Self.size) { SidebarView(vm: vm).frame(width: Self.size.width, height: Self.size.height) }
+    }
+
+    /// Where the first text line beginning `prefix` starts, in points from the sidebar's left edge, as the rendered pixels say it (Vision's boxes).
+    static func textX(_ prefix: String, in view: some View, size: CGSize) throws -> CGFloat? {
+        let window = NSWindow(contentRect: NSRect(origin: CGPoint(x: -30_000, y: -30_000), size: size), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .aqua)
+        let host = NSHostingView(rootView: view.environment(\.colorScheme, .light))
+        window.contentView = host
+        window.orderBack(nil)
+        defer { window.orderOut(nil); window.contentView = nil }
+        host.layoutSubtreeIfNeeded()
+        let scale: CGFloat = 4
+        let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * scale), pixelsHigh: Int(size.height * scale), bitsPerSample: 8,
+                                                   samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        bitmap.size = size
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let request = VNRecognizeTextRequest()
+        request.usesLanguageCorrection = false
+        request.recognitionLevel = .accurate
+        try VNImageRequestHandler(cgImage: try #require(bitmap.cgImage)).perform([request])
+        let hit = request.results?.first { $0.topCandidates(1).first?.string.hasPrefix(prefix) == true }
+        return hit.map { $0.boundingBox.minX * size.width }
+    }
+
+    /// The same inset in every path: in both sidebar styles, a sent thread's title starts 18pt right of its sender's (FleetCornerFull: x57 against x39 at the
+    /// default width), read from the rendered pixels of the board's own sidebar, not from the metrics.
+    @Test func aSentThreadSitsAtTheSameInsetInBothStyles() async throws {
+        let space = Space(name: "payments-api", path: "/tmp/p")
+        let speed = Self.thread("Speed up checkout CI", .working, in: space, at: 1)
+        let flaky = UUID()
+        var cast = Cast()
+        cast.local = [speed]
+        cast.mini = [Self.thread("Fix flaky payment test", .working, in: space, at: 4, from: speed, dispatch: flaky)]
+        cast.records = [Self.record(.running, "Fix flaky payment test", sender: speed, id: flaky, minutes: 4)]
+        for (style, name) in [(SHSidebarStyle.activity, "activity"), (.projects, "spaces")] {
+            for selected in [speed.id, nil] {
+                let (workspace, vm) = try await mount(cast, style: style, selected: selected)
+                defer { workspace.stop() }
+                let size = CGSize(width: Self.size.width, height: 500)
+                let view = SidebarView(vm: vm).frame(width: size.width, height: size.height)
+                try await eventuallyOnMain("the rows to draw") { vm.presentedSidebarLists.working.contains { $0.fleetNested } || style == .projects }
+                var sender: CGFloat?, child: CGFloat?
+                try await eventuallyOnMain("\(name) rows' text to be read", timeout: .seconds(20)) {
+                    sender = try Self.textX("Speed up", in: view, size: size)
+                    child = try Self.textX("Fix flaky", in: view, size: size)
+                    return sender != nil && child != nil
+                }
+                let delta = try #require(child) - (try #require(sender))
+                // Vision's boxes are a point loose around a bold selected title, so the Spaces tree's tolerance is wider.
+                #expect(abs(delta - 18) <= (style == .activity ? 1.5 : 3), "\(name), selected \(selected != nil): child at \(child ?? 0), sender at \(sender ?? 0)")
+                if style == .activity {
+                    let (senderX, childX) = (try #require(sender), try #require(child))
+                    #expect(abs(senderX - 39) <= 1.5 && abs(childX - 57) <= 1.5, "activity: sender \(senderX), child \(childX)")
+                }
+            }
+        }
     }
 
     /// Every stage a sent thread shows (FleetSubthreads), then a sender that folds, what is back and a sender that isn't here.
