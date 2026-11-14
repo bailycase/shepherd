@@ -17,6 +17,10 @@ extension FixtureCatalog {
             // The network drops under the connection while the reader follows the tail of the long thread: the offline notice joins the
             // top of the transcript, and leaves it when the app has reconnected. The view stays on its tail, on every display frame.
             FixtureScreen(name: "thread-banner-drop-tail", hosts: TailFixture.hosts(), routes: [.thread(thread)], prepare: TailFixture.bannerAppears),
+            // A reader who left the long thread holding the bottom marker has a screen pushed over it and popped, `pushCycles` times: the
+            // transcript never unmounts, so the reader keeps the marker (iOS 27.1) and the view stays on its tail, drawn.
+            FixtureScreen(name: "thread-push-pop-marker", hosts: TailFixture.remountHosts(), routes: [.thread(thread)],
+                          prepare: { app in await TailFixture.pushPop(app) }),
         ]
     }
 }
@@ -72,6 +76,9 @@ extension TailFixture {
         var beyondJolt = 0
         /// Frames with the scroll view in place and no built row in view.
         var blank = 0
+        /// Frames more than `TailFixture.overshootTolerance` past the end of the content (a blank band), and the deepest of them.
+        var pastEnd = 0
+        var deepest = 0
         /// From the first frame away from the tail to the last.
         var awayMilliseconds = 0.0
         /// The first frames away: when (ms from `start()`), how far, and the host's phase then.
@@ -116,6 +123,10 @@ extension TailFixture {
         guard let scroll else { return }
         let distance = TailFixture.tailDistance(of: scroll)
         if TailFixture.builtRows(in: scroll) == 0 { result.blank += 1 }
+        if distance < -CGFloat(TailFixture.overshootTolerance) {
+            result.pastEnd += 1
+            result.deepest = max(result.deepest, Int((-distance).rounded()))
+        }
         guard distance > NativeScrollFollower.repinSlack + TailFixture.gutter(of: scroll) else { return }
         let now = CACurrentMediaTime()
         firstAway = firstAway ?? now

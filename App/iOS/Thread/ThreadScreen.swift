@@ -426,7 +426,8 @@ struct ThreadTranscript: View {
             .scrollDismissesKeyboard(.interactively)
             .onAppear {
                 tailHold.resume()
-                guard !appeared else { return }
+                // A screen pushed over the thread was popped: the stack never unmounted, so it keeps the marker `onDisappear` withheld.
+                guard !appeared else { return presentation.resume() }
                 appeared = true
                 presentation.mount()
             }

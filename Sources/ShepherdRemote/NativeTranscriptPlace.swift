@@ -28,6 +28,13 @@ public struct NativeTranscriptPlace: Equatable, Sendable {
     /// through the binding, which replaces the marker as the turn but not the follower's claim to it, so this stays until the marker is
     /// kept again, the reader detaches or the session changes.
     private var withheld = false
+    /// What `leave()` took, to give back when the screen returns with no mount between.
+    private var departed: Departure?
+
+    private struct Departure: Equatable, Sendable {
+        var tail: String?
+        var withheld: Bool
+    }
 
     /// The id of the 1 pt row that ends the transcript's turns. SwiftUI reports it through the position binding at the end of a drag
     /// to the tail, and the transcript lands on it.
@@ -53,6 +60,7 @@ public struct NativeTranscriptPlace: Equatable, Sendable {
     /// with the jump pill showing while the agent runs. Nothing changes where a turn is kept or where the transcript does not mount
     /// at its tail.
     public mutating func mount() {
+        departed = nil
         guard mountsAtTail, turn == nil, !follower.sticky else { return }
         var next = follower
         next.jumpToLatest()
@@ -63,10 +71,26 @@ public struct NativeTranscriptPlace: Equatable, Sendable {
     /// opens a lazy stack at the marker's estimated place, among rows built nowhere near it (the Duo's cover display did it on every
     /// re-open), for the tail guard to jump out of, and once 39 pt past the end. The marker is withheld as it is after rows joined
     /// (`withholdsMarker`): the pin lands the view at the mount, and `hold(tail:)` keeps the marker again once that landing has settled.
-    /// A follower who keeps a row, a detached reader and a transcript that mounts at its tail are unchanged.
+    /// A follower who keeps a row, a detached reader and a transcript that mounts at its tail are unchanged. A screen that comes back
+    /// with no mount between (`resume()`) has the marker back.
     public mutating func leave() {
         guard follower.sticky, !mountsAtTail, turn == Self.bottomMarker else { return }
+        if departed == nil { departed = Departure(tail: markerTail, withheld: withheld) }
         markerTail = nil
+    }
+
+    /// The screen is back and the transcript was never torn down (a screen pushed over the thread was popped). There is no mount to
+    /// land at, so the follower has the marker back as it was kept, for the tail it was kept for (rows that joined meanwhile still
+    /// withhold it). What SwiftUI reported through the binding meanwhile (nothing, or a row, once the marker was withheld) was the
+    /// leave's doing, so the marker replaces it; a marker kept again since stays. A mount forgets what the leave took, as does a
+    /// new session.
+    public mutating func resume() {
+        guard let departed else { return }
+        self.departed = nil
+        guard follower.sticky, !mountsAtTail, markerTail == nil else { return }
+        turn = Self.bottomMarker
+        markerTail = departed.tail
+        withheld = departed.withheld
     }
 
     /// SwiftUI's write through the position binding: kept unless the reader follows where `mountsAtTail`. Nil clears, as another
@@ -82,6 +106,7 @@ public struct NativeTranscriptPlace: Equatable, Sendable {
 
     /// Another session's turns replace this one's: none is kept, and the marker is not the new session's to have back.
     public mutating func newSession() {
+        departed = nil
         turn = nil
         markerTail = nil
         withheld = false

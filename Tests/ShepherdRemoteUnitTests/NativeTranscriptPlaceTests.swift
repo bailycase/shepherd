@@ -21,6 +21,8 @@ struct NativeTranscriptPlaceTests {
         case mount
         /// The transcript leaves the screen.
         case leave
+        /// The screen is back, and the transcript never unmounted (a screen pushed over the thread was popped).
+        case resume
         /// Another session's turns replace this one's (the thread's session key changed).
         case newSession
     }
@@ -147,6 +149,20 @@ struct NativeTranscriptPlaceTests {
              mountsAtTail: false, events: [.detach, .swiftUI(marker, tail: "a"), .leave, .mount], turn: marker, follows: false),
         Case(testDescription: "a transcript that mounts at its tail keeps no marker through a leave and a mount",
              mountsAtTail: true, events: [.swiftUI(marker, tail: "a"), .leave, .mount], turn: nil, follows: true),
+        Case(testDescription: "a follower whose screen came back without a mount keeps the bottom marker",
+             mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .resume], turn: marker, follows: true),
+        Case(testDescription: "a follower whose screen came back after SwiftUI reported none for the withheld marker keeps the bottom marker",
+             mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .swiftUI(nil, tail: "a"), .resume], turn: marker, follows: true),
+        Case(testDescription: "a follower whose screen came back after SwiftUI reported a row for the withheld marker keeps the bottom marker",
+             mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .swiftUI("reply", tail: "a"), .resume], turn: marker, follows: true),
+        Case(testDescription: "a follower who left keeps nothing once SwiftUI reports none for the withheld marker",
+             mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .swiftUI(nil, tail: "a")], turn: nil, follows: true),
+        Case(testDescription: "a follower who keeps a row has nothing to give back to a screen that came back",
+             mountsAtTail: false, events: [.swiftUI("reply", tail: "a"), .leave, .resume], turn: "reply", follows: true),
+        Case(testDescription: "a detached reader's screen that came back keeps the bottom marker",
+             mountsAtTail: false, events: [.detach, .swiftUI(marker, tail: "a"), .leave, .resume], turn: marker, follows: false),
+        Case(testDescription: "a transcript that mounts at its tail keeps no marker through a leave and a return",
+             mountsAtTail: true, events: [.swiftUI(marker, tail: "a"), .leave, .resume], turn: nil, follows: true),
     ]
 
     /// The bottom anchor row of the transcript, as SwiftUI reports it through the position binding.
@@ -170,6 +186,7 @@ struct NativeTranscriptPlaceTests {
             case .pin(let id): place.pin(id)
             case .mount: place.mount()
             case .leave: place.leave()
+            case .resume: place.resume()
             case .newSession: place.newSession()
             }
         }
@@ -222,6 +239,26 @@ struct NativeTranscriptPlaceTests {
                      mountsAtTail: false, events: [.detach, .swiftUI(marker, tail: "a"), .leave, .mount], tail: "b", handed: marker),
         PositionCase(testDescription: "a transcript that mounts at its tail is handed a follower nothing after a leave",
                      mountsAtTail: true, events: [.swiftUI(marker, tail: "a"), .leave, .mount], tail: "a", handed: nil),
+        PositionCase(testDescription: "a follower whose screen came back without a mount is handed the marker again",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .resume], tail: "a", handed: marker),
+        PositionCase(testDescription: "a follower whose screen came back after SwiftUI reported none for the withheld marker is handed it again",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .swiftUI(nil, tail: "a"), .resume], tail: "a", handed: marker),
+        PositionCase(testDescription: "a follower whose screen came back after SwiftUI reported a row for the withheld marker is handed it again",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .swiftUI("reply", tail: "a"), .resume], tail: "a", handed: marker),
+        PositionCase(testDescription: "a follower whose screen came back after a row joined is handed nothing",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .resume], tail: "b", handed: nil),
+        PositionCase(testDescription: "a follower who left and came back twice is handed the marker for the tail it was kept for",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .resume, .leave, .resume], tail: "a", handed: marker),
+        PositionCase(testDescription: "a follower who held the marker for a new tail keeps it through a leave and a return",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .hold(tail: "b"), .leave, .resume], tail: "b", handed: marker),
+        PositionCase(testDescription: "a mount forgets what the leave took, so a return after it gives nothing back",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .mount, .resume], tail: "a", handed: nil),
+        PositionCase(testDescription: "a marker SwiftUI wrote while the screen was away is not undone by its return",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .swiftUI(marker, tail: "b"), .resume], tail: "b", handed: marker),
+        PositionCase(testDescription: "a new session while the screen was away leaves nothing to give back",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .newSession, .resume], tail: "a", handed: nil),
+        PositionCase(testDescription: "a transcript that mounts at its tail is handed a follower nothing after a leave and a return",
+                     mountsAtTail: true, events: [.swiftUI(marker, tail: "a"), .leave, .resume], tail: "a", handed: nil),
         PositionCase(testDescription: "a follower with no rows is handed the marker kept for none after a leave",
                      mountsAtTail: false, events: [.swiftUI(marker, tail: nil), .leave, .mount], tail: nil, handed: marker),
         PositionCase(testDescription: "a follower with no rows yet is handed the marker kept for none",
@@ -278,6 +315,16 @@ struct NativeTranscriptPlaceTests {
                      mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .mount], tail: "a", withheld: true),
         WithheldCase(testDescription: "a follower's marker is not withheld after a leave until the next mount's landing has held it again",
                      mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .mount, .hold(tail: "a")], tail: "a", withheld: false),
+        WithheldCase(testDescription: "a follower's marker is not withheld once the screen that left came back without a mount",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .resume], tail: "a", withheld: false),
+        WithheldCase(testDescription: "a follower's marker is not withheld once the screen came back after SwiftUI reported none for it",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .swiftUI(nil, tail: "a"), .resume], tail: "a", withheld: false),
+        WithheldCase(testDescription: "a follower whose marker was withheld by a row that joined has it withheld through a leave and a return",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .swiftUI(nil, tail: "b"), .leave, .resume], tail: "b", withheld: true),
+        WithheldCase(testDescription: "a follower's marker is withheld once the screen came back after a row joined",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .resume], tail: "b", withheld: true),
+        WithheldCase(testDescription: "a follower's marker is still withheld at the mount that follows a leave, whatever returns after it",
+                     mountsAtTail: false, events: [.swiftUI(marker, tail: "a"), .leave, .mount, .resume], tail: "a", withheld: true),
         WithheldCase(testDescription: "a follower who never kept the marker has none withheld at a mount",
                      mountsAtTail: false, events: [.swiftUI("reply", tail: "a"), .leave, .mount], tail: "a", withheld: false),
         WithheldCase(testDescription: "a detached reader has none withheld",
