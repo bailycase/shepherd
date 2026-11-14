@@ -142,11 +142,11 @@ struct FleetMovePresentationTests {
         let agent = Agent(name: "Speed up checkout CI", spaceID: space.id, tabID: TabID())
         let state = ShepherdState(spaces: [space], agents: [agent])
         let caps: Set<String> = [RemoteProtocol.agentActionsCapability, RemoteProtocol.fleetMoveViewCapability]
-        func offered(_ agent: Agent = agent, state: ShepherdState = state, connected: Bool = true, _ capabilities: Set<String> = caps) -> Bool {
+        func offered(_ agent: Agent = agent, state: ShepherdState = state, connected: Bool = true, capabilities: Set<String> = caps) -> Bool {
             FleetThreadAbilities(agent: agent, state: state, connected: connected, capabilities: capabilities).moveToMac
         }
         #expect(offered())
-        #expect(!offered(connected: false) && !offered([RemoteProtocol.agentActionsCapability]), "an offline or older host")
+        #expect(!offered(connected: false) && !offered(capabilities: [RemoteProtocol.agentActionsCapability]), "an offline or older host")
         var moved = agent
         moved.movedTo = MovedTo(hostID: P.mini, hostName: "Mac mini", at: 1, moveID: UUID())
         #expect(!offered(moved))
