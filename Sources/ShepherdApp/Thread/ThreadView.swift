@@ -185,15 +185,18 @@ struct ThreadView: View {
                             else { emptyState }
                         }
                         if let day = leadDayTitle(rows) { SHLeadDaySeparator(word: day) }
-                        LazyVStack(alignment: .leading, spacing: spacing) {
-                            ForEach(drawn.prefix(drawn.count - eager.count)) { row in
-                                rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
+                        // Absent while it has no rows: an empty stack still takes the column's spacing, a gap above the first row.
+                        if drawn.count > eager.count {
+                            LazyVStack(alignment: .leading, spacing: spacing) {
+                                ForEach(drawn.prefix(drawn.count - eager.count)) { row in
+                                    rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
+                                }
                             }
+                            .scrollTargetLayout()
+                            // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
+                            // that host does not run). Its identity changes only while the rows are let go, and takes them with it.
+                            .id(dormant)
                         }
-                        .scrollTargetLayout()
-                        // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
-                        // that host does not run). Its identity changes only while the rows are let go, and takes them with it.
-                        .id(dormant)
                         ForEach(eager) { row in
                             rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                         }
