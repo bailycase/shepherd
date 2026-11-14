@@ -191,17 +191,19 @@ public enum FleetPlacement {
         let localScore = local.flatMap { scores[$0.hostID] }
         if let localSkip, localScore == nil || localScore == 0 { reasons.append(FleetPlacementReason(.localIneligible, skip: localSkip)) }
         let others = counted.filter { $0.score > 0 && $0.mac.hostID != winnerID }
+        // What the winner is running, as it said: the log says "no builds running" of it.
+        let commands = counted.first { $0.mac.hostID == winnerID }?.mac.sample?.commandAgents
         if winnerID == local?.hostID, let localScore, localScore > 0 {
             // Stayed here: because nothing else counted, or because the best peer didn't clear the margin.
             if let best = others.map(\.score).max(), best > localScore {
-                reasons.append(FleetPlacementReason(.keptLocal, ratio: best / localScore))
+                reasons.append(FleetPlacementReason(.keptLocal, ratio: best / localScore, commands: commands))
             } else {
-                reasons.append(FleetPlacementReason(others.isEmpty ? .onlyChoice : .mostRoom))
+                reasons.append(FleetPlacementReason(others.isEmpty ? .onlyChoice : .mostRoom, commands: commands))
             }
         } else if let localScore, localScore > 0, let winnerScore = scores[winnerID] {
-            reasons.append(FleetPlacementReason(.mostRoom, ratio: winnerScore / localScore))
+            reasons.append(FleetPlacementReason(.mostRoom, ratio: winnerScore / localScore, commands: commands))
         } else {
-            reasons.append(FleetPlacementReason(others.isEmpty ? .onlyChoice : .mostRoom))
+            reasons.append(FleetPlacementReason(others.isEmpty ? .onlyChoice : .mostRoom, commands: commands))
         }
         if counted.first(where: { $0.mac.hostID == winnerID })?.mac.hasRepo == false { reasons.append(FleetPlacementReason(.willClone)) }
         return .place(hostID: winnerID, reasons: reasons)

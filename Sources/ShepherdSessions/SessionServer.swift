@@ -1299,6 +1299,8 @@ public final class SessionServer: @unchecked Sendable {
     private var fleetSettings: HostSettings?
     /// Places promised to dispatches that haven't started (`FleetPressureSample.reserved`), for any thread.
     private let fleetReserved = FleetCounter()
+    /// The agents whose pi is running a shell command now (`FleetPressureSample.commandAgents`), for any thread.
+    private let fleetCommandAgents = FleetAgentSet()
 
     /// Server queue: a skill was written by the fleet's sync. One push covers the files a pass wrote.
     private var skillsSyncPushPending = false
@@ -1373,7 +1375,9 @@ public final class SessionServer: @unchecked Sendable {
             guard let self else { return FleetLocalFacts() }
             let state = self.store.committed
             let spaces = state.spaces.filter { !$0.hidden }
-            return FleetLocalFacts(activeAgents: state.agents.filter { $0.status == .working }.count,
+            let working = state.agents.filter { $0.status == .working }
+            let commands = self.fleetCommandAgents.members
+            return FleetLocalFacts(activeAgents: working.count, commandAgents: working.filter { commands.contains($0.id) }.count,
                                    spaces: spaces.map { (name: $0.name, path: $0.path) },
                                    mcpConfig: self.pi.files.mcpConfig,
                                    // The repositories this Mac can serve: its spaces', and every other checkout it already has that a
@@ -1541,6 +1545,7 @@ public final class SessionServer: @unchecked Sendable {
             state: { [weak self] in self?.store.state ?? ShepherdState() },
             settings: { [weak self] in self?.fleetSettings },
             wakeParent: { [weak self] agentID, text in await self?.pushMessage(toAgent: agentID, text: text, delivery: .task) ?? false },
+            defaultModel: { [home = pi.home] in PiConfig.defaultModel(in: home) },
             createThread: { [weak self] request in
                 await withCheckedContinuation { continuation in
                     self?.queue.async {
@@ -7925,6 +7930,7 @@ public final class SessionServer: @unchecked Sendable {
             // A thread that is closed sends nothing more: its dispatches end, and a dispatched thread's ends too.
             self.fleet?.dispatch.cancelDispatches(ownedBy: agentID)
             self.fleet?.dispatch.agentRemoved(agentID)
+            self.fleetCommandAgents.set(agentID, false)
             try self.mutateState {
                 $0.agents.removeAll { $0.id == agentID }
                 $0.tabs.removeAll { doomedTabIDs.contains($0.id) }
@@ -9473,6 +9479,10 @@ public final class SessionServer: @unchecked Sendable {
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
                 Task { await server.withdrawDesignReferences(payloads, from: agentID) }
             }
+            thread.onCommandActivity = { [weak serverWeak] running in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                server.fleetCommandAgents.set(agentID, running)
+            }
             thread.onToolFinished = { [weak serverWeak] name in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
                 server.sendToLocalApps(.toolFinished(agentID: agentID, tool: name))
@@ -9484,6 +9494,7 @@ public final class SessionServer: @unchecked Sendable {
                    let provider = message.provider, let error = message.errorMessage, let server = serverWeak,
                    let agentID = server.agentID(forSession: sid) {
                     server.hopToMain { [weak server] in server?.onAgentProviderError?(agentID, provider, error) }
+                    server.fleet?.providerFailed(provider: provider, error: error)
                 }
                 // pi emits custom message_end only after appending it to session history. A
                 // report receipt on the extension socket alone would not prove that append.
@@ -9945,6 +9956,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         peerDeliveries = peerDeliveries.filter { $0.value.sessionID != sessionID }
         let agent = agentID(forSession: sessionID)
+        if let agent { fleetCommandAgents.set(agent, false) }
         if let agent {
             if let thread = sessions[sessionID]?.thread, thread.pushRunArmed, !thread.stopRequested, isStarted {
                 thread.pushRunArmed = false

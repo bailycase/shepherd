@@ -30,7 +30,7 @@ struct FleetSettings: View {
 
     static let explanation = "Your Macs work as one. Settings, instructions, skills, extensions, MCP servers and sign-ins are the same on every Mac, and any Mac can take a thread. Changes sync on their own, including each save in a linked extension folder."
     /// FleetSettings' footer, reworded: Shepherd adds no TLS, so the fleet runs over the person's own network.
-    static let footnote = "Macs pair once, on the same local network, with a code shown on the other Mac. Shepherd doesn't encrypt fleet traffic, so keep the fleet on a network you trust."
+    static let footnote = "Macs pair once, with a code shown on the other Mac. Shepherd doesn't encrypt fleet traffic, so keep the fleet on a network you trust."
     static let devicesFootnote = "iPhones, iPads and Mac apps connect to every Mac in the fleet with a token of their own. They hold no sign-ins and can't pair or remove Macs. Any Mac can revoke one."
     /// Serve this Mac's footnote: nothing listens on a fresh Mac, so the switch says when it does.
     static let serveFootnote = "This Mac starts listening on its own once another Mac or a device is paired, or while a code is showing. Turn this on to listen all the time. Your own network is the transport."
