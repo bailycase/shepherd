@@ -176,10 +176,12 @@ A hidden thread keeps its host, page, history and draft, but its rows are bounde
 (`releaseTranscript`), the oldest rows of the thread shown longest ago first, in a pass of
 `releaseStep` bytes, or of what the hidden threads are over by, at most `releaseCeiling`, while the
 app is quiet: a thread shown builds hundreds of megabytes in a few seconds, and a step a pass never
-caught up with the shows. A pass never runs while the
-person types or scrolls, however long that lasts, nor while a thread on screen, local or remote,
-streams (`NativeThreadStores.busy`; only a stream gives out, after ten seconds of passes, which
-take a step, so that a long one cannot hold the budget off for good). Unpinned threads go first, then readers left
+caught up with the shows. A pass never runs while the person types or scrolls, however long that
+lasts, nor while a thread on screen, local or remote, streams (`NativeThreadStores.busy`); only a
+stream gives out, after ten seconds of passes, which take a step, so that a long one cannot hold the
+budget off for good, or at once while the hidden threads hold more over the budget than a quarter of
+it or the ceiling, whichever is more (`farOverBudget`), when the pass is a quiet one's and the first
+follows a show after half a second. Unpinned threads go first, then readers left
 scrolled up beyond the two most recently shown; the thread shown before the current one, and the one
 on screen, never. A thread keeps its last screen built (`NativeThreadStore.keptRows`: at most four
 rows within 16 MiB, or a last row of up to 64 MiB alone; a larger reply goes with the rest), which
