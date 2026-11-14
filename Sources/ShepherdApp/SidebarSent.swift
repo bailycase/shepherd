@@ -155,10 +155,14 @@ enum SidebarSent {
                     let by = ["sent by \(info.senderTitle.isEmpty ? "a thread" : info.senderTitle)", info.senderHost].compactMap { $0 }
                     row.subtitle = .init(by.joined(separator: " · "))
                 }
+                if let subtitle = row.subtitle, id.dispatchID == nil, infos[id] != nil {
+                    row.accessibilityLabel += ", \(subtitle.text)"
+                }
                 if let kids = children[id], !kids.isEmpty {
                     let counts = (sent: kids.count, back: kids.filter { !nestable($0.info) }.count,
                                   asking: kids.contains { $0.info.stage.phase == .asking })
                     row.subtitle = FleetSentSummary.line(sent: counts.sent, back: counts.back, asking: counts.asking).map { .init($0) }
+                    if let subtitle = row.subtitle { row.accessibilityLabel += ", \(subtitle.text)" }
                     let live = kids.filter { nestable($0.info) }.sorted { $0.info.at < $1.info.at }
                     if !live.isEmpty, counts.sent > FleetSentSummary.foldsAbove { row.fold = SidebarFold(key: foldKey(id)) }
                     out.append(row)

@@ -82,6 +82,7 @@ struct FleetNestingTests {
         #expect(nested.subtitle?.text == "mini · running" && nested.subtitle?.tone == .running && nested.subtitle?.since != nil)
         #expect(line(built.working[1]) == "1 sent", "the sender says what it sent")
         #expect(built.working[1].fold == nil, "a sender of one or two doesn't fold")
+        #expect(built.working[1].accessibilityLabel.hasSuffix(", 1 sent") && nested.accessibilityLabel == "Task 1, sent thread, mini · running")
     }
 
     @Test func aThreadThatCameFromAnotherMacReadsItsOwnState() {

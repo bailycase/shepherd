@@ -189,6 +189,7 @@ private struct SidebarTreeItemView: View, Equatable {
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }
                     .accessibilityLabel(row.accessibilityLabel)
                     .accessibilityAddTraits(row.selected ? .isSelected : [])
+                    .modifier(SentFoldAction(vm: vm, fold: row.fold))
                     .contextMenu { SidebarRowMenu(vm: vm, row: row) }
                     .threadDraggable(row.id)
             }

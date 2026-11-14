@@ -169,9 +169,24 @@ private struct SidebarItemView: View, Equatable {
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }
                     .accessibilityLabel(row.accessibilityLabel)
                     .accessibilityAddTraits(row.selected ? .isSelected : [])
+                    .modifier(SentFoldAction(vm: vm, fold: row.fold))
                     .contextMenu { SidebarRowMenu(vm: vm, row: row) }
                     .threadDraggable(row.id)
             }
+        }
+    }
+}
+
+/// A sender's chevron as a named VoiceOver action: the row is one element, so its button isn't reachable on its own.
+struct SentFoldAction: ViewModifier {
+    var vm: ShepherdViewModel
+    let fold: SidebarFold?
+
+    func body(content: Content) -> some View {
+        if let fold {
+            content.accessibilityAction(named: fold.open ? "Hide sent threads" : "Show sent threads") { vm.toggleRunGroup(fold.key) }
+        } else {
+            content
         }
     }
 }
