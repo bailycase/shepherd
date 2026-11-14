@@ -63,14 +63,15 @@ Settings ▸ Remote ▸ Serve this Mac ▸ Listener.
 
 - **Binding:** it binds TCP on **all IPv4 interfaces**, port 7433 by default (7434 in Shepherd
   Nightly).
-- **Authentication:** a shared bearer token. The first frame must be a `hello` carrying the
-  token from `remote-token` in the support directory. The token is 32 random bytes as hex,
-  created with mode `0600` on first use. Any other first frame, or a wrong token, closes the
-  connection.
+- **Authentication:** a token of the client's own. A phone, iPad or Mac pairs once with a 6 digit
+  code the host shows (valid for five minutes, five tries), makes a 32 byte token itself and gives
+  the host only its hash. The first frame must be a `hello` carrying that token. Any other first
+  frame, or a token that is no paired device's or Mac's, closes the connection. There is no token
+  shared by every client, and no `remote-token` file is created or read.
 - **No TLS.** The token and all traffic, including prompts, transcripts, terminal input and
   output, and uploaded files, cross the network in cleartext. The design assumes a VPN or
   trusted network is the transport boundary. **Never expose the listener to the internet.** The
-  token only keeps other devices on that trusted network honest.
+  tokens only keep other devices on that trusted network honest.
 - **A token grants everything your user can do on the host.** A client can:
   - type into terminals
   - create agents that run pi with your credentials
@@ -80,9 +81,8 @@ Settings ▸ Remote ▸ Serve this Mac ▸ Listener.
   - upload files (up to 32 MiB each, into a private `0700` directory)
   - review diffs and revert files
   - create and delete worktrees
-- **Revoking:** delete `remote-token`, then turn the listener off and on (or relaunch
-  Shepherd). A new token is generated, and every client must be given it again. The token is
-  read when the listener starts, so deleting the file alone does not disconnect anyone.
+- **Revoking:** Settings ▸ Fleet ▸ Devices ▸ Revoke ends that device's connections on every Mac of
+  the fleet and refuses its token from then on. A device pairs again with a new code.
 - **Bind errors** appear in Settings ▸ Remote rather than being ignored.
 
 ### The Browser over the remote connection

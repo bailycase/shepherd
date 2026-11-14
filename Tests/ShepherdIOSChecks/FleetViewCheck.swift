@@ -90,7 +90,7 @@ struct FleetViewCheck {
             return object["type"] as? String ?? object["kind"] as? String
         }
         check(sentKinds.contains("fleetAction") && sentKinds.contains("hostSettings"), "the kinds are read from what was sent: \(sentKinds)")
-        for forbidden in ["fleetSync", "fleetPressure", "fleetReadiness", "fleetPressureNow", "fleetEstablish", "fleetIntroduce", "fleetRevoke"] {
+        for forbidden in ["fleetSync", "fleetPressure", "fleetReadiness", "fleetPressureNow", "fleetIntroduce", "fleetRevoke"] {
             check(!sentKinds.contains(forbidden), "a phone never sends \(forbidden)")
         }
 

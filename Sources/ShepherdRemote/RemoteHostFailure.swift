@@ -12,6 +12,9 @@ public struct RemoteHostFailure: Hashable, Sendable {
         case lost
         /// The host refused the token.
         case tokenRefused
+        /// The host no longer accepts the one token every client shared: this client's saved token is that one (or a revoked device's),
+        /// and the way back in is to pair again with a code (`RemoteProtocol.sharedTokenRetiredCode`).
+        case sharedTokenRetired
         /// The host speaks another protocol version; `hostNewer` is nil when it did not say which.
         case versionMismatch(hostNewer: Bool?)
         /// No token is saved for the host.
@@ -25,6 +28,7 @@ public struct RemoteHostFailure: Hashable, Sendable {
             switch self {
             case .unreachable, .lost, .other: "Unreachable"
             case .tokenRefused: "Token refused"
+            case .sharedTokenRetired: "Pair again"
             case .versionMismatch: "Update needed"
             case .tokenMissing: "No token"
             case .tokenUnreadable: "Token locked"
@@ -55,6 +59,8 @@ public struct RemoteHostFailure: Hashable, Sendable {
             self.init(kind: call == "connect" && err != EISCONN ? .unreachable : .other, detail: detail)
         case .rejected(RemoteProtocol.unauthorizedCode, _):
             self.init(kind: .tokenRefused, detail: detail)
+        case .rejected(RemoteProtocol.sharedTokenRetiredCode, _):
+            self.init(kind: .sharedTokenRetired, detail: detail)
         case .rejected(RemoteProtocol.versionMismatchCode, let message):
             self.init(kind: .versionMismatch(hostNewer: Self.hostVersion(message).map { $0 > RemoteProtocol.version }), detail: detail)
         case .disconnected:
@@ -74,7 +80,7 @@ public struct RemoteHostFailure: Hashable, Sendable {
     public var retries: Bool {
         switch kind {
         case .unreachable, .lost, .other: true
-        case .tokenRefused, .versionMismatch, .tokenMissing, .tokenUnreadable: false
+        case .tokenRefused, .sharedTokenRetired, .versionMismatch, .tokenMissing, .tokenUnreadable: false
         }
     }
 
@@ -85,6 +91,7 @@ public struct RemoteHostFailure: Hashable, Sendable {
         switch kind {
         case .unreachable: "Shepherd isn't running on \(host), or it can't be reached."
         case .lost: "Lost the connection to \(host)."
+        case .sharedTokenRetired: "\(host) no longer accepts the old shared token. Pair again with a code."
         case .tokenRefused: "\(host) refused the token. This device may have been revoked, or the Mac may have stopped accepting its old token. Pair it again with a code."
         case .versionMismatch(hostNewer: true): "\(host) runs a newer Shepherd. Update Shepherd here to connect."
         case .versionMismatch(hostNewer: false): "\(host) runs an older Shepherd. Update Shepherd there to connect."

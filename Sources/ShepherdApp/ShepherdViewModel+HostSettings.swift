@@ -78,7 +78,6 @@ enum HostSettingsMapping {
             queueDelivery: app.queueDelivery,
             goalsEnabled: app.goalsEnabled,
             projectsEnabled: app.projectsEnabled,
-            fleetEnabled: app.fleetEnabled,
             worktreeBase: app.worktreeBaseMode == .head ? .head : .fresh,
             fetchBeforeCreating: app.worktreeFetchBeforeCreate,
             generatePRDescriptions: app.worktreeGeneratePRDescription,
@@ -125,7 +124,6 @@ enum HostSettingsMapping {
         case .goalCrossProviderEvaluation: break // Legacy: goals no longer use a checker model.
         case .goalsEnabled(let on): app.goalsEnabled = on
         case .projectsEnabled(let on): app.projectsEnabled = on
-        case .fleetEnabled(let on): app.fleetEnabled = on
         case .worktreeBase(let base): app.worktreeBaseMode = base == .head ? .head : .fresh
         case .fetchBeforeCreating(let on): app.worktreeFetchBeforeCreate = on
         case .generatePRDescriptions(let on): app.worktreeGeneratePRDescription = on

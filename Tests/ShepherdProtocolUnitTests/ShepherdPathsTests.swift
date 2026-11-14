@@ -15,7 +15,6 @@ struct ShepherdPathsTests {
         let directory = ShepherdPaths.supportDirectory(environment: env)
         #expect(ShepherdPaths.socketURL(environment: env) == directory.appendingPathComponent("shepherd.sock"))
         #expect(ShepherdPaths.stateURL(environment: env) == directory.appendingPathComponent("state.json"))
-        #expect(ShepherdPaths.remoteTokenURL(environment: env) == directory.appendingPathComponent("remote-token"))
     }
 
     /// Each app keeps its own folder, so Shepherd Nightly never reads the everyday app's

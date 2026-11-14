@@ -192,37 +192,6 @@ extension ShepherdViewModel {
         }
         automationsPageSelection = target
     }
-
-    // MARK: Hosts
-
-    /// This Mac and every configured host, as the Hosts page shows them.
-    func hostsPageModel(agentVersion: String?) -> HostsPageModel {
-        HostsPageModel.make(local: state, agentVersion: agentVersion, remotes: hostsPageRemotes, columns: AppLayout.hostColumns)
-    }
-
-    /// The page as its view draws it, derived again only when what it reads changed.
-    func hostsPage(agentVersion: String?) -> HostsPageModel {
-        let inputs = HostsPageInputs(local: state, agentVersion: agentVersion, remotes: hostsPageRemotes)
-        if let cached = hostsPageCache, cached.inputs == inputs { return cached.model }
-        let model = HostsPageModel.make(local: inputs.local, agentVersion: agentVersion, remotes: inputs.remotes,
-                                        columns: AppLayout.hostColumns)
-        hostsPageCache = (inputs, model)
-        return model
-    }
-
-    private var hostsPageRemotes: [HostsPageRemote] {
-        remoteHosts.pairedConnections.map { connection in
-            HostsPageRemote(id: connection.id, name: connection.config.name, address: connection.config.host,
-                            port: connection.config.port, phase: connection.phase, state: connection.state,
-                            lastSeen: connection.lastSeen)
-        }
-    }
-
-    /// Add host: Macs are added with a code in Settings ▸ Fleet.
-    func showAddHost() {
-        settingsSection = .fleet
-        showSettings = true
-    }
 }
 
 /// What the Automations page is derived from.
@@ -238,9 +207,3 @@ struct AutomationsPageInputs: Equatable {
     var minute: Int
 }
 
-/// What the Hosts page is derived from.
-struct HostsPageInputs: Equatable {
-    var local: ShepherdState
-    var agentVersion: String?
-    var remotes: [HostsPageRemote]
-}

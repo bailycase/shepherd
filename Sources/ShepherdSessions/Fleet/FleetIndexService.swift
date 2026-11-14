@@ -7,7 +7,7 @@ import ShepherdRemote
 /// The host's content indexing (slice 4b): a `FleetContentIndex` for each space's checkout, the manifest each repository
 /// makes of them, a stream of those manifests to every peer Mac, and what the peers sent back, kept on disk.
 ///
-/// It indexes only while Fleet is on and at least one Mac is paired (`setActive`): a host with nobody to tell has no reason
+/// It indexes only while at least one Mac is paired (`setActive`): a host with nobody to tell has no reason
 /// to read a repository's files. Manifests go over the same peer links as everything else, and only to a Mac (a
 /// `FleetAccess.member` connection): a phone or the shared token is never offered `fleet.snapshot.v1`.
 /// Everything here but the indexes themselves belongs to the server queue; each index has its own utility queue and reports
@@ -93,7 +93,7 @@ final class FleetIndexService: @unchecked Sendable {
 
     // MARK: Lifecycle (server queue)
 
-    /// Fleet is on and a Mac is paired (or isn't any more).
+    /// A Mac is paired (or isn't any more).
     func setActive(_ on: Bool) {
         guard on != isActive else { return }
         isActive = on

@@ -109,7 +109,7 @@ public enum SessionHost {
             // The app's first launch copies the user's pi (and its sign-ins) in: no pi starts before.
             server.holdStartsForFirstCopy()
             await serve(server, socket: support.appendingPathComponent("host.sock").path,
-                        tokenURL: support.appendingPathComponent("remote-token"), respawn: respawn, configure: configure,
+                        respawn: respawn, configure: configure,
                         threads: threads, automations: automations, pullRequests: pullRequests, banners: banners)
         }
         ready()
@@ -126,7 +126,7 @@ public enum SessionHost {
     /// `recovering` false leaves unfinished work for a test that only draws it.
     /// Returns the banners' observer (also `banners`, the process's last), when `banners` was given.
     @MainActor @discardableResult
-    public static func serve(_ server: SessionServer, socket: String, tokenURL: URL, recovering: Bool = true, respawn: @escaping @MainActor (Agent) -> AgentSpawn,
+    public static func serve(_ server: SessionServer, socket: String, recovering: Bool = true, respawn: @escaping @MainActor (Agent) -> AgentSpawn,
                              configure: (@MainActor (SessionServer) -> Void)? = nil,
                              threads: (@MainActor (SessionServer) -> ThreadHosting)? = nil,
                              automations: (@MainActor (SessionServer) -> AutomationHosting)? = nil,
@@ -136,7 +136,7 @@ public enum SessionHost {
         if let threads { server.serveThreads(threads(server)) }
         // The app's way in (`host.sock`), once its threads are served.
         do {
-            try server.startLocalListener(path: socket, tokenURL: tokenURL)
+            try server.startLocalListener(path: socket)
         } catch {
             ShepherdLog.error("host has no local socket: \(error)")
         }

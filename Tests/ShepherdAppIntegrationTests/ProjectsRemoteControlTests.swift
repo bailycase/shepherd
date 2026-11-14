@@ -42,7 +42,7 @@ struct ProjectsRemoteControlTests {
         let port = try remote.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let hosts = app.remoteHosts
-        hosts.addHost(name: "mac-mini", host: "127.0.0.1", port: port, token: token)
+        hosts.addHost(name: "mac-mini", host: "127.0.0.1", port: port, token: token, fleetManaged: true)
         try await eventuallyOnMain("the authenticated Projects host") { hosts.connections.first?.phase == .connected }
         vm.showSettings = true; vm.settingsSection = .projects
         let model = vm.projects

@@ -48,20 +48,17 @@ struct FleetMacRow: Identifiable, Equatable {
 }
 
 extension FleetMacRow {
-    /// A Mac this app is a client of (`RemoteHostStore`): where it is and how the connection stands.
-    static func client(id: UUID, name: String, host: String, port: UInt16, phase: RemoteHostStore.Phase) -> FleetMacRow {
-        let (word, state): (String, FleetMacRowState) = switch phase {
-        case .connected: ("connected", .connected)
-        case .connecting: ("connecting…", .connecting)
-        case .failed(let failure): (failure.headline.lowercased(), .offline)
-        case .disconnected: ("disconnected", .offline)
-        }
-        return FleetMacRow(id: id.uuidString, hostID: id, title: name, detail: "\(host):\(port) · \(word)", state: state)
+    /// A Mac this app was a client of before Fleet was how Macs connect (`RemoteHostStore.notInFleet`): where it was and that it
+    /// is not in the fleet. Its row adds it (`Add to fleet…`) or dismisses it.
+    static func notInFleet(id: UUID, name: String, host: String, port: UInt16) -> FleetMacRow {
+        FleetMacRow(id: id.uuidString, hostID: id, title: name, detail: "\(host):\(port) · not in your fleet", state: .notInFleet)
     }
 }
 
 enum FleetMacRowState: Equatable {
     case thisMac, connected, connecting, offline
+    /// A Mac this app was a client of: add it to the fleet or dismiss it.
+    case notInFleet
 }
 
 /// One row of Settings ▸ Fleet's Devices: a phone, an iPad or a Mac's app paired as a client.
@@ -129,15 +126,15 @@ final class FleetSettingsModel {
     }
 
     /// The host's fleet: this Mac, the Macs it is paired with and each link. Empty (not enabled)
-    /// until the host answers, and while Fleet is off (its devices and port are still read then).
+    /// until the host answers.
     var snapshot = FleetSnapshot()
-    /// The host answered with its devices: Add a device and the list work (Fleet on or off).
+    /// The host answered with its devices: Add a device and the list work.
     var devicesReady = false
     /// This Mac and each Mac it is paired with, as Settings lists them.
     var rows: [FleetMacRow] = []
     /// Where sync stands, in the line under the page's explanation; nil with no Mac paired.
     var syncLine: FleetSyncLine?
-    /// The host has answered at least once since Fleet was switched on.
+    /// The host has answered at least once.
     var loaded = false
     /// The code this Mac shows while its Join screen is open.
     var join: Join?
@@ -176,8 +173,6 @@ final class FleetSettingsModel {
     /// This app's link scheme, and the time a link's expiry is read against.
     @ObservationIgnored var linkScheme = FleetPairingLink.currentScheme
     @ObservationIgnored var now: () -> Date = Date.init
-    /// Pairs this app as a device of a Mac that is not in its fleet (Fleet off): the app does it, not its host.
-    @ObservationIgnored var pairClient: (String, UInt16, String, UUID?) async throws -> Void = { _, _, _, _ in }
     /// Starts finding Macs; the answer stops it. Replaced by a fixture in tests.
     @ObservationIgnored var browse: @MainActor (@escaping @Sendable ([FoundMac]) -> Void) -> () -> Void = { _ in {} }
     /// Every snapshot the host answered with, for the Fleet page (`FleetPageModel`).
@@ -188,8 +183,6 @@ final class FleetSettingsModel {
     @ObservationIgnored private var everyFound: [FoundMac] = []
     @ObservationIgnored private var joinBaseline: Set<UUID> = []
     @ObservationIgnored private var deviceBaseline: Set<UUID> = []
-    @ObservationIgnored private var adopting: Set<UUID> = []
-    @ObservationIgnored private var notFleet: Set<UUID> = []
 
     init() {}
 
@@ -289,16 +282,6 @@ final class FleetSettingsModel {
         await deviceAction(.revokeDevice(id))
     }
 
-    /// Stops accepting the shared token. The host refuses while a device that used it hasn't switched.
-    func retireSharedToken() async {
-        await deviceAction(.retireSharedToken)
-    }
-
-    /// Stops waiting for a client that connected with the shared token and may never come back.
-    func forgetWaiting(_ id: String) async {
-        await deviceAction(.forgetLegacyClient(id))
-    }
-
     private func deviceAction(_ action: FleetAction) async {
         do {
             guard let client = try host() else { return }
@@ -380,20 +363,6 @@ final class FleetSettingsModel {
         }
     }
 
-    /// Enters `code` on `mac` and adds it as a Mac this app is a client of (Fleet off). True when it did.
-    func pairAsClient(with mac: FoundMac, code: String) async -> Bool {
-        guard let address = mac.address, let port = mac.port else { return false }
-        pairing = .working
-        do {
-            try await pairClient(address, port, code, nil)
-            pairing = .idle
-            return true
-        } catch {
-            pairing = .failed(Self.words(error))
-            return false
-        }
-    }
-
     // MARK: Removing
 
     /// Removes a Mac from the fleet, here and on every other member.
@@ -453,25 +422,6 @@ final class FleetSettingsModel {
         } catch {
             problem = Self.words(error)
         }
-    }
-
-    // MARK: Moving a pre-fleet pairing over
-
-    /// Hands hosts the app already reached with the shared token to its host, which makes the ones
-    /// that speak Fleet peers. The answer says which became one. A host that said it isn't a fleet
-    /// Mac isn't asked again until it connects again (`retrying`), and one being asked isn't asked twice.
-    func adopt(_ hosts: [FleetLegacyHost], retrying: Bool = false) async -> [FleetAdoption] {
-        let asked = hosts.filter { !adopting.contains($0.id) && (retrying || !notFleet.contains($0.id)) }
-        guard !asked.isEmpty, let client = try? host() else { return [] }
-        adopting.formUnion(asked.map(\.id))
-        defer { adopting.subtract(asked.map(\.id)) }
-        guard let result = try? await client.fleetAction(.adopt(asked)) else { return [] }
-        apply(result)
-        let outcomes = result.adopted ?? []
-        for adoption in outcomes {
-            if adoption.outcome == .notFleet { notFleet.insert(adoption.id) } else { notFleet.remove(adoption.id) }
-        }
-        return outcomes
     }
 
     // MARK: Words

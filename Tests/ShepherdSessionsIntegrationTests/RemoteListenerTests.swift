@@ -18,13 +18,15 @@ struct RemoteListenerTests {
         try client.send(.hello(id: 7, token: r.token, clientName: "test", protocolVersion: RemoteProtocol.version))
         // Designs (and Pencil markup and Delete with them) only while the host's Design tool is
         // on, and it starts off.
-        // Fleet is offered only while the host's Fleet experiment is on (it starts off).
+        // Fleet is offered only by a host whose fleet has started (`SessionServer.startFleet`); a bare server has none.
         // A bare server also has no owner Project launcher/controller installed, and Files goes
         // only to a client that lists it (this one lists nothing).
         let offered = RemoteProtocol.capabilities.filter {
-            !RemoteProtocol.designCapabilities.contains($0) && $0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetLinkCapability && $0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetViewCapability && $0 != RemoteProtocol.fleetFollowCapability && $0 != RemoteProtocol.fleetDevicesCapability && $0 != RemoteProtocol.fleetSyncCapability && $0 != RemoteProtocol.fleetSnapshotCapability && $0 != RemoteProtocol.fleetDispatchCapability && $0 != RemoteProtocol.fleetRendezvousCapability && $0 != RemoteProtocol.fleetPairLinkCapability && $0 != RemoteProtocol.hostUpdateCapability && $0 != RemoteProtocol.filesCapability && $0 != RemoteProtocol.logicalProjectRuntimeCapability && $0 != RemoteProtocol.projectWorkerCapability && $0 != RemoteProtocol.projectMessageImagesCapability && $0 != RemoteProtocol.projectExecutionCapability && $0 != RemoteProtocol.projectPlacementCapability && $0 != RemoteProtocol.projectPublicationsCapability && $0 != RemoteProtocol.projectResultCapability
+            !RemoteProtocol.designCapabilities.contains($0) && $0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetLinkCapability && $0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetDevicesCapability && $0 != RemoteProtocol.fleetSyncCapability && $0 != RemoteProtocol.fleetSnapshotCapability && $0 != RemoteProtocol.fleetDispatchCapability && $0 != RemoteProtocol.fleetRendezvousCapability && $0 != RemoteProtocol.fleetPairLinkCapability && $0 != RemoteProtocol.hostUpdateCapability && $0 != RemoteProtocol.filesCapability && $0 != RemoteProtocol.logicalProjectRuntimeCapability && $0 != RemoteProtocol.projectWorkerCapability && $0 != RemoteProtocol.projectMessageImagesCapability && $0 != RemoteProtocol.projectExecutionCapability && $0 != RemoteProtocol.projectPlacementCapability && $0 != RemoteProtocol.projectPublicationsCapability && $0 != RemoteProtocol.projectResultCapability
         }
-        #expect(try await client.next() == .helloOk(id: 7, protocolVersion: RemoteProtocol.version, capabilities: offered))
+        // This host's fleet runs (a test's client is one of its devices), so it says who it is.
+        guard case .helloOk(7, RemoteProtocol.version, let capabilities, _, let hostID) = try await client.next() else { Issue.record("expected helloOk"); return }
+        #expect(capabilities == offered && hostID != nil)
     }
 
     @Test(arguments: ["127.0.0.1", "localhost"])
@@ -51,7 +53,7 @@ struct RemoteListenerTests {
 
     /// Each failure is a final reply, then the host closes the connection.
     @Test(arguments: [
-        ("wrong token", "unauthorized"),
+        ("wrong token", "shared_token_retired"),
         ("wrong version", "protocol_version"),
         ("no hello", "unauthenticated"),
     ])
@@ -86,7 +88,7 @@ struct RemoteListenerTests {
             thrown = error
         }
         let error = try #require(thrown)
-        #expect(RemoteHostFailure(error).kind == .tokenRefused)
+        #expect(RemoteHostFailure(error).kind == .sharedTokenRetired)
         // Whatever the client's queue did with the host's close has been handed to main by the
         // time disconnect returns; draining main runs any callback it scheduled.
         client.disconnect()

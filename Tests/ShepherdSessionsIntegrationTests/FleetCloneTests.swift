@@ -67,17 +67,18 @@ struct FleetCloneTests {
         let b = try await Mac("Mac mini", origin: origin, busy: 10, checkout: false)
         defer { a.stop(); b.stop() }
         let (main, _) = try await Self.hiddenCheckout(on: b, origin: origin)
+        // A Mac with no other Mac reads no checkout: its finder starts looking once it is in a fleet.
+        try await a.pair(with: b)
         // The repository's key isn't one of Mac mini's spaces', but its finder knows the checkout, and that is what its readiness says.
         let key = D.repoKey
         try await D.wait("Mac mini's finder to know the checkout") { b.server.queue.sync { b.server.fleet?.dispatch.finder.knownKeys().contains(key) == true } }
-        #expect(b.server.state.spaces.contains { $0.repoKey == key } == false, "no space of its own uses it")
         #expect(b.server.fleetLocalFacts().repoKeys.contains(key), "readiness lists what the finder can bind, not only the spaces")
 
-        try await a.pair(with: b)
         try await D.waitForReports(a, b)
         let id = try await b.hostID()
-        let held = try await a.local.fleetRead().snapshot.macs.first { $0.hostID == id }
-        #expect(held?.readiness?.repoKeys.contains(key) == true, "the other Mac sees it as having the repository")
+        try await D.wait("the other Mac to see it as having the repository") {
+            try await a.local.fleetRead().snapshot.macs.first { $0.hostID == id }?.readiness?.repoKeys.contains(key) == true
+        }
 
         // Auto: the Mac mini has the room, and nothing charges it for a clone.
         let parent = try await a.parent()
@@ -293,8 +294,9 @@ struct FleetCloneTests {
         let a = try await Mac("MacBook Pro", origin: origin, repoKey: nil)
         let b = try await Mac("Mac mini", origin: origin, checkout: false)
         defer { a.stop(); b.stop() }
-        _ = try await Self.removeOrigin(of: a)
+        // A host reads its spaces' repositories once a Mac is paired.
         try await a.pair(with: b)
+        _ = try await Self.removeOrigin(of: a)
         try await D.waitForReports(a, b)
         try FleetSnapshotTransferTests.write("# acme-web\nedited, not committed\n", to: "README.md", in: a.folder)
         let expected = try FleetSnapshotTransferTests.tree(of: a.folder)

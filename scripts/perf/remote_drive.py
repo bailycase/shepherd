@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Drive a Shepherd app over its remote listener: add a space, create N agents with a prompt.
-Usage: remote_drive.py <port> <remote-token file> <space path> <count>. Used by stress.sh."""
+Usage: SHEPHERD_REMOTE_TOKEN=<device token> remote_drive.py <port> <space path> <count>. Used by stress.sh.
+A host takes only a paired device's (or Mac's) own token, never a shared one. To get one for a real host: make 32
+random bytes as hex, pair with the code Settings ▸ Fleet ▸ Add a device shows (fleetPairDevice carries the
+token's SHA-256), and set this variable to the token. stress.sh seeds a scratch host with one instead."""
 import json, socket, sys, time
-port, token_path, space_path, count = int(sys.argv[1]), sys.argv[2], sys.argv[3], int(sys.argv[4])
-token = open(token_path).read().strip()
+import os
+port, space_path, count = int(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+token = os.environ["SHEPHERD_REMOTE_TOKEN"].strip()
 s = socket.create_connection(("127.0.0.1", port)); f = s.makefile("rwb")
 rid = [0]
 def send(obj):

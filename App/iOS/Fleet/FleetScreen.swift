@@ -65,7 +65,7 @@ struct FleetScreen: View {
                             .padding(.top, wide ? SH.Space.s : 0)
                         FleetDispatchesCard()
                     } else {
-                        Text("Room and readings show while a Mac has Fleet on (Settings ▸ Experiments ▸ Fleet).")
+                        Text("Room and readings show for a Mac on the latest Shepherd. Update it to see them.")
                             .shText(.caption).foregroundStyle(Color.sh.textTertiary).padding(.horizontal, SH.Space.xs)
                     }
                 }

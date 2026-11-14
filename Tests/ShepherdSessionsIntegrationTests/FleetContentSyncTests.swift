@@ -112,19 +112,16 @@ struct FleetContentSyncTests {
         // Hand copied folders (Local skills): one only the mini has, and one both have, differently.
         try Self.makeLocal("notes", in: b, skill: "---\nname: notes\ndescription: The mini's notes.\n---\n")
         try Self.makeLocal("changelog", in: a, skill: "---\nname: changelog\ndescription: The MacBook Pro's.\n---\n")
-        a.enable()
-        try await eventually("A to seed the fleet") { a.server.fleetSyncWinner(FleetUnit.skill("changelog")) != nil }
-        // The mini's seeds must be later readings than A's, whatever the millisecond.
-        let before = Int(Date().timeIntervalSince1970 * 1000)
-        try await eventually("the clock to move on") { Int(Date().timeIntervalSince1970 * 1000) > before }
         try Self.makeLocal("changelog", in: b, skill: "---\nname: changelog\ndescription: The mini's own.\n---\n")
+        // Nothing is read until a Mac is paired: the Mac that enters the code reads first, so its copies are the reference.
+        a.enable()
         b.enable()
         try await a.pair(with: b)
         try await a.waitForLink(to: b)
         try await b.waitForLink(to: a)
 
         try await waitForSkill("notes", on: a)
-        #expect(Self.skill("changelog", on: a)?.summary == "The MacBook Pro's.", "the Mac where Fleet was first on is the reference")
+        #expect(Self.skill("changelog", on: a)?.summary == "The MacBook Pro's.", "the Mac that entered the code is the reference")
         try await eventually("the mini to take the reference's changelog") { Self.skill("changelog", on: b)?.summary == "The MacBook Pro's." }
         #expect(!b.server.fleetSyncHistory(FleetUnit.skillFile("changelog", "SKILL.md")).isEmpty, "the mini's own copy is kept in the fleet's history")
     }
@@ -150,13 +147,17 @@ struct FleetContentSyncTests {
         #expect(Self.text(Self.folder(studio, "pdf").appendingPathComponent("SKILL.md")) == Self.pdf, "the files came from the mini, the ops are the MacBook Pro's")
     }
 
-    @Test func skillsThePiLoadsFromElsewhereAndOnesFleetIsOffForNeverTravel() async throws {
+    @Test func skillsThePiLoadsFromElsewhereNeverTravel() async throws {
         let a = try await Mac("MacBook Pro", enable: false)
         defer { a.stop() }
         try Self.makeLocal("kept-home", in: a, skill: "---\nname: kept-home\ndescription: Not yet shared.\n---\n")
-        #expect(!FileManager.default.fileExists(atPath: a.host.dir.appendingPathComponent("fleet/store").path), "with Fleet off nothing is read or kept")
         a.enable()
-        try await eventually("the skill to be seeded once Fleet is on") { a.server.fleetSyncWinner(FleetUnit.skill("kept-home")) != nil }
+        // Nothing is read, and no store made, until a Mac is paired.
+        #expect(a.server.fleetSyncUnits().isEmpty, "no unit is read before a Mac is paired")
+        let b = try await Mac("Mac mini")
+        defer { b.stop() }
+        try await a.pair(with: b)
+        try await eventually("the skill to be seeded once a Mac is paired") { a.server.fleetSyncWinner(FleetUnit.skill("kept-home")) != nil }
         // A name that would leave the skill's folder is refused, never written.
         #expect(!FleetUnit.isValid("skill:pdf/../../x") && FleetFileTree.isSafe("scripts/run.sh") && !FleetFileTree.isSafe("../x") && !FleetFileTree.isSafe("/etc/hosts"))
     }
@@ -318,20 +319,6 @@ struct FleetContentSyncTests {
         // It does still read the skills the way a client always did: its own list, from the host.
         let listed = try await phone.skills(.fetch)
         if case .skills(let snapshot) = listed { #expect(snapshot.skills.map(\.name) == ["pdf"]) } else { Issue.record("no skills answer") }
-    }
-
-    /// Fleet off is membership off: nothing of the skills or extensions is watched, kept or applied.
-    @Test func withFleetOffSkillsAndExtensionsAreAsTheyWereBefore() async throws {
-        let a = try await Mac("MacBook Pro", enable: false)
-        defer { a.stop() }
-        let repo = try Repo()
-        try await repo.install(on: a)
-        try await a.local.skills(.setOn(name: "pdf", on: false))
-        try await a.local.skills(.setOn(name: "pdf", on: true))
-        #expect(Self.skill("pdf", on: a)?.isOn == true)
-        _ = try YourPiFixture().importAndSwitchOn(on: a)
-        #expect(!FileManager.default.fileExists(atPath: a.host.dir.appendingPathComponent("fleet/store").path), "no store until Fleet is on")
-        #expect(!(try await a.read()).enabled)
     }
 
     // MARK: Helpers

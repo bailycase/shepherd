@@ -86,7 +86,7 @@ struct LocalHostRoutingTests {
             apps: AppsModel(home: clientDir.appendingPathComponent("apps-home").path))
         // As `ShepherdApp` connects it.
         await beforeConnect(vm)
-        vm.connectLocalHost(socket: socket, token: token)
+        vm.connectLocalHost(socket: socket)
         try await eventuallyOnMain("the host's workspace as the app's", timeout: .seconds(30)) {
             vm.state.agents == host.server.state.agents && vm.state.spaces == host.server.state.spaces
         }
@@ -435,7 +435,7 @@ struct LocalHostRoutingTests {
             remoteHosts: hosts, sidebarDefaults: defaults, themeInstaller: { _ in },
             hooks: HooksModel(home: dir.appendingPathComponent("hooks-home").path, support: dir.appendingPathComponent("hooks-support")),
             apps: AppsModel(home: dir.appendingPathComponent("apps-home").path))
-        vm.connectLocalHost(socket: host.dir.appendingPathComponent("h.sock").path, token: token)
+        vm.connectLocalHost(socket: host.dir.appendingPathComponent("h.sock").path)
         return App(vm: vm, hosts: hosts, dir: dir)
     }
 }

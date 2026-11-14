@@ -131,10 +131,12 @@ struct RemoteTerminalRestartTests {
         let second = try ScratchServer(dir: dir)
         defer { second.stop() }
         _ = try second.server.startRemoteListener(port: first.port, tokenURL: tokenURL)
+        // The relaunched host holds its clients' tokens in memory only (a test's), so its client presents the one it was just given.
+        let secondToken = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Reconnected, the pane still names the old shell until the host respawns it: the attach
         // is refused, and asked again while the pane stays on screen.
-        let client = try await Self.connect(port: first.port, token: first.token, output: output, states: states)
+        let client = try await Self.connect(port: first.port, token: secondToken, output: output, states: states)
         defer { client.disconnect() }
         await old.hold(client)
         try await eventually("the refused attach to be asked again") {

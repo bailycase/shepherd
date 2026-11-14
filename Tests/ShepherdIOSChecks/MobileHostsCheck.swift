@@ -20,32 +20,15 @@ struct MobileHostsCheck {
         }
         let defaults = scratchDefaults("defaults")
 
-        // A locked device refuses the Keychain: the record migrates at once, and its token
-        // moves on the first foreground once the Keychain answers.
-        let lockedDefaults = scratchDefaults("locked")
-        lockedDefaults.set(Data(#"{"name":"Old Mac","host":"127.0.0.1","port":1}"#.utf8), forKey: MobileHosts.legacyKey)
-        let memory = HostTokens.memory(legacy: "legacy-token")
-        let locked = Locked(true)
-        var lockable = memory
-        lockable.readLegacy = { if locked.value { throw CocoaError(.fileReadNoPermission) }; return try memory.readLegacy() }
-        let whileLocked = MobileHosts(defaults: lockedDefaults, tokens: lockable)
-        let lockedID = whileLocked.hosts.first?.id
-        try check(lockedID != nil && memory.read(lockedID!) == nil && memory.readLegacy() == "legacy-token", "a locked Keychain keeps the token pending")
-        check(MobileHosts(defaults: lockedDefaults, tokens: lockable).hosts.map(\.id) == [lockedID!], "the record migrated once")
-        locked.value = false
-        whileLocked.setForeground(true)
-        try check(memory.read(lockedID!) == "legacy-token" && memory.readLegacy() == nil, "the token moves once the Keychain answers")
-        check(lockedDefaults.string(forKey: MobileHosts.legacyTokenKey) == nil, "nothing is left pending")
-        whileLocked.setForeground(false)
-
-        // The first client's single host migrates, token and all, and its old key goes.
+        // The first client's single host migrates as a record, without its token (there is no token shared by every client any more):
+        // it says no token is saved, and its old key goes.
         defaults.set(Data(#"{"name":"Old Mac","host":"127.0.0.1","port":1}"#.utf8), forKey: MobileHosts.legacyKey)
-        let tokens = HostTokens.memory(legacy: "legacy-token")
+        let tokens = HostTokens.memory()
         let migrated = MobileHosts(defaults: defaults, tokens: tokens)
         check(migrated.hosts.count == 1, "legacy host migrated")
         let legacy = migrated.hosts[0]
         check(legacy.record.name == "Old Mac" && legacy.record.address == "127.0.0.1" && legacy.record.port == 1, "legacy record kept")
-        try check(tokens.read(legacy.id) == "legacy-token" && tokens.readLegacy() == nil, "legacy token moved")
+        try check(tokens.read(legacy.id) == nil, "no token is moved")
         check(defaults.data(forKey: MobileHosts.legacyKey) == nil, "legacy key removed")
         check(MobileHosts(defaults: defaults, tokens: tokens).hosts.map(\.record) == [legacy.record], "migration is saved once")
 
@@ -112,7 +95,19 @@ struct MobileHostsCheck {
         hosts.retry(refusedID)
         try await waitUntil("Retry tries once more") { refusals.value == 2 && refused.phase.failure?.kind == .tokenRefused }
         await refusingTask.value
-        print("PASS: MobileHosts migration, records without tokens, several hosts over real TCP, pushes, background and foreground, retry and stop, rename, forget, a refused token waits")
+
+        // A host that no longer accepts the old shared token says to pair again: no retry on its own, and nothing for Retry to fix.
+        let retired = try Listener()
+        let retiredCount = Locked(0)
+        let retiredTask = Task.detached { retired.refuse(connections: 1, count: retiredCount, code: RemoteProtocol.sharedTokenRetiredCode, message: RemoteProtocol.sharedTokenRetiredMessage) }
+        let retiredID = try hosts.add(RemoteHostEntry(name: "Mac mini", address: "127.0.0.1", port: String(retired.port), token: "old-shared-token"))
+        let retiredHost = hosts.host(retiredID)!
+        try await waitUntil("the old shared token's refusal shown") { retiredHost.phase.failure?.kind == .sharedTokenRetired }
+        try await Task.sleep(for: .milliseconds(300))
+        check(retiredCount.value == 1 && retiredHost.phase.failure?.retries == false, "a retired shared token is not retried on its own")
+        check(retiredHost.phase.failure?.message(host: "Mac mini") == "Mac mini no longer accepts the old shared token. Pair again with a code.", "it says to pair again")
+        await retiredTask.value
+        print("PASS: MobileHosts migration, records without tokens, several hosts over real TCP, pushes, background and foreground, retry and stop, rename, forget, a refused token waits, a retired shared token says to pair again")
     }
 
     static func check(_ condition: @autoclosure () throws -> Bool, _ what: String) rethrows {
@@ -192,7 +187,7 @@ final class Listener: @unchecked Sendable {
 
     /// Refuses each hello the way a host refuses a wrong token (a final reply, then close),
     /// counting the connections.
-    func refuse(connections: Int, count: Locked<Int>) {
+    func refuse(connections: Int, count: Locked<Int>, code: String = RemoteProtocol.unauthorizedCode, message: String = "bad token") {
         for _ in 0..<connections {
             let client = accept(fd, nil, nil)
             precondition(client >= 0)
@@ -203,7 +198,7 @@ final class Listener: @unchecked Sendable {
                 guard case .hello(let id, _, _, _, _) = try NDJSON.decode(RemoteRequest.self, from: readLine(client)) else {
                     fatalError("expected hello")
                 }
-                try write(client, .error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token"))
+                try write(client, .error(id: id, code: code, message: message))
             } catch {
                 fatalError("refusing host failed: \(error)")
             }

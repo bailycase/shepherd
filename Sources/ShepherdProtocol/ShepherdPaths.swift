@@ -47,14 +47,6 @@ public enum ShepherdPaths {
         supportDirectory(environment: environment).appendingPathComponent("state.json")
     }
 
-    /// Shared secret for remote Shepherd clients (the TCP listener). Created
-    /// on first use with 0600 permissions; deleting it revokes every client.
-    public static func remoteTokenURL(
-        environment: [String: String] = ProcessInfo.processInfo.environment
-    ) -> URL {
-        supportDirectory(environment: environment).appendingPathComponent("remote-token")
-    }
-
     /// Fleet's own files (identity, peers; mode 0600 inside a 0700 folder). Never synced: they say who this Mac is.
     public static func fleetDirectory(
         environment: [String: String] = ProcessInfo.processInfo.environment

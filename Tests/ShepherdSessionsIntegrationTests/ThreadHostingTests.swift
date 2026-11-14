@@ -68,9 +68,11 @@ struct ThreadHostingTests {
         let finished = agents[0].0.id, other = agents[1].0.id
         let mac = try await connect(path, token)
         defer { mac.disconnect() }
-        let port = try h.server.startRemoteListener(port: 0, tokenURL: h.dir.appendingPathComponent("remote-token"))
+        let remoteTokenURL = h.dir.appendingPathComponent("remote-token")
+        let port = try h.server.startRemoteListener(port: 0, tokenURL: remoteTokenURL)
+        let remoteToken = try String(contentsOf: remoteTokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let phone = RemoteHostClient()
-        _ = try await phone.connect(host: "127.0.0.1", port: port, token: token, clientName: "iPhone")
+        _ = try await phone.connect(host: "127.0.0.1", port: port, token: remoteToken, clientName: "iPhone")
         defer { phone.disconnect() }
         #expect(phone.capabilities.contains(RemoteProtocol.completionSeenCapability))
         let macState = Locked(ShepherdState()), phoneState = Locked(ShepherdState())

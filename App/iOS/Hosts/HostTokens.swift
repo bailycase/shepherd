@@ -7,9 +7,6 @@ struct HostTokens {
     var read: (UUID) throws -> String?
     var save: (String, UUID) throws -> Void
     var remove: (UUID) throws -> Void
-    /// The first client's single token (one host, one Keychain item), read once to migrate it.
-    var readLegacy: () throws -> String?
-    var removeLegacy: () throws -> Void
     /// This device's identity in a fleet (`MobileHosts.DeviceIdentity`, as JSON): one id and token for
     /// every Mac it is paired with, so one pairing works on all of them.
     var readDevice: () throws -> String? = { nil }
@@ -20,27 +17,22 @@ struct HostTokens {
         read: { try HostKeychain.read(account: HostKeychain.account($0)) },
         save: { try HostKeychain.save($0, account: HostKeychain.account($1)) },
         remove: { try HostKeychain.remove(account: HostKeychain.account($0)) },
-        readLegacy: { try HostKeychain.read(account: HostKeychain.legacyAccount) },
-        removeLegacy: { try HostKeychain.remove(account: HostKeychain.legacyAccount) },
         readDevice: { try HostKeychain.read(account: HostKeychain.deviceAccount) },
         saveDevice: { try HostKeychain.save($0, account: HostKeychain.deviceAccount) }
     )
 
     /// Tokens held in memory for this process only.
-    static func memory(_ initial: [UUID: String] = [:], legacy: String? = nil) -> HostTokens {
+    static func memory(_ initial: [UUID: String] = [:]) -> HostTokens {
         final class Box: @unchecked Sendable {
             var tokens: [UUID: String]
-            var legacy: String?
             var device: String?
-            init(_ tokens: [UUID: String], _ legacy: String?) { self.tokens = tokens; self.legacy = legacy }
+            init(_ tokens: [UUID: String]) { self.tokens = tokens }
         }
-        let box = Box(initial, legacy)
+        let box = Box(initial)
         return HostTokens(
             read: { box.tokens[$0] },
             save: { box.tokens[$1] = $0 },
             remove: { box.tokens[$0] = nil },
-            readLegacy: { box.legacy },
-            removeLegacy: { box.legacy = nil },
             readDevice: { box.device },
             saveDevice: { box.device = $0 }
         )
@@ -49,8 +41,6 @@ struct HostTokens {
 
 enum HostKeychain {
     static let service = "com.bailycase.shepherd.ios.remote"
-    /// The first client's one account.
-    static let legacyAccount = "host-token"
     /// This device's fleet identity (id and token).
     static let deviceAccount = "device-identity"
 

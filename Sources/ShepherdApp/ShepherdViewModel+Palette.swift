@@ -48,12 +48,8 @@ extension ShepherdViewModel {
         items.append(PaletteItem(id: "action.settings", kind: .action("settings"), section: .commands,
                                  title: "Settings…", shortcut: "⌘,", icon: "gearshape"))
         // The pages the boards' sidebar no longer lists (it draws New thread, Designs and Automations only).
-        items.append(PaletteItem(id: "action.openHosts", kind: .action("openHosts"), section: .commands, title: "Open Hosts",
-                                 subtitle: offlineHostCount > 0 ? "\(offlineHostCount) offline" : nil, icon: "display"))
-        if settings.fleetEnabled {
-            items.append(PaletteItem(id: "action.openFleet", kind: .action("openFleet"), section: .commands, title: "Open Fleet",
-                                     subtitle: fleetPage.page.footer.paletteDetail, icon: "macbook.and.iphone"))
-        }
+        items.append(PaletteItem(id: "action.openFleet", kind: .action("openFleet"), section: .commands, title: "Open Fleet",
+                                 subtitle: fleetPage.page.footer.paletteDetail, icon: "macbook.and.iphone"))
         if designToolEnabled {
             items.append(PaletteItem(id: "action.openDesignSystems", kind: .action("openDesignSystems"), section: .commands,
                                      title: "Open Design systems", icon: "paintpalette"))
@@ -366,7 +362,6 @@ extension ShepherdViewModel {
             case "fastMode": toggleFastMode()
             case "toggleSidebar": toggleSidebar()
             case "settings": showSettings = true
-            case "openHosts": openDestination(.hosts)
             case "openFleet": openDestination(.fleet)
             case "openDesignSystems": openDesignSystems()
             case "openExtensions":

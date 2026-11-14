@@ -51,14 +51,14 @@ struct FleetFollowCheck {
         fleet.code = "482913"
         let ids = try await phone.pair(address: "127.0.0.1", port: mini.port, code: "482913")
         check(ids.count == 1 && phone.host(ids[0])?.fleetID == mini.hostID, "paired with the Mac mini, whose id it knows")
-        // A Mac the user paired themselves, on the shared token: the fleet never touches it.
-        let home = try phone.add(RemoteHostEntry(name: "Office Mac", address: "127.0.0.1", port: String(office.port), token: fleet.sharedToken))
+        // A Mac the user added with a token another pairing gave them: the fleet never touches it.
+        let home = try phone.add(RemoteHostEntry(name: "Office Mac", address: "127.0.0.1", port: String(office.port), token: fleet.pastedToken))
         let identity = try phone.deviceIdentity()
         phone.setForeground(true)
         try await waitUntil("both connected") { phone.hosts.allSatisfy { $0.phase == .connected } }
         check(phone.hosts.count == 2, "nothing is added while the fleet is one Mac")
-        // The Mac the user added is offered the device's own token, as any older pairing is, and still isn't in the fleet's group.
-        try await waitUntil("the Office Mac given the device's own token") { fleet.enrollments == 1 && (try? tokens.read(home)) == identity.token }
+        // The Mac the user added keeps the token it was given, and isn't in the fleet's group.
+        try check(tokens.read(home) == fleet.pastedToken, "its token is left as it was")
 
         // The Mac Studio joins the fleet: the phone gets it, with the same token and without pairing again.
         let accepted = fleet.accepted
@@ -68,11 +68,10 @@ struct FleetFollowCheck {
         try await waitUntil("the Mac Studio added and connected") { phone.hosts.first { $0.fleetID == studio.hostID }?.phase == .connected }
         let added = phone.hosts.first { $0.fleetID == studio.hostID }!
         try check(tokens.read(added.id) == identity.token, "it holds the device's own token")
-        check(fleet.accepted == accepted && fleet.enrollments == 1, "no new pairing and no new offer")
+        check(fleet.accepted == accepted, "no new pairing")
         check(added.name == "Mac Studio" && added.record.routes.map(\.host) == ["no-such-mac.invalid", "127.0.0.1"]
               && added.record.routes.allSatisfy { $0.port == studio.port && $0.kind == .lan }, "its routes are the fleet's, in order")
         check(added.routeIndex == 1, "the first route that answers carries it: the second")
-        check(Set(defaults.stringArray(forKey: MobileHosts.ownTokenKey) ?? []).contains(added.id.uuidString), "it is marked as on the device's own token")
         let saved = try JSONSerialization.jsonObject(with: defaults.data(forKey: MobileHosts.recordsKey)!) as! [[String: Any]]
         check(saved.count == 3 && saved.allSatisfy { $0["token"] == nil }, "saved, and no token in the records")
 
@@ -118,7 +117,7 @@ struct FleetFollowCheck {
         let before = reads()
         fleet.refuse(token: identity.token)
         phone.retry(ids[0])
-        try await waitUntil("the token refused") { phone.host(ids[0])?.phase.failure?.kind == .tokenRefused }
+        try await waitUntil("the token refused") { phone.host(ids[0])?.phase.failure?.kind == .sharedTokenRetired }
         tell(mini, [member(mini, local), member(moved, local)])
         try await Task.sleep(for: .milliseconds(300))
         check(reads() == before && phone.hosts.count == 2, "a revoked device reads and adds nothing")

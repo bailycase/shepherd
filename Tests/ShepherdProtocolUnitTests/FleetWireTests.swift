@@ -99,9 +99,9 @@ struct FleetWireTests {
         for hidden in ["192.168", "7434", "1.9.0", "iPhone"] { #expect(!text.contains(hidden), "\(hidden)") }
     }
 
-    @Test func onlyADeviceAndTheSharedTokenMayViewTheFleet() {
-        #expect(FleetAccess.device.mayViewFleet && FleetAccess.shared.mayViewFleet)
-        #expect(!FleetAccess.member.mayViewFleet && !FleetAccess.local.mayViewFleet)
+    @Test func onlyADeviceMayViewTheFleet() {
+        #expect(FleetAccess.device.mayViewFleet)
+        #expect(!FleetAccess.member.mayViewFleet && !FleetAccess.local.mayViewFleet && !FleetAccess.unauthenticated.mayViewFleet)
         #expect(!FleetAccess.device.takesPartInFleet)
     }
 
