@@ -13,6 +13,10 @@ final class FleetPageModel {
     /// The dispatches this Mac sent, as cards: kept apart from `page`, which moves with every sample, so a thread that draws them is
     /// redrawn only when a dispatch changes.
     private(set) var dispatchCards: [FleetDispatchCard] = []
+    /// The sidebar's Fleet corner, nil while Fleet shows no Mac.
+    private(set) var corner: FleetCorner?
+    /// What the sidebar reads of the dispatches this Mac sent: kept apart from `page` for the same reason as `dispatchCards`.
+    private(set) var sidebarFleet = SidebarFleet()
     /// The moves of this Mac's threads (FleetMove), live or failed: a thread that moves draws its own card from them.
     private(set) var moves: [FleetDispatchRecord] = []
     /// The moves of a remote host's threads, read from that host while one is going (`ShepherdViewModel.watchRemoteMoves`).
@@ -39,6 +43,8 @@ final class FleetPageModel {
     var moveAsk: FleetMoveAsk?
     @ObservationIgnored var remoteMoveWatchers: [UUID: Task<Void, Never>] = [:]
 
+    /// The Mac the sidebar's Fleet corner opened the page on: its card is scrolled into view and marked until the page is left or another is picked.
+    var focusedMac: UUID?
     /// The page's two views (FleetA, FleetCheck): the Macs, or what each has of what the fleet needs.
     enum Tab: Hashable { case macs, check }
     var tab = Tab.macs
@@ -85,7 +91,12 @@ final class FleetPageModel {
                                               threadCap: threadCap(), checkIgnored: checkIgnored,
                                               checkFixing: snapshot.hostID.map { [$0: localFixing] } ?? [:])
         if next != page { page = next }
+        let corner = FleetCorner.make(next)
+        if corner != self.corner { self.corner = corner }
         if next.dispatchCards != dispatchCards { dispatchCards = next.dispatchCards }
+        let sent = SidebarFleet(records: snapshot.dispatches.filter { $0.kind != .move }.sorted { $0.createdAt > $1.createdAt },
+                                next: next.nextGoesTo, cap: threadCap())
+        if sent != sidebarFleet { sidebarFleet = sent }
         menus = [:]
         menuRevision &+= 1
         let moving = snapshot.dispatches.filter { $0.kind == .move && $0.move != nil }

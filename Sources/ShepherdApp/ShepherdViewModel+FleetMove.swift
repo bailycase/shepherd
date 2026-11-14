@@ -45,7 +45,7 @@ extension ShepherdViewModel {
                   let agent = connection.state.agents.first(where: { $0.id == ref.agentID }), let hostID = connection.fleetID else { return nil }
             return MoveSubject(ref: ref, agent: agent, hostID: hostID, isLocal: false,
                                space: connection.state.spaces.first { $0.id == agent.spaceID }, capable: connection.supportsFleetMove && Self.movable(agent, in: connection.state))
-        case .design, .remoteDesign:
+        case .design, .remoteDesign, .dispatch:
             return nil
         }
     }

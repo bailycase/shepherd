@@ -34,6 +34,30 @@ struct FleetDispatchPresentationTests {
         #expect(card.actions == [.open, .stop])
     }
 
+    /// The thread that sent the work draws what a card can say in a few words as one line (FleetDispatch): a thread that is on a Mac or came back, and work
+    /// that waits. A card that carries progress, a failure or a decision keeps its words.
+    @Test func aCardThatNeedsFewWordsHasACompactLine() throws {
+        func compact(_ state: FleetDispatchState, target: UUID? = P.mini, host: String? = "Mac mini") throws -> FleetDispatchCard.Compact? {
+            try #require(Self.cards([Self.record(state, target: target, host: host)]).first).compact
+        }
+        #expect(try compact(.done) == .init(words: "back", tone: .good, timed: true))
+        #expect(try compact(.delivering) == .init(words: "delivering", tone: .active, timed: true))
+        #expect(try compact(.running) == .init(words: "working", tone: .active, timed: true))
+        #expect(try compact(.waitingWake, target: P.studio, host: "Mac Studio") == .init(words: "goes when studio wakes", tone: .tertiary, timed: false))
+        #expect(try compact(.waitingRoom, target: nil, host: nil) == .init(words: "no Mac has room", tone: .tertiary, timed: false))
+        #expect(try compact(.placing, target: nil, host: nil)?.words == "placing")
+        for state in [FleetDispatchState.preparing, .failed, .heldRestart] {
+            #expect(try compact(state) == nil, "\(state) keeps its card")
+        }
+    }
+
+    @Test func aCompactLineKeepsEveryButtonTheCardHad() throws {
+        let card = try #require(Self.cards([Self.record(.running)]).first)
+        #expect(card.compact != nil && card.actions == [.open, .stop])
+        let waiting = try #require(Self.cards([Self.record(.waitingRoom, target: nil, host: nil)]).first)
+        #expect(waiting.compact != nil && waiting.actions == [.runHereNow, .cancel])
+    }
+
     @Test func aDispatchToAMacWithoutAnMCPServersCommandSaysItStartedWithoutIt() throws {
         var record = Self.record(.running)
         record.without = ["bearcli"]

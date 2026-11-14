@@ -178,26 +178,6 @@ struct FleetPagePreviewTests {
         }
     }
 
-    /// The footer: Fleet closed, selected, nothing asleep, and a Mac alone; with Fleet off it is the user's row.
-    @Test func sidebarFooter() async throws {
-        let all = Self.page().footer
-        let awake = Self.page(Self.awake).footer
-        var lone = Self.snapshot
-        lone.peers = []
-        lone.macs = [lone.macs[0]]
-        let alone = Self.page(lone).footer
-        try await Preview.renderMatrix("fleet3a-footer", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 4 * 64)) {
-            VStack(spacing: 0) {
-                SidebarFleetFooter(footer: all, selected: false, open: {}, settings: {})
-                SidebarFleetFooter(footer: all, selected: true, open: {}, settings: {})
-                SidebarFleetFooter(footer: awake, selected: false, open: {}, settings: {})
-                SidebarFleetFooter(footer: alone, selected: false, open: {}, settings: {})
-            }
-            .frame(width: AppLayout.sidebarDefaultWidth)
-            .background(Color.sh.bgBase)
-        }
-    }
-
     static var awake: FleetSnapshot {
         var snapshot = Self.snapshot
         snapshot.peers[1].link = .connected

@@ -33,10 +33,14 @@ struct SidebarView: View {
                 }
             }
         } footer: {
-            if !vm.fleetPage.page.cards.isEmpty {
-                // FleetSidebar: with a Mac paired, the footer is the Fleet row and Settings.
-                SidebarFleetFooter(footer: vm.fleetPage.page.footer, selected: vm.shownDestination == .fleet,
-                                   open: { vm.openDestination(.fleet) }, settings: { vm.showSettings = true })
+            if let corner = vm.fleetPage.corner {
+                // The Fleet corner (FleetCornerFull): with Fleet on, the footer is the Macs, and Settings is its gear.
+                FleetCornerView(corner: corner, minimized: vm.fleetCornerMinimized, onPage: vm.shownDestination == .fleet,
+                                focusedMac: vm.fleetPage.focusedMac, open: { vm.openFleet(mac: $0) },
+                                setMinimized: { vm.fleetCornerMinimized = $0 }, settings: {
+                                    vm.settingsSection = .fleet
+                                    vm.showSettings = true
+                                })
                     .equatable()
             } else {
                 let footer = vm.sidebarFooterIdentity ?? SidebarDerivation.footer
@@ -158,15 +162,31 @@ private struct SidebarItemView: View, Equatable {
             case .row(let row):
                 // A run under its automation's row sits a level in (`nested`), as in the space tree.
                 SHSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
-                             accessory: accessory(row), hasGoal: row.hasGoal, nested: row.foldedUnder != nil || row.fleetNested,
-                             badge: row.pullRequest, elbow: row.fleetNested)
+                             accessory: accessory(row), hasGoal: row.hasGoal, nested: row.foldedUnder != nil,
+                             badge: row.pullRequest, elbow: row.fleetNested, subtitle: row.subtitle,
+                             fold: row.fold.map { fold in SHSidebarRow.Fold(open: fold.open) { vm.toggleRunGroup(fold.key) } })
                     .help(row.help)
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }
                     .accessibilityLabel(row.accessibilityLabel)
                     .accessibilityAddTraits(row.selected ? .isSelected : [])
+                    .modifier(SentFoldAction(vm: vm, fold: row.fold))
                     .contextMenu { SidebarRowMenu(vm: vm, row: row) }
                     .threadDraggable(row.id)
             }
+        }
+    }
+}
+
+/// A sender's chevron as a named VoiceOver action: the row is one element, so its button isn't reachable on its own.
+struct SentFoldAction: ViewModifier {
+    var vm: ShepherdViewModel
+    let fold: SidebarFold?
+
+    func body(content: Content) -> some View {
+        if let fold {
+            content.accessibilityAction(named: fold.open ? "Hide sent threads" : "Show sent threads") { vm.toggleRunGroup(fold.key) }
+        } else {
+            content
         }
     }
 }
@@ -220,7 +240,7 @@ struct SidebarAutomationRow: View {
 
 private extension SidebarItemView {
     func accessory(_ row: SidebarListRow) -> SHSidebarRow.Accessory {
-        if row.section == .working, case .local(let id) = row.id {
+        if row.section == .working, !row.fleetNested, case .local(let id) = row.id {
             if case .shortcut = row.accessory { return row.accessory }
             return .activity(vm.agentLive(id).samples)
         }
@@ -268,6 +288,8 @@ struct SidebarRowMenu: View {
                 Divider()
                 Button(row.worktree ? "Delete Worktree Agent…" : "Delete Agent…", role: .destructive) { vm.requestDeleteAgent(id) }
             }
+        case .dispatch(let id):
+            SidebarDispatchMenu(vm: vm, dispatch: id)
         case .design(let id):
             // DesignRecentsMenu: the card's menu with Remove from Recents.
             DesignMenuItems(menu: vm.designMenu(.local(id), context: .recents)) { vm.performDesignMenu($0, on: .local(id)) }
@@ -287,6 +309,23 @@ struct SidebarRowMenu: View {
                 DesignMenuItems(menu: vm.designMenu(target, context: .recents)) { vm.performDesignMenu($0, on: target) }
             } else {
                 RemoteRowMenu(vm: vm, row: row, ref: ref)
+            }
+        }
+    }
+}
+
+/// A dispatch with no thread yet: what its card offers on the Fleet page (Cancel, Run on This Mac now, Send to another Mac).
+private struct SidebarDispatchMenu: View {
+    var vm: ShepherdViewModel
+    let dispatch: UUID
+
+    var body: some View {
+        Button("Show in Fleet") { vm.openFleet() }
+        if let card = vm.fleetPage.page.dispatchCards.first(where: { $0.id == dispatch }) {
+            let actions = card.actions.filter { if case .openOthers = $0 { false } else { $0 != .open } }
+            if !actions.isEmpty { Divider() }
+            ForEach(actions, id: \.self) { action in
+                Button(action.title) { vm.perform(action, on: card) }
             }
         }
     }

@@ -26,6 +26,9 @@ enum SidebarActivitySection: String, CaseIterable, Hashable {
     }
 }
 
+/// The identity of a sent thread's row under its sender: the thread's row in Needs you has the same thread id.
+struct SentRowID: Hashable { let row: SidebarRowID }
+
 /// A flat, stable-id lazy list. Folding removes rows, never the section's count.
 enum SidebarActivityItem: Identifiable, Equatable {
     case header(SidebarActivitySection, count: Int, collapsed: Bool)
@@ -39,7 +42,7 @@ enum SidebarActivityItem: Identifiable, Equatable {
     var id: AnyHashable {
         switch self {
         case .header(let section, _, _): AnyHashable("header.\(section.rawValue)")
-        case .row(let row): AnyHashable(row.id)
+        case .row(let row): row.fleetNested ? AnyHashable(SentRowID(row: row.id)) : AnyHashable(row.id)
         case .automation(let automation, _): AnyHashable(automation.key)
         case .project(let project): AnyHashable(project.ref)
         case .forgePin(let pin): AnyHashable(pin.ref)
@@ -58,7 +61,7 @@ extension SidebarLists {
 
     /// `openRunGroups` holds the open automations' keys (`runGroupKey`); a closed one's runs aren't visible.
     func visibleRows(collapsed: Set<SidebarActivitySection>, openRunGroups: Set<String> = []) -> [SidebarListRow] {
-        sections.flatMap { collapsed.contains($0.section) ? [] : $0.rows }
+        sections.flatMap { collapsed.contains($0.section) ? [] : $0.rows.foldingSent(open: openRunGroups) }
             .filter { row in row.foldedUnder.map { openRunGroups.contains(Self.runGroupKey($0)) } ?? true }
     }
 
@@ -74,7 +77,8 @@ extension SidebarLists {
         func block(_ section: SidebarActivitySection, _ rows: [SidebarListRow]) -> [SidebarActivityItem] {
             guard !rows.isEmpty else { return [] }
             let folded = collapsed.contains(section)
-            return [.header(section, count: rows.count, collapsed: folded)] + (folded ? [] : rows.map(SidebarActivityItem.row))
+            // A thread under its sender is counted with the sender.
+            return [.header(section, count: rows.count { !$0.fleetNested }, collapsed: folded)] + (folded ? [] : rows.map(SidebarActivityItem.row))
         }
         var items: [SidebarActivityItem] = []
         for (section, rows) in sections {
@@ -194,7 +198,17 @@ extension ShepherdViewModel {
         }
     }
 
+    /// Selecting a sender, or a thread it sent, shows what it sent, in either sidebar style.
+    func openSentFoldsHoldingSelection() {
+        guard let selected = selectedSidebarRow else { return }
+        for row in sidebarLists.all where row.id == selected {
+            let keys = [row.fold?.key, row.sentRoot.map(SidebarSent.foldKey)].compactMap { $0 }
+            for key in keys where !collapsedProjects.contains(key) { collapsedProjects.insert(key) }
+        }
+    }
+
     func openActivitySectionHoldingSelection() {
+        openSentFoldsHoldingSelection()
         guard sidebarStyle == .activity, let selected = selectedSidebarRow,
               let section = sidebarLists.sections.first(where: { $0.rows.contains { $0.id == selected } })?.section else { return }
         collapsedActivitySections.remove(section)
@@ -301,7 +315,7 @@ extension ShepherdViewModel {
         case .remote(let remote):
             ref = remote
             agent = remoteHosts.connections.first { $0.id == remote.hostID }?.state.agents.first { $0.id == remote.agentID }
-        case .design, .remoteDesign: return
+        case .design, .remoteDesign, .dispatch: return
         }
         guard let agent, let stamp = agent.completedAt, Int(stamp) == completion, agent.completionSeen == false else { return }
         Task {
