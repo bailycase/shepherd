@@ -1167,7 +1167,8 @@ final class FleetService: @unchecked Sendable {
         }
         return FleetPeerStatus(hostID: record.hostID, name: record.name, kind: record.kind, host: link?.route?.host ?? record.addresses.first?.host,
                                port: link?.route?.port ?? record.addresses.first?.port, pairedAt: record.pairedAt, link: link?.phase ?? .offline,
-                               lastSeen: link?.lastSeen, reach: reach)
+                               lastSeen: link?.lastSeen, reach: reach,
+                               takesThreads: link?.phase == .connected ? dispatch.capabilities(of: record.hostID)?.contains(RemoteProtocol.fleetMoveCapability) : nil)
     }
 
     // MARK: - Persistence (server queue)

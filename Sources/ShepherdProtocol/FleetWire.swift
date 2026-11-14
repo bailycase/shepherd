@@ -127,10 +127,14 @@ public struct FleetPeerStatus: Codable, Hashable, Identifiable, Sendable {
     public var lastSeen: Double?
     /// How the host reaches it now while linked (`FleetPeerReach`); nil from a host before links ran both ways, and to a client.
     public var reach: FleetPeerReach?
+    /// Whether this Mac can take a thread that moves to it (`RemoteProtocol.fleetMoveCapability`): false only while its link is up and it
+    /// lacks the capability (it runs an older Shepherd); nil while the link is down or from a host that doesn't say.
+    public var takesThreads: Bool?
     public var id: UUID { hostID }
 
     public init(hostID: UUID, name: String, kind: FleetPeerKind = .mac, host: String? = nil, port: UInt16? = nil,
-                pairedAt: Double, link: Link, lastSeen: Double? = nil, reach: FleetPeerReach? = nil) {
+                pairedAt: Double, link: Link, lastSeen: Double? = nil, reach: FleetPeerReach? = nil, takesThreads: Bool? = nil) {
+        self.takesThreads = takesThreads
         self.reach = reach
         self.hostID = hostID
         self.name = name
@@ -244,9 +248,11 @@ extension FleetSnapshot {
     public var clientView: FleetSnapshot {
         FleetSnapshot(enabled: enabled, hostID: hostID, name: name,
                       peers: peers.map {
-                          FleetPeerStatus(hostID: $0.hostID, name: $0.name, kind: $0.kind, pairedAt: $0.pairedAt, link: $0.link, lastSeen: $0.lastSeen)
+                          FleetPeerStatus(hostID: $0.hostID, name: $0.name, kind: $0.kind, pairedAt: $0.pairedAt, link: $0.link, lastSeen: $0.lastSeen,
+                                          takesThreads: $0.takesThreads)
                       },
-                      macs: macs, members: members)
+                      // A thread that is moving shows its progress wherever it is open (`fleet.move.view.v1`); nothing else a Mac sent.
+                      macs: macs, dispatches: dispatches.filter { $0.kind == .move }, members: members)
     }
 }
 

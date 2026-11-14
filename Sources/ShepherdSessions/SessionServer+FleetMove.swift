@@ -4,7 +4,29 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// A thread that moves between Macs, on the host that gives it up and on the one that takes it (`FleetMove.swift`, `FleetDispatchMove.swift`).
+/// A move the host refused: the reason is what the person reads.
+struct FleetMoveRefused: Error, CustomStringConvertible {
+    var code: String
+    var message: String
+    var description: String { message }
+}
+
 extension SessionServer {
+    /// A client's `RemoteAgentAction.moveToMac`: asks the fleet's engine and answers once the move is accepted (or refused with the reason).
+    func moveThreadToMac(_ request: FleetMoveRequest) async throws {
+        let refusal: FleetDispatchRefusal? = await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                guard let dispatch = fleet?.dispatch else {
+                    return continuation.resume(returning: FleetDispatchRefusal(code: FleetDispatchCode.fleetOff, message: "Fleet isn't running on this Mac."))
+                }
+                dispatch.moveThread(request) { result in
+                    if case .failure(let refusal) = result { continuation.resume(returning: refusal) } else { continuation.resume(returning: nil) }
+                }
+            }
+        }
+        if let refusal { throw FleetMoveRefused(code: refusal.code, message: refusal.message) }
+    }
+
     /// Server queue: where a thread's conversation is and what pi runs in, for a move (`FleetDispatchHost.moveSource`).
     func fleetMoveSource(_ agentID: AgentID) -> FleetMoveSource? {
         guard let agent = store.state.agents.first(where: { $0.id == agentID }),

@@ -306,6 +306,11 @@ extension SessionServer {
         case .markSeen(let upTo): try await markCompletionSeen(agentID, upTo: upTo)
         case .mutePushes(let muted): try await setPushMuted(agentID, muted: muted)
         case .readCheckout: onThreadFocused?(agentID)
+        case .moveToMac(let request):
+            // The thread named by the request is the one the action is on, whatever the request says.
+            var request = request
+            request.agentID = agentID
+            try await moveThreadToMac(request)
         }
     }
 
