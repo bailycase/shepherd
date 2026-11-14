@@ -116,7 +116,6 @@ struct ThreadView: View {
     @State private var arrivals = ThreadArrivals()
     @State private var rowIndex = ThreadRowIndex()
     @State private var restore = ThreadRestore()
-    @State private var historyCache = ThreadHistoryCache()
     @State private var shownSignpost = ThreadShownSignpost()
     /// Bumped when another view showing this thread hands the store's loop back to this one (`ThreadReaderPins`).
     @State private var loopRun = 0
@@ -405,7 +404,6 @@ struct ThreadView: View {
         .onGeometryChange(for: CGFloat.self) { AppLayout.threadGutter(width: $0.size.width) } action: { [composerInset] in composerInset.gutter = $0 }
         .onHover { hovering = $0 }
         .onDisappear {
-            historyCache.drop()
             historyAnchor.cancel()
             tailGuard.stop()
             store.stop(owner: storeOwner)
@@ -461,8 +459,9 @@ struct ThreadView: View {
     /// The lazy stack of the rows older than the eager tail, drawn again only when what its rows are built from changes
     /// (`ThreadHistoryCache`).
     private func historyColumn(_ history: ArraySlice<NativeThreadRow>, spacing: CGFloat, dormant: Bool, running: Bool, catchingUp: Bool,
-                               arrived: Set<String>, settled: Bool, historyRowID: String?) -> AnyView {
-        historyCache.view(for: historyKey(history, arrived: arrived, dormant: dormant, boundary: historyRowID, running: running, detached: !follower.sticky)) {
+                               arrived: Set<String>, settled: Bool, historyRowID: String?) -> some View {
+        let key = historyKey(history, arrived: arrived, dormant: dormant, boundary: historyRowID, running: running, detached: !follower.sticky)
+        return ThreadHistoryColumn(key: key) {
             AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
                 ForEach(history) { row in
                     rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
@@ -931,6 +930,8 @@ private final class ThreadRowMemory {
 /// the rows it has not measured, and a reader in the eager tail below it has nothing to hold their rows where they were. A turn ending is
 /// not ignored: the stack's estimates are replaced as it does, and a reply landing at the tail was blank for a frame without it. A
 /// reference, so keeping it never draws the thread.
+///
+/// The kept view holds the thread view that drew it, so the cache must not be held by that thread view (`ThreadHistoryColumn`).
 @MainActor
 final class ThreadHistoryCache {
     struct Key: Equatable {
@@ -951,7 +952,8 @@ final class ThreadHistoryCache {
     /// `make` draws the stack: every time with no `key`, and otherwise when the key is not the last one's.
     func view(for key: Key?, make: () -> AnyView) -> AnyView {
         guard let key else {
-            drop()
+            self.key = nil
+            kept = nil
             return make()
         }
         if let kept, self.key == key { return kept }
@@ -960,12 +962,24 @@ final class ThreadHistoryCache {
         kept = view
         return view
     }
+}
 
-    /// Lets go of the view, which holds the thread that drew it.
-    func drop() {
-        key = nil
-        kept = nil
+/// Shows the history stack through `ThreadHistoryCache`, which it holds in its own state. The stack's rows are built by the thread view's
+/// methods, so the view the cache keeps holds a copy of the thread view; had the thread view held the cache, the two would hold each other,
+/// and with them the thread's store and tail guard and every row of its history, until something broke the loop (`onDisappear` once
+/// did), and a teardown that never got there left them for good. Here the cache is the column's, and goes with it
+/// (`ThreadHistoryRetentionTests`).
+private struct ThreadHistoryColumn: View {
+    let key: ThreadHistoryCache.Key?
+    let make: () -> AnyView
+    @State private var cache = ThreadHistoryCache()
+
+    init(key: ThreadHistoryCache.Key?, make: @escaping () -> AnyView) {
+        self.key = key
+        self.make = make
     }
+
+    var body: some View { cache.view(for: key, make: make) }
 }
 
 /// What a thread view's loop task restarts for: showing or hiding, and a loop handed back to it.
