@@ -127,11 +127,13 @@ public enum FleetDispatchPresentation {
                 // Held for the provider's limit, on every Mac alike: nothing has room to give it. It starts by itself when the limit lifts.
                 (card.pill, card.tone) = ("Waiting for limit", .warn)
                 card.detail = limited
+                // Every Mac is limited alike, so running it here would only wait again: there is nothing to offer but Cancel.
+                card.actions = [.cancel]
             } else {
                 (card.pill, card.tone) = ("Waiting for room", .tertiary)
                 card.detail = busyWords(record, among: records, in: context)
+                card.actions = [.runHereNow, .cancel]
             }
-            card.actions = [.runHereNow, .cancel]
         case .waitingWake:
             (card.pill, card.tone) = ("Waiting", .tertiary)
             card.detail = asleepWords(record, in: context)

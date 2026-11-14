@@ -1003,6 +1003,26 @@ struct ThreadEventTests {
         #expect(ended.timestamp != nil)
     }
 
+    /// What the fleet weighs a thread by (`FleetRoom.commandWeight`): told when a shell command starts running and when the last one ends.
+    @Test func aThreadSaysWhenItStartsAndStopsRunningAShellCommand() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        let heard = Locked<[Bool]>([])
+        t.queue.sync { t.state.onCommandActivity = { running in heard.withValue { $0.append(running) } } }
+        try await t.feed(
+            #"{"type":"tool_execution_start","toolCallId":"r1","toolName":"read","args":{"path":"a"}}"#,
+            #"{"type":"tool_execution_start","toolCallId":"b1","toolName":"bash","args":{"command":"swift test"}}"#,
+            #"{"type":"tool_execution_start","toolCallId":"b2","toolName":"bash","args":{"command":"make"}}"#,
+            #"{"type":"tool_execution_end","toolCallId":"b1","toolName":"bash","result":{"content":[]},"isError":false}"#)
+        #expect(heard.current == [true], "a read is not a command, and a second command is not news")
+        try await t.feed(#"{"type":"tool_execution_end","toolCallId":"b2","toolName":"bash","result":{"content":[]},"isError":false}"#)
+        #expect(heard.current == [true, false], "the last command ending is")
+        // A run that settles with a call still open ends it.
+        try await t.feed(#"{"type":"tool_execution_start","toolCallId":"b3","toolName":"bash","args":{"command":"sleep 99"}}"#, #"{"type":"agent_settled"}"#)
+        #expect(heard.current == [true, false, true, false])
+    }
+
     @Test func aScriptAndItsNestedCallsHaveIndependentActivityRows() async throws {
         let t = try Thread()
         defer { t.stop() }

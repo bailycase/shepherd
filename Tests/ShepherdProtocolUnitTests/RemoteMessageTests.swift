@@ -37,9 +37,12 @@ enum RemoteSamples {
                                       .init(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F3")!, name: "Mac Studio", state: .offline)],
                               notice: "Replaced AGENTS.md with Mac mini's. The old copy is in its history."),
         macs: [FleetMacState(hostID: fleetHost, sample: fleetSample, sampleAge: 2.5, readiness: fleetReadiness, check: fleetCheck, checkAge: 40),
-               FleetMacState(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F2")!)])
+               FleetMacState(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F2")!)],
+        limits: [FleetLimitStatus(provider: "anthropic", seconds: 100, waiting: 3)])
     static let fleetSample = FleetPressureSample(cpuUtilization: 0.72, cpuCount: 12, totalMemoryBytes: 38_654_705_664, availableMemoryBytes: 10_093_173_145,
-                                                 thermal: .fair, onBattery: true, batteryPercent: 41, activeAgents: 3, reserved: 1)
+                                                 thermal: .fair, onBattery: true, batteryPercent: 41, activeAgents: 3, reserved: 1,
+                                                 commandAgents: 2, cpuAverage: 0.64, memoryPressure: .warn,
+                                                 limits: [FleetProviderLimit(provider: "anthropic", seconds: 100)])
     static let fleetIndexStatus = FleetIndexStatus(indexing: true, repos: [
         FleetIndexStatus.Repo(repo: "github.com/acme/web", name: "acme-web", files: 20_001, ready: true),
         FleetIndexStatus.Repo(repo: "space:2F1D", name: "orders-svc", files: 412, ready: false),
