@@ -337,7 +337,6 @@ struct NativeThreadStoresHistoryTests {
         func hidden() -> Int { ["a", "b", "c", "d", "e"].reduce(0) { $0 + stores.store(for: $1).mountedCost(eagerRows: stores.eagerRows) } }
         let whole = hidden()
         stores.releaseStep = row
-        stores.releaseCeiling = row * 5
         stores.patience = 1
         stores.mountedBudget = 0
         var wait = ThreadPassWait.streaming
@@ -350,11 +349,11 @@ struct NativeThreadStoresHistoryTests {
         #expect(streaming > 0 && streaming <= row * 2 && b.transcriptDrawn == nil, "a stream gives it a step, a row over at the most, of one thread: \(streaming) of \(row)")
 
         wait = .idle
+        stores.releaseCeiling = row * 5
         let before = hidden()
         #expect(stores.runMountedPass() == true)
         let quiet = before - hidden()
-        #expect(quiet >= row * 4 && quiet <= row * 6, "a quiet pass takes the ceiling, a row over at the most: \(quiet) of \(row * 5)")
-        #expect(b.transcriptReleased, "from more than one thread")
+        #expect(quiet >= row * 5 && quiet <= row * 6, "a quiet pass takes the ceiling, a row over at the most: \(quiet) of \(row * 5)")
     }
 
     /// A step that lets go of a thread's lazy stack costs a layout of its whole host: a quiet pass lets go of one lazy stack and goes on to the
@@ -383,6 +382,49 @@ struct NativeThreadStoresHistoryTests {
             let store = stores.store(for: key)
             #expect(store.transcriptDrawn == store.keptRows, "\(key) goes whole, a lazy stack and all")
         }
+    }
+
+    /// Far over the budget, more rows are built by the shows meanwhile than the passes let go of in the seconds a stream lasts: typing still holds a
+    /// pass off, a stream no longer does, and the pass that runs is a quiet one's.
+    @Test func aStreamHoldsNoPassOffOnceTheThreadsAreFarOverTheBudget() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses, turns: 6)
+        let row = stores.store(for: "a").mountedCost(eagerRows: 1)
+        let held = ["a", "b", "c"].reduce(0) { $0 + stores.store(for: $1).mountedCost(eagerRows: stores.eagerRows) }
+        stores.releaseStep = row
+        stores.releaseCeiling = row * 3
+        var wait = ThreadPassWait.streaming
+        stores.busy = { wait }
+        stores.mountedBudget = held - row
+        #expect(!stores.farOverBudget, "a row over is not far over")
+        #expect(stores.runMountedPass() == false, "a stream holds a pass off while the threads are about at the budget")
+
+        stores.mountedBudget = held / 2
+        #expect(stores.farOverBudget && held / 2 > row * 3, "half of what they hold over, more than the ceiling")
+        let before = ["a", "b", "c"].reduce(0) { $0 + stores.store(for: $1).mountedCost(eagerRows: stores.eagerRows) }
+        #expect(stores.runMountedPass() == true, "far over, a stream holds none off")
+        let taken = before - ["a", "b", "c"].reduce(0) { $0 + stores.store(for: $1).mountedCost(eagerRows: stores.eagerRows) }
+        #expect(taken >= row * 3 - row && taken > row * 2, "a pass of the quiet kind: the ceiling, not a step: \(taken) of \(row)")
+        wait = .input
+        #expect(stores.runMountedPass() == false, "typing holds it off all the same")
+    }
+
+    /// A step that crosses goes on to the row that does not fit, so that it is not spent on small rows ahead of a large one.
+    @Test func aStepThatCrossesLetsGoOfTheRowThatDoesNotFit() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c"], selected: "c", pauses: pauses, turns: 6)
+        let a = stores.store(for: "a"), b = stores.store(for: "b")
+        let count = a.rows.count
+        let oldest = a.mountedCost(eagerRows: count) - a.mountedCost(eagerRows: count - 1)
+        let next = a.mountedCost(eagerRows: count - 1) - a.mountedCost(eagerRows: count - 2)
+        #expect(oldest > 0 && next > 0 && b.rows.count == count)
+        let bytes = oldest + next - 1
+        a.releaseTranscript(bytes: bytes)
+        #expect(a.transcriptDrawn == count - 1, "one byte short of two rows takes one")
+        b.releaseTranscript(bytes: bytes, crossing: true)
+        #expect(b.transcriptDrawn == count - 2, "crossing takes the second, which does not fit")
     }
 
     /// A stream never holds the passes off for good: after the default patience (forty looks, ten seconds at the default spacing) a pass runs.
