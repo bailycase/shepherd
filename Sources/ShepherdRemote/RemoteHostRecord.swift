@@ -1,19 +1,65 @@
 import Foundation
+import ShepherdProtocol
+
+/// One way to reach a host: where it listens, and what kind of route it is when its fleet said.
+public struct RemoteHostRoute: Codable, Hashable, Sendable {
+    public var host: String
+    public var port: UInt16
+    public var kind: FleetRouteKind?
+
+    public init(host: String, port: UInt16, kind: FleetRouteKind? = nil) {
+        self.host = host
+        self.port = port
+        self.kind = kind
+    }
+}
 
 /// A host a client connects to: where it listens and what the user calls it. The bearer token
 /// is kept apart (the iOS client keeps it in the Keychain, keyed by `id`), so a record is safe
 /// to save in preferences.
+///
+/// A host in a fleet has several ways to be reached (`routes`, the client tries them in order); one the user typed has one.
+/// `address` and `port` are the first, and are still written, so a record keeps its meaning to a build before routes. A record saved
+/// before routes decodes as one route.
 public struct RemoteHostRecord: Codable, Hashable, Identifiable, Sendable {
     public var id: UUID
     public var name: String
-    public var address: String
-    public var port: UInt16
+    /// Every way to reach the host, in the order to try them. Never empty.
+    public var routes: [RemoteHostRoute]
+
+    public var address: String { routes.first?.host ?? "" }
+    public var port: UInt16 { routes.first?.port ?? Self.defaultPort }
 
     public init(id: UUID = UUID(), name: String, address: String, port: UInt16) {
+        self.init(id: id, name: name, routes: [RemoteHostRoute(host: address, port: port)])
+    }
+
+    public init(id: UUID = UUID(), name: String, routes: [RemoteHostRoute]) {
         self.id = id
         self.name = name
-        self.address = address
-        self.port = port
+        self.routes = routes
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, address, port, routes }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        if let saved = try c.decodeIfPresent([RemoteHostRoute].self, forKey: .routes), !saved.isEmpty {
+            routes = saved
+        } else {
+            routes = [RemoteHostRoute(host: try c.decode(String.self, forKey: .address), port: try c.decode(UInt16.self, forKey: .port))]
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(address, forKey: .address)
+        try c.encode(port, forKey: .port)
+        try c.encode(routes, forKey: .routes)
     }
 
     /// The listener's default port (Shepherd Nightly serves on 7434).

@@ -19,7 +19,7 @@ struct FleetDevicePairingCheck {
         func scratchDefaults(_ name: String) -> UserDefaults { UserDefaults(suiteName: scratch.appendingPathComponent(name).path)! }
 
         let fleet = FakeFleet()
-        let mini = try FakeMac(name: "Mac mini", fleet: fleet), studio = try FakeMac(name: "Mac Studio", fleet: fleet)
+        let mini = try FakeMac(name: "Mac mini", fleet: fleet), studio = try FakeMac(name: "Mac Studio", fleet: fleet, hostID: UUID())
         fleet.members = [studio]
         defer { mini.stop(); studio.stop() }
         let defaults = scratchDefaults("defaults")
@@ -47,7 +47,7 @@ struct FleetDevicePairingCheck {
               "the Mac was sent the hash, the name and the kind, never the token")
         check(!fleet.heard.contains { $0.contains(identity.token) && !$0.contains("\"hello\"") }, "the token only travels in hello")
         let saved = try JSONSerialization.jsonObject(with: defaults.data(forKey: MobileHosts.recordsKey)!) as! [[String: Any]]
-        check(saved.count == 2 && saved.allSatisfy { Set($0.keys) == ["id", "name", "address", "port"] }, "records hold no token")
+        check(saved.count == 2 && saved.allSatisfy { Set($0.keys) == ["id", "name", "address", "port", "routes"] }, "records hold no token")
         check(Set(defaults.stringArray(forKey: MobileHosts.ownTokenKey) ?? []) == Set(ids.map(\.uuidString)), "both hosts are marked as on the device's own token")
 
         // Connected, a device is offered no fleet capability (and so is never offered a token again).

@@ -438,6 +438,11 @@ export default function shepherdStatus(pi: ExtensionAPI) {
   pi.on("tool_call", (event) => {
     if (event.toolName === "codemode" && !codemodeEnabled) return { block: true, reason: "Codemode is disabled for this project." };
     try {
+      // pi's bash tool has no timeout of its own: a watcher, a dev server or a deadlocked test would hold the call open for hours.
+      // A timeout the model passes stays; pi kills the process group at the limit and says "Command timed out after N seconds".
+      if (event.toolName === "bash" && event.input && typeof event.input === "object" && (event.input as { timeout?: unknown }).timeout == null) {
+        (event.input as { timeout?: number }).timeout = Number(process.env.SHEPHERD_COMMAND_LIMIT_SECONDS) > 0 ? Number(process.env.SHEPHERD_COMMAND_LIMIT_SECONDS) : 20 * 60;
+      }
       if (shortTools.has(event.toolName) && event.input && typeof event.input === "object") {
         delete (event.input as Record<string, unknown>).short;
       }

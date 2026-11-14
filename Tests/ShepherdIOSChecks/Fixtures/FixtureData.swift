@@ -78,7 +78,7 @@ struct FixtureHostData {
         RemoteProtocol.capabilities.filter {
             (designs != nil || !RemoteProtocol.designCapabilities.contains($0))
                 && (forge != nil || ($0 != RemoteProtocol.forgeCapability && $0 != RemoteProtocol.forgeBrowseCapability))
-                && (fleet != nil || $0 != RemoteProtocol.fleetViewCapability)
+                && (fleet != nil || ($0 != RemoteProtocol.fleetViewCapability && $0 != RemoteProtocol.fleetFollowCapability))
         }
     }
 }
