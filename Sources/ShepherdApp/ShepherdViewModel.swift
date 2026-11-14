@@ -256,6 +256,12 @@ final class ShepherdViewModel {
         didSet { sidebarDefaults.set(fleetCornerMinimized, forKey: Self.fleetCornerMinimizedKey) }
     }
     static let fleetCornerMinimizedKey = "shepherd.sidebar.fleetCornerMinimized"
+    /// Failed threads with no Mac to run on that the person deleted from the sidebar (`SidebarFleet.dismissed`). Hidden on this Mac only,
+    /// never synced.
+    var dismissedDispatches: Set<UUID> = [] {
+        didSet { sidebarDefaults.set(dismissedDispatches.map(\.uuidString).sorted(), forKey: Self.dismissedDispatchesKey) }
+    }
+    static let dismissedDispatchesKey = "shepherd.sidebar.dismissedDispatches"
     static let designJumpRecentsKey = "shepherd.designs.jumpRecents"
     var collapsedActivitySections: Set<SidebarActivitySection> = [] {
         didSet { sidebarDefaults.set(collapsedActivitySections.map(\.rawValue).sorted(), forKey: Self.collapsedActivitySectionsKey) }
@@ -734,6 +740,7 @@ final class ShepherdViewModel {
         sidebarHidden = sidebarDefaults.bool(forKey: "shepherd.sidebarHidden")
         collapsedProjects = Set(sidebarDefaults.stringArray(forKey: Self.collapsedProjectsKey) ?? [])
         fleetCornerMinimized = sidebarDefaults.bool(forKey: Self.fleetCornerMinimizedKey)
+        dismissedDispatches = Set((sidebarDefaults.stringArray(forKey: Self.dismissedDispatchesKey) ?? []).compactMap(UUID.init(uuidString:)))
         if let data = sidebarDefaults.data(forKey: Self.designJumpRecentsKey),
            let recents = try? JSONDecoder().decode(DesignJumpRecents.self, from: data) {
             designJumpRecents = recents

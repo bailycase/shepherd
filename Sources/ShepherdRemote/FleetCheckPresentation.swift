@@ -482,7 +482,7 @@ public enum FleetCheckPresentation {
             detail.pill = "Fails on \(name)"
             detail.title = "\(name) can’t reach \(item.tool ?? row.name)"
             detail.body = "git gets no answer from \(item.tool ?? "the remote") on \(name) (\(row.why)). Its ssh key or sign-in there may be missing."
-            detail.effect = "Auto still sends work there, but a dispatch that has to fetch or clone from it fails with git’s own words."
+            detail.effect = "Auto still sends work there, but a thread that has to fetch or clone from it fails with git’s own words."
         case .provider:
             detail.pill = "Fails on \(name)"
             detail.title = "\(item.value) on \(name)"
@@ -491,7 +491,7 @@ public enum FleetCheckPresentation {
         case .disk:
             detail.pill = "Low on \(name)"
             detail.title = "\(item.value) free on \(name)"
-            detail.body = "Each dispatch makes a worktree, and a first dispatch can clone a whole repo. Below 50 GB, a big clone can fill the disk."
+            detail.body = "Each thread sent there makes a worktree, and the first can clone a whole repo. Below 50 GB, a big clone can fill the disk."
             detail.effect = "Nothing is stopped: Auto still sends work to \(name), and a clone that doesn’t fit fails with git’s own words."
         case .sleep:
             let minutes = item.value.split(separator: " ").compactMap { Int($0) }.first
@@ -503,7 +503,7 @@ public enum FleetCheckPresentation {
             detail.pill = "Behind on \(name)"
             detail.title = "\(name) runs \(item.value.lowercasedFirst)"
             detail.body = "The rest of the fleet runs build \(merged.newestBuild ?? ""). \(name) updates when Shepherd does there."
-            detail.effect = "Until then it may lack what the newer build added. Sync and dispatch still work between the builds."
+            detail.effect = "Until then it may lack what the newer build added. Sync and threads on other Macs still work between the builds."
         case .other:
             detail.pill = "Differs on \(name)"
             detail.title = "\(row.name) on \(name)"

@@ -101,11 +101,11 @@ struct FleetSectionLabel: View {
     }
 }
 
-/// The Dispatches log. Nothing sends work yet (slice 4d), so it holds its empty state, as the Mac's does.
+/// The Recent work log. Nothing sends work yet (slice 4d), so it holds its empty state, as the Mac's does.
 struct FleetDispatchesCard: View {
     var body: some View {
         SHListCard {
-            Text("Nothing sent yet. When a thread sends work to another Mac, it shows here with why it went there.")
+            Text("Nothing yet. When a thread starts work on another Mac, it shows here with why it went there.")
                 .font(.sh(.ui, weight: .regular))
                 .foregroundStyle(Color.sh.textTertiary)
                 .padding(.vertical, SH.Space.xl)

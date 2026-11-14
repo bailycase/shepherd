@@ -489,7 +489,8 @@ struct FleetGoesBackBanner: View, Equatable {
     }
 }
 
-/// The dispatched thread's header, after its title: the Mac it runs on as a pill with a dot, and "sent by <thread>" as a link.
+/// The header of a thread another Mac or thread started, after its title: the Mac it runs on as a pill with a dot, and "started by <thread>" as a link
+/// when a thread started it.
 struct FleetSentByHeader: View, Equatable {
     let sentBy: FleetSentBy
     let online: Bool
@@ -515,18 +516,21 @@ struct FleetSentByHeader: View, Equatable {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(online ? "Runs on \(sentBy.host)" : "Runs on \(sentBy.host), offline")
             }
-            HStack(spacing: SH.Space.xs) {
-                Text("sent by").foregroundStyle(sh.textTertiary)
-                if let openSender, sentBy.fromThread {
-                    Button(action: openSender) { Text(sentBy.sender).foregroundStyle(sh.running) }
-                        .buttonStyle(.plain)
-                        .help("Open \(sentBy.sender)")
-                } else {
-                    Text(sentBy.sender).foregroundStyle(sentBy.fromThread ? sh.textSecondary : sh.textTertiary)
+            // A thread the person started on another Mac is a thread like any other: only one that a thread started says who.
+            if sentBy.fromThread {
+                HStack(spacing: SH.Space.xs) {
+                    Text("started by").foregroundStyle(sh.textTertiary)
+                    if let openSender {
+                        Button(action: openSender) { Text(sentBy.sender).foregroundStyle(sh.running) }
+                            .buttonStyle(.plain)
+                            .help("Open \(sentBy.sender)")
+                    } else {
+                        Text(sentBy.sender).foregroundStyle(sh.textSecondary)
+                    }
                 }
+                .font(.sh(.caption, weight: .regular))
+                .lineLimit(1)
             }
-            .font(.sh(.caption, weight: .regular))
-            .lineLimit(1)
         }
     }
 }

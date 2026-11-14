@@ -482,7 +482,7 @@ public struct SHSidebarRow: View, Equatable {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(fold.open ? "Hide sent threads" : "Show sent threads")
+                .accessibilityLabel(fold.open ? "Hide threads it started" : "Show threads it started")
             }
         }
         .padding(.leading, (nested ? density.treeChildLeading : density.sidebarRowPadding))

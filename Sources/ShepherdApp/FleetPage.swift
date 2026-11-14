@@ -147,7 +147,7 @@ struct FleetPageContent: View {
     }
 }
 
-/// "Auto dispatch is on": where work would go now. Nothing is sent from here.
+/// "Auto is on": where work would go now. Nothing is sent from here.
 private struct FleetPlacementCard: View {
     let autoDispatch: Bool
     let nextGoesTo: String?
@@ -165,9 +165,9 @@ private struct FleetPlacementCard: View {
                 }
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(autoDispatch ? "Auto dispatch is on" : "Auto dispatch is off").font(.sh(.headline)).foregroundStyle(sh.textPrimary)
-                Text(autoDispatch ? "New and sent work goes to the Mac with the most room that has the thread’s models and tools."
-                     : "New threads start on This Mac. Pick a Mac in the composer, or turn Auto dispatch on in Fleet settings.")
+                Text(autoDispatch ? "Auto is on" : "Auto is off").font(.sh(.headline)).foregroundStyle(sh.textPrimary)
+                Text(autoDispatch ? "New threads go to the Mac with the most room that has the thread’s models and tools."
+                     : "New threads start on This Mac. Pick a Mac in the composer, or turn Auto on in Fleet settings.")
                     .font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
             }
             Spacer(minLength: SH.Space.xl)
@@ -495,14 +495,14 @@ struct FleetWeightPicker: View {
 
 // MARK: Dispatches
 
-/// The Dispatches log (FleetA): one line per dispatch, newest first, with where it went and why.
+/// The Recent work log (FleetA): one line per thread started on a Mac, newest first, with where it went and why.
 struct FleetDispatchesCard: View {
     let rows: [FleetDispatchRow]
 
     var body: some View {
         let sh = Color.sh
         VStack(alignment: .leading, spacing: 0) {
-            Text("Dispatches")
+            Text("Recent work")
                 .font(.sh(.headline))
                 .foregroundStyle(sh.textPrimary)
                 .padding(.vertical, SH.Space.l)
@@ -510,7 +510,7 @@ struct FleetDispatchesCard: View {
                 .accessibilityAddTraits(.isHeader)
             SHHairline()
             if rows.isEmpty {
-                Text("Nothing sent yet. When a thread sends work to another Mac, it shows here with why it went there.")
+                Text("Nothing yet. When a thread starts work on another Mac, it shows here with why it went there.")
                     .font(.sh(.ui, weight: .regular))
                     .foregroundStyle(sh.textTertiary)
                     .padding(.vertical, SH.Space.xl)

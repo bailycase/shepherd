@@ -459,7 +459,7 @@ private struct TreeBuilder {
                                                  notSignedIn: notSignedIn, waiting: source.waiting.contains(agent.id),
                                                  since: source.statusSince[agent.id])
             if let pull = source.pullRequests[agent.id] { row.attach(pull) }
-            if let info = SidebarDerivation.sentInfo(of: agent, host: nil, source), let dispatch = agent.dispatchedFrom?.dispatchID {
+            if let info = SidebarDerivation.sentInfo(of: agent, source), let dispatch = agent.dispatchedFrom?.dispatchID {
                 sent[row.id] = info
                 sentThreads.insert(dispatch)
             }
@@ -513,7 +513,7 @@ private struct TreeBuilder {
             guard let project else { continue }
             let waiting = !host.offline && agent.status == .blocked
             let row = SidebarDerivation.remoteRow(agent, host: host, automation: automation != nil, needsYou: waiting)
-            if let info = SidebarDerivation.sentInfo(of: agent, host: host, source), let dispatch = agent.dispatchedFrom?.dispatchID {
+            if let info = SidebarDerivation.sentInfo(of: agent, source), let dispatch = agent.dispatchedFrom?.dispatchID {
                 sent[row.id] = info
                 sentThreads.insert(dispatch)
             }

@@ -95,7 +95,7 @@ final class FleetPageModel {
         if corner != self.corner { self.corner = corner }
         if next.dispatchCards != dispatchCards { dispatchCards = next.dispatchCards }
         let sent = SidebarFleet(records: snapshot.dispatches.filter { $0.kind != .move }.sorted { $0.createdAt > $1.createdAt },
-                                next: next.nextGoesTo, cap: threadCap())
+                                macs: snapshot.macNames)
         if sent != sidebarFleet { sidebarFleet = sent }
         menus = [:]
         menuRevision &+= 1

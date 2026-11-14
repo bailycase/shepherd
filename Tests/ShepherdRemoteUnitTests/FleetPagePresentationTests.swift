@@ -357,9 +357,9 @@ struct FleetPagePresentationTests {
         #expect(FleetPagePresentation.memory(bytes) == text)
     }
 
-    // MARK: Dispatches log
+    // MARK: Recent work log
 
-    @Test func theDispatchesLogReadsNewestFirstWithWhereAndWhy() {
+    @Test func theRecentWorkLogReadsNewestFirstWithWhereAndWhy() {
         let now = Date(timeIntervalSince1970: 1_790_040_000)
         func record(_ title: String, _ state: FleetDispatchState, ago: TimeInterval, kind: FleetDispatchRecord.Kind = .agentDispatch, host: String? = "Mac mini",
                     reasons: [FleetPlacementReason] = [], failure: String? = nil) -> FleetDispatchRecord {
@@ -379,9 +379,9 @@ struct FleetPagePresentationTests {
         #expect(rows.map(\.title) == ["Bump tools", "Fix flaky payment test", "Migrate orders", "Old", "Profile cold launch"])
         let byTitle = Dictionary(uniqueKeysWithValues: rows.map { ($0.title, $0) })
         let fix = byTitle["Fix flaky payment test"]!
-        #expect(fix.sentBy == "Sent by Speed up checkout CI" && fix.host == "Mac mini" && fix.state == "Working" && fix.tone == .active && fix.age == "4m ago")
+        #expect(fix.sentBy == "Started by Speed up checkout CI" && fix.host == "Mac mini" && fix.state == "Working" && fix.tone == .active && fix.age == "4m ago")
         #expect(fix.reason == "Auto: This Mac is busy")
-        #expect(byTitle["Migrate orders"]?.sentBy == "Sent by you" && byTitle["Migrate orders"]?.reason == "You picked Mac mini")
+        #expect(byTitle["Migrate orders"]?.sentBy == "Started by you" && byTitle["Migrate orders"]?.reason == "You picked Mac mini")
         #expect(byTitle["Old"]?.reason == "Auto: most room" && byTitle["Old"]?.state == "Done" && byTitle["Old"]?.tone == .good)
         #expect(byTitle["Profile cold launch"]?.state == "Waiting" && byTitle["Profile cold launch"]?.reason == "Waiting for Mac Studio to wake")
         let failed = byTitle["Bump tools"]!
