@@ -401,7 +401,7 @@ extension TailFixture {
     static let firstFrameReach = NativeScrollFollower.threshold
     /// Whether this runs on iOS 27.1 or later, where `ComposerPresentation.nativeTail` is off and a re-open was measured on a Duo.
     static let fromIOS271: Bool = { if #available(iOS 27.1, *) { true } else { false } }()
-    /// How far past the tail a view may rest: a point or two of rounding.
+    /// How far past the end of its content a view may be: a point or two of rounding.
     static let overshootTolerance = 2
     /// The row's top may sit this far from the top edge once a detached reader's row is restored.
     static let restoreTolerance: CGFloat = 8
@@ -549,8 +549,10 @@ extension TailFixture {
         MainQueueWatchdog.start(limit: 5)
         var verdicts: [(ok: Bool, line: String)] = []
         if holdingMarker {
-            // A reader who drags to the end leaves holding the bottom marker, which SwiftUI reports there (not where `nativeTail`).
+            // A reader who drags to the end leaves holding the bottom marker, which SwiftUI reports at the end of that drag (not where
+            // `nativeTail`). A view already at the end has no drag to make, so the reader first goes back up a little.
             guard let scroll = FollowFixture.threadScrollView() else { return FixtureCheck.report("FIXTURE CHECK FAILED: no thread scroll view") }
+            await Finger(scroll: scroll).drag(by: -600)
             await Finger(scroll: scroll).toEnd()
             try? await Task.sleep(for: .seconds(1.5))
             let kept = app.navigator.composerPresentation.state(for: ref).visibleTurn
@@ -590,9 +592,11 @@ extension TailFixture {
                 + "at rest \(rest.distance)pt from the tail, \(Int((rest.ink * 100).rounded()))% ink; "
                 + "footprint \(Int(away.rounded())) MB away, \(Int(mounted.rounded())) MB mounted (+\(Int((mounted - away).rounded())))")
             let repaired = counts["thread.tailRepair", default: 0] > 0
-            // A view that rests past the end of its content shows a blank band: the guard's jump left one 39 pt past the tail on iOS 27.1.
-            verdicts.append((Int(gap) - rest.distance <= overshootTolerance, "cycle \(cycle): the thread rests on its tail, not past it"))
+            // A view past the end of its content shows a blank band: on iOS 27.1 the guard's jump left one 39 pt past it at rest, and the
+            // first frame with a row stood up to 49 pt past it.
+            verdicts.append((rest.distance >= -overshootTolerance, "cycle \(cycle): the thread rests on its content, not past its end"))
             if Self.fromIOS271 {
+                verdicts.append((reach.map { Int($0.rounded()) >= -overshootTolerance } ?? false, "cycle \(cycle): the first frame with a row is not past the end of the content"))
                 // iOS 27.1 opens at the tail through the pin's landings, so a re-open has no stranded stack for the guard to jump out of.
                 verdicts.append((counts["thread.tailMountJump", default: 0] == 0, "cycle \(cycle): the re-open needed no mount jump"))
                 // iOS 27.1 opens as the merge base did, which needs no repair and shows no blank frame, whichever way `nativeTail` goes.
