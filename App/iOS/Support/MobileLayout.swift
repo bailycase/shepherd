@@ -22,6 +22,8 @@ enum MobileLayout {
     static let tailGuardMinimumPage: CGFloat = 50
     /// How long a transcript counts as just appeared: it goes at once to the rows its stack placed when none is in view (`ThreadTailGuard`).
     static let tailGuardMount: Duration = .seconds(1)
+    /// How long after a landing the bottom marker is handed back to SwiftUI (ThreadTailHold): the layout of the rows that joined has settled.
+    static let tailHoldWait: Duration = .milliseconds(500)
     /// The parts inside one agent turn.
     static let turnItemSpacing: CGFloat = SH.Space.l
     /// Lines inside a work group.

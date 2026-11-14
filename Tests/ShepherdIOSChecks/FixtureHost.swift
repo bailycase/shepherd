@@ -82,6 +82,12 @@ final class FixtureHost: @unchecked Sendable {
         for fd in lock.withLock({ connections }) { _ = write(fd, encoded) }
     }
 
+    /// Tells every connected client that a thread changed, as a pushing host does after each step of a live turn.
+    func pushThreadChanged(_ agent: AgentID) {
+        guard let encoded = try? NDJSON.encode(RemoteReply.nativeThreadChanged(agentID: agent)) else { return }
+        for fd in lock.withLock({ connections }) { _ = write(fd, encoded) }
+    }
+
     private func serve(_ fd: Int32) {
         lock.withLock { _ = connections.insert(fd) }
         defer {
@@ -233,6 +239,10 @@ final class FixtureHost: @unchecked Sendable {
              .apps(let id, _):
             note(Self.kind(request))
             return [.error(id: id, code: "fixture", message: "No fixture answer for this request.")]
+        case .fleetEnrollDevice(let id, _):
+            // Offered on every connect once hello advertises `fleetDevicesCapability`; left unanswered it times out after 10 s and the
+            // host's connection is torn down, which shows the thread's offline banner at the top of a long transcript.
+            return [.error(id: id, code: "unsupported", message: "The fixture host enrolls no device.")]
         default:
             return []
         }
@@ -381,7 +391,8 @@ final class FixtureHost: @unchecked Sendable {
         case .drain(let id), .fleetIdentify(let id), .fleetPair(let id, _, _), .fleetEstablish(let id, _), .fleetIntroduce(let id, _),
              .fleetRevoke(let id, _, _), .fleetSync(let id, _), .fleetRead(let id), .fleetAction(let id, _),
              .fleetPressure(let id, _), .fleetReadiness(let id, _), .fleetPressureNow(let id), .fleetRepoManifest(let id, _),
-             .fleetSnapshotPart(let id, _, _), .fleetBlobPush(let id, _, _):
+             .fleetSnapshotPart(let id, _, _), .fleetBlobPush(let id, _, _), .fleetDispatchCreate(let id, _), .fleetDispatchControl(let id, _, _),
+             .fleetDispatchChanged(let id, _), .fleetDispatchResult(let id, _, _, _), .fleetRoutes(let id, _), .fleetPeerAnswer(let id, _):
             return [.error(id: id, code: "unsupported", message: refused)]
         case .pushRegistration(let id, _):
             note("pushRegistration")
