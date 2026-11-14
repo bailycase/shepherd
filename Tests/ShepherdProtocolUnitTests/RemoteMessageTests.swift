@@ -36,10 +36,13 @@ enum RemoteSamples {
         sync: FleetSyncStatus(peers: [.init(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F2")!, name: "Mac mini", state: .inSync),
                                       .init(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F3")!, name: "Mac Studio", state: .offline)],
                               notice: "Replaced AGENTS.md with Mac mini's. The old copy is in its history."),
-        macs: [FleetMacState(hostID: fleetHost, sample: fleetSample, sampleAge: 2.5, readiness: fleetReadiness),
-               FleetMacState(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F2")!)])
+        macs: [FleetMacState(hostID: fleetHost, sample: fleetSample, sampleAge: 2.5, readiness: fleetReadiness, check: fleetCheck, checkAge: 40),
+               FleetMacState(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000F2")!)],
+        limits: [FleetLimitStatus(provider: "anthropic", seconds: 100, waiting: 3)])
     static let fleetSample = FleetPressureSample(cpuUtilization: 0.72, cpuCount: 12, totalMemoryBytes: 38_654_705_664, availableMemoryBytes: 10_093_173_145,
-                                                 thermal: .fair, onBattery: true, batteryPercent: 41, activeAgents: 3, reserved: 1)
+                                                 thermal: .fair, onBattery: true, batteryPercent: 41, activeAgents: 3, reserved: 1,
+                                                 commandAgents: 2, cpuAverage: 0.64, memoryPressure: .warn,
+                                                 limits: [FleetProviderLimit(provider: "anthropic", seconds: 100)])
     static let fleetIndexStatus = FleetIndexStatus(indexing: true, repos: [
         FleetIndexStatus.Repo(repo: "github.com/acme/web", name: "acme-web", files: 20_001, ready: true),
         FleetIndexStatus.Repo(repo: "space:2F1D", name: "orders-svc", files: 412, ready: false),
@@ -56,6 +59,12 @@ enum RemoteSamples {
     static let fleetReadiness = FleetReadinessReport(model: "MacBook Pro", chip: "M4 Pro",
                                                      missing: [FleetMissingTool(kind: .binary, name: "muse"), FleetMissingTool(kind: .xcode)],
                                                      repos: ["acme-web", "payments-api"], repoKeys: ["github.com/acme/payments-api", "github.com/acme/web"], noXcode: true)
+    static let fleetCheck = FleetCheckReport(items: [
+        FleetCheckItem(id: "need:node:22", group: .needs, name: "node 22", why: ".nvmrc in acme-web", state: .warn, value: "Has 20.18", kind: .tool,
+                       tool: "node", want: "22", subjects: ["acme-web"], sources: [".nvmrc"]),
+        FleetCheckItem(id: "tool:muse", group: .tools, name: "muse", why: "muse MCP server", state: .warn, value: "Missing", kind: .command, tool: "muse", subjects: ["muse"]),
+        FleetCheckItem(id: "disk", group: .system, name: "Free disk", why: "Worktrees and clones need room", state: .ok, value: "312 GB", kind: .disk)],
+                                                packageManager: "nix")
     static let dispatchID = UUID(uuidString: "5D4F1F6E-2B0C-4C86-9E43-7F5B7E0A9C11")!
     static let dispatchCreate = FleetDispatchCreate(
         dispatchID: dispatchID, task: "Fix the flaky payment test.", title: "Fix flaky payment test", repoKey: "github.com/acme/payments-api",
@@ -516,13 +525,13 @@ struct RemoteRequestTests {
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps,
              .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
-             .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
+             .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetCheck, .fleetCheckNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
              .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult, .fleetRoutes, .fleetPeerAnswer,
              .fleetPairDevice, .fleetSyncDevices:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 74
+    static let caseCount = 76
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -561,6 +570,9 @@ struct RemoteRequestTests {
         .fleetPressure(id: 104, sample: RemoteSamples.fleetSample),
         .fleetReadiness(id: 105, report: RemoteSamples.fleetReadiness),
         .fleetPressureNow(id: 106),
+        .fleetCheck(id: 160, report: RemoteSamples.fleetCheck),
+        .fleetCheck(id: 161, report: FleetCheckReport()),
+        .fleetCheckNow(id: 162),
         .fleetRepoManifest(id: 107, update: RemoteSamples.fleetManifestFull),
         .fleetRepoManifest(id: 108, update: RemoteSamples.fleetManifestDelta),
         .fleetRepoManifest(id: 109, update: RemoteSamples.fleetManifestHead),
@@ -585,6 +597,12 @@ struct RemoteRequestTests {
         .fleetDispatchControl(id: 112, dispatchID: RemoteSamples.dispatchID, control: .status),
         .fleetDispatchControl(id: 113, dispatchID: RemoteSamples.dispatchID, control: .cancel),
         .fleetDispatchControl(id: 114, dispatchID: RemoteSamples.dispatchID, control: .message(text: "Also update the docs.", delivery: .steer)),
+        .fleetDispatchControl(id: 130, dispatchID: RemoteSamples.dispatchID, control: .commit),
+        .fleetDispatchCreate(id: 131, create: FleetDispatchCreate(dispatchID: RemoteSamples.dispatchID, kind: .move, task: "", title: "Speed up checkout CI", repoKey: "github.com/acme/web",
+                                                                  from: FleetDispatchSender(hostID: RemoteSamples.fleetHost, hostName: "MacBook Pro", agentTitle: ""),
+                                                                  snapshot: RemoteSamples.repoOnlyHeader,
+                                                                  move: FleetMoveHandoff(agentID: AgentID(rawValue: "a1"), sessionID: "s1", name: "Speed up checkout CI", nameIsFinal: true,
+                                                                                         branch: "perf/checkout-ci", movedAt: 1_760_000_000_000, messages: 412, uncommittedFiles: 3))),
         .fleetDispatchChanged(id: 115, record: RemoteSamples.dispatchRecord),
         .fleetDispatchChanged(id: 124, record: RemoteSamples.dispatchRecordCloning),
         .fleetDispatchResult(id: 116, dispatchID: RemoteSamples.dispatchID, text: "Fixed: the test raced the clock.", branchFacts: RemoteSamples.branchFacts),
@@ -612,6 +630,7 @@ struct RemoteRequestTests {
         .fleetAction(id: 103, action: .retryDispatch(id: RemoteSamples.dispatchID, host: nil)),
         .fleetAction(id: 104, action: .retryDispatch(id: RemoteSamples.dispatchID, host: RemoteSamples.fleetHost)),
         .fleetAction(id: 105, action: .cancelDispatch(id: RemoteSamples.dispatchID)),
+        .fleetAction(id: 132, action: .moveThread(FleetMoveRequest(moveID: RemoteSamples.dispatchID, agentID: AgentID(rawValue: "a1"), host: "Mac mini", when: .whenDone))),
         .hostUpdate(id: 90, request: .status),
         .hostUpdate(id: 91, request: .check),
         .hostUpdate(id: 92, request: .install(offerID: S.op, authorized: true)),
@@ -767,7 +786,8 @@ struct RemoteRequestTests {
     @Test(arguments: [RemoteAgentAction.rename(name: "x"), .move(spaceID: SpaceID(rawValue: "destination")), .deleteKeepingWorktree, .reorder(target: AgentID(rawValue: "b")),
                       .renameTerminal(paneID: PaneID(rawValue: "p"), title: "logs"), .renameTerminal(paneID: PaneID(rawValue: "p"), title: nil),
                       .killTerminalProcess(paneID: PaneID(rawValue: "p")), .startTerminal(paneID: PaneID(rawValue: "p")),
-                      .openTerminal(cwd: "/host/repo/apps/web", command: "pnpm dev"), .restartPi(newConversation: true), .restartPi(newConversation: false, model: "anthropic/claude-x"), .markSeen(upTo: 1_760_000_000_123), .mutePushes(true), .mutePushes(false), .readCheckout])
+                      .openTerminal(cwd: "/host/repo/apps/web", command: "pnpm dev"), .restartPi(newConversation: true), .restartPi(newConversation: false, model: "anthropic/claude-x"), .markSeen(upTo: 1_760_000_000_123), .mutePushes(true), .mutePushes(false), .readCheckout,
+                      .moveToMac(FleetMoveRequest(moveID: UUID(), agentID: AgentID(rawValue: "a"), host: "Mac mini", when: .whenDone))])
     func everyAgentActionRoundTrips(_ action: RemoteAgentAction) throws {
         #expect(try Wire.roundTrip(RemoteRequest.agentAction(id: 1, agentID: S.agent, action: action))
             == .agentAction(id: 1, agentID: S.agent, action: action))
@@ -910,11 +930,11 @@ struct RemoteReplyTests {
         case .nativeThreadChanged, .fleetDigest, .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .forgeResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged, .fleetViewChanged,
-             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .fleetIdentity, .fleetPaired, .fleetResult, .fleetSyncReply, .fleetRepoManifestAck, .fleetSnapshotAck, .fleetDevices, .fleetPressureSample, .fleetDispatchAccepted, .fleetDispatchState, .fleetPeerCall, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged, .pullRequestLinks:
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .designRelay, .agentNotify, .appRelay, .settingsChanged, .fleetIdentity, .fleetPaired, .fleetResult, .fleetSyncReply, .fleetRepoManifestAck, .fleetSnapshotAck, .fleetDevices, .fleetPressureSample, .fleetCheckReport, .fleetDispatchAccepted, .fleetDispatchState, .fleetPeerCall, .toolFinished, .threadNotice, .agentStartProblem, .automationsChanged, .automationNotify, .designNotesChanged, .designGitChanged, .designImportProgress, .hostConfig, .apps, .appsChanged, .pullRequestLinks:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 68
+    static let caseCount = 69
 
     static let samples: [RemoteReply] = [
         .nativeThreadChanged(agentID: S.agent),
@@ -954,6 +974,8 @@ struct RemoteReplyTests {
         .fleetResult(id: 9, result: FleetResult(snapshot: S.fleetSnapshot, paired: S.fleetSnapshot.peers[0])),
         .fleetPressureSample(id: 11, sample: S.fleetSample, readiness: S.fleetReadiness),
         .fleetPressureSample(id: 13, sample: S.fleetSample, readiness: nil),
+        .fleetCheckReport(id: 14, report: S.fleetCheck),
+        .fleetPeerCall(id: 153, request: .fleetCheckNow(id: 153)),
         .fleetRepoManifestAck(id: 14, ack: FleetRepoManifestAck(repo: "github.com/acme/web", generation: 7, seq: 3)),
         .fleetRepoManifestAck(id: 16, ack: FleetRepoManifestAck(repo: "space:2F1D", generation: 7, seq: 0, resend: true)),
         .fleetSnapshotAck(id: 17, ack: FleetSnapshotAck(dispatchID: RemoteSamples.dispatchID, parts: 2, needs: [RemoteSamples.snapshotHash], needsCount: 1)),
@@ -1496,10 +1518,10 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.pushMuteCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             // Offered whenever the host's fleet service runs, which is every host that started (SessionServer.startFleet).
-            RemoteProtocol.fleetCapability, RemoteProtocol.fleetPressureCapability, RemoteProtocol.fleetDispatchCapability,
-            RemoteProtocol.fleetSyncCapability, RemoteProtocol.fleetSnapshotCapability, RemoteProtocol.fleetRendezvousCapability, RemoteProtocol.fleetLinkCapability, RemoteProtocol.fleetPairLinkCapability,
+            RemoteProtocol.fleetCapability, RemoteProtocol.fleetPressureCapability, RemoteProtocol.fleetCheckCapability, RemoteProtocol.fleetDispatchCapability,
+            RemoteProtocol.fleetSyncCapability, RemoteProtocol.fleetSnapshotCapability, RemoteProtocol.fleetMoveCapability, RemoteProtocol.fleetRendezvousCapability, RemoteProtocol.fleetLinkCapability, RemoteProtocol.fleetPairLinkCapability,
             // Offered to every client, a device included.
-            RemoteProtocol.fleetViewCapability, RemoteProtocol.fleetFollowCapability,
+            RemoteProtocol.fleetViewCapability, RemoteProtocol.fleetFollowCapability, RemoteProtocol.fleetMoveViewCapability,
             // Offered whenever the host runs, and never to a client device (FleetAccess).
             RemoteProtocol.fleetDevicesCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
@@ -1520,12 +1542,15 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.nativeFleetDigestCapability == "native.fleetDigest.v1")
         #expect(RemoteProtocol.fleetCapability == "fleet.v1")
         #expect(RemoteProtocol.fleetPressureCapability == "fleet.pressure.v1")
+        #expect(RemoteProtocol.fleetCheckCapability == "fleet.check.v1")
         #expect(RemoteProtocol.fleetSnapshotCapability == "fleet.snapshot.v1")
         #expect(RemoteProtocol.fleetRendezvousCapability == "fleet.rendezvous.v1")
         #expect(RemoteProtocol.fleetPairLinkCapability == "fleet.pairlink.v1")
         #expect(RemoteProtocol.fleetDispatchCapability == "fleet.dispatch.v1")
         #expect(RemoteProtocol.fleetDevicesCapability == "fleet.devices.v1")
         #expect(RemoteProtocol.fleetFollowCapability == "fleet.follow.v1")
+        #expect(RemoteProtocol.fleetMoveCapability == "fleet.move.v1")
+        #expect(RemoteProtocol.fleetMoveViewCapability == "fleet.move.view.v1")
         #expect(RemoteProtocol.logicalProjectsCapability == "logicalProjects.v1")
         #expect(RemoteProtocol.projectMessageImagesCapability == "logicalProjectRuntime.images.v1")
         #expect(RemoteProtocol.projectConversationThinkingCapability == "logicalProjects.conversationThinking.v1")

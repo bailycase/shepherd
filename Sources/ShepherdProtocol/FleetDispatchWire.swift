@@ -89,11 +89,16 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
     public var repo: FleetRepoSource?
     /// Where a thread the person started begins (the New thread form's workplace choice); nil for a thread's dispatch.
     public var start: FleetThreadStart?
+    /// A thread that moves (`kind == .move`): what the receiver makes it from (`FleetMove.swift`). Only a Mac that offers
+    /// `fleet.move.v1` is sent one.
+    public var move: FleetMoveHandoff?
 
     public init(dispatchID: UUID, kind: FleetDispatchRecord.Kind = .agentDispatch, task: String, title: String, repoKey: String,
                 commitSHA: String? = nil, subdir: String? = nil, branch: String? = nil, model: String? = nil, thinking: String? = nil,
-                from: FleetDispatchSender, snapshot: FleetSnapshotHeader? = nil, repo: FleetRepoSource? = nil, start: FleetThreadStart? = nil) {
+                from: FleetDispatchSender, snapshot: FleetSnapshotHeader? = nil, repo: FleetRepoSource? = nil, start: FleetThreadStart? = nil,
+                move: FleetMoveHandoff? = nil) {
         self.start = start
+        self.move = move
         self.dispatchID = dispatchID
         self.kind = kind
         self.task = task
@@ -109,7 +114,7 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         self.repo = repo
     }
 
-    private enum CodingKeys: String, CodingKey { case dispatchID, kind, task, title, repoKey, commitSHA, subdir, branch, model, thinking, from, snapshot, repo, start }
+    private enum CodingKeys: String, CodingKey { case dispatchID, kind, task, title, repoKey, commitSHA, subdir, branch, model, thinking, from, snapshot, repo, start, move }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -127,6 +132,7 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         snapshot = try c.decodeIfPresent(FleetSnapshotHeader.self, forKey: .snapshot)
         repo = try c.decodeIfPresent(FleetRepoSource.self, forKey: .repo)
         start = try c.decodeIfPresent(FleetThreadStart.self, forKey: .start)
+        move = try c.decodeIfPresent(FleetMoveHandoff.self, forKey: .move)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -145,6 +151,7 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         try c.encodeIfPresent(snapshot, forKey: .snapshot)
         try c.encodeIfPresent(repo, forKey: .repo)
         try c.encodeIfPresent(start, forKey: .start)
+        try c.encodeIfPresent(move, forKey: .move)
     }
 }
 
@@ -164,9 +171,13 @@ public struct FleetUserThread: Codable, Hashable, Sendable {
     /// The form's workplace choice: a new worktree from a base, a new worktree on an existing branch, or the space's own checkout. Nil is a
     /// new worktree from the base Settings ▸ Worktrees and the project give (as a form left at its defaults would).
     public var start: FleetThreadStart?
+    /// The Check items this thread is there to fix (their ids, `FleetCheckItem.id`): the Check tab shows them as being fixed while it runs, and
+    /// the host looks at the Mac again when it ends. Empty for any other thread.
+    public var fixes: [String]
 
     public init(dispatchID: UUID = UUID(), spaceID: SpaceID, task: String, title: String? = nil, host: String? = nil,
-                model: String? = nil, thinking: String? = nil, start: FleetThreadStart? = nil) {
+                model: String? = nil, thinking: String? = nil, start: FleetThreadStart? = nil, fixes: [String] = []) {
+        self.fixes = fixes
         self.start = start
         self.dispatchID = dispatchID
         self.spaceID = spaceID
@@ -175,6 +186,34 @@ public struct FleetUserThread: Codable, Hashable, Sendable {
         self.host = host
         self.model = model
         self.thinking = thinking
+    }
+
+    private enum CodingKeys: String, CodingKey { case dispatchID, spaceID, task, title, host, model, thinking, start, fixes }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dispatchID = try c.decode(UUID.self, forKey: .dispatchID)
+        spaceID = try c.decode(SpaceID.self, forKey: .spaceID)
+        task = try c.decode(String.self, forKey: .task)
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        host = try c.decodeIfPresent(String.self, forKey: .host)
+        model = try c.decodeIfPresent(String.self, forKey: .model)
+        thinking = try c.decodeIfPresent(String.self, forKey: .thinking)
+        start = try c.decodeIfPresent(FleetThreadStart.self, forKey: .start)
+        fixes = try c.decodeIfPresent([String].self, forKey: .fixes) ?? []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(dispatchID, forKey: .dispatchID)
+        try c.encode(spaceID, forKey: .spaceID)
+        try c.encode(task, forKey: .task)
+        try c.encodeIfPresent(title, forKey: .title)
+        try c.encodeIfPresent(host, forKey: .host)
+        try c.encodeIfPresent(model, forKey: .model)
+        try c.encodeIfPresent(thinking, forKey: .thinking)
+        try c.encodeIfPresent(start, forKey: .start)
+        if !fixes.isEmpty { try c.encode(fixes, forKey: .fixes) }
     }
 }
 
@@ -190,8 +229,11 @@ public enum FleetDispatchControl: Codable, Hashable, Sendable {
     case cancel
     /// Send the thread a message. A finished dispatch starts a new run on the same thread.
     case message(text: String, delivery: FleetMessageDelivery)
+    /// A move: the sender has written its tombstone, and the thread starts here now. Repeating it answers the same record
+    /// (`fleet.move.v1`; only ever sent to a Mac that offers it).
+    case commit
 
-    private enum Kind: String, Codable { case status, cancel, message }
+    private enum Kind: String, Codable { case status, cancel, message, commit }
     private enum CodingKeys: String, CodingKey { case type, text, delivery }
 
     public init(from decoder: Decoder) throws {
@@ -199,6 +241,7 @@ public enum FleetDispatchControl: Codable, Hashable, Sendable {
         switch try c.decode(Kind.self, forKey: .type) {
         case .status: self = .status
         case .cancel: self = .cancel
+        case .commit: self = .commit
         case .message:
             self = .message(text: try c.decode(String.self, forKey: .text),
                             delivery: (try? c.decodeIfPresent(FleetMessageDelivery.self, forKey: .delivery)) ?? .followUp)
@@ -210,6 +253,7 @@ public enum FleetDispatchControl: Codable, Hashable, Sendable {
         switch self {
         case .status: try c.encode(Kind.status, forKey: .type)
         case .cancel: try c.encode(Kind.cancel, forKey: .type)
+        case .commit: try c.encode(Kind.commit, forKey: .type)
         case .message(let text, let delivery):
             try c.encode(Kind.message, forKey: .type)
             try c.encode(text, forKey: .text)

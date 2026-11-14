@@ -106,9 +106,9 @@ final class FleetHostSettingsSource: FleetUnitSource {
     private let apply: @Sendable (HostSettingChange) -> Void
     /// The settings and the weights this Mac holds; the weights of other Macs the store decided come through `owns`.
     var units: [String] {
-        FleetHostSetting.allCases.map(\.unit) + (settings.map { Array(FleetWeightSetting.values(in: $0).keys) + Array(FleetSnapshotExcludeSetting.values(in: $0).keys) } ?? [])
+        FleetHostSetting.allCases.map(\.unit) + (settings.map { Array(FleetWeightSetting.values(in: $0).keys) + Array(FleetSnapshotExcludeSetting.values(in: $0).keys) + Array(FleetCheckIgnoreSetting.values(in: $0).keys) } ?? [])
     }
-    func owns(_ unit: String) -> Bool { FleetWeightSetting.hostID(unit: unit) != nil || FleetSnapshotExcludeSetting.spaceID(unit: unit) != nil }
+    func owns(_ unit: String) -> Bool { FleetWeightSetting.hostID(unit: unit) != nil || FleetSnapshotExcludeSetting.spaceID(unit: unit) != nil || FleetCheckIgnoreSetting.hostID(unit: unit) != nil }
 
     init(apply: @escaping @Sendable (HostSettingChange) -> Void) { self.apply = apply }
 
@@ -123,14 +123,14 @@ final class FleetHostSettingsSource: FleetUnitSource {
     func read() -> [String: Data] {
         guard let settings else { return [:] }
         return FleetHostSetting.values(in: settings).merging(FleetWeightSetting.values(in: settings)) { $1 }
-            .merging(FleetSnapshotExcludeSetting.values(in: settings)) { $1 }.mapValues { Data($0.utf8) }
+            .merging(FleetSnapshotExcludeSetting.values(in: settings)) { $1 }.merging(FleetCheckIgnoreSetting.values(in: settings)) { $1 }.mapValues { Data($0.utf8) }
     }
 
     func isSeedable(_ unit: String, _ value: Data) -> Bool {
         guard let settings else { return false }
         // A weight set to Normal is what no choice means.
         if FleetWeightSetting.hostID(unit: unit) != nil { return String(decoding: value, as: UTF8.self) != "\"\(FleetSendWeight.normal.rawValue)\"" }
-        if FleetSnapshotExcludeSetting.spaceID(unit: unit) != nil { return true }
+        if FleetSnapshotExcludeSetting.spaceID(unit: unit) != nil || FleetCheckIgnoreSetting.hostID(unit: unit) != nil { return true }
         guard let setting = FleetHostSetting.named(unit: unit) else { return false }
         return !setting.isDefault(in: settings)
     }
@@ -148,6 +148,14 @@ final class FleetHostSettingsSource: FleetUnitSource {
             // A deletion is back to the defaults.
             let json = value.map { String(decoding: $0, as: UTF8.self) } ?? "{}"
             guard let change = FleetSnapshotExcludeSetting.change(spaceID: id, fromJSON: json) else {
+                throw FleetUnitRefused(description: "\(unit) holds a value this version doesn't know")
+            }
+            return apply(change)
+        }
+        if let id = FleetCheckIgnoreSetting.hostID(unit: unit) {
+            // A deletion is nothing set aside.
+            let json = value.map { String(decoding: $0, as: UTF8.self) } ?? "[]"
+            guard let change = FleetCheckIgnoreSetting.change(hostID: id, fromJSON: json) else {
                 throw FleetUnitRefused(description: "\(unit) holds a value this version doesn't know")
             }
             return apply(change)

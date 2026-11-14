@@ -21,8 +21,10 @@ extension FleetDispatch {
             return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "The task is empty or longer than \(FleetDispatchProtocol.maxTaskBytes / 1024) KiB.")))
         }
         let requested = FleetPlacement.isAuto(thread.host) ? nil : thread.host?.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Named for this very Mac: nothing to send.
-        if let requested, requested.lowercased() == hostName().lowercased() || requested.lowercased() == hostID.uuidString.lowercased() {
+        // Named for this very Mac: nothing to send, unless the provider of its model is limited and the thread has to wait for that: a
+        // dispatch to this Mac holds it as it would hold one to any other.
+        let limited = FleetPlacement.provider(ofModel: thread.model?.fleetNonEmpty ?? host.defaultModel()).flatMap { pressure.limitRemaining($0) } != nil
+        if let requested, requested.lowercased() == hostName().lowercased() || requested.lowercased() == hostID.uuidString.lowercased(), !limited {
             return reply(.success(nil))
         }
         // A space that isn't one of this Mac's, or whose folder is no repository another Mac could find, stays here when Auto chose it and is
@@ -39,7 +41,7 @@ extension FleetDispatch {
         var record = FleetDispatchRecord(
             id: id, kind: .userThread, parentHostID: hostID, parentHostName: hostName(), requestedHost: requested, state: .placing,
             title: Self.title(thread.title, task: task), task: task, repoKey: space.repoKey ?? "", model: thread.model?.fleetNonEmpty,
-            thinking: thread.thinking?.fleetNonEmpty, spaceID: space.id, start: start, createdAt: now)
+            thinking: thread.thinking?.fleetNonEmpty, spaceID: space.id, start: start, fixes: thread.fixes, createdAt: now)
         record.updatedAt = record.createdAt
         outbound[id] = record
         firstPlacements.insert(id)

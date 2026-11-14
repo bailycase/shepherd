@@ -88,8 +88,12 @@ public struct FleetCardContext: Sendable {
     public var cap: Int
     public var locale: Locale
     public var calendar: Calendar
+    /// How long this device has held `snapshot`, so a limit's countdown goes on between snapshots.
+    public var snapshotAge: TimeInterval
 
-    public init(snapshot: FleetSnapshot, cap: Int = HostSettings.fleetThreadCapDefault, locale: Locale = .current, calendar: Calendar = .current) {
+    public init(snapshot: FleetSnapshot, cap: Int = HostSettings.fleetThreadCapDefault, locale: Locale = .current, calendar: Calendar = .current,
+                snapshotAge: TimeInterval = 0) {
+        self.snapshotAge = snapshotAge
         self.snapshot = snapshot
         self.cap = cap
         self.locale = locale
@@ -102,7 +106,8 @@ public enum FleetDispatchPresentation {
 
     /// A card for every record, newest first.
     public static func cards(_ records: [FleetDispatchRecord], in context: FleetCardContext) -> [FleetDispatchCard] {
-        records.sorted { $0.createdAt > $1.createdAt }.map { card($0, among: records, in: context) }
+        // A move has its own card in the thread that moves (`FleetMovePresentation`); the Fleet page's cards are for work that was sent.
+        records.filter { $0.kind != .move }.sorted { $0.createdAt > $1.createdAt }.map { card($0, among: records, in: context) }
     }
 
     /// The card of one record. `records` is every record the Mac holds, for what a card says of the others.
@@ -118,9 +123,17 @@ public enum FleetDispatchPresentation {
             card.detail = "Choosing the Mac with the most room."
             card.actions = [.cancel]
         case .waitingRoom:
-            (card.pill, card.tone) = ("Waiting for room", .tertiary)
-            card.detail = busyWords(record, among: records, in: context)
-            card.actions = [.runHereNow, .cancel]
+            if let limited = FleetPagePresentation.limitWords(record, limits: context.snapshot.limits, snapshotAge: context.snapshotAge) {
+                // Held for the provider's limit, on every Mac alike: nothing has room to give it. It starts by itself when the limit lifts.
+                (card.pill, card.tone) = ("Waiting for limit", .warn)
+                card.detail = limited
+                // Every Mac is limited alike, so running it here would only wait again: there is nothing to offer but Cancel.
+                card.actions = [.cancel]
+            } else {
+                (card.pill, card.tone) = ("Waiting for room", .tertiary)
+                card.detail = busyWords(record, among: records, in: context)
+                card.actions = [.runHereNow, .cancel]
+            }
         case .waitingWake:
             (card.pill, card.tone) = ("Waiting", .tertiary)
             card.detail = asleepWords(record, in: context)
@@ -137,6 +150,10 @@ public enum FleetDispatchPresentation {
             (card.pill, card.tone) = ("Held", .warn)
             card.detail = "Shepherd restarted before this was sent. Nothing is sent again by itself."
             card.actions = [.send, .cancel]
+        case .waitingTurn:
+            (card.pill, card.tone) = ("Waiting", .tertiary)
+            card.detail = "Moves \(host.map { "to \($0)" } ?? "to another Mac") when its turn ends."
+            card.actions = [.cancel]
         case .preparing:
             (card.pill, card.tone) = ("Starting", .active)
             let repo = repoName(record.repoKey)
@@ -230,20 +247,32 @@ public enum FleetDispatchPresentation {
             let why = switch skip {
             case "cpu": "is busy"
             case "memory": "is low on memory"
+            case "memoryPressure": "is under memory pressure"
             case "thermal": "is running hot"
             case "manualOnly": "is set to Manual only"
             default: "isn't counted"
             }
             return "Auto: This Mac \(why), so \(host)"
         }
+        // What the Mac it went to was running when it was chosen, when it said.
+        let running = codes.first?.commands.map { ", " + commandsWords($0) } ?? ""
         switch codes.first?.code {
         case .named?: return record.kind == .userThread ? "You picked \(host)" : "Picked \(host)"
         case .mostRoom?:
-            guard let ratio, ratio > 1 else { return "Auto: \(host) had the most room" }
-            return "Auto: \(host) had \(multiple(ratio)) the room"
-        case .onlyChoice?: return "Auto: \(host) was the only Mac with room"
+            guard let ratio, ratio > 1 else { return "Auto: \(host) had the most room\(running)" }
+            return "Auto: \(host) had \(multiple(ratio)) the room\(running)"
+        case .onlyChoice?: return "Auto: \(host) was the only Mac with room\(running)"
         case .keptLocal?: return "Auto: \(host) had enough room"
         default: return ""
+        }
+    }
+
+    /// What a Mac was running: "no builds running", "1 running a build or test", "2 running builds or tests".
+    public static func commandsWords(_ commands: Int) -> String {
+        switch commands {
+        case ...0: "no builds running"
+        case 1: "1 running a build or test"
+        default: "\(commands) running builds or tests"
         }
     }
 

@@ -16,6 +16,45 @@ public enum FleetThermal: String, Codable, Hashable, Sendable, Comparable {
     public static func < (a: FleetThermal, b: FleetThermal) -> Bool { a.rank < b.rank }
 }
 
+/// The kernel's memory pressure level (`kern.memorystatus_vm_pressure_level`: 1, 2 and 4), the same signal Activity Monitor colors green,
+/// yellow and red. Free memory alone misses a Mac that is compressing and swapping with pages still "inactive".
+public enum FleetMemoryPressure: String, Codable, Hashable, Sendable, Comparable {
+    case normal, warn, critical
+
+    private var rank: Int {
+        switch self {
+        case .normal: 0
+        case .warn: 1
+        case .critical: 2
+        }
+    }
+
+    public static func < (a: FleetMemoryPressure, b: FleetMemoryPressure) -> Bool { a.rank < b.rank }
+
+    /// The kernel's level; anything it doesn't name reads as normal, so a number this build doesn't know never leaves a Mac out.
+    public init(kernelLevel: Int) {
+        switch kernelLevel {
+        case 2: self = .warn
+        case 4: self = .critical
+        default: self = .normal
+        }
+    }
+}
+
+/// A provider that answered a request with a rate limit or "overloaded" (`FleetProviderLimits`): sign-ins are shared by the fleet, so the
+/// limit is the whole fleet's, and is carried to every Mac in the pressure sample of the one that saw it.
+public struct FleetProviderLimit: Codable, Hashable, Sendable {
+    /// pi's provider id ("anthropic").
+    public var provider: String
+    /// How long it lasts from the moment the sample was taken. A duration, never a time: the receiver stamps its own clock.
+    public var seconds: Double
+
+    public init(provider: String, seconds: Double) {
+        self.provider = provider
+        self.seconds = seconds
+    }
+}
+
 /// One reading of a Mac's load (`FleetPressureSampler`). The receiver stamps when it arrived and
 /// never compares the sender's clock, so a sample carries no time.
 public struct FleetPressureSample: Codable, Hashable, Sendable {
@@ -33,10 +72,25 @@ public struct FleetPressureSample: Codable, Hashable, Sendable {
     public var activeAgents: Int
     /// Places promised to dispatches that haven't started yet (slice 4 fills it in).
     public var reserved: Int
+    /// Of `activeAgents`, the threads running a tool command now (a build, a test run); the rest wait on the model. Nil from a Mac
+    /// that doesn't say (an older build): all of its threads then weigh the same.
+    public var commandAgents: Int?
+    /// `cpuUtilization` averaged over the last `FleetRoom.cpuWindow` seconds, as the sending Mac took it. Nil from an older build.
+    public var cpuAverage: Double?
+    /// Nil from an older build, which reads as normal.
+    public var memoryPressure: FleetMemoryPressure?
+    /// The providers this Mac itself saw limit its requests and that still are (never ones it was told of: a Mac that relayed them would
+    /// keep them alive for ever). Nil from an older build.
+    public var limits: [FleetProviderLimit]?
 
     public init(cpuUtilization: Double, cpuCount: Int, totalMemoryBytes: UInt64, availableMemoryBytes: UInt64,
                 thermal: FleetThermal = .nominal, onBattery: Bool = false, batteryPercent: Int? = nil,
-                activeAgents: Int = 0, reserved: Int = 0) {
+                activeAgents: Int = 0, reserved: Int = 0, commandAgents: Int? = nil, cpuAverage: Double? = nil,
+                memoryPressure: FleetMemoryPressure? = nil, limits: [FleetProviderLimit]? = nil) {
+        self.commandAgents = commandAgents
+        self.cpuAverage = cpuAverage
+        self.memoryPressure = memoryPressure
+        self.limits = limits
         self.cpuUtilization = cpuUtilization
         self.cpuCount = cpuCount
         self.totalMemoryBytes = totalMemoryBytes
@@ -100,6 +154,15 @@ public enum FleetRoom {
     public static let moveMargin = 1.5
     /// A Mac on battery scores this much of what it would plugged in, when the fleet counts it.
     public static let batteryFactor = 0.5
+    /// What a thread running a tool command (a build, a test run, a dev server) takes of a Mac's room, in threads: it holds the CPU and
+    /// the disk, where a thread waiting on the model holds almost nothing.
+    public static let commandWeight = 3.0
+    /// What a thread waiting on the model takes of a Mac's room, and a place promised to a dispatch that hasn't started.
+    public static let modelWaitWeight = 1.0
+    /// The CPU the score and the ceiling see is its average over this long, not the one reading a build or a test run can spike.
+    public static let cpuWindow: TimeInterval = 60
+    /// A Mac whose memory pressure is at this level or worse is left out, whatever its free memory says.
+    public static let memoryPressureCutoff = FleetMemoryPressure.warn
 
     /// Why a Mac is left out of Auto.
     public enum Skip: String, Hashable, Sendable {
@@ -107,6 +170,7 @@ public enum FleetRoom {
         case future
         case cpu
         case memory
+        case memoryPressure
         case thermal
         case manualOnly
     }
@@ -117,19 +181,33 @@ public enum FleetRoom {
         if weight == .manualOnly { return .manualOnly }
         if age > staleAfter { return .stale }
         if age < -futureTolerance { return .future }
-        if sample.cpuUtilization >= cpuCeiling { return .cpu }
+        if smoothedCPU(sample) >= cpuCeiling { return .cpu }
         if sample.availableShare <= memoryFloor { return .memory }
+        if (sample.memoryPressure ?? .normal) >= memoryPressureCutoff { return .memoryPressure }
         if sample.thermal >= .serious { return .thermal }
         return nil
     }
 
-    /// `weight * cpuCount * (1 - cpu) * (available / total) / (1 + activeAgents + reserved)`,
+    /// The CPU share the score and the ceiling use: the sender's average over `cpuWindow` when it sent one, else its single reading.
+    public static func smoothedCPU(_ sample: FleetPressureSample) -> Double {
+        let share = sample.cpuAverage ?? sample.cpuUtilization
+        return share.isFinite ? share : 0
+    }
+
+    /// What the Mac's threads and promised places take of it, in threads: a thread running a command weighs `commandWeight`, a thread
+    /// waiting on the model (or one whose Mac doesn't say) and a promised place `modelWaitWeight`.
+    public static func load(_ sample: FleetPressureSample) -> Double {
+        let working = max(0, sample.activeAgents)
+        let commands = min(working, max(0, sample.commandAgents ?? 0))
+        return Double(commands) * commandWeight + Double(working - commands) * modelWaitWeight + Double(max(0, sample.reserved)) * modelWaitWeight
+    }
+
+    /// `weight * cpuCount * (1 - cpu) * (available / total) / (1 + load)` (`smoothedCPU`, `load`),
     /// halved on battery when `batteryCountsHalf`. Zero for a Mac Auto never picks.
     public static func score(_ sample: FleetPressureSample, weight: FleetSendWeight = .normal, batteryCountsHalf: Bool = true) -> Double {
         guard let multiplier = weight.multiplier else { return 0 }
-        let busy = min(1, max(0, sample.cpuUtilization))
-        var score = multiplier * Double(max(0, sample.cpuCount)) * (1 - busy) * sample.availableShare
-            / Double(1 + max(0, sample.activeAgents) + max(0, sample.reserved))
+        let busy = min(1, max(0, smoothedCPU(sample)))
+        var score = multiplier * Double(max(0, sample.cpuCount)) * (1 - busy) * sample.availableShare / (1 + load(sample))
         if sample.onBattery, batteryCountsHalf { score *= batteryFactor }
         return score
     }

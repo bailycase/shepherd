@@ -69,6 +69,33 @@ struct FleetPagePreviewTests {
         }
     }
 
+    /// FleetA's throttled state: Anthropic limits the account, so the strip shows under Auto dispatch, a dispatch for Claude waits with its note, and the
+    /// Agents rows say which threads run builds or tests. Real derivations over the fixture Macs.
+    @Test func fleetPageSignals() async throws {
+        var snapshot = Self.snapshot
+        snapshot.macs[0].sample?.commandAgents = 2
+        snapshot.macs[0].sample?.cpuAverage = 0.66
+        snapshot.macs[1].sample?.commandAgents = 0
+        snapshot.macs[1].sample?.cpuAverage = 0.16
+        snapshot.limits = [FleetLimitStatus(provider: "anthropic", seconds: 100, waiting: 3)]
+        let now = Date()
+        func record(_ title: String, _ state: FleetDispatchState, ago: TimeInterval, kind: FleetDispatchRecord.Kind = .agentDispatch, reasons: [FleetPlacementReason] = [],
+                    host: String? = "Mac mini", limit: String? = nil) -> FleetDispatchRecord {
+            FleetDispatchRecord(kind: kind, parentHostID: Self.here, parentHostName: "MacBook Pro", parentTitle: kind == .userThread ? "" : "Speed up checkout CI",
+                                targetHostName: host, state: state, title: title, task: "", repoKey: "github.com/acme/web", reasonCodes: reasons, limitProvider: limit,
+                                createdAt: (now.timeIntervalSince1970 - ago) * 1000)
+        }
+        snapshot.dispatches = [
+            record("Summarise the failing orders import", .waitingRoom, ago: 20, kind: .userThread, host: nil, limit: "anthropic"),
+            record("Fix flaky payment test", .running, ago: 240, reasons: [FleetPlacementReason(.mostRoom, commands: 0)]),
+            record("Migrate orders to Postgres 17", .running, ago: 1_320, kind: .userThread, reasons: [FleetPlacementReason(.named)]),
+        ]
+        let page = FleetPagePresentation.make(snapshot: snapshot, weight: { [Self.mini: FleetSendWeight.prefer][$0] ?? .normal }, now: now)
+        try await Preview.renderMatrix("fleet-signals-page", size: CGSize(width: 1208, height: 1000)) {
+            FleetPageContent(page: page, actions: Self.noActions).frame(width: 1208, height: 1000)
+        }
+    }
+
     @Test func fleetPage() async throws {
         let page = Self.page()
         try await Preview.renderMatrix("fleet3a-page", size: CGSize(width: 1208, height: 900)) {

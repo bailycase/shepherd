@@ -188,7 +188,8 @@ public func nativeTurnPresentation(
             raw.append(.hook(message.hook.map(NativeHookRow.init) ?? NativeHookRow(text: message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n"))))
             continue
         }
-        if message.role == "custom", ["shepherd.goal.set", "shepherd.goal.check"].contains(message.customType ?? "") {
+        // Where the thread moved to another Mac (`shepherd.move`, FleetMove) divides the conversation as a goal check does.
+        if message.role == "custom", ["shepherd.goal.set", "shepherd.goal.check", "shepherd.move"].contains(message.customType ?? "") {
             raw.append(.goalRecord(message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")))
             continue
         }
