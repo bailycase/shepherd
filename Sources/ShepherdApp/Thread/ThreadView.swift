@@ -143,6 +143,8 @@ struct ThreadView: View {
         }
         let restoreStepping = restore.restoring
         let drawn = rows.suffix(kept ?? restored.map { $0.history ? rows.count : $0.eager } ?? rows.count)
+        let eager = drawn.suffix(restored?.eager ?? Self.eagerRows)
+        let history = drawn.prefix(drawn.count - eager.count)
         // A Project's accepted messages the transcript has not taken in: waiting ones go to the composer's Up next, outcomes stay here.
         let held = projectSend?.held() ?? []
         // A row's background needs only the boundary ID, not a captured copy of the transcript.
@@ -167,7 +169,6 @@ struct ThreadView: View {
             let _ = keepTail(proxy)
             ZStack(alignment: .bottom) {
                 let spacing = leadColumn ? SHLeadMetrics.turnGap : AppLayout.turnSpacing
-                let eager = drawn.suffix(restored?.eager ?? Self.eagerRows)
                 ScrollView {
                     // Never animated as a whole (rows, their text, and the tail anchor change on
                     // every streamed chunk): turns that arrive make their own entrance.
@@ -185,15 +186,8 @@ struct ThreadView: View {
                             else { emptyState }
                         }
                         if let day = leadDayTitle(rows) { SHLeadDaySeparator(word: day) }
-                        LazyVStack(alignment: .leading, spacing: spacing) {
-                            ForEach(drawn.prefix(drawn.count - eager.count)) { row in
-                                rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
-                            }
-                        }
-                        .scrollTargetLayout()
-                        // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
-                        // that host does not run). Its identity changes only while the rows are let go, and takes them with it.
-                        .id(dormant)
+                        historyColumn(history, tail: eager, spacing: spacing, dormant: dormant, running: running, catchingUp: catchingUp,
+                                      arrived: arrived, settled: settled, historyRowID: historyRowID)
                         ForEach(eager) { row in
                             rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                         }
@@ -227,7 +221,9 @@ struct ThreadView: View {
                     }
                     .scrollTargetLayout()
                     .overlay(alignment: .top) {
-                        Color.clear.frame(height: AppLayout.turnSpacing)
+                        // With no history the lazy stack is empty and still takes the column's spacing: the first row starts that far below the
+                        // column's top, and the sentinel reaches it, or turning to that row leaves it above the scroll view's margin.
+                        Color.clear.frame(height: AppLayout.turnSpacing + (history.isEmpty ? spacing : 0))
                             .onScrollVisibilityChange { visible in
                                 historyPaging.visible = visible
                                 loadVisibleHistory()
@@ -458,6 +454,38 @@ struct ThreadView: View {
     /// The rows the thread draws: its list, less a Project's user turns made only of the runtime's wake-ups.
     private func listedRows(_ origins: ProjectUserOrigins) -> [NativeThreadRow] {
         origins.runtime.isEmpty ? store.listRows : store.listRows.filter { !($0.isUser && origins.hides($0.turn)) }
+    }
+
+    /// The lazy stack of the rows older than the eager tail, drawn again only when what its rows are built from changes
+    /// (`ThreadHistoryCache`).
+    private func historyColumn(_ history: ArraySlice<NativeThreadRow>, tail: ArraySlice<NativeThreadRow>, spacing: CGFloat, dormant: Bool,
+                               running: Bool, catchingUp: Bool, arrived: Set<String>, settled: Bool, historyRowID: String?) -> some View {
+        let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, boundary: historyRowID, running: running, detached: !follower.sticky)
+        return ThreadHistoryColumn(key: key) {
+            AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
+                ForEach(history) { row in
+                    rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
+                }
+            }
+            .scrollTargetLayout()
+            // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
+            // that host does not run). Its identity changes only while the rows are let go, and takes them with it.
+            .id(dormant))
+        }
+    }
+
+    /// What the history's rows are built from. None while there is no history, and for a thread whose rows also read what cannot be
+    /// compared (a Project's references, a design's comments): the stack is drawn every time.
+    private func historyKey(_ history: ArraySlice<NativeThreadRow>, tail: ArraySlice<NativeThreadRow>, arrived: Set<String>, dormant: Bool,
+                            boundary: String?, running: Bool, detached: Bool) -> ThreadHistoryCache.Key? {
+        guard !history.isEmpty, !leadColumn, projectActionCards == nil, commentCards == nil else { return nil }
+        // The key leaves out what only the live reply reads, which is always among the tail's rows (`ThreadHistoryCache`).
+        assert(Self.eagerRows >= 1)
+        return ThreadHistoryCache.Key(rows: history, dormant: dormant, boundary: boundary, running: running, detached: detached,
+                                      arrived: ThreadHistoryCache.Key.arrivals(in: history, tail: tail, among: arrived),
+                                      inspected: inspectedRunID, fleet: fleetThread,
+                                      actions: [review != nil, turnActions != nil, inspectSubagent != nil, steerSubagent != nil],
+                                      store: ObjectIdentifier(store), tailGuard: ObjectIdentifier(tailGuard))
     }
 
     /// Brings back what a restore still owes (`ThreadRestore`), a step at a time, each after the frame of the one before it. The lazy
@@ -805,12 +833,17 @@ struct ThreadView: View {
     /// Wheel/trackpad events are the one user scroll intent SwiftUI does not phase for us.
     private func installWheelMonitor() {
         guard wheelMonitor == nil else { return }
-        wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-            if hovering {
-                historyAnchor.cancel()
-                if event.scrollingDeltaY != 0 { input.readerScrolled(upward: event.scrollingDeltaY > 0) }
-                historyPaging.beginScroll()
-                tailGuard.readerMoved()
+        // The view's state holds the monitor, so a handler that held the view would hold it in return, and a teardown that cannot write
+        // `wheelMonitor` back to nil (a window released with the thread in it) would leave the pair and the store alive for good. The
+        // handler holds only what it moves.
+        let hovering = $hovering
+        wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) {
+            [weak input = input, weak anchor = historyAnchor, weak paging = historyPaging, weak guardian = tailGuard] event in
+            if hovering.wrappedValue {
+                anchor?.cancel()
+                if event.scrollingDeltaY != 0 { input?.readerScrolled(upward: event.scrollingDeltaY > 0) }
+                paging?.beginScroll()
+                guardian?.readerMoved()
             }
             return event
         }
@@ -892,6 +925,83 @@ private final class ThreadRowMemory {
     var catchUp: CatchUpGate?
     /// Whether the last render drew the shell; nil until the first.
     var shell: Bool?
+}
+
+/// The lazy stack of the rows older than the eager tail, kept as the view it was while what its rows are built from has not changed (`Key`:
+/// the rows, the boundary row's probe, whether a turn runs and whether the reader has left the tail, the arrivals among the rows, the run open
+/// in the inspector, the dispatches, which actions the thread was given, and the store and the tail guard its rows are drawn with). The
+/// thread's body runs for much else (it is shown or hidden, it catches up), which nothing in the stack reads; handed the same rows in a new
+/// closure, the stack builds them again and moves its estimate of the rows it has not measured, and a reader in the eager tail below it has
+/// nothing to hold their rows where they were. A turn ending is not ignored: the stack's estimates are replaced as it does, and a reply
+/// landing at the tail was blank for a frame without it. A reference, so keeping it never draws the thread.
+///
+/// Two things are relied on. Handing SwiftUI the very `AnyView` it drew last lets it leave the stack alone, which a new one built from the
+/// same rows does not; `switchingAwayAndBackKeepsLoadedHistoryAndScrollPosition` is the guard for that and fails if it stops holding. And
+/// the key leaves out whether the thread is on screen, is catching up and has settled (`active`, `catchingUp`, `settled`): only the
+/// streaming reply and a row that arrives read them to play their motion, and the reply is the last row, which `ThreadView.eagerRows >= 1`
+/// (and a restore's plan, which draws at least one) keeps in the eager tail, while an arrival among the history's rows is in the key.
+///
+/// The kept view holds the thread view that drew it, so the cache must not be held by that thread view (`ThreadHistoryColumn`).
+@MainActor
+final class ThreadHistoryCache {
+    struct Key: Equatable {
+        let rows: ArraySlice<NativeThreadRow>
+        let dormant: Bool
+        let boundary: String?
+        let running: Bool
+        let detached: Bool
+        let arrived: Set<String>
+        let inspected: String?
+        let fleet: FleetThreadSurface?
+        let actions: [Bool]
+        let store: ObjectIdentifier
+        let tailGuard: ObjectIdentifier
+
+        /// The rows of `arrived` that are among the `history`'s. Rows arrive at the thread's tail, so unless a batch larger than the
+        /// tail arrived at once, every one is in `tail` and only it is looked at; the history is walked only for such a batch.
+        static func arrivals(in history: ArraySlice<NativeThreadRow>, tail: ArraySlice<NativeThreadRow>, among arrived: Set<String>) -> Set<String> {
+            guard !arrived.isEmpty else { return [] }
+            var inTail = 0
+            for row in tail where arrived.contains(row.id) { inTail += 1 }
+            guard inTail < arrived.count else { return [] }
+            return Set(history.lazy.map(\.id).filter(arrived.contains))
+        }
+    }
+
+    private var key: Key?
+    private var kept: AnyView?
+
+    /// `make` draws the stack: every time with no `key`, and otherwise when the key is not the last one's.
+    func view(for key: Key?, make: () -> AnyView) -> AnyView {
+        guard let key else {
+            self.key = nil
+            kept = nil
+            return make()
+        }
+        if let kept, self.key == key { return kept }
+        let view = make()
+        self.key = key
+        kept = view
+        return view
+    }
+}
+
+/// Shows the history stack through `ThreadHistoryCache`, which it holds in its own state. The stack's rows are built by the thread view's
+/// methods, so the view the cache keeps holds a copy of the thread view; had the thread view held the cache, the two would hold each other,
+/// and with them the thread's store and tail guard and every row of its history, until something broke the loop (`onDisappear` once
+/// did), and a teardown that never got there left them for good. Here the cache is the column's, and goes with it
+/// (`ThreadHistoryRetentionTests`).
+private struct ThreadHistoryColumn: View {
+    let key: ThreadHistoryCache.Key?
+    let make: () -> AnyView
+    @State private var cache = ThreadHistoryCache()
+
+    init(key: ThreadHistoryCache.Key?, make: @escaping () -> AnyView) {
+        self.key = key
+        self.make = make
+    }
+
+    var body: some View { cache.view(for: key, make: make) }
 }
 
 /// What a thread view's loop task restarts for: showing or hiding, and a loop handed back to it.
