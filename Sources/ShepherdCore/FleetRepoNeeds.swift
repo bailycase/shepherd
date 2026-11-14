@@ -48,7 +48,7 @@ public struct FleetRepoNeed: Hashable, Sendable {
 /// What a checkout asks for, from its marker files. Pure parsers over text, and one reader that looks at the folder's top level.
 public enum FleetRepoNeeds {
     /// A file larger than this isn't read.
-    static let maxFile = 256 * 1024
+    public static let maxFile = 256 * 1024
 
     /// The needs of the checkout at `folder`, one per tool (the first marker that names it), in a stable order.
     public static func read(folder: String, repo: String, fileManager: FileManager = .default) -> [FleetRepoNeed] {
