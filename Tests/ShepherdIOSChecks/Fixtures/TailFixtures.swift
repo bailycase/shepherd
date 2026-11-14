@@ -597,8 +597,13 @@ extension TailFixture {
             verdicts.append((rest.distance >= -overshootTolerance, "cycle \(cycle): the thread rests on its content, not past its end"))
             if Self.fromIOS271 {
                 verdicts.append((reach.map { Int($0.rounded()) >= -overshootTolerance } ?? false, "cycle \(cycle): the first frame with a row is not past the end of the content"))
-                // iOS 27.1 opens at the tail through the pin's landings, so a re-open has no stranded stack for the guard to jump out of.
-                verdicts.append((counts["thread.tailMountJump", default: 0] == 0, "cycle \(cycle): the re-open needed no mount jump"))
+                // A reader who left holding the bottom marker is not handed it at the re-open, so iOS 27.1 opens at the tail through the
+                // pin's landings and the stack has nothing stranded for the guard to jump out of. Any other re-open is counted but not
+                // judged: a loaded machine can strand the stack, and the guard then rightly jumps (the blank frame and repair verdicts
+                // below still fail a re-open that did not recover).
+                if holdingMarker {
+                    verdicts.append((counts["thread.tailMountJump", default: 0] == 0, "cycle \(cycle): the re-open needed no mount jump"))
+                }
                 // iOS 27.1 opens as the merge base did, which needs no repair and shows no blank frame, whichever way `nativeTail` goes.
                 // Mounting it at its tail there stranded the stack at the end of its estimated height: 26 blank frames (about 840 ms) and a
                 // repair on every re-open on the Duo's cover display, and two repairs on the open one. Its first frame with a row has drawn
