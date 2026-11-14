@@ -1309,6 +1309,20 @@ struct ListPerformanceTests {
         #expect(show["thread.rowBuilder", default: 0] <= ThreadView.eagerRows + 40, "\(show)")
     }
 
+    /// A reader in the eager tail has nothing above them to hold their rows still when the history's lazy stack builds its rows again
+    /// and moves its estimate of the ones it has not measured (`ThreadHistoryCache`): showing and hiding a thread builds none of them.
+    @Test func aSwitchBuildsNoRowAboveTheEagerTail() async throws {
+        let thread = try await chromeThread(running: false)
+        defer { thread.close() }
+
+        let hide = try await counting(thread.window) { try await thread.show(false) }
+        let show = try await counting(thread.window) { try await thread.show(true) }
+
+        for (name, rows) in [("hide", hide), ("show", show)] {
+            #expect(rows["thread.rowBuilder", default: 0] <= ThreadView.eagerRows, "\(name): \(rows)")
+        }
+    }
+
     // MARK: Code blocks
 
     /// A reply streaming `lines` lines of a Swift fence (still open).

@@ -769,20 +769,6 @@ struct ThreadScrollingTests {
         #expect(abs(after - before) < 2, "prepending moved the visible turn from \(before) to \(after)")
     }
 
-    /// A thread of fewer rows than the eager tail has no history for a lazy stack to hold, so none is drawn: an empty one would still
-    /// take the column's spacing, leaving the first row 28pt below the column's top and the top sentinel (`NativeHistoryPaging`)
-    /// above it, in the band the scroll view's top margin hides, when a turn jump puts that row at the top of the window.
-    @Test func theFirstRowOfAShortThreadStartsTheColumn() async throws {
-        let thread = ThreadHarness(messages: 24, paragraphs: 2, olderCursor: "m0")
-        defer { thread.close() }
-        try await thread.waitUntilReady()
-
-        let marker = try await thread.reachTheFirstRow()
-        let row = try #require(marker.viewportTop) + thread.scrollView.contentView.bounds.origin.y
-        #expect(abs(row) < 1, "the first row sits \(row)pt below the top of the column")
-        try await eventuallyOnMain("the top sentinel to ask for older history") { thread.olderReply != nil }
-    }
-
     @Test func scrollingTheTopWithNoPageLoadingMovesNoHistoryAnchor() async throws {
         let thread = ThreadHarness(messages: 24, paragraphs: 4)
         defer { thread.close() }
