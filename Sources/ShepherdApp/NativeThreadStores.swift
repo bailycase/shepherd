@@ -177,12 +177,15 @@ final class NativeThreadStores<Key: Hashable> {
 
     /// `key`'s thread came on screen: the least recent threads past the bounds let their history go,
     /// after the pass that showed it (views ask for stores as they draw), and the hidden threads' rows are
-    /// looked at once the show has settled (`releaseDelay` after the last one).
+    /// looked at once the show has settled (`releaseDelay` after the last one, `releaseUrgentDelay` while they are far over the budget).
     func noteShown(_ key: Key) {
         recent.removeAll { $0 == key }
         recent.append(key)
-        Task { @MainActor [weak self] in self?.enforceHistoryBounds() }
-        scheduleMountedPass(after: farOverBudget ? releaseUrgentDelay : releaseDelay)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            enforceHistoryBounds()
+            scheduleMountedPass(after: farOverBudget ? releaseUrgentDelay : releaseDelay)
+        }
     }
 
     /// Releases what `Self.evictions` picks. Costs are read here, once per thread shown, never in a view body.
