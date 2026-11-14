@@ -352,7 +352,7 @@ struct ThreadTranscript: View {
             // A reused view (the design pane's chat has no identity of its own) shows another thread, which mounts as a new transcript does.
             .onChange(of: ref) { _, _ in
                 tailPin.reset()
-                presentation.mount(tail: tail)
+                presentation.mount()
             }
             .defaultScrollAnchor(nativeTail ? (presentation.restoresTurn ? .top : .bottom) : nil, for: .initialOffset)
             .defaultScrollAnchor(nativeTail ? (presentation.follows ? .bottom : nil) : (presentation.follows ? nil : .top), for: .sizeChanges)
@@ -423,12 +423,13 @@ struct ThreadTranscript: View {
                 tailHold.resume()
                 guard !appeared else { return }
                 appeared = true
-                presentation.mount(tail: tail)
+                presentation.mount()
             }
             .onDisappear {
                 tailHold.stop()
                 tailPin.stop()
                 tailGuard.stop()
+                presentation.leave()
             }
         }
     }
