@@ -70,8 +70,9 @@ struct WorkspaceNavigationTests {
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agents = (0..<2).map { Fixture.agent("a\($0)", in: space, order: $0) }
-        // Every page, the Design tool's included.
+        // Every page, the Design tool's and Fleet's included.
         app.settings.designToolEnabled = true
+        app.settings.fleetEnabled = true
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
         vm.selectAgent(agents[0].agent.id)
         let mounted = vm.mountedTabs.map(\.id)
