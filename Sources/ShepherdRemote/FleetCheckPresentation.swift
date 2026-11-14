@@ -24,6 +24,11 @@ public enum FleetCheckTone: Equatable, Sendable {
 public struct FleetCheckCell: Equatable, Sendable {
     public var text: String
     public var tone: FleetCheckTone
+
+    public init(text: String, tone: FleetCheckTone) {
+        self.text = text
+        self.tone = tone
+    }
 }
 
 /// A column: one Mac.

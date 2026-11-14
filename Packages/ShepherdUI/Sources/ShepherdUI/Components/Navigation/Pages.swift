@@ -47,19 +47,21 @@ public enum SHPageMetrics {
 /// the trailing controls (a filter, the page's one primary button), on the window's background
 /// with a hairline beneath. As the thread toolbar (`SHThreadToolbar`): a sidebar button leads
 /// while the sidebar is not docked, `leadingInset` clears the window controls, and its empty area
-/// drags the window.
-public struct SHPageHeader<Trailing: View>: View {
+/// drags the window. An `accessory` sits right after the title, before the subtitle: a page's tabs (Fleet's Macs and Check).
+public struct SHPageHeader<Accessory: View, Trailing: View>: View {
     let title: String
     let subtitle: String?
     let leadingInset: CGFloat
     let sidebar: (() -> Void)?
     let sidebarLabel: String
     let sidebarShortcut: String?
+    let accessory: Accessory
     let trailing: Trailing
 
     public init(_ title: String, subtitle: String? = nil, leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil,
                 sidebarLabel: String = "Show sidebar", sidebarShortcut: String? = nil,
-                @ViewBuilder trailing: () -> Trailing) {
+                @ViewBuilder accessory: () -> Accessory, @ViewBuilder trailing: () -> Trailing) {
+        self.accessory = accessory()
         self.title = title
         self.subtitle = subtitle
         self.leadingInset = leadingInset
@@ -82,6 +84,7 @@ public struct SHPageHeader<Trailing: View>: View {
                 .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
                 .accessibilityAddTraits(.isHeader)
+            accessory
             if let subtitle {
                 Text(subtitle)
                     .font(.sh(.ui, weight: .regular))
@@ -102,7 +105,16 @@ public struct SHPageHeader<Trailing: View>: View {
     }
 }
 
-extension SHPageHeader where Trailing == EmptyView {
+extension SHPageHeader where Accessory == EmptyView {
+    public init(_ title: String, subtitle: String? = nil, leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil,
+                sidebarLabel: String = "Show sidebar", sidebarShortcut: String? = nil,
+                @ViewBuilder trailing: () -> Trailing) {
+        self.init(title, subtitle: subtitle, leadingInset: leadingInset, sidebar: sidebar, sidebarLabel: sidebarLabel, sidebarShortcut: sidebarShortcut,
+                  accessory: { EmptyView() }, trailing: trailing)
+    }
+}
+
+extension SHPageHeader where Trailing == EmptyView, Accessory == EmptyView {
     public init(_ title: String, subtitle: String? = nil, leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil) {
         self.init(title, subtitle: subtitle, leadingInset: leadingInset, sidebar: sidebar) { EmptyView() }
     }
