@@ -5,7 +5,7 @@
 **Environment variables:**
 
 - **`SHEPHERD_SUPPORT_DIR`** moves the support directory: the socket, `state.json`, installed
-  extensions, `remote-token`, `automation-runs.json`, Settings ▸ Instructions' files
+  extensions, `automation-runs.json`, Settings ▸ Instructions' files
   (`instructions/`), Settings ▸ Skills' state and git caches (`skills/`), designs (`designs/`), design systems (`design-systems/`), and subagent artifacts. It wins over the edition's own folder
   (`Shepherd`, or `Shepherd Nightly` in Shepherd Nightly).
 - No variable picks the host: every launch is a client of the host that owns

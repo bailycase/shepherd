@@ -82,15 +82,18 @@
 - **Auth:** the first frame must be `hello` with a token and a matching `RemoteProtocol.version`,
   listing what the client understands (`RemoteProtocol.clientCapabilities`; older clients list
   nothing). The host accepts, in this order, and records which one opened the connection:
-  the token of a **device** (a phone, iPad or Mac app paired as a client: `devices.json`, below), the
-  token of a **peer Mac** (`peers.json`), or the **shared token** (`remote-token` in the support
-  directory: 32 random bytes as hex, mode 0600, created on first use). There is no password and no
-  pasted token anywhere: devices and Macs pair with a 6 digit code (Fleet, below). The shared token
-  is the pre-fleet way in. It stays accepted until Settings ▸
-  Fleet ▸ Devices ▸ Stop accepting it, which the host refuses while a client it saw on the shared
-  token hasn't been given its own (`devices_waiting`; Forget drops one that will not return). After
-  that only device and peer tokens connect (this Mac's own app on `host.sock` keeps its own token), and
-  connections that came in on the shared token end. A retired shared token stays retired, read from `devices.json`. **There is no TLS.** A VPN or trusted
+  the token of a **device** (a phone, iPad or Mac app paired as a client: `devices.json`, below) or the
+  token of a **peer Mac** (`peers.json`). Each client made its own token and the host keeps only its hash.
+  There is no password, no pasted token and **no token shared by every client**: devices and Macs pair
+  with a 6 digit code (Fleet, below). The old shared `remote-token` file is neither created nor read; one
+  left on disk is ignored, and the host's `hello` refuses a token that is no device's and no Mac's with
+  `shared_token_retired` ("This Mac no longer accepts the old shared token. Pair again with a code."), the
+  same for a revoked device's token. A client reads that as `RemoteHostFailure.Kind.sharedTokenRetired`
+  ("Pair again", never retried on its own); the iPhone shows it with an Add a Mac button. This Mac's own
+  app on `host.sock` needs no token: `LocalPeer` at accept (only this app's signed code) is the proof, and
+  `hello` there carries none. Older clients may still send `fleetEnrollDevice`, `fleetEstablish` and the
+  `retireSharedToken` and `forgetLegacyClient` actions; they no longer decode and get an undecodable-request
+  close. **There is no TLS.** A VPN or trusted
   network is the transport boundary. Never describe the listener as internet-safe.
 - **Protocol** (NDJSON, `RemoteMessage.swift`):
   - state fetch and pushed `stateChanged`
@@ -529,7 +532,7 @@
 - **Exact Project results:** `logicalProjects.result.v1` gates exact archived-worker snapshot reads (`ProjectRuntimeRequest.worker(taskID:)`, `ProjectExecutionRequest.worker(key:)`) and `ProjectExecutionRequest.result(key:offset:sha256:)` and owner `ProjectRuntimeRequest.result(taskID:operationID:offset:sha256:)`. Result pages use optional compatible fields on the existing reply models, at most 8 KiB of redacted visible final text, total length/digest, next byte offset, availability, stop reason and exact owner/executor identities. Remote reads keep the original host/binding and owner authorization; metadata cache hits cannot bypass revocation. Permission generations are rechecked after asynchronous I/O; disable/re-enable or remove/restore of the exact executor Space/path/binding cannot revive an old grant. Owner-directory and executor-Space tokens track only current eligible routes, scoped by Space ID and path. On the executor, removing, hiding, reserving or replacing the target rotates only its grant; no-op refreshes, renames and unrelated Space additions/updates/removals preserve it. Restoring the target requires a fresh grant, while global Projects-enablement and restart fences still apply. Disabled-executor cancellation, pause and receipt reconciliation keep their existing exemptions, not the new result/worker-content endpoints. Archived worker reads use the exact original task/session and executor binding and are snapshots only. Older peers refuse before transmission, never substitute snapshot text. `history(taskID:beforeSequence:)` is explicit bounded owner-record discovery, not arbitrary native transcript access.
 - **Fleet is how Macs connect** (no experiment, no off switch; `fleet.devices.v1`, offered whenever the host runs, never to a device): `FleetService`
   exists for as long as the host does, with its links, pairing of Macs (Join, peer tokens, `fleet.v1`) and devices (`fleetPairDevice`,
-  `devices.json`, the app's device actions: Add a device, Revoke, retire the shared token, `enrollApp`). It holds no port by itself: it
+  `devices.json`, the app's device actions: Add a device, Revoke, `enrollApp`). It holds no port by itself: it
   says when it needs the listener (`FleetService.needsListener`, handed to the app's host through `SessionServer.onFleetListenerNeed`): a
   Mac or a device is paired, a code window (Join a fleet, Add a device) is open, or this Mac is entering a code on another (its pairing tells
   that Mac where to reach it). A fresh host listens on nothing; Settings ▸ Fleet ▸ Serve this Mac keeps the listener open on its own. A code
@@ -546,7 +549,7 @@
   Before `hello`, `fleetIdentify` asks who is there and `fleetPair` pairs with a code the other Mac's Join screen shows
   (6 digits, five minutes, five wrong tries close it, kept only as a hash; unauthenticated fleet frames are rate limited).
   Each side hands the other a random token of its own (`FleetPeers`, `peers.json`, kept as a hash on the side that
-  checks it), and the listener accepts the shared token or a peer's: the connection records which peer opened it.
+  checks it), and the listener accepts a peer's token (or a device's): the connection records which peer opened it.
   After `hello`, `fleetIntroduce` brings a new Mac to every member, and `fleetRevoke` removes one
   everywhere (a tombstone, so a stale pairing never undoes a newer one). `fleetRead` and `fleetAction` (pair, start and
   stop a join window, remove) are for this Mac's own app over `host.sock`. The host
@@ -598,7 +601,7 @@
   multi file, so each applies as it arrives. A kind this build doesn't know is stored, relayed and never applied. The later write wins by (hlc, then the larger Mac id); the loser is kept in `history/<unit>/` (100
   versions or 30 days). An op a person didn't write, copied from what a Mac held when its sync first ran, is a `seed`: any
   other op beats it and among seeds the earliest wins, so the Mac where Fleet was first switched on is the reference.
-  Only to a `member` connection (`FleetAccess`: never a client device, never the shared token, never this Mac's own app; refused `forbidden`), after `hello` with a peer's token, one request, `fleetSync`, with
+  Only to a `member` connection (`FleetAccess`: never a client device, never this Mac's own app; refused `forbidden`), after `hello` with a peer's token, one request, `fleetSync`, with
   `FleetSyncRequest`: `hello(vector)` when a link comes up (answered with the receiver's version vector, `{macID: highest
   seq held}`), `ops` and `op` (ops the receiver lacks, in order per origin, batches under 512 KiB; a skipped `seq` is
   stored never and the sender resends from the vector in the answer; every op is validated for shape and size) and
@@ -609,7 +612,7 @@
   a hash of what it wrote so its own writes never return as ops, and never writes a blob it doesn't hold. `FleetSnapshot.sync`
   (`FleetSyncStatus`: each peer in sync, catching up or offline, and a one line notice of what the first sync replaced)
   rides `fleetRead` for Settings ▸ Fleet.
-  Slice 2c adds sign-ins, units only a Mac of the fleet ever holds (`FleetUnit.isCredential`; the access check above is the whole gate, and a device or the shared token is refused `forbidden` for every request, a credential included): `credential:<provider>` (inline JSON: one provider's entry in pi's `auth.json`, as pi stores it, sorted keys) and `mcpAuth:<key>` (one MCP server's sign-in in `mcp-auth.json`, pi's key `mcp__<name>|<url>`; only an entry with `tokens`, so a sign-in under way is not shared). Each is applied one key at a time under pi's own lock (`PiSettingsFile`), so a provider pi wrote meanwhile is never overwritten, and pi's rewrites (a sign-in, a token refresh, an account switch, a sign-out) are read back by the watcher as ops. There is no sealing, no fleet key and no Keychain: a sign-in that lives only in a Mac's Keychain is not in either file and does not sync, and the op log, blobs and history stay mode 0600 like `auth.json`. Each op of a unit is a new generation of that sign-in, ordered by the clock like any unit. An OAuth refresh token rotates, so before an agent's pi starts the host runs a fence (`FleetSync.catchUpCredentials`): it reads its own sign-ins, sends each connected peer `hello(vector, fresh: true)` (`fresh` is written only when set), the peer reads its own sign-ins before answering and pushes what the asker lacks, and the launch waits until the answer's vector is held and written, at most 3 s (a peer that doesn't catch it up in time is not waited for again for 60 s). With no peer connected, or none ahead, it returns at once. A host keeps a provider (or MCP server) out of the sync with a JSON array of names in `<support>/fleet/credentials-excluded.json` (read at each pass; there is no Settings row for it yet).
+  Slice 2c adds sign-ins, units only a Mac of the fleet ever holds (`FleetUnit.isCredential`; the access check above is the whole gate, and a device is refused `forbidden` for every request, a credential included): `credential:<provider>` (inline JSON: one provider's entry in pi's `auth.json`, as pi stores it, sorted keys) and `mcpAuth:<key>` (one MCP server's sign-in in `mcp-auth.json`, pi's key `mcp__<name>|<url>`; only an entry with `tokens`, so a sign-in under way is not shared). Each is applied one key at a time under pi's own lock (`PiSettingsFile`), so a provider pi wrote meanwhile is never overwritten, and pi's rewrites (a sign-in, a token refresh, an account switch, a sign-out) are read back by the watcher as ops. There is no sealing, no fleet key and no Keychain: a sign-in that lives only in a Mac's Keychain is not in either file and does not sync, and the op log, blobs and history stay mode 0600 like `auth.json`. Each op of a unit is a new generation of that sign-in, ordered by the clock like any unit. An OAuth refresh token rotates, so before an agent's pi starts the host runs a fence (`FleetSync.catchUpCredentials`): it reads its own sign-ins, sends each connected peer `hello(vector, fresh: true)` (`fresh` is written only when set), the peer reads its own sign-ins before answering and pushes what the asker lacks, and the launch waits until the answer's vector is held and written, at most 3 s (a peer that doesn't catch it up in time is not waited for again for 60 s). With no peer connected, or none ahead, it returns at once. A host keeps a provider (or MCP server) out of the sync with a JSON array of names in `<support>/fleet/credentials-excluded.json` (read at each pass; there is no Settings row for it yet).
 - **Fleet links and routes** (`fleet.link.v1`, offered with `fleet.v1`, `FleetRoutesWire.swift`): a pair of Macs holds one authenticated
   connection whichever of them opened it, so a pair where only one can dial the other (a router that blocks one direction between VLANs)
   works in both directions. A Mac that dials lists `RemoteProtocol.fleetLinkClientCapabilities` in `hello`; a host that offers
@@ -664,7 +667,7 @@
   `FleetPressureSample`: CPU share, core count, total and available memory, thermal state, power, threads working,
   reserved places) every 5 s to the Macs it holds a link to, `fleetReadiness` (a `FleetReadinessReport`: model, chip, the
   programs it lacks, whether Xcode is installed at all (`noXcode`, absent from an older Mac), the projects it has folders for) when that changes, daily, and every 60 s while it lists a missing tool (an install changes nothing it is keyed by), and again before it answers `fleetPressureNow` if it lists one, and answers `fleetPressureNow` with
-  `fleetPressureSample` when a peer needs a fresh reading. Only a connection that authenticated with a peer's token (`FleetAccess.member`; never a device or the shared token) may
+  `fleetPressureSample` when a peer needs a fresh reading. Only a connection that authenticated with a peer's token (`FleetAccess.member`; never a device) may
   send them, and a sample is filed under that peer, never one it names; the receiver clamps what it keeps and stamps the
   arrival with its own clock, so a sample carries no time and a sender's clock never matters. A host samples (no
   subprocess: `host_statistics`, `host_statistics64`, `ProcessInfo.thermalState`, IOPowerSources) only while a link to a
@@ -699,14 +702,14 @@
   and the sender sends the whole set again and checks its own index against the disk. A copy that is behind in the same generation is
   answered with where it stands and the sender sends the deltas between (the last 64 are kept). A 128 bit prefix names a hash; two contents
   sharing one would only make a manifest say "held" for a blob the target lacks, which the target's own hash check repairs (slice 4c).
-  Only a `FleetAccess.member` connection sends or is sent them: a client on the shared token or a device with its own token is
+  Only a `FleetAccess.member` connection sends or is sent them: a device with its own token is
   refused `forbidden` (and a device is not offered the capability, see `fleetMemberCapabilities`). `FleetSnapshot.index`
   (`FleetIndexStatus`: per repository its name, files indexed, `ready` once the first scan is done, and `indexing` while any is
   still on it) tells this Mac's app where the first scan stands, and is nil while the index isn't running. Nothing is
   sent, cloned or applied yet: slice 4c carries the blobs.
 - **Fleet view for clients** (`fleet.view.v1`, offered to every client, a device included; not one of
   `fleetMemberCapabilities`): a phone or an iPad reads the Macs, their load and readiness, and chooses where work is sent, and
-  does nothing else of the fleet. `fleetRead` from a `device` (or a client on the shared token) is answered with
+  does nothing else of the fleet. `fleetRead` from a `device` is answered with
   `FleetSnapshot.clientView`: this Mac's id and name, each peer's name, link and last seen, and `macs` (samples and readiness
   reports); never a peer's address or port in `peers`, a code window, the devices, the sync state or the build (the routes a phone keeps its
   Macs by are `members`, below). `fleetAction(.watching(_))` is
