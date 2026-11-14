@@ -830,12 +830,17 @@ struct ThreadView: View {
     /// Wheel/trackpad events are the one user scroll intent SwiftUI does not phase for us.
     private func installWheelMonitor() {
         guard wheelMonitor == nil else { return }
-        wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-            if hovering {
-                historyAnchor.cancel()
-                if event.scrollingDeltaY != 0 { input.readerScrolled(upward: event.scrollingDeltaY > 0) }
-                historyPaging.beginScroll()
-                tailGuard.readerMoved()
+        // The view's state holds the monitor, so a handler that held the view would hold it in return, and a teardown that cannot write
+        // `wheelMonitor` back to nil (a window released with the thread in it) would leave the pair and the store alive for good. The
+        // handler holds only what it moves.
+        let hovering = $hovering
+        wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) {
+            [weak input = input, weak anchor = historyAnchor, weak paging = historyPaging, weak guardian = tailGuard] event in
+            if hovering.wrappedValue {
+                anchor?.cancel()
+                if event.scrollingDeltaY != 0 { input?.readerScrolled(upward: event.scrollingDeltaY > 0) }
+                paging?.beginScroll()
+                guardian?.readerMoved()
             }
             return event
         }
