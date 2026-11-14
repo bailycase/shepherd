@@ -28,14 +28,16 @@ enum ThreadPassWait: Equatable {
 /// Row views: a hidden layout stays mounted and its thread keeps the views of its last rows, which are most of what the
 /// app holds (`NativeThreadStore.mountedCost` estimates them). Past `mountedBudget` bytes of them in all, the least
 /// recently shown hidden threads let their rows go (`NativeThreadStore.releaseTranscript`), a pass at a time and the oldest
-/// rows of the thread shown longest ago first (`releaseStep` bytes of them, or what the hidden threads are over by, at most
-/// `releaseCeiling`, while the app is quiet), unpinned ones first, then readers left scrolled up beyond the `keepPinned` most
-/// recently shown. The newest hidden thread, the ones on screen and the selected one are never taken. Only the thread view's rows go,
+/// rows of the thread shown longest ago first: `releaseStep` bytes of them from one thread, or what the hidden threads are over by,
+/// at most `releaseCeiling` while the app is idle or a stream lasts and they are far over the budget, and at most `releaseFarCeiling`
+/// while the app is idle and they are (`farOverBudget`). Unpinned threads go first, then readers left scrolled up beyond the
+/// `keepPinned` most recently shown. The newest hidden thread, the ones on screen and the selected one are never taken. Only the thread view's rows go,
 /// and not its last screen (`NativeThreadStore.keptRows`): the host, the page, the history, the caches, the draft and the rows
 /// at the end of the thread stay, so showing a thread draws its tail in the update that shows it, never blank and with nothing
 /// to build, and the rows above it come back after that frame (`ThreadView`). A reader taken this way comes back at the tail of
 /// its thread, not at its place (`ThreadView`). A pass waits (`busy`) for as long as the person scrolls or types, and while a thread
-/// on screen streams for at most `patience` looks, so that a long stream cannot hold it off for good: it takes no more than a step of rows.
+/// on screen streams for at most `patience` looks, so that a long stream cannot hold it off for good (it takes a step then), or not
+/// at all while the hidden threads are far over the budget (`farOverBudget`; it takes `releaseCeiling` at most).
 @MainActor
 final class NativeThreadStores<Key: Hashable> {
     private var stores: [Key: NativeThreadStore] = [:]
@@ -70,17 +72,18 @@ final class NativeThreadStores<Key: Hashable> {
     /// How long after a show the first pass runs while the hidden threads are far over the budget (`farOverBudget`): the shows come
     /// faster than passes that waited `releaseDelay` for each let go of what they build.
     var releaseUrgentDelay: Duration = .milliseconds(500)
-    /// The estimated bytes of rows a pass lets go of, at most (a row larger than it goes whole, as a pass lets go of at least one),
-    /// while a thread on screen streams and the hidden threads are not far over the budget, and when they are no more than a step over
-    /// it. A pass costs the main thread a layout of the whole mounted tree, tens of milliseconds, whether it takes one row or eight,
+    /// The estimated bytes of rows a pass lets go of, at most (a row larger than it goes whole, as a pass lets go of at least one), from one
+    /// thread, after a thread on screen has streamed for `patience` looks with the hidden threads not far over the budget (`farOverBudget`);
+    /// it is also the least a quiet pass takes. A pass costs the main thread a layout of the whole mounted tree, tens of milliseconds, whether it takes one row or eight,
     /// so a smaller step makes more passes and more of those stalls for the same memory, and shortens none.
     var releaseStep = 32 << 20
-    /// What a pass lets go of, at most, while the app is quiet (no key or scroll, no thread on screen streaming) or the hidden threads
-    /// are far over the budget, and they are more than a step over it: what they are over by. Showing a thread builds its rows again,
-    /// hundreds of megabytes of them in a few seconds, and the time to the next show gives the passes a few looks: a step a pass never
-    /// caught up with the shows while the person switched from one thread to the next, and the hidden threads grew to the abort.
+    /// What a pass lets go of, at most, while the app is idle (no key or scroll, no thread on screen streaming), or a thread streams and the
+    /// hidden threads are far over the budget, and they are more than a step over it: what they are over by. Showing a thread builds its rows
+    /// again, hundreds of megabytes of them in a few seconds, and the time to the next show gives the passes a few looks: a step a pass never
+    /// caught up with the shows while the person switched from one thread to the next, and the hidden threads grew to the abort. A stream's
+    /// pass takes no more than this, so that it stalls the stream no more than a quiet one's.
     var releaseCeiling = 128 << 20
-    /// The same while the hidden threads are far over the budget (`farOverBudget`). Letting rows go costs the main thread a sixth of what
+    /// The same while the app is idle and the hidden threads are far over the budget (`farOverBudget`). Letting rows go costs the main thread a sixth of what
     /// building them does, and a pass that takes one 250 MB row between two steps of a restore that builds one lets go of no more than
     /// the restore builds: the threads stayed at 5 GB or more, and the app aborted after fifty minutes.
     var releaseFarCeiling = 1 << 30
@@ -376,7 +379,14 @@ final class NativeThreadStores<Key: Hashable> {
             break
         }
         putOff = 0
-        enforceMountedBudget(limit: .max, ceiling: farOver ? releaseFarCeiling : wait == .idle ? releaseCeiling : nil)
+        // A stream's pass takes no more than a quiet pass near the budget would, and one thread's step after its patience: what it lets go of
+        // stalls the stream, and a gibibyte in one update stalled it for a second.
+        let ceiling: Int? = switch (wait, farOver) {
+        case (.idle, true): releaseFarCeiling
+        case (.idle, false), (.streaming, true): releaseCeiling
+        case (.streaming, false), (.input, _): nil
+        }
+        enforceMountedBudget(limit: ceiling == nil ? 1 : .max, ceiling: ceiling)
         return true
     }
 
