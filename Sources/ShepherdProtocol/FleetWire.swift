@@ -160,6 +160,33 @@ public struct FleetJoinStatus: Codable, Hashable, Sendable {
     }
 }
 
+/// A provider that is limiting the fleet's requests now, for the Fleet page's strip: from this Mac's own reports and every Mac's samples
+/// (`FleetPressureSample.limits`).
+public struct FleetLimitStatus: Codable, Hashable, Sendable, Identifiable {
+    /// pi's provider id ("anthropic").
+    public var provider: String
+    /// How long it lasts from the moment the host answered; the viewer counts down from when it received this.
+    public var seconds: Double
+    /// Dispatches and new threads of this Mac held for it (`FleetDispatchRecord.limitProvider`).
+    public var waiting: Int
+    public var id: String { provider }
+
+    public init(provider: String, seconds: Double, waiting: Int = 0) {
+        self.provider = provider
+        self.seconds = seconds
+        self.waiting = waiting
+    }
+
+    private enum CodingKeys: String, CodingKey { case provider, seconds, waiting }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try c.decode(String.self, forKey: .provider)
+        seconds = try c.decodeIfPresent(Double.self, forKey: .seconds) ?? 0
+        waiting = try c.decodeIfPresent(Int.self, forKey: .waiting) ?? 0
+    }
+}
+
 /// What the app draws of this Mac's fleet (`RemoteRequest.fleetRead`).
 public struct FleetSnapshot: Codable, Hashable, Sendable {
     /// The host's fleet answered. Always true from this build; an older host with Fleet off said false and nothing below was live.
@@ -193,11 +220,15 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
     /// This Mac and the Macs of its fleet with how each is reached (`RemoteProtocol.fleetFollowCapability`): what a phone or an iPad that
     /// is paired with any of them keeps its list of Macs from. Empty from a host without the capability, and while Fleet is off.
     public var members: [FleetViewMember]
+    /// The providers limiting the fleet's requests now (`FleetLimitStatus`), sorted by provider. Empty from a host that doesn't say.
+    public var limits: [FleetLimitStatus]
 
     public init(enabled: Bool = false, hostID: UUID? = nil, name: String = "", build: String? = nil, addresses: [String] = [],
                 port: UInt16? = nil, routes: [FleetReportedRoute] = [], advertising: Bool = false, peers: [FleetPeerStatus] = [], join: FleetJoinStatus? = nil,
                 sync: FleetSyncStatus? = nil, devices: FleetDevicesSnapshot? = nil, macs: [FleetMacState] = [],
-                dispatches: [FleetDispatchRecord] = [], index: FleetIndexStatus? = nil, members: [FleetViewMember] = []) {
+                dispatches: [FleetDispatchRecord] = [], index: FleetIndexStatus? = nil, members: [FleetViewMember] = [],
+                limits: [FleetLimitStatus] = []) {
+        self.limits = limits
         self.members = members
         self.routes = routes
         self.index = index
@@ -216,7 +247,7 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         self.sync = sync
     }
 
-    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, routes, advertising, peers, join, macs, devices, sync, dispatches, index, members }
+    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, routes, advertising, peers, join, macs, devices, sync, dispatches, index, members, limits }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -238,6 +269,7 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         dispatches = (try? c.decodeIfPresent([FleetDispatchRecord].self, forKey: .dispatches)) ?? []
         index = try c.decodeIfPresent(FleetIndexStatus.self, forKey: .index)
         members = (try? c.decodeIfPresent([FleetViewMember].self, forKey: .members)) ?? []
+        limits = (try? c.decodeIfPresent([FleetLimitStatus].self, forKey: .limits)) ?? []
     }
 }
 
@@ -256,7 +288,7 @@ extension FleetSnapshot {
                                           takesThreads: $0.takesThreads)
                       },
                       // A thread that is moving shows its progress wherever it is open; nothing else a Mac sent.
-                      macs: macs, dispatches: moves ? dispatches.filter { $0.kind == .move } : [], members: members)
+                      macs: macs, dispatches: moves ? dispatches.filter { $0.kind == .move } : [], members: members, limits: limits)
     }
 }
 

@@ -6,6 +6,8 @@ import ShepherdProtocol
 struct FleetLocalFacts: Sendable {
     /// Threads working now.
     var activeAgents: Int
+    /// Of them, the threads running a tool command now (`FleetPressureSample.commandAgents`).
+    var commandAgents: Int
     /// Each project (space) this Mac has a folder for.
     var spaces: [(name: String, path: String)]
     /// This Mac's build of Shepherd ("675"), for Check.
@@ -17,10 +19,11 @@ struct FleetLocalFacts: Sendable {
     /// Dispatches this host promised a place to that haven't started (`FleetPressureSample.reserved`).
     var reserved: Int
 
-    init(activeAgents: Int = 0, spaces: [(name: String, path: String)] = [], mcpConfig: URL? = nil, repoKeys: [String] = [], reserved: Int = 0,
+    init(activeAgents: Int = 0, commandAgents: Int = 0, spaces: [(name: String, path: String)] = [], mcpConfig: URL? = nil, repoKeys: [String] = [], reserved: Int = 0,
          build: String? = nil) {
         self.build = build
         self.activeAgents = activeAgents
+        self.commandAgents = commandAgents
         self.spaces = spaces
         self.mcpConfig = mcpConfig
         self.repoKeys = repoKeys

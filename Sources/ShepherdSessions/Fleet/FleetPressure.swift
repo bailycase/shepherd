@@ -19,6 +19,9 @@ final class FleetPressure: @unchecked Sendable {
         var readiness: FleetReadinessReport?
         var check: FleetCheckReport?
         var checkAt: Date?
+        /// The providers it said are limiting its requests, until when by this Mac's clock; replaced by each sample it sends, so a limit
+        /// ends here when it stops saying it.
+        var limits: [String: Date] = [:]
     }
 
     /// Sampling period.
@@ -34,7 +37,7 @@ final class FleetPressure: @unchecked Sendable {
     /// A burst of changes reaches the app as one.
     static let notifyDelay: TimeInterval = 0.3
     /// What a peer's report is cut to.
-    static let reportLimits = (repos: 200, missing: 50, text: 100)
+    static let reportLimits = (repos: 200, missing: 50, text: 100, limits: 16)
 
     private let queue: DispatchQueue
     private let clock: @Sendable () -> Date
@@ -65,6 +68,10 @@ final class FleetPressure: @unchecked Sendable {
     private var checkServing: [@Sendable (FleetCheckReport?) -> Void] = []
     private var checkWaiting: [@Sendable (FleetCheckReport?) -> Void] = []
     private var peers: [UUID: Peer] = [:]
+    /// The last `FleetRoom.cpuWindow` of this Mac's own CPU readings.
+    private var cpuReadings = FleetCPUAverage()
+    /// The providers this Mac itself saw limit its requests, until when (`reportLimit`); only these ride its samples.
+    private var ownLimits: [String: Date] = [:]
     private var watchers: Set<Int32> = []
     private var timer: DispatchSourceTimer?
     private var taking = false
@@ -143,14 +150,15 @@ final class FleetPressure: @unchecked Sendable {
         taking = true
         let facts = localFacts()
         Task { [weak self, sampler] in
-            let sample = await sampler.sample(activeAgents: facts.activeAgents, reserved: facts.reserved)
+            let sample = await sampler.sample(activeAgents: facts.activeAgents, commandAgents: facts.commandAgents, reserved: facts.reserved)
             self?.queue.async { self?.took(sample, facts: facts) }
         }
     }
 
-    private func took(_ sample: FleetPressureSample, facts: FleetLocalFacts) {
+    private func took(_ reading: FleetPressureSample, facts: FleetLocalFacts) {
         taking = false
         guard !stopped else { return }
+        let sample = decorated(reading)
         local = (sample, clock())
         for client in pushTargets() where client.capabilities.contains(RemoteProtocol.fleetPressureCapability) {
             Task { try? await client.fleetPressure(sample) }
@@ -282,15 +290,24 @@ final class FleetPressure: @unchecked Sendable {
         notify()
     }
 
+    /// A reading with what only this host knows: its CPU averaged over `FleetRoom.cpuWindow` and the providers it saw limited. Server queue.
+    private func decorated(_ reading: FleetPressureSample) -> FleetPressureSample {
+        var sample = reading
+        sample.cpuAverage = cpuReadings.add(reading.cpuUtilization, at: clock())
+        sample.limits = ownLimitList()
+        return sample
+    }
+
     /// A sample of this Mac now, for a peer that asked (`fleetPressureNow`). A report that lists a missing tool is looked at again
     /// first: a placement is about to rely on it, and installing the tool changes nothing it is keyed by.
     func sampleNow() async -> (FleetPressureSample, FleetReadinessReport?) {
         let facts = localFacts()
-        let sample = await sampler.sample(activeAgents: facts.activeAgents, reserved: facts.reserved)
-        let known: (key: String?, at: Date?, lacking: Bool) = await withCheckedContinuation { continuation in
+        let reading = await sampler.sample(activeAgents: facts.activeAgents, commandAgents: facts.commandAgents, reserved: facts.reserved)
+        let (sample, known): (FleetPressureSample, (key: String?, at: Date?, lacking: Bool)) = await withCheckedContinuation { continuation in
             queue.async {
+                let sample = self.decorated(reading)
                 self.local = (sample, self.clock())
-                continuation.resume(returning: (self.readinessKey, self.readinessAt, self.localReadiness.map { !$0.missing.isEmpty || $0.noXcode } ?? false))
+                continuation.resume(returning: (sample, (self.readinessKey, self.readinessAt, self.localReadiness.map { !$0.missing.isEmpty || $0.noXcode } ?? false)))
             }
         }
         let fresh = known.lacking ? await makeReadiness(facts, known: (known.key, known.at), now: clock(), force: true) : nil
@@ -319,8 +336,11 @@ final class FleetPressure: @unchecked Sendable {
 
     func received(_ sample: FleetPressureSample, from hostID: UUID) {
         var peer = peers[hostID] ?? Peer()
-        peer.sample = Self.sanitized(sample)
-        peer.receivedAt = clock()
+        let kept = Self.sanitized(sample)
+        let now = clock()
+        peer.sample = kept
+        peer.receivedAt = now
+        peer.limits = Dictionary((kept.limits ?? []).map { ($0.provider, now.addingTimeInterval($0.seconds)) }) { first, second in max(first, second) }
         peers[hostID] = peer
         notify()
     }
@@ -344,6 +364,15 @@ final class FleetPressure: @unchecked Sendable {
         sample.batteryPercent = sample.batteryPercent.map { min(100, max(0, $0)) }
         sample.activeAgents = min(100_000, max(0, sample.activeAgents))
         sample.reserved = min(100_000, max(0, sample.reserved))
+        sample.commandAgents = sample.commandAgents.map { min(sample.activeAgents, max(0, $0)) }
+        sample.cpuAverage = sample.cpuAverage.map { $0.isFinite ? min(1, max(0, $0)) : 0 }
+        sample.limits = sample.limits.map { limits in
+            limits.prefix(reportLimits.limits).compactMap { limit in
+                let provider = normalized(limit.provider)
+                guard !provider.isEmpty, limit.seconds.isFinite, limit.seconds > 0 else { return nil }
+                return FleetProviderLimit(provider: provider, seconds: min(FleetProviderLimits.maxHold, limit.seconds))
+            }
+        }
         return sample
     }
 
@@ -354,6 +383,53 @@ final class FleetPressure: @unchecked Sendable {
             missing: report.missing.prefix(reportLimits.missing).map { FleetMissingTool(kind: $0.kind, name: line($0.name)) },
             repos: report.repos.prefix(reportLimits.repos).map(line), repoKeys: report.repoKeys.prefix(reportLimits.repos).map(line),
             noXcode: report.noXcode)
+    }
+
+    // MARK: Provider limits
+
+    /// pi's provider ids are lowercase words ("anthropic", "openai-codex"); what a peer sends is cut and lowercased like one.
+    static func normalized(_ provider: String) -> String {
+        String(provider.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().prefix(reportLimits.text))
+    }
+
+    /// pi said `provider` limited a request (a 429 or "overloaded"): this Mac holds new work for it for what the error asks, or
+    /// `FleetProviderLimits.defaultHold`, and tells the Macs it is linked to at once, not at the next sample. Server queue.
+    func reportLimit(provider: String, retryAfter: TimeInterval?) {
+        let id = Self.normalized(provider)
+        guard !stopped, !id.isEmpty else { return }
+        let now = clock()
+        let until = now.addingTimeInterval(FleetProviderLimits.hold(retryAfter: retryAfter))
+        let held = ownLimits[id].map { $0.timeIntervalSince(now) } ?? 0
+        // An error that asks for less than the hold already running doesn't shorten it.
+        ownLimits[id] = max(ownLimits[id] ?? until, until)
+        guard held <= 0 || until.timeIntervalSince(now) > held + 1 else { return }
+        if linkConnected() { tick() }
+        notify()
+    }
+
+    /// The providers this Mac saw limited and that still are, as a sample carries them.
+    private func ownLimitList() -> [FleetProviderLimit] {
+        let now = clock()
+        ownLimits = ownLimits.filter { $0.value > now }
+        return ownLimits.map { FleetProviderLimit(provider: $0.key, seconds: $0.value.timeIntervalSince(now)) }.sorted { $0.provider < $1.provider }
+    }
+
+    /// How long `provider` is limited for, by any Mac of the fleet (this one's own errors, and what each peer says of its own); nil when it isn't.
+    func limitRemaining(_ provider: String) -> TimeInterval? {
+        let now = clock()
+        let id = Self.normalized(provider)
+        let untils = [ownLimits[id]] + peers.values.map { $0.limits[id] }
+        return untils.compactMap { $0 }.map { $0.timeIntervalSince(now) }.filter { $0 > 0 }.max()
+    }
+
+    /// Every provider limiting the fleet now, with the time left, sorted by provider.
+    func limits() -> [FleetProviderLimit] {
+        let now = clock()
+        var until = ownLimits
+        for peer in peers.values { until.merge(peer.limits) { max($0, $1) } }
+        return until.compactMap { provider, end in
+            end.timeIntervalSince(now) > 0 ? FleetProviderLimit(provider: provider, seconds: end.timeIntervalSince(now)) : nil
+        }.sorted { $0.provider < $1.provider }
     }
 
     // MARK: Reading

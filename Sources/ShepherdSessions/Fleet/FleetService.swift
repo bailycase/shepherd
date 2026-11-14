@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
@@ -1176,7 +1177,15 @@ final class FleetService: @unchecked Sendable {
                              advertising: discovery?.isAdvertising ?? false, peers: statuses, join: window,
                              sync: syncStatus, devices: FleetDevicesSnapshot(devices: clients, code: code),
                              macs: pressure.macs(thisMac: identity.hostID, peerIDs: statuses.map(\.hostID)),
-                             dispatches: dispatch.log(), index: index.status(), members: viewMembers())
+                             dispatches: dispatch.log(), index: index.status(), members: viewMembers(), limits: dispatch.limitStatuses())
+    }
+
+    /// A thread's request to `provider` failed with `error` (server queue): when it is a rate limit or "overloaded", sign-ins are shared, so
+    /// the limit is the fleet's (`FleetPressure.reportLimit`).
+    func providerFailed(provider: String, error: String) {
+        let kind = NativeTurnError(text: String(error.prefix(4096))).kind
+        guard kind == .rateLimit || kind == .overloaded else { return }
+        pressure.reportLimit(provider: provider, retryAfter: FleetProviderLimits.retryAfter(in: error))
     }
 
     private func status(of record: FleetPeerRecord) -> FleetPeerStatus {

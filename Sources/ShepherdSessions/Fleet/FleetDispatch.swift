@@ -31,6 +31,16 @@ final class FleetCounter: @unchecked Sendable {
     }
 }
 
+/// The agents doing something now, readable from any thread (`FleetPressureSample.commandAgents`).
+final class FleetAgentSet: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Set<AgentID> = []
+    var members: Set<AgentID> { lock.withLock { stored } }
+    func set(_ id: AgentID, _ present: Bool) {
+        lock.withLock { if present { stored.insert(id) } else { stored.remove(id) } }
+    }
+}
+
 /// A dispatch the host refused, with the code a thread (or the log) reads.
 struct FleetDispatchRefusal: Error, Equatable {
     var code: String
@@ -47,6 +57,8 @@ struct FleetDispatchHost: @unchecked Sendable {
     var settings: @Sendable () -> HostSettings? = { nil }
     /// Delivers `text` to a thread as a task (`pushMessage`): false when its pi isn't connected.
     var wakeParent: @Sendable (AgentID, String) async -> Bool = { _, _ in false }
+    /// The model a thread takes when it names none ("anthropic/claude-x"), for the provider whose limit holds it; nil when pi has none set.
+    var defaultModel: @Sendable () -> String? = { nil }
     /// Starts a thread the way a remote client's create does (`onRemoteCreateAgent`).
     var createThread: @Sendable (RemoteCreateAgentRequest) async -> Result<AgentID, RemoteCreateAgentError> = { _ in
         .failure(RemoteCreateAgentError("host cannot create threads"))
@@ -379,6 +391,14 @@ final class FleetDispatch: @unchecked Sendable {
 
     func record(_ id: UUID) -> FleetDispatchRecord? { outbound[id] }
 
+    /// The providers limiting the fleet now and how many of this Mac's dispatches wait for each (the Fleet page's strip).
+    func limitStatuses() -> [FleetLimitStatus] {
+        pressure.limits().map { limit in
+            FleetLimitStatus(provider: limit.provider, seconds: limit.seconds,
+                             waiting: outbound.values.filter { $0.state == .waitingRoom && $0.limitProvider == limit.provider }.count)
+        }
+    }
+
     /// The dispatch `key` names for `agentID`, as the extension asked (a UUID or the tool call's own id).
     func dispatch(forKey key: String, agent agentID: AgentID) -> FleetDispatchRecord? {
         let id = Self.identifier(key: key, agent: agentID)
@@ -574,6 +594,7 @@ final class FleetDispatch: @unchecked Sendable {
     func place(_ id: UUID, completion: ((Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void)?) {
         guard outbound[id] != nil else { return completion?(.failure(.init(code: FleetDispatchCode.invalid, message: "No such dispatch."))) ?? () }
         guard !placing.contains(id) || completion != nil else { return }
+        if holdForLimit(id) { return completion?(.success(outbound[id]!)) ?? () }
         placing.insert(id)
         let stale = peers().filter { peer in
             guard peer.connected else { return false }
@@ -599,6 +620,35 @@ final class FleetDispatch: @unchecked Sendable {
                 self.decide(id, completion: completion)
             }
         }
+    }
+
+    /// The provider whose limit holds this dispatch: the one of its model (the default model's when it names none), while the fleet has it limited.
+    func limitedProvider(of record: FleetDispatchRecord) -> String? {
+        guard let provider = FleetPlacement.provider(ofModel: record.model ?? host.defaultModel()) else { return nil }
+        return pressure.limitRemaining(provider) == nil ? nil : provider
+    }
+
+    /// A dispatch for a provider the fleet has limited waits for the limit to lift instead of piling on: it keeps its place (`waitingRoom`, so an
+    /// older build shows it waiting) and the same look every few seconds starts it when the limit is gone. Other providers' work is not held.
+    /// True when `id` is held (the caller says so); false lets it be placed, and clears what an earlier hold wrote.
+    private func holdForLimit(_ id: UUID) -> Bool {
+        // A move carries a thread that already runs; the limit holds new threads, not that one.
+        guard var record = outbound[id], record.kind != .move, [.placing, .waitingRoom, .heldLimit].contains(record.state) else { return false }
+        guard let provider = limitedProvider(of: record) else {
+            if record.limitProvider != nil { outbound[id]?.limitProvider = nil; save() }
+            return false
+        }
+        if record.state != .waitingRoom || record.limitProvider != provider {
+            record.state = .waitingRoom
+            record.limitProvider = provider
+            record.targetHostID = nil
+            record.targetHostName = nil
+            record.updatedAt = now
+            outbound[id] = record
+            save()
+        }
+        scheduleEvaluation()
+        return true
     }
 
     private func decide(_ id: UUID, completion: ((Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void)?) {
@@ -633,6 +683,7 @@ final class FleetDispatch: @unchecked Sendable {
             record.targetHostID = target
             record.targetHostName = macs.first { $0.hostID == target }?.name
             record.reasonCodes = reasons
+            record.limitProvider = nil
             // What the target lacks of MCP servers doesn't stop it: the thread starts without them, and the sender is told which.
             record.without = macs.first { $0.hostID == target }?.withoutCommands ?? []
             record.state = .preparing

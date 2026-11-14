@@ -123,11 +123,15 @@ public struct FleetPlacementReason: Codable, Hashable, Sendable {
     public var skip: String?
     /// How many times the winner's room beat this Mac's, where that was weighed.
     public var ratio: Double?
+    /// How many threads on the Mac it went to were running a tool command (a build, a test run) when it was chosen; nil where the Mac
+    /// didn't say (an older build) or the Mac was named. The log's "Mac mini: no builds running".
+    public var commands: Int?
 
-    public init(_ code: Code, skip: String? = nil, ratio: Double? = nil) {
+    public init(_ code: Code, skip: String? = nil, ratio: Double? = nil, commands: Int? = nil) {
         self.code = code
         self.skip = skip
         self.ratio = ratio
+        self.commands = commands
     }
 }
 
@@ -316,6 +320,9 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
     /// The Check items the thread is there to fix (`FleetUserThread.fixes`): while it runs the Check tab shows them being fixed, and when it ends the
     /// host looks at the Mac again. Empty for any other dispatch, and from an older build.
     public var fixes: [String]
+    /// While it waits (`waitingRoom`) because the provider of its model is limiting the fleet's requests (`FleetProviderLimits`): pi's
+    /// provider id. It goes by itself when the limit lifts. Nil otherwise, and from an older build (which says only that it waits).
+    public var limitProvider: String?
     /// Epoch milliseconds.
     public var createdAt: Double
     public var updatedAt: Double
@@ -327,7 +334,9 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
                 thinking: String? = nil, reasonCodes: [FleetPlacementReason] = [], without: [String] = [], remoteAgentID: AgentID? = nil, activity: String? = nil,
                 resultText: String? = nil, resultBranchFacts: FleetBranchFacts? = nil, snapshotBytes: UInt64? = nil, snapshotProgress: UInt64? = nil,
                 snapshotFiles: Int? = nil, sendWarning: Bool = false, fileMillis: Int? = nil, spaceID: SpaceID? = nil, origin: String? = nil,
-                clone: FleetCloneProgress? = nil, start: FleetThreadStart? = nil, move: FleetMoveInfo? = nil, fixes: [String] = [], createdAt: Double, updatedAt: Double? = nil) {
+                clone: FleetCloneProgress? = nil, start: FleetThreadStart? = nil, move: FleetMoveInfo? = nil, fixes: [String] = [], limitProvider: String? = nil,
+                createdAt: Double, updatedAt: Double? = nil) {
+        self.limitProvider = limitProvider
         self.fixes = fixes
         self.start = start
         self.move = move
@@ -374,7 +383,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         case failure, failureDetail, title, task, repoKey, commitSHA, subdir, branch, model, thinking, reasonCodes, without, remoteAgentID
         case activity, resultText, resultBranchFacts, createdAt, updatedAt
         case snapshotBytes, snapshotProgress, snapshotFiles, sendWarning, fileMillis
-        case spaceID, origin, clone, start, fixes, move, movedOn
+        case spaceID, origin, clone, start, fixes, move, movedOn, limitProvider
     }
 
     public init(from decoder: Decoder) throws {
@@ -418,6 +427,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         move = try? c.decodeIfPresent(FleetMoveInfo.self, forKey: .move)
         movedOn = try? c.decodeIfPresent(FleetMovedOn.self, forKey: .movedOn)
         fixes = try c.decodeIfPresent([String].self, forKey: .fixes) ?? []
+        limitProvider = try c.decodeIfPresent(String.self, forKey: .limitProvider)
         createdAt = try c.decodeIfPresent(Double.self, forKey: .createdAt) ?? 0
         updatedAt = try c.decodeIfPresent(Double.self, forKey: .updatedAt) ?? createdAt
     }
@@ -462,6 +472,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(move, forKey: .move)
         try c.encodeIfPresent(movedOn, forKey: .movedOn)
         if !fixes.isEmpty { try c.encode(fixes, forKey: .fixes) }
+        try c.encodeIfPresent(limitProvider, forKey: .limitProvider)
         try c.encode(createdAt, forKey: .createdAt)
         try c.encode(updatedAt, forKey: .updatedAt)
     }

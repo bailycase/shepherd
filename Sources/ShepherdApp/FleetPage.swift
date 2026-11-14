@@ -92,6 +92,9 @@ struct FleetPageContent: View {
         ScrollView {
             VStack(alignment: .leading, spacing: SH.Space.xl) {
                 FleetPlacementCard(autoDispatch: page.autoDispatch, nextGoesTo: page.nextGoesTo)
+                ForEach(page.limits) { strip in
+                    FleetLimitStripView(strip: strip)
+                }
                 if !page.attention.isEmpty || !page.behind.isEmpty {
                     VStack(spacing: SH.Space.l) {
                         ForEach(page.attention) { card in
@@ -165,6 +168,29 @@ private struct FleetPlacementCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: sh.lineSubtle)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// "Anthropic is limiting your account…": a provider is limiting the fleet's requests, so new threads for it wait on every Mac.
+struct FleetLimitStripView: View {
+    let strip: FleetLimitStrip
+
+    var body: some View {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.l) {
+            Circle().fill(sh.lantern).frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
+            Text(strip.text).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.lanternText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let waiting = strip.waiting {
+                Text(waiting).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary).fixedSize()
+            }
+        }
+        .padding(.vertical, SH.Space.m)
+        .padding(.horizontal, SH.Space.xl)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(sh.lanternTint, in: RoundedRectangle(cornerRadius: SH.Radius.l))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel([strip.text, strip.waiting].compactMap { $0 }.joined(separator: ". "))
     }
 }
 

@@ -60,6 +60,89 @@ struct FleetPagePresentationTests {
 
     static func card(_ id: UUID, _ page: FleetPage) -> FleetMacCard { page.cards.first { $0.id == id }! }
 
+    // MARK: Signals
+
+    /// FleetA's Agents row.
+    @Test func theAgentsRowSaysHowManyRunBuildsOrTestsAndHowManyWaitOnTheModel() {
+        func words(_ working: Int, _ commands: Int?) -> String {
+            FleetPagePresentation.agentsWords(FleetPressureSample(cpuUtilization: 0, cpuCount: 8, totalMemoryBytes: 100, availableMemoryBytes: 50, activeAgents: working, commandAgents: commands))
+        }
+        #expect(words(3, 2) == "3 working · 2 running builds or tests")
+        #expect(words(3, 0) == "3 working · all waiting on the model")
+        #expect(words(1, 0) == "1 working · waiting on the model")
+        #expect(words(2, 1) == "2 working · 1 running a build or test")
+        #expect(words(3, nil) == "3 working", "an older Mac doesn't say")
+        #expect(words(0, 0) == "None working")
+    }
+
+    @Test func aMacUnderMemoryPressureIsNotCountedAndItsMemoryReadsWarn() {
+        var snapshot = Self.snapshot()
+        snapshot.macs[1].sample?.memoryPressure = .warn
+        let mini = Self.card(Self.mini, Self.page(snapshot))
+        #expect(mini.room.text == "No room" && mini.room.tone == .bad && mini.memory?.tone == .warn)
+        snapshot.macs[1].sample?.memoryPressure = .critical
+        #expect(Self.card(Self.mini, Self.page(snapshot)).memory?.tone == .bad)
+    }
+
+    @Test func theCardShowsTheCurrentCpuWhileTheRoomUsesTheAverage() {
+        var snapshot = Self.snapshot()
+        // 72% right now on this Mac, but 20% over the minute: it counts as having plenty of room, and the card still says 72%.
+        snapshot.macs[0].sample?.cpuAverage = 0.2
+        let page = Self.page(snapshot)
+        #expect(Self.card(Self.here, page).cpu?.text == "72%")
+        let plain = Self.card(Self.here, Self.page())
+        #expect(Self.card(Self.here, page).room.fraction > plain.room.fraction)
+    }
+
+    @Test func aLimitedProviderIsAStripWithItsCountdownAndHowManyWait() {
+        var snapshot = Self.snapshot()
+        snapshot.limits = [FleetLimitStatus(provider: "anthropic", seconds: 100, waiting: 3)]
+        let strip = Self.page(snapshot).limits.first
+        #expect(strip?.id == "anthropic" && strip?.waiting == "3 waiting")
+        #expect(strip?.text == "Anthropic is limiting your account. New Claude threads wait about 1m 40s before they start, on every Mac. Other models start now.")
+        // The countdown goes on between snapshots, and the strip goes when the limit has lifted.
+        #expect(Self.page(snapshot, snapshotAge: 60).limits.first?.text.contains("about 40s") == true)
+        #expect(Self.page(snapshot, snapshotAge: 100).limits.isEmpty)
+        snapshot.limits[0].waiting = 0
+        #expect(Self.page(snapshot).limits.first?.waiting == nil)
+        #expect(Self.page().limits.isEmpty)
+    }
+
+    @Test func severalLimitedProvidersEachGetAStripThatDoesNotPromiseTheRestStartNow() {
+        var snapshot = Self.snapshot()
+        snapshot.limits = [FleetLimitStatus(provider: "anthropic", seconds: 100), FleetLimitStatus(provider: "openai-codex", seconds: 30)]
+        let strips = Self.page(snapshot).limits
+        #expect(strips.map(\.id) == ["anthropic", "openai-codex"])
+        #expect(strips.allSatisfy { !$0.text.contains("Other models start now") })
+        #expect(strips[1].text == "OpenAI is limiting your account. New OpenAI threads wait about 30s before they start, on every Mac.")
+    }
+
+    @Test func aDispatchHeldForALimitSaysSoInTheLogWithTheTimeLeft() throws {
+        var snapshot = Self.snapshot()
+        snapshot.limits = [FleetLimitStatus(provider: "anthropic", seconds: 100, waiting: 1)]
+        var record = FleetDispatchPresentationTests.record(.waitingRoom, target: nil, host: nil)
+        record.limitProvider = "anthropic"
+        snapshot.dispatches = [record]
+        let row = try #require(Self.page(snapshot).dispatches.first)
+        #expect(row.state == "Waiting" && row.reason == "Waiting for Anthropic's limit · 1m 40s")
+        // The limit lifted a moment ago and the host hasn't placed it yet.
+        let lifted = try #require(Self.page(snapshot, snapshotAge: 200).dispatches.first)
+        #expect(lifted.reason == "Waiting for Anthropic's limit to lift")
+    }
+
+    @Test func theLogSaysWhatTheMacItWentToWasRunning() throws {
+        var snapshot = Self.snapshot()
+        var quiet = FleetDispatchPresentationTests.record(.running, reasons: [FleetPlacementReason(.mostRoom, ratio: 2, commands: 0)])
+        quiet.id = UUID()
+        var building = FleetDispatchPresentationTests.record(.running, reasons: [FleetPlacementReason(.onlyChoice, commands: 2)], at: 50)
+        building.id = UUID()
+        snapshot.dispatches = [quiet, building]
+        let rows = Self.page(snapshot).dispatches
+        #expect(rows.map(\.reason) == ["Auto: Mac mini, no builds running", "Auto: Mac mini, 2 running builds or tests"])
+        let memory = FleetDispatchPresentationTests.record(.running, reasons: [FleetPlacementReason(.localIneligible, skip: "memoryPressure"), FleetPlacementReason(.mostRoom)])
+        #expect(FleetPagePresentation.dispatchRow(memory, now: Date()).reason == "Auto: This Mac is under memory pressure")
+    }
+
     // MARK: Cards
 
     @Test func theCardsAreThisMacThenEachPairedMacInOrder() {

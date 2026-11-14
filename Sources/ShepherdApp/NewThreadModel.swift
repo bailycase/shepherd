@@ -260,6 +260,16 @@ final class NewThreadState {
             baseBranch: workplaceBase(vm), startsInCheckout: !(worktree && offersWorktree(vm)))
     }
 
+    /// The provider of the thread's model is limiting the fleet's requests now: the host holds the thread, as it would a dispatch, until the limit lifts
+    /// (`FleetProviderLimits`). It takes words only, as any dispatch does.
+    func limitHolds(_ vm: ShepherdViewModel) -> Bool {
+        let chosen = model.trimmingCharacters(in: .whitespaces)
+        guard attachments.images.isEmpty, references.isEmpty,
+              let provider = FleetPlacement.provider(ofModel: chosen.isEmpty ? listing?.defaultModel : chosen) else { return false }
+        let age = Date().timeIntervalSince(vm.fleetPage.snapshotAt)
+        return vm.fleetPage.snapshot.limits.contains { $0.provider == provider && $0.seconds - age >= 1 }
+    }
+
     /// The workplace choice of the form, as the Mac that runs the thread takes it (`FleetThreadStart`). The base a new worktree starts from is
     /// the one picked, else the project's, else what Settings ▸ Worktrees resolves (without fetching: the Mac that runs it does that).
     func fleetStart(_ vm: ShepherdViewModel, spaceID: SpaceID, worktree useWorktree: Bool, base picked: String?, branch: NewThreadBranch?) async -> FleetThreadStart {
@@ -503,12 +513,13 @@ final class NewThreadState {
         let images = attachments.images
         // Where the thread goes when Fleet is on: another Mac, with the words and nothing else. The local host confirms the Mac at send.
         let picker = place.host == nil ? fleetPicker(vm) : .empty
+        let held = place.host == nil && limitHolds(vm)
         starting = true
         error = nil
         Task {
             defer { starting = false }
             do {
-                if picker.dispatches, let spaceID = place.space {
+                if picker.dispatches || held, let spaceID = place.space {
                     let named: String? = if case .mac(let id)? = wherePick { id.uuidString } else { nil }
                     // Where the form would have started it here: a new worktree from a base, a new worktree on a branch, or the checkout.
                     let start = await fleetStart(vm, spaceID: spaceID, worktree: useWorktree, base: submittedBase, branch: submittedBranch)
@@ -518,7 +529,7 @@ final class NewThreadState {
                         if prompt == submittedPrompt { prompt = "" }
                         return
                     }
-                    // The host kept it on this Mac (it had the room): it starts here as it always did.
+                    // The host kept it on this Mac (it had the room, and no limit holds it): it starts here as it always did.
                 }
                 if let host = place.host {
                     guard let space = vm.remoteHosts.allConnections.first(where: { $0.id == host })?.state.spaces
