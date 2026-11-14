@@ -114,8 +114,7 @@ struct SidebarPinnedFlowTests {
         try #require(!relaunched.didAdopt && relaunched.state.agents.isEmpty)
         relaunched.pruneSidebarPins()
         #expect(relaunched.sidebarPins.threads == [.local(agents[0].agent.id)])
-        // Then it connects to its host, as the relaunched app does.
-        let token = try String(contentsOf: app.dir.appendingPathComponent("remote-token"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        // Then it connects to its host's local socket, as the relaunched app does: this app's own code needs no token.
         _ = relaunched.connectLocalHost(socket: app.hostSocket)
         try await eventuallyOnMain("the view model to adopt the workspace") { relaunched.state == app.server.state }
         #expect(relaunched.sidebarPins.threads == [.local(agents[0].agent.id)])
