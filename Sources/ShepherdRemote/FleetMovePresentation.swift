@@ -221,7 +221,7 @@ public struct FleetMoveConfirm: Equatable, Sendable {
         let since = call.startedAt.map { Date(timeIntervalSince1970: $0 / 1000) }
         var duration = ""
         if let since {
-            let seconds = max(0, Int(now.timeIntervalSince(since)))
+            let seconds = max(0, Int(now.timeIntervalSince(since).rounded()))
             duration = seconds < 60 ? " for \(nativeCount(max(1, seconds), "second"))" : " for \(nativeCount(seconds / 60, "minute"))"
         }
         return FleetMoveConfirm(title: "It’s running a command",
