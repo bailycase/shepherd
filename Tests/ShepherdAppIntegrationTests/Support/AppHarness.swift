@@ -67,7 +67,7 @@ final class AppHarness {
             apps: AppsModel(home: dir.appendingPathComponent("apps-home").path)
         )
         self.vm = vm
-        let token = try await serveHost(mcp: mcp, recovering: restoringAgents)
+        let token = try await serveHost(mcp: mcp, piAuth: piAuth, recovering: restoringAgents)
         let connection = vm.connectLocalHost(socket: hostSocket, token: token)
         let server = server
         try await eventuallyOnMain("the view model to adopt the host's workspace", timeout: .seconds(30)) {
@@ -85,8 +85,9 @@ final class AppHarness {
     private var hostBanners: ThreadBanners?
 
     /// Serves the scratch server as the app's host, as `Shepherd --host` does, on `hostSocket`.
-    /// `recovering` respawns unfinished work as the host does at its start. Returns the token.
-    private func serveHost(mcp: MCPStore?, recovering: Bool) async throws -> String {
+    /// `recovering` respawns unfinished work as the host does at its start. `piAuth` is the host's sign-in store too, so
+    /// a client's provider requests run the test's bridge. Returns the token.
+    private func serveHost(mcp: MCPStore?, piAuth: PiAuthStore?, recovering: Bool) async throws -> String {
         let tokenURL = dir.appendingPathComponent("remote-token")
         if host == nil {
             let notice = "shepherd-test-settings-\(UUID().uuidString)"
@@ -104,6 +105,11 @@ final class AppHarness {
             services.pullRequestLookup = { _ in nil }
             host = services
             hostBanners = await services.serve(server, socket: hostSocket, tokenURL: tokenURL, recovering: recovering)
+            if let piAuth {
+                let pi = server.pi
+                HostStores(mcp: services.mcpStore, subagents: { SubagentDefinitionsModel(pi: pi) }, piAuth: piAuth, yourPi: YourPiModel(pi: pi),
+                           remoteSignIns: RemoteSignIns()).serve(on: server)
+            }
         }
         return try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
     }
