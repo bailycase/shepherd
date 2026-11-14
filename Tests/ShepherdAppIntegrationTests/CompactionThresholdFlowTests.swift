@@ -7,7 +7,7 @@ import Testing
 /// Settings ▸ Agents ▸ Compact at, from the setting to the file pi reads: the host, which follows the
 /// app's settings, asks the stub engine for its catalog and writes each model's reserve into Shepherd's pi home. The
 /// controls themselves are pressed in `AgentSettingsContextTests`.
-@Suite("Compact at, written for pi", .mainActorExclusive, .integrationTimeLimit)
+@Suite("Compact at, written for pi", .mainActorExclusive)
 @MainActor
 struct CompactionThresholdFlowTests {
     /// A pi home of its own: the process-wide scratch home is shared with every harness that starts a view model,

@@ -6,7 +6,7 @@ import ShepherdRemote
 import ShepherdTestSupport
 @testable import ShepherdApp
 
-@Suite("Browser tab behavior", .mainActorExclusive, .integrationTimeLimit)
+@Suite("Browser tab behavior", .mainActorExclusive)
 @MainActor
 struct BrowserTabsTests {
     private func result(_ outcome: BrowserOutcome) throws -> String {

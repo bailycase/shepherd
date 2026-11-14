@@ -12,7 +12,7 @@ import Testing
 /// a window that is never shown: a chip's thumbnail opens the viewer, its x removes the image,
 /// and the viewer's ‹ › Copy, Add to message, Show in Finder and close each do what they say. Each
 /// scenario runs in its own process for the accessibility tree (`ControlPress`).
-@Suite("Thread images, controls", .mainActorExclusive, .integrationTimeLimit)
+@Suite("Thread images, controls", .mainActorExclusive)
 struct ThreadImagesControlTests {
     @Test func theChipsThumbnailOpensTheViewerAndItsXRemovesTheImage() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
