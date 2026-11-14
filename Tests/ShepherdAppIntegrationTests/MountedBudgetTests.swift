@@ -263,7 +263,8 @@ struct MountedBudgetTests {
         #expect(SHRenderProbe.count("deck.unmount") == 0 && SHRenderProbe.count("deck.mount") == 0, "no layout was removed or mounted")
     }
 
-    /// What a pass lets go of is freed, and not only taken out of the window: the views of the rows it took are gone once the layout has drawn without them.
+    /// What a pass lets go of is freed, and not only taken out of the window: once the layout has drawn without them, the views of the rows it
+    /// took are gone and the ones of its last screen are the only fields left, in the window and in memory.
     @Test func aReleasedThreadsRowViewsAreFreed() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -276,12 +277,22 @@ struct MountedBudgetTests {
         }
         func fields(in view: NSView) -> [NSView] { (view is SHNativeCodeText.Field ? [view] : []) + view.subviews.flatMap(fields) }
         var held: [Held] = []
-        for index in [1, 2] { held += fields(in: try #require(try work.host(index))).map(Held.init) }
-        #expect(held.count > 20, "two threads draw their fences: \(held.count)")
+        var kept = 0
+        for index in [1, 2] {
+            let drawn = fields(in: try #require(try work.host(index)))
+            let store = work.store(index)
+            held += drawn.map(Held.init)
+            // Every reply of the seed holds the same number of fences, and its prompt none.
+            let replies = store.rows.filter { $0.presentation != nil }.count
+            kept += drawn.count / replies * store.rows.suffix(store.keptRows).filter { $0.presentation != nil }.count
+        }
+        #expect(held.count > 20 && kept > 0 && kept < held.count / 2, "two threads draw their fences, and a last screen is a part of them: \(held.count), \(kept) of them kept")
         work.releaseHidden()
-        try await eventuallyOnMain("the views of the rows that went to be freed", timeout: .seconds(60)) {
+        try await eventuallyOnMain("the views of the rows that went to be freed, and the last screens' alone to stay", timeout: .seconds(60)) {
             ListPerf.settle(work.window)
-            return held.filter { $0.view != nil }.count <= held.count / 2
+            let drawn = try [1, 2].flatMap { fields(in: try #require(try work.host($0))) }
+            let alive = held.compactMap(\.view)
+            return drawn.count == kept && alive.count <= kept && alive.allSatisfy { view in drawn.contains { $0 === view } }
         }
     }
 
