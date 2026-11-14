@@ -18,6 +18,8 @@ struct FleetSnapshotSender {
         /// The checkout the contents are read from.
         var root: String
         var bundle: (ref: FleetBlobRef, url: URL)?
+        /// A move: the thread's conversation, a content like the bundle.
+        var transcript: (ref: FleetBlobRef, url: URL)?
         var warning: Bool
         /// Milliseconds since `build` began at the end of each step, in order (the budget test and the log).
         var phases: [String] = []

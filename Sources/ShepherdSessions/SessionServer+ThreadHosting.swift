@@ -165,7 +165,7 @@ extension SessionServer {
 
     /// Starts a thread's pi with the host's launch settings; a failure is logged.
     @MainActor
-    private func startThreadPi(_ agentID: AgentID, hosting: ThreadHosting, checksResume: Bool = true, model: String? = nil) async {
+    func startThreadPi(_ agentID: AgentID, hosting: ThreadHosting, checksResume: Bool = true, model: String? = nil) async {
         guard let agent = state.agents.first(where: { $0.id == agentID }) else { return }
         var spawn = AgentSpawn(agent: agent, cwd: "", settings: hosting.launch())
         spawn.mcp = hosting.mcp
@@ -209,6 +209,7 @@ extension SessionServer {
     /// A client's new thread, in a new worktree when it names a branch.
     @MainActor
     func startRequestedAgent(_ request: RemoteCreateAgentRequest, hosting: ThreadHosting) async throws -> AgentID {
+        if let moved = request.moved { return try await adoptMovedThread(request, moved, hosting: hosting) }
         let defaults = hosting.defaults()
         var spaceID = request.spaceID, cwd = request.cwd
         if request.standalone, let agentID = request.agentID {

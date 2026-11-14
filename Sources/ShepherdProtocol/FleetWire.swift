@@ -293,6 +293,9 @@ public enum FleetAction: Codable, Hashable, Sendable {
     /// the code is still the only proof. `expiresAt` (epoch milliseconds) is when the code stops working; an expired one is refused
     /// without a connection. Answered with the Mac (`FleetResult.paired`).
     case pairAt(hostID: UUID, port: UInt16, routes: [FleetReportedRoute], code: String, expiresAt: Double?)
+    /// Move a thread of this Mac to another Mac (`RemoteProtocol.fleetMoveCapability`, `FleetMoveWire.swift`). Answered with the move's
+    /// record (`FleetResult.dispatch`), or refused with the reason. Cancelling it is `cancelDispatch`.
+    case moveThread(FleetMoveRequest)
 }
 
 /// The answer to `fleetRead` and `fleetAction`: the snapshot after it, plus what the action made.

@@ -1011,6 +1011,14 @@ final class FleetService: @unchecked Sendable {
                 case .failure(let refusal): reply(Self.refusal(id, refusal.code, refusal.message))
                 }
             }
+        case .moveThread(let request):
+            dispatch.moveThread(request) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success(let record): reply(.fleetResult(id: id, result: FleetResult(snapshot: self.snapshot(), dispatch: record)))
+                case .failure(let refusal): reply(Self.refusal(id, refusal.code, refusal.message))
+                }
+            }
         case .cancelDispatch(let dispatchID):
             guard dispatch.record(dispatchID) != nil else {
                 return reply(Self.refusal(id, FleetDispatchProtocol.Code.unknownDispatch, "This Mac has no such dispatch."))

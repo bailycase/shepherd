@@ -62,6 +62,17 @@ struct FleetDispatchHost: @unchecked Sendable {
     var repoPlaces: @Sendable () -> [FleetRepoFinder.Place] = { [] }
     /// Puts a checkout in the workspace as a space (server queue): the one already at that path, else a new one. Nil when it couldn't.
     var bindSpace: @Sendable (FleetSpaceBinding) -> Space? = { _ in nil }
+    /// Threads that run without a person (automation runs): they stay where they are (server queue).
+    var unattended: @Sendable () -> Set<AgentID> = { [] }
+    /// A move's source (server queue): the thread's pi session, its conversation file and the folder pi runs in. Nil when it isn't a thread here.
+    var moveSource: @Sendable (AgentID) -> FleetMoveSource? = { _ in nil }
+    /// Stops a thread's pi but not its agent, for a move, and returns once it has stopped.
+    var stopPiForMove: @Sendable (AgentID) async -> Void = { _ in }
+    /// Writes a move's tombstone (`Agent.movedTo`) and closes the thread's terminals, as one step that is saved before it returns (server
+    /// queue). False when the workspace couldn't be saved, and then nothing changed.
+    var tombstone: @Sendable (AgentID, MovedTo) -> Bool = { _, _ in false }
+    /// Takes the tombstone of `moveID` away again, when the other Mac answered that it started no thread (server queue).
+    var untombstone: @Sendable (AgentID, UUID) -> Bool = { _, _ in false }
 }
 
 /// A checkout a dispatch is to work in, as a space (`FleetDispatchHost.bindSpace`).
@@ -106,6 +117,12 @@ final class FleetDispatch: @unchecked Sendable {
         var acceptedAt: Double = 0
         /// The folder a clone for this dispatch is being made in (made by it, so it is the one thing a restart may remove).
         var cloneDirectory: String?
+        /// A move (`kind == .move`): the thread it brings, its conversation (a content kept with the snapshot's), the space whose checkout the
+        /// worktree was built in and whether it made the fleet ref. Kept across a restart: the sender decides what becomes of it.
+        var handoff: FleetMoveHandoff?
+        var transcript: FleetBlobRef?
+        var spaceID: SpaceID?
+        var madeRef = false
     }
 
     let queue: DispatchQueue
@@ -178,6 +195,14 @@ final class FleetDispatch: @unchecked Sendable {
     var awaitingRepository: Set<UUID> = []
     /// Dispatches whose target has the repository but lacks the commit: the bundle is only what it lacks, not the whole repository.
     var incrementalBundles: Set<UUID> = []
+    /// How long a stopped turn is given to end before the thread's pi is stopped anyway (seconds). Tests shorten it.
+    var moveStopGrace: TimeInterval = 10
+    /// Tests: a move that is ready to hand the thread over waits (it is held at the point its tombstone would be written).
+    var holdCommit = false
+    /// Sender: the conversation each move sends, copied to a file of its own.
+    var moveTranscripts: [UUID: (ref: FleetBlobRef, url: URL)] = [:]
+    /// Receiver: answers waiting for a move's thread to start (`FleetDispatchControl.commit`).
+    var commitWaiters: [UUID: [(Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void]] = [:]
     private let reservedCount = FleetCounter()
     /// Told whenever the count of promised places changes (the host reads it for its samples).
     var reservedSink: FleetCounter?
@@ -264,8 +289,15 @@ final class FleetDispatch: @unchecked Sendable {
             default: break
             }
         }
+        // A move that hadn't handed over when this Mac went down ends: the thread stays (the other Mac drops what it holds when told).
+        settleMovesAfterRestart()
+        for (id, entry) in inbound where entry.record.kind == .move && entry.record.state == .preparing && entry.record.move?.stage == .starting {
+            // The thread's start was cut short: the sender's repeated hand over starts it (it is made once, by its id).
+            inbound[id]?.record.move?.stage = .staged
+            changed = true
+        }
         // A create that was still being made when the host went down has no thread to follow.
-        for (id, entry) in inbound where entry.record.state == .preparing {
+        for (id, entry) in inbound where entry.record.state == .preparing && !(entry.record.kind == .move && entry.record.move?.stage == .staged) {
             // A clone that was running has left a folder this host made for it: it goes, and nothing is bound to it.
             if let folder = entry.cloneDirectory { FleetDispatch.discardClone(folder) }
             inbound[id]?.cloneDirectory = nil
@@ -369,7 +401,7 @@ final class FleetDispatch: @unchecked Sendable {
     }
 
     private var hasWork: Bool {
-        outbound.values.contains { [.waitingRoom, .waitingWake, .heldLimit, .delivering, .preparing, .running].contains($0.state) }
+        outbound.values.contains { [.waitingRoom, .waitingWake, .heldLimit, .waitingTurn, .delivering, .preparing, .running].contains($0.state) || $0.move?.cancelPending == true }
             || inbound.values.contains { $0.unsent || $0.record.state == .delivering }
     }
 
@@ -406,6 +438,7 @@ final class FleetDispatch: @unchecked Sendable {
             default: break
             }
         }
+        evaluateMoves()
         scheduleEvaluation()
     }
 
@@ -550,6 +583,20 @@ final class FleetDispatch: @unchecked Sendable {
         let macs = placementMacs(for: record)
         let batteryHalf = host.settings()?.fleetBatteryCountsHalf ?? true
         let outcome = FleetPlacement.place(host: record.requestedHost, macs: macs, needsXcode: needsXcode(record), batteryCountsHalf: batteryHalf)
+        // A move waits for nothing: the thread is stopped, and a Mac that can't take it now leaves it where it is.
+        if record.kind == .move {
+            switch outcome {
+            case .place: break
+            case .waitForRoom, .waitForWake:
+                let refusal = Self.refusal(FleetDispatchCode.hostNotReady, "unreachable")
+                failMove(id, refusal.code, refusal.detail)
+                return completion?(.failure(refusal)) ?? ()
+            case .refuse(let code, let detail):
+                let refusal = Self.refusal(code, detail)
+                failMove(id, code, detail)
+                return completion?(.failure(refusal)) ?? ()
+            }
+        }
         switch outcome {
         case .place(let target, let reasons):
             // A thread the person started that stays on this Mac isn't a dispatch: the app starts it itself.
@@ -682,6 +729,10 @@ final class FleetDispatch: @unchecked Sendable {
     func sendCreate(_ id: UUID, completion: ((Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void)?) {
         guard let record = outbound[id], let target = record.targetHostID else { sending.remove(id); return }
         // Where a Mac with no checkout gets the repository: this Mac's origin, and the space it is, so the checkout becomes that space there.
+        if record.kind == .move, handoff(for: record) == nil {
+            sending.remove(id)
+            return failMove(id, FleetDispatchCode.moveRefused, "The thread is gone.")
+        }
         let space = record.spaceID.flatMap { wanted in host.state().spaces.first { $0.id == wanted } }
         let repo = FleetRepoSource(origin: record.origin, spaceID: record.spaceID, name: space?.name, worktreeBase: space?.worktreeBase)
         let create = FleetDispatchCreate(
@@ -689,7 +740,7 @@ final class FleetDispatch: @unchecked Sendable {
             subdir: record.subdir, branch: record.branch ?? record.start?.branch.map { record.start?.place == .existingBranch ? Self.localName($0) : $0 },
             model: record.model, thinking: record.thinking,
             from: FleetDispatchSender(hostID: hostID, hostName: hostName(), agentID: record.parentAgentID, agentTitle: record.parentTitle),
-            snapshot: snapshots[id]?.header, repo: repo, start: record.start)
+            snapshot: snapshots[id]?.header, repo: repo, start: record.start, move: record.kind == .move ? handoff(for: record) : nil)
         let finish: @Sendable (Result<FleetDispatchRecord, Error>) -> Void = { [weak self] result in
             self?.queue.async { self?.created(id, result, completion: completion) }
         }
@@ -738,7 +789,11 @@ final class FleetDispatch: @unchecked Sendable {
             if case RemoteHostClientError.rejected(let code, _) = error, !Self.transportCodes.contains(code) {
                 let known = [FleetDispatchCode.repoMissing, FleetDispatchCode.repoAmbiguous, FleetDispatchCode.commitUnreachable, FleetDispatchCode.cloneFailed,
                              FleetDispatchCode.hostNotReady, FleetDispatchCode.snapshotTooLarge, FleetDispatchCode.snapshotMismatch,
-                             FleetDispatchCode.snapshotFailed, FleetDispatchCode.invalid]
+                             FleetDispatchCode.snapshotFailed, FleetDispatchCode.invalid, FleetDispatchCode.alreadyHere, FleetDispatchCode.moveRefused]
+                if record.kind == .move {
+                    failMove(id, known.contains(code) ? code : FleetDispatchCode.refused, known.contains(code) ? nil : code)
+                    return completion?(.failure(Self.refusal(outbound[id]?.failure ?? code, outbound[id]?.failureDetail))) ?? ()
+                }
                 record.state = .failed
                 record.failure = known.contains(code) ? code : FleetDispatchCode.refused
                 record.failureDetail = known.contains(code) ? nil : code
@@ -764,6 +819,7 @@ final class FleetDispatch: @unchecked Sendable {
     /// Takes what the target says into the sender's record. A finished sender record never moves back.
     func merge(_ theirs: FleetDispatchRecord, into record: inout FleetDispatchRecord) {
         guard record.state.isLive else { return }
+        if record.kind == .move { return mergeMove(theirs, into: &record) }
         // A failed clone told a second time (the push and the answer to a status question both bring it) is the same attempt, already
         // answered: the repository is on its way, and a clone from it never says this.
         // (`clone_failed` is only ever said while preparing: once the thread runs it is stale.)
@@ -819,6 +875,15 @@ final class FleetDispatch: @unchecked Sendable {
     /// The Mac running a dispatch told us where it stands (`fleetDispatchChanged`).
     func changed(_ theirs: FleetDispatchRecord, from peer: UUID) -> Bool {
         guard var record = outbound[theirs.id], record.targetHostID == peer else { return false }
+        // The thread this sent work to moved on to another Mac: the work is that Mac's now, and so is its result.
+        if let moved = theirs.movedOn, record.kind != .move {
+            record.targetHostID = moved.hostID
+            record.targetHostName = moved.hostName
+            record.updatedAt = now
+            outbound[record.id] = record
+            save()
+            return true
+        }
         merge(theirs, into: &record)
         outbound[record.id] = record
         save()
@@ -911,6 +976,7 @@ final class FleetDispatch: @unchecked Sendable {
     /// Cancels one dispatch the sender holds and stops its thread (best effort, now or when the Mac is reachable).
     func cancel(_ id: UUID, save shouldSave: Bool = true) {
         guard var record = outbound[id], record.state.isLive else { return }
+        if record.kind == .move { return cancelMove(id) }
         let sent = record.targetHostID != nil && [.preparing, .running, .delivering, .waitingWake].contains(record.state)
         record.state = .cancelled
         record.updatedAt = now
@@ -938,6 +1004,8 @@ final class FleetDispatch: @unchecked Sendable {
             guard record.state.isLive else { return reply(.success(record)) }
             cancel(record.id)
             reply(.success(outbound[record.id] ?? record))
+        case .commit:
+            reply(.failure(.init(code: FleetDispatchCode.invalid, message: "A thread's tools don't hand a move over.")))
         case .message(let text, let delivery):
             guard let target = record.targetHostID, record.state == .running || record.state == .delivering || record.state == .done else {
                 return reply(.failure(.init(code: "not_running", message: "That dispatch isn't running, so there is no thread to message (it is \(record.state.rawValue)).")))
@@ -989,8 +1057,14 @@ final class FleetDispatch: @unchecked Sendable {
     /// `peer_gone` and leaves a preparing one held for the person.
     func reconcile() {
         guard !stopped else { return }
+        evaluateMoves()
         for record in outbound.values where record.state == .preparing || record.state == .running {
             guard let target = record.targetHostID, isConnected(target), !sending.contains(record.id) else { continue }
+            // A move is followed by its own hand over (`evaluateMoves`); what it holds of the other Mac's progress is read when its link is back.
+            if record.kind == .move {
+                if record.state == .preparing, record.move?.committed != true, [.conversation, .worktree, .staged].contains(record.move?.stage) { askTarget(record.id, target) }
+                continue
+            }
             let id = record.id
             let finish: @Sendable (Result<FleetDispatchRecord, Error>) -> Void = { [weak self] result in
                 self?.queue.async { self?.reconciled(id, result) }
