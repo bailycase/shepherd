@@ -594,6 +594,12 @@ struct RemoteRequestTests {
         .fleetDispatchControl(id: 112, dispatchID: RemoteSamples.dispatchID, control: .status),
         .fleetDispatchControl(id: 113, dispatchID: RemoteSamples.dispatchID, control: .cancel),
         .fleetDispatchControl(id: 114, dispatchID: RemoteSamples.dispatchID, control: .message(text: "Also update the docs.", delivery: .steer)),
+        .fleetDispatchControl(id: 130, dispatchID: RemoteSamples.dispatchID, control: .commit),
+        .fleetDispatchCreate(id: 131, create: FleetDispatchCreate(dispatchID: RemoteSamples.dispatchID, kind: .move, task: "", title: "Speed up checkout CI", repoKey: "github.com/acme/web",
+                                                                  from: FleetDispatchSender(hostID: RemoteSamples.fleetHost, hostName: "MacBook Pro", agentTitle: ""),
+                                                                  snapshot: RemoteSamples.repoOnlyHeader,
+                                                                  move: FleetMoveHandoff(agentID: AgentID(rawValue: "a1"), sessionID: "s1", name: "Speed up checkout CI", nameIsFinal: true,
+                                                                                         branch: "perf/checkout-ci", movedAt: 1_760_000_000_000, messages: 412, uncommittedFiles: 3))),
         .fleetDispatchChanged(id: 115, record: RemoteSamples.dispatchRecord),
         .fleetDispatchChanged(id: 124, record: RemoteSamples.dispatchRecordCloning),
         .fleetDispatchResult(id: 116, dispatchID: RemoteSamples.dispatchID, text: "Fixed: the test raced the clock.", branchFacts: RemoteSamples.branchFacts),
@@ -621,6 +627,7 @@ struct RemoteRequestTests {
         .fleetAction(id: 103, action: .retryDispatch(id: RemoteSamples.dispatchID, host: nil)),
         .fleetAction(id: 104, action: .retryDispatch(id: RemoteSamples.dispatchID, host: RemoteSamples.fleetHost)),
         .fleetAction(id: 105, action: .cancelDispatch(id: RemoteSamples.dispatchID)),
+        .fleetAction(id: 132, action: .moveThread(FleetMoveRequest(moveID: RemoteSamples.dispatchID, agentID: AgentID(rawValue: "a1"), host: "Mac mini", when: .whenDone))),
         .hostUpdate(id: 90, request: .status),
         .hostUpdate(id: 91, request: .check),
         .hostUpdate(id: 92, request: .install(offerID: S.op, authorized: true)),
@@ -776,7 +783,8 @@ struct RemoteRequestTests {
     @Test(arguments: [RemoteAgentAction.rename(name: "x"), .move(spaceID: SpaceID(rawValue: "destination")), .deleteKeepingWorktree, .reorder(target: AgentID(rawValue: "b")),
                       .renameTerminal(paneID: PaneID(rawValue: "p"), title: "logs"), .renameTerminal(paneID: PaneID(rawValue: "p"), title: nil),
                       .killTerminalProcess(paneID: PaneID(rawValue: "p")), .startTerminal(paneID: PaneID(rawValue: "p")),
-                      .openTerminal(cwd: "/host/repo/apps/web", command: "pnpm dev"), .restartPi(newConversation: true), .restartPi(newConversation: false, model: "anthropic/claude-x"), .markSeen(upTo: 1_760_000_000_123), .mutePushes(true), .mutePushes(false), .readCheckout])
+                      .openTerminal(cwd: "/host/repo/apps/web", command: "pnpm dev"), .restartPi(newConversation: true), .restartPi(newConversation: false, model: "anthropic/claude-x"), .markSeen(upTo: 1_760_000_000_123), .mutePushes(true), .mutePushes(false), .readCheckout,
+                      .moveToMac(FleetMoveRequest(moveID: UUID(), agentID: AgentID(rawValue: "a"), host: "Mac mini", when: .whenDone))])
     func everyAgentActionRoundTrips(_ action: RemoteAgentAction) throws {
         #expect(try Wire.roundTrip(RemoteRequest.agentAction(id: 1, agentID: S.agent, action: action))
             == .agentAction(id: 1, agentID: S.agent, action: action))
@@ -1508,9 +1516,9 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             // Offered whenever the host's fleet service runs, which is every host that started (SessionServer.startFleet).
             RemoteProtocol.fleetCapability, RemoteProtocol.fleetPressureCapability, RemoteProtocol.fleetCheckCapability, RemoteProtocol.fleetDispatchCapability,
-            RemoteProtocol.fleetSyncCapability, RemoteProtocol.fleetSnapshotCapability, RemoteProtocol.fleetRendezvousCapability, RemoteProtocol.fleetLinkCapability, RemoteProtocol.fleetPairLinkCapability,
+            RemoteProtocol.fleetSyncCapability, RemoteProtocol.fleetSnapshotCapability, RemoteProtocol.fleetMoveCapability, RemoteProtocol.fleetRendezvousCapability, RemoteProtocol.fleetLinkCapability, RemoteProtocol.fleetPairLinkCapability,
             // Offered to every client, a device included.
-            RemoteProtocol.fleetViewCapability, RemoteProtocol.fleetFollowCapability,
+            RemoteProtocol.fleetViewCapability, RemoteProtocol.fleetFollowCapability, RemoteProtocol.fleetMoveViewCapability,
             // Offered whenever the host runs, and never to a client device (FleetAccess).
             RemoteProtocol.fleetDevicesCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
@@ -1538,6 +1546,8 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.fleetDispatchCapability == "fleet.dispatch.v1")
         #expect(RemoteProtocol.fleetDevicesCapability == "fleet.devices.v1")
         #expect(RemoteProtocol.fleetFollowCapability == "fleet.follow.v1")
+        #expect(RemoteProtocol.fleetMoveCapability == "fleet.move.v1")
+        #expect(RemoteProtocol.fleetMoveViewCapability == "fleet.move.view.v1")
         #expect(RemoteProtocol.logicalProjectsCapability == "logicalProjects.v1")
         #expect(RemoteProtocol.projectMessageImagesCapability == "logicalProjectRuntime.images.v1")
         #expect(RemoteProtocol.projectConversationThinkingCapability == "logicalProjects.conversationThinking.v1")

@@ -321,7 +321,7 @@ public enum FleetPagePresentation {
     static func dispatchRow(_ record: FleetDispatchRecord, now: Date) -> FleetDispatchRow {
         let (state, tone): (String, FleetTone) = switch record.state {
         case .placing: ("Placing", .tertiary)
-        case .waitingRoom, .waitingWake: ("Waiting", .tertiary)
+        case .waitingRoom, .waitingWake, .waitingTurn: ("Waiting", .tertiary)
         case .heldLimit, .heldRestart: ("Held", .warn)
         case .preparing: (record.clone == nil ? "Preparing" : "Cloning", .active)
         case .running: ("Working", .active)
@@ -333,7 +333,7 @@ public enum FleetPagePresentation {
         let host = record.targetHostName ?? record.requestedHost.flatMap { FleetPlacement.isAuto($0) ? nil : $0 } ?? "No Mac yet"
         return FleetDispatchRow(
             id: record.id, title: record.title.isEmpty ? "Untitled" : record.title,
-            sentBy: record.kind == .userThread ? "Sent by you" : record.parentTitle.isEmpty ? "Sent by a thread" : "Sent by \(record.parentTitle)",
+            sentBy: record.kind == .move ? "Moved by you" : record.kind == .userThread ? "Sent by you" : record.parentTitle.isEmpty ? "Sent by a thread" : "Sent by \(record.parentTitle)",
             host: host, reason: reason(record, host: host), state: state, tone: tone,
             age: ForgePresentation.ago(Date(timeIntervalSince1970: record.createdAt / 1000), now: now))
     }

@@ -71,12 +71,13 @@ struct FleetDispatchTests {
         init(_ name: String, origin: Origin, busy: UInt64 = 20, repoKey: String? = FleetDispatchTests.repoKey, dir: URL? = nil, port: UInt16 = 0,
              sendWork: Bool = true, cap: Int = HostSettings.fleetThreadCapDefault, checkout: Bool = true,
              uncommitted: FleetUncommittedChanges = .sendThem, links: SessionServer.FleetLinkOptions? = nil, gate: FleetTestGate? = nil,
-             mcp: [String: String] = [:], lacking: Set<String> = [], noXcode: Bool = false) async throws {
+             mcp: [String: String] = [:], lacking: Set<String> = [], noXcode: Bool = false, isolatedPi: Bool = false) async throws {
             self.name = name
             meter = FleetPressureIntegrationTests.Meter(busy: busy)
             settings = Locked(HostSettings(fleetThreadsCanSend: sendWork, fleetThreadCap: cap, fleetUncommitted: uncommitted))
             let scratch = try dir ?? makeScratchDirectory("dispatch")
-            let host = try ScratchServer(dir: scratch)
+            // A Mac of its own pi home: the conversations of two Macs never meet in one folder (a move writes one).
+            let host = try ScratchServer(dir: scratch, pi: isolatedPi ? PiSetup(engine: PiSetup.app.engine, home: scratch.appendingPathComponent("pi"), userHome: scratch.path) : .app)
             let server = host.server
             server.configureFleet(name: name, advertises: false)
             let (meter, clock) = (meter, clock)
@@ -239,12 +240,12 @@ struct FleetDispatchTests {
                      originExtra: [String: String] = [:], repoKeyB: String? = repoKey,
                      originOfB: ((Origin) throws -> Origin)? = nil, checkoutB: Bool = true,
                      uncommittedA: FleetUncommittedChanges = .sendThem, mcp: [String: String] = [:], lackingB: Set<String> = [],
-                     noXcodeB: Bool = false) async throws -> (a: Mac, b: Mac, origin: Origin) {
+                     noXcodeB: Bool = false, isolatedPi: Bool = false) async throws -> (a: Mac, b: Mac, origin: Origin) {
         try StubPi.installAsEngine()
         let origin = try makeOrigin(extra: originExtra)
-        let a = try await Mac("MacBook Pro", origin: origin, busy: busyA, sendWork: sendWork, cap: cap, uncommitted: uncommittedA, mcp: mcp)
+        let a = try await Mac("MacBook Pro", origin: origin, busy: busyA, sendWork: sendWork, cap: cap, uncommitted: uncommittedA, mcp: mcp, isolatedPi: isolatedPi)
         let b = try await Mac("Mac mini", origin: try originOfB?(origin) ?? origin, busy: busyB, repoKey: repoKeyB, sendWork: sendWork, checkout: checkoutB,
-                              mcp: mcp, lacking: lackingB, noXcode: noXcodeB)
+                              mcp: mcp, lacking: lackingB, noXcode: noXcodeB, isolatedPi: isolatedPi)
         try await a.pair(with: b)
         try await waitForReports(a, b)
         return (a, b, origin)

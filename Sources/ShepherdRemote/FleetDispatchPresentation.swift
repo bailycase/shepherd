@@ -102,7 +102,8 @@ public enum FleetDispatchPresentation {
 
     /// A card for every record, newest first.
     public static func cards(_ records: [FleetDispatchRecord], in context: FleetCardContext) -> [FleetDispatchCard] {
-        records.sorted { $0.createdAt > $1.createdAt }.map { card($0, among: records, in: context) }
+        // A move has its own card in the thread that moves (`FleetMovePresentation`); the Fleet page's cards are for work that was sent.
+        records.filter { $0.kind != .move }.sorted { $0.createdAt > $1.createdAt }.map { card($0, among: records, in: context) }
     }
 
     /// The card of one record. `records` is every record the Mac holds, for what a card says of the others.
@@ -137,6 +138,10 @@ public enum FleetDispatchPresentation {
             (card.pill, card.tone) = ("Held", .warn)
             card.detail = "Shepherd restarted before this was sent. Nothing is sent again by itself."
             card.actions = [.send, .cancel]
+        case .waitingTurn:
+            (card.pill, card.tone) = ("Waiting", .tertiary)
+            card.detail = "Moves \(host.map { "to \($0)" } ?? "to another Mac") when its turn ends."
+            card.actions = [.cancel]
         case .preparing:
             (card.pill, card.tone) = ("Starting", .active)
             let repo = repoName(record.repoKey)

@@ -36,6 +36,8 @@ public enum FleetDispatchState: String, Codable, Hashable, Sendable, CaseIterabl
     case heldLimit
     /// The sending host restarted before this was placed. Nothing is sent again by itself.
     case heldRestart
+    /// A move that waits for the thread's turn to end ("Move when it's done"); it begins by itself when the turn does.
+    case waitingTurn
     /// The target is fetching and making the worktree.
     case preparing
     case running
@@ -49,14 +51,14 @@ public enum FleetDispatchState: String, Codable, Hashable, Sendable, CaseIterabl
     public var countsAgainstCap: Bool {
         switch self {
         case .placing, .waitingRoom, .waitingWake, .preparing, .running: true
-        case .heldLimit, .heldRestart, .delivering, .done, .failed, .cancelled: false
+        case .heldLimit, .heldRestart, .waitingTurn, .delivering, .done, .failed, .cancelled: false
         }
     }
 
     /// Stop on the parent cancels it, and the host keeps following it.
     public var isLive: Bool {
         switch self {
-        case .placing, .waitingRoom, .waitingWake, .heldLimit, .heldRestart, .preparing, .running, .delivering: true
+        case .placing, .waitingRoom, .waitingWake, .heldLimit, .heldRestart, .waitingTurn, .preparing, .running, .delivering: true
         case .done, .failed, .cancelled: false
         }
     }
@@ -84,6 +86,18 @@ public enum FleetDispatchCode {
     public static let refused = "refused"
     public static let peerGone = "peer_gone"
     public static let invalid = "invalid"
+    /// A move: the thread can't be moved now (it isn't this Mac's, is a kind that stays, or already moves).
+    public static let moveRefused = "move_refused"
+    /// A move: this Mac holds a live copy of that thread already.
+    public static let alreadyHere = "already_here"
+    /// A move that ended because the Mac that was sending the thread restarted before it handed it over: the thread stays where it was.
+    public static let restarted = "restarted"
+    /// A move: the thread has work running on other Macs, which would lose their parent.
+    public static let hasDispatches = "has_dispatches"
+    /// A move of a thread another Mac sent: that Mac runs an older Shepherd and couldn't follow the thread.
+    public static let senderOld = "sender_old"
+    /// The Mac to move to runs a Shepherd that can't take a thread.
+    public static let targetOld = "target_old"
 }
 
 /// Why placement chose a Mac (`FleetPlacement`): codes and numbers, never prose. The UI turns them
@@ -238,6 +252,8 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         case agentDispatch
         /// The person started it from New Thread's Auto chip: no parent thread.
         case userThread
+        /// A thread that moves to this Mac from another (`move` says which): the conversation and the worktree go with it.
+        case move
     }
 
     public var id: UUID
@@ -293,6 +309,10 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
     /// Where a thread the person started begins (the New thread form's workplace choice). Nil for a thread's dispatch, which starts at its commit
     /// with the snapshot, and for a record from an older build.
     public var start: FleetThreadStart?
+    /// A move (`kind == .move`): the thread, and how far it has got.
+    public var move: FleetMoveInfo?
+    /// A dispatched thread that moved on to another Mac: the Mac running it says so, and the sender follows it there.
+    public var movedOn: FleetMovedOn?
     /// The Check items the thread is there to fix (`FleetUserThread.fixes`): while it runs the Check tab shows them being fixed, and when it ends the
     /// host looks at the Mac again. Empty for any other dispatch, and from an older build.
     public var fixes: [String]
@@ -307,9 +327,10 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
                 thinking: String? = nil, reasonCodes: [FleetPlacementReason] = [], without: [String] = [], remoteAgentID: AgentID? = nil, activity: String? = nil,
                 resultText: String? = nil, resultBranchFacts: FleetBranchFacts? = nil, snapshotBytes: UInt64? = nil, snapshotProgress: UInt64? = nil,
                 snapshotFiles: Int? = nil, sendWarning: Bool = false, fileMillis: Int? = nil, spaceID: SpaceID? = nil, origin: String? = nil,
-                clone: FleetCloneProgress? = nil, start: FleetThreadStart? = nil, fixes: [String] = [], createdAt: Double, updatedAt: Double? = nil) {
+                clone: FleetCloneProgress? = nil, start: FleetThreadStart? = nil, move: FleetMoveInfo? = nil, fixes: [String] = [], createdAt: Double, updatedAt: Double? = nil) {
         self.fixes = fixes
         self.start = start
+        self.move = move
         self.id = id
         self.kind = kind
         self.parentAgentID = parentAgentID
@@ -353,7 +374,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         case failure, failureDetail, title, task, repoKey, commitSHA, subdir, branch, model, thinking, reasonCodes, without, remoteAgentID
         case activity, resultText, resultBranchFacts, createdAt, updatedAt
         case snapshotBytes, snapshotProgress, snapshotFiles, sendWarning, fileMillis
-        case spaceID, origin, clone, start, fixes
+        case spaceID, origin, clone, start, fixes, move, movedOn
     }
 
     public init(from decoder: Decoder) throws {
@@ -394,6 +415,8 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         origin = try c.decodeIfPresent(String.self, forKey: .origin)
         clone = try c.decodeIfPresent(FleetCloneProgress.self, forKey: .clone)
         start = try c.decodeIfPresent(FleetThreadStart.self, forKey: .start)
+        move = try? c.decodeIfPresent(FleetMoveInfo.self, forKey: .move)
+        movedOn = try? c.decodeIfPresent(FleetMovedOn.self, forKey: .movedOn)
         fixes = try c.decodeIfPresent([String].self, forKey: .fixes) ?? []
         createdAt = try c.decodeIfPresent(Double.self, forKey: .createdAt) ?? 0
         updatedAt = try c.decodeIfPresent(Double.self, forKey: .updatedAt) ?? createdAt
@@ -436,6 +459,8 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(origin, forKey: .origin)
         try c.encodeIfPresent(clone, forKey: .clone)
         try c.encodeIfPresent(start, forKey: .start)
+        try c.encodeIfPresent(move, forKey: .move)
+        try c.encodeIfPresent(movedOn, forKey: .movedOn)
         if !fixes.isEmpty { try c.encode(fixes, forKey: .fixes) }
         try c.encode(createdAt, forKey: .createdAt)
         try c.encode(updatedAt, forKey: .updatedAt)

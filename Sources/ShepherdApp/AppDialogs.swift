@@ -119,6 +119,23 @@ struct AppDialogs: ViewModifier {
                 AgentDeleteDialog(agent: item.agent, host: item.hostName, settings: vm.settings,
                                   cancel: { vm.remoteDeleteTarget = nil }) { vm.confirmRemoteDelete(item.target) }
             }
+            .sheet(item: Binding(get: { vm.fleetPage.moveAsk }, set: { vm.fleetPage.moveAsk = $0 })) { ask in
+                DialogSheet(
+                    title: ask.facts.title,
+                    subtitle: ask.facts.message,
+                    actions: [
+                        DialogAction("Cancel", kind: .cancel) { vm.fleetPage.moveAsk = nil },
+                        DialogAction("Move when it’s done", kind: .normal) {
+                            vm.fleetPage.moveAsk = nil
+                            vm.moveThread(ask.row, to: ask.target, when: .whenDone)
+                        },
+                        DialogAction("Stop and move", kind: .prominent) {
+                            vm.fleetPage.moveAsk = nil
+                            vm.moveThread(ask.row, to: ask.target)
+                        },
+                    ]
+                )
+            }
             .sheet(item: $vm.automationDeleteAutomation, onDismiss: vm.runAfterDialogDismiss) { automation in
                 DialogSheet(
                     title: "Delete automation",

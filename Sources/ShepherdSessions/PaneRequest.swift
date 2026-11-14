@@ -25,6 +25,33 @@ public struct RemoteCreateAgentRequest: Sendable {
     /// A thread Fleet started for another Mac's work: where it came from, and the folder of the checkout it works in.
     public var dispatchedFrom: DispatchedFrom?
     public var subdirectory: String?
+    /// A thread another Mac moved here (`FleetMove.swift`): with `agentID`, `piSessionID` and `worktreePath` it is the same thread, its
+    /// conversation installed and its pi resumed, never a new one.
+    public var moved: Moved?
+
+    /// What a moved thread brings besides what a new thread has.
+    public struct Moved: Sendable {
+        /// The conversation (pi's session file), when pi had written one.
+        public var transcript: URL?
+        public var from: MovedFrom
+        public var nameIsFinal: Bool
+        public var pushMuted: Bool
+        public var lastActiveAt: Double?
+        public var unpushedCommits: Int
+        /// The line the conversation keeps where the thread moved (`FleetDispatch.moveNote`).
+        public var note: String?
+
+        public init(transcript: URL?, from: MovedFrom, nameIsFinal: Bool, pushMuted: Bool = false, lastActiveAt: Double? = nil, unpushedCommits: Int = 0,
+                    note: String? = nil) {
+            self.note = note
+            self.transcript = transcript
+            self.from = from
+            self.nameIsFinal = nameIsFinal
+            self.pushMuted = pushMuted
+            self.lastActiveAt = lastActiveAt
+            self.unpushedCommits = unpushedCommits
+        }
+    }
 
     public init(
         spaceID: SpaceID,

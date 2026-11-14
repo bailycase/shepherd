@@ -85,4 +85,12 @@ extension AppLayout {
     static let fleetOfflineOpacity: Double = 0.6
     /// New thread's Where it runs popover hangs 33pt in from the card's trailing edge (FleetNewThread).
     static let fleetPlaceTrailingInset: CGFloat = 33
+
+    // Moving a thread to another Mac (FleetMove).
+    /// The header chip's menu and its confirmation are 400pt wide; a Mac's room bar is 56 by 4pt.
+    static let fleetMoveMenuWidth: CGFloat = 400
+    static let fleetMoveBarWidth: CGFloat = 56
+    static let fleetMoveBarHeight: CGFloat = 4
+    /// A step's mark column in the progress card.
+    static let fleetMoveMarkWidth: CGFloat = 14
 }

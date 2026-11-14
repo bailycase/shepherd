@@ -364,6 +364,52 @@ public enum PiSessionFile {
         return sessionID
     }
 
+    /// A conversation another Mac sent (a move): `source` becomes the session `sessionID` in `cwd`'s project folder, with the header's cwd
+    /// this Mac's and the id it was written with, and a displayed note (`shepherd.move`: pi keeps it in the thread like any message) after
+    /// the last entry. Every whole line is kept; a line pi was cut off in is dropped. A session of that id already in the folder (a header
+    /// Shepherd seeded, or the one an earlier try wrote) is replaced. File work: call it off the main actor. False when nothing was written.
+    @discardableResult
+    public static func install(_ source: URL, sessionID: String, cwd: String, sessionsRoot: URL, note: String?, now: Date = Date()) -> Bool {
+        let fm = FileManager.default
+        guard var data = fm.contents(atPath: source.path), !data.isEmpty,
+              let newline = data.firstIndex(of: UInt8(ascii: "\n")),
+              var header = try? JSONSerialization.jsonObject(with: data[..<newline]) as? [String: Any],
+              header["type"] as? String == "session", header["id"] as? String == sessionID,
+              let directory = writableProjectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot) else { return false }
+        if let last = data.lastIndex(of: UInt8(ascii: "\n")) { data = data[...last] }
+        header["cwd"] = realPath(cwd)
+        guard let headerData = try? JSONSerialization.data(withJSONObject: header, options: [.sortedKeys]) else { return false }
+        var body = Data(data[newline...])
+        if let note {
+            // The note continues the branch pi is on: its parent is the last entry that has an id.
+            var parent: String?
+            for line in data[data.index(after: newline)...].split(separator: UInt8(ascii: "\n")).reversed() {
+                if let entry = try? JSONSerialization.jsonObject(with: line) as? [String: Any], let id = entry["id"] as? String { parent = id; break }
+            }
+            var entry: [String: Any] = [
+                "type": "custom_message", "id": String(UUID().uuidString.lowercased().prefix(8)), "timestamp": isoTimestamp.string(from: now),
+                "customType": "shepherd.move", "content": [["type": "text", "text": note]], "display": true,
+            ]
+            entry["parentId"] = parent ?? NSNull()
+            guard let line = try? JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys, .withoutEscapingSlashes]) else { return false }
+            body += line + Data("\n".utf8)
+        }
+        let suffix = "_\(sessionID).jsonl"
+        let name = ((try? fm.contentsOfDirectory(atPath: directory.path)) ?? []).first { $0.hasSuffix(suffix) }
+            ?? "\(fileTimestamp.string(from: now))_\(sessionID).jsonl"
+        do {
+            try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            for stale in ((try? fm.contentsOfDirectory(atPath: directory.path)) ?? []) where stale.hasSuffix(suffix) && stale != name {
+                try? fm.removeItem(at: directory.appendingPathComponent(stale))
+            }
+            try (headerData + body).write(to: directory.appendingPathComponent(name), options: .atomic)
+            return true
+        } catch {
+            ShepherdLog.info("couldn't install session \(sessionID) in \(directory.path): \(error)")
+            return false
+        }
+    }
+
     /// What was said in a session, oldest first, as "user: …" and "assistant: …" paragraphs: the
     /// user's and the assistant's text along the branch pi is on (walked back from its last
     /// entry by `parentId`), never thinking, tool calls or their results. Nil when the file
