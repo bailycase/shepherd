@@ -30,7 +30,8 @@ enum ThreadPassWait: Equatable {
 /// recently shown hidden threads let their rows go (`NativeThreadStore.releaseTranscript`), a pass at a time and the oldest
 /// rows of the thread shown longest ago first (`releaseStep` bytes of them, or what the hidden threads are over by, at most
 /// `releaseCeiling`, while the app is quiet), unpinned ones first, then readers left scrolled up beyond the `keepPinned` most
-/// recently shown. The newest hidden thread, the ones on screen and the selected one are never taken. Only the thread view's rows go,
+/// recently shown. The ones on screen and the selected one are never taken, nor the newest hidden thread until the hidden threads
+/// are far over the budget (`farOverBudget`). Only the thread view's rows go,
 /// and not its last screen (`NativeThreadStore.keptRows`): the host, the page, the history, the caches, the draft and the rows
 /// at the end of the thread stay, so showing a thread draws its tail in the update that shows it, never blank and with nothing
 /// to build, and the rows above it come back after that frame (`ThreadView`). A reader taken this way comes back at the tail of
@@ -279,9 +280,9 @@ final class NativeThreadStores<Key: Hashable> {
         return (entries, costs)
     }
 
-    /// The hidden threads hold so much more than the budget (a quarter of it, and a step more than the ceiling) that waiting for a stream to
-    /// end, or for the show that came before to settle, means more rows built meanwhile than the passes then let go of: the abort
-    /// this budget exists to prevent.
+    /// The hidden threads hold more over the budget than a quarter of it or the ceiling, whichever is more: waiting for a stream to end,
+    /// or for the show that came before to settle, means more rows built meanwhile than the passes then let go of, and the abort this
+    /// budget exists to prevent.
     var farOverBudget: Bool {
         guard let held = mountedEntries()?.entries.reduce(0, { $0 + $1.cost }) else { return false }
         return held - mountedBudget > max(mountedBudget / 4, releaseCeiling)
@@ -354,7 +355,7 @@ final class NativeThreadStores<Key: Hashable> {
     func runMountedPass() -> Bool {
         let wait = busy?() ?? .idle
         // Typing and scrolling hold a pass off whatever the threads hold; a stream does not once they hold far more than the budget.
-        let farOver = wait == .streaming && farOverBudget
+        let farOver = farOverBudget
         switch wait {
         case .input:
             scheduleMountedPass(after: releaseSpacing)
@@ -367,7 +368,9 @@ final class NativeThreadStores<Key: Hashable> {
             break
         }
         putOff = 0
-        enforceMountedBudget(limit: .max, quiet: wait == .idle || farOver)
+        // Far over, the thread shown before the current one goes too if the older ones do not hold enough: one that holds more than the
+        // budget left over with the one on screen is what a person going round the threads comes back to last.
+        enforceMountedBudget(keep: farOver ? 0 : 1, limit: .max, quiet: wait == .idle || farOver)
         return true
     }
 

@@ -410,6 +410,29 @@ struct NativeThreadStoresHistoryTests {
         #expect(stores.runMountedPass() == false, "typing holds it off all the same")
     }
 
+    /// The thread shown before the current one stays while the others can bring the hidden threads to the budget, and goes last once they are far over.
+    @Test func theNewestHiddenThreadGoesLastAndOnlyFarOverTheBudget() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses, turns: 6)
+        stores.busy = { .idle }
+        let a = stores.store(for: "a"), c = stores.store(for: "c")
+        let row = a.mountedCost(eagerRows: 1)
+        stores.releaseCeiling = row
+        let heldByC = c.mountedCost(eagerRows: stores.eagerRows)
+        // About a thread over: the oldest let go, the newest stays.
+        stores.mountedBudget = heldByC * 2 + row
+        #expect(!stores.farOverBudget)
+        stores.runMountedPass()
+        #expect(!c.transcriptReleased, "the newest hidden thread stays while the budget is nearly reached")
+        // Far over: the older threads' last screens are not enough, and the newest goes too.
+        stores.mountedBudget = heldByC / 2
+        #expect(stores.farOverBudget)
+        stores.runMountedPass()
+        stores.runMountedPass()
+        #expect(a.transcriptDrawn == a.keptRows && c.transcriptReleased, "now the newest goes with the rest")
+    }
+
     /// A step that crosses goes on to the row that does not fit, so that it is not spent on small rows ahead of a large one.
     @Test func aStepThatCrossesLetsGoOfTheRowThatDoesNotFit() {
         let pauses = Pauses()
