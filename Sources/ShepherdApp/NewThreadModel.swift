@@ -244,10 +244,10 @@ final class NewThreadState {
         place?.host == nil ? nil : NewThreadPlaces.referencesNote
     }
 
-    /// Where Auto would send the thread now and every Mac ranked by room (FleetNewThread); empty unless Fleet is on, another Mac is paired and the
+    /// Where Auto would send the thread now and every Mac ranked by room (FleetNewThread); empty unless another Mac is paired and the
     /// project is one of This Mac's.
     func fleetPicker(_ vm: ShepherdViewModel) -> FleetWherePicker {
-        guard vm.settings.fleetEnabled, let place, place.host == nil, let id = place.space,
+        guard let place, place.host == nil, let id = place.space,
               let space = vm.state.spaces.first(where: { $0.id == id }) else { return .empty }
         let snapshot = vm.fleetPage.snapshot
         return FleetWherePicker.make(

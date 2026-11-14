@@ -167,15 +167,14 @@ struct FleetCredentialsSyncTests {
         #expect(second < .seconds(3), "a Mac that failed to catch this one up is not waited for again at once")
     }
 
-    @Test func withFleetOffNoSignInIsReadAndNothingWaits() async throws {
-        let a = try await Mac("MacBook Pro", enable: false)
+    @Test func withNoMacPairedNothingWaitsForASignIn() async throws {
+        let a = try await Mac("MacBook Pro")
         defer { a.stop() }
         try Self.piWrites(Self.acme, Self.oauth(1), in: Self.auth(a))
         let before = try Data(contentsOf: Self.auth(a))
         let took = await ContinuousClock().measure { await a.server.fleetCredentialFence() }
         #expect(took < .seconds(FleetSync.fencePatience / 2), "it doesn't wait out the fence's patience")
         #expect(try Data(contentsOf: Self.auth(a)) == before)
-        #expect(!FileManager.default.fileExists(atPath: a.host.dir.appendingPathComponent("fleet/store").path), "no store until Fleet is on")
     }
 
     // MARK: pi's own writes are never clobbered
@@ -221,9 +220,8 @@ struct FleetCredentialsSyncTests {
         defer { a.stop(); b.stop() }
         try Self.piWrites(Self.acme, Self.oauth(1), in: Self.auth(a))
         try Self.piWrites(Self.acme, Self.oauth(9), in: Self.auth(b))
+        // The Mac that enters the code reads first, so its sign-in is the reference.
         a.enable()
-        // The Mac where Fleet was first switched on is the reference.
-        try await eventually("the MacBook to hold its sign-in as a seed") { a.server.fleetSyncWinner("credential:\(Self.acme)") != nil }
         b.enable()
         try await Self.enabled(a, b)
         try await a.pair(with: b)
@@ -323,7 +321,7 @@ struct FleetCredentialsSyncTests {
         // The shared token is not a member either, nor is this Mac's own app: sync is a member's.
         let shared = RemoteHostClient()
         defer { shared.disconnect() }
-        _ = try await shared.connect(host: "127.0.0.1", port: a.port, token: a.sharedToken, clientName: "Old client")
+        _ = try await shared.connect(host: "127.0.0.1", port: a.port, token: a.clientToken, clientName: "Old client")
         let stolen = FleetOp(mac: UUID(), seq: 1, hlc: FleetHLC(wallMs: 9_999_999_999_999), unit: "credential:\(Self.acme)",
                              change: .value(#"{"type":"oauth","access":"fake-evil","refresh":"fake-evil","expires":1}"#))
         for (name, client) in [("a device", phone), ("the shared token", shared), ("this Mac's app", a.local)] {
@@ -341,6 +339,6 @@ struct FleetCredentialsSyncTests {
         // Nothing the host pushed to the phone held a token.
         let seen = heard.current.joined()
         #expect(!seen.contains("fake-refresh") && !seen.contains("fake-access"))
-        #expect(!FleetAccess.device.takesPartInFleet && !FleetAccess.shared.takesPartInFleet && FleetAccess.member.takesPartInFleet)
+        #expect(!FleetAccess.device.takesPartInFleet && !FleetAccess.unauthenticated.takesPartInFleet && FleetAccess.member.takesPartInFleet)
     }
 }

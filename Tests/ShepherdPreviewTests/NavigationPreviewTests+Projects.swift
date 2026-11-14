@@ -95,7 +95,7 @@ extension PreviewTests {
         vm.collapsedProjects.insert(SidebarProjectID.local(try #require(vm.state.spaces.first?.id)).key)
         try await Preview.render("sidebar-projects-remote",
                                  size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 640),
-                                 ready: { vm.offlineHostCount == 1 }) {
+                                 ready: { vm.remoteHosts.connections.contains { if case .failed = $0.phase { true } else { false } } }) {
             SidebarView(vm: vm)
         }
     }

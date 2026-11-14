@@ -30,7 +30,7 @@ struct FixtureHostData {
     var threads: [AgentID: NativeThreadSnapshot] = [:]
     /// Offline hosts refuse connections, so the app shows them unreachable.
     var online = true
-    /// Answers hello as a host holding another token does: `unauthorized`, then it closes.
+    /// Answers hello as a host that doesn't know the token does: `shared_token_retired` ("Pair again"), then it closes.
     var refusesToken = false
     var models: [String] = ["anthropic/claude-opus", "anthropic/claude-sonnet", "openai/gpt-5"]
     /// The models `listModels` says take no thinking level; nil answers as an older host does.

@@ -107,7 +107,7 @@ public struct ShepherdMacApp: App {
                 // App-side diagnostics only; the host's server metrics aren't reported to the app (#561 Q5).
                 ShepherdDiagnostics.shared.start(settings: .shared)
                 let vm = ShepherdViewModel(welcomesYourPi: true, browserData: .persistent)
-                vm.connectLocalHost(socket: BackgroundHostClient.socketPath(), token: BackgroundHostClient.token() ?? "")
+                vm.connectLocalHost(socket: BackgroundHostClient.socketPath())
                 vm.backgroundService = service
                 vm.backgroundServiceStatus = status
                 // The supervisor starts the host again; the store reconnects on its own.
@@ -295,17 +295,13 @@ extension ShepherdHost {
         }
         compact(settings.compactAtPercent)
         settings.onCompactAtChange = { compact($0) }
-        // Fleet: the host's links and pairing (`FleetService`) run only while the experiment is on, and
-        // they need the host's listener, which Fleet opens even with Settings ▸ Remote's switch off.
-        server.setFleetEnabled(settings.fleetEnabled)
         let listen = { [weak server, settings] (on: Bool) -> UInt16? in
             guard let server, on else {
                 listener?(nil, nil)
                 return nil
             }
             do {
-                let port = try server.startRemoteListener(port: UInt16(clamping: settings.remoteListenerPort),
-                                                          tokenURL: server.supportDirectory.appendingPathComponent("remote-token"))
+                let port = try server.startRemoteListener(port: UInt16(clamping: settings.remoteListenerPort))
                 listener?(port, nil)
                 return port
             } catch {
@@ -317,15 +313,20 @@ extension ShepherdHost {
         let listening = Listening(open: false)
         let relisten = { [weak server, settings] in
             server?.stopRemoteListener()
-            listening.open = listen(settings.remoteListenerEnabled || settings.fleetEnabled) != nil
+            listening.open = listen(settings.remoteListenerEnabled || listening.fleetNeeds) != nil
             server?.settingsChanged(.remote)
         }
         settings.onRemoteListenerChange = { _ in relisten() }
-        settings.onFleetChange = { [weak server, settings] on in
-            server?.setFleetEnabled(on)
-            // A Mac already serving keeps its clients when Fleet is switched; only a change opens or closes the listener.
-            if (settings.remoteListenerEnabled || on) != listening.open { relisten() }
+        // Fleet is how Macs connect: the host's links and pairing (`FleetService`) run as long as it does, but a fresh host listens on
+        // nothing. The fleet says when it needs the listener (a Mac or a device is paired, or a code is showing), and Serve this Mac's
+        // switch keeps it open on its own. A listener already open keeps its clients when only the other reason ends.
+        server.onFleetListenerNeed { need in
+            Task { @MainActor in
+                listening.fleetNeeds = need
+                if (settings.remoteListenerEnabled || need) != listening.open { relisten() }
+            }
         }
+        server.startFleet()
         // Fleet sync: the host settings that are the same on every Mac are read from these settings and
         // applied to them as the Settings pages would (`FleetHostSetting`).
         server.setFleetHostSettings { change in
@@ -336,7 +337,7 @@ extension ShepherdHost {
         }
         report()
         settings.observeWrites(report)
-        let port = listen(settings.remoteListenerEnabled || settings.fleetEnabled)
+        let port = listen(settings.remoteListenerEnabled)
         listening.open = port != nil
         return port
     }
@@ -345,6 +346,8 @@ extension ShepherdHost {
 /// Whether the host's listener is open, for the closures `serveSettings` hands the settings.
 private final class Listening: @unchecked Sendable {
     var open: Bool
+    /// The fleet needs the listener (`SessionServer.onFleetListenerNeed`).
+    var fleetNeeds = false
     init(open: Bool) { self.open = open }
 }
 
@@ -414,8 +417,8 @@ public enum ShepherdHost {
 
         /// `SessionHost.serve` with these services, for a host the test process runs.
         @discardableResult
-        func serve(_ server: SessionServer, socket: String, tokenURL: URL, recovering: Bool = true) async -> ThreadBanners? {
-            await SessionHost.serve(server, socket: socket, tokenURL: tokenURL, recovering: recovering, respawn: respawn, configure: configure,
+        func serve(_ server: SessionServer, socket: String, recovering: Bool = true) async -> ThreadBanners? {
+            await SessionHost.serve(server, socket: socket, recovering: recovering, respawn: respawn, configure: configure,
                                     threads: threads, automations: automations, pullRequests: pullRequests, banners: banners)
         }
 

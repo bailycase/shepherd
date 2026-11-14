@@ -145,6 +145,12 @@ final class FleetPressure: @unchecked Sendable {
 
     /// Makes the readiness report again when its inputs changed (pi's MCP commands, the projects), daily, and
     /// every `missingRecheckInterval` while it lists a missing tool, and pushes it to the peers when it differs.
+    /// What the readiness report is made of may have changed (the repositories this Mac can bind): it is made again now, and pushed if it did.
+    func factsChanged() {
+        guard !stopped else { return }
+        remakeReadiness(localFacts())
+    }
+
     private func remakeReadiness(_ facts: FleetLocalFacts) {
         guard !makingReport else { return }
         makingReport = true

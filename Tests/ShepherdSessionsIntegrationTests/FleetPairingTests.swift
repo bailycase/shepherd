@@ -9,7 +9,7 @@ import ShepherdRemote
 import ShepherdTestSupport
 
 /// Fleet's first slice end to end between real scratch hosts: pairing by code, the host's link to
-/// each peer, removal, and moving a pre-fleet pairing over. Each `Mac` is a `SessionServer` with
+/// each peer, and removal. Each `Mac` is a `SessionServer` with
 /// its remote listener (what another Mac reaches), its local socket (what its own app uses) and
 /// a fleet, on a private scratch folder; nothing advertises on the network.
 @Suite("Fleet pairing", .integrationTimeLimit)
@@ -20,13 +20,14 @@ struct FleetPairingTests {
         let port: UInt16
         let name: String
         let local: RemoteHostClient
-        let sharedToken: String
+        /// What a test's client presents to this Mac's listener (`clientTokenForTests`): `connected(to:)` is one, as a phone is.
+        let clientToken: String
         var server: SessionServer { host.server }
         var peersFile: URL { host.dir.appendingPathComponent("fleet/peers.json") }
 
         /// `port` 0 picks one that stays free for a restart; a restarted Mac asks for the one it had, as a real host's is fixed.
         /// `configure` sets the host up before its fleet starts (an iCloud store to stand in for CloudKit, say).
-        init(_ name: String, dir: URL? = nil, port: UInt16 = 0, fleet: Bool = true, configure: (SessionServer) -> Void = { _ in }) async throws {
+        init(_ name: String, dir: URL? = nil, port: UInt16 = 0, configure: (SessionServer) -> Void = { _ in }) async throws {
             self.name = name
             let host = try ScratchServer(dir: dir)
             let server = host.server
@@ -37,11 +38,10 @@ struct FleetPairingTests {
             let port = try await RestartablePort.listen(port) { try server.startRemoteListener(port: $0, tokenURL: tokenURL) }
             let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             try server.startLocalListener(path: socket, tokenURL: tokenURL)
-            // A host always has its fleet service (devices pair with it); `fleet: false` leaves membership off, as a fresh install is.
-            server.setFleetEnabledAndWait(fleet)
+            server.startFleetAndWait()
             let local = RemoteHostClient(localSocket: socket)
             _ = try await local.connect(host: "", port: 0, token: token, clientName: "Shepherd")
-            (self.host, self.port, self.sharedToken, self.local) = (host, port, token, local)
+            (self.host, self.port, self.clientToken, self.local) = (host, port, token, local)
         }
 
         func stop(keepFiles: Bool = false) {
@@ -168,22 +168,6 @@ struct FleetPairingTests {
         catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetProtocol.Code.notJoining) }
     }
 
-    @Test func fleetOffRefusesEveryFleetMessage() async throws {
-        let a = try await Mac("MacBook Pro"), b = try await Mac("Mac mini", fleet: false)
-        defer { a.stop(); b.stop() }
-        do { _ = try await b.local.fleetAction(.startJoin); Issue.record("Join opened with Fleet off") }
-        catch RemoteHostClientError.rejected(let code, let message) {
-            #expect(code == FleetProtocol.Code.off && message == "Enable Fleet in Settings ▸ Experiments.")
-        }
-        #expect(try await b.read().enabled == false, "the app can still read that it is off")
-        do { try await a.pair(with: b, code: "482913"); Issue.record("paired with Fleet off") }
-        catch RemoteHostClientError.rejected(let code, _) { #expect(code == FleetProtocol.Code.off) }
-        let client = RemoteHostClient()
-        _ = try await client.connect(host: "127.0.0.1", port: b.port, token: b.sharedToken, clientName: "phone")
-        defer { client.disconnect() }
-        #expect(!client.capabilities.contains(RemoteProtocol.fleetCapability) && client.hostID == nil)
-    }
-
     // MARK: Tokens
 
     @Test func aPeersTokenIsRefusedOnceItIsRemoved() async throws {
@@ -214,7 +198,7 @@ struct FleetPairingTests {
                                        fetchesState: false)
             Issue.record("a removed Mac's token was accepted")
         } catch RemoteHostClientError.rejected(let code, _) {
-            #expect(code == RemoteProtocol.unauthorizedCode)
+            #expect(code == RemoteProtocol.sharedTokenRetiredCode)
         }
         // The Mac that was removed is told, and drops what it paired.
         try await eventually("the removed Mac to leave the fleet") { try await b.peers().isEmpty }
@@ -290,41 +274,6 @@ struct FleetPairingTests {
         }
     }
 
-    // MARK: Moving a pre-fleet pairing over
-
-    /// A host the app already reached with the shared token becomes a peer with no code, and the
-    /// shared token keeps working beside it.
-    @Test func aLegacyHostBecomesAPeerWithTheSharedToken() async throws {
-        let a = try await Mac("MacBook Pro"), b = try await Mac("Mac mini")
-        defer { a.stop(); b.stop() }
-        let legacy = FleetLegacyHost(id: UUID(), name: "mini", host: "127.0.0.1", port: b.port, token: b.sharedToken)
-
-        let handed = try await a.local.fleetAction(.adopt([legacy]))
-        #expect(handed.adopted == [FleetAdoption(id: legacy.id, outcome: .established(hostID: try #require(try await b.read().hostID), name: "Mac mini"))])
-        try await a.waitForLink(to: b)
-        try await b.waitForLink(to: a)
-
-        // Handing it over again changes nothing.
-        let again = try await a.local.fleetAction(.adopt([legacy]))
-        #expect(again.snapshot.peers.count == 1)
-        // The shared token still opens the same listener for an older client.
-        let phone = RemoteHostClient()
-        defer { phone.disconnect() }
-        _ = try await phone.connect(host: "127.0.0.1", port: b.port, token: b.sharedToken, clientName: "iPhone")
-        #expect(phone.hostID != nil)
-    }
-
-    @Test func aHostWithoutFleetOrThatIsAwayIsLeftAsItWas() async throws {
-        let a = try await Mac("MacBook Pro"), off = try await Mac("Mac mini", fleet: false)
-        defer { a.stop(); off.stop() }
-        let notFleet = FleetLegacyHost(id: UUID(), name: "off", host: "127.0.0.1", port: off.port, token: off.sharedToken)
-        let away = FleetLegacyHost(id: UUID(), name: "away", host: "127.0.0.1", port: 1, token: "x")
-        let wrongToken = FleetLegacyHost(id: UUID(), name: "bad", host: "127.0.0.1", port: off.port, token: "nope")
-        let result = try await a.local.fleetAction(.adopt([notFleet, away, wrongToken]))
-        #expect(result.adopted?.map(\.outcome) == [.notFleet, .unreachable, .refused(code: RemoteProtocol.unauthorizedCode)])
-        #expect(result.snapshot.peers.isEmpty)
-    }
-
     // MARK: Only the app, only the local socket
 
     @Test func onlyThisMacsOwnAppReadsOrChangesItsFleet() async throws {
@@ -347,7 +296,7 @@ struct FleetPairingTests {
         let a = try await Mac("MacBook Pro")
         defer { a.stop() }
         let raw = try RawRemote(port: a.port)
-        try await raw.hello(token: a.sharedToken)
+        try await raw.hello(token: a.clientToken)
         try raw.send(.fleetPair(id: 5, code: "482913", from: FleetIntroduction(hostID: UUID(), name: "x", myTokenHash: FleetProtocol.hash("t"), port: 7434)))
         guard case .error(5, let code, _) = try await raw.next() else { Issue.record("expected a refusal"); return }
         #expect(code == FleetProtocol.Code.forbidden)
@@ -383,10 +332,10 @@ struct FleetPairingTests {
 }
 
 extension RemoteHostClient {
-    /// A client of `mac`'s listener with the shared token, as a phone or an older Mac is.
+    /// A client of `mac`'s listener with a device's token, as a phone is.
     static func connected(to mac: FleetPairingTests.Mac) async throws -> RemoteHostClient {
         let client = RemoteHostClient()
-        _ = try await client.connect(host: "127.0.0.1", port: mac.port, token: mac.sharedToken, clientName: "iPhone")
+        _ = try await client.connect(host: "127.0.0.1", port: mac.port, token: mac.clientToken, clientName: "iPhone")
         return client
     }
 }

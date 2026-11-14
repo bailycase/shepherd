@@ -16,7 +16,6 @@ extension FleetDispatch {
     /// record: `preparing` while the fetch, worktree and thread come, `waitingRoom` when this Mac is full
     /// and kept nothing, or a refusal with a code.
     func receiveCreate(_ create: FleetDispatchCreate, from sender: UUID, reply: @escaping (Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void) {
-        guard membership() else { return reply(.failure(Self.refusal(FleetDispatchCode.fleetOff, nil))) }
         guard create.from.hostID == sender else {
             return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "A dispatch can only come from the Mac that sends it.")))
         }
@@ -276,7 +275,6 @@ extension FleetDispatch {
     /// `fleetDispatchControl` from `sender`, which must be the Mac that sent the dispatch.
     func control(_ id: UUID, _ control: FleetDispatchControl, from sender: UUID,
                  reply: @escaping (Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void) {
-        guard membership() else { return reply(.failure(Self.refusal(FleetDispatchCode.fleetOff, nil))) }
         guard var entry = inbound[id], entry.record.parentHostID == sender else {
             return reply(.failure(.init(code: FleetDispatchProtocol.Code.unknownDispatch, message: "That Mac has no such dispatch.")))
         }

@@ -67,8 +67,8 @@ final class AppHarness {
             apps: AppsModel(home: dir.appendingPathComponent("apps-home").path)
         )
         self.vm = vm
-        let token = try await serveHost(mcp: mcp, recovering: restoringAgents)
-        let connection = vm.connectLocalHost(socket: hostSocket, token: token)
+        try await serveHost(mcp: mcp, recovering: restoringAgents)
+        let connection = vm.connectLocalHost(socket: hostSocket)
         let server = server
         try await eventuallyOnMain("the view model to adopt the host's workspace", timeout: .seconds(30)) {
             connection.phase == .connected && vm.state == server.state
@@ -85,9 +85,8 @@ final class AppHarness {
     private var hostBanners: ThreadBanners?
 
     /// Serves the scratch server as the app's host, as `Shepherd --host` does, on `hostSocket`.
-    /// `recovering` respawns unfinished work as the host does at its start. Returns the token.
-    private func serveHost(mcp: MCPStore?, recovering: Bool) async throws -> String {
-        let tokenURL = dir.appendingPathComponent("remote-token")
+    /// `recovering` respawns unfinished work as the host does at its start.
+    private func serveHost(mcp: MCPStore?, recovering: Bool) async throws {
         if host == nil {
             let notice = "shepherd-test-settings-\(UUID().uuidString)"
             settings.followOtherProcesses(notice: notice)
@@ -103,9 +102,8 @@ final class AppHarness {
             // No `gh` on this Mac: a test that wants a pull request stands one in.
             services.pullRequestLookup = { _ in nil }
             host = services
-            hostBanners = await services.serve(server, socket: hostSocket, tokenURL: tokenURL, recovering: recovering)
+            hostBanners = await services.serve(server, socket: hostSocket, recovering: recovering)
         }
-        return try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Waits for every queued optimistic write to reach the server.

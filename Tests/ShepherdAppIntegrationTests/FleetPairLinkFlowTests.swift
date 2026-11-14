@@ -15,8 +15,8 @@ import Testing
 struct FleetPairLinkFlowTests {
     typealias FleetApp = FleetSettingsFlowTests.FleetApp
 
-    static func app(_ name: String, fleet: Bool = true, serving: Bool = false) async throws -> FleetApp {
-        try await FleetApp(name, fleet: fleet, serving: serving) { server in
+    static func app(_ name: String, serving: Bool = false) async throws -> FleetApp {
+        try await FleetApp(name, serving: serving) { server in
             server.configureFleetRendezvous(store: UnavailableFleetRendezvousStore(),
                                             routes: { port in [FleetRoute(host: "127.0.0.1", port: port, kind: .lan, learned: false)] }, lookupInterval: 0)
         }
@@ -44,14 +44,6 @@ struct FleetPairLinkFlowTests {
         #expect(b.model.snapshot.routes.map { $0.kind.label } == ["LAN"])
     }
 
-    @Test func aMacThatHasNotSaidWhereItListensOffersNoLink() async throws {
-        let b = try await FleetApp("Mac mini", fleet: false)
-        defer { b.stop() }
-        await b.model.startDeviceCode()
-        let shown = try #require(b.model.deviceCode)
-        #expect(b.model.pairingLink(for: shown, purpose: .device) == nil, "no listener, no link")
-    }
-
     // MARK: Opening a link
 
     @Test func aLinkOpenedFromOutsideFillsInAddAMacAndPairsOnItsCode() async throws {
@@ -65,12 +57,12 @@ struct FleetPairLinkFlowTests {
         a.model.receive(link: link.url(scheme: a.model.linkScheme))
         let text = try #require(a.model.incomingLink)
         a.model.incomingLink = nil
-        a.model.readLink(text, asClient: false)
+        a.model.readLink(text)
         #expect(a.model.linkProblem == nil)
         let target = try #require(a.model.target)
         #expect(target.hostID == link.hostID && target.name == "Mac mini" && target.address == "127.0.0.1:\(b.port ?? 0)" && target.expiresAt == link.expiresAt)
 
-        #expect(await a.model.pair(at: target, code: link.code, asClient: false))
+        #expect(await a.model.pair(at: target, code: link.code))
         #expect(a.model.pairing == .idle)
         try await FleetSettingsFlowTests.waitFor("both Macs to list each other") {
             await a.model.refresh(); await b.model.refresh()
@@ -87,25 +79,23 @@ struct FleetPairLinkFlowTests {
         await a.model.refresh()
         let link = try await Self.link(of: b)
 
-        a.model.readLink("   ", asClient: false)
+        a.model.readLink("   ")
         #expect(a.model.link == nil && a.model.linkProblem == nil, "an empty field says nothing")
-        a.model.readLink("482913", asClient: false)
+        a.model.readLink("482913")
         #expect(a.model.linkProblem?.hasPrefix("That isn't a pairing link") == true && a.model.target == nil)
-        a.model.readLink(link.url(scheme: FleetPairingLink.nightlyScheme == a.model.linkScheme ? FleetPairingLink.stableScheme : FleetPairingLink.nightlyScheme).absoluteString, asClient: false)
+        a.model.readLink(link.url(scheme: FleetPairingLink.nightlyScheme == a.model.linkScheme ? FleetPairingLink.stableScheme : FleetPairingLink.nightlyScheme).absoluteString)
         #expect(a.model.linkProblem?.hasPrefix("That link is for Shepherd") == true && a.model.target == nil, "another edition's link isn't opened")
         a.model.now = { Date().addingTimeInterval(3600) }
-        a.model.readLink(link.url(scheme: a.model.linkScheme).absoluteString, asClient: false)
+        a.model.readLink(link.url(scheme: a.model.linkScheme).absoluteString)
         #expect(a.model.linkProblem?.hasPrefix("That link has expired") == true && a.model.target == nil)
         a.model.now = Date.init
-        a.model.readLink(link.url(scheme: a.model.linkScheme).absoluteString + "x", asClient: false)
+        a.model.readLink(link.url(scheme: a.model.linkScheme).absoluteString + "x")
         #expect(a.model.linkProblem != nil && a.model.target == nil, "a damaged link")
         // A Mac's own link, and a link for the other kind of sheet.
         let own = FleetPairingLink(hostID: try #require(a.model.snapshot.hostID), name: "MacBook Pro", port: 7434, routes: [FleetReportedRoute(host: "127.0.0.1", kind: .lan)],
                                    code: "482913", expiresAt: Date().timeIntervalSince1970 * 1000 + 60_000)
-        a.model.readLink(own.url(scheme: a.model.linkScheme).absoluteString, asClient: false)
+        a.model.readLink(own.url(scheme: a.model.linkScheme).absoluteString)
         #expect(a.model.linkProblem == "That link is for this Mac.")
-        a.model.readLink(link.url(scheme: a.model.linkScheme).absoluteString, asClient: true)
-        #expect(a.model.linkProblem?.contains("adds a Mac to a fleet") == true && a.model.target == nil, "with Fleet off a Join link adds nothing")
     }
 
     @Test func aLinkWhoseMacIsAnotherThanTheOneAtItsAddressPairsNothing() async throws {
@@ -114,9 +104,9 @@ struct FleetPairLinkFlowTests {
         await a.model.refresh()
         var link = try await Self.link(of: b)
         link.hostID = UUID()
-        a.model.readLink(link.url(scheme: a.model.linkScheme).absoluteString, asClient: false)
+        a.model.readLink(link.url(scheme: a.model.linkScheme).absoluteString)
         let target = try #require(a.model.target)
-        #expect(!(await a.model.pair(at: target, code: link.code, asClient: false)))
+        #expect(!(await a.model.pair(at: target, code: link.code)))
         guard case .failed(let message) = a.model.pairing else { Issue.record("a wrong Mac was paired"); return }
         #expect(!message.isEmpty)
         await a.model.refresh(); await b.model.refresh()
@@ -129,9 +119,9 @@ struct FleetPairLinkFlowTests {
         await a.model.refresh()
         a.model.findsByLink = false
         let link = try await Self.link(of: b)
-        a.model.readLink(link.url(scheme: a.model.linkScheme).absoluteString, asClient: false)
+        a.model.readLink(link.url(scheme: a.model.linkScheme).absoluteString)
         let target = try #require(a.model.target)
-        #expect(!(await a.model.pair(at: target, code: link.code, asClient: false)))
+        #expect(!(await a.model.pair(at: target, code: link.code)))
         guard case .failed(let message) = a.model.pairing else { Issue.record("an old host paired by link"); return }
         #expect(message.contains("older than this app"))
         await b.model.refresh()
@@ -143,6 +133,8 @@ struct FleetPairLinkFlowTests {
     @Test func aMacFoundOverSSHShowsWhereItListensAndPairsOnlyOnItsCode() async throws {
         let a = try await Self.app("MacBook Pro"), b = try await Self.app("Mac mini")
         defer { a.stop(); b.stop() }
+        // The Mac shows its code first: that is what opens its listener, and what `fleet-where` then reports.
+        await b.model.startJoin()
         await a.model.refresh(); await b.model.refresh()
         let answer = FleetWhere(hostID: try #require(b.model.snapshot.hostID), name: "Mac mini", app: "Shepherd Nightly", build: "1.9", port: try #require(b.model.snapshot.port),
                                 routes: b.model.snapshot.routes)
@@ -161,9 +153,8 @@ struct FleetPairLinkFlowTests {
         await b.model.refresh()
         #expect(a.model.rows.map(\.title) == ["This Mac"] && b.model.rows.map(\.title) == ["This Mac"], "finding pairs nothing")
 
-        await b.model.startJoin()
         let code = try #require(b.model.join).code
-        #expect(await a.model.pair(at: found, code: code, asClient: false))
+        #expect(await a.model.pair(at: found, code: code))
         try await FleetSettingsFlowTests.waitFor("both Macs to list each other") {
             await a.model.refresh(); await b.model.refresh()
             return a.model.rows.map(\.state) == [.thisMac, .connected] && b.model.rows.map(\.state) == [.thisMac, .connected]
@@ -189,28 +180,15 @@ struct FleetPairLinkFlowTests {
         #expect(a.model.ssh == .failed("That is this Mac."))
     }
 
-    // MARK: A device with Fleet off
+    // MARK: A link that adds a device
 
-    @Test func withFleetOffALinkAddsTheMacAsAClientAfterCheckingWhoAnswers() async throws {
-        let a = try await Self.app("MacBook Pro", fleet: false, serving: true), b = try await Self.app("Mac mini", fleet: false, serving: true)
+    @Test func aDeviceLinkIsRefusedByAddAMacWithWhatToUseInstead() async throws {
+        let a = try await Self.app("MacBook Pro"), b = try await Self.app("Mac mini")
         defer { a.stop(); b.stop() }
         await a.model.refresh()
-        let store = RemoteHostStore(defaults: ScratchDefaults(), connects: false)
-        a.model.pairClient = { host, port, code, expecting in try await store.pairAsClient(host: host, port: port, code: code, expecting: expecting) }
         let link = try await Self.link(of: b, purpose: .device)
         #expect(link.purpose == .device)
-
-        // A Join link isn't for a Mac with Fleet off; a device link is.
-        a.model.readLink(link.url(scheme: a.model.linkScheme).absoluteString, asClient: false)
-        #expect(a.model.target == nil && a.model.linkProblem?.contains("adds a device") == true, "a Mac in a fleet is added with a Join link")
-        a.model.readLink(link.url(scheme: a.model.linkScheme).absoluteString, asClient: true)
-        let target = try #require(a.model.target)
-
-        var wrong = target
-        wrong.hostID = UUID()
-        #expect(!(await a.model.pair(at: wrong, code: link.code, asClient: true)) && store.hosts.isEmpty, "another Mac answering is refused before the code is sent")
-        #expect(await a.model.pair(at: target, code: link.code, asClient: true))
-        let held = try #require(store.hosts.first)
-        #expect(held.name == "Mac mini" && held.port == b.port && held.ownToken)
+        a.model.readLink(link.url(scheme: a.model.linkScheme).absoluteString)
+        #expect(a.model.target == nil && a.model.linkProblem?.contains("adds a device") == true, "a Mac is added with a Join link")
     }
 }

@@ -42,9 +42,7 @@ struct FleetPagePreviewTests {
     /// preview's own host never starts a fleet (no listener, no advertisement), and what it says
     /// of one when the app connects must not replace them.
     static func seedFleet(_ workspace: PreviewWorkspace) {
-        workspace.settings.onFleetChange = nil
         workspace.vm.fleet.onSnapshot = nil
-        workspace.settings.fleetEnabled = true
         workspace.settings.setFleetWeight(.prefer, of: mini)
         workspace.vm.fleetPage.update(snapshot)
     }
@@ -142,7 +140,7 @@ struct FleetPagePreviewTests {
         Self.seedFleet(workspace)
         workspace.vm.openDestination(.fleet)
         #expect(workspace.vm.shownDestination == .fleet)
-        #expect(workspace.vm.settings.fleetEnabled && !workspace.vm.fleetPage.page.cards.isEmpty)
+        #expect(!workspace.vm.fleetPage.page.cards.isEmpty)
         let page = workspace.vm.fleetPage.page
         try await Preview.renderMatrix("fleet3a-window", size: CGSize(width: 1440, height: 900)) {
             HStack(spacing: 0) {

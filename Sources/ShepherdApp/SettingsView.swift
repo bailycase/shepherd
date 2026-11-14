@@ -191,7 +191,7 @@ struct SettingsView: View {
         case .subagents: SubagentsSettings(model: vm.subagentDefinitions, native: NativeSubagentSettings(pi: vm.pi, settings: vm.settings))
         case .projects: ProjectsSettings(vm: vm, model: vm.projects)
         case .pi: PiSettings(pi: vm.pi, yourPi: vm.yourPi) { vm.settingsSection = .extensions }
-        case .piSignIn: PiSignInSettings(yourPi: vm.yourPi, auth: vm.piAuth, inFleet: vm.settings.fleetEnabled)
+        case .piSignIn: PiSignInSettings(yourPi: vm.yourPi, auth: vm.piAuth)
         case .extensions: ExtensionsSettings(settings: vm.settings)
         case .piSlashCommands: SlashCommandsSettings(model: vm.slashCommands, settings: vm.settings)
         case .apps: AppsSettings(vm: vm, model: vm.apps)
@@ -201,14 +201,14 @@ struct SettingsView: View {
         case .skills: SkillsSettings(vm: vm, model: vm.skills)
         case .mcp: MCPSettings(vm: vm, store: vm.mcp, initiallyExpanded: vm.mcpOpenServer)
         case .fleet:
-            FleetSettings(model: vm.fleet, serviceKeepsRunning: vm.backgroundServiceStatus?.keepsAgentsRunning, enabled: vm.settings.fleetEnabled,
+            FleetSettings(model: vm.fleet, serviceKeepsRunning: vm.backgroundServiceStatus?.keepsAgentsRunning,
                           serve: FleetServe(isOn: Binding(get: { vm.remoteListenerEnabled }, set: { vm.setRemoteListenerEnabled($0) }),
                                             status: vm.remoteListenerStatus, problem: vm.remoteListenerProblem,
                                             problemDetail: vm.remoteListenerProblemDetail),
-                          clients: vm.remoteHosts.pairedConnections.filter { !vm.settings.fleetEnabled || !$0.config.fleetManaged }.map {
-                              .client(id: $0.id, name: $0.config.name, host: $0.config.host, port: $0.config.port, phase: $0.phase)
+                          notInFleet: vm.remoteHosts.notInFleet.map {
+                              FleetNotInFleetMac(id: $0.id, name: $0.name, host: $0.host, port: $0.port)
                           },
-                          removeClient: { vm.remoteHosts.removeHost(id: $0) },
+                          dismissNotInFleet: { vm.remoteHosts.dismissNotInFleet(id: $0) },
                           code: FleetCodeSettings(
                               uncommitted: vm.settings.fleetUncommitted, setUncommitted: { vm.settings.fleetUncommitted = $0 },
                               spaces: vm.state.spaces.filter { !$0.hidden && $0.repoKey != nil }.map {
@@ -353,7 +353,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .fleet: ["Macs", "Add a Mac", "Join a fleet", "Remove", "Devices", "Add a device", "Revoke", "Listener"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Open files in", "Workspace state", "Extension socket", "Update channel", "Check for updates", "Share diagnostics", "Skipped confirmations", "Reset settings"]
-        case .experiments: ["Goals", "Projects", "Fleet", "Suggested instructions", "Learn from", "Can suggest for", "Waiting for you",
+        case .experiments: ["Goals", "Projects", "Suggested instructions", "Learn from", "Can suggest for", "Waiting for you",
                             "Added from suggestions", "Design tool"]
         }
     }

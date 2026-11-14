@@ -65,8 +65,8 @@ final class PreviewWorkspace {
                                              keepsAgentsRunning: { nil })
         // No `gh` on this Mac: a preview that draws a pull request stands one in.
         services.pullRequestLookup = { _ in nil }
-        await services.serve(server, socket: socket, tokenURL: tokenURL, recovering: false)
-        vm.connectLocalHost(socket: socket, token: try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines))
+        await services.serve(server, socket: socket, recovering: false)
+        vm.connectLocalHost(socket: socket)
         return services
     }
 

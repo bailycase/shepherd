@@ -8,7 +8,7 @@ public enum ShepherdFleetWhere {
     public static var requested: Bool { CommandLine.arguments.dropFirst().contains(FleetWhereCommand.argument) }
 
     public static func main() -> Never {
-        FleetWhereCommand.main(socket: BackgroundHostClient.socketPath(), token: BackgroundHostClient.token() ?? "",
+        FleetWhereCommand.main(socket: BackgroundHostClient.socketPath(),
                                app: ShepherdEdition.current.displayName,
                                version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
     }

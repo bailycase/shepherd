@@ -156,7 +156,7 @@ extension ShepherdViewModel {
                 selectRemoteAgent(hostID: ref.hostID, agentID: ref.agentID)
             }
         case .host:
-            openDestination(.hosts)
+            openDestination(.fleet)
         }
     }
 

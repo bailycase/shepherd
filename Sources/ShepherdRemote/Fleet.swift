@@ -372,8 +372,12 @@ public struct FleetHostCard: Identifiable, Equatable, Sendable {
     /// When it was last connected, while it is not (MobileMore's "Last seen today 07:12").
     public var lastSeen: Date?
 
-    /// Retry makes sense: neither connected nor already connecting.
-    public var canRetry: Bool { !phase.isConnected && phase != .connecting }
+    /// Retry makes sense: neither connected nor already connecting, and the Mac didn't say to pair again.
+    public var canRetry: Bool { !phase.isConnected && phase != .connecting && !needsPairing }
+
+    /// The Mac no longer accepts this device's saved token (the old shared one, or a revoked device's): trying again fails the same
+    /// way, and Add a Mac, with the code it shows, is the way back in.
+    public var needsPairing: Bool { phase.failure?.kind == .sharedTokenRetired }
 }
 
 /// An automation, read-only: what it runs, where, and how its run is doing.

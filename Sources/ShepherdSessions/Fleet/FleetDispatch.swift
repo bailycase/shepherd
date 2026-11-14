@@ -114,8 +114,6 @@ final class FleetDispatch: @unchecked Sendable {
     var host = FleetDispatchHost()
     /// This Mac's name as other Macs see it.
     var hostName: () -> String = { "This Mac" }
-    /// Whether Fleet is on (membership); every dispatch is refused with `fleet_off` otherwise.
-    var membership: () -> Bool = { false }
     /// The paired Macs: id, name, whether the link is up.
     var peers: () -> [(hostID: UUID, name: String, connected: Bool)] = { [] }
     /// The connected link to a Mac.
@@ -393,7 +391,7 @@ final class FleetDispatch: @unchecked Sendable {
     /// a result for a parent whose pi is back. Never re-sends a record the person has to decide on
     /// (`heldRestart`).
     func evaluate() {
-        guard !stopped, membership() else { return }
+        guard !stopped else { return }
         let waiting = outbound.values.sorted { $0.createdAt < $1.createdAt }
         for record in waiting {
             switch record.state {
@@ -421,9 +419,6 @@ final class FleetDispatch: @unchecked Sendable {
     /// was found unable to), or at once when it waits or is held.
     func dispatch(from agentID: AgentID, key: String?, task: String, title: String?, host named: String?, model: String?, thinking: String?,
                   reply: @escaping (Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void) {
-        guard membership() else {
-            return reply(.failure(.init(code: FleetDispatchCode.fleetOff, message: "Fleet is off. Turn it on in Settings ▸ Experiments.")))
-        }
         guard host.settings()?.fleetThreadsCanSend == true else {
             return reply(.failure(.init(code: FleetDispatchCode.sendOff, message: "Threads can't send work to other Macs. Turn on Settings ▸ Fleet ▸ Threads can send work.")))
         }
@@ -644,7 +639,7 @@ final class FleetDispatch: @unchecked Sendable {
         case FleetDispatchCode.repoAmbiguous: "More than one folder on that Mac is this repository: \(detail ?? "")."
         case FleetDispatchCode.hostNotReady: "That Mac isn't ready: \(detail.map { $0 == "unknown" ? "it hasn't reported yet" : "\($0) isn't installed" } ?? "it can't run this work")."
         case FleetDispatchCode.commitUnreachable: "That Mac can't reach this commit from its origin."
-        case FleetDispatchCode.fleetOff: "Fleet is off. Turn it on in Settings ▸ Experiments."
+        case FleetDispatchCode.fleetOff: "Fleet is off on that Mac, which runs an older Shepherd. Update it."
         default: detail.map { "\(code): \($0)" } ?? code
         }
         return FleetDispatchRefusal(code: code, message: message, detail: detail)
@@ -993,7 +988,7 @@ final class FleetDispatch: @unchecked Sendable {
     /// on that Mac under its own recovery rules. A Mac that never heard of it ends a running dispatch
     /// `peer_gone` and leaves a preparing one held for the person.
     func reconcile() {
-        guard !stopped, membership() else { return }
+        guard !stopped else { return }
         for record in outbound.values where record.state == .preparing || record.state == .running {
             guard let target = record.targetHostID, isConnected(target), !sending.contains(record.id) else { continue }
             let id = record.id

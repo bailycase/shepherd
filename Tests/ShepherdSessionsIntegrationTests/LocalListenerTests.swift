@@ -70,9 +70,10 @@ struct LocalListenerTests {
     @Test func onlyTheLocalSocketOffersLocalAndClosingTheTCPListenerKeepsIt() async throws {
         let local = try Local()
         defer { local.host.stop() }
-        let port = try local.host.server.startRemoteListener(port: 0, tokenURL: local.host.dir.appendingPathComponent("remote-token"))
+        let remoteTokenURL = local.host.dir.appendingPathComponent("remote-token")
+        let port = try local.host.server.startRemoteListener(port: 0, tokenURL: remoteTokenURL)
         let remote = RemoteHostClient()
-        _ = try await remote.connect(host: "127.0.0.1", port: port, token: local.token, clientName: "iPhone")
+        _ = try await remote.connect(host: "127.0.0.1", port: port, token: try String(contentsOf: remoteTokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), clientName: "iPhone")
         defer { remote.disconnect() }
         #expect(!remote.capabilities.contains(RemoteProtocol.localCapability))
 
@@ -87,11 +88,10 @@ struct LocalListenerTests {
             #expect(code == "native_unavailable")
         }
 
-        // A wrong token is refused like on TCP.
-        let stranger = RemoteHostClient(localSocket: local.path)
-        await #expect(throws: RemoteHostClientError.self) {
-            _ = try await stranger.connect(host: "", port: 0, token: "not-the-token", clientName: "Shepherd")
-        }
+        // The socket asks for no token: only this app's own code gets past accept (`aProcessSignedAsSomethingElseIsRefusedBeforeHello`).
+        let nothing = RemoteHostClient(localSocket: local.path)
+        defer { nothing.disconnect() }
+        _ = try await nothing.connect(host: "", port: 0, token: "", clientName: "Shepherd")
     }
 
     @Test func aProcessSignedAsSomethingElseIsRefusedBeforeHello() async throws {

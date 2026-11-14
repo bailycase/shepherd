@@ -13,9 +13,6 @@ extension FleetDispatch {
     /// Sends a thread from New thread. Answers once the target took it (or was found unable to), at once when it waits, or
     /// with `nil` when the work stays on this Mac (named or chosen by Auto), which the app starts itself as it always did.
     func dispatchUserThread(_ thread: FleetUserThread, reply: @escaping (Result<FleetDispatchRecord?, FleetDispatchRefusal>) -> Void) {
-        guard membership() else {
-            return reply(.failure(Self.refusal(FleetDispatchCode.fleetOff, nil)))
-        }
         let id = thread.dispatchID
         // A retry of a send that already went answers what it made.
         if let existing = outbound[id] { return reply(.success(existing.summary)) }
@@ -101,7 +98,6 @@ extension FleetDispatch {
     /// asked. A record that failed starts again under a new id: the Mac that refused it may hold its copy of the first
     /// try, which would answer for the second.
     func retry(_ id: UUID, host target: UUID?, reply: @escaping (Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void) {
-        guard membership() else { return reply(.failure(Self.refusal(FleetDispatchCode.fleetOff, nil))) }
         guard var record = outbound[id] else {
             return reply(.failure(.init(code: FleetDispatchProtocol.Code.unknownDispatch, message: "This Mac has no such dispatch.")))
         }
