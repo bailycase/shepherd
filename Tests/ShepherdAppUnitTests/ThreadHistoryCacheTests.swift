@@ -12,22 +12,24 @@ struct ThreadHistoryCacheTests {
         ids.map { NativeThreadRow(turn: NativeTurn(id: $0, isUser: false, messages: []), presentation: nil, live: false, promptText: nil, startedAt: nil) }[...]
     }
 
-    private func key(arrived: Set<String> = []) -> ThreadHistoryCache.Key {
+    private func key(arrived: Set<String> = [], store: NativeThreadStore, tailGuard: ThreadTailGuard) -> ThreadHistoryCache.Key {
         ThreadHistoryCache.Key(rows: rows(["a", "b"]), dormant: false, boundary: "a", running: false, detached: false, arrived: arrived,
-                               inspected: nil, fleet: nil, actions: [false, false, false, false])
+                               inspected: nil, fleet: nil, actions: [false, false, false, false],
+                               store: ObjectIdentifier(store), tailGuard: ObjectIdentifier(tailGuard))
     }
 
     @Test func aKeptStackIsHandedBackUntilTheKeyChanges() {
         let cache = ThreadHistoryCache()
+        let store = NativeThreadStore(), tailGuard = ThreadTailGuard()
         var made = 0
         func make() -> AnyView {
             made += 1
             return AnyView(Text("\(made)"))
         }
-        _ = cache.view(for: key(), make: make)
-        _ = cache.view(for: key(), make: make)
+        _ = cache.view(for: key(store: store, tailGuard: tailGuard), make: make)
+        _ = cache.view(for: key(store: store, tailGuard: tailGuard), make: make)
         #expect(made == 1)
-        _ = cache.view(for: key(arrived: ["b"]), make: make)
+        _ = cache.view(for: key(arrived: ["b"], store: store, tailGuard: tailGuard), make: make)
         #expect(made == 2)
     }
 
@@ -36,6 +38,14 @@ struct ThreadHistoryCacheTests {
         var made = 0
         for _ in 0..<3 { _ = cache.view(for: nil) { made += 1; return AnyView(EmptyView()) } }
         #expect(made == 3)
+    }
+
+    @Test func anotherStoreOrTailGuardIsAnotherKey() {
+        let store = NativeThreadStore(), tailGuard = ThreadTailGuard()
+        let same = key(store: store, tailGuard: tailGuard)
+        #expect(same == key(store: store, tailGuard: tailGuard))
+        #expect(same != key(store: NativeThreadStore(), tailGuard: tailGuard))
+        #expect(same != key(store: store, tailGuard: ThreadTailGuard()))
     }
 
     @Test func arrivalsInTheTailAreNotTheHistorys() {

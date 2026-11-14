@@ -482,7 +482,8 @@ struct ThreadView: View {
         return ThreadHistoryCache.Key(rows: history, dormant: dormant, boundary: boundary, running: running, detached: detached,
                                       arrived: ThreadHistoryCache.Key.arrivals(in: history, tail: tail, among: arrived),
                                       inspected: inspectedRunID, fleet: fleetThread,
-                                      actions: [review != nil, turnActions != nil, inspectSubagent != nil, steerSubagent != nil])
+                                      actions: [review != nil, turnActions != nil, inspectSubagent != nil, steerSubagent != nil],
+                                      store: ObjectIdentifier(store), tailGuard: ObjectIdentifier(tailGuard))
     }
 
     /// Brings back what a restore still owes (`ThreadRestore`), a step at a time, each after the frame of the one before it. The lazy
@@ -926,11 +927,11 @@ private final class ThreadRowMemory {
 
 /// The lazy stack of the rows older than the eager tail, kept as the view it was while what its rows are built from has not changed (`Key`:
 /// the rows, the boundary row's probe, whether a turn runs and whether the reader has left the tail, the arrivals among the rows, the run open
-/// in the inspector, the dispatches, and which actions the thread was given). The thread's body runs for much else (it is shown or hidden, it
-/// catches up), which nothing in the stack reads; handed the same rows in a new closure, the stack builds them again and moves its estimate of
-/// the rows it has not measured, and a reader in the eager tail below it has nothing to hold their rows where they were. A turn ending is
-/// not ignored: the stack's estimates are replaced as it does, and a reply landing at the tail was blank for a frame without it. A
-/// reference, so keeping it never draws the thread.
+/// in the inspector, the dispatches, which actions the thread was given, and the store and the tail guard its rows are drawn with). The
+/// thread's body runs for much else (it is shown or hidden, it catches up), which nothing in the stack reads; handed the same rows in a new
+/// closure, the stack builds them again and moves its estimate of the rows it has not measured, and a reader in the eager tail below it has
+/// nothing to hold their rows where they were. A turn ending is not ignored: the stack's estimates are replaced as it does, and a reply
+/// landing at the tail was blank for a frame without it. A reference, so keeping it never draws the thread.
 ///
 /// The kept view holds the thread view that drew it, so the cache must not be held by that thread view (`ThreadHistoryColumn`).
 @MainActor
@@ -945,6 +946,8 @@ final class ThreadHistoryCache {
         let inspected: String?
         let fleet: FleetThreadSurface?
         let actions: [Bool]
+        let store: ObjectIdentifier
+        let tailGuard: ObjectIdentifier
 
         /// The rows of `arrived` that are among the `history`'s. Rows arrive at the thread's tail, so unless a batch larger than the
         /// tail arrived at once, every one is in `tail` and only it is looked at; the history is walked only for such a batch.
