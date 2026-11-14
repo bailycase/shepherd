@@ -74,7 +74,7 @@ struct FleetScreen: View {
                     if tab == .check, serves {
                         EmptyView()
                     } else if serves {
-                        FleetSectionLabel(title: wide ? "Dispatches today" : "Dispatches", capitals: navigator.hingeClosed == nil)
+                        FleetSectionLabel(title: wide ? "Recent work today" : "Recent work", capitals: navigator.hingeClosed == nil)
                             .padding(.top, wide ? SH.Space.s : 0)
                         FleetDispatchesCard()
                     } else {

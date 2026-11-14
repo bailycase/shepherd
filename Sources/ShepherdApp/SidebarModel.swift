@@ -308,21 +308,16 @@ struct SidebarSource: Equatable {
     }
 }
 
-/// The dispatches this Mac sent, as the sidebar reads them (`FleetPageModel.dispatchRecords`).
+/// The threads this Mac started on other Macs, as the sidebar reads them (`FleetPageModel.sidebarFleet`).
 struct SidebarFleet: Equatable {
     /// Every dispatch but a move, newest first (a move is its thread's own card).
     var records: [FleetDispatchRecord] = []
-    /// The Mac Auto picks next, by name.
-    var next: String?
-    /// The most dispatches one thread may have going.
-    var cap = HostSettings.fleetThreadCapDefault
+    /// This Mac and its peers by fleet id: a dispatch names the Mac it asked for by id.
+    var macs: [UUID: String] = [:]
+    /// Failed threads the person deleted on this Mac: not drawn (`ShepherdViewModel.dismissedDispatches`).
+    var dismissed: Set<UUID> = []
 
     func record(_ id: UUID) -> FleetDispatchRecord? { records.first { $0.id == id } }
-
-    /// How many of the sender's sends count against its limit now.
-    func live(_ record: FleetDispatchRecord) -> Int {
-        records.count { $0.parentAgentID == record.parentAgentID && $0.state.countsAgainstCap }
-    }
 }
 
 enum SidebarDerivation {
@@ -403,7 +398,7 @@ enum SidebarDerivation {
                                notSignedIn: notSignedIn, waiting: source.waiting.contains(agent.id),
                                opening: source.openingTurns.contains(agent.id), since: source.statusSince[agent.id])
             if let pull = source.pullRequests[agent.id] { row.attach(pull) }
-            if let info = sentInfo(of: agent, host: nil, source), let dispatch = agent.dispatchedFrom?.dispatchID {
+            if let info = sentInfo(of: agent, source), let dispatch = agent.dispatchedFrom?.dispatchID {
                 sent[row.id] = info
                 sentThreads.insert(dispatch)
             }
@@ -460,7 +455,7 @@ enum SidebarDerivation {
                 var parent: Automation?
                 if !host.offline, let candidate = watcher ?? origin, live || candidate.activeTrigger { parent = candidate }
                 var row = remoteRow(agent, host: host, automation: watcher != nil, needsYou: needsYou, folded: parent != nil)
-                if let info = sentInfo(of: agent, host: host, source), let dispatch = agent.dispatchedFrom?.dispatchID {
+                if let info = sentInfo(of: agent, source), let dispatch = agent.dispatchedFrom?.dispatchID {
                     sent[row.id] = info
                     sentThreads.insert(dispatch)
                 }

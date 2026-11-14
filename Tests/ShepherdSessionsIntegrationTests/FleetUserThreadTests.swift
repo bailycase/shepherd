@@ -23,13 +23,13 @@ struct FleetUserThreadTests {
         #expect(record.reasonCodes.first?.code == .mostRoom)
         #expect(record.task.isEmpty, "the reply, like the log, leaves the task out")
 
-        // The Mac that took it runs a thread nobody's thread sent: its header reads "sent by you".
+        // The Mac that took it runs a thread nobody's thread sent: its header names no thread.
         try await D.wait("B to run the thread") { !b.dispatched.isEmpty }
         let running = try #require(b.dispatched.first)
         let from = try #require(running.dispatchedFrom)
         #expect(from.hostID == aID && from.hostName == "MacBook Pro" && from.agentID == nil && from.dispatchID == thread.dispatchID)
         let sentBy = FleetSentBy(from, host: "Mac mini", viewer: aID)
-        #expect(sentBy.sentByLine == "sent by you" && sentBy.goesBackLine == nil)
+        #expect(sentBy.sender == "you" && !sentBy.fromThread && sentBy.goesBackLine == nil)
         #expect(a.dispatched.isEmpty, "nothing started on the Mac that sent it")
         try await D.wait("A to follow it as running") { a.sent().first?.state == .running && a.sent().first?.remoteAgentID == running.id }
     }

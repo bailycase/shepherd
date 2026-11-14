@@ -327,7 +327,7 @@ public enum FleetPagePresentation {
         var page = FleetPage(cards: cards, summary: summary.joined(separator: " · "),
                              nextGoesTo: winner.flatMap { id in cards.first { $0.id == id }?.name }, nextGoesToID: winner,
                              footer: footer(cards, asleep: asleep, viewer: viewer))
-        page.dispatches = snapshot.dispatches.sorted { $0.createdAt > $1.createdAt }.prefix(fleetDispatchLogLimit).map { dispatchRow($0, now: now, limits: snapshot.limits, snapshotAge: snapshotAge) }
+        page.dispatches = snapshot.dispatches.sorted { $0.createdAt > $1.createdAt }.prefix(fleetDispatchLogLimit).map { dispatchRow($0, now: now, limits: snapshot.limits, snapshotAge: snapshotAge, macs: snapshot.macNames) }
         page.autoDispatch = autoDispatch
         let context = FleetCardContext(snapshot: snapshot, cap: threadCap, locale: locale, calendar: calendar, snapshotAge: snapshotAge)
         page.dispatchCards = FleetDispatchPresentation.cards(Array(snapshot.dispatches.prefix(fleetDispatchLogLimit)), in: context)
@@ -349,6 +349,7 @@ public enum FleetPagePresentation {
         records.count { record in
             guard record.kind != .move, [.waitingWake, .waitingRoom].contains(record.state) else { return false }
             if let target = record.targetHostID { return target == card.id }
+            if FleetDispatchPresentation.hostID(of: record) == card.id { return true }
             return record.requestedHost.map { !FleetPlacement.isAuto($0) && $0.caseInsensitiveCompare(card.name) == .orderedSame } ?? false
         }
     }
@@ -385,22 +386,23 @@ public enum FleetPagePresentation {
     }
 
     /// The words of one record: the state, why it went where it did (or why it didn't start) and its age.
-    static func dispatchRow(_ record: FleetDispatchRecord, now: Date, limits: [FleetLimitStatus] = [], snapshotAge: TimeInterval = 0) -> FleetDispatchRow {
+    static func dispatchRow(_ record: FleetDispatchRecord, now: Date, limits: [FleetLimitStatus] = [], snapshotAge: TimeInterval = 0,
+                            macs: [UUID: String] = [:]) -> FleetDispatchRow {
         let (state, tone): (String, FleetTone) = switch record.state {
-        case .placing: ("Placing", .tertiary)
+        case .placing: ("Starting", .tertiary)
         case .waitingRoom, .waitingWake, .waitingTurn: ("Waiting", .tertiary)
-        case .heldLimit, .heldRestart: ("Held", .warn)
-        case .preparing: (record.clone == nil ? "Preparing" : "Cloning", .active)
+        case .heldLimit, .heldRestart: ("Waiting", .warn)
+        case .preparing: (record.clone == nil ? "Starting" : "Cloning", .active)
         case .running: ("Working", .active)
-        case .delivering: ("Delivering", .active)
+        case .delivering: ("Working", .active)
         case .done: ("Done", .good)
         case .failed: ("Failed", .bad)
         case .cancelled: ("Cancelled", .tertiary)
         }
-        let host = record.targetHostName ?? record.requestedHost.flatMap { FleetPlacement.isAuto($0) ? nil : $0 } ?? "No Mac yet"
+        let host = FleetDispatchPresentation.hostName(of: record, macs: macs) ?? "No Mac yet"
         return FleetDispatchRow(
             id: record.id, title: record.title.isEmpty ? "Untitled" : record.title,
-            sentBy: record.kind == .move ? "Moved by you" : record.kind == .userThread ? "Sent by you" : record.parentTitle.isEmpty ? "Sent by a thread" : "Sent by \(record.parentTitle)",
+            sentBy: record.kind == .move ? "Moved by you" : record.kind == .userThread ? "Started by you" : record.parentTitle.isEmpty ? "Started by a thread" : "Started by \(record.parentTitle)",
             host: host, reason: limitWords(record, limits: limits, snapshotAge: snapshotAge) ?? reason(record, host: host), state: state, tone: tone,
             age: ForgePresentation.ago(Date(timeIntervalSince1970: record.createdAt / 1000), now: now))
     }
@@ -408,7 +410,7 @@ public enum FleetPagePresentation {
     private static func reason(_ record: FleetDispatchRecord, host: String) -> String {
         switch record.state {
         case .failed: return failureWords(record.failure, detail: record.failureDetail)
-        case .heldLimit: return "This thread already has its limit of dispatches going"
+        case .heldLimit: return "This thread already has its limit of threads going on other Macs"
         case .heldRestart: return "Held since the restart; send it again from the thread"
         case .waitingRoom: return "\(host) has no room for it yet"
         case .waitingWake: return "Waiting for \(host) to wake"

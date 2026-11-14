@@ -1224,7 +1224,7 @@ public final class RemoteHostClient: @unchecked Sendable {
             case .projectsEnabled: "toggle the Projects experiment"
             case .fleetWeight: "change where Fleet sends work"
             case .fleetThreadsCanSend, .fleetThreadCap: "change what threads may send"
-            case .fleetUncommitted, .fleetSnapshotExcludes: "change what a dispatch carries"
+            case .fleetUncommitted, .fleetSnapshotExcludes: "change what a thread sent to another Mac carries"
             case .fleetCheckIgnore: "set aside what Check finds"
             case .fleetAutoDispatch, .fleetBatteryCountsHalf: "change how Fleet picks a Mac"
             case .designToolEnabled: "toggle the Design tool experiment"

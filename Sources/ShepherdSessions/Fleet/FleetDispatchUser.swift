@@ -5,7 +5,7 @@ import ShepherdProtocol
 /// What the person does about dispatches from this Mac's app (`FleetAction.sendThread`, `retryDispatch`,
 /// `cancelDispatch`; server queue): start a thread on the Mac Auto picks, and decide what becomes of a dispatch that
 /// waits, is held or wasn't sent. A thread the person starts is a `userThread` dispatch: no parent thread, its result
-/// is the thread, and it shows in the Dispatches log as "sent by you".
+/// is the thread, and it shows in the Recent work log as "started by you".
 extension FleetDispatch {
     /// The code a first placement answers with when the work stays on this Mac: not a failure, the app starts the thread.
     static let keptHere = "kept_here"
@@ -101,10 +101,10 @@ extension FleetDispatch {
     /// try, which would answer for the second.
     func retry(_ id: UUID, host target: UUID?, reply: @escaping (Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void) {
         guard var record = outbound[id] else {
-            return reply(.failure(.init(code: FleetDispatchProtocol.Code.unknownDispatch, message: "This Mac has no such dispatch.")))
+            return reply(.failure(.init(code: FleetDispatchProtocol.Code.unknownDispatch, message: "This Mac has no such thread.")))
         }
         guard [.waitingRoom, .waitingWake, .heldLimit, .heldRestart, .failed].contains(record.state), !placing.contains(id), !sending.contains(id) else {
-            return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "That dispatch isn't waiting for anything (it is \(record.state.rawValue)).")))
+            return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "That thread isn't waiting for anything (it is \(record.state.rawValue)).")))
         }
         if record.state == .failed {
             outbound[id] = nil

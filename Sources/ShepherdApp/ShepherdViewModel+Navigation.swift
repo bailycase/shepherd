@@ -91,7 +91,14 @@ extension ShepherdViewModel {
                     state: SidebarSource.presentationState($0.state, children: $0.children), offline: $0.phase != .connected,
                     fleetID: $0.fleetID)
             }, designs: designToolEnabled, missingSpaces: missingSpaces, pullRequests: sidebarPullRequests,
-            fleet: fleetPage.sidebarFleet)
+            fleet: sidebarFleet)
+    }
+
+    /// What the sidebar reads of the dispatches this Mac sent, less the failures the person dismissed.
+    private var sidebarFleet: SidebarFleet {
+        var fleet = fleetPage.sidebarFleet
+        fleet.dismissed = dismissedDispatches
+        return fleet
     }
 
     /// Activity groups, derived again only when their inputs change.

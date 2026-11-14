@@ -158,15 +158,16 @@ struct HostModeSettingsTests {
         vm.setRemoteListenerEnabled(true)
         try await eventuallyOnMain("the page to show the host's port") { vm.remoteListenerBoundPort != nil }
         let port = try #require(vm.remoteListenerBoundPort)
+        let deviceToken = host.server.clientTokenForTests()
         let iPhone = RemoteHostClient()
-        _ = try await iPhone.connect(host: "127.0.0.1", port: port, token: token, clientName: "iPhone")
+        _ = try await iPhone.connect(host: "127.0.0.1", port: port, token: deviceToken, clientName: "iPhone")
         defer { iPhone.disconnect() }
 
         vm.setRemoteListenerEnabled(false)
         try await eventuallyOnMain("the page to show the listener off") { vm.remoteListenerBoundPort == nil }
         let refused = RemoteHostClient()
         await #expect(throws: (any Error).self) {
-            _ = try await refused.connect(host: "127.0.0.1", port: port, token: token, clientName: "iPhone")
+            _ = try await refused.connect(host: "127.0.0.1", port: port, token: deviceToken, clientName: "iPhone")
         }
     }
 

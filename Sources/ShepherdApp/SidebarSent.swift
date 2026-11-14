@@ -4,23 +4,17 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
-// Threads sent to other Macs, in the sidebar (FleetSubthreads): a sent thread nests under the thread that sent it with the Mac and stage on its
-// second line, a sender says "3 sent · 1 back", more than two fold, a thread that is back leaves the tree for its own group, and one whose sender
-// isn't here is a flat "sent by" row. Plain values derived with the lists, never in a view's body.
+// A thread another thread started on any Mac is a thread like any other (FleetSubthreads): the same dot, second line and menu as one that is here, tagged
+// with the Mac that has it. The one relationship a row shows is that it nests under the thread that started it while it works. Work that has no
+// thread yet is a row in a starting state ("starting on mini") that becomes the real thread when it starts. Plain values derived with the lists,
+// never in a view's body.
 
-/// Where a sent thread came from and where it is: what the tree needs to place its row.
+/// Who started a thread: what the tree needs to nest its row.
 struct SidebarSentInfo: Equatable {
-    /// The row of the thread that sent it, when this Mac can name it.
+    /// The row of the thread that started it, when this Mac can name it.
     var sender: SidebarRowID?
-    /// The sender's title, as it was when the work went ("" for a thread the person started).
-    var senderTitle: String
-    /// The sender's Mac when it isn't one this Mac sees ("sent by Release prep · studio").
-    var senderHost: String?
-    var stage: FleetSentStage
-    /// When it was sent, in epoch milliseconds: a sender lists what it sent in this order.
+    /// When it was started, in epoch milliseconds: a thread lists the ones it started in this order.
     var at: Double
-    /// The person started it from New thread, not a thread.
-    var userStarted: Bool
 }
 
 extension AgentState {
@@ -28,7 +22,6 @@ extension AgentState {
         switch mark {
         case .hollow: self = .idle
         case .running: self = .running
-        case .attention: self = .attention
         case .failed: self = .failed
         case .done: self = .done
         }
@@ -39,7 +32,6 @@ extension SHSidebarRow.Subtitle.Tone {
     init(_ mark: FleetSentStage.Mark?) {
         switch mark {
         case .running?: self = .running
-        case .attention?: self = .attention
         case .failed?: self = .failed
         case .hollow?, .done?, nil: self = .quiet
         }
@@ -47,47 +39,37 @@ extension SHSidebarRow.Subtitle.Tone {
 }
 
 extension SidebarDerivation {
-    /// The tree facts of a thread another Mac sent or this Mac was sent; nil for any other. `host` is the Mac it runs on (nil: This Mac).
-    static func sentInfo(of agent: Agent, host: SidebarSource.Host?, _ source: SidebarSource) -> SidebarSentInfo? {
+    /// The tree facts of a thread another Mac or thread started; nil for any other.
+    static func sentInfo(of agent: Agent, _ source: SidebarSource) -> SidebarSentInfo? {
         guard let from = agent.dispatchedFrom else { return nil }
-        let tag = host.map { $0.fleetID == nil ? $0.name : FleetWherePicker.tagName($0.name) } ?? "This Mac"
-        let stage: FleetSentStage
-        if let record = source.fleet.record(from.dispatchID) {
-            stage = .of(record, thread: agent.status, viewer: source.localFleetID, next: source.fleet.next, live: source.fleet.live(record),
-                        cap: source.fleet.cap)
-        } else {
-            stage = .of(thread: agent.status, host: tag)
-        }
-        let sender = fleetSender(of: agent, source)
-        let elsewhere = sender == nil && from.agentID != nil && from.hostID != source.localFleetID
-        return SidebarSentInfo(sender: sender, senderTitle: from.agentTitle, senderHost: elsewhere ? FleetWherePicker.tagName(from.hostName) : nil,
-                               stage: stage, at: from.at, userStarted: from.agentID == nil)
+        return SidebarSentInfo(sender: fleetSender(of: agent, source), at: from.at)
     }
 
-    /// The dispatches this Mac sent that have no thread to draw: their own rows, with their facts. A dispatch whose thread is among `threads` is
-    /// drawn as that thread.
+    /// The threads this Mac started on other Macs that don't exist yet, and the ones that failed before they did: their own rows, with their facts. A
+    /// thread that exists among `threads` is drawn as itself. One that is starting reads as a normal thread's row in Working; one that failed is a finished
+    /// thread in Done with its reason in red.
     static func dispatchRows(_ source: SidebarSource, threads: Set<UUID>, now: Date = Date()) -> [(row: SidebarListRow, info: SidebarSentInfo, key: Double, space: SpaceID?)] {
         let pending: Set<FleetDispatchState> = [.placing, .waitingRoom, .waitingWake, .heldLimit, .heldRestart, .preparing, .failed]
         let dayAgo = (now.timeIntervalSince1970 - 86_400) * 1000
         return source.fleet.records.compactMap { record in
             guard record.kind != .move, pending.contains(record.state), !threads.contains(record.id),
-                  record.state != .failed || record.updatedAt > dayAgo else { return nil }
-            // Auto starts a thread the person made on the Mac with the most room: no "next" Mac to name when none has any.
-            let stage = FleetSentStage.of(record, viewer: source.localFleetID, next: record.kind == .userThread ? nil : source.fleet.next,
-                                          live: source.fleet.live(record), cap: source.fleet.cap)
+                  record.state != .failed || (record.updatedAt > dayAgo && !source.fleet.dismissed.contains(record.id)) else { return nil }
+            let stage = FleetSentStage.of(record, viewer: source.localFleetID, macs: source.fleet.macs)
             let sender = record.parentAgentID.flatMap { id in
                 record.parentHostID == source.localFleetID ? SidebarRowID.local(id) : source.hosts.first { $0.fleetID == record.parentHostID }
                     .map { .remote(RemoteAgentRef(hostID: $0.id, agentID: id)) }
             }
-            let info = SidebarSentInfo(sender: sender, senderTitle: record.parentTitle, senderHost: nil, stage: stage, at: record.createdAt,
-                                       userStarted: record.kind == .userThread)
             let title = record.title.isEmpty ? "Untitled" : record.title
-            let line = info.userStarted && stage.phase == .noRoom ? "Auto · \(stage.words)" : stage.line()
-            var row = SidebarListRow(id: .dispatch(record.id), title: title, leading: .dot(AgentState(stage.dot)), accessory: .none,
-                                     section: .working, help: "\(title) · \(line)", accessibilityLabel: "\(title), sent thread, \(line)",
+            let failed = stage.phase == .failed
+            let words = [stage.tag, stage.words].compactMap { $0 }.joined(separator: " · ")
+            var row = SidebarListRow(id: .dispatch(record.id), title: title, leading: .dot(AgentState(stage.dot)),
+                                     accessory: stage.tag.map { .tag($0) } ?? .none, section: failed ? .done : .working,
+                                     help: "\(title) · \(words)", accessibilityLabel: "\(title), \(words)",
                                      worktree: false, automation: nil, automationLive: false)
-            row.subtitle = .init(line, tone: .init(stage.tone))
-            return (row, info, record.updatedAt, record.spaceID)
+            row.subtitle = .init(stage.words, tone: .init(stage.tone))
+            // Finished: Done, and nothing marks it read (only Try again or Delete ends it).
+            if failed { row.completion = 1 }
+            return (row, SidebarSentInfo(sender: sender, at: record.createdAt), record.updatedAt, record.spaceID)
         }
     }
 }
@@ -104,13 +86,16 @@ enum SidebarSent {
         }
     }
 
-    /// Places every sent thread among `lists` (the rows of one or more groups, in order): under its sender while it is on its way or working,
-    /// in its own group, with "sent by <thread>" under it, once it is back or its sender isn't among the rows. A sent thread that asks you
-    /// stays in Needs you as well, "from <sender>" (`keepsNeedsYou`: the Spaces tree has no Needs you). A sender says what it sent.
+    /// More than this many threads nested under one thread fold under it until it is opened or one of them is on screen.
+    static let foldsAbove = 2
+
+    /// Places every thread another thread started among `lists` (the rows of one or more groups, in order): under the thread that started it while it
+    /// works or asks, and in its own group, as the thread it is, once it is finished or when that thread isn't among the rows. One that asks you stays
+    /// in Needs you as well (`keepsNeedsYou`: the Spaces tree has no Needs you).
     static func arrange(_ lists: inout [[SidebarListRow]], by infos: [SidebarRowID: SidebarSentInfo], keepsNeedsYou: Bool = true) {
         guard !infos.isEmpty else { return }
         let present = Set(lists.flatMap { $0.map(\.id) })
-        // The top of each chain of senders that this Mac can see.
+        // The top of each chain of threads that started one another that this Mac can see.
         func root(of id: SidebarRowID) -> SidebarRowID? {
             var seen: Set<SidebarRowID> = [id]
             var top: SidebarRowID?
@@ -121,52 +106,28 @@ enum SidebarSent {
             }
             return top
         }
-        var children: [SidebarRowID: [(row: SidebarListRow, info: SidebarSentInfo)]] = [:]
+        // A thread that is finished, or pinned, or whose starter isn't here stays in its group.
+        func nests(_ row: SidebarListRow) -> Bool { !row.pinned && [.working, .needsYou].contains(row.section) && root(of: row.id) != nil }
+        var children: [SidebarRowID: [(row: SidebarListRow, at: Double)]] = [:]
         for row in lists.joined() {
-            guard let info = infos[row.id], !row.pinned, let top = root(of: row.id) else { continue }
-            children[top, default: []].append((row, info))
+            guard let info = infos[row.id], nests(row), let top = root(of: row.id) else { continue }
+            children[top, default: []].append((row, info.at))
         }
-        // Nested rows go under their root; a thread that is back, or pinned, or whose sender isn't here stays in its group.
-        func nested(_ row: SidebarListRow, _ info: SidebarSentInfo, top: SidebarRowID) -> SidebarListRow {
-            var row = row
-            row.fleetNested = true
-            row.sentRoot = top
-            row.leading = .dot(AgentState(info.stage.dot))
-            row.accessory = .none
-            row.pullRequest = nil
-            let via = info.sender == top || info.senderTitle.isEmpty ? nil : "via \(info.senderTitle)"
-            let line = [via, info.stage.line()].compactMap { $0 }.joined(separator: " · ")
-            row.subtitle = .init(line, tone: .init(info.stage.tone), since: info.stage.runningSince.map { Date(timeIntervalSince1970: $0 / 1000) })
-            row.accessibilityLabel = "\(row.title), sent thread, \(line)"
-            row.help = "\(row.title) · \(line)"
-            return row
-        }
-        let nestable: (SidebarSentInfo) -> Bool = { $0.stage.phase != .back }
         for list in lists.indices {
             var out: [SidebarListRow] = []
             for var row in lists[list] {
                 let id = row.id
-                if let info = infos[id], !row.pinned, root(of: id) != nil, nestable(info) {
-                    // Still in its own group only where it waits on you.
-                    guard keepsNeedsYou, row.section == .needsYou else { continue }
-                    row.subtitle = .init(info.senderTitle.isEmpty ? "sent from another Mac" : "from \(info.senderTitle)", tone: .attention)
-                    row.accessory = .none
-                } else if let info = infos[id], !info.userStarted, !info.senderTitle.isEmpty || info.senderHost != nil {
-                    let by = ["sent by \(info.senderTitle.isEmpty ? "a thread" : info.senderTitle)", info.senderHost].compactMap { $0 }
-                    row.subtitle = .init(by.joined(separator: " · "))
-                }
-                if let subtitle = row.subtitle, id.dispatchID == nil, infos[id] != nil {
-                    row.accessibilityLabel += ", \(subtitle.text)"
-                }
-                if let kids = children[id], !kids.isEmpty {
-                    let counts = (sent: kids.count, back: kids.filter { !nestable($0.info) }.count,
-                                  asking: kids.contains { $0.info.stage.phase == .asking })
-                    row.subtitle = FleetSentSummary.line(sent: counts.sent, back: counts.back, asking: counts.asking).map { .init($0) }
-                    if let subtitle = row.subtitle { row.accessibilityLabel += ", \(subtitle.text)" }
-                    let live = kids.filter { nestable($0.info) }.sorted { $0.info.at < $1.info.at }
-                    if !live.isEmpty, counts.sent > FleetSentSummary.foldsAbove { row.fold = SidebarFold(key: foldKey(id)) }
+                // Still in its own group only where it waits on you.
+                if infos[id] != nil, nests(row), !(keepsNeedsYou && row.section == .needsYou) { continue }
+                if let kids = children[id]?.sorted(by: { $0.at < $1.at }) {
+                    if kids.count > foldsAbove { row.fold = SidebarFold(key: foldKey(id)) }
                     out.append(row)
-                    out += live.map { nested($0.row, $0.info, top: id) }
+                    out += kids.map {
+                        var nested = $0.row
+                        nested.fleetNested = true
+                        nested.sentRoot = id
+                        return nested
+                    }
                     continue
                 }
                 out.append(row)

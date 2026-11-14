@@ -115,15 +115,15 @@ private struct FleetDispatchGroup: View {
     static func capTitle(_ cap: Int) -> String { "\(cap) at a time" }
 
     var body: some View {
-        SettingsGroup(title: "Dispatch") {
-            SettingsRow(title: "Auto dispatch", subtitle: "New threads go to the Mac with the most room. You can still pick a Mac in the composer.") {
-                SettingsSwitch(label: "Auto dispatch", isOn: controls.autoDispatch)
+        SettingsGroup(title: "Where threads run") {
+            SettingsRow(title: "Auto", subtitle: "New threads go to the Mac with the most room. You can still pick a Mac in the composer.") {
+                SettingsSwitch(label: "Auto", isOn: controls.autoDispatch)
             }
             SettingsRow(title: "Threads can send work to other Macs",
                         subtitle: "A thread hands separate work to the Mac with room and wakes up with the result. Threads it sends can’t send more.") {
                 SettingsSwitch(label: "Threads can send work to other Macs", isOn: controls.threadsCanSend)
             }
-            SettingsRow(title: "At most per thread", subtitle: "Sent threads running at once, across every Mac.") {
+            SettingsRow(title: "At most per thread", subtitle: "Threads a thread started that run at once, across every Mac.") {
                 SHPopupMenu(Self.capTitle(controls.threadCap.wrappedValue)) {
                     Picker("At most per thread", selection: controls.threadCap) {
                         ForEach(Array(HostSettings.fleetThreadCapRange), id: \.self) { Text(Self.capTitle($0)).tag($0) }

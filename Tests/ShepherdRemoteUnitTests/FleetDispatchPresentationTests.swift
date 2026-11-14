@@ -40,15 +40,34 @@ struct FleetDispatchPresentationTests {
         func compact(_ state: FleetDispatchState, target: UUID? = P.mini, host: String? = "Mac mini") throws -> FleetDispatchCard.Compact? {
             try #require(Self.cards([Self.record(state, target: target, host: host)]).first).compact
         }
-        #expect(try compact(.done) == .init(words: "back", tone: .good, timed: true))
-        #expect(try compact(.delivering) == .init(words: "delivering", tone: .active, timed: true))
+        #expect(try compact(.done) == .init(words: "done", tone: .good, timed: true))
+        #expect(try compact(.delivering) == .init(words: "working", tone: .active, timed: true))
         #expect(try compact(.running) == .init(words: "working", tone: .active, timed: true))
-        #expect(try compact(.waitingWake, target: P.studio, host: "Mac Studio") == .init(words: "goes when studio wakes", tone: .tertiary, timed: false))
-        #expect(try compact(.waitingRoom, target: nil, host: nil) == .init(words: "no Mac has room", tone: .tertiary, timed: false))
-        #expect(try compact(.placing, target: nil, host: nil)?.words == "placing")
+        #expect(try compact(.waitingWake, target: P.studio, host: "Mac Studio") == .init(words: "waiting for studio to wake", tone: .tertiary, timed: false))
+        #expect(try compact(.waitingRoom, target: nil, host: nil) == .init(words: "waiting for a Mac with room", tone: .tertiary, timed: false))
+        #expect(try compact(.placing, target: nil, host: nil)?.words == "starting")
         for state in [FleetDispatchState.preparing, .failed, .heldRestart] {
             #expect(try compact(state) == nil, "\(state) keeps its card")
         }
+    }
+
+    // A thread sent from New thread names its Mac by id (`requestedHost`): the card and the page's row say its name, never the id.
+    @Test func aCardNamesTheMacItAskedForNotItsId() throws {
+        func card(asking id: UUID) throws -> FleetDispatchCard {
+            var record = Self.record(.failed, target: nil, host: nil, failure: FleetDispatchCode.hostNotReady, kind: .userThread, parent: nil)
+            record.requestedHost = id.uuidString
+            return try #require(Self.cards([record]).first)
+        }
+        let named = try card(asking: P.studio)
+        #expect(named.host == "Mac Studio" && named.detail.hasPrefix("The studio lacks"))
+        let gone = try card(asking: UUID(uuidString: "00000000-0000-0000-0000-0000000000F9")!)
+        #expect(gone.host == "a Mac that left" && gone.detail.hasPrefix("A Mac that left lacks"))
+        #expect(!gone.detail.contains("00000000"))
+
+        var record = Self.record(.failed, target: nil, host: nil, kind: .userThread, parent: nil)
+        record.requestedHost = P.mini.uuidString
+        let row = FleetPagePresentation.dispatchRow(record, now: Date(timeIntervalSince1970: 100), macs: P.snapshot().macNames)
+        #expect(row.host == "Mac mini")
     }
 
     @Test func aCompactLineKeepsEveryButtonTheCardHad() throws {
@@ -69,7 +88,7 @@ struct FleetDispatchPresentationTests {
 
     @Test func whyReadsFromTheReasonCodesTheSendersHostRecorded() {
         func why(_ reasons: [FleetPlacementReason], kind: FleetDispatchRecord.Kind = .agentDispatch) -> String {
-            FleetDispatchPresentation.whyWords(Self.record(.running, reasons: reasons, kind: kind))
+            FleetDispatchPresentation.whyWords(Self.record(.running, reasons: reasons, kind: kind), macs: [:])
         }
         #expect(why([FleetPlacementReason(.named)]) == "Picked Mac mini")
         #expect(why([FleetPlacementReason(.named)], kind: .userThread) == "You picked Mac mini")
@@ -94,9 +113,9 @@ struct FleetDispatchPresentationTests {
     }
 
     @Test func whatTheMacItWentToWasRunningRidesTheRowsWhy() {
-        let why = FleetDispatchPresentation.whyWords(Self.record(.running, reasons: [FleetPlacementReason(.mostRoom, ratio: 3.4, commands: 0)]))
+        let why = FleetDispatchPresentation.whyWords(Self.record(.running, reasons: [FleetPlacementReason(.mostRoom, ratio: 3.4, commands: 0)]), macs: [:])
         #expect(why == "Auto: Mac mini had 3.4× the room, no builds running")
-        #expect(FleetDispatchPresentation.whyWords(Self.record(.running, reasons: [FleetPlacementReason(.onlyChoice, commands: 1)]))
+        #expect(FleetDispatchPresentation.whyWords(Self.record(.running, reasons: [FleetPlacementReason(.onlyChoice, commands: 1)]), macs: [:])
             == "Auto: Mac mini was the only Mac with room, 1 running a build or test")
     }
 
@@ -111,7 +130,7 @@ struct FleetDispatchPresentationTests {
         let running = (0..<2).map { Self.record(.running, title: "Task \($0)", at: Double($0)) }
         let held = Self.record(.heldLimit, title: "Third task", at: 10)
         let card = try #require(Self.cards(running + [held]).first { $0.id == held.id })
-        #expect(card.pill == "Held" && card.tone == .warn)
+        #expect(card.pill == "Waiting" && card.tone == .warn)
         #expect(card.detail == "Speed up checkout CI already has 2 threads running on other Macs. This one goes when one of them finishes.")
         #expect(card.actions == [.openOthers(2)])
     }
@@ -128,7 +147,7 @@ struct FleetDispatchPresentationTests {
     @Test(arguments: [
         (FleetDispatchCode.repoMissing, "The mini doesn't have payments-api and couldn't clone it. Run this here, or try again once it can."),
         (FleetDispatchCode.noSuchHost, "No Mac named that is in the fleet."),
-        (FleetDispatchCode.peerGone, "The mini stopped answering and doesn't know this dispatch. Run it again, or run it here."),
+        (FleetDispatchCode.peerGone, "The mini stopped answering and doesn't know this thread. Run it again, or run it here."),
         ("a_newer_code", "It wasn't sent."),
     ])
     func aFailureReadsFromItsCodeAndOffersRunHereOrTryAgain(code: String, words: String) throws {
@@ -174,17 +193,17 @@ struct FleetDispatchPresentationTests {
         DispatchedFrom(hostID: host, hostName: "MacBook Pro", agentID: agent, agentTitle: "Speed up checkout CI", dispatchID: UUID(), at: 1_790_000_000_000)
     }
 
-    @Test func aThreadSentByAThreadNamesItAndSaysItsLastMessageGoesBack() {
+    @Test func aThreadAThreadStartedNamesItAndSaysItsLastMessageGoesBack() {
         let here = FleetSentBy(Self.from(Self.parent), host: "Mac mini", viewer: P.here)
-        #expect(here.fromLine == "From Speed up checkout CI on This Mac" && here.sentByLine == "sent by Speed up checkout CI")
+        #expect(here.fromLine == "From Speed up checkout CI on This Mac" && here.sender == "Speed up checkout CI" && here.fromThread)
         #expect(here.goesBackLine == "When this finishes, its last message goes back to Speed up checkout CI. You can still talk to it here.")
         // Seen from another Mac the sender's Mac is named.
         #expect(FleetSentBy(Self.from(Self.parent), host: "Mac mini", viewer: P.mini).fromLine == "From Speed up checkout CI on MacBook Pro")
     }
 
-    @Test func aThreadYouStartedIsSentByYouAndNothingGoesBack() {
+    @Test func aThreadYouStartedNamesNoThreadAndNothingGoesBack() {
         let sent = FleetSentBy(Self.from(nil), host: "Mac mini", viewer: P.here)
-        #expect(sent.sentByLine == "sent by you" && !sent.fromThread && sent.goesBackLine == nil)
+        #expect(sent.sender == "you" && !sent.fromThread && sent.goesBackLine == nil)
     }
 
     @Test func theFromBoxDrawsTheTaskWithoutTheInstructionsTheHostAdded() {

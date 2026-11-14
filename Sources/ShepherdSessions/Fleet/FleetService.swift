@@ -1043,7 +1043,7 @@ final class FleetService: @unchecked Sendable {
             }
         case .cancelDispatch(let dispatchID):
             guard dispatch.record(dispatchID) != nil else {
-                return reply(Self.refusal(id, FleetDispatchProtocol.Code.unknownDispatch, "This Mac has no such dispatch."))
+                return reply(Self.refusal(id, FleetDispatchProtocol.Code.unknownDispatch, "This Mac has no such thread."))
             }
             dispatch.cancel(dispatchID)
             reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot(), dispatch: dispatch.record(dispatchID)?.summary)))
