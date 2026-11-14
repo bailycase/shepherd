@@ -479,6 +479,8 @@ struct ThreadView: View {
     private func historyKey(_ history: ArraySlice<NativeThreadRow>, tail: ArraySlice<NativeThreadRow>, arrived: Set<String>, dormant: Bool,
                             boundary: String?, running: Bool, detached: Bool) -> ThreadHistoryCache.Key? {
         guard !history.isEmpty, !leadColumn, projectActionCards == nil, commentCards == nil else { return nil }
+        // The key leaves out what only the live reply reads, which is always among the tail's rows (`ThreadHistoryCache`).
+        assert(Self.eagerRows >= 1)
         return ThreadHistoryCache.Key(rows: history, dormant: dormant, boundary: boundary, running: running, detached: detached,
                                       arrived: ThreadHistoryCache.Key.arrivals(in: history, tail: tail, among: arrived),
                                       inspected: inspectedRunID, fleet: fleetThread,
@@ -932,6 +934,12 @@ private final class ThreadRowMemory {
 /// closure, the stack builds them again and moves its estimate of the rows it has not measured, and a reader in the eager tail below it has
 /// nothing to hold their rows where they were. A turn ending is not ignored: the stack's estimates are replaced as it does, and a reply
 /// landing at the tail was blank for a frame without it. A reference, so keeping it never draws the thread.
+///
+/// Two things are relied on. Handing SwiftUI the very `AnyView` it drew last lets it leave the stack alone, which a new one built from the
+/// same rows does not; `switchingAwayAndBackKeepsLoadedHistoryAndScrollPosition` is the guard for that and fails if it stops holding. And
+/// the key leaves out whether the thread is on screen, is catching up and has settled (`active`, `catchingUp`, `settled`): only the
+/// streaming reply and a row that arrives read them to play their motion, and the reply is the last row, which `ThreadView.eagerRows >= 1`
+/// (and a restore's plan, which draws at least one) keeps in the eager tail, while an arrival among the history's rows is in the key.
 ///
 /// The kept view holds the thread view that drew it, so the cache must not be held by that thread view (`ThreadHistoryColumn`).
 @MainActor
