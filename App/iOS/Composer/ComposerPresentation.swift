@@ -71,13 +71,6 @@ final class ComposerPresentation {
         publish()
     }
 
-    /// The screen is back over a transcript that never unmounted: a follower keeps the marker it left holding
-    /// (`NativeTranscriptPlace.resume()`).
-    func resume() {
-        place.resume()
-        publish()
-    }
-
     /// Another session's turns replace the ones kept (`NativeTranscriptPlace.newSession()`).
     func newSession() {
         place.newSession()
