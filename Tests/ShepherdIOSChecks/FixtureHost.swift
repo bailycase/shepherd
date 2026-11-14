@@ -107,6 +107,7 @@ final class FixtureHost: @unchecked Sendable {
                 for reply in answer(request) {
                     guard let encoded = try? NDJSON.encode(reply), write(fd, encoded) else { return }
                     // A refused hello is a final reply, as on a real host.
+                    if case .error(_, RemoteProtocol.sharedTokenRetiredCode, _) = reply { return }
                     if case .error(_, RemoteProtocol.unauthorizedCode, _) = reply { return }
                 }
             }
@@ -155,7 +156,8 @@ final class FixtureHost: @unchecked Sendable {
             note("hello")
             if lock.withLock({ holdsHello }) { return [] }
             guard token == FixtureHostData.token, !data.refusesToken else {
-                return [.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token")]
+                // A host refuses a token that is no device's with this, the old shared token's too.
+                return [.error(id: id, code: RemoteProtocol.sharedTokenRetiredCode, message: RemoteProtocol.sharedTokenRetiredMessage)]
             }
             let capabilities = (data.capabilities ?? data.defaultCapabilities).filter { $0 != RemoteProtocol.projectMessageImagesCapability && $0 != RemoteProtocol.logicalProjectsCapability && $0 != RemoteProtocol.projectWorkerCapability && $0 != RemoteProtocol.logicalProjectFilesCapability && $0 != RemoteProtocol.projectExecutionCapability }
             return [.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: capabilities, hostID: data.fleetID)]

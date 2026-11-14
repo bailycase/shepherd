@@ -85,6 +85,17 @@ struct FleetDevicesTests {
         #expect(loaded.count == 1 && loaded[0].name == "" && loaded[0].kind == .iphone && loaded[0].revokedAt == nil)
     }
 
+    /// `scripts/perf/stress.sh` seeds a scratch host with a device in this shape (only the token's SHA-256 on disk).
+    @Test func aDeviceFileWrittenByTheStressScriptAuthenticatesItsToken() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let token = "0123456789abcdef"
+        let json = #"{"devices":[{"deviceID":"00000000-0000-0000-0000-0000000000D9","name":"stress driver","kind":"macApp","pairedAt":0,"tokenHash":"\#(FleetProtocol.hash(token))"}]}"#
+        try Data(json.utf8).write(to: dir.appendingPathComponent("devices.json"))
+        let devices = try FleetDevices.load(from: dir)
+        #expect(devices.authenticate(token: token) != nil && devices.authenticate(token: "other") == nil)
+    }
+
     @Test func theCodeOfAddADeviceIsTheJoinWindowWithItsFiveTries() {
         var window = FleetJoinWindow.open(now: FleetStoreTests.start).window
         var results: [FleetJoinWindow.Attempt] = []
