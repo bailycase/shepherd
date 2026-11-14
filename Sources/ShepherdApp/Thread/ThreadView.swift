@@ -462,7 +462,7 @@ struct ThreadView: View {
     /// (`ThreadHistoryCache`).
     private func historyColumn(_ history: ArraySlice<NativeThreadRow>, spacing: CGFloat, dormant: Bool, running: Bool, catchingUp: Bool,
                                arrived: Set<String>, settled: Bool, historyRowID: String?) -> AnyView {
-        historyCache.view(for: historyKey(history, arrived: arrived, dormant: dormant, boundary: historyRowID)) {
+        historyCache.view(for: historyKey(history, arrived: arrived, dormant: dormant, boundary: historyRowID, running: running, detached: !follower.sticky)) {
             AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
                 ForEach(history) { row in
                     rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
@@ -477,9 +477,9 @@ struct ThreadView: View {
 
     /// What the history's rows are built from. None while there is no history, and for a thread whose rows also read what cannot be
     /// compared (a Project's references, a design's comments): the stack is drawn every time.
-    private func historyKey(_ history: ArraySlice<NativeThreadRow>, arrived: Set<String>, dormant: Bool, boundary: String?) -> ThreadHistoryCache.Key? {
+    private func historyKey(_ history: ArraySlice<NativeThreadRow>, arrived: Set<String>, dormant: Bool, boundary: String?, running: Bool, detached: Bool) -> ThreadHistoryCache.Key? {
         guard !history.isEmpty, !leadColumn, projectActionCards == nil, commentCards == nil else { return nil }
-        return ThreadHistoryCache.Key(rows: history, dormant: dormant, boundary: boundary,
+        return ThreadHistoryCache.Key(rows: history, dormant: dormant, boundary: boundary, running: running, detached: detached,
                                       arrived: arrived.isEmpty ? [] : arrived.filter { id in history.contains { $0.id == id } },
                                       inspected: inspectedRunID, fleet: fleetThread,
                                       actions: [review != nil, turnActions != nil, inspectSubagent != nil, steerSubagent != nil])
@@ -930,6 +930,8 @@ final class ThreadHistoryCache {
         let rows: ArraySlice<NativeThreadRow>
         let dormant: Bool
         let boundary: String?
+        let running: Bool
+        let detached: Bool
         let arrived: Set<String>
         let inspected: String?
         let fleet: FleetThreadSurface?
