@@ -180,8 +180,9 @@ seconds and a step a pass never caught up with the shows. A pass never runs whil
 or scrolls, however long that lasts, nor while a thread on screen, local or remote, streams
 (`NativeThreadStores.busy`), except that a stream gives out after ten seconds of passes, so that a
 long one cannot hold the budget off for good, and the pass then takes a step. The hidden threads
-are far over the budget (`farOverBudget`) when they hold more over it than a quarter of it or the
-ceiling, whichever is more. Far over, a stream holds no pass
+are far over the budget (`farOverBudget`) when a pass could take more than a quarter of it or the
+ceiling, whichever is more, off them: what they hold over it, not counting the newest one, the
+readers kept and the threads with nothing past their last screen. Far over, a stream holds no pass
 off and its pass takes `releaseCeiling` at most, an idle pass takes up to a gibibyte
 (`releaseFarCeiling`: letting rows go costs a sixth of building them), and the first pass follows
 a show after half a second. Unpinned threads go first, then readers left
