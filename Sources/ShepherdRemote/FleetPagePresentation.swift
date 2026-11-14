@@ -2,7 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-// The Fleet page as plain values (FleetA, and the sidebar's Fleet footer and the palette's Open
+// The Fleet page as plain values (FleetA, the sidebar's Fleet corner (`FleetCorner`) and the palette's Open
 // Fleet): one card per Mac with its room, CPU, memory, power, readiness and agents, derived once
 // per change from the host's `FleetSnapshot` and the Send work here weights. The Mac page and
 // the iPhone and iPad fleet screens draw the same values.
@@ -89,6 +89,11 @@ public struct FleetMacCard: Identifiable, Equatable, Sendable {
     /// What Check found that needs something here (not set aside): the Ready line says so and Check… opens the tab on it. Zero from a Mac
     /// that hasn't reported, and from one that is asleep.
     public var needs = 0
+    /// Dispatches waiting for this Mac by name (it is asleep, or named and has no room): the sidebar corner's "1 waiting".
+    public var waiting = 0
+    /// What keeps the Mac from taking work at all, in the corner's words ("no Xcode"): a tool every thread needs that it lacks. Nil
+    /// while it can take work, and for a Mac that isn't answering.
+    public var cannotTake: String?
     /// Names the Mac's weight control for VoiceOver ("Send work to Mac mini").
     public var weightLabel: String { "Send work to \(name)" }
     public var isThisMac: Bool { status == .thisMac }
@@ -165,6 +170,8 @@ public struct FleetPage: Equatable, Sendable {
     public var summary: String
     /// The Mac Auto would pick now, by name; nil when no Mac counts.
     public var nextGoesTo: String?
+    /// The same Mac's id, for the sidebar corner's "next".
+    public var nextGoesToID: UUID? = nil
     public var footer: FleetFooter
     /// Settings ▸ Fleet ▸ Auto dispatch: New thread's Auto place is on, and the page's placement card says so.
     public var autoDispatch = true
@@ -192,7 +199,7 @@ public struct FleetLimitStrip: Identifiable, Equatable, Sendable {
     public var waiting: String?
 }
 
-/// The sidebar's Fleet row: a dot per Mac and how many sleep.
+/// How many Macs sleep, for the palette's Open Fleet row (the sidebar's Fleet corner is `FleetCorner`).
 public struct FleetFooter: Equatable, Sendable {
     public enum Dot: Equatable, Sendable {
         case thisMac, connected, connecting, asleep
@@ -305,13 +312,20 @@ public enum FleetPagePresentation {
         }
 
         let winner = FleetRoom.nextGoesTo(zip(entries, scores).map { FleetRoom.Candidate(id: $0.0.id, score: $0.1) }, local: thisID)
+        for index in cards.indices where cards[index].status != .asleep {
+            let gates = (macs[cards[index].id]?.readiness?.missing ?? []).map(\.kind)
+            cards[index].cannotTake = gates.contains(.git) ? "no git" : gates.contains(.xcode) ? "no Xcode" : nil
+        }
+        for index in cards.indices {
+            cards[index].waiting = waitingCount(for: cards[index], in: snapshot.dispatches)
+        }
         let working = entries.compactMap { $0.sample?.activeAgents }.reduce(0, +)
         let asleep = cards.filter { $0.status == .asleep }
         var summary = ["\(cards.count) \(cards.count == 1 ? "Mac" : "Macs")"]
         if !asleep.isEmpty { summary.append("\(asleep.count) asleep") }
         summary.append(working == 0 ? "no threads working" : "\(working) \(working == 1 ? "thread" : "threads") working")
         var page = FleetPage(cards: cards, summary: summary.joined(separator: " · "),
-                             nextGoesTo: winner.flatMap { id in cards.first { $0.id == id }?.name },
+                             nextGoesTo: winner.flatMap { id in cards.first { $0.id == id }?.name }, nextGoesToID: winner,
                              footer: footer(cards, asleep: asleep, viewer: viewer))
         page.dispatches = snapshot.dispatches.sorted { $0.createdAt > $1.createdAt }.prefix(fleetDispatchLogLimit).map { dispatchRow($0, now: now, limits: snapshot.limits, snapshotAge: snapshotAge) }
         page.autoDispatch = autoDispatch
@@ -328,6 +342,15 @@ public enum FleetPagePresentation {
         page.check = check
         page.limits = limitStrips(snapshot.limits, snapshotAge: snapshotAge)
         return page
+    }
+
+    /// How many dispatches wait for `card`'s Mac: sent to it by name, and held until it wakes or has room.
+    static func waitingCount(for card: FleetMacCard, in records: [FleetDispatchRecord]) -> Int {
+        records.count { record in
+            guard record.kind != .move, [.waitingWake, .waitingRoom].contains(record.state) else { return false }
+            if let target = record.targetHostID { return target == card.id }
+            return record.requestedHost.map { !FleetPlacement.isAuto($0) && $0.caseInsensitiveCompare(card.name) == .orderedSame } ?? false
+        }
     }
 
     /// The strips for the providers still limited after `snapshotAge` seconds: one provider says what it does to new threads; several, only

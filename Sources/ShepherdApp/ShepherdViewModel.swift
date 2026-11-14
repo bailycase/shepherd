@@ -249,6 +249,13 @@ final class ShepherdViewModel {
         didSet { sidebarDefaults.set(collapsedProjects.sorted(), forKey: Self.collapsedProjectsKey) }
     }
     static let collapsedProjectsKey = "shepherd.sidebar.collapsedProjects"
+    /// Previews and tests: changes the sidebar's inputs before the lists are derived, where a connected host's fleet identity can't be made up.
+    @ObservationIgnored var sidebarSourceAdjust: ((SidebarSource) -> SidebarSource)?
+    /// The Fleet corner is minimized to its one line (FleetCornerMin). This Mac app's own choice, never synced.
+    var fleetCornerMinimized = false {
+        didSet { sidebarDefaults.set(fleetCornerMinimized, forKey: Self.fleetCornerMinimizedKey) }
+    }
+    static let fleetCornerMinimizedKey = "shepherd.sidebar.fleetCornerMinimized"
     static let designJumpRecentsKey = "shepherd.designs.jumpRecents"
     var collapsedActivitySections: Set<SidebarActivitySection> = [] {
         didSet { sidebarDefaults.set(collapsedActivitySections.map(\.rawValue).sorted(), forKey: Self.collapsedActivitySectionsKey) }
@@ -351,7 +358,7 @@ final class ShepherdViewModel {
     let apps: AppsModel
     /// Settings ▸ Fleet: this Mac's fleet as its host reports it.
     let fleet = FleetSettingsModel()
-    /// The Fleet page and the sidebar's Fleet row: the cards derived from `fleet`'s snapshot.
+    /// The Fleet page and the sidebar's Fleet corner: the cards derived from `fleet`'s snapshot.
     let fleetPage = FleetPageModel()
     /// What the buttons on dispatch cards do (`configureFleetThreadActions`).
     let fleetThreadActions = FleetThreadActions()
@@ -726,6 +733,7 @@ final class ShepherdViewModel {
         // footer) stay in older preferences and are no longer read.
         sidebarHidden = sidebarDefaults.bool(forKey: "shepherd.sidebarHidden")
         collapsedProjects = Set(sidebarDefaults.stringArray(forKey: Self.collapsedProjectsKey) ?? [])
+        fleetCornerMinimized = sidebarDefaults.bool(forKey: Self.fleetCornerMinimizedKey)
         if let data = sidebarDefaults.data(forKey: Self.designJumpRecentsKey),
            let recents = try? JSONDecoder().decode(DesignJumpRecents.self, from: data) {
             designJumpRecents = recents

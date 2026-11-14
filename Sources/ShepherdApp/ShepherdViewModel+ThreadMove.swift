@@ -13,7 +13,7 @@ struct ThreadMoveDrag: Codable, Equatable {
         switch row {
         case .local(let id): agentID = id; hostID = nil
         case .remote(let ref): agentID = ref.agentID; hostID = ref.hostID
-        case .design, .remoteDesign: return nil
+        case .design, .remoteDesign, .dispatch: return nil
         }
     }
 
@@ -48,7 +48,7 @@ struct ThreadMoveDrag: Codable, Equatable {
         switch row {
         case .local: state.spaces.filter { !$0.hidden }
         case .remote(let ref): remoteHosts.allConnections.first { $0.id == ref.hostID }?.state.spaces.filter { !$0.hidden } ?? []
-        case .design, .remoteDesign: []
+        case .design, .remoteDesign, .dispatch: []
         }
     }
 
@@ -58,7 +58,7 @@ struct ThreadMoveDrag: Codable, Equatable {
                 switch row {
                 case .local(let id): try await moveThread(id, to: space)
                 case .remote(let ref): try await remoteHosts.agentAction(ref, action: .move(spaceID: space))
-                case .design, .remoteDesign: return
+                case .design, .remoteDesign, .dispatch: return
                 }
             } catch { fail("Couldn’t move the thread", error) }
         }

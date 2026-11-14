@@ -54,10 +54,17 @@ extension AppLayout {
     static let fleetTagFont: CGFloat = 10
     /// A card of a Mac that isn't answering fades.
     static let fleetAsleepOpacity: Double = 0.72
-    /// The sidebar's Fleet row: 36pt tall, its glyph 16pt.
-    static let fleetFooterRowHeight: CGFloat = 36
+    /// The sidebar's Fleet corner (FleetCornerFull, FleetCornerMin): its glyph 16pt, the header and a Mac's row 24pt tall, a Mac's name in a 68pt
+    /// column, its room gauge 36pt wide.
     static let fleetFooterGlyph: CGFloat = 16
-    static let fleetFooterDotGap: CGFloat = SH.Space.xs
+    static let fleetCornerHeaderHeight: CGFloat = 28
+    static let fleetCornerRowHeight: CGFloat = 24
+    static let fleetCornerNameWidth: CGFloat = 64
+    static let fleetCornerGaugeWidth: CGFloat = 36
+    /// An asleep Mac's hollow dot.
+    static let fleetCornerDotStroke: CGFloat = 1
+    /// The minimized corner's two lines stand 36pt tall.
+    static let fleetCornerMinHeight: CGFloat = 36
 
     // The Check tab (FleetCheck): the grid beside a panel.
     /// The panel's width, the grid's head and its rows' least height.
@@ -77,6 +84,9 @@ extension AppLayout {
     /// The From box's dash, and the result card's tick.
     static let fleetFromDash: [CGFloat] = [4, 3]
     static let fleetResultTick: CGFloat = 12
+    /// A sent thread as one line in the thread that sent it (FleetDispatch): 36pt tall, its arrow in a 14pt slot.
+    static let fleetCompactRowHeight: CGFloat = 36
+    static let fleetCompactRowGlyph: CGFloat = 14
     /// The header's host pill is 24pt tall; its dot is the Fleet page's.
     static let fleetHeaderPillHeight: CGFloat = 24
     /// A card's buttons are 26pt tall.

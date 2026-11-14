@@ -75,6 +75,18 @@ public struct FleetDispatchCard: Identifiable, Equatable, Sendable {
     public var targetHostID: UUID?
     public var remoteAgentID: AgentID?
     public var createdAt: Double
+    /// When the record last changed, in epoch milliseconds: how long a compact row's state has held.
+    public var updatedAt: Double = 0
+    /// How the thread that sent it draws it as one line (FleetDispatch's compact row); nil where the card needs its words or its progress.
+    public var compact: Compact?
+
+    /// "back · 2m", "delivering · 4m", "goes when studio wakes": the line's words after the title and the Mac's tag.
+    public struct Compact: Equatable, Sendable {
+        public var words: String
+        public var tone: FleetTone
+        /// The time since the state began follows the words ("back · 2m").
+        public var timed: Bool
+    }
 
     public var accessibilityLabel: String {
         [title, host.map { "on \($0)" }, pill, detail].compactMap { $0 }.joined(separator: ", ")
@@ -116,7 +128,7 @@ public enum FleetDispatchPresentation {
         var card = FleetDispatchCard(
             id: record.id, layout: .state, state: record.state, title: record.title.isEmpty ? "Untitled" : record.title, host: host, pill: "", tone: .tertiary,
             detail: "", actions: [], parentAgentID: record.parentAgentID, parentHostID: record.parentHostID, targetHostID: record.targetHostID,
-            remoteAgentID: record.remoteAgentID, createdAt: record.createdAt)
+            remoteAgentID: record.remoteAgentID, createdAt: record.createdAt, updatedAt: record.updatedAt)
         switch record.state {
         case .placing:
             (card.pill, card.tone) = ("Placing", .tertiary)
@@ -198,7 +210,27 @@ public enum FleetDispatchPresentation {
             card.detail = failureWords(record, in: context)
             card.actions = [.runHere, .tryAgain]
         }
+        card.compact = compact(card, record: record, host: host)
         return card
+    }
+
+    /// The one line of a card that needs only a few words: a thread that is on a Mac or came back, and work that waits for room, a Mac or its
+    /// sender's limit. A card that carries progress, a failure or a decision (`preparing`, `heldRestart`, `failed`) keeps its words.
+    static func compact(_ card: FleetDispatchCard, record: FleetDispatchRecord, host: String?) -> FleetDispatchCard.Compact? {
+        let name = host.map(FleetWherePicker.tagName)
+        switch record.state {
+        case .done: return .init(words: "back", tone: .good, timed: true)
+        case .delivering: return .init(words: "delivering", tone: .active, timed: true)
+        case .running: return .init(words: "working", tone: .active, timed: true)
+        case .cancelled: return .init(words: "stopped", tone: .tertiary, timed: true)
+        case .placing: return .init(words: "placing", tone: .tertiary, timed: false)
+        case .waitingRoom:
+            return .init(words: record.limitProvider == nil ? "no Mac has room" : "waiting for the limit", tone: .tertiary, timed: false)
+        case .waitingWake: return .init(words: "goes when \(name ?? "it") wakes", tone: .tertiary, timed: false)
+        case .heldLimit: return .init(words: "held until one finishes", tone: .warn, timed: false)
+        case .waitingTurn: return .init(words: "moves when its turn ends", tone: .tertiary, timed: false)
+        case .heldRestart, .preparing, .failed: return nil
+        }
     }
 
     /// The Mac a card's tag names: where it went, else the one named.

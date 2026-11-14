@@ -250,7 +250,7 @@ struct AgentTurn: View, Equatable {
                     if let fleet {
                         // The cards of the dispatches the burst's `fleet_dispatch` calls made.
                         ForEach(bursts.flatMap(\.calls).filter { $0.name == "fleet_dispatch" }.compactMap { fleet.card(forToolCall: $0.toolCallID) }) { card in
-                            FleetDispatchCardView(card: card, actions: fleet.actions).equatable()
+                            FleetDispatchCardView(card: card, actions: fleet.actions, compactRows: true).equatable()
                         }
                     }
                 case .thinking(_, _, _, _, true, _):

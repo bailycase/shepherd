@@ -664,7 +664,7 @@ extension ShepherdViewModel {
             case .remote(let ref):
                 let since = remoteAgent(ref)?.lastActiveAt.map { Date(timeIntervalSince1970: $0 / 1000) }
                 return ContinueCard(id: row.id, title: row.title, since: since)
-            case .design, .remoteDesign:
+            case .design, .remoteDesign, .dispatch:
                 // A design's row wears the nib, never a running dot.
                 continue
             }

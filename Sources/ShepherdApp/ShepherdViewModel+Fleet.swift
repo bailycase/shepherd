@@ -31,6 +31,13 @@ extension ShepherdViewModel {
         showSettings = true
     }
 
+    /// The Fleet page, on the Macs tab; with `mac`, scrolled to that Mac's card and marked.
+    func openFleet(mac: UUID? = nil) {
+        fleetPage.tab = .macs
+        fleetPage.focusedMac = mac
+        openDestination(.fleet)
+    }
+
     /// This Mac's own fleet host id, once its host has said it.
     var thisFleetID: UUID? { fleetPage.snapshot.hostID }
 

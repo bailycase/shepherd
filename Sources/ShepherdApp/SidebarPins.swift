@@ -18,7 +18,7 @@ enum PinnedThread: Hashable {
         switch row {
         case .local(let id): self = .local(id)
         case .remote(let ref): self = .remote(ref)
-        case .design, .remoteDesign: return nil
+        case .design, .remoteDesign, .dispatch: return nil
         }
     }
 
