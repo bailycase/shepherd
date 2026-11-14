@@ -286,7 +286,10 @@ struct ThreadTranscript: View {
             // iOS 27.1 still draws from every change of the follower (ComposerPresentation.followerChanges).
             let _ = nativeTail ? 0 : presentation.followerChanges
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: MobileLayout.turnSpacing) {
+                // The notice and the spinner sit above the lazy stack, not in it: a line joining, changing or leaving the top of a
+                // lazy stack made it estimate its height again, and a following view was thrown tens of thousands of points from its
+                // tail for a few frames (the host dropping and coming back).
+                VStack(alignment: .leading, spacing: MobileLayout.turnSpacing) {
                     if let banner {
                         Text(banner).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -302,23 +305,25 @@ struct ThreadTranscript: View {
                     if store.snapshot == nil && store.loadError == nil && store.startProblem == nil && store.isLive {
                         ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
                     }
-                    ForEach(rows) { row in
-                        // One view per row whatever it holds, so the lazy stack builds only the
-                        // rows on screen.
-                        VStack(spacing: 0) {
-                            // Only one thing moves (LiveText): a running call's own line
-                            // (MobileApproval), thinking, or the reply as it is written; between
-                            // tools the live turn ends in "Thinking…".
-                            turn(row, running: running, thinking: row.live && thinking)
+                    LazyVStack(alignment: .leading, spacing: MobileLayout.turnSpacing) {
+                        ForEach(rows) { row in
+                            // One view per row whatever it holds, so the lazy stack builds only the
+                            // rows on screen.
+                            VStack(spacing: 0) {
+                                // Only one thing moves (LiveText): a running call's own line
+                                // (MobileApproval), thinking, or the reply as it is written; between
+                                // tools the live turn ends in "Thinking…".
+                                turn(row, running: running, thinking: row.live && thinking)
+                            }
+                            .turnTransfer(row, thread: ref)
+                            .id(row.id)
+                            .background { TailRowMarker(guardian: tailGuard) }
                         }
-                        .turnTransfer(row, thread: ref)
-                        .id(row.id)
-                        .background { TailRowMarker(guardian: tailGuard) }
+                        if thinking, liveRow == nil { LiveWaitLine(wait: store.liveWait) }
+                        Color.clear.frame(height: 1).id(Self.bottomID)
                     }
-                    if thinking, liveRow == nil { LiveWaitLine(wait: store.liveWait) }
-                    Color.clear.frame(height: 1).id(Self.bottomID)
+                    .scrollTargetLayout()
                 }
-                .scrollTargetLayout()
                 .background { TailScrollFinder(guardian: tailGuard) }
                 .overlay(alignment: .top) {
                     Color.clear.frame(height: MobileLayout.turnSpacing)
@@ -352,7 +357,7 @@ struct ThreadTranscript: View {
             // A reused view (the design pane's chat has no identity of its own) shows another thread, which mounts as a new transcript does.
             .onChange(of: ref) { _, _ in
                 tailPin.reset()
-                presentation.mount(tail: tail)
+                presentation.mount()
             }
             .defaultScrollAnchor(nativeTail ? (presentation.restoresTurn ? .top : .bottom) : nil, for: .initialOffset)
             .defaultScrollAnchor(nativeTail ? (presentation.follows ? .bottom : nil) : (presentation.follows ? nil : .top), for: .sizeChanges)
@@ -423,12 +428,13 @@ struct ThreadTranscript: View {
                 tailHold.resume()
                 guard !appeared else { return }
                 appeared = true
-                presentation.mount(tail: tail)
+                presentation.mount()
             }
             .onDisappear {
                 tailHold.stop()
                 tailPin.stop()
                 tailGuard.stop()
+                presentation.leave()
             }
         }
     }

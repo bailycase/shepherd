@@ -88,6 +88,11 @@ final class FixtureHost: @unchecked Sendable {
         for fd in lock.withLock({ connections }) { _ = write(fd, encoded) }
     }
 
+    /// Ends every connection being served, as a network that drops: the clients read the end of the stream and reconnect.
+    func dropConnections() {
+        for fd in lock.withLock({ connections }) { shutdown(fd, SHUT_RDWR) }
+    }
+
     private func serve(_ fd: Int32) {
         lock.withLock { _ = connections.insert(fd) }
         defer {
