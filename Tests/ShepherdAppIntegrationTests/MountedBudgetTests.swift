@@ -190,6 +190,37 @@ struct MountedBudgetTests {
         #expect(hidden() <= stores.mountedBudget, "what the hidden threads keep is within the budget: \(hidden()) of \(stores.mountedBudget)")
     }
 
+    /// Showing a thread builds its rows again, and the passes between two shows are few: while the app is quiet a pass has to catch up with
+    /// what the last show added, or the hidden threads grow with every round of switching until the process cannot hold them. Two passes
+    /// a show, none on their own (the stores' pause never ends), a budget for two threads and a half: after every show's passes the hidden
+    /// threads hold no more than the budget, the thread just left (which is never taken) and a reply's rows (a row goes whole).
+    @Test func passesKeepUpWithShowsThatBuildRowsAgain() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let work = try await Workspace.open(6, replies: 5, cycles: 20, in: app)
+        defer { work.window.close() }
+        let stores = work.stores
+        stores.pause = { _ in try? await Task.sleep(for: .seconds(3600)) }
+        let one = work.store(0).mountedCost(eagerRows: stores.eagerRows)
+        #expect(one > 0)
+        stores.busy = { .idle }
+        stores.releaseStep = one / 4
+        stores.releaseCeiling = one * 8
+        stores.mountedBudget = one * 5 / 2
+        func hidden(except shown: Int) -> Int { (0..<6).filter { $0 != shown }.reduce(0) { $0 + work.store($1).mountedCost(eagerRows: stores.eagerRows) } }
+
+        var previous = 0
+        for index in [1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5] {
+            try await work.show(index)
+            #expect(stores.runMountedPass() && stores.runMountedPass())
+            let left = work.store(previous).mountedCost(eagerRows: stores.eagerRows)
+            #expect(hidden(except: index) <= stores.mountedBudget + left + one / 4,
+                    "after showing \(index): \(hidden(except: index)) held by the hidden threads, a budget of \(stores.mountedBudget) and \(left) in the one just left")
+            previous = index
+        }
+        #expect(!work.store(previous).transcriptReleased, "the thread on screen is never released")
+    }
+
     // MARK: Switching stays a flip
 
     @Test func aReleasedThreadKeepsItsHostAndHistory() async throws {
@@ -230,6 +261,39 @@ struct MountedBudgetTests {
             #expect(deck.pages[tab]?.host === hosts[index] && deck.pages[tab]?.page === pages[index], "still the same objects for agent \(index)")
         }
         #expect(SHRenderProbe.count("deck.unmount") == 0 && SHRenderProbe.count("deck.mount") == 0, "no layout was removed or mounted")
+    }
+
+    /// What a pass lets go of is freed, and not only taken out of the window: once the layout has drawn without them, the views of the rows it
+    /// took are gone and the ones of its last screen are the only fields left, in the window and in memory.
+    @Test func aReleasedThreadsRowViewsAreFreed() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let work = try await Workspace.open(3, replies: 6, cycles: 10, in: app)
+        defer { work.window.close() }
+        for index in [1, 2, 0] { try await work.show(index) }
+        final class Held {
+            weak var view: NSView?
+            init(_ view: NSView) { self.view = view }
+        }
+        func fields(in view: NSView) -> [NSView] { (view is SHNativeCodeText.Field ? [view] : []) + view.subviews.flatMap(fields) }
+        var held: [Held] = []
+        var kept = 0
+        for index in [1, 2] {
+            let drawn = fields(in: try #require(try work.host(index)))
+            let store = work.store(index)
+            held += drawn.map(Held.init)
+            // Every reply of the seed holds the same number of fences, and its prompt none.
+            let replies = store.rows.filter { $0.presentation != nil }.count
+            kept += drawn.count / replies * store.rows.suffix(store.keptRows).filter { $0.presentation != nil }.count
+        }
+        #expect(held.count > 20 && kept > 0 && kept < held.count / 2, "two threads draw their fences, and a last screen is a part of them: \(held.count), \(kept) of them kept")
+        work.releaseHidden()
+        try await eventuallyOnMain("the views of the rows that went to be freed, and the last screens' alone to stay", timeout: .seconds(60)) {
+            ListPerf.settle(work.window)
+            let drawn = try [1, 2].flatMap { fields(in: try #require(try work.host($0))) }
+            let alive = held.compactMap(\.view)
+            return drawn.count == kept && alive.count <= kept && alive.allSatisfy { view in drawn.contains { $0 === view } }
+        }
     }
 
     /// Shown again halfway through its release, a thread draws the rows it still had at once and every row it had after that, from what the store kept.

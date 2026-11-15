@@ -1631,22 +1631,30 @@ public final class NativeThreadStore {
         return min(transcriptDrawn ?? count, count) > keptRows
     }
 
+    /// Whether the next `releaseTranscript` of less than everything lets go of the lazy stack's rows alone: the thread has more rows than
+    /// `eagerRows` and its hidden view still draws all of them.
+    public func releasesLazyStackFirst(eagerRows: Int) -> Bool {
+        transcriptDrawn == nil && min(rows.count, rowCosts.count) > eagerRows
+    }
+
     /// Has the thread's hidden view let go of the oldest rows it draws, as many as fit in `bytes` of what `mountedCost` estimates
-    /// for them (and at least one row), so that no one update tears down much; `.max` lets every row go. With more rows than `eagerRows`
-    /// the first call lets go of the lazy stack's alone. `keepingLastScreen` stops at the rows of `keptRows`, which stay built.
+    /// for them (and at least one row), so that no one update tears down much; `.max` lets every row go. `crossing` goes on to
+    /// the row that does not fit, so that `bytes` is the least it lets go of (a row over it, at most) and a step is never spent on
+    /// the small rows before a large one. With more rows than `eagerRows` the first call lets go of the lazy stack's alone.
+    /// `keepingLastScreen` stops at the rows of `keptRows`, which stay built.
     /// The history, the rows, every cache, the draft and the store itself stay, so showing the thread draws its rows from them
     /// in the update that shows it, with nothing to load or parse.
-    public func releaseTranscript(bytes: Int = .max, eagerRows: Int = .max, keepingLastScreen: Bool = false) {
+    public func releaseTranscript(bytes: Int = .max, eagerRows: Int = .max, keepingLastScreen: Bool = false, crossing: Bool = false) {
         let count = min(rows.count, rowCosts.count)
         let floor = keepingLastScreen ? keptRows : 0
         var drawn = min(transcriptDrawn ?? count, count)
-        if transcriptDrawn == nil, count > eagerRows, bytes < .max {
+        if releasesLazyStackFirst(eagerRows: eagerRows), bytes < .max {
             drawn = max(eagerRows, floor)
         } else {
             var freed = 0
             while drawn > floor {
                 let cost = rowCosts[count - drawn]
-                if freed > 0, freed + cost > bytes { break }
+                if freed > 0, crossing ? freed >= bytes : freed + cost > bytes { break }
                 freed += cost
                 drawn -= 1
             }

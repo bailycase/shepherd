@@ -173,10 +173,19 @@ page draws: its coordinator never mounts here, and a worker only while it is the
 A hidden thread keeps its host, page, history and draft, but its rows are bounded: past
 `NativeThreadStores.mountedBudget` (an eighth of the memory, at most 2 GiB, counted by
 `NativeThreadStore.mountedCost`) the least recently shown hidden threads let their rows go
-(`releaseTranscript`), one thread a pass and `releaseStep` bytes of it. A pass never runs while the
-person types or scrolls, however long that lasts, nor while a thread on screen, local or remote,
-streams (`NativeThreadStores.busy`; only a stream gives out, after ten seconds of passes, so that
-a long one cannot hold the budget off for good). Unpinned threads go first, then readers left
+(`releaseTranscript`), the oldest rows of the thread shown longest ago first. A pass takes
+`releaseStep` bytes of one thread; while the app is idle it takes what the hidden threads are over
+by instead, at most `releaseCeiling`, because a thread shown builds hundreds of megabytes in a few
+seconds and a step a pass never caught up with the shows. A pass never runs while the person types
+or scrolls, however long that lasts, nor while a thread on screen, local or remote, streams
+(`NativeThreadStores.busy`), except that a stream gives out after ten seconds of passes, so that a
+long one cannot hold the budget off for good, and the pass then takes a step. The hidden threads
+are far over the budget (`farOverBudget`) when a pass could take more than a quarter of it or the
+ceiling, whichever is more, off them: what they hold over it, not counting the newest one, the
+readers kept and the threads with nothing past their last screen. Far over, a stream holds no pass
+off and its pass takes `releaseCeiling` at most, an idle pass takes up to a gibibyte
+(`releaseFarCeiling`: letting rows go costs a sixth of building them), and the first pass follows
+a show after half a second. Unpinned threads go first, then readers left
 scrolled up beyond the two most recently shown; the thread shown before the current one, and the one
 on screen, never. A thread keeps its last screen built (`NativeThreadStore.keptRows`: at most four
 rows within 16 MiB, or a last row of up to 64 MiB alone; a larger reply goes with the rest), which
