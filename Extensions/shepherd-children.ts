@@ -510,7 +510,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   if (!process.env.SHEPHERD_AGENT_ID || !process.env.SHEPHERD_SOCKET) return;
   const nativeChildren = process.env.SHEPHERD_NATIVE_CHILDREN === "1";
 
-  const runs = new Map(), workflows = new Map(), cliRuns = new Map();
+  const runs = new Map(), workflows = new Map(), cliRuns = new Map(), dropped = new Map();
   const admission = lifecycleWaiters(), savedStates = new WeakMap();
   let cancelCli;
   const projectWorker = !!process.env.SHEPHERD_PROJECT_CONTEXT;
@@ -1009,9 +1009,31 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     finally { signal?.removeEventListener("abort", abort); }
     return summary(run);
   }
-  function get(id) { const run = runs.get(id); if (!run) throw new Error("Unknown child id in this parent session"); return run; }
+  function get(id) {
+    const run = runs.get(id);
+    if (!run) throw new Error(dropped.has(id) ? droppedNote(id) : "Unknown child id in this parent session");
+    return run;
+  }
+  const droppedNote = (id) => `Child ${id} finished and was dropped from this thread to make room for newer helpers. Its full conversation is in ${dropped.get(id)}.`;
   function capacity() { if ([...runs.values()].filter((r) => r.state === "running" || r.state === "queued").length >= defaults.concurrency) throw Object.assign(new Error(`${defaults.concurrency === 4 ? "Four" : defaults.concurrency} helpers are already running. Wait for one to finish or cancel one (shepherd_child_cancel), then try again.`), { code: "capacity" }); }
-  const retained = () => { if (runs.size >= MAX_RUNS) throw new Error(`This thread already keeps ${MAX_RUNS} helpers, finished ones included, the most it can. Continue the work in a new thread, or send a finished helper more work with shepherd_child_resume.`); };
+  // At the limit, the oldest finished helper whose result the parent has taken makes room: never one that is live,
+  // asking, or still has an unread notice. Its session file and status.json stay; only the thread's list forgets it.
+  const finished = (run) => ["complete", "failed", "stopped"].includes(run.state) && (!run.proc || run.exited) && !run.needsReply && !pendingNotices.has(run.id);
+  const oldest = (items) => items.sort((a, b) => (a.endedAt ?? a.startedAt) - (b.endedAt ?? b.startedAt))[0];
+  function dropRun(run) {
+    runs.delete(run.id); cliRuns.delete(run.id); dropped.set(run.id, run.sessionFile);
+    controlWatchers.get(run.id)?.close(); controlWatchers.delete(run.id);
+    clearTimeout(saveTimers.get(run.id)); saveTimers.delete(run.id);
+    // The restore loop reads this marker, so a relaunch doesn't bring the helper back.
+    pi.appendEntry("shepherd-child-dropped", { owner, id: run.id, sessionFile: run.sessionFile });
+    publish();
+  }
+  const retained = (make = false) => {
+    if (runs.size < MAX_RUNS) return;
+    const victim = oldest([...runs.values()].filter(finished));
+    if (!victim) throw new Error(`This thread already keeps ${MAX_RUNS} helpers and every one is still running or waiting on you. Cancel a running helper (shepherd_child_cancel) or wait for one to finish, then try again.`);
+    if (make) dropRun(victim);
+  };
   async function send(run, message, mode = "steer") {
     checkScope(run.projectScope);
     if (!run.proc || run.exited || run.cancelled || run.settled) throw new Error("Child is not accepting messages; use shepherd_child_resume after it exits");
@@ -1162,8 +1184,13 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     parentWorking = false; parentInterrupted = false; userInputWaiting = false; directInputWaiting = false; parentInputVersion += 1; pendingNotices.clear(); clearTimeout(noticeTimer); noticeTimer = undefined;
     connectControl();
     fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+    dropped.clear();
     for (const entry of ctx.sessionManager.getEntries()) {
-      if (entry.type !== "custom" || entry.customType !== "shepherd-child" || entry.data?.owner !== owner || runs.size >= MAX_RUNS) continue;
+      const data = entry.data;
+      if (entry.type === "custom" && entry.customType === "shepherd-child-dropped" && data?.owner === owner && typeof data.id === "string") dropped.set(data.id, data.sessionFile);
+    }
+    for (const entry of ctx.sessionManager.getEntries()) {
+      if (entry.type !== "custom" || entry.customType !== "shepherd-child" || entry.data?.owner !== owner || runs.size >= MAX_RUNS || dropped.has(entry.data?.id)) continue;
       const data = entry.data;
       if (!/^native-[\w-]+$/.test(data.id) || typeof data.role !== "string") continue;
       const dir = path.join(root, data.id);
@@ -1290,7 +1317,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       signal?.throwIfAborted();
       if (!active || owner !== startingOwner) throw Error("Parent session ended or dispatch cancelled");
       capacity();
-      retained();
+      retained(true);
       const id = `native-${randomUUID()}`, dir = path.join(root, id);
       fs.mkdirSync(path.join(dir, "control", "steer-requests"), { recursive: true, mode: 0o700 });
       const run = { id, dir, owner, projectScope, role, name: label, model, cwd, thinking: params.thinking ?? resolved.thinkingLevel ?? profile.thinking ?? defaults.thinking ?? ctx.thinkingLevel ?? "off", task: params.task,
@@ -1411,6 +1438,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     parameters: Type.Object({ id: Type.Optional(idSchema) }),
     async execute(_id, p) {
       if (p.id) pendingNotices.delete(p.id);
+      if (p.id && dropped.has(p.id) && !runs.has(p.id)) return result({ id: p.id, dropped: true, sessionFile: dropped.get(p.id), note: droppedNote(p.id) });
       // The list names the children that wait on an answer, so a question is never lost with its notice.
       return result(p.id ? forParent(get(p.id)) : [...runs.values()].map((r) => ({ id: r.id, name: r.name, role: r.role, state: r.state, task: clip(r.task, 160),
         ...(r.needsReply ? { needsReply: true, questionID: r.questionID, question: r.questionText } : {}) })));
@@ -1491,7 +1519,13 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       const projectScope = projectWorker ? await authorizeScope() : undefined;
       checkScope(projectScope); signal?.throwIfAborted();
       if (!p.workflowScript) throw Error("workflowScript is required");
-      if (workflows.size >= 32 || [...workflows.values()].filter((w) => w.state === "running").length >= 4) throw Error("Workflow limit reached: four active, 32 retained per parent");
+      if ([...workflows.values()].filter((w) => w.state === "running").length >= 4) throw Error("Workflow limit reached: four active, 32 retained per parent");
+      // 32 retained: the oldest finished workflow whose result was taken makes room.
+      if (workflows.size >= 32) {
+        const done = [...workflows.values()].find((w) => w.state !== "running" && w.cleaned && !pendingNotices.has(w.id)); // Map order is start order
+        if (!done) throw Error("Workflow limit reached: 32 retained per parent and every one is still running or unread. Cancel a running workflow or read a finished one with shepherd_workflow {action: \"status\"}, then try again.");
+        workflows.delete(done.id);
+      }
       const w = { id: `workflow-${randomUUID()}`, owner, projectScope, state: "running", async: p.async !== false, keys: new Map(), claims: new Set(), starts: new Set(), controller: new AbortController() };
       workflows.set(w.id, w);
       const guard = () => { checkScope(w.projectScope); w.controller.signal.throwIfAborted(); if (!active || w.state !== "running") throw Error("Workflow is no longer accepting calls"); };
