@@ -436,7 +436,16 @@ public final class SessionServer: @unchecked Sendable {
     public var onDrainRequest: (() -> Void)?
     public var onRemoteHostUpdate: ((RemoteHostUpdateRequest, @escaping () async -> Bool, @escaping (HostUpdateStatus) -> Void) -> Void)?
     private var hostUpdateReserved = false
-    private var hostUpdateRequests: [Int32: UUID] = [:]
+    /// Who has an update request pending, and which: a client of this host, a Mac that called over its link, or this host's own job
+    /// (`FleetUpdates`). One each, so a client can't pile requests up.
+    enum HostUpdateRequester: Hashable { case client(Int32), peer(UUID), job }
+    private var hostUpdateRequests: [HostUpdateRequester: UUID] = [:]
+    /// Tests (and a host with no app of its own): starts this Mac's Shepherd app so Sparkle can run, true once it has been asked to.
+    /// `relayWindowRequestsToApp` sets the app's own when none is set.
+    public var openAppForUpdate: (@Sendable () async -> Bool)?
+    /// How long a request that needs the app waits for it to connect after it was started; under the 10 s a request may take.
+    var appConnectPatience: Duration = .seconds(6)
+    var appLaunchedAt: Date?
 
     public func reserveHostUpdate() async -> Bool {
         (try? await enqueue {
@@ -480,6 +489,127 @@ public final class SessionServer: @unchecked Sendable {
                 && self.hostUpdateRequests.isEmpty
                 && !self.clients.values.contains { $0.isRemote && !$0.pendingReplies.isEmpty }
                 && self.checkpointHostUpdate())
+        }
+    }
+
+    /// Threads working on this host now: the ones an install waits for when asked to wait (`RemoteHostUpdateRequest.installWhenIdle`), and
+    /// the ones an install now checkpoints. Counts what the gate counts as busy, so zero is what `hostUpdateBlockReason` calls settled.
+    public func hostUpdateBusyThreads() async -> Int {
+        (try? await enqueue { self.busyThreadCount }) ?? 0
+    }
+
+    private var busyThreadCount: Int {
+        sessions.values.reduce(0) { count, session in
+            guard let thread = session.thread else { return count }
+            let busy = thread.piBusy || thread.retry != nil || thread.continuesAfterSettle || !thread.items.isEmpty || thread.goal?.isActive == true
+            return busy ? count + 1 : count
+        }
+    }
+
+    /// An install waiting for the threads that work here to settle (`RemoteHostUpdateRequest.installWhenIdle`): the updater holds the offer, and the
+    /// host sends `install` once none is busy. Memory only: a restart of the host drops it, and nothing resumes it. Server queue.
+    private var idleInstall: (offerID: UUID, since: Date, attempt: UUID)?
+    /// Server queue: an install waits for the threads to settle.
+    var isWaitingForIdleInstall: Bool { idleInstall != nil }
+    /// How often the host looks at its threads while an install waits for them, and the longest it waits.
+    var idleInstallInterval: TimeInterval = 2
+    static let idleInstallLimit: TimeInterval = 12 * 3600
+
+    /// Serves `request` through the updater (`onRemoteHostUpdate`) for `requester`: a client of this host, a Mac that called over its link
+    /// (`FleetService.onHostUpdate`) or this host's own job. `alive` says, on the server queue, whether the requester is still there and
+    /// may be answered; the updater's authorization (`authorized`) is the same question, so an install never begins for one that left.
+    /// `reply` is called once on the server queue, with nil when the updater didn't answer in time. Every answer carries how many threads
+    /// work here (`HostUpdateStatus.busyThreads`) and whether an install waits for them. Server queue. Returns why nothing was started, if so.
+    func serveHostUpdate(_ request: RemoteHostUpdateRequest, requester: HostUpdateRequester, alive: @escaping () -> Bool,
+                         reply: @escaping (HostUpdateStatus?) -> Void) -> (code: String, message: String)? {
+        guard offeredCapabilities.contains(RemoteProtocol.hostUpdateCapability), let handler = onRemoteHostUpdate else {
+            return ("unsupported", "Remote updates are unavailable.")
+        }
+        switch request {
+        case .installWhenIdle, .cancel:
+            guard offeredCapabilities.contains(RemoteProtocol.fleetUpdateCapability) else {
+                return ("unsupported", "This host can't wait for its threads to settle before it updates.")
+            }
+        case .status, .check, .install: break
+        }
+        guard hostUpdateRequests[requester] == nil else { return ("busy", "An update request is pending.") }
+        let generation = UUID()
+        hostUpdateRequests[requester] = generation
+        // With nothing working there is nothing to wait for: it is an install. Otherwise the updater holds the offer, and this host sends
+        // `install` when the threads have settled. Another install, a cancel or a new look ends the wait.
+        var forwarded = request
+        var waits: UUID?
+        switch request {
+        case .installWhenIdle(let offerID, let consent):
+            if consent, busyThreadCount == 0 { forwarded = .install(offerID: offerID, authorized: true) }
+            else if consent { waits = offerID }
+        case .install, .cancel, .check:
+            idleInstall = nil
+        case .status: break
+        }
+        let finish: (HostUpdateStatus?) -> Void = { [weak self] status in
+            guard let self else { return }
+            self.queue.async {
+                guard self.hostUpdateRequests[requester] == generation else { return }
+                self.hostUpdateRequests[requester] = nil
+                guard alive() else { return }
+                guard var status else { return reply(nil) }
+                // The updater says it holds the offer: from here the host waits for the threads.
+                if let waits, status.waitingForIdle, status.offerID == waits, self.idleInstall == nil {
+                    self.idleInstall = (waits, Date(), UUID())
+                    self.pollIdleInstall(waits, attempt: self.idleInstall?.attempt)
+                }
+                status.busyThreads = self.busyThreadCount
+                status.waitingForIdle = self.idleInstall != nil && status.phase == .available
+                reply(status)
+            }
+        }
+        queue.asyncAfter(deadline: .now() + 10) { finish(nil) }
+        let toUpdater = forwarded
+        hopToMain { [weak self] in
+            guard let self else { return }
+            self.queue.async {
+                guard alive(), self.hostUpdateRequests[requester] == generation else { return }
+                let authorized: () async -> Bool = { [weak self] in
+                    guard let self else { return false }
+                    return (try? await self.enqueue { alive() && self.hostUpdateRequests[requester] == generation }) ?? false
+                }
+                self.hopToMain { handler(toUpdater, authorized) { finish($0) } }
+            }
+        }
+        return nil
+    }
+
+    /// While an install waits for the threads: looks again after `idleInstallInterval`, and once none works here (or the wait ran out) acts. Server queue.
+    private func pollIdleInstall(_ offerID: UUID, attempt: UUID?) {
+        queue.asyncAfter(deadline: .now() + idleInstallInterval) { [weak self] in
+            guard let self, let wait = self.idleInstall, wait.offerID == offerID, wait.attempt == attempt, let handler = self.onRemoteHostUpdate else { return }
+            let next = { [weak self] in
+                guard let self, let wait = self.idleInstall, wait.offerID == offerID, wait.attempt == attempt else { return }
+                self.pollIdleInstall(offerID, attempt: attempt)
+            }
+            if Date().timeIntervalSince(wait.since) > Self.idleInstallLimit {
+                // Gave up: the updater lets go of the offer.
+                self.idleInstall = nil
+                return self.hopToMain { handler(.cancel, { true }) { _ in } }
+            }
+            guard self.busyThreadCount == 0 else { return next() }
+            // Idle: the held offer is installed, as an install asked for now would be. An answer that is still an offer (the host
+            // refused to reserve: a question waits, a Project runs) leaves it held and the wait goes on; one that never comes is looked at again.
+            let answered = OneShot()
+            self.hopToMain {
+                handler(.install(offerID: offerID, authorized: true), { true }) { status in
+                    self.queue.async {
+                        guard answered.first() else { return }
+                        guard let wait = self.idleInstall, wait.offerID == offerID, wait.attempt == attempt else { return }
+                        if status.phase == .available { next() } else { self.idleInstall = nil }
+                    }
+                }
+            }
+            self.queue.asyncAfter(deadline: .now() + 15) {
+                guard answered.first() else { return }
+                next()
+            }
         }
     }
 
@@ -1098,6 +1228,7 @@ public final class SessionServer: @unchecked Sendable {
                 && ($0 != RemoteProtocol.projectPublicationsCapability || (isStarted && (onProjectPlacement != nil || onProjectExecutionLaunch != nil || onProjectRuntimeLaunch != nil)))
                 && ($0 != RemoteProtocol.projectPlacementCapability || (isStarted && (onProjectPlacement != nil || onProjectExecutionLaunch != nil)))
                 && ($0 != RemoteProtocol.hostUpdateCapability || onRemoteHostUpdate != nil)
+                && (![RemoteProtocol.fleetUpdateCapability, RemoteProtocol.fleetUpdateViewCapability].contains($0) || onRemoteHostUpdate != nil)
                 && (designsServed && designs || !RemoteProtocol.designCapabilities.contains($0))
                 && (tunnelsServed || ($0 != RemoteProtocol.browserTunnelCapability && $0 != RemoteProtocol.browserDriveCapability))
                 && (!RemoteProtocol.fleetServiceCapabilities.contains($0) || fleet != nil)
@@ -1439,6 +1570,20 @@ public final class SessionServer: @unchecked Sendable {
                     guard let self, let client = self.clients[connection], client.fleetPeerID != nil else { return }
                     self.send(.fleetPeerCall(id: id, request: request), to: client)
                 }
+                // A Mac of the fleet asks this one to update itself, over a connection either opened; so may this host's own job and its app.
+                service.onHostUpdate = { [weak self] request, peer, alive, reply in
+                    self?.serveHostUpdate(request, requester: .peer(peer), alive: alive, reply: reply)
+                }
+                service.localHostUpdate = { [weak self] request in
+                    guard let self else { return nil }
+                    return await withCheckedContinuation { continuation in
+                        self.queue.async {
+                            let refusal = self.serveHostUpdate(request, requester: .job, alive: { true }) { continuation.resume(returning: $0) }
+                            if refusal != nil { continuation.resume(returning: nil) }
+                        }
+                    }
+                }
+                service.appName = ShepherdEdition.current.displayName
                 service.onCloseConnection = { [weak self] connection, reason in
                     guard let self, let client = self.clients[connection] else { return }
                     self.disconnect(client, reason: reason)
@@ -3550,42 +3695,15 @@ public final class SessionServer: @unchecked Sendable {
             }
             if request.requiresMCP { client.projectMCPRequests[id] = task }
         case .hostUpdate(let id, let request):
-            guard offeredCapabilities.contains(RemoteProtocol.hostUpdateCapability), let handler = onRemoteHostUpdate else {
-                send(.error(id: id, code: "unsupported", message: "Remote updates are unavailable."), to: client)
-                return
-            }
-            guard hostUpdateRequests[client.fd] == nil else {
-                send(.error(id: id, code: "busy", message: "An update request is pending."), to: client)
-                return
-            }
-            let generation = UUID()
-            hostUpdateRequests[client.fd] = generation
-            let finish: (HostUpdateStatus?) -> Void = { [weak self, weak client] status in
+            let refusal = serveHostUpdate(request, requester: .client(client.fd), alive: { [weak self, weak client] in
+                guard let self, let client else { return false }
+                return self.clients[client.fd] === client && client.authenticated
+            }, reply: { [weak self, weak client] status in
                 guard let self, let client else { return }
-                self.queue.async {
-                    guard self.hostUpdateRequests[client.fd] == generation else { return }
-                    self.hostUpdateRequests[client.fd] = nil
-                    guard self.clients[client.fd] === client, client.authenticated else { return }
-                    if let status { self.send(.hostUpdate(id: id, status: status), to: client) }
-                    else { self.send(.error(id: id, code: "timeout", message: "Update handler timed out."), to: client) }
-                }
-            }
-            queue.asyncAfter(deadline: .now() + 10) { finish(nil) }
-            hopToMain { [weak self, weak client] in
-                guard let self, let client else { return }
-                self.queue.async {
-                    guard self.clients[client.fd] === client, client.authenticated,
-                          self.hostUpdateRequests[client.fd] == generation else { return }
-                    let authorized: () async -> Bool = { [weak self, weak client] in
-                        guard let self, let client else { return false }
-                        return (try? await self.enqueue {
-                            self.clients[client.fd] === client && client.authenticated
-                                && self.hostUpdateRequests[client.fd] == generation
-                        }) ?? false
-                    }
-                    self.hopToMain { handler(request, authorized) { finish($0) } }
-                }
-            }
+                if let status { self.send(.hostUpdate(id: id, status: status), to: client) }
+                else { self.send(.error(id: id, code: "timeout", message: "Update handler timed out."), to: client) }
+            })
+            if let refusal { send(.error(id: id, code: refusal.code, message: refusal.message), to: client) }
         case .hostSettings(let id, let request):
             guard let handler = onRemoteHostSettings else {
                 send(.error(id: id, code: "unavailable", message: "This host has no settings to share."), to: client)
@@ -5253,7 +5371,7 @@ public final class SessionServer: @unchecked Sendable {
             ShepherdLog.connection("\(client.isLocal ? "local app" : "remote client") on fd \(client.fd) disconnected: \(reason) "
                 + "(\(client.queuedReplyBytes) B unwritten)")
         }
-        hostUpdateRequests[client.fd] = nil
+        hostUpdateRequests[.client(client.fd)] = nil
         fleet?.connectionClosed(client.fd)
         clients.removeValue(forKey: client.fd)
         for span in client.personWrites { changes.endWrite(span) }
@@ -10780,5 +10898,19 @@ extension SessionServer {
               let paneID = agent.paneID, let sessionID = tab.layout.leaf(withID: paneID)?.sessionID,
               let thread = sessions[sessionID]?.thread else { return }
         thread.setTurnChanges(turns)
+    }
+}
+
+/// True once, from whichever thread asks first.
+private final class OneShot: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fired = false
+
+    func first() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !fired else { return false }
+        fired = true
+        return true
     }
 }
