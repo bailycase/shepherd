@@ -634,6 +634,11 @@ struct RemoteRequestTests {
         .hostUpdate(id: 90, request: .status),
         .hostUpdate(id: 91, request: .check),
         .hostUpdate(id: 92, request: .install(offerID: S.op, authorized: true)),
+        .hostUpdate(id: 93, request: .installWhenIdle(offerID: S.op, authorized: true)),
+        .hostUpdate(id: 94, request: .cancel),
+        .fleetAction(id: 133, action: .update(hostID: RemoteSamples.dispatchID, .start(when: .idle))),
+        .fleetAction(id: 134, action: .update(hostID: RemoteSamples.dispatchID, .start(when: .now))),
+        .fleetAction(id: 135, action: .update(hostID: RemoteSamples.dispatchID, .cancel)),
         .logicalProjectRuntime(id: 81, request: .action(projectID: ProjectID(), expectedRevision: 1, request: .read)),
         .nativeThread(id: 80, agentID: S.agent, request: .snapshot(expectedSessionID: "s", beforeEntryID: "m:3", afterRevision: 9)),
         .hello(id: 2, token: "", clientName: "Alex's MacBook \"Pro\"", protocolVersion: 99),
@@ -943,6 +948,8 @@ struct RemoteReplyTests {
             question: .init(dialogID: "q", kind: .select, title: "Choose", options: ["yes", "no"])))),
         .hostUpdate(id: 90, status: HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .available,
                                                   offerID: S.op, offeredVersion: "2", canInstall: true)),
+        .hostUpdate(id: 91, status: HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .available,
+                                                  offerID: S.op, offeredVersion: "2", busyThreads: 2, waitingForIdle: true)),
         .logicalProjectRuntime(id: 81, result: .project(Project(name: "Owner"))),
         .nativeThread(id: 80, result: .accepted(operationID: S.op)),
         .uploadResult(id: 51, result: .complete(path: "/host/private/image.png")),
@@ -1519,9 +1526,9 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             // Offered whenever the host's fleet service runs, which is every host that started (SessionServer.startFleet).
             RemoteProtocol.fleetCapability, RemoteProtocol.fleetPressureCapability, RemoteProtocol.fleetCheckCapability, RemoteProtocol.fleetDispatchCapability,
-            RemoteProtocol.fleetSyncCapability, RemoteProtocol.fleetSnapshotCapability, RemoteProtocol.fleetMoveCapability, RemoteProtocol.fleetRendezvousCapability, RemoteProtocol.fleetLinkCapability, RemoteProtocol.fleetPairLinkCapability,
+            RemoteProtocol.fleetSyncCapability, RemoteProtocol.fleetSnapshotCapability, RemoteProtocol.fleetMoveCapability, RemoteProtocol.fleetRendezvousCapability, RemoteProtocol.fleetLinkCapability, RemoteProtocol.fleetPairLinkCapability, RemoteProtocol.fleetUpdateCapability,
             // Offered to every client, a device included.
-            RemoteProtocol.fleetViewCapability, RemoteProtocol.fleetFollowCapability, RemoteProtocol.fleetMoveViewCapability,
+            RemoteProtocol.fleetViewCapability, RemoteProtocol.fleetFollowCapability, RemoteProtocol.fleetMoveViewCapability, RemoteProtocol.fleetUpdateViewCapability,
             // Offered whenever the host runs, and never to a client device (FleetAccess).
             RemoteProtocol.fleetDevicesCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).

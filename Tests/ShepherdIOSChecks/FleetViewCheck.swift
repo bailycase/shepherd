@@ -69,6 +69,14 @@ struct FleetViewCheck {
         check(fleet.changes == [.fleetWeight(hostID: studio, weight: .manualOnly)], "exactly that change reached the Mac: \(fleet.changes)")
         check(fleet.weights[FleetSendWeight.settingKey(hostID: studio)] == .manualOnly && model.problem == nil, "the Mac holds it")
 
+        // A device may ask a Mac of the fleet to update itself (an action on that Mac, like starting a thread there): through the Mac it reads the page
+        // from, which keeps the job and answers with the fleet carrying it.
+        check(model.canUpdate(settingsHosts()), "the Mac offers updating a Mac of its fleet")
+        await model.update(studio, .start(when: .idle), settingsHosts())
+        check(fleet.updated.map(\.hostID) == [studio] && fleet.updated.first?.command == .start(when: .idle) && model.problem == nil, "the ask reached the Mac: \(fleet.updated)")
+        await model.update(studio, .cancel, settingsHosts())
+        check(fleet.updated.count == 2 && fleet.updated[1].command == .cancel, "Cancel reached the Mac")
+
         // The Mac's fleet id is kept with the pairing, so the Fleet screen finds it while it is away; Forget clears it.
         let defaults = hosts.defaults
         check(hosts.hosts[0].fleetID == here, "the pairing holds the Mac's fleet id")
@@ -93,6 +101,13 @@ struct FleetViewCheck {
         for forbidden in ["fleetSync", "fleetPressure", "fleetReadiness", "fleetPressureNow", "fleetIntroduce", "fleetRevoke"] {
             check(!sentKinds.contains(forbidden), "a phone never sends \(forbidden)")
         }
+
+        // A Mac on a build before `fleet.update.view.v1` offers no Update: the row says nothing of it, and an ask is refused in words, never sent.
+        mac.push(capabilities: [RemoteProtocol.nativeThreadCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.fleetViewCapability])
+        try await waitUntil("the update capability to be withdrawn") { !hosts.hosts[0].supports(RemoteProtocol.fleetUpdateViewCapability) }
+        check(!model.canUpdate(settingsHosts()), "an older Mac offers no Update")
+        await model.update(studio, .start(when: .idle), settingsHosts())
+        check(fleet.updated.count == 2 && model.problem?.contains("can't update another Mac") == true, "an older Mac is not asked: \(model.problem ?? "nil")")
 
         // The Mac turns Fleet off: it says so, and the phone hides Fleet and shows that it is off.
         fleet.view = nil

@@ -103,11 +103,12 @@ final class FleetPageModel {
         if moving != moves { moves = moving }
     }
 
-    /// Check: the Mac card's Check… opens the tab on the first thing `mac` needs.
-    func openCheck(for mac: UUID) {
+    /// Check: the Mac card's Check… opens the tab on the first thing `mac` needs, and its Update… on `row` (the Shepherd row).
+    func openCheck(for mac: UUID, row: String? = nil) {
         tab = .check
         checkMac = mac
-        checkRow = page.check.firstRow(needing: mac)
+        checkRow = row ?? page.check.firstRow(needing: mac)
+        checkProblem = nil
     }
 
     /// A row of the grid is picked: the panel is about `mac` (the first that needs something when nil).

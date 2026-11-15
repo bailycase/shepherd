@@ -404,6 +404,21 @@ final class FleetSettingsModel {
         }
     }
 
+    /// Update Shepherd on the Mac `hostID` (this one included), or stop that: the host carries it out and keeps the job, which the page reads from
+    /// the snapshot. Nil when it was taken, else the host's reason in words.
+    func updateMac(_ hostID: UUID, _ command: FleetUpdateCommand) async -> String? {
+        do {
+            guard let client = try host() else { return Self.words(RemoteHostClientError.disconnected) }
+            guard client.capabilities.contains(RemoteProtocol.fleetUpdateViewCapability) else {
+                return "This Mac's background service can't update Shepherd on a Mac yet. Quit and open Shepherd again."
+            }
+            apply(try await client.fleetAction(.update(hostID: hostID, command)))
+            return nil
+        } catch {
+            return Self.words(error)
+        }
+    }
+
     // MARK: Dispatches
 
     /// Starts the thread the person wrote in New thread on the Mac Auto (or `thread.host`) picks. The record it made, or nil when the work

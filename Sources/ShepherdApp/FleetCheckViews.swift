@@ -24,6 +24,10 @@ struct FleetCheckActions {
     var fix: (FleetCheckFix) -> Void
     var ignore: (String, UUID, Bool) -> Void
     var openThread: (FleetCheckFixing) -> Void
+    /// Update Shepherd on a Mac (Update Shepherd on <Mac>, or Update now), stop that (Cancel), or update every Mac that is behind.
+    var update: (UUID, FleetUpdateWhen) -> Void = { _, _ in }
+    var cancelUpdate: (UUID) -> Void = { _ in }
+    var updateAll: ([UUID]) -> Void = { _ in }
 
     static let none = FleetCheckActions(select: { _, _ in }, checkNow: {}, copy: { _ in }, fix: { _ in }, ignore: { _, _, _ in }, openThread: { _ in })
 }
@@ -250,7 +254,9 @@ private struct FleetCheckPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             summary
             SHHairline()
-            if detail.command != nil || detail.fixable || detail.fixing != nil {
+            if let update = detail.update {
+                updateSection(update)
+            } else if detail.command != nil || detail.fixable || detail.fixing != nil {
                 actionsSection
             }
             if let problem {
@@ -260,7 +266,7 @@ private struct FleetCheckPanel: View {
                     .padding(.horizontal, SH.Space.xl)
                     .padding(.bottom, SH.Space.l)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityLabel("Couldn’t start the fix: \(problem)")
+                    .accessibilityLabel("Couldn’t do that: \(problem)")
             }
             Spacer(minLength: 0)
             if detail.ignorable || detail.fixAllCount > 0, let mac = detail.mac {
@@ -313,6 +319,49 @@ private struct FleetCheckPanel: View {
         case .good: FleetPill(text: detail.pill, dot: sh.done, text: sh.done, fill: sh.doneTint)
         case .quiet: FleetPill(text: detail.pill, dot: sh.textTertiary, text: sh.textTertiary, fill: sh.bgSelected)
         }
+    }
+
+    /// Update Shepherd on the Mac (FleetCheck, the Shepherd row): what is ready, the button, and while the host carries it out the state it is in.
+    private func updateSection(_ update: FleetUpdateOffer) -> some View {
+        let sh = Color.sh
+        return VStack(alignment: .leading, spacing: SH.Space.l) {
+            if let running = update.running {
+                VStack(alignment: .leading, spacing: SH.Space.m) {
+                    HStack(spacing: SH.Space.s) {
+                        Circle().fill(sh.running).frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
+                        Text(running.state).font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.running)
+                    }
+                    Text(running.note).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    if running.cancellable {
+                        Button("Cancel") { actions.cancelUpdate(update.mac) }
+                            .buttonStyle(.sh(.secondary))
+                            .accessibilityLabel("Cancel updating \(update.macName)")
+                    }
+                }
+                .padding(SH.Space.l)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(sh.runningTint, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                .accessibilityElement(children: .contain)
+            } else {
+                VStack(alignment: .leading, spacing: SH.Space.s) {
+                    if update.canStart {
+                        Text(update.headline).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
+                        Button(update.buttonTitle) { actions.update(update.mac, .idle) }
+                            .buttonStyle(.sh(.primary, size: .l))
+                    }
+                    Text(update.note).font(.sh(.caption, weight: .regular)).foregroundStyle(sh.textTertiary).fixedSize(horizontal: false, vertical: true)
+                    if update.canStart, let now = update.nowTitle {
+                        Button(now) { actions.update(update.mac, .now) }.buttonStyle(.sh(.ghost))
+                    }
+                    if let problem = update.problem {
+                        Text(problem).font(.sh(.caption, weight: .regular)).foregroundStyle(update.failed ? sh.failed : sh.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .padding(SH.Space.xl)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var actionsSection: some View {

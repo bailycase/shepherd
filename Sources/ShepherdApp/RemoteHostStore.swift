@@ -196,9 +196,6 @@ final class RemoteHostStore {
         var supportsInstructions: Bool { client?.capabilities.contains(RemoteProtocol.instructionsCapability) == true }
         /// The host serves Settings ▸ Skills (`skills.v1`).
         var supportsSkills: Bool { client?.capabilities.contains(RemoteProtocol.skillsCapability) == true }
-        var supportsHostUpdate: Bool { client?.capabilities.contains(RemoteProtocol.hostUpdateCapability) == true }
-        /// The client for update requests, while connected and capable.
-        var updateClient: RemoteHostClient? { supportsHostUpdate ? client : nil }
         var supportsProjects: Bool {
             client?.capabilities.contains(RemoteProtocol.projectsV2Capability) == true
                 || client?.capabilities.contains(RemoteProtocol.projectsCapability) == true
@@ -1221,6 +1218,12 @@ final class RemotePaneSession {
 }
 
 extension RemoteHostStore.Phase {
+    /// Why the connection failed, while it has.
+    var failure: RemoteHostFailure? {
+        if case .failed(let failure) = self { return failure }
+        return nil
+    }
+
     enum Kind: Hashable { case disconnected, connecting, connected, failed(RemoteHostFailure.Kind) }
 
     /// The phase with its failure's kind, not its detail: what the workspace's placeholders

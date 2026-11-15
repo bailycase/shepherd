@@ -89,6 +89,9 @@ public struct FleetMacCard: Identifiable, Equatable, Sendable {
     /// What Check found that needs something here (not set aside): the Ready line says so and Check… opens the tab on it. Zero from a Mac
     /// that hasn't reported, and from one that is asleep.
     public var needs = 0
+    /// The build the Mac runs while it is behind the fleet's newest and that isn't set aside ("671"): the Ready line says "Behind · build 671" and
+    /// the card offers Update…, which opens Check on the build row. Empty when the Mac didn't say its build. Nil when it isn't behind.
+    public var behindBuild: String?
     /// Dispatches waiting for this Mac by name (it is asleep, or named and has no room): the sidebar corner's "1 waiting".
     public var waiting = 0
     /// What keeps the Mac from taking work at all, in the corner's words ("no Xcode"): a tool every thread needs that it lacks. Nil
@@ -308,8 +311,15 @@ public enum FleetPagePresentation {
             let rows = check.shortNames(needing: id)
             let all = gates + rows
             cards[index].needs = all.count
-            cards[index].ready = FleetCheckPresentation.needs(all).map { FleetLine(text: $0, tone: .warn) } ?? FleetLine(text: "Every model and tool", tone: .good)
+            // A Mac whose only need is a newer build says so (FleetA): the build, and Update… beside Check….
+            if let behind = check.behindBuild(of: id), gates.isEmpty, rows.count == 1 {
+                cards[index].ready = FleetLine(text: behind.isEmpty ? "Behind" : "Behind · build \(behind)", tone: .warn)
+            } else {
+                cards[index].ready = FleetCheckPresentation.needs(all).map { FleetLine(text: $0, tone: .warn) } ?? FleetLine(text: "Every model and tool", tone: .good)
+            }
         }
+        // An asleep Mac that is behind still offers Update…: it starts when it wakes.
+        for index in cards.indices { cards[index].behindBuild = check.behindBuild(of: cards[index].id) }
 
         let winner = FleetRoom.nextGoesTo(zip(entries, scores).map { FleetRoom.Candidate(id: $0.0.id, score: $0.1) }, local: thisID)
         for index in cards.indices where cards[index].status != .asleep {

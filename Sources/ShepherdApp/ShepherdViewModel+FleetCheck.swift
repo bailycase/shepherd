@@ -19,6 +19,28 @@ extension ShepherdViewModel {
         }
     }
 
+    /// Update Shepherd on `mac` (Update Shepherd on <Mac>, or Update now): this Mac's host carries it out, over the link to that Mac, and the page reads
+    /// how it goes from the snapshot. The row looks again by itself when the Mac is back.
+    func updateFleetMac(_ mac: UUID, when: FleetUpdateWhen) {
+        fleetPage.checkProblem = nil
+        Task { fleetPage.checkProblem = await fleet.updateMac(mac, .start(when: when)) }
+    }
+
+    /// Cancel on an update that goes on, or putting away one that ended.
+    func cancelFleetUpdate(_ mac: UUID) {
+        Task { fleetPage.checkProblem = await fleet.updateMac(mac, .cancel) }
+    }
+
+    /// Update every Mac: each Mac that is behind, once its threads are idle. Each is its own update, started in turn.
+    func updateEveryFleetMac(_ macs: [UUID]) {
+        fleetPage.checkProblem = nil
+        Task {
+            for mac in macs {
+                if let problem = await fleet.updateMac(mac, .start(when: .idle)) { fleetPage.checkProblem = problem }
+            }
+        }
+    }
+
     /// Fix with an agent: a thread on `fix.mac` with the checklist. A thread on another Mac goes through the same `sendThread` as New thread's
     /// (so it is placed, refused or waits as any), tagged with the items so the row shows Fixing… and Check looks again when it ends; a thread
     /// on this Mac is a thread of its own, here.

@@ -92,6 +92,12 @@ final class FakeUpdater: @unchecked Sendable {
         }
     }
 
+    /// The first step, once the host's check reached the updater: the job shows "checking" as it begins, a moment before the updater is asked.
+    func answerTheCheck() async throws {
+        try await waitFor("check") { if case .check = $0 { true } else { false } }
+        advance()
+    }
+
     func waitFor(_ what: String, _ request: @escaping @Sendable (RemoteHostUpdateRequest) -> Bool) async throws {
         try await eventually("the updater to be asked to \(what)") { asked.contains(where: request) }
     }
@@ -146,7 +152,7 @@ struct FleetUpdateTests {
         let id = try await target.hostID()
         try await start(asker, id)
         try await waitForStage(.checking, on: asker, of: id)
-        updater.advance()   // its feed offers a build
+        try await updater.answerTheCheck()   // its feed offers a build
         try await waitForStage(.downloading, on: asker, of: id)
         updater.advance()   // downloaded: it installs
         try await waitForStage(.installing, on: asker, of: id)
@@ -199,7 +205,7 @@ struct FleetUpdateTests {
         let id = try await b.hostID()
         try await Self.start(a, id)
         try await Self.waitForStage(.checking, on: a, of: id)
-        again.advance()
+        try await again.answerTheCheck()
         try await Self.waitForStage(.upToDate, on: a, of: id)
         #expect(!again.sawInstallNow && !again.sawInstallWhenIdle)
         #expect(try await Self.job(a, id)?.message?.contains("nothing newer") == true)
@@ -235,7 +241,7 @@ struct FleetUpdateTests {
         Self.quicken(a)
         try await Self.start(a, id, .idle)
         try await Self.waitForStage(.checking, on: a, of: id)
-        updater.advance()
+        try await updater.answerTheCheck()
         try await Self.waitForStage(.waitingForThreads, on: a, of: id)
         #expect(try await Self.job(a, id)?.threads == 1)
         #expect(updater.sawInstallWhenIdle && !updater.sawInstallNow)
@@ -259,7 +265,7 @@ struct FleetUpdateTests {
         Self.quicken(a)
         try await Self.start(a, id, .now)
         try await Self.waitForStage(.checking, on: a, of: id)
-        updater.advance()
+        try await updater.answerTheCheck()
         try await updater.waitFor("install now") { if case .install = $0 { true } else { false } }
         #expect(!updater.sawInstallWhenIdle)
         #expect(await b.server.hostUpdateBusyThreads() == 1, "it did not wait for the thread")
@@ -276,7 +282,7 @@ struct FleetUpdateTests {
         Self.quicken(a)
         try await Self.start(a, id)
         try await Self.waitForStage(.checking, on: a, of: id)
-        updater.advance()
+        try await updater.answerTheCheck()
         try await Self.waitForStage(.waitingForThreads, on: a, of: id)
         let waiting = b.server.queue.sync { b.server.isWaitingForIdleInstall }
         #expect(waiting)
@@ -366,7 +372,7 @@ struct FleetUpdateTests {
         let b2 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, prepare: { woke.install(on: $0) })
         defer { b2.stop() }
         try await Self.waitForStage(.checking, on: a, of: id)
-        woke.advance()
+        try await woke.answerTheCheck()
         try await Self.waitForStage(.downloading, on: a, of: id)
         woke.advance()
         try await Self.waitForStage(.installing, on: a, of: id)

@@ -21,6 +21,22 @@ final class FakeFleet: @unchecked Sendable {
     /// The Macs offer `fleet.follow.v1` with their view (a build before it doesn't).
     var follows = true
     private var _view: FleetSnapshot?, _weights: [String: FleetSendWeight] = [:], _watching: [Bool] = [], _changes: [HostSettingChange] = []
+    /// The Macs offer `fleet.update.view.v1` (a build before it doesn't): a device may ask one to update a Mac of its fleet.
+    var updates = true
+    private var _updated: [(UUID, FleetUpdateCommand)] = []
+    /// Every update a device asked for, in order.
+    var updated: [(hostID: UUID, command: FleetUpdateCommand)] { lock.withLock { _updated.map { ($0.0, $0.1) } } }
+    func updated(_ hostID: UUID, _ command: FleetUpdateCommand) {
+        lock.withLock {
+            _updated.append((hostID, command))
+            // The host carries the job out and keeps it: the next read of the fleet carries it.
+            switch command {
+            case .start(let when):
+                _view?.updates = [FleetUpdateStatus(hostID: hostID, stage: .checking, when: when, fromBuild: "671", startedAt: 1, updatedAt: 1)]
+            case .cancel: _view?.updates = []
+            }
+        }
+    }
 
     /// The fleet this Mac serves a device (`fleet.view.v1`); nil: Fleet is off here.
     var view: FleetSnapshot? { get { lock.withLock { _view } } set { lock.withLock { _view = newValue } } }
@@ -154,6 +170,7 @@ final class FakeMac: @unchecked Sendable {
                 if view ?? fleet.view != nil {
                     capabilities += [RemoteProtocol.fleetViewCapability, RemoteProtocol.hostSettingsCapability]
                     if fleet.follows { capabilities.append(RemoteProtocol.fleetFollowCapability) }
+                    if fleet.updates { capabilities.append(RemoteProtocol.fleetUpdateViewCapability) }
                 }
                 write(client, .helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: capabilities, hostID: hostID))
             case .stateFetch(let id):
@@ -163,6 +180,9 @@ final class FakeMac: @unchecked Sendable {
                 else { write(client, .error(id: id, code: FleetProtocol.Code.off, message: "Enable Fleet in Settings ▸ Experiments.")) }
             case .fleetAction(let id, .watching(let on)):
                 fleet.watched(on)
+                write(client, .fleetResult(id: id, result: FleetResult(snapshot: fleet.view ?? FleetSnapshot())))
+            case .fleetAction(let id, .update(let hostID, let command)) where fleet.updates:
+                fleet.updated(hostID, command)
                 write(client, .fleetResult(id: id, result: FleetResult(snapshot: fleet.view ?? FleetSnapshot())))
             case .hostSettings(let id, let command):
                 var settings = HostSettings(fleetWeights: fleet.weights)

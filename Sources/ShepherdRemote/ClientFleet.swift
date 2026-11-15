@@ -14,11 +14,20 @@ public protocol FleetViewClient: SettingsClient {
     func fleetRead() async throws -> FleetResult
     /// Tells the host the Fleet page is on screen (true) or isn't (false): it samples while it is. Answers the view too.
     func fleetWatching(_ on: Bool) async throws -> FleetResult
+    /// Asks the host to update Shepherd on a Mac of its fleet, or to stop that (`fleet.update.view.v1`). Answers with the view, which carries the job.
+    func fleetUpdate(_ hostID: UUID, _ command: FleetUpdateCommand) async throws -> FleetResult
 }
 
 extension RemoteHostClient: FleetViewClient {
     public func fleetWatching(_ on: Bool) async throws -> FleetResult {
         try await fleetAction(.watching(on))
+    }
+
+    public func fleetUpdate(_ hostID: UUID, _ command: FleetUpdateCommand) async throws -> FleetResult {
+        guard capabilities.contains(RemoteProtocol.fleetUpdateViewCapability) else {
+            throw RemoteHostClientError.rejected(code: "unsupported", message: "This Mac can't update another Mac. Update Shepherd on it there.")
+        }
+        return try await fleetAction(.update(hostID: hostID, command))
     }
 }
 
@@ -39,6 +48,8 @@ public final class ClientFleet {
     public private(set) var phase = Phase.idle
     /// The Mac the page is read from, by name.
     public private(set) var sourceName: String?
+    /// Why an update the person asked for couldn't be asked of the Mac, in words.
+    public private(set) var updateProblem: String?
 
     /// The weights are host settings: shared with the rest of Settings, so one read serves both.
     public let hostSettings: ClientHostSettings
@@ -135,8 +146,32 @@ public final class ClientFleet {
         }
     }
 
-    /// Why the last weight change was refused, in words.
-    public var problem: String? { hostSettings.problem }
+    /// Why the last weight change, or the last update, was refused, in words.
+    public var problem: String? { hostSettings.problem ?? updateProblem }
 
-    public func dismissProblem() { hostSettings.dismissProblem() }
+    public func dismissProblem() {
+        hostSettings.dismissProblem()
+        updateProblem = nil
+    }
+
+    /// The Mac this page is read from can be asked to update Shepherd on a Mac of its fleet (`fleet.update.view.v1`): an older Mac shows no Update.
+    public func canUpdate(_ hosts: [SettingsHost]) -> Bool {
+        source(in: hosts)?.serves(RemoteProtocol.fleetUpdateViewCapability) == true
+    }
+
+    /// Update Shepherd on the Mac `hostID`, or stop that: an action on that Mac, like starting a thread there, asked through the Mac this page is
+    /// read from, which carries it out and keeps the job (the page reads it from the snapshot). Shows what the host answers at once.
+    public func update(_ hostID: UUID, _ command: FleetUpdateCommand, _ hosts: [SettingsHost]) async {
+        guard let host = source(in: hosts), let client = host.client as? any FleetViewClient else { return }
+        do {
+            let read = try await client.fleetUpdate(hostID, command).snapshot
+            updateProblem = nil
+            guard sourceID == host.id else { return }
+            snapshot = read
+            snapshotAt = now()
+            recompute(host)
+        } catch {
+            updateProblem = settingsProblem(error)
+        }
+    }
 }
