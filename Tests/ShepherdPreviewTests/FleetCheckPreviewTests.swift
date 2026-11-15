@@ -157,6 +157,41 @@ struct FleetCheckPreviewTests {
         try await Preview.render("fleet-check-matching", size: CGSize(width: 1208, height: 900)) { Self.tab(page, row: "need:node:22") }
     }
 
+    // MARK: Update Shepherd
+
+    /// The snapshot with Mac mini on build 671 while the rest run 675 and awake, so its card says "Behind · build 671"; `job` is what the host carries out on it.
+    static func behindMini(job: FleetUpdateStatus.Stage? = nil, threads: Int? = nil, message: String? = nil) async throws -> FleetPage {
+        var snapshot = try await Self.snapshot(matching: true)
+        if let build = snapshot.macs[1].check?.items.firstIndex(where: { $0.id == "build" }) { snapshot.macs[1].check?.items[build].value = "Build 671" }
+        snapshot.macs[2].sample = snapshot.macs[1].sample
+        snapshot.macs[2].sampleAge = 2
+        snapshot.peers[1].link = .connected
+        snapshot.app = "Shepherd Nightly"
+        for index in snapshot.peers.indices { snapshot.peers[index].takesUpdates = true }
+        snapshot.macs[1].sample?.activeAgents = 2
+        if let job {
+            snapshot.updates = [FleetUpdateStatus(hostID: P.mini, stage: job, when: .idle, fromBuild: "671", threads: threads, message: message,
+                                                  startedAt: 1, updatedAt: 2)]
+        }
+        return Self.page(snapshot)
+    }
+
+    /// The Shepherd row's panel for a Mac that is behind (FleetCheck): what is ready, Update Shepherd on Mac mini, Update now naming its two working threads;
+    /// while it downloads, the state with Cancel; and a failure that says why. The cards (FleetA) say Behind · build 671 with Update… alone (its only need is the build).
+    @Test func updateShepherdOnAMacThatIsBehind() async throws {
+        let page = try await Self.behindMini()
+        #expect(page.check.detail(row: "build", mac: P.mini).update?.nowTitle == "Update now, stopping 2 threads")
+        #expect(Self.card(P.mini, page).ready.text == "Behind · build 671" && Self.card(P.mini, page).behindBuild == "671")
+        try await Preview.renderMatrix("fleet-update-ready", size: CGSize(width: 1208, height: 900)) { Self.tab(page, row: "build", mac: P.mini) }
+        try await Preview.renderMatrix("fleet-update-cards", size: CGSize(width: 1208, height: 900)) {
+            FleetPageContent(page: page, actions: P.noActions).frame(width: 1208, height: 900)
+        }
+        let waiting = try await Self.behindMini(job: .waitingForThreads, threads: 2)
+        try await Preview.renderMatrix("fleet-update-waiting", size: CGSize(width: 1208, height: 900)) { Self.tab(waiting, row: "build", mac: P.mini) }
+        let failed = try await Self.behindMini(job: .failed, message: "Mac mini couldn’t check the signature of the download.")
+        try await Preview.renderMatrix("fleet-update-failed", size: CGSize(width: 1208, height: 900)) { Self.tab(failed, row: "build", mac: P.mini) }
+    }
+
     // MARK: The Mac card
 
     /// FleetA's Mac cards: the Ready row says what Mac mini needs and Check… opens the tab; This Mac has everything; Mac Studio catches up when it wakes.

@@ -257,6 +257,10 @@ final class AppUpdater {
 
     func remoteUpdate(_ request: RemoteHostUpdateRequest, authorized: @escaping () async -> Bool) async -> HostUpdateStatus {
         guard available, started, await authorized(), let server = gate else { return remoteDriver.status }
+        if request == .cancel {
+            remoteDriver.cancelRemote()
+            return remoteDriver.status
+        }
         if request == .status {
             var status = remoteDriver.status
             let reason = await server.blockReason()
@@ -274,12 +278,21 @@ final class AppUpdater {
         handlingRemoteRequest = true
         defer { handlingRemoteRequest = false }
         switch request {
-        case .status: break
+        case .status, .cancel: break
         case .check:
+            // A new look lets go of an offer held for idle threads (the host that held it for them may be gone).
+            if remoteDriver.status.waitingForIdle { remoteDriver.cancelRemote() }
             guard canCheck else { return remoteDriver.status }
             remoteDriver.status.channel = channel.rawValue
             remoteDriver.begin()
             updater.checkForUpdates()
+        case .installWhenIdle(let offerID, let consent):
+            // The host counts the threads and sends `install` when they have settled: this only keeps the offer until then.
+            guard consent, remoteDriver.holdForIdle(offerID) else {
+                var status = remoteDriver.status
+                if !consent || status.offerID != offerID { status.error = "Confirm the current update before installing and restarting." }
+                return status
+            }
         case .install(let offerID, let consent):
             guard consent, remoteDriver.status.phase == .available,
                   remoteDriver.status.offerID == offerID else {

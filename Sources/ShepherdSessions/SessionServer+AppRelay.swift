@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
@@ -39,16 +40,14 @@ extension SessionServer {
                 if case .done(let url)? = result { answer(url) } else { answer(nil) }
             }
         }
-        // A paired device's Update this Mac: Sparkle runs in this Mac's app, which asks the host
-        // before it reserves or restarts (`hostUpdateGate`). With no app, nothing can install.
+        // A paired device's or Mac's Update this Mac: Sparkle runs in this Mac's app, which asks the host
+        // before it reserves or restarts (`hostUpdateGate`). With no app open the host opens it for a request that needs it.
+        if openAppForUpdate == nil { openAppForUpdate = Self.openOwnApp }
         onRemoteHostUpdate = { [weak self] request, authorized, completion in
             guard let self else { return }
             Task {
                 guard await authorized() else { return }
-                self.relayToApp(.hostUpdate(request: request)) { result in
-                    guard case .hostUpdate(let status)? = result else { return completion(self.hostUpdateWithoutApp) }
-                    completion(status)
-                }
+                completion(await self.relayHostUpdate(request))
             }
         }
         onProjectRequest = { [weak self] request, respond in
@@ -88,6 +87,60 @@ extension SessionServer {
                 }
             }
         }
+    }
+
+    /// The app's answer to `request`. A request that needs the updater to run (a check, an install) with no app connected opens this Mac's own
+    /// Shepherd and waits a few seconds for it to connect; a status or a cancel is answered at once. With no app, or one that doesn't
+    /// answer, the status says to open Shepherd on this Mac.
+    func relayHostUpdate(_ request: RemoteHostUpdateRequest) async -> HostUpdateStatus {
+        func relay() async -> HostUpdateStatus? {
+            await withCheckedContinuation { continuation in
+                relayToApp(.hostUpdate(request: request)) { result in
+                    if case .hostUpdate(let status)? = result { continuation.resume(returning: status) } else { continuation.resume(returning: nil) }
+                }
+            }
+        }
+        if let status = await relay() { return status }
+        switch request {
+        case .status, .cancel: return hostUpdateWithoutApp
+        case .check, .install, .installWhenIdle: break
+        }
+        guard await openApp() else { return hostUpdateWithoutApp }
+        return await relay() ?? hostUpdateWithoutApp
+    }
+
+    /// Opens this Mac's own Shepherd (once in a while) and waits for it to connect over `host.sock`. False when it can't be opened or doesn't connect in time.
+    private func openApp() async -> Bool {
+        guard let open = openAppForUpdate else { return false }
+        let launch = (try? await enqueue { () -> Bool in
+            guard !self.appRelayConnected else { return false }
+            // One launch at a time: a second request while the app is starting only waits.
+            if let at = self.appLaunchedAt, Date().timeIntervalSince(at) < 30 { return false }
+            self.appLaunchedAt = Date()
+            return true
+        }) ?? false
+        if launch, !(await open()) {
+            _ = try? await enqueue { self.appLaunchedAt = nil }
+            return false
+        }
+        let deadline = ContinuousClock.now.advanced(by: appConnectPatience)
+        while ContinuousClock.now < deadline {
+            if (try? await enqueue { self.appRelayConnected }) == true { return true }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return false
+    }
+
+    /// Opens the Shepherd this host belongs to, hidden and without taking focus: Sparkle runs in the app. The host is launchd's job in the person's own
+    /// login session (`SMAppService.agent`), so LaunchServices can open an app from it; a host that isn't inside an app bundle opens nothing.
+    @Sendable static func openOwnApp() async -> Bool {
+        let bundle = Bundle.main.bundleURL
+        guard bundle.pathExtension == "app" else { return false }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        configuration.hides = true
+        configuration.addsToRecentItems = false
+        return (try? await NSWorkspace.shared.openApplication(at: bundle, configuration: configuration)) != nil
     }
 
     /// What a paired device's Update this Mac reads while no app is connected to install it.

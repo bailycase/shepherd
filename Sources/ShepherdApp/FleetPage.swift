@@ -16,6 +16,8 @@ struct FleetPageActions {
     var addMac: () -> Void
     /// A Mac card's Check…: the Check tab, on the first thing that Mac needs.
     var openCheck: (UUID) -> Void = { _ in }
+    /// A Mac card's Update…: the Check tab, on the Shepherd row, where Update Shepherd on that Mac is.
+    var openUpdate: (UUID) -> Void = { _ in }
 }
 
 extension FleetTone {
@@ -74,6 +76,10 @@ struct FleetPageContent: View {
                 case .check:
                     if let ago = page.check.checkedAgo {
                         Text(ago).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
+                    }
+                    if page.check.updatable.count > 1 {
+                        Button("Update every Mac") { checkActions.updateAll(page.check.updatable) }
+                            .buttonStyle(.sh(.secondary))
                     }
                     Button(check.checking ? "Checking…" : "Check now", action: checkActions.checkNow)
                         .buttonStyle(.sh(.secondary))
@@ -391,7 +397,13 @@ struct FleetMacCardView: View, Equatable {
                     .buttonStyle(.sh(.secondary))
                     .accessibilityLabel("Retry \(card.name)")
             }
-            if card.needs > 0 {
+            if card.behindBuild != nil {
+                Button("Update…") { actions.openUpdate(card.id) }
+                    .buttonStyle(.sh(.secondary))
+                    .accessibilityLabel("Update Shepherd on \(card.name)")
+            }
+            // A Mac whose only need is its build has Update… alone: Check… would open the same row.
+            if card.needs > (card.behindBuild != nil ? 1 : 0) {
                 Button("Check…") { actions.openCheck(card.id) }
                     .buttonStyle(.sh(.secondary))
                     .accessibilityLabel("See what \(card.name) needs")
@@ -608,7 +620,8 @@ struct FleetDestination: View {
                 vm.fleet.openPairing()
                 adding = true
             },
-            openCheck: { model.openCheck(for: $0) }), chrome: chrome,
+            openCheck: { model.openCheck(for: $0) },
+            openUpdate: { model.openCheck(for: $0, row: "build") }), chrome: chrome,
             tab: Binding(get: { model.tab }, set: { model.tab = $0 }),
             check: FleetCheckState(row: model.checkRow, mac: model.checkMac, checking: model.checking, problem: model.checkProblem),
             checkActions: FleetCheckActions(
@@ -620,7 +633,10 @@ struct FleetDestination: View {
                 },
                 fix: { vm.startFleetFix($0) },
                 ignore: { model.ignoreCheck($0, on: $1, $2) },
-                openThread: { vm.openFleetFix($0) }),
+                openThread: { vm.openFleetFix($0) },
+                update: { vm.updateFleetMac($0, when: $1) },
+                cancelUpdate: { vm.cancelFleetUpdate($0) },
+                updateAll: { vm.updateEveryFleetMac($0) }),
             focusedMac: model.focusedMac)
             .task {
                 await vm.fleet.refresh()

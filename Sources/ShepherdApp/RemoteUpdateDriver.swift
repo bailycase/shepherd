@@ -29,7 +29,40 @@ final class RemoteUpdateDriver: SPUStandardUserDriver {
         status.error = nil
         status.offerID = nil
         status.canInstall = false
+        status.waitingForIdle = false
         bound(seconds: 60)
+    }
+
+    /// The offer is kept while the host's threads settle (`RemoteHostUpdateRequest.installWhenIdle`): nothing times it out, and the status says
+    /// it is waiting. Sparkle holds its choice for as long as its own alert would.
+    func holdForIdle(_ offerID: UUID) -> Bool {
+        guard remote, status.phase == .available, status.offerID == offerID, choice != nil else { return false }
+        deadline?.invalidate()
+        status.waitingForIdle = true
+        status.canInstall = false
+        return true
+    }
+
+    /// Lets go of an offer held for idle threads or a download that hasn't reached the installer; what the installer has can't be taken back. The offer
+    /// is dismissed, never skipped, so the app's own Check for Updates offers it again.
+    func cancelRemote() {
+        guard remote, !installationHandedOff, status.phase == .available || status.phase == .downloading else { return }
+        let choice = self.choice, cancel = self.cancel
+        self.choice = nil
+        self.cancel = nil
+        deadline?.invalidate()
+        restartAuthorized = false
+        status.phase = .idle
+        status.error = nil
+        status.offerID = nil
+        status.canInstall = false
+        status.waitingForIdle = false
+        choice?(.dismiss)
+        cancel?()
+        if !installationStarted {
+            remote = false
+            onEnd?()
+        }
     }
 
     func install(offerID: UUID) -> Bool {
@@ -41,6 +74,7 @@ final class RemoteUpdateDriver: SPUStandardUserDriver {
         }
         self.choice = nil
         status.canInstall = false
+        status.waitingForIdle = false
         status.phase = .downloading
         installationStarted = true
         bound(seconds: 600)
@@ -49,6 +83,7 @@ final class RemoteUpdateDriver: SPUStandardUserDriver {
     }
 
     func fail(_ message: String) {
+        status.waitingForIdle = false
         status.phase = .failed
         status.error = message
         status.canInstall = false
