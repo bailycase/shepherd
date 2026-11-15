@@ -51,7 +51,7 @@ struct ExtensionMessageTests {
         .setAgentChildren(agentID: agent, children: [
             ChildRun(runID: "r1", childIndex: 2, label: "src/jobs", state: "failed", startedAt: 1, endedAt: 2,
                      currentTool: "read", needsAttention: true, attentionText: "boom", asyncDir: "/tmp/a"),
-            ChildRun(runID: "r2", label: "reviewer", state: "queued", attempt: "fresh-attempt",
+            ChildRun(runID: "r2", label: "reviewer", state: "queued", role: "worker", name: "card-network-rules", attempt: "fresh-attempt",
                      projectScope: .init(key: .init(ownerID: UUID(), projectID: ProjectID(), operationID: UUID()), workerAgentID: agent, sessionID: "session", generation: "generation")),
         ]),
         .notify(agentID: agent, title: "CI passed", body: "PR #42 is green"),
@@ -778,7 +778,7 @@ struct ChildRunTests {
         {"type":"setAgentChildren","agentID":"a","children":[
          {"runID":"run-2","label":"scout","state":"complete","needsAttention":false},
          {"runID":"native-1","label":"worker: restyle","state":"running","startedAt":1,"needsAttention":false,
-          "role":"worker","model":"p/m","thinking":"high","context":"background","step":{"index":1,"total":3},
+          "role":"worker","name":"restyle-tokens","model":"p/m","thinking":"high","context":"background","step":{"index":1,"total":3},
           "turns":78,"toolCalls":82,"tokens":922000,"contextPercent":62,
           "lastActivity":{"kind":"tool","tool":"edit","preview":"Sources/A.swift","diff":{"added":31,"removed":0},"at":2},
           "toolCallID":"call_1","task":"Restyle","sessionFile":"/tmp/c/session.jsonl","paused":true},
@@ -795,6 +795,7 @@ struct ChildRunTests {
         }
         #expect(rows.count == 5)
         #expect(rows[0] == ChildRun(runID: "run-2", label: "scout", state: "complete"))
+        #expect(rows[1].name == "restyle-tokens" && rows[0].name == nil, "a run from an older publisher decodes without a label")
         #expect(rows[1].step == ChildStep(index: 1, total: 3))
         #expect(rows[1].lastActivity == ChildActivity(tool: "edit", preview: "Sources/A.swift", diff: ChildDiff(added: 31, removed: 0), at: 2))
         #expect(rows[1].contextPercent == 62 && rows[1].paused == true && rows[1].toolCallID == "call_1")

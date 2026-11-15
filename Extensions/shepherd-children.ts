@@ -42,10 +42,12 @@ export const PARENT_QUESTION_GUIDE = "Each child above that needs a reply asked 
   + "- Answer it yourself if you can, from what you know, the files or your tools: call shepherd_child_resume with the child's id, your answer as message and its questionID (shepherd_child_message takes the same arguments).\n"
   + "- Only if you cannot, ask the USER yourself, in your own reply: your question tool if you have one, otherwise a plain question in your message. Then end your turn; the question stays pending. When the user answers, pass the answer down the same way, with the same id and questionID.\n"
   + "- Do not ignore a question, and do not ask the user what you can answer. With several questions, answer what you can and put the rest in one message to the user, naming each child.";
+// How a child is named to its parent: its label and profile ("card-network-rules · worker"), or the profile alone.
+const runTitle = (run) => run.name ? `${run.name} · ${run.role}` : run.role;
 // One asking child as its parent reads it: the question, the answers it offered, and the ids to answer with.
 function askLine(run) {
   const options = run.questionOptions?.length ? `\nOptions it offered: ${run.questionOptions.join(" | ")}` : "";
-  return `Child ${run.id} (${run.role}): Needs reply: ${run.questionText ?? clip(run.output, 600)}${options}\nAttempt: ${run.attempt ?? "unknown"}\nquestionID: ${run.questionID}`;
+  return `Child ${run.id} (${runTitle(run)}): Needs reply: ${run.questionText ?? clip(run.output, 600)}${options}\nAttempt: ${run.attempt ?? "unknown"}\nquestionID: ${run.questionID}`;
 }
 // What a result tells the parent about a child that asked, with the exact call that answers it.
 const parentAction = (run) => `This child asked its parent (you) a question and waits on you; it never reaches the user. Answer it yourself if you can: shepherd_child_resume {id: "${run.id}", message: <your answer>, questionID: "${run.questionID}"}. If you cannot, ask the USER yourself in your reply, end your turn, and pass their answer down with the same call. Do not ask the user what you can answer.`;
@@ -219,20 +221,40 @@ export function childLaunch({ run, bridge, inherited = [], parentEnv = process.e
 
 const nameTokens = (name) => new Set(String(name).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
 const within = (a, b) => [...a].every((token) => b.has(token));
+const editDistance = (a, b) => {
+  let row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    row = next;
+  }
+  return row[b.length];
+};
+
+// The profiles a name could be a misspelling or a longer form of: the same words in either direction
+// ("design-editor" for design-composer-editor, "trust-scout" for scout) or a couple of letters off ("reviewr").
+// A start with a name like these is refused, never run as another profile, whose tools may differ.
+export function closeAgents(name, agents) {
+  const wanted = nameTokens(name), lower = String(name).toLowerCase();
+  return agents.map((a) => a.name).filter((other) => {
+    const tokens = nameTokens(other);
+    return within(wanted, tokens) || within(tokens, wanted) || editDistance(lower, other.toLowerCase()) <= (other.length > 4 ? 2 : 1);
+  }).slice(0, 3);
+}
 
 // A role or profile that isn't one thing: every name that would work, and the nearest to what was passed.
 export function unknownAgentMessage(name, agents, matches = []) {
   if (matches.length > 1) {
-    return `Ambiguous agent "${name}": it names ${matches.map((a) => `${a.name} (${a.source}${a.filePath ? `, ${a.filePath}` : ""})`).join(" and ")}. Pass one profile's full name.`;
+    return `Ambiguous agent "${name}". It names ${matches.map((a) => `${a.name} (${a.source}${a.filePath ? `, ${a.filePath}` : ""})`).join(" and ")}. Pass agent as one profile's full name.`;
   }
   const roles = Object.keys(ROLES).filter((name) => agents.some((a) => a.name === name));
   const profiles = agents.filter((a) => !Object.hasOwn(ROLES, a.name)).map((a) => a.name);
-  const wanted = nameTokens(name);
-  const close = agents.map((a) => a.name).filter((other) => { const tokens = nameTokens(other); return within(wanted, tokens) || within(tokens, wanted); }).slice(0, 3);
-  return `Unknown agent "${name}". Roles: ${roles.join(", ") || "none (the default files were removed)"}. `
-    + `Profiles: ${profiles.join(", ") || "none discovered"}. `
-    + (close.length ? `Did you mean ${close.join(" or ")}? ` : "")
-    + "Pass one of them as agent (role is an alias); shepherd_child_agents lists each with its source.";
+  const close = closeAgents(name, agents);
+  return `Unknown agent "${name}". `
+    + (close.length ? `Did you mean ${close.join(" or ")}? Pass agent: "${close[0]}"${close.length === 1 ? "" : " (or another)"}, and name: "${name}" if it is only a label. `
+      : `agent picks a profile; a label goes in name. `)
+    + `Roles: ${roles.join(", ") || "none (the default files were removed)"}. `
+    + `Profiles: ${profiles.join(", ") || "none discovered"}. shepherd_child_agents lists each with its source.`;
 }
 
 // A helper whose pi died before it served says why on stderr (finish() returns that to the pending
@@ -578,7 +600,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     } catch { /* No header yet; the card publishes without it. */ } finally { if (fd !== undefined) fs.closeSync(fd); }
     return run.sessionID;
   };
-  const summary = (run) => ({ id: run.id, role: run.role, state: run.state, task: run.task, startedAt: run.startedAt, endedAt: run.endedAt, currentTool: run.currentTool, latestTool: run.latestTool, model: run.model, cwd: run.cwd,
+  const summary = (run) => ({ id: run.id, name: run.name, role: run.role, state: run.state, task: run.task, startedAt: run.startedAt, endedAt: run.endedAt, currentTool: run.currentTool, latestTool: run.latestTool, model: run.model, cwd: run.cwd,
     workflowId: run.workflowId, delivery: run.delivery ?? "continue", settled: run.settled, thinking: run.thinking, context: run.context, tools: run.tools, sessionFile: run.sessionFile, output: run.output, error: run.error, needsReply: run.needsReply, stopReason: run.lastStop, omittedInFlight: run.omittedInFlight,
     turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, files: fileChanges(run), added: run.added, removed: run.removed, lastActivity: run.lastActivity, questionOptions: run.questionOptions, questionText: run.questionText, questionShort: run.questionShort,
     projectScope: run.projectScope, attempt: run.attempt, questionID: run.questionID, exitCode: run.exitCode, toolCallID: run.toolCallID, stepIndex: run.stepIndex,
@@ -590,7 +612,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   function card(run) {
     const workflow = run.workflowId ? workflows.get(run.workflowId) : undefined;
     return {
-      runID: run.id, attempt: run.attempt, projectScope: run.projectScope, label: `${run.role}: ${clip(run.task, 100)}`, state: run.state,
+      runID: run.id, attempt: run.attempt, projectScope: run.projectScope, label: `${run.name ?? run.role}: ${clip(run.task, 100)}`, name: run.name, state: run.state,
       startedAt: run.startedAt, endedAt: run.endedAt, currentTool: run.currentTool,
       needsAttention: run.needsReply === true, attentionText: run.needsReply ? clip(run.questionText ?? run.output, 160) : undefined, asyncDir: run.dir,
       role: run.role, model: run.model, thinking: run.thinking, context: workflow?.async ? "async" : "background",
@@ -701,7 +723,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   const compose = (notices) => notices.map((n) => n.content).join("\n\n") + (notices.some((n) => n.question) ? `\n\n${PARENT_QUESTION_GUIDE}` : "");
   function notify(run, message) {
     if (!current(run) || run.workflowId || closedScopes.has(scopeKey(run.projectScope))) return;
-    const content = `Child ${run.id} (${run.role}): ${clip(message)}\nAttempt: ${run.attempt ?? "unknown"}\nUse this result to continue the task. Do not acknowledge receipt or repeat it unless it changes the user's outcome.`;
+    const content = `Child ${run.id} (${runTitle(run)}): ${clip(message)}\nAttempt: ${run.attempt ?? "unknown"}\nUse this result to continue the task. Do not acknowledge receipt or repeat it unless it changes the user's outcome.`;
     enqueueNotice(run.id, content, run.delivery !== "report");
   }
   // A child's question goes to its parent in either delivery mode, and wakes an idle one; it notifies once.
@@ -988,7 +1010,8 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     return summary(run);
   }
   function get(id) { const run = runs.get(id); if (!run) throw new Error("Unknown child id in this parent session"); return run; }
-  function capacity() { if ([...runs.values()].filter((r) => r.state === "running" || r.state === "queued").length >= defaults.concurrency) throw Object.assign(new Error(`${defaults.concurrency === 4 ? "Four" : defaults.concurrency} children are already active; wait or cancel first`), { code: "capacity" }); }
+  function capacity() { if ([...runs.values()].filter((r) => r.state === "running" || r.state === "queued").length >= defaults.concurrency) throw Object.assign(new Error(`${defaults.concurrency === 4 ? "Four" : defaults.concurrency} helpers are already running. Wait for one to finish or cancel one (shepherd_child_cancel), then try again.`), { code: "capacity" }); }
+  const retained = () => { if (runs.size >= MAX_RUNS) throw new Error(`This thread already keeps ${MAX_RUNS} helpers, finished ones included, the most it can. Continue the work in a new thread, or send a finished helper more work with shepherd_child_resume.`); };
   async function send(run, message, mode = "steer") {
     checkScope(run.projectScope);
     if (!run.proc || run.exited || run.cancelled || run.settled) throw new Error("Child is not accepting messages; use shepherd_child_resume after it exits");
@@ -1176,60 +1199,90 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     await Promise.all([...runs.values()].map((run) => stop(run, "Parent session ended")));
   });
 
-  const startSchema = Type.Object({ task: textSchema,
-    delivery: Type.Optional(StringEnum(["report", "continue"], { description: "report stores the result without starting a parent turn; continue resumes the parent to finish dependent work (default). Blocking questions may notify in either mode." })), role: Type.Optional(idSchema), agent: Type.Optional(idSchema), context: Type.Optional(StringEnum(["fresh", "fork"])),
+  // What the model sees: agent picks the profile and name labels the helper. `role` (an old alias of agent) is
+  // still accepted, so startSchema, which checks every call, has it and the tool's own schema does not.
+  const startFields = { task: textSchema,
+    delivery: Type.Optional(StringEnum(["report", "continue"], { description: "report stores the result without starting a parent turn; continue resumes the parent to finish dependent work (default). Blocking questions may notify in either mode." })),
+    agent: Type.Optional(Type.String({ minLength: 1, maxLength: 80, description: "Profile: scout, reviewer, planner, worker (default), or one from shepherd_child_agents. Labels go in name." })),
+    name: Type.Optional(Type.String({ minLength: 1, maxLength: 80, description: "Label, e.g. card-network-rules." })), context: Type.Optional(StringEnum(["fresh", "fork"])),
     cwd: Type.Optional(Type.String({ maxLength: 4096 })), model: Type.Optional(Type.String({ maxLength: 256 })),
-    thinking: Type.Optional(StringEnum(thinkingLevels)) }, { additionalProperties: false });
+    thinking: Type.Optional(StringEnum(thinkingLevels)) };
+  const startParameters = Type.Object(startFields);
+  const startSchema = Type.Object({ ...startFields, role: Type.Optional(idSchema) }, { additionalProperties: false });
   function checked(schema, params) { return validateToolArguments({ name: "shepherd", parameters: schema }, { id: "check", name: "shepherd", arguments: params }); }
   function resolveModel(profile, ctx, explicit) {
     const requestedModel = explicit ?? profile.model ?? defaults.model ?? "inherit";
     const resolved = requestedModel === "inherit" ? { model: ctx.model } : resolveCliModel({ cliModel: requestedModel,
       modelRuntime: { getModels: () => ctx.modelRegistry.getAll(), hasConfiguredAuth: (provider) => ctx.modelRegistry.getAll().some((m) => m.provider === provider && ctx.modelRegistry.hasConfiguredAuth?.(m)) } });
-    if (requestedModel === "inherit" && !resolved.model) throw Error("Select a model in the parent first");
+    if (requestedModel === "inherit" && !resolved.model) throw Error("No model is selected in this thread, so the helper has none to inherit. Pass model as provider/id, or select a model in the thread first.");
     // Pi takes an id a known provider doesn't list as a custom model (and says so in `warning`), but a
     // helper's catalog never holds it, so it would fail after launching: refuse it here, once, saying who
     // named the model and what is loaded instead.
     const listed = resolved.model && ctx.modelRegistry.getAll().some((m) => m.provider === resolved.model.provider && m.id === resolved.model.id);
     if (requestedModel !== "inherit" && (resolved.error || !resolved.model || !listed)) {
       const origin = explicit ? "The model argument" : profile.model ? `Agent profile ${profile.name}` : "Shepherd's native-subagent model default";
-      throw Error(modelNotFound(requestedModel, ctx.modelRegistry.getAll(), { origin, where: "this Pi" }));
+      const fix = explicit ? "Pass model as one of those, or omit model to use the thread's." : profile.model ? `Fix model: in the profile, or pass model as one of those.` : "Pass model as one of those.";
+      throw Error(`Model ${requestedModel.replace(THINKING_SUFFIX, "")} isn't loaded. ${modelNotFound(requestedModel, ctx.modelRegistry.getAll(), { origin, where: "this Pi" })} ${fix}`);
     }
     return resolved;
   }
   async function start(params, signal, ctx, workflowId, toolCallID, stepIndex, queueInput, cli) {
       const projectScope = workflowId ? workflows.get(workflowId)?.projectScope : projectWorker ? await authorizeScope() : undefined;
       checkScope(projectScope);
+      const stray = Object.keys(params ?? {}).filter((key) => !(key in startSchema.properties));
+      if (stray.length) throw Error(`Unknown parameter${stray.length > 1 ? "s" : ""} ${stray.map((key) => `"${key}"`).join(", ")} for shepherd_child_start. Its parameters are ${Object.keys(startFields).join(", ")}; name labels the helper and agent picks its profile.`);
       params = checked(startSchema, params);
       if (!active) throw new Error("No active parent session");
       if (!supported) throw new Error("Shepherd native children require Pi 0.85.1 or newer");
       signal?.throwIfAborted(); capacity();
-      if (runs.size >= MAX_RUNS) throw new Error("64 retained children reached; start a new parent session");
-      if (params.agent && params.role) throw Error("Pass either an agent profile or a role, not both: agent and role name the same thing (role is an alias for agent). Use agent for a profile from shepherd_child_agents, or role for one of the default files (scout, reviewer, planner, worker).");
-      const cwd = fs.realpathSync(path.resolve(ctx.cwd, params.cwd ?? "."));
-      if (!fs.statSync(cwd).isDirectory()) throw new Error("Child cwd must be a directory");
+      retained();
+      const asked = path.resolve(ctx.cwd, params.cwd ?? ".");
+      let cwd;
+      try { cwd = fs.realpathSync(asked); } catch { throw new Error(`cwd ${asked} doesn't exist. Pass cwd as an existing directory, or omit it to use this thread's.`); }
+      if (!fs.statSync(cwd).isDirectory()) throw new Error(`cwd ${asked} is a file, not a directory. Pass its folder as cwd, or omit cwd.`);
       const startingOwner = owner;
       signal?.throwIfAborted();
       if (!active || owner !== startingOwner) throw Error("Parent session ended or dispatch cancelled");
       capacity();
-      if (runs.size >= MAX_RUNS) throw new Error("64 retained children reached; start a new parent session");
+      retained();
       const targetContext = childTargetContext(ctx, cwd);
       const catalog = discoverChildAgents(targetContext, defaults.scope);
-      const name = params.agent ?? params.role ?? "worker";
-      const exact = catalog.agents.filter((a) => a.name === name);
-      const matches = exact.length ? exact : catalog.agents.filter((a) => a.aliases?.includes(name));
-      if (!cli && matches.length !== 1) throw Error(unknownAgentMessage(name, catalog.agents, matches));
+      const find = (wanted) => {
+        const exact = catalog.agents.filter((a) => a.name === wanted);
+        return exact.length ? exact : catalog.agents.filter((a) => a.aliases?.includes(wanted));
+      };
+      // agent picks the profile and name labels it; role is an old alias of agent. A call that passes
+      // both with one a profile and the other not is a profile and its label, so it runs as that.
+      let wanted = params.agent ?? params.role ?? "worker", label = params.name?.trim() || undefined, startNote;
+      if (params.agent && params.role && params.agent !== params.role) {
+        const [byAgent, byRole] = [find(params.agent), find(params.role)];
+        if (label || byAgent.length + byRole.length !== 1) {
+          throw Error(`agent "${params.agent}" and role "${params.role}" disagree. Pass only agent, set to the profile to run (role is an alias of agent), and put a label in name.`);
+        }
+        [wanted, label] = byAgent.length ? [params.agent, params.role] : [params.role, params.agent];
+      }
+      let matches = find(wanted);
+      // A profile that doesn't exist and isn't a near miss of one is a label: run a worker under it, and say so.
+      // A near miss is refused below: a typo of "reviewer" must not run as a worker, which can write.
+      const fallback = find("worker");
+      if (!cli && !matches.length && !label && !closeAgents(wanted, catalog.agents).length && fallback.length === 1) {
+        label = wanted; wanted = "worker"; matches = fallback;
+        startNote = `No agent profile "${label}"; started a worker named ${label}. agent picks a profile (shepherd_child_agents lists them); name is the label.`;
+      }
+      if (!cli && matches.length !== 1) throw Error(unknownAgentMessage(wanted, catalog.agents, matches));
       const profile = cli ? cli.profile : matches[0], role = profile.name;
-      if (profile.error || profile.disabled) throw Error(profile.error || `Agent ${role} is disabled`);
-      if (profile.tools === "inherit") throw Error("tools: inherit requires ambient extensions, which native children do not inherit. Omit tools for Pi builtins or list tools and explicit extension files.");
+      if (profile.error) throw Error(`Agent profile ${role} can't run. Its file is invalid: ${profile.error}. Fix ${profile.filePath ?? "it"}, or pass another agent.`);
+      if (profile.disabled) throw Error(`Agent profile ${role} is disabled. Remove disabled: true from ${profile.filePath ?? "its file"}, or pass another agent.`);
+      if (profile.tools === "inherit") throw Error(`Agent profile ${role} has tools: inherit, which native helpers can't use. Remove that line from ${profile.filePath ?? "its file"}, or list tools and explicit extension files.`);
       const requestedTools = profile.tools ?? defaultChildTools(cwd);
       // A design agent's helpers get its design tools through their parent (see serveRelay); a profile's
       // `extensions` can't supply them (shepherd-design.ts is inert without the design agent's environment).
       const designNames = requestedTools.filter((name) => DESIGN_TOOLS.includes(name));
       const designProblem = designNames.length ? designToolsProblem(designNames, designRelay()) : undefined;
-      if (designProblem) throw Error(designProblem);
+      if (designProblem) throw Error(`Agent profile ${role} lists design tools it can't use here. ${designProblem}`);
+      if (requestedTools.some((name) => /^(shepherd_child_|shepherd_workflow|subagent$)/.test(name))) throw Error(`Agent profile ${role} lists delegation tools, and helpers can't delegate. Remove shepherd_child_*, shepherd_workflow and subagent from tools: in ${profile.filePath ?? "its file"}.`);
       const unknownTools = requestedTools.filter((name) => !ROLES.worker.tools.includes(name) && name !== "shepherd_parent_message" && !DESIGN_TOOLS.includes(name));
-      if (unknownTools.length && !cli && !profile.extensions?.length) throw Error(`Unsupported agent tools without explicit extensions: ${unknownTools.join(", ")}`);
-      if (requestedTools.some((name) => /^(shepherd_child_|shepherd_workflow|subagent$)/.test(name))) throw Error("Nested delegation tools are unsupported");
+      if (unknownTools.length && !cli && !profile.extensions?.length) throw Error(`Agent profile ${role} lists tools no helper can load: ${unknownTools.join(", ")}. Remove them from tools: in ${profile.filePath ?? "its file"}, or add extensions: files that provide them.`);
       const resolved = resolveModel(profile, ctx, params.model);
       const model = `${resolved.model.provider}/${resolved.model.id}`;
       if (!bridge) throw new Error("Shepherd child extension path is missing");
@@ -1237,10 +1290,10 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       signal?.throwIfAborted();
       if (!active || owner !== startingOwner) throw Error("Parent session ended or dispatch cancelled");
       capacity();
-      if (runs.size >= MAX_RUNS) throw new Error("64 retained children reached; start a new parent session");
+      retained();
       const id = `native-${randomUUID()}`, dir = path.join(root, id);
       fs.mkdirSync(path.join(dir, "control", "steer-requests"), { recursive: true, mode: 0o700 });
-      const run = { id, dir, owner, projectScope, role, model, cwd, thinking: params.thinking ?? resolved.thinkingLevel ?? profile.thinking ?? defaults.thinking ?? ctx.thinkingLevel ?? "off", task: params.task,
+      const run = { id, dir, owner, projectScope, role, name: label, model, cwd, thinking: params.thinking ?? resolved.thinkingLevel ?? profile.thinking ?? defaults.thinking ?? ctx.thinkingLevel ?? "off", task: params.task,
         context: params.context ?? profile.context ?? defaults.context, delivery: params.delivery ?? "continue",
         profileSource: profile.source, systemPromptMode: profile.systemPromptMode, inheritProjectContext: profile.inheritProjectContext,
         extensions: profile.extensions ?? [], skills, workflowId,
@@ -1260,7 +1313,8 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         const { dir: _dir, output: _output, files: _files, ...descriptor } = run;
         pi.appendEntry("shepherd-child", descriptor);
         run.starting = launch(run, cli?.prompt ?? queueInput?.text ?? params.task, signal, queueInput?.images);
-        return await run.starting;
+        const receipt = await run.starting;
+        return startNote ? { ...receipt, note: startNote } : receipt;
       } catch (error) { if (!run.proc) { run.state = "failed"; run.endedAt = Date.now(); run.error = clip(error.message); save(run); } throw error; }
   }
   cancelCli = registerCliBash(pi, { bridge, bashOperations: childBashOperations,
@@ -1321,8 +1375,8 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   const later = DEFER ? { exposure: "deferred" as const, namespace: MORE_CHILDREN } : {};
   pi.registerTool({ name: "shepherd_child_agents", label: "child agents", ...later, description: "List effective agent profiles, sources and unsupported-field diagnostics. Reads only Shepherd's pi/agents folder. Invalid files stay visible as diagnostics and cannot run.",
     parameters: Type.Object({}), async execute(_id, _p, _s, _u, ctx) { return result({ defaults, ...discoverChildAgents(ctx, defaults.scope) }); } });
-  pi.registerTool({ name: "shepherd_child_start", label: "start child", parameters: startSchema,
-    description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Progress stays in the child record. A child never reaches the user: when it is blocked it asks you (needsReply, in a notice and result with a questionID): answer it yourself if you can with shepherd_child_resume and that questionID, else ask the user in your own reply and pass their answer down. delivery:report stores completion without waking the parent, so the user can keep chatting; delivery:continue resumes dependent work; a question wakes you in either. Result reads consume pending notices. For dependent work use delivery:continue and end your turn; completion resumes you. Do not poll child_result. No nested delegation or automatic worktrees.",
+  pi.registerTool({ name: "shepherd_child_start", label: "start child", parameters: startParameters,
+    description: "Start an owned background Pi helper. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Progress stays in the child record. A child never reaches the user: when it is blocked it asks you (needsReply, in a notice and result with a questionID): answer it yourself if you can with shepherd_child_resume and that questionID, else ask the user in your own reply and pass their answer down. Result reads consume pending notices. For dependent work use delivery:continue and end your turn; completion resumes you. Do not poll child_result. No nested delegation or automatic worktrees.",
     async execute(id, p, signal, _update, ctx) { return result(await start(p, signal, ctx, undefined, id)); } });
   // The parent's answer to a child's question, from either tool with the questionID. A child that asked is told to finish
   // its turn, and its process ends when that turn settles, so an answer sent into the turn is lost with it. The answer
@@ -1358,7 +1412,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     async execute(_id, p) {
       if (p.id) pendingNotices.delete(p.id);
       // The list names the children that wait on an answer, so a question is never lost with its notice.
-      return result(p.id ? forParent(get(p.id)) : [...runs.values()].map((r) => ({ id: r.id, role: r.role, state: r.state, task: clip(r.task, 160),
+      return result(p.id ? forParent(get(p.id)) : [...runs.values()].map((r) => ({ id: r.id, name: r.name, role: r.role, state: r.state, task: clip(r.task, 160),
         ...(r.needsReply ? { needsReply: true, questionID: r.questionID, question: r.questionText } : {}) })));
     } });
   pi.registerTool({ name: "shepherd_child_cancel", label: "cancel child", ...later, description: "Clear queued work, abort, and terminate an owned child. Returns only after its process exits. Session history remains available for explicit continuation.",
@@ -1411,7 +1465,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       ...(asking.length ? { parentAction: `${asking.length === 1 ? "A child" : `${asking.length} children`} of this workflow asked you a question and wait on you, never on the user. Answer each yourself if you can with shepherd_child_resume {id, message, questionID}; ask the USER yourself, in one message, only what you cannot answer, and pass their answer down the same way.` } : {}) };
   };
   pi.registerTool({ name: "shepherd_workflow", label: "workflow", parameters: workflowSchema, ...later,
-    description: "Start a background JavaScript statement body with runs.run(key,{agent,task,...}), runs.all([{key,agent,task,...}]), runs.steer(key,message,{mode}), runs.status(key), runs.cancel(key). Await or return calls. Use ordinary sequencing/branching; no imports, process or filesystem API. This is restricted execution, NOT an OS sandbox. Children retain their normal tools. Default 30-minute deadline" + ". delivery:report records completion without waking the parent; continue resumes dependent work. A child that is blocked asks you instead of finishing: its runs.run result then has needsReply:true, questionID and question (its output is not a result); once the workflow ends, answer it yourself with shepherd_child_resume {id, message, questionID} or ask the user and pass their answer down. A question wakes you in either delivery. async:false waits; new user input interrupts action:wait without stopping children. status/wait/cancel target this parent's workflow id. No automatic retries, worktrees or scheduling.",
+    description: "Start a background JavaScript statement body with runs.run(key,{agent,name,task,...}), runs.all([{key,agent,name,task,...}]), runs.steer(key,message,{mode}), runs.status(key), runs.cancel(key). Await or return calls. Use ordinary sequencing/branching; no imports, process or filesystem API. This is restricted execution, NOT an OS sandbox. Children retain their normal tools. Default 30-minute deadline" + ". delivery:report records completion without waking the parent; continue resumes dependent work. A child that is blocked asks you instead of finishing: its runs.run result then has needsReply:true, questionID and question (its output is not a result); once the workflow ends, answer it yourself with shepherd_child_resume {id, message, questionID} or ask the user and pass their answer down. A question wakes you in either delivery. async:false waits; new user input interrupts action:wait without stopping children. status/wait/cancel target this parent's workflow id. No automatic retries, worktrees or scheduling.",
     async execute(id, params, signal, _update, ctx) { return runWorkflow(params, signal, ctx, undefined, id); } });
   async function runWorkflow(params, signal, ctx, onSlashComplete, toolCallID) {
       const p = checked(workflowSchema, params), action = p.action ?? "start";
@@ -1463,11 +1517,12 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
           finally { w.starts.delete(promise); }
         }
         const run = get(receipt.id); w.keys.set(key, run); admission.notify();
+        const note = receipt.note;
         guard();
         await run.closed;
         guard();
         // A child that asked ended its turn on a question for the parent: `output` is not its result, `question` is.
-        const value = { key, id: run.id, runId: run.id, agent: run.role, ok: run.state === "complete", state: run.state, output: run.output, error: run.error,
+        const value = { key, id: run.id, runId: run.id, agent: run.role, name: run.name, ...(note ? { note } : {}), ok: run.state === "complete", state: run.state, output: run.output, error: run.error,
           ...(run.needsReply ? { needsReply: true, questionID: run.questionID, question: run.questionText } : {}) };
         if (run.state !== "complete") throw Error(`Child ${key} ${run.state}: ${run.error || run.output}`);
         return value;

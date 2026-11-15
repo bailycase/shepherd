@@ -48,8 +48,11 @@ public func nativeRunPhase(_ run: ChildRun) -> NativeRunPhase {
 // MARK: Names and tags
 
 /// A native child's "role: task" label leads with a bounded task sentence, with its role
-/// secondary. Explicit workflow lane names and older role-only labels stay as reported.
+/// secondary. The label its parent gave it ("card-network-rules") leads instead, whatever its task.
+/// Explicit workflow lane names and older role-only labels stay as reported.
 public func nativeRunNames(_ run: ChildRun) -> (name: String, role: String?) {
+    let given = run.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    if !given.isEmpty { return (given, run.role.flatMap { $0.isEmpty || $0 == given ? nil : $0 }) }
     guard let role = run.role, !role.isEmpty else { return (run.label, nil) }
     if run.childIndex == nil, run.label.hasPrefix("\(role): ") {
         let task = run.task?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -59,8 +62,10 @@ public func nativeRunNames(_ run: ChildRun) -> (name: String, role: String?) {
     return (run.label, run.label == role ? nil : role)
 }
 
-/// The agent's name a run is shown by ("worker"), or its label when it has no role.
+/// The agent's name a run is shown by ("worker"), or its label when it has no role. A run the
+/// parent labelled is shown by that label.
 public func nativeRunAgentName(_ run: ChildRun) -> String {
+    if let name = run.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty { return name }
     if let role = run.role, !role.isEmpty { return role }
     return nativeRunNames(run).name
 }

@@ -204,6 +204,22 @@ struct SubagentTrayTests {
         #expect(record.finishedAt == 45 * 60_000.0)
     }
 
+    /// A label the parent gave a helper leads its row and the record's started line, with the profile after it, so
+    /// two workers on different lanes are told apart by what they were called.
+    @Test func aLabelledRunLeadsItsRowAndNamesTheRecord() throws {
+        var rules = Self.run("a", role: "worker", startedAt: 0)
+        rules.name = "card-network-rules"
+        var providers = Self.run("b", role: "worker", startedAt: 1)
+        providers.name = "provider-requirements"
+        let rows = NativeSubagentTray([rules, providers]).rows
+        #expect(rows.map(\.name) == ["card-network-rules", "provider-requirements"] && rows.map(\.role) == ["worker", "worker"])
+        #expect(rows[0].accessibilityLabel.hasPrefix("card-network-rules, worker, "))
+        #expect(try #require(NativeSubagentRecord([rules, providers])).started.meta == "card-network-rules · provider-requirements")
+        var same = Self.run("c", role: "worker")
+        same.name = "worker"
+        #expect(NativeSubagentTray([same]).rows.map(\.role) == [nil], "a label that is the profile says it once")
+    }
+
     @Test func aRecordCountsFailuresAndNamesAtMostSixRuns() throws {
         let runs = (0..<8).map { Self.run("lane\($0)", state: $0 == 0 ? "failed" : "complete", startedAt: Double($0), endedAt: 60_000) }
         let record = try #require(NativeSubagentRecord(runs))
