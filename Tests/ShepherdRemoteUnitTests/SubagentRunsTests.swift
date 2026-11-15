@@ -54,6 +54,20 @@ struct SubagentRunsTests {
         #expect(names.role == tag)
     }
 
+    @Test func aLabelFromTheParentLeadsInPlaceOfTheTaskAndItsProfileFollows() {
+        var run = Self.run("r", label: "worker: Check the card network rules", role: "worker")
+        run.task = "Check the card network rules"
+        run.name = "card-network-rules"
+        #expect(nativeRunNames(run).name == "card-network-rules" && nativeRunNames(run).role == "worker")
+        #expect(nativeRunSummary(run).name == "card-network-rules" && nativeRunSummary(run).goal == "Check the card network rules")
+        run.name = "  \n"
+        #expect(nativeRunNames(run).name == "Check the card network rules", "a blank label is no label")
+        var lane = Self.run("workflow", label: "frontend", role: "worker")
+        lane.childIndex = 1
+        lane.name = "frontend-lane"
+        #expect(nativeRunNames(lane).name == "frontend-lane")
+    }
+
     @Test func aTaskNameIsBoundedWithoutLosingTheGoalOrSplittingCharacters() {
         var run = Self.run("r", label: "worker: clipped label", role: "worker")
         run.task = String(repeating: "👩🏽‍💻", count: 80) + "\nKeep the entire goal."

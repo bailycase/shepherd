@@ -242,6 +242,24 @@ struct ActivityTests {
         #expect(burst.kind == .subagents && burst.label == "Started 2 subagents" && burst.meta == "reviewer · tests")
     }
 
+    /// The parent's label for a helper leads, the profile follows it in the line, and a refused start says why.
+    @Test func aLabelledSpawnNamesTheLabelAndARefusedOneSaysWhy() {
+        let spawn = call("shepherd_child_start", ["agent": "worker", "name": "card-network-rules", "task": "check"])
+        #expect(spawn.subagent == "card-network-rules" && spawn.detail == "card-network-rules · worker · check")
+        #expect(nativeActivityBurst([spawn, call("shepherd_child_start", ["role": "scout", "task": "run"])]).meta == "card-network-rules · scout")
+
+        let refused = nativeActivityBurst([call("shepherd_child_start", ["role": "reviewr", "task": "check"],
+            output: "Unknown agent \"reviewr\". Did you mean reviewer? Pass agent: \"reviewer\", and name: \"reviewr\" if it is only a label. Roles: scout, reviewer.", error: true)])
+        #expect(refused.state == .failed && refused.label == "Subagent failed to start")
+        #expect(refused.meta == "Unknown agent reviewr")
+        let model = nativeActivityBurst([call("shepherd_child_start", ["task": "x", "model": "gpt-x"],
+            output: "Model gpt-x isn't loaded. The model argument names gpt-x, but no provider of this Pi lists \"gpt-x\".", error: true)])
+        #expect(model.meta == "Model gpt-x isn't loaded")
+        let long = nativeActivityBurst([call("shepherd_child_start", ["task": "x"], output: String(repeating: "a", count: 200), error: true)])
+        #expect(long.meta.count <= 80)
+        #expect(nativeActivityBurst([call("shepherd_child_start", ["task": "x"], output: "", error: true)]).meta == "failed")
+    }
+
     // MARK: Design verbs
 
     private func boardWrite(_ path: String, created: Bool) -> NativeActivityCall {

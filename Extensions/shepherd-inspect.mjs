@@ -61,12 +61,12 @@ export function ansiStatusDot(run, colors) {
   return `\x1b[${color}m●\x1b[0m`;
 }
 export function identityLine(run, width) {
-  const id = shortID(run?.id ?? run?.runId ?? ""), metadata = cleanText(`${run?.role ?? "child"} · ${run?.model ?? ""}`);
+  const id = shortID(run?.id ?? run?.runId ?? ""), metadata = cleanText(`${run?.name ? `${run.name} · ` : ""}${run?.role ?? "child"} · ${run?.model ?? ""}`);
   return clipColumns(`${id} · ${clipColumns(metadata, width - displayWidth(id) - 3)}`, width);
 }
 export function composerLabel(run, mode = "steer", width = 80) {
   const action = repliesByResume(run) ? `reply · resumes ${shortID(run.id ?? run.runId)}` : `${mode} · ${shortID(run.id ?? run.runId)}`;
-  return clipColumns(`${action} · to ${run.role ?? "child"}`, width);
+  return clipColumns(`${action} · to ${run.name ?? run.role ?? "child"}`, width);
 }
 export function stopScope(run) {
   return run?.workflowId ? `owned by workflow ${run.workflowId}\nStopping this child may cancel workflow siblings.` : "Stops this child's owned process tree. Saved transcript remains.";

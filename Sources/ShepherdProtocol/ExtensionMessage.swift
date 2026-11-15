@@ -1131,6 +1131,9 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
 
     /// Agent profile name ("worker").
     public var role: String?
+    /// The label the parent gave this helper ("card-network-rules"); nil from an older publisher
+    /// or when none was given.
+    public var name: String?
     /// "provider/id".
     public var model: String?
     public var thinking: String?
@@ -1188,6 +1191,7 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
         attentionText: String? = nil,
         asyncDir: String? = nil,
         role: String? = nil,
+        name: String? = nil,
         model: String? = nil,
         thinking: String? = nil,
         context: String? = nil,
@@ -1224,6 +1228,7 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
         self.attentionText = attentionText
         self.asyncDir = asyncDir
         self.role = role
+        self.name = name
         self.model = model
         self.thinking = thinking
         self.context = context
