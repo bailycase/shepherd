@@ -60,6 +60,9 @@ public struct NativeProse: Equatable, Sendable {
         return count
     }
 
+    /// A low estimate in points of how tall every chunk draws (`NativeRowHeight`).
+    public var height: Int { chunks.reduce(0) { $0 + $1.height } }
+
     /// What the views of every chunk hold (`NativeMountedCost`).
     public var cost: Int { chunks.reduce(0) { $0 + $1.cost } }
 
@@ -273,12 +276,15 @@ public struct NativeProseChunk: Equatable, Identifiable, Sendable {
         let weight: Int
         /// What the views of its blocks hold (`NativeMountedCost`), worked out once, in the parse.
         let cost: Int
+        /// A low estimate in points of how tall its blocks draw (`NativeRowHeight`), with the cost.
+        let height: Int
 
         init(parts: [NativeProsePart], weight: Int) {
             self.parts = parts
             self.blocks = parts.map(\.block)
             self.weight = weight
             self.cost = self.blocks.reduce(0) { $0 + NativeMountedCost.block($1) }
+            self.height = self.blocks.reduce(0) { $0 + NativeRowHeight.block($1) }
         }
     }
 
@@ -296,6 +302,8 @@ public struct NativeProseChunk: Equatable, Identifiable, Sendable {
     public var weight: Int { storage.weight }
     /// What the views of its blocks hold (`NativeMountedCost`).
     public var cost: Int { storage.cost }
+    /// A low estimate in points of how tall its blocks draw (`NativeRowHeight`).
+    public var height: Int { storage.height }
     /// The first part carries on a list the chunk before it ended in.
     public var continuesList: Bool { storage.parts.first?.continuation ?? false }
 

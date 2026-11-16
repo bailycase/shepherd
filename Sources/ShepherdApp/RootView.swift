@@ -12,6 +12,9 @@ struct RootView: View {
     @Environment(\.colorScheme) private var systemColorScheme
     @Environment(\.openWindow) private var openWindow
     @State private var liveSidebarWidth: Double?
+    /// The window is mid live resize (its drag, not a frame set in code): threads lay out
+    /// only the rows that cover them while it lasts (`ThreadView.eagerCount`).
+    @State private var windowLiveResizing = false
     @State private var windowWidth = AppLayout.windowDefaultWidth
     /// In full screen the window controls are gone, so nothing needs to clear them.
     @State private var isFullScreen = false
@@ -139,6 +142,7 @@ struct RootView: View {
         .environment(\.hookPresenter, HookPresenter(model: vm))
         .environment(\.threadReaderPins, vm.threadReaderPins)
         .environment(\.userActivity, vm.userActivity)
+        .environment(\.liveResizing, windowLiveResizing)
         .environment(\.shDiagramPresentation, vm.diagramPresentation)
         .frame(minWidth: AppLayout.windowMinWidth, minHeight: AppLayout.windowMinHeight)
         // Only the width the shell's layout can tell apart: past the widest window that still
@@ -157,6 +161,12 @@ struct RootView: View {
         .onChange(of: systemColorScheme) { vm.systemAppearanceChanged(systemColorScheme) }
         // The overlaid sidebar is for picking: it closes once something is picked.
         .modifier(SidebarOverlayDismissal(vm: vm))
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willStartLiveResizeNotification)) { note in
+            if let window = vm.workspaceColumn.window, note.object as? NSWindow === window { windowLiveResizing = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEndLiveResizeNotification)) { note in
+            if let window = vm.workspaceColumn.window, note.object as? NSWindow === window { windowLiveResizing = false }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { _ in isFullScreen = true }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { _ in isFullScreen = false }
         .modifier(AppDialogs(vm: vm))

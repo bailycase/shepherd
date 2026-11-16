@@ -19,6 +19,9 @@ extension EnvironmentValues {
     @Entry var threadReaderPins: ThreadReaderPins? = nil
     /// Whether the person is typing or scrolling, which a restore of a thread's rows waits out (`ThreadRestore`).
     @Entry var userActivity: UserActivity? = nil
+    /// The window is mid live resize: the thread lays out only the rows that cover it, and
+    /// takes its whole eager tail back when the drag ends (`eagerCount`).
+    @Entry var liveResizing: Bool = false
 }
 
 /// An agent's thread (SHThread board): an 820pt column of turns in a scroll view that follows
@@ -111,6 +114,16 @@ struct ThreadView: View {
     /// Composer height and responsive gutters are observed by their consumers, not the
     /// transcript builder. Resizing or a growing composer must not rebuild every row.
     @State private var composerInset = ComposerInset()
+    /// Points of estimated row height the eager tail covers (`AppLayout.eagerCoverHeight`):
+    /// bucketed, so a height drag rebuilds the transcript a few times, not at every point.
+    @State private var eagerCover = AppLayout.eagerCoverHeight(forViewport: AppLayout.windowDefaultHeight)
+    /// The eager tail's size while it grows back after a live resize (`returnEagerTail`):
+    /// rebuilding a heavy thread's rows in one update would stall the release of the drag.
+    @State private var eagerReturning: Int?
+    /// Whether the last pass drew with a live resize running, kept across renders in a
+    /// reference: the first pass after a drag must keep the small tail, before `onChange`
+    /// has had its say and `eagerReturning` is set.
+    @State private var liveResizeGate = LiveResizeGate()
     /// The user turn the last ⌥⌘↑/↓ landed on.
     @State private var jumpedTurn: String?
     @State private var arrivals = ThreadArrivals()
@@ -119,6 +132,7 @@ struct ThreadView: View {
     @State private var shownSignpost = ThreadShownSignpost()
     /// Bumped when another view showing this thread hands the store's loop back to this one (`ThreadReaderPins`).
     @State private var loopRun = 0
+    @Environment(\.liveResizing) private var liveResizing
     @Environment(\.designCommentCards) private var commentCards
     @Environment(\.shUserBubbleMetrics) private var bubbleMetrics
     /// Dispatches: what this thread sent and where it came from (FleetDispatch, FleetRemote).
@@ -138,12 +152,13 @@ struct ThreadView: View {
         let dormant = kept != nil
         // Shown again, such a thread draws the rows it kept at once (they never went), and the rest after that frame, a step at a time
         // from the newest (`ThreadRestore`): the eager tail grows over the lazy stack's rows, which the second frame brings back.
-        let restored = restore.plan(active: active, hiddenKept: kept, rows: rows, eagerRows: Self.eagerRows) { [store] drawn in
-            store.restoreCost(drawn: drawn, upTo: Self.eagerRows)
+        let eagerCount = eagerCount(origins)
+        let restored = restore.plan(active: active, hiddenKept: kept, rows: rows, eagerRows: eagerCount) { [store] drawn in
+            store.restoreCost(drawn: drawn, upTo: eagerCount)
         }
         let restoreStepping = restore.restoring
         let drawn = rows.suffix(kept ?? restored.map { $0.history ? rows.count : $0.eager } ?? rows.count)
-        let eager = drawn.suffix(restored?.eager ?? Self.eagerRows)
+        let eager = drawn.suffix(restored?.eager ?? eagerCount)
         let history = drawn.prefix(drawn.count - eager.count)
         // A Project's accepted messages the transcript has not taken in: waiting ones go to the composer's Up next, outcomes stay here.
         let held = projectSend?.held() ?? []
@@ -172,7 +187,7 @@ struct ThreadView: View {
                 ScrollView {
                     // Never animated as a whole (rows, their text, and the tail anchor change on
                     // every streamed chunk): turns that arrive make their own entrance.
-                    // The tail is laid out for real (`eagerRows`); only the history above it is
+                    // The tail is laid out for real (`eagerCount`); only the history above it is
                     // lazy, so no row at the end of the thread is a guess the scroll view can be
                     // left past (the blank thread). A giant reply (`NativeProse.isGiant`) keeps its
                     // tail real and the chunks before it lazy (`SHProseChunks`); any other is real.
@@ -402,6 +417,7 @@ struct ThreadView: View {
         .background { ThreadInputBackground(input: input) }
         .background(Color.sh.bgWindow)
         .onGeometryChange(for: CGFloat.self) { AppLayout.threadGutter(width: $0.size.width) } action: { [composerInset] in composerInset.gutter = $0 }
+        .onGeometryChange(for: Int.self) { AppLayout.eagerCoverHeight(forViewport: $0.size.height) } action: { eagerCover = $0 }
         .onHover { hovering = $0 }
         .onDisappear {
             historyAnchor.cancel()
@@ -422,6 +438,17 @@ struct ThreadView: View {
         // restore is under way). The lazy stack does not wait for that: until it is back they cannot reach the older rows.
         .task(id: restoreStepping && active && (follower.sticky || restore.awaitsHistory)) {
             if restoreStepping && active && (follower.sticky || restore.awaitsHistory) { await restoreRows() }
+        }
+        // The drag over, the eager tail grows back a step at a time (`returnEagerTail`).
+        .onChange(of: liveResizing) { _, resizing in
+            guard !resizing else { return }
+            liveResizeGate.wasLive = false
+            guard active else { return }
+            let live = liveEagerCount(userOrigins)
+            if live < Self.eagerRows { eagerReturning = live }
+        }
+        .task(id: eagerReturning != nil) {
+            if eagerReturning != nil { await returnEagerTail() }
         }
         .task(id: LoopKey(active: active, run: loopRun)) {
             guard !Task.isCancelled else { return }
@@ -454,6 +481,37 @@ struct ThreadView: View {
     /// The rows the thread draws: its list, less a Project's user turns made only of the runtime's wake-ups.
     private func listedRows(_ origins: ProjectUserOrigins) -> [NativeThreadRow] {
         origins.runtime.isEmpty ? store.listRows : store.listRows.filter { !($0.isUser && origins.hides($0.turn)) }
+    }
+
+    /// How many rows at the end of the thread are laid out for real. While the window is
+    /// being live-resized, only enough of them, by the store's low height estimate, to cover
+    /// the window (`eagerCover`): every other row stays in the lazy stack, out of each resize
+    /// step's layout pass, and the full tail is laid out again when the drag ends. The full
+    /// tail is what keeps the scroll view's bottom anchor honest when rows land, so a thread
+    /// at rest always has it.
+    private func eagerCount(_ origins: ProjectUserOrigins) -> Int {
+        // A hidden thread's frame is frozen through the drag; moving its boundary would only rebuild rows.
+        guard active else { liveResizeGate.wasLive = liveResizing; return Self.eagerRows }
+        if liveResizing { liveResizeGate.wasLive = true; return liveEagerCount(origins) }
+        if liveResizeGate.wasLive, eagerReturning == nil { return liveEagerCount(origins) }
+        return eagerReturning ?? Self.eagerRows
+    }
+
+    /// The tail that covers the window while it is being live-resized (`eagerCount`).
+    private func liveEagerCount(_ origins: ProjectUserOrigins) -> Int {
+        store.eagerRowCount(coveringHeight: eagerCover, maxRows: Self.eagerRows) { $0.isUser && origins.hides($0.turn) }
+    }
+
+    /// Grows the eager tail back to full size after a live resize, a restore-sized step of
+    /// rows at a time (`NativeThreadStore.restoreStep`), so no one update rebuilds them all.
+    private func returnEagerTail() async {
+        while let current = eagerReturning, !Task.isCancelled {
+            guard active, !liveResizing else { eagerReturning = nil; return }
+            let more = store.restoreStep(drawn: current, bytes: AppLayout.restoreStepBytes)
+            if more == 0 || current + more >= Self.eagerRows { eagerReturning = nil; return }
+            eagerReturning = current + more
+            try? await Task.sleep(for: AppLayout.restorePause)
+        }
     }
 
     /// The lazy stack of the rows older than the eager tail, drawn again only when what its rows are built from changes
@@ -508,14 +566,14 @@ struct ThreadView: View {
                 follower.jumpToLatest()
                 tailGuard.land()
             }
-            _ = restore.advance(rows: listedRows(userOrigins), eagerRows: Self.eagerRows) { _ in 0 }
+            _ = restore.advance(rows: listedRows(userOrigins), eagerRows: eagerCount(userOrigins)) { _ in 0 }
         }
         while !Task.isCancelled {
             try? await Task.sleep(for: waiting() ? AppLayout.restoreRetry : AppLayout.restorePause)
             guard !Task.isCancelled else { return }
             if waiting() { continue }
             let rows = listedRows(userOrigins)
-            let more = restore.advance(rows: rows, eagerRows: Self.eagerRows) { [store] drawn in
+            let more = restore.advance(rows: rows, eagerRows: eagerCount(userOrigins)) { [store] drawn in
                 store.restoreStep(drawn: drawn, bytes: AppLayout.restoreStepBytes)
             }
             if !more { return }
@@ -586,8 +644,9 @@ struct ThreadView: View {
         return FleetFinishedDay.dayTitle(Date(timeIntervalSince1970: at / 1000), now: Date())
     }
 
-    /// How many rows at the end of the thread are laid out for real rather than lazily: more
-    /// than any window shows, few enough that a streamed chunk's relayout stays cheap.
+    /// How many rows at the end of the thread are laid out for real rather than lazily at
+    /// rest: more than any window shows, few enough that a streamed chunk's relayout stays
+    /// cheap. While the window live-resizes the tail is only as many as cover it (`eagerCount`).
     static let eagerRows = 30
 
     /// One view per row whatever it holds, so the lazy stack builds only the rows on screen: a
@@ -1309,6 +1368,13 @@ struct ThreadTailAnchor: ViewModifier {
                 .defaultScrollAnchor(sticky ? nil : .top, for: .sizeChanges)
         }
     }
+}
+
+/// Whether the thread's last pass drew with a live resize running (`ThreadView.eagerCount`).
+/// A reference, so keeping it current in a render redraws nothing.
+@MainActor
+final class LiveResizeGate {
+    var wasLive = false
 }
 
 /// Measured insets, read by the composer and padding rather than the transcript builder.

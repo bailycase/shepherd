@@ -18,6 +18,7 @@ final class FakeThread {
         var active = true
         var motionPaused = false
         var focused = false
+        var liveResizing = false
         /// Whether the window can be seen (`mainWindowVisible`): false while it is covered, minimized, hidden or on another Space.
         var windowVisible = true
     }
@@ -54,6 +55,7 @@ final class FakeThread {
             }
             // As the workspace hides a layout it keeps mounted.
             .opacity(visibility.active ? 1 : 0)
+            .environment(\.liveResizing, visibility.liveResizing)
             .environment(\.shMotionPaused, visibility.motionPaused)
             .environment(\.mainWindowVisible, visibility.windowVisible)
             .environment(\.threadRestDelay, .zero)
@@ -89,13 +91,14 @@ final class FakeThread {
          store: NativeThreadStore = NativeThreadStore(), size: CGSize = CGSize(width: 900, height: 800), dark: Bool = true,
          header: Bool = false, focused: Bool = false, reduceMotion: Bool? = nil, designCards: DesignCommentCards? = nil,
          projectCards: ProjectActionCards? = nil, subagentTray: Bool = false, windowVisible: Bool = true, deckHosting: Bool = false,
-         tailGuard: ThreadTailGuard? = nil) {
+         tailGuard: ThreadTailGuard? = nil, liveResizing: Bool = false) {
         self.snapshot = snapshot
         self.history = history
         self.starting = starting
         self.store = store
         visibility.focused = focused
         visibility.windowVisible = windowVisible
+        visibility.liveResizing = liveResizing
         window = OffscreenWindow(size: size, dark: dark, deckHosting: deckHosting)
         let request: NativeThreadStore.Request = { [weak self] value in
             guard let self else { return .failure(code: "gone", message: "harness released") }
