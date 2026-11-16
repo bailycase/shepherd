@@ -131,7 +131,7 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
 public final class DesignStore: @unchecked Sendable {
     public let directory: URL
     /// A design holds at most this many files.
-    public static let maxFiles = 512
+    public static let maxFiles = DesignImport.maxFiles
     /// How many checkpoints, and how many bytes of them, a design keeps (tests lower them).
     var checkpointCaps = (count: DesignCheckpointName.maxPerDesign, bytes: DesignCheckpointName.maxBytesPerDesign)
 
