@@ -32,7 +32,8 @@
     (`PiHome.keychainCertificatesFile`, private CAs the Mac's keychain trusts — an internal proxy
     or MCP server's root) isn't empty, `NODE_EXTRA_CA_CERTS` pointing at it (the sign-in bridge,
     which runs the engine's node directly, falls back the same way).
-  - With the matching extension on: `SHEPHERD_EXT_PANES`, `SHEPHERD_EXT_BROWSER` (the installed
+  - With the matching extension on: `SHEPHERD_EXT_PANES` with `SHEPHERD_SKILL_DIR` (the built-in skill on working in
+    Shepherd, which the app writes to the support directory's `shepherd-skill/`), `SHEPHERD_EXT_BROWSER` (the installed
     `shepherd-browser.ts`, for Settings ▸ Pi ▸ Browser tools; never in a design's agent),
     `SHEPHERD_NATIVE_CHILDREN`,
     `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`. The retired `SHEPHERD_CHILD_SCOPE` is

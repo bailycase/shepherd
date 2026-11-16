@@ -4,7 +4,9 @@
 // other agent threads and automations. The agent's own thread is not a terminal: it is never
 // listed, and nothing here can type into it or close it. Wire fields keep their older names
 // (panes, paneID). Inert unless Shepherd's env is present.
+import * as fs from "node:fs";
 import * as net from "node:net";
+import * as path from "node:path";
 import { textLines } from "./shepherd-lines.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -89,9 +91,9 @@ interface TerminalInfo {
 }
 
 const VISUAL_GUIDELINE =
-  "To show a diagram, chart or small widget, write a self-contained HTML page in a ```html-render block (or use " +
-  "```mermaid); the thread renders it live. No network or links; color with var(--bg), var(--text), var(--line) and " +
-  "var(--accent) so it reads in light and dark.";
+  "When an answer explains a flow, loop, architecture, state machine or before/after, draw it rather than describe it: " +
+  "a ```mermaid block, or a self-contained HTML page in a ```html-render block, which the thread renders live. No network " +
+  "or links; color with var(--bg), var(--text), var(--line) and var(--accent) so it reads in light and dark.";
 
 // Unlike agent_*, a thread may use fleet_dispatch without being asked; the host refuses unless Fleet's setting is on.
 const FLEET_GUIDELINE =
@@ -1233,6 +1235,18 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     } catch {
       // A rule is never worth a failed turn.
     }
+  });
+
+  // The built-in skill on how to work in Shepherd (`PanesExtension.installedSkillDirectory`): one line in the skills list,
+  // read when a question is about Shepherd itself.
+  const skillDirectory = process.env.SHEPHERD_SKILL_DIR ?? "";
+  pi.on("resources_discover", () => {
+    try {
+      if (skillDirectory && fs.existsSync(path.join(skillDirectory, "SKILL.md"))) return { skillPaths: [skillDirectory] };
+    } catch {
+      // No skill is better than a failed start.
+    }
+    return undefined;
   });
 
   // Connect eagerly so pushes can reach this agent before it ever uses a

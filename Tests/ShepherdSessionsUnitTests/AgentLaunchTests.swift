@@ -31,6 +31,9 @@ struct AgentLaunchTests {
         #expect(all["SHEPHERD_EXT_BROWSER"] != nil)
         #expect(all["SHEPHERD_EXT_CONTEXT"] != nil)
         #expect(all["SHEPHERD_DEFER_TOOLS"] != nil)
+        // A thread gets the built-in skill on how to work in Shepherd, installed where pi looks for it.
+        let skill = try #require(all["SHEPHERD_SKILL_DIR"])
+        #expect(FileManager.default.fileExists(atPath: skill + "/SKILL.md"))
         var off = AgentLaunchSettings()
         off.panes = false; off.browser = false; off.trimToolOutput = false; off.deferTools = false
         let none = try command(agent(), off).env
@@ -38,12 +41,14 @@ struct AgentLaunchTests {
         #expect(none["SHEPHERD_EXT_BROWSER"] == nil)
         #expect(none["SHEPHERD_EXT_CONTEXT"] == nil)
         #expect(none["SHEPHERD_DEFER_TOOLS"] == nil)
+        #expect(none["SHEPHERD_SKILL_DIR"] == nil)
     }
 
     @Test func aDesignsAgentGetsNeitherPanesNorBrowser() throws {
         let env = try command(agent(design: DesignID())).env
         #expect(env["SHEPHERD_EXT_PANES"] == nil)
         #expect(env["SHEPHERD_EXT_BROWSER"] == nil)
+        #expect(env["SHEPHERD_SKILL_DIR"] == nil)
         #expect(env["SHEPHERD_DESIGN_ID"] != nil)
     }
 
