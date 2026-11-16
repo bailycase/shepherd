@@ -159,6 +159,8 @@ struct ComposerPresentationTests {
     @Test func aQueryFiltersByAnyPartOfTheID() {
         let sections = NativeModelChoices.sections(["anthropic/claude-opus", "openai/gpt-5", "openai/o3"], current: nil, query: " GPT ")
         #expect(sections.flatMap(\.models).map(\.id) == ["openai/gpt-5"])
+        let words = NativeModelChoices.sections(["anthropic/claude-opus", "openai/gpt-5"], current: nil, query: "claude op")
+        #expect(words.flatMap(\.models).map(\.id) == ["anthropic/claude-opus"], "words typed with spaces match the hyphenated id")
         #expect(NativeModelChoices.shortName("model") == "model")
         #expect(NativeModelChoices.provider("model") == "Other")
     }

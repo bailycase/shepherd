@@ -36,6 +36,28 @@ struct ModelSettingsComponentTests {
         #expect(SHModelSettingsStops(models: 1, thinking: 2, speeds: 2).moved(from, by: step) == to)
     }
 
+    // MARK: Search
+
+    private static let searchable = ["anthropic/claude-opus-4-5", "acme/muse-wonder-full-1.0", "openai/gpt-5"]
+        .map { SHModelOption(id: $0, title: $0) }
+
+    /// Ids join words with hyphens where people type spaces, so each word typed matches
+    /// somewhere in the id, in any order, ignoring case.
+    @Test(arguments: [("muse won", ["acme/muse-wonder-full-1.0"]), ("  muse   won ", ["acme/muse-wonder-full-1.0"]),
+                      ("CLAUDE opus", ["anthropic/claude-opus-4-5"]), ("opus anthropic", ["anthropic/claude-opus-4-5"]),
+                      ("muse-won", ["acme/muse-wonder-full-1.0"]), ("claude gpt", []),
+                      ("", ["anthropic/claude-opus-4-5", "acme/muse-wonder-full-1.0", "openai/gpt-5"])])
+    func aSearchMatchesEachWordTypedSomewhereInTheId(query: String, ids: [String]) {
+        #expect(SHModelSearch.results(query: query, in: Self.searchable, current: nil).map(\.id) == ids)
+    }
+
+    /// The current model keeps its check in the results, whichever row it is.
+    @Test func aSearchMarksTheCurrentModel() {
+        let results = SHModelSearch.results(query: "muse won", in: Self.searchable, current: "acme/muse-wonder-full-1.0")
+        #expect(results.map(\.isCurrent) == [true])
+        #expect(SHModelSearch.results(query: "muse won", in: Self.searchable, current: "openai/gpt-5").map(\.isCurrent) == [false])
+    }
+
     // MARK: Segments
 
     /// Up to four segments share a row; more wrap onto balanced rows, so no title is cut.

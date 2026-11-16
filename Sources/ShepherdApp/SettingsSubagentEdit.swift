@@ -324,11 +324,15 @@ struct SubagentModelField: View {
     }
 
     static func sections(choices: [String], query: String, current: String?) -> [SHModelSection] {
-        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
-        let matches = q.isEmpty ? choices : choices.filter { $0.lowercased().contains(q) }
+        // Each word typed must appear in the id: ids join words with hyphens, people type spaces.
+        let words = query.lowercased().split(separator: " ").map(String.init)
+        let matches = choices.filter { choice in
+            let key = choice.lowercased()
+            return words.allSatisfy { key.contains($0) }
+        }
         let options = matches.map { SHModelOption(id: $0, title: $0, isCurrent: $0 == current) }
         let inherit = SHModelOption(id: "", title: Self.inherit, isCurrent: current == nil)
-        return [SHModelSection(title: "Models", options: (q.isEmpty ? [inherit] : []) + options)]
+        return [SHModelSection(title: "Models", options: (words.isEmpty ? [inherit] : []) + options)]
     }
 }
 

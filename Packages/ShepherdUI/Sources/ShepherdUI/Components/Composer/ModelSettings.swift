@@ -104,6 +104,23 @@ struct SHModelSettingsStops: Equatable {
   }
 }
 
+/// What a search in the popover finds: every word typed appears somewhere in the model's id,
+/// ignoring case. Ids join their words with hyphens ("muse-wonder-full-1.0") where people type
+/// spaces ("muse won"), so the words match one by one instead of the search as one literal
+/// string. A blank search matches everything (the popover shows its quick choices instead).
+enum SHModelSearch {
+  static func results(query: String, in models: [SHModelOption], current: String?) -> [SHModelOption] {
+    let words = query.lowercased().split(separator: " ").map(String.init)
+    return models.compactMap { model in
+      let key = model.id.lowercased()
+      guard words.allSatisfy({ key.contains($0) }) else { return nil }
+      var result = model
+      result.isCurrent = model.id == current
+      return result
+    }
+  }
+}
+
 /// SHComposer's one popover (SHModelSettings): the model, the thinking level and the speed. The
 /// button that opens it reads model · thinking, plus a bolt when speed is Fast.
 ///
@@ -165,14 +182,7 @@ public struct SHModelSettings: View {
   }
 
   private func search() {
-    let key = query.trimmingCharacters(in: .whitespaces).lowercased()
-    let current = models.first(where: \.isCurrent)?.id
-    matches = query.isEmpty ? [] : searchModels.compactMap { model in
-      guard model.id.lowercased().contains(key) else { return nil }
-      var result = model
-      result.isCurrent = model.id == current
-      return result
-    }
+    matches = SHModelSearch.results(query: query, in: searchModels, current: models.first(where: \.isCurrent)?.id)
     selection = 0
   }
 
