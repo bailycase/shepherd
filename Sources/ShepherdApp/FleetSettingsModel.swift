@@ -293,10 +293,10 @@ final class FleetSettingsModel {
     }
 
     /// A token for this Mac's app to reach the other Macs of the fleet with, made by the host; nil while it is away.
-    func enrollApp(name: String) async -> String? {
+    func enrollApp(name: String) async -> RemoteHostStore.AppEnrollment? {
         guard let client = try? host(), let result = try? await client.fleetAction(.enrollApp(name: name)) else { return nil }
         apply(result)
-        return result.appToken
+        return result.appToken.map { RemoteHostStore.AppEnrollment(deviceID: result.appDevice, token: $0) }
     }
 
     // MARK: Adding: another Mac's code is entered here

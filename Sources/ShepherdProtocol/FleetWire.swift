@@ -381,13 +381,16 @@ public struct FleetResult: Codable, Hashable, Sendable {
     public var deviceCode: Join?
     /// The token this Mac's app was given, answering `FleetAction.enrollApp`. Over the local socket only.
     public var appToken: String?
+    /// The device that token is, with `appToken`: the app checks it is still in the fleet before it reuses the token.
+    public var appDevice: UUID?
     /// The dispatch `FleetAction.sendThread`, `retryDispatch` or `cancelDispatch` made or changed, with its task and result
     /// text left out like the log's (`FleetDispatchRecord.summary`).
     public var dispatch: FleetDispatchRecord?
 
     public init(snapshot: FleetSnapshot, join: Join? = nil, paired: FleetPeerStatus? = nil,
-                deviceCode: Join? = nil, appToken: String? = nil, dispatch: FleetDispatchRecord? = nil) {
+                deviceCode: Join? = nil, appToken: String? = nil, appDevice: UUID? = nil, dispatch: FleetDispatchRecord? = nil) {
         self.dispatch = dispatch
+        self.appDevice = appDevice
         self.deviceCode = deviceCode
         self.appToken = appToken
         self.snapshot = snapshot

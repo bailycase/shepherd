@@ -1045,7 +1045,7 @@ final class FleetService: @unchecked Sendable {
                 guard case .fleetDevices = answer else { return reply(answer) }
                 self?.queue.async {
                     guard let self else { return }
-                    reply(.fleetResult(id: id, result: FleetResult(snapshot: self.snapshot(), appToken: token)))
+                    reply(.fleetResult(id: id, result: FleetResult(snapshot: self.snapshot(), appToken: token, appDevice: app.deviceID)))
                 }
             }
         case .sendThread(let thread):

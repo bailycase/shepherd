@@ -291,6 +291,19 @@ final class RemoteHostStore {
         set { defaults.set(newValue.map(\.uuidString).sorted(), forKey: Self.fleetMembersKey) }
     }
 
+    /// The device the host made this app (`FleetAction.enrollApp`) and its token.
+    struct AppEnrollment: Codable, Equatable {
+        /// Nil from a host older than `FleetResult.appDevice`: such an enrollment is used but not saved.
+        var deviceID: UUID?
+        var token: String
+    }
+    static let appEnrollmentKey = "shepherd.remote.hosts.appEnrollment"
+    /// Saved, so a Mac out of reach is retried on the same token, after a relaunch too, rather than the app enrolling as a new device each try.
+    var appEnrollment: AppEnrollment? {
+        get { defaults.data(forKey: Self.appEnrollmentKey).flatMap { try? JSONDecoder().decode(AppEnrollment.self, from: $0) } }
+        set { defaults.set(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: Self.appEnrollmentKey) }
+    }
+
     @ObservationIgnored var onProjectionChanged: (() -> Void)?
     /// Whether the app leaves the next workspace the background host on this Mac pushes unadopted when a newer
     /// one is already queued behind it (`StateAdoption`). Asked before the connection holds the push: a push it

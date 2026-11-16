@@ -41,6 +41,35 @@ struct FleetConnectionsFlowTests {
         try await FleetSettingsFlowTests.waitFor("the connection to go") { await a.model.refresh(); return store.pairedConnections.isEmpty }
     }
 
+    /// A Mac the app can't reach is retried on the token it has: the fleet gains one device for this app, not one per try or launch,
+    /// and a new one only once that device is revoked.
+    @Test func aMacTheAppCannotReachIsRetriedWithoutEnrollingTheAppAgain() async throws {
+        let a = try await FleetApp("MacBook Pro")
+        defer { a.stop() }
+        let store = RemoteHostStore(defaults: ScratchDefaults())
+        // Port 1 on loopback refuses at once: a Mac that is off.
+        let away = FleetPeerStatus(hostID: UUID(), name: "Mac mini", host: "127.0.0.1", port: 1, pairedAt: 0, link: .offline)
+        let snapshot = FleetSnapshot(enabled: true, peers: [away])
+        func appDevices() async -> [FleetDeviceStatus] {
+            await a.model.refresh()
+            return (a.model.snapshot.devices?.devices ?? []).filter { $0.kind == .macApp }
+        }
+
+        let connections = FleetConnections(hosts: store, fleet: a.model)
+        await connections.sync(snapshot)
+        await connections.sync(snapshot)
+        // A relaunch: a new FleetConnections over the same saved store.
+        await FleetConnections(hosts: store, fleet: a.model).sync(snapshot)
+        let first = try #require(await appDevices().first)
+        #expect(await appDevices().count == 1)
+        #expect(store.pairedConnections.isEmpty)
+
+        await a.model.revokeDevice(first.deviceID)
+        await connections.sync(snapshot)
+        let now = await appDevices()
+        #expect(now.count == 1 && now.first?.deviceID != first.deviceID, "a revoked device's token is never used again")
+    }
+
     @Test func aMacTheAppWasAClientOfIsARowToAddToTheFleetAndPairsWithItsCode() async throws {
         let a = try await FleetApp("MacBook Pro"), b = try await FleetApp("Mac mini", serving: true)
         defer { a.stop(); b.stop() }

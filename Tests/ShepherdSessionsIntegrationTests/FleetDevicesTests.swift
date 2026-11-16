@@ -313,6 +313,7 @@ struct FleetDevicesIntegrationTests {
         let result = try await a.local.fleetAction(.enrollApp(name: "MacBook Pro"))
         let token = try #require(result.appToken)
         #expect(result.snapshot.devices?.devices.first?.kind == .macApp)
+        #expect(result.appDevice != nil && result.appDevice == result.snapshot.devices?.devices.first?.deviceID)
         // Every Mac in the fleet accepts it, as a client.
         let app = RemoteHostClient()
         defer { app.disconnect() }
