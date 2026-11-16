@@ -35,7 +35,7 @@ struct DesignCanvasSafetyTests {
         #expect(t.files(h, design).keys.allSatisfy { !$0.hasPrefix("ds/acme/") })
         #expect(try await h.server.designSystems.read("acme").summary.namespace == "acme")
         let after = try await h.server.designSnapshot(design.id)
-        #expect(after.usage?.files == t.files(h, design).count && after.usage?.fileLimit == 512)
+        #expect(after.usage?.files == t.files(h, design).count && after.usage?.fileLimit == DesignStore.maxFiles)
     }
 
     @Test func aCanvasCommitFailureKeepsDeletedBoardsVersionsAndSystemCopies() async throws {
@@ -126,7 +126,7 @@ struct DesignCanvasSafetyTests {
         let path = try DesignPath.validate("C.dc.html")
         do {
             _ = try await h.server.writeDesignBoards(design.id, sources: [path: DesignToolsStoreTests.chips()])
-            Issue.record("a 513th project file was written")
+            Issue.record("a project file past the limit was written")
         } catch { #expect(error as? DesignStoreError == .tooManyFiles) }
         #expect(!FileManager.default.fileExists(atPath: project.appendingPathComponent(path.rawValue).path))
     }
