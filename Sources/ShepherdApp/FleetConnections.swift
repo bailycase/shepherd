@@ -37,6 +37,18 @@ final class FleetConnections {
         }
     }
 
+    /// The token the host enrolled this app with. The host makes a new device on every `enrollApp`, so the app enrolls again only
+    /// when it has none saved or its device was revoked: a Mac it can't reach yet is retried on the same token, not a new device each try.
+    private func appToken() async -> String? {
+        if let saved = hosts.appEnrollment, let device = saved.deviceID,
+           fleet.snapshot.devices?.devices.contains(where: { $0.deviceID == device }) ?? true {
+            return saved.token
+        }
+        guard let enrolled = await fleet.enrollApp(name: deviceName) else { return nil }
+        if enrolled.deviceID != nil { hosts.appEnrollment = enrolled }
+        return enrolled.token
+    }
+
     /// Adds a connection for each Mac of the fleet that has none, follows the address and name of those that have one, and removes
     /// those whose Mac left the fleet. A Mac that doesn't answer with the token yet (it hasn't taken the device in) is tried again.
     func sync(_ snapshot: FleetSnapshot) async {
@@ -65,7 +77,7 @@ final class FleetConnections {
                 }
                 continue
             }
-            if token == nil { token = await fleet.enrollApp(name: deviceName) }
+            if token == nil { token = await appToken() }
             guard let token else { owed = true; continue }
             let probe = RemoteHostClient()
             defer { probe.disconnect() }
