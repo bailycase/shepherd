@@ -489,10 +489,13 @@ public final class NativeThreadStore {
     /// The images pi saved in this thread, fetched on demand from the host (`NativeThreadImages`). Not observed: a view
     /// that wants one asks, and holds what it got.
     @ObservationIgnored public let images = NativeThreadImages()
-    /// A reply's presentation by turn, with what its views hold (`NativeMountedCost.presentation`), worked out when it was built.
-    @ObservationIgnored private var presentationCache: [String: (key: PresentationKey, value: NativeTurnPresentation, cost: Int)] = [:]
+    /// A reply's presentation by turn, with what its views hold (`NativeMountedCost.presentation`) and a low estimate of
+    /// its height (`NativeRowHeight.presentation`), worked out when it was built.
+    @ObservationIgnored private var presentationCache: [String: (key: PresentationKey, value: NativeTurnPresentation, cost: Int, height: Int)] = [:]
     /// What each of `rows` holds once drawn (`NativeMountedCost.row`), row for row; `mountedCost` sums the tail.
     @ObservationIgnored private var rowCosts: [Int] = []
+    /// A low estimate in points of how tall each of `rows` draws (`NativeRowHeight.row`), row for row.
+    @ObservationIgnored private var rowHeights: [Int] = []
     /// Presentations whose cost was worked out: one per reply built, none for a cached one or a user row.
     @ObservationIgnored private(set) var rowCostComputations = 0
     @ObservationIgnored private var messageIndex: [String: Int] = [:]
@@ -813,6 +816,8 @@ public final class NativeThreadStore {
         rows.reserveCapacity(turns.count - rowStart)
         var costs: [Int] = []
         costs.reserveCapacity(turns.count - rowStart)
+        var heights: [Int] = []
+        heights.reserveCapacity(turns.count - rowStart)
         let removed = Set(self.rows.dropFirst(rowStart).map(\.id)).subtracting(turns.dropFirst(rowStart).map(\.id))
         for id in removed {
             presentationCache[id] = nil
@@ -832,6 +837,7 @@ public final class NativeThreadStore {
                 row.designMarkup = Self.designMarkup(turn)
                 rows.append(row)
                 costs.append(NativeMountedCost.row(row))
+                heights.append(NativeRowHeight.row(row))
                 continue
             }
             let isLive = index == liveReply
@@ -840,9 +846,11 @@ public final class NativeThreadStore {
             let key = PresentationKey(messages: turn.messages, live: isLive, cards: NativeCardLayout(placements[turn.id]), errors: errors)
             let presentation: NativeTurnPresentation
             let presentationCost: Int
+            let presentationHeight: Int
             if let cached = presentationCache[turn.id], cached.key == key {
                 presentation = cached.value
                 presentationCost = cached.cost
+                presentationHeight = cached.height
             } else {
                 var thinkingIndex = 0
                 var used: Set<ProseKey> = []
@@ -858,8 +866,9 @@ public final class NativeThreadStore {
                 for key in (proseKeysByTurn[turn.id] ?? []).subtracting(used) { invalidateParse(key) }
                 proseKeysByTurn[turn.id] = used
                 presentationCost = NativeMountedCost.presentation(presentation)
+                presentationHeight = NativeRowHeight.presentation(presentation)
                 rowCostComputations += 1
-                presentationCache[turn.id] = (key, presentation, presentationCost)
+                presentationCache[turn.id] = (key, presentation, presentationCost, presentationHeight)
             }
             let prompt = opener.map { opener in
                 if let cached = promptCache[opener.id], cached.messages == opener.messages { return cached.text }
@@ -885,6 +894,7 @@ public final class NativeThreadStore {
             if index == turns.count - 1, !isLive, let opener { row.retryEntryID = Self.retryEntryID(opener) }
             rows.append(row)
             costs.append(NativeMountedCost.row(presentation: presentationCost))
+            heights.append(NativeRowHeight.row(presentation: presentationHeight))
         }
         // Start from cached *unfolded* presentations, including the predecessor above, so a
         // changed or removed successor can both fold and unfold an earlier error.
@@ -896,7 +906,9 @@ public final class NativeThreadStore {
             self.rows.replaceSubrange(rowStart..., with: rows)
         }
         rowCosts.replaceSubrange(rowStart..., with: costs)
+        rowHeights.replaceSubrange(rowStart..., with: heights)
         assert(rowCosts.count == self.rows.count, "rowCosts runs parallel to rows")
+        assert(rowHeights.count == self.rows.count, "rowHeights runs parallel to rows")
         // From the full list: a derive that rebuilt no row (a queue overlay, an identical page)
         // leaves the live turn out of `rows`, and its row must stay.
         assert(liveReply.map { self.rows.indices.contains($0) } ?? true)
@@ -1686,6 +1698,25 @@ public final class NativeThreadStore {
         let count = min(rows.count, rowCosts.count)
         guard drawn < min(upTo, count) else { return 0 }
         return (drawn..<min(upTo, count)).reduce(0) { $0 + max(0, rowCosts[count - 1 - $1] - NativeMountedCost.rowBase) }
+    }
+
+    /// How many rows at the end of the thread cover `height` points by the low estimate of `NativeRowHeight`,
+    /// at most `maxRows`. `hidden` names the rows the view leaves out, as in `mountedCost`, and
+    /// they do not count. The streaming reply is always reached while it is within `maxRows`, however much the
+    /// queued rows below it cover: its row is laid out for real, never estimated by the lazy stack.
+    public func eagerRowCount(coveringHeight height: Int, maxRows: Int, skipping hidden: (NativeThreadRow) -> Bool = { _ in false }) -> Int {
+        let count = min(rows.count, rowHeights.count)
+        var covered = 0, taken = 0, index = count, reachedLive = liveRowID == nil
+        while taken < maxRows, index > 0 {
+            if covered >= height, reachedLive { break }
+            index -= 1
+            let row = rows[index]
+            if hidden(row) { continue }
+            covered += rowHeights[index]
+            taken += 1
+            if row.live { reachedLive = true }
+        }
+        return taken
     }
 
     /// An estimate of what the views of this thread hold while it is mounted, in bytes (`NativeMountedCost`): the last
