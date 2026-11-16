@@ -64,9 +64,13 @@ struct ModelPickerTests {
         #expect(list.options.filter(\.isCurrent).map(\.id) == ["openai/gpt-5"])
     }
 
+    /// Ids join words with hyphens where people type spaces, so each word typed matches
+    /// somewhere in the id ("claude opus", "gpt mini"), in any order, ignoring case.
     @Test(arguments: [("GPT", ["openai/gpt-5", "openrouter/openai/gpt-5-mini"]), ("  opus ", ["anthropic/claude-opus-4-5"]),
-                      ("openai/", ["openai/gpt-5", "openrouter/openai/gpt-5-mini"]), ("nothing", [])])
-    func aQueryMatchesAnywhereInTheIdIgnoringCase(query: String, ids: [String]) {
+                      ("openai/", ["openai/gpt-5", "openrouter/openai/gpt-5-mini"]), ("nothing", []),
+                      ("claude opus", ["anthropic/claude-opus-4-5"]), ("gpt mini", ["openrouter/openai/gpt-5-mini"]),
+                      ("opus anthropic", ["anthropic/claude-opus-4-5"]), ("claude gpt", [])])
+    func aQueryMatchesEachWordAnywhereInTheIdIgnoringCase(query: String, ids: [String]) {
         #expect(Self.catalog.list(query: query, recent: [], current: nil).options.map(\.id) == ids)
     }
 
