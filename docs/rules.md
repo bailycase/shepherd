@@ -22,7 +22,8 @@ change.
 ## Embedded extensions have one copy
 
 `Extensions/` holds every pi extension and node script Shepherd ships, and the design skill in
-`Extensions/design-skill/`. `Sources/ShepherdSessions/Extensions` is a symlink to it, declared as a
+`Extensions/design-skill/` and the Shepherd skill in `Extensions/shepherd-skill/` (its entry is `shepherd.md`, installed as
+`SKILL.md`, since flattening allows one `SKILL.md`). `Sources/ShepherdSessions/Extensions` is a symlink to it, declared as a
 processed resource. SwiftPM flattens the filenames into `Shepherd_ShepherdSessions.bundle`;
 `EmbeddedExtensions.source(name)` resolves logical paths by basename. Each `*Extension.swift` installs its file into the support directory (or the private pi
 home, for `GoalExtension` and `ServiceTierExtension`) and rewrites it when

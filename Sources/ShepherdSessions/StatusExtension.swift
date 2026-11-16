@@ -119,6 +119,7 @@ public enum StatusExtension {
         socketPath: String,
         extensionPath: String,
         panesExtensionPath: String?,
+        shepherdSkillDirectory: String? = nil,
         reviewExtensionPath: String?,
         subagentsExtensionPath: String?,
         childrenExtensionPath: String? = nil,
@@ -181,6 +182,8 @@ public enum StatusExtension {
         // suggest_instruction may draft a line for.
         if instructions != nil, !suggestFiles.isEmpty { env["SHEPHERD_SUGGEST_FILES"] = suggestFiles.joined(separator: ",") }
         if let panesExtensionPath { env["SHEPHERD_EXT_PANES"] = panesExtensionPath }
+        // The panes extension hands pi the built-in skill on how to work in Shepherd.
+        if panesExtensionPath != nil, let shepherdSkillDirectory { env["SHEPHERD_SKILL_DIR"] = shepherdSkillDirectory }
         // Settings ▸ Pi ▸ Browser tools: the tools on the thread's own page.
         if let browserExtensionPath { env["SHEPHERD_EXT_BROWSER"] = browserExtensionPath }
         if let childrenExtensionPath {
