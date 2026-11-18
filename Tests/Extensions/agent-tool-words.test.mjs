@@ -154,6 +154,19 @@ test("every tool that touches another thread leads with the rule and gives a wro
   } finally { await h.close(); }
 });
 
+test("with Threads can start threads on, agent_spawn may start a thread unasked and the rest still need an ask", async () => {
+  process.env.SHEPHERD_THREADS_START_THREADS = "1";
+  const h = await harness();
+  try {
+    const spawn = h.tools.get("agent_spawn");
+    assert.doesNotMatch(spawn.description, /^Only when the user/);
+    assert.match(spawn.description, /Wrong: .+ Right: /);
+    assert.doesNotMatch(spawn.promptGuidelines[0], /agent_spawn/);
+    assert.match(spawn.promptGuidelines[0], /agent_read only when the user explicitly asks you to in this conversation/);
+    assert.ok(h.tools.get("agent_send").description.startsWith(RULE));
+  } finally { delete process.env.SHEPHERD_THREADS_START_THREADS; await h.close(); }
+});
+
 test("nothing an agent is shown invites a status report, a hand-off or a reply", async () => {
   const h = await harness();
   try {

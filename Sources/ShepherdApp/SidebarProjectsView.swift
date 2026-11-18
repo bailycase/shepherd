@@ -182,8 +182,7 @@ private struct SidebarTreeItemView: View, Equatable {
             case .row(let row):
                 SHSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
                              accessory: row.accessory, hasGoal: row.hasGoal, nested: true, badge: row.pullRequest,
-                             elbow: row.fleetNested, subtitle: row.subtitle,
-                             fold: row.fold.map { fold in SHSidebarRow.Fold(open: fold.open) { vm.toggleRunGroup(fold.key) } })
+                             subtitle: row.subtitle)
                     .padding(.leading, CGFloat(row.projectDepth) * (SHProjectMetrics.chevronSlot + SHProjectMetrics.gap))
                     .help(row.help)
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }

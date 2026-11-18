@@ -166,6 +166,8 @@ struct ThreadHostingTests {
         }
         let created = h.server.state.agents.first { $0.id == id }
         #expect(created?.spaceID == space.id)
+        // It records the thread that started it, one deeper; nothing else about it changes.
+        #expect(created?.startedBy?.agentID == lead.id && created?.startedBy?.depth == 1 && created?.worktreeBranch == nil)
         // The pinned model and reasoning level land on the new thread; its defaults are not used.
         #expect(created?.model == "claude-fable-5-1" && created?.thinkingLevel == .low)
         try await eventuallyOnMain("the spawned pi to launch") { StubPi.launches().contains { $0.env["SHEPHERD_AGENT_ID"] == id.rawValue } }
@@ -173,6 +175,41 @@ struct ThreadHostingTests {
         try caller.send(.coordinateAgent(id: 3, agentID: lead.id, targetAgentID: worker.id, request: .init(operation: .delete)))
         guard case .agentResult(3, let result) = try await caller.reply(), result.code == nil else { Issue.record("agent_delete not served"); return }
         #expect(!h.server.state.agents.contains { $0.id == worker.id })
+    }
+
+    /// agent_spawn with place worktree: a new branch from the starter's commit, in the same folder of the repository. A thread three deep
+    /// starts none.
+    @Test func aThreadStartsAnotherInANewWorktreeAndDepthStopsAChain() async throws {
+        try StubPi.installAsEngine()
+        let (h, _, _) = try host()
+        defer { h.stop() }
+        let repo = try makeScratchRepo(files: ["README.md": "# acme\n", "web/index.html": "<p>hi</p>\n"])
+        let head = try git(["rev-parse", "HEAD"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
+        let space = Space(name: "acme-web", path: repo.path)
+        try await h.server.addSpace(space)
+        let pane = LeafPane(cwd: space.path)
+        let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        var lead = Agent(name: "lead", spaceID: space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true)
+        lead.startedBy = StartedBy(agentID: AgentID(), agentTitle: "top", at: 1, depth: 2)
+        try await h.server.addAgent(lead, withTab: tab)
+        let caller = try ExtensionClient(path: h.socketPath)
+        try caller.send(.helloAgent(agentID: lead.id))
+
+        let web = repo.appendingPathComponent("web").path
+        try caller.send(.spawnAgent(id: 1, agentID: lead.id, cwd: web, prompt: "Shard the UI tests", place: .worktree, branch: "agent/shard-ui"))
+        guard case .agents(1, let spawned) = try await caller.reply(), let id = spawned.first?.id else { Issue.record("agent_spawn not served"); return }
+        let child = try #require(h.server.state.agents.first { $0.id == id })
+        #expect(child.worktreeBranch == "agent/shard-ui" && child.worktreeBase == head && child.startedBy?.depth == 3)
+        let path = try #require(child.worktreePath)
+        try await eventuallyOnMain("its worktree") { FileManager.default.fileExists(atPath: path + "/web/index.html") }
+        #expect(spawned.first?.cwd.hasSuffix("/web") == true, "it starts in the same folder of its worktree")
+
+        // The child is three below the thread the person started: it starts none, here or on another Mac.
+        let childCaller = try ExtensionClient(path: h.socketPath)
+        try childCaller.send(.helloAgent(agentID: id))
+        try childCaller.send(.spawnAgent(id: 2, agentID: id, cwd: space.path, prompt: "Go deeper"))
+        guard case .error(2, FleetDispatchCode.tooDeep, _) = try await childCaller.reply() else { Issue.record("a thread three deep started another"); return }
+        #expect(h.server.state.agents.count == 2)
     }
 
     @Test func theAppMovesADormantThreadToAnotherSpaceAndItStaysDormant() async throws {

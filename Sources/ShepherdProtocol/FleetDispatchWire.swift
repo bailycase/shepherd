@@ -14,12 +14,15 @@ public struct FleetDispatchSender: Codable, Hashable, Sendable {
     /// Nil for a thread the person started with Auto.
     public var agentID: AgentID?
     public var agentTitle: String
+    /// The sending thread's depth (`Agent.threadDepth`); nil from an older Mac.
+    public var depth: Int?
 
-    public init(hostID: UUID, hostName: String, agentID: AgentID? = nil, agentTitle: String) {
+    public init(hostID: UUID, hostName: String, agentID: AgentID? = nil, agentTitle: String, depth: Int? = nil) {
         self.hostID = hostID
         self.hostName = hostName
         self.agentID = agentID
         self.agentTitle = agentTitle
+        self.depth = depth
     }
 }
 

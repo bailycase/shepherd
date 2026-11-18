@@ -21,6 +21,8 @@ public struct AgentLaunchSettings: Equatable, Sendable {
     public var browser = true
     public var trimToolOutput = false
     public var deferTools = false
+    /// Settings ▸ Agents ▸ Threads can start threads: agent_spawn may start one without being asked.
+    public var threadsStartThreads = false
 
     public init() {}
 }
@@ -106,6 +108,7 @@ public enum AgentLaunch {
             contextExtensionPath: settings.trimToolOutput ? try ContextExtension.installedPath() : nil,
             projectContext: try project.map { (try ProjectContextExtension.installedPath(), try ProjectContextExtension.context($0), agent.coordinatorFor != nil) },
             deferTools: settings.deferTools,
+            threadsStartThreads: settings.threadsStartThreads,
             userHome: pi.userHome,
             // Use another model (an agent not signed in): its next start takes the model picked.
             // A child space's unset startup model and thinking follow its parent spaces (`inherited`).

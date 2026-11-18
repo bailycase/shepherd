@@ -1734,8 +1734,8 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// An agent's `fleet_*` tool. Refused unless Fleet is on and the thread may send work at all (`fleet_scope`:
-    /// a dispatched thread, a project worker, a coordinator, a design's agent or an automation run
-    /// never does); the settings and the per-thread cap are the engine's. Server queue.
+    /// a project worker, a coordinator, a design's agent or an automation run never does); the settings, the depth
+    /// limit and the per-thread cap are the engine's. Server queue.
     private func serveFleetTool(_ message: ExtensionMessage, from client: ExtensionConnection) {
         let id: Int, agentID: AgentID
         switch message {
@@ -5697,7 +5697,7 @@ public final class SessionServer: @unchecked Sendable {
             routeAgentPeerRequest(.move(agentID: agentID, targetAgentID: targetAgentID, spaceID: spaceID), requestID: id, client: client)
         case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
             break // Served ahead of the scope lists above (`serveFleetTool`).
-        case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking):
+        case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking, let place, let branch):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "cwd and prompt are required"), to: client)
                 return
@@ -5714,7 +5714,9 @@ public final class SessionServer: @unchecked Sendable {
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
             guard agentActionAllowed(senderID: agentID, requestID: id, client: client,
                                      problem: spawnProblem(sender: agentID, cwd: cwd)) else { return }
-            routeAgentPeerRequest(.spawn(agentID: agentID, cwd: cwd, prompt: prompt, model: pinnedModel, thinking: level), requestID: id, client: client)
+            let pinnedBranch = branch.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+            routeAgentPeerRequest(.spawn(agentID: agentID, cwd: cwd, prompt: prompt, model: pinnedModel, thinking: level, place: place, branch: pinnedBranch),
+                                  requestID: id, client: client)
         case .createAutomation(let id, let name, let prompt, let cwd, let enabled, let start, let deleteAfterRun, let settings):
             let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -6321,7 +6323,9 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Why a new thread could not be started in `cwd`, or nil.
     private func spawnProblem(sender: AgentID, cwd: String) -> (code: String, message: String)? {
-        guard store.state.agents.contains(where: { $0.id == sender }) else { return ("no_such_agent", "unknown agent \(sender)") }
+        let state = store.state
+        guard state.agents.contains(where: { $0.id == sender }) else { return ("no_such_agent", "unknown agent \(sender)") }
+        if let refusal = FleetDispatch.depthProblem(for: sender, in: state) { return (refusal.code, refusal.message) }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: (cwd as NSString).expandingTildeInPath, isDirectory: &isDirectory),
               isDirectory.boolValue else { return ("no_such_directory", "\(cwd) is not a directory") }

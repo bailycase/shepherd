@@ -270,7 +270,7 @@ extension FleetDispatch {
         return FleetMoveHandoff(
             agentID: agent.id, sessionID: info.sessionID, name: agent.name, nameIsFinal: agent.nameIsFinal, model: agent.model,
             thinking: agent.thinkingLevel?.rawValue, serviceTier: agent.serviceTier == .standard ? nil : agent.serviceTier.rawValue,
-            pushMuted: agent.pushMuted, dispatchedFrom: agent.dispatchedFrom, dispatch: liveInboundDispatch(of: agent.id)?.record,
+            pushMuted: agent.pushMuted, dispatchedFrom: agent.dispatchedFrom, startedBy: agent.startedBy, dispatch: liveInboundDispatch(of: agent.id)?.record,
             branch: record.branch, worktreeBase: agent.worktreeBase, lastActiveAt: agent.lastActiveAt, movedAt: now, messages: info.messages ?? 0,
             uncommittedFiles: info.uncommittedFiles ?? 0, unpushedCommits: info.unpushedCommits ?? 0)
     }

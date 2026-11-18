@@ -80,6 +80,7 @@ extension FleetDispatch {
         request.worktreePath = worktree
         request.subdirectory = entry.record.subdir
         request.dispatchedFrom = handoff.dispatchedFrom
+        request.startedBy = handoff.startedBy
         let moved = MovedFrom(hostID: entry.record.parentHostID, hostName: entry.record.parentHostName, at: handoff.movedAt, moveID: id,
                               branch: entry.record.branch, uncommittedFiles: handoff.uncommittedFiles)
         request.moved = RemoteCreateAgentRequest.Moved(

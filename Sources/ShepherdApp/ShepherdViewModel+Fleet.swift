@@ -46,12 +46,20 @@ extension ShepherdViewModel {
     func fleetSurface(for agent: Agent, onRemote remoteName: String? = nil, hostID: UUID? = nil) -> FleetThreadSurface? {
         let cards = remoteName == nil ? fleetPage.dispatchCards.filter { $0.parentAgentID == agent.id } : []
         let move = moveCard(for: agent.id, on: hostID)
-        guard agent.dispatchedFrom != nil || !cards.isEmpty || move != nil else { return nil }
+        guard agent.dispatchedFrom != nil || agent.startedBy != nil || !cards.isEmpty || move != nil else { return nil }
         var surface = FleetThreadSurface(cards: cards, parent: agent.id, actions: fleetThreadActions)
         surface.move = move
-        if let from = agent.dispatchedFrom {
+        if let started = agent.startedBy {
+            // Another thread on the same Mac started it: the thread's own host, never this Mac's guess.
+            let row: SidebarRowID = hostID.map { .remote(RemoteAgentRef(hostID: $0, agentID: started.agentID)) } ?? .local(started.agentID)
+            var sentBy = FleetSentBy(started, host: remoteName ?? "This Mac")
+            sentBy.senderOpens = sidebarRowExists(row)
+            surface.sentBy = sentBy
+            surface.sender = sentBy.senderOpens ? row : nil
+        } else if let from = agent.dispatchedFrom {
             var sentBy = FleetSentBy(from, host: remoteName ?? "This Mac", viewer: thisFleetID)
-            sentBy.senderOpens = senderRow(of: from) != nil
+            surface.sender = senderRow(of: from)
+            sentBy.senderOpens = surface.sender != nil
             surface.sentBy = sentBy
             surface.dispatched = from
             // The Mac that sent it knows whether its dispatch is going; any other reads the thread's own state.
@@ -75,6 +83,15 @@ extension ShepherdViewModel {
 
     func openSender(of from: DispatchedFrom) {
         if let row = senderRow(of: from) { selectSidebarRow(row) }
+    }
+
+    /// Whether the thread a row names is here to open.
+    private func sidebarRowExists(_ row: SidebarRowID) -> Bool {
+        switch row {
+        case .local(let id): state.agents.contains { $0.id == id }
+        case .remote(let ref): remoteHosts.allConnections.first { $0.id == ref.hostID }?.state.agents.contains { $0.id == ref.agentID } == true
+        default: false
+        }
     }
 
     /// The thread a dispatch runs as, on whichever Mac runs it.

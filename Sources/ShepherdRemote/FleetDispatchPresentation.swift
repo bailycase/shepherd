@@ -468,6 +468,8 @@ public struct FleetSentBy: Equatable, Sendable {
     public var at: Double
     /// The thread that sent it can be opened from here: it is on this Mac or on one this Mac is connected to.
     public var senderOpens = false
+    /// The header names the Mac it runs on: false for a thread another thread started on the same Mac (`StartedBy`).
+    public var showsHost = true
 
     /// "From Speed up checkout CI on This Mac".
     public var fromLine: String { "From \(sender) on \(senderHost)" }
@@ -484,6 +486,16 @@ public struct FleetSentBy: Equatable, Sendable {
         sender = from.agentID == nil ? "you" : from.agentTitle.isEmpty ? "a thread" : from.agentTitle
         senderHost = from.hostID == viewer ? "This Mac" : from.hostName
         at = from.at
+    }
+
+    /// A thread `agent_spawn` started on the Mac it runs on: only "started by" shows.
+    public init(_ started: StartedBy, host: String) {
+        self.host = host
+        fromThread = true
+        sender = started.agentTitle.isEmpty ? "a thread" : started.agentTitle
+        senderHost = host
+        at = started.at
+        showsHost = false
     }
 
     /// The task, without what the host added after it (`FleetDispatchProtocol.promptSeparator`): the From box draws the words

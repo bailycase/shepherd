@@ -39,8 +39,13 @@ extension SHSidebarRow.Subtitle.Tone {
 }
 
 extension SidebarDerivation {
-    /// The tree facts of a thread another Mac or thread started; nil for any other.
-    static func sentInfo(of agent: Agent, _ source: SidebarSource) -> SidebarSentInfo? {
+    /// The tree facts of a thread another Mac or thread started; nil for any other. `host` is the connected host it runs on, nil for This Mac:
+    /// a thread `agent_spawn` started sits on the same host as the thread that started it.
+    static func sentInfo(of agent: Agent, host: UUID? = nil, _ source: SidebarSource) -> SidebarSentInfo? {
+        if let started = agent.startedBy {
+            let sender: SidebarRowID = host.map { .remote(RemoteAgentRef(hostID: $0, agentID: started.agentID)) } ?? .local(started.agentID)
+            return SidebarSentInfo(sender: sender, at: started.at)
+        }
         guard let from = agent.dispatchedFrom else { return nil }
         return SidebarSentInfo(sender: fleetSender(of: agent, source), at: from.at)
     }
@@ -91,8 +96,8 @@ enum SidebarSent {
 
     /// Places every thread another thread started among `lists` (the rows of one or more groups, in order): under the thread that started it while it
     /// works or asks, and in its own group, as the thread it is, once it is finished or when that thread isn't among the rows. One that asks you stays
-    /// in Needs you as well (`keepsNeedsYou`: the Spaces tree has no Needs you).
-    static func arrange(_ lists: inout [[SidebarListRow]], by infos: [SidebarRowID: SidebarSentInfo], keepsNeedsYou: Bool = true) {
+    /// in Needs you as well. Activity only: the Spaces tree keeps every thread in its own space.
+    static func arrange(_ lists: inout [[SidebarListRow]], by infos: [SidebarRowID: SidebarSentInfo]) {
         guard !infos.isEmpty else { return }
         let present = Set(lists.flatMap { $0.map(\.id) })
         // The top of each chain of threads that started one another that this Mac can see.
@@ -118,7 +123,7 @@ enum SidebarSent {
             for var row in lists[list] {
                 let id = row.id
                 // Still in its own group only where it waits on you.
-                if infos[id] != nil, nests(row), !(keepsNeedsYou && row.section == .needsYou) { continue }
+                if infos[id] != nil, nests(row), row.section != .needsYou { continue }
                 if let kids = children[id]?.sorted(by: { $0.at < $1.at }) {
                     if kids.count > foldsAbove { row.fold = SidebarFold(key: foldKey(id)) }
                     out.append(row)

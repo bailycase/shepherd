@@ -22,6 +22,11 @@ public enum ResponseTimingMark: String, Codable, Hashable, Sendable {
     case message
 }
 
+/// Where a thread `agent_spawn` starts works: the folder it is given as it is, or a new worktree of that folder's repository.
+public enum SpawnPlace: String, Codable, Hashable, Sendable, CaseIterable {
+    case checkout, worktree
+}
+
 public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// Lifecycle status for one agent.
     case setAgentStatus(agentID: AgentID, status: AgentStatus)
@@ -96,9 +101,11 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     case listAgents(id: Int, agentID: AgentID)
     /// Send framed context only (`report`) or start/queue work (`task`, the legacy default).
     case sendToAgent(id: Int, agentID: AgentID, targetAgentID: AgentID, text: String, delivery: AgentMessageDelivery = .task)
-    /// Spawn a new top-level agent thread with an opening prompt.
-    /// `model` and `thinking` pin the new thread's model and reasoning level; nil takes Shepherd's defaults.
-    case spawnAgent(id: Int, agentID: AgentID, cwd: String, prompt: String, model: String? = nil, thinking: String? = nil)
+    /// Spawn a new top-level agent thread with an opening prompt; it records the sender as its starter (`Agent.startedBy`).
+    /// `model` and `thinking` pin the new thread's model and reasoning level; nil takes Shepherd's defaults. `place` says where it works
+    /// (nil: Settings ▸ Agents); `branch` names a worktree's branch, an existing one or a new one.
+    case spawnAgent(id: Int, agentID: AgentID, cwd: String, prompt: String, model: String? = nil, thinking: String? = nil,
+                    place: SpawnPlace? = nil, branch: String? = nil)
     /// Move an inactive ordinary thread to a registered space on this host.
     case moveAgent(id: Int, agentID: AgentID, targetAgentID: AgentID, spaceID: SpaceID)
     /// Receipt of a tokenized peer task; the host transfers it into its tracked native queue.
@@ -253,7 +260,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case paneID, axis, cwd, relativeTo, command, text, submit, reference
         case title, body
         case prompt, enabled, start, deleteAfterRun, settings, automationID, targetAgentID, request, requestID, result, delivery, spaceID, deliveryID
-        case model, thinking, host, dispatchID, task
+        case model, thinking, host, dispatchID, task, place, branch
         case error
         case line, reason, file
         case designID, path, source, baseRevision, changes, commentID, edits, tokens, query, options
@@ -452,7 +459,9 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 cwd: try c.decode(String.self, forKey: .cwd),
                 prompt: try c.decode(String.self, forKey: .prompt),
                 model: try c.decodeIfPresent(String.self, forKey: .model),
-                thinking: try c.decodeIfPresent(String.self, forKey: .thinking)
+                thinking: try c.decodeIfPresent(String.self, forKey: .thinking),
+                place: try? c.decodeIfPresent(SpawnPlace.self, forKey: .place),
+                branch: try c.decodeIfPresent(String.self, forKey: .branch)
             )
         case .fleetListHosts:
             self = .fleetListHosts(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID))
@@ -844,7 +853,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(agentID, forKey: .agentID)
             try c.encode(targetAgentID, forKey: .targetAgentID)
             try c.encode(spaceID, forKey: .spaceID)
-        case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking):
+        case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking, let place, let branch):
             try c.encode(Kind.spawnAgent, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
@@ -852,6 +861,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(prompt, forKey: .prompt)
             try c.encodeIfPresent(model, forKey: .model)
             try c.encodeIfPresent(thinking, forKey: .thinking)
+            try c.encodeIfPresent(place, forKey: .place)
+            try c.encodeIfPresent(branch, forKey: .branch)
         case .fleetListHosts(let id, let agentID):
             try c.encode(Kind.fleetListHosts, forKey: .type)
             try c.encode(id, forKey: .id)

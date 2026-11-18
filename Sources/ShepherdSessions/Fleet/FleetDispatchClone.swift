@@ -159,7 +159,7 @@ extension FleetDispatch {
         let record = entry.record
         let create = FleetDispatchCreate(
             dispatchID: id, kind: record.kind, task: "", title: record.title, repoKey: record.repoKey, commitSHA: record.commitSHA, branch: snap.requestedBranch,
-            from: FleetDispatchSender(hostID: record.parentHostID, hostName: record.parentHostName, agentID: record.parentAgentID, agentTitle: record.parentTitle),
+            from: FleetDispatchSender(hostID: record.parentHostID, hostName: record.parentHostName, agentID: record.parentAgentID, agentTitle: record.parentTitle, depth: record.parentDepth),
             snapshot: snap.header, repo: snap.repo)
         let path = blobs.url(bundle.hash).path
         Task.detached(priority: .utility) { [weak self] in await self?.clone(id, create, source: path, bundle: true) }

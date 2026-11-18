@@ -89,6 +89,8 @@ final class AppSettings {
         static let trimToolOutput = "shepherd.agent.trimToolOutput"
         static let notifyOnTurnFinished = "shepherd.agent.notifyOnTurnFinished"
         static let deferTools = "shepherd.agent.deferTools"
+        static let threadsStartThreads = "shepherd.agent.threadsStartThreads"
+        static let subThreadPlace = "shepherd.agent.subThreadPlace"
         static let codemode = "shepherd.agent.codemode"
         static let compactAtPercent = "shepherd.agent.compactAtPercent"
         static let piPanesExtension = "shepherd.pi.extension.panes"
@@ -137,7 +139,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, defaultServiceTier, textGenerationModel, visionModel, queueDelivery, trimToolOutput, notifyOnTurnFinished, deferTools, codemode, compactAtPercent, shellPath, editor, editorsByType,
+            defaultThinking, defaultServiceTier, textGenerationModel, visionModel, queueDelivery, trimToolOutput, notifyOnTurnFinished, deferTools, threadsStartThreads, subThreadPlace, codemode, compactAtPercent, shellPath, editor, editorsByType,
             piPanesExtension, piReviewExtension, subagentDisplay, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext,
@@ -289,6 +291,17 @@ final class AppSettings {
     /// Off sends them all, as before. Agents launched after a change follow it.
     var deferTools: Bool {
         didSet { store.set(deferTools, forKey: Key.deferTools) }
+    }
+
+    /// Settings ▸ Agents ▸ Threads can start threads: agents get `SHEPHERD_THREADS_START_THREADS=1`, and agent_spawn says they may start a
+    /// thread for separate work without being asked. Off keeps it to when the person asks. Agents launched after a change follow it.
+    var threadsStartThreads: Bool {
+        didSet { store.set(threadsStartThreads, forKey: Key.threadsStartThreads) }
+    }
+
+    /// Settings ▸ Agents ▸ Threads a thread starts work in: where agent_spawn puts a thread when the call doesn't say.
+    var subThreadPlace: SpawnPlace {
+        didSet { store.set(subThreadPlace.rawValue, forKey: Key.subThreadPlace) }
     }
 
     /// Pi's native codemode is enabled by default. Project settings can override it.
@@ -700,6 +713,8 @@ final class AppSettings {
         trimToolOutput = store.object(forKey: Key.trimToolOutput) as? Bool ?? true
         notifyOnTurnFinished = store.object(forKey: Key.notifyOnTurnFinished) as? Bool ?? true
         deferTools = store.object(forKey: Key.deferTools) as? Bool ?? true
+        threadsStartThreads = store.object(forKey: Key.threadsStartThreads) as? Bool ?? false
+        subThreadPlace = store.string(forKey: Key.subThreadPlace).flatMap(SpawnPlace.init(rawValue:)) ?? .checkout
         codemode = store.object(forKey: Key.codemode) as? Bool ?? true
         compactAtPercent = (store.object(forKey: Key.compactAtPercent) as? Int).flatMap { PiCompactionThreshold.choices.contains($0) ? $0 : nil }
         piPanesExtension = store.object(forKey: Key.piPanesExtension) as? Bool ?? true
@@ -818,6 +833,8 @@ final class AppSettings {
         trimToolOutput = true
         notifyOnTurnFinished = true
         deferTools = true
+        threadsStartThreads = false
+        subThreadPlace = .checkout
         codemode = true
         compactAtPercent = nil
         uiDensity = 1
@@ -970,7 +987,7 @@ final class AppSettings {
         take(\.defaultServiceTier), take(\.goalsEnabled), take(\.projectsEnabled), take(\.shareDiagnostics),
         take(\.textGenerationModel), take(\.visionModel), take(\.skillsInSlashMenu), take(\.hiddenSlashCommands), take(\.mcpProjectConfig),
         take(\.queueDelivery), take(\.trimToolOutput), take(\.notifyOnTurnFinished),
-        take(\.deferTools), take(\.codemode), take(\.compactAtPercent), take(\.uiDensity), take(\.uiTextScale),
+        take(\.deferTools), take(\.threadsStartThreads), take(\.subThreadPlace), take(\.codemode), take(\.compactAtPercent), take(\.uiDensity), take(\.uiTextScale),
         take(\.sidebarWidth), take(\.sidebarRowDensity), take(\.sidebarStyle),
         take(\.sidebarKeepIdleDays), take(\.piPanesExtension), take(\.piReviewExtension), take(\.subagentDisplay),
         take(\.piNativeSubagents), take(\.piMCPExtension), take(\.piBrowserExtension), take(\.piDesignReferences),

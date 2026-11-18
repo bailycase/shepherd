@@ -515,6 +515,8 @@ final class FleetDispatch: @unchecked Sendable {
         guard let agent = state.agents.first(where: { $0.id == agentID }), let space = state.spaces.first(where: { $0.id == agent.spaceID }) else {
             return reply(.failure(.init(code: FleetDispatchCode.repoMissing, message: "This thread's project isn't a repository another Mac can find.")))
         }
+        if let refusal = Self.depthProblem(for: agentID, in: state) { return reply(.failure(refusal)) }
+        let depth = agent.threadDepth
         let cwd = state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd ?? space.path
         placing.insert(id)
         waiters[id, default: []].append(reply)
@@ -547,6 +549,7 @@ final class FleetDispatch: @unchecked Sendable {
                         commitSHA: pin.sha, subdir: pin.subdir, model: model?.fleetNonEmpty, thinking: thinking?.fleetNonEmpty,
                         spaceID: spaceID, origin: origin, createdAt: self.now)
                     record.updatedAt = record.createdAt
+                    record.parentDepth = depth
                     self.outbound[id] = record
                     self.save()
                     self.waiters[id] = waiting
@@ -815,7 +818,7 @@ final class FleetDispatch: @unchecked Sendable {
             dispatchID: id, kind: record.kind, task: record.task, title: record.title, repoKey: record.repoKey, commitSHA: record.commitSHA,
             subdir: record.subdir, branch: record.branch ?? record.start?.branch.map { record.start?.place == .existingBranch ? Self.localName($0) : $0 },
             model: record.model, thinking: record.thinking,
-            from: FleetDispatchSender(hostID: hostID, hostName: hostName(), agentID: record.parentAgentID, agentTitle: record.parentTitle),
+            from: FleetDispatchSender(hostID: hostID, hostName: hostName(), agentID: record.parentAgentID, agentTitle: record.parentTitle, depth: record.parentDepth),
             snapshot: snapshots[id]?.header, repo: repo, start: record.start, move: record.kind == .move ? handoff(for: record) : nil)
         let finish: @Sendable (Result<FleetDispatchRecord, Error>) -> Void = { [weak self] result in
             self?.queue.async { self?.created(id, result, completion: completion) }

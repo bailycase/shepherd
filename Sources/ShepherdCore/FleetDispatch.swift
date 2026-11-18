@@ -13,14 +13,38 @@ public struct DispatchedFrom: Codable, Hashable, Sendable {
     public var dispatchID: UUID
     /// Epoch milliseconds.
     public var at: Double
+    /// This thread's own depth (`Agent.threadDepth`): its sender's plus one. Nil from an older Mac.
+    public var depth: Int?
 
-    public init(hostID: UUID, hostName: String, agentID: AgentID? = nil, agentTitle: String, dispatchID: UUID, at: Double) {
+    public init(hostID: UUID, hostName: String, agentID: AgentID? = nil, agentTitle: String, dispatchID: UUID, at: Double, depth: Int? = nil) {
         self.hostID = hostID
         self.hostName = hostName
         self.agentID = agentID
         self.agentTitle = agentTitle
         self.dispatchID = dispatchID
         self.at = at
+        self.depth = depth
+    }
+}
+
+/// The thread on the same Mac that started this one with `agent_spawn` (`Agent.startedBy`). The title is a snapshot: the starter may be
+/// renamed or deleted. The thread is independent of it: nothing about the starter stops, moves or deletes it.
+public struct StartedBy: Codable, Hashable, Sendable {
+    public var agentID: AgentID
+    public var agentTitle: String
+    /// Epoch milliseconds.
+    public var at: Double
+    /// This thread's depth: its starter's plus one (`Agent.threadDepth`).
+    public var depth: Int
+
+    /// The deepest a thread can be and still start threads is one less: a thread this deep starts none, here or on another Mac.
+    public static let maxDepth = 3
+
+    public init(agentID: AgentID, agentTitle: String, at: Double, depth: Int) {
+        self.agentID = agentID
+        self.agentTitle = agentTitle
+        self.at = at
+        self.depth = depth
     }
 }
 
@@ -69,8 +93,10 @@ public enum FleetDispatchState: String, Codable, Hashable, Sendable, CaseIterabl
 public enum FleetDispatchCode {
     public static let fleetOff = "fleet_off"
     public static let sendOff = "send_off"
-    /// A dispatched, mission, project, coordinator, design or automation thread tried to dispatch.
+    /// A mission, project, coordinator, design or automation thread tried to dispatch.
     public static let fleetScope = "fleet_scope"
+    /// A thread `StartedBy.maxDepth` below one the person started tried to start another (dispatch or `agent_spawn`).
+    public static let tooDeep = "too_deep"
     public static let noSuchHost = "no_such_host"
     public static let hostNotReady = "host_not_ready"
     public static let repoMissing = "repo_missing"
@@ -323,6 +349,8 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
     /// While it waits (`waitingRoom`) because the provider of its model is limiting the fleet's requests (`FleetProviderLimits`): pi's
     /// provider id. It goes by itself when the limit lifts. Nil otherwise, and from an older build (which says only that it waits).
     public var limitProvider: String?
+    /// The sending thread's depth (`Agent.threadDepth`), so the thread it starts is one deeper on any Mac. Nil from an older build.
+    public var parentDepth: Int?
     /// Epoch milliseconds.
     public var createdAt: Double
     public var updatedAt: Double
@@ -383,7 +411,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         case failure, failureDetail, title, task, repoKey, commitSHA, subdir, branch, model, thinking, reasonCodes, without, remoteAgentID
         case activity, resultText, resultBranchFacts, createdAt, updatedAt
         case snapshotBytes, snapshotProgress, snapshotFiles, sendWarning, fileMillis
-        case spaceID, origin, clone, start, fixes, move, movedOn, limitProvider
+        case spaceID, origin, clone, start, fixes, move, movedOn, limitProvider, parentDepth
     }
 
     public init(from decoder: Decoder) throws {
@@ -428,6 +456,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         movedOn = try? c.decodeIfPresent(FleetMovedOn.self, forKey: .movedOn)
         fixes = try c.decodeIfPresent([String].self, forKey: .fixes) ?? []
         limitProvider = try c.decodeIfPresent(String.self, forKey: .limitProvider)
+        parentDepth = try? c.decodeIfPresent(Int.self, forKey: .parentDepth)
         createdAt = try c.decodeIfPresent(Double.self, forKey: .createdAt) ?? 0
         updatedAt = try c.decodeIfPresent(Double.self, forKey: .updatedAt) ?? createdAt
     }
@@ -473,6 +502,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(movedOn, forKey: .movedOn)
         if !fixes.isEmpty { try c.encode(fixes, forKey: .fixes) }
         try c.encodeIfPresent(limitProvider, forKey: .limitProvider)
+        try c.encodeIfPresent(parentDepth, forKey: .parentDepth)
         try c.encode(createdAt, forKey: .createdAt)
         try c.encode(updatedAt, forKey: .updatedAt)
     }
