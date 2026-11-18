@@ -276,7 +276,10 @@ struct FileViewerOverlay: View {
                     content: state.content, source: state.source,
                     previous: state.hasPrevious ? { state.previous() } : nil,
                     next: state.hasNext ? { state.next() } : nil,
-                    openInEditor: { [vm] in ShepherdViewModel.openInEditor(URL(fileURLWithPath: path), editor: vm.settings.editor) },
+                    openInEditor: { [vm] in
+                        let url = URL(fileURLWithPath: path)
+                        ShepherdViewModel.openInEditor(url, editor: vm.settings.editor(for: url))
+                    },
                     close: { vm.closeFileViewer() })
                 // Keys go to a hidden focus target of their own, as the image viewer's do, so no control draws a focus ring.
                 .background {

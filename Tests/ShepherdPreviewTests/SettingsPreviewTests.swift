@@ -805,6 +805,17 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Settings ▸ Advanced ▸ Editor with apps picked for two file types from Open in (OpenInD2): the By file type row and Reset.
+    @Test func settingsAdvancedEditorsByType() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.settings.editorsByType = [".md": "com.apple.TextEdit", ".tsx": "com.apple.dt.Xcode"]
+        workspace.vm.settingsSection = .advanced
+        try await Preview.render("settings-advanced-editors-by-type", size: CGSize(width: 1280, height: 1000)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
     /// Settings ▸ Advanced when the background service is off in Login Items: the one line (C11).
     @Test func settingsAdvancedBackgroundServiceOff() async throws {
         let workspace = try PreviewWorkspace()
