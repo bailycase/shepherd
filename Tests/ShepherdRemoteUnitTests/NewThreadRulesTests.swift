@@ -100,10 +100,29 @@ struct NewThreadRulesTests {
 
     @Test func repoRowsListTheChosenHostsSpacesThenOtherConnectedHosts() {
         let rows = NewThreadRows.repos([Self.studio, Self.build, Self.laptop], host: Self.studioID, space: Self.web.id)
-        #expect(rows.map(\.name) == ["shepherd", "dashboard-web", "orders-svc"])
-        #expect(rows.map(\.detail) == ["~/code/shepherd", "~/code/dashboard-web", "on build-01"])
-        #expect(rows.map(\.selected) == [false, true, false])
-        #expect(rows[2].id == .init(host: Self.buildID, space: Self.orders.id))
+        // build-01's Shepherd is too old for No space.
+        #expect(rows.map(\.name) == ["No space", "shepherd", "dashboard-web", "orders-svc"])
+        #expect(rows.map(\.detail) == ["Own scratch folder", "~/code/shepherd", "~/code/dashboard-web", "on build-01"])
+        #expect(rows.map(\.selected) == [false, false, true, false])
+        #expect(rows[3].id == .init(host: Self.buildID, space: Self.orders.id))
+    }
+
+    /// No space on any host that takes it: listed under each, it starts with an empty space id and no worktree.
+    @Test func noSpaceIsOfferedOnEveryHostThatTakesItAndStartsWithoutARepo() {
+        let rows = NewThreadRows.repos([Self.build, Self.studio], host: Self.buildID, space: Self.orders.id)
+        #expect(rows.map(\.name) == ["orders-svc", "No space", "shepherd", "dashboard-web"])
+        #expect(rows[1].id == .init(host: Self.studioID, space: NewThreadRules.noSpace) && rows[1].detail == "on Studio")
+
+        var draft = Self.draft(space: nil, worktree: true)
+        #expect(NewThreadRules.blocker(draft) == .noRepo("Studio"))
+        draft.noSpace = true
+        #expect(!draft.usesWorktree)
+        let creation = NewThreadRules.creation(draft)
+        #expect(creation?.spaceID == NewThreadRules.noSpace && creation?.cwd == nil && creation?.worktreeBranch == nil)
+        draft.host = Self.build
+        draft.defaults = Self.readyDefaults(Self.buildID)
+        #expect(NewThreadRules.blocker(draft) == .noRepo("build-01"))
+        #expect(NewThreadRules.worktreeSummary(repo: nil, worktree: true, noSpace: true) == "In its own scratch folder")
     }
 
     @Test(arguments: [

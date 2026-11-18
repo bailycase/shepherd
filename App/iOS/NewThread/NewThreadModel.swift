@@ -97,6 +97,10 @@ final class NewThreadModel {
 
     var host: NewThreadHostInput? { inputs.first { $0.id == hostID } }
     var space: Space? { host?.spaces.first { $0.id == spaceID } }
+    /// No space chosen, on a host that takes it: the thread works in a folder of its own there.
+    var noSpace: Bool { spaceID == NewThreadRules.noSpace && host?.supportsNoSpace == true }
+    /// The chips' and rows' name for where it works: the repo, or No space.
+    var repoName: String? { noSpace ? NewThreadRules.noSpaceName : space?.name }
     var usesWorktree: Bool { draft.usesWorktree }
 
     var draft: NewThreadDraft {
@@ -105,6 +109,7 @@ final class NewThreadModel {
         var draft = NewThreadDraft(prompt: prompt, host: host, space: space, defaults: defaults, worktree: worktreeWanted, branch: branch,
                        base: base, attachments: attachments.count, starting: starting)
         draft.pendingImports = pendingImports
+        draft.noSpace = noSpace
         return draft
     }
 
@@ -146,12 +151,12 @@ final class NewThreadModel {
             return
         }
         if let pendingSpace, host.spaces.contains(where: { $0.id == pendingSpace }) { self.pendingSpace = nil }
-        if space == nil, pendingSpace == nil || pendingSpace != spaceID, let first = NewThreadRules.lastUsedSpace(host) ?? host.spaces.first?.id {
+        if space == nil, !noSpace, pendingSpace == nil || pendingSpace != spaceID, let first = Self.fallbackSpace(host) {
             spaceID = first
             rebuildRows()
         }
         // A host that comes back (or a repo that arrives) gets its defaults once per connection.
-        if host.phase.isConnected, !defaults.ready, !defaults.loading, space != nil, sessions[host.id] != defaultsSession {
+        if host.phase.isConnected, !defaults.ready, !defaults.loading, space != nil || noSpace, sessions[host.id] != defaultsSession {
             loadDefaults()
         }
         refreshBase()
@@ -195,10 +200,17 @@ final class NewThreadModel {
         let contextSpace = context?.host == pick ? hosts.agent(context!)?.spaceID : nil
         let input = inputs.first { $0.id == pick }
         let spaces = input?.spaces ?? []
-        spaceID = spaces.first { $0.id == contextSpace }?.id ?? input.flatMap(NewThreadRules.lastUsedSpace) ?? spaces.first?.id
+        // A thread on screen with no space opens the form on No space, as on the Mac.
+        let contextNoSpace = input?.supportsNoSpace == true && input?.state.spaces.first { $0.id == contextSpace }?.holdsThreads == true
+        spaceID = contextNoSpace ? NewThreadRules.noSpace : spaces.first { $0.id == contextSpace }?.id ?? input.flatMap(Self.fallbackSpace)
         rebuildRows()
         loadDefaults()
         refreshBase()
+    }
+
+    /// The repo the host last worked in, else its first, else No space where it takes it.
+    private static func fallbackSpace(_ host: NewThreadHostInput) -> SpaceID? {
+        NewThreadRules.lastUsedSpace(host) ?? host.spaces.first?.id ?? (host.supportsNoSpace ? NewThreadRules.noSpace : nil)
     }
 
     // MARK: Choosing
@@ -206,7 +218,7 @@ final class NewThreadModel {
     func choose(host id: UUID) {
         guard id != hostID, hostRows.first(where: { $0.id == id })?.selectable == true else { return }
         hostID = id
-        if space == nil { spaceID = host.flatMap(NewThreadRules.lastUsedSpace) ?? host?.spaces.first?.id }
+        if space == nil, !noSpace { spaceID = host.flatMap(Self.fallbackSpace) }
         errorText = nil
         rebuildRows()
         loadDefaults()

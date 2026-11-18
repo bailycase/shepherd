@@ -78,9 +78,9 @@ private struct NewThreadRepoSummary: View {
     let model: NewThreadModel
 
     var body: some View {
-        let path = model.space.map { NewThreadRules.abbreviatedPath($0.path) }
+        let path = model.noSpace ? "Own scratch folder" : model.space.map { NewThreadRules.abbreviatedPath($0.path) }
         NavigationLink(value: NewThreadModel.Panel.repo) {
-            SHChoiceRow(model.space?.name ?? "Choose repo", detail: path ?? model.host.map { "a repo on \($0.name)" }) {
+            SHChoiceRow(model.repoName ?? "Choose repo", detail: path ?? model.host.map { "a repo on \($0.name)" }) {
                 SHGlyph.repository.image
                     .font(.sh(.ui))
                     .foregroundStyle(Color.sh.textSecondary)
@@ -343,13 +343,14 @@ struct NewThreadWorktreeCard: View {
         let supported = model.host?.supportsWorktrees ?? true
         let on = model.usesWorktree
         SHGroupCard {
-            SHCardRow("New worktree", description: NewThreadRules.worktreeCaption(base: model.base.base),
+            SHCardRow("New worktree", description: model.noSpace ? "No space has no repo to branch."
+                          : NewThreadRules.worktreeCaption(base: model.base.base),
                       problem: supported ? nil : model.host.map { "Update Shepherd on \($0.name) to start threads in a new worktree." }) {
                 Toggle("New worktree", isOn: Binding(get: { on }, set: { model.setWorktree($0) }))
                     .toggleStyle(.shSwitch)
                     .labelsHidden()
                     .shTouchTarget(height: SH.Height.controlS, width: SH.Height.controlL)
-                    .disabled(!supported)
+                    .disabled(!supported || model.noSpace)
             }
             if on {
                 field("New branch", text: Binding(get: { model.branch }, set: { model.setBranch($0) }), prompt: "branch name")
