@@ -551,8 +551,9 @@ struct ThreadView: View {
             }
             .scrollTargetLayout()
             // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
-            // that host does not run). Its identity changes only while the rows are let go, and takes them with it.
-            .id(dormant))
+            // that host does not run). Its identity changes whenever the rows are let go (a pass, a released history, a hidden
+            // thread that draws its tail alone), and takes them with it.
+            .id(dormant || history.isEmpty))
         }
     }
 

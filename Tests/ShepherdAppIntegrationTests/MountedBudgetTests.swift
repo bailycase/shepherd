@@ -296,6 +296,28 @@ struct MountedBudgetTests {
         }
     }
 
+    /// The lazy stack of a hidden layout keeps the rows it realized when its list empties, so a history let go while the layout is hidden
+    /// (the thread's turn past the most that keep theirs) must take the stack with it, as a pass's release does.
+    @Test func aHiddenLayoutThatLosesItsHistoryHoldsNoneOfTheRowsItsStackRealized() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        // Eighty one-line rows: thirty are the tail and the rest the lazy stack's, which a reader scrolled far up realizes.
+        let work = try await Workspace.open(2, replies: 40, cycles: 1, in: app)
+        defer { work.window.close() }
+        let reader = work.store(0)
+        let eager = try work.fields(0)
+        for _ in 0..<5 { try await work.scrollUp(0) }
+        let realized = try work.fields(0)
+        #expect(realized > eager, "the stack realized rows: \(realized) fences, \(eager) in the tail")
+        try await work.show(1)
+        reader.stop()
+        reader.release()
+        try await eventuallyOnMain("agent 0's layout to hold none of the rows it had", timeout: .seconds(30)) {
+            ListPerf.settle(work.window)
+            return try work.fields(0) == 0
+        }
+    }
+
     /// Shown again halfway through its release, a thread draws the rows it still had at once and every row it had after that, from what the store kept.
     @Test func aThreadLeftHalfwayReleasedDrawsEverythingWhenShown() async throws {
         let app = try AppHarness()
