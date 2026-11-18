@@ -504,7 +504,8 @@ final class NewThreadState {
         let submittedWorktree = worktree
         let submittedBase = worktreeBase
         let submittedBranch = worktreeBranch
-        let text = submittedPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        // pi runs only a leading command: a skill chip mid-prompt moves to the front, as a thread's composer sends it.
+        let text = ComposerSkillToken.message(submittedPrompt.trimmingCharacters(in: .whitespacesAndNewlines))
         let chosenModel = model.trimmingCharacters(in: .whitespaces)
         let level = thinkingLevel(vm)
         let tier = place.host == nil || vm.remoteHosts.allConnections.first(where: { $0.id == place.host })?.supportsCreateAgentServiceTier == true
