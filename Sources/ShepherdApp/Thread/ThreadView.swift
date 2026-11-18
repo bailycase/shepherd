@@ -154,7 +154,8 @@ struct ThreadView: View {
         // Shown again, such a thread draws the rows it kept at once (they never went), and the rest after that frame, a step at a time
         // from the newest (`ThreadRestore`): the eager tail grows over the lazy stack's rows, which the second frame brings back.
         let eagerCount = eagerCount(origins, rows: rows)
-        let restored = restore.plan(active: active, hiddenKept: kept, rows: rows, eagerRows: eagerCount) { [store] drawn in
+        let restored = restore.plan(active: active, hiddenKept: kept, rows: rows, eagerRows: eagerCount,
+                                    tailParsed: !store.tailAwaitsParse(lastRows: eagerCount)) { [store] drawn in
             store.restoreCost(drawn: drawn, upTo: eagerCount)
         }
         let restoreStepping = restore.restoring
@@ -502,7 +503,8 @@ struct ThreadView: View {
     /// rows change (`ThreadEagerTail`), and the store is told what was drawn, which the budget counts (`NativeThreadStore.drawnEagerRows`).
     private func restingCount(_ origins: ProjectUserOrigins, rows: [NativeThreadRow]) -> Int {
         let count = eagerTail.update(rows: rows, revision: store.rowStructureRevision, costs: store.rowCostRevision, cover: eagerCover, maxRows: Self.eagerRows,
-                                     crossing: AppLayout.eagerTailCrossing, detached: !follower.sticky) { ruleCount(origins) }
+                                     crossing: AppLayout.eagerTailCrossing, detached: !follower.sticky,
+                                     settling: store.tailAwaitsParse(lastRows: Self.eagerRows)) { ruleCount(origins) }
         if count > 0, store.drawnEagerRows != count { store.drawnEagerRows = count }
         return count
     }
@@ -575,12 +577,9 @@ struct ThreadView: View {
         if restore.awaitsHistory {
             try? await Task.sleep(for: AppLayout.restorePause)
             // Replies still to be parsed (a large one is parsed off the main thread) draw as nothing, and a tail a few points tall leaves the
-            // stack in the window, where it builds rows that grow to their full size out of view and out of the budget.
-            func awaitingParse() -> Bool {
-                let rows = listedRows(userOrigins)
-                return store.tailAwaitsParse(lastRows: eagerCount(userOrigins, rows: rows))
-            }
-            while scrolling() || awaitingParse(), !Task.isCancelled { try? await Task.sleep(for: AppLayout.restoreRetry) }
+            // stack in the window, where it builds rows that grow to their full size out of view and out of the budget. The update that
+            // brings their blocks builds them, and the stack comes in the one after it.
+            while scrolling() || !restore.tailDrawnParsed, !Task.isCancelled { try? await Task.sleep(for: AppLayout.restoreRetry) }
             guard !Task.isCancelled else { return }
             // The stack's height comes in above whatever the reader is looking at, and a scroll view held to nothing keeps its offset
             // from the top: a reader who scrolled away in the moments before it comes goes back to the tail, held there as it grows.
@@ -1197,6 +1196,11 @@ final class ThreadRestore {
     /// the lazy stack above its eager tail has had its first frame.
     @ObservationIgnored private var arrived = false
 
+    /// The last update drew the replies at the end of the eager tail with their blocks (`NativeThreadStore.tailAwaitsParse` was false):
+    /// a large reply is parsed off the main thread and draws as nothing until then, and the update that brings its content builds it,
+    /// which the lazy stack above must not share (it would be laid out against a tail still growing, and build rows).
+    @ObservationIgnored private(set) var tailDrawnParsed = true
+
     /// The lazy stack is still to come back (the next step brings it): the thread draws only the rows the eager stack holds, so a
     /// reader cannot scroll to older ones.
     var awaitsHistory: Bool { restoring && !history }
@@ -1208,9 +1212,11 @@ final class ThreadRestore {
     /// no more than a step (`AppLayout.restoreStepBytes`) draws them all in its first frame, as it would after any release, because
     /// there is nothing to spread (a dozen rows of one line owe nothing), and a last screen that is all it drew might not fill its
     /// window (`ThreadTailAnchor`).
-    func plan<Rows: BidirectionalCollection>(active: Bool, hiddenKept: Int?, rows: Rows, eagerRows: Int, owed: (Int) -> Int) -> Plan?
+    func plan<Rows: BidirectionalCollection>(active: Bool, hiddenKept: Int?, rows: Rows, eagerRows: Int, tailParsed: Bool = true,
+                                             owed: (Int) -> Int) -> Plan?
     where Rows.Element == NativeThreadRow, Rows.Index == Int {
         _ = steps
+        tailDrawnParsed = tailParsed
         guard active else {
             self.hiddenKept = hiddenKept
             arrived = !rows.isEmpty

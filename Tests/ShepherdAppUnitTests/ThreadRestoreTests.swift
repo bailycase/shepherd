@@ -98,6 +98,17 @@ struct ThreadRestoreTests {
         #expect(cheap.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: ThreadView.eagerRows, owed: owed) == nil && !cheap.restoring)
     }
 
+    /// The stack waits for an update that drew the tail's replies with their blocks: the one that brings them builds them.
+    @Test func theRestoreKnowsWhetherTheLastUpdateDrewTheTailWithItsBlocks() {
+        let long = store(turns: 24)
+        let restore = ThreadRestore()
+        #expect(restore.tailDrawnParsed)
+        _ = restore.plan(active: true, hiddenKept: nil, rows: long.rows, eagerRows: 12, tailParsed: false, owed: { _ in 0 })
+        #expect(!restore.tailDrawnParsed && restore.awaitsHistory)
+        _ = restore.plan(active: true, hiddenKept: nil, rows: long.rows, eagerRows: 12, tailParsed: true, owed: { _ in 0 })
+        #expect(restore.tailDrawnParsed)
+    }
+
     @Test func aThreadWithNoRowsBeyondItsEagerTailHasNoStackToWaitFor() {
         let short = store(turns: 10)
         let restore = ThreadRestore()

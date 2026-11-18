@@ -24,9 +24,10 @@ struct ThreadEagerTailBoundaryTests {
     }()
 
     /// The tail once the thread has its first `count` rows, at structure `revision`, the rule saying `rule`.
-    private func update(_ tail: ThreadEagerTail, count: Int, revision: Int, rule: Int, cover: Int = 1, costs: Int = 0, detached: Bool = true) -> Int {
+    private func update(_ tail: ThreadEagerTail, count: Int, revision: Int, rule: Int, cover: Int = 1, costs: Int = 0, detached: Bool = true,
+                        settling: Bool = false) -> Int {
         tail.update(rows: Array(Self.all.prefix(count)), revision: revision, costs: costs, cover: cover, maxRows: Self.maxRows, crossing: 2,
-                    detached: detached) { rule }
+                    detached: detached, settling: settling) { rule }
     }
 
     @Test func aThreadDrawnForTheFirstTimeTakesTheRuleWhole() {
@@ -77,6 +78,20 @@ struct ThreadEagerTailBoundaryTests {
         #expect(update(tail, count: 42, revision: 2, rule: 9, detached: false) == 9)
         #expect(update(tail, count: 44, revision: 3, rule: 9, detached: false) == 9)
         #expect(update(tail, count: 44, revision: 4, rule: 5, detached: false) == 5)
+    }
+
+    /// A reply that has no blocks yet draws as nothing; the rows above it must not go to the lazy stack meanwhile, or the window shows nothing.
+    @Test func aTailDoesNotShrinkWhileAReplyAtItsEndAwaitsItsParse() {
+        for detached in [true, false] {
+            let tail = ThreadEagerTail()
+            #expect(update(tail, count: 40, revision: 1, rule: 24, detached: detached) == 24)
+            #expect(update(tail, count: 42, revision: 2, rule: 4, detached: detached, settling: true) == 26, "the two rows that arrived, and none left")
+            #expect(update(tail, count: 42, revision: 3, rule: 4, detached: detached, settling: true) == 26)
+            #expect(update(tail, count: 42, revision: 4, rule: 4, costs: 1, detached: detached) == (detached ? 24 : 4), "the parse landed")
+        }
+        let capped = ThreadEagerTail()
+        #expect(update(capped, count: 40, revision: 1, rule: 30) == 30)
+        #expect(update(capped, count: 44, revision: 2, rule: 4, settling: true) == 30, "thirty is still the most")
     }
 
     @Test func aTailGrowsBackTwoRowsAtATimeAndNeverPastTheRule() {

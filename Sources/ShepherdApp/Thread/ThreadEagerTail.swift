@@ -10,6 +10,8 @@ import ShepherdRemote
 /// moves nothing), and then:
 /// - it takes the rule whole the first time, and when the row it held is gone (history that came back, another session), which is what a
 ///   thread builds when it opens or is shown again;
+/// - it does not shrink while a reply among the last rows has no blocks yet (`settling`): that row draws as nothing until its parse lands,
+///   and the rows it would push into the lazy stack are what the window shows meanwhile; the rule is asked again when it lands;
 /// - for a reader who has left the tail it moves toward the rule by at most `crossing` rows, in either direction, so that no bulk of rows
 ///   crosses where the reader can see it; rows past `maxRows` leave at once, as they always did;
 /// - for one following the tail, rows that leave go at once, and rows that come back are `crossing` at a time (they are built): the rows
@@ -33,10 +35,11 @@ final class ThreadEagerTail {
     }
 
     /// The rows the eager tail holds now. `revision` and `costs` are the store's (`rowStructureRevision`, `rowCostRevision`). `rule` is how
-    /// many it should hold (read only when the rows, what they cost or the window changed since the last call), `maxRows` the most it may, `crossing` how many rows move between the stacks at a time, `detached` whether the reader has
-    /// left the tail.
+    /// many it should hold (read only when the rows, what they cost or the window changed since the last call), `maxRows` the most it may,
+    /// `crossing` how many rows move between the stacks at a time, `detached` whether the reader has left the tail, `settling` whether a
+    /// reply among the last rows is still to be parsed.
     func update<Rows: RandomAccessCollection>(rows: Rows, revision: Int, costs: Int, cover: Int, maxRows: Int, crossing: Int, detached: Bool,
-                                              rule: () -> Int) -> Int where Rows.Element == NativeThreadRow, Rows.Index == Int {
+                                              settling: Bool = false, rule: () -> Int) -> Int where Rows.Element == NativeThreadRow, Rows.Index == Int {
         let key = Key(revision: revision, costs: costs, rows: rows.count, first: rows.first?.id, last: rows.last?.id, cover: cover)
         guard key != self.key else { return count }
         self.key = key
@@ -54,7 +57,7 @@ final class ThreadEagerTail {
         let current = rows.endIndex - index
         let next: Int
         if current > target {
-            next = detached ? max(target, min(maxRows, current - crossing)) : target
+            next = settling ? min(current, maxRows) : detached ? max(target, min(maxRows, current - crossing)) : target
         } else {
             next = min(target, current + crossing)
         }

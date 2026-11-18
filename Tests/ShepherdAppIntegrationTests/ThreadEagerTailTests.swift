@@ -73,7 +73,9 @@ struct ThreadEagerTailTests {
         // The lazy stack above the tail builds nothing: the window is at the tail, and the stack is drawn once the tail has its content.
         let ceiling = allowed / 2 * Self.cycles
         #expect(fields <= ceiling, "\(fields) code fields are built, \(ceiling) at most for \(allowed) rows")
-        #expect(peak <= ceiling, "and never more on the way: \(peak) code fields at most")
+        // Until their parses land the replies cost by their text (a fixture of tables costs more than that, as a reply of fences does
+        // less), so the tail drawn first may be a few replies longer than the one the parsed costs allow; it comes down when they land.
+        #expect(peak <= 3 * ceiling, "and not many more on the way: \(peak) code fields at most")
         #expect(fields >= Self.cycles, "the last reply is built")
     }
 
@@ -100,6 +102,40 @@ struct ThreadEagerTailTests {
         let ceiling = allowed / 2 * Self.cycles
         #expect(last <= ceiling, "\(last) code fields are built, \(ceiling) at most for \(allowed) rows")
         #expect(last >= Self.cycles, "the last reply is built")
+    }
+
+    /// A tail of a few rows (what its cost allows) is as safe at the end of the thread as thirty were: sending, streaming with tool calls
+    /// and finishing into a long reply never leave a blank stretch where the reader is, though the rows above the tail are the lazy
+    /// stack's estimates.
+    ///
+    /// Only the short window: in a window of 1200x900 a thread of heavy rows leaves blank stretches between its rows on the base as well (the
+    /// limit of `ThreadBlankScreenTests.blankBandLimit` is for rows that are not tables and fences).
+    @Test(arguments: [CGSize(width: 900, height: 600)])
+    func aTailBoundByCostNeverLeavesTheThreadBlankWhileItTakesATurn(size: CGSize) async throws {
+        let history = Self.messages(turns: 40, cycles: Self.cycles)
+        try await ThreadBlankScreenTests.withRig(size: size, messages: history) { rig in
+            try await eventuallyOnMain("the thread to load") { rig.store.ready }
+            await rig.store.waitForProse()
+            try await rig.expectTail("opening")
+            #expect(rig.store.drawnEagerRows.map { $0 < ThreadView.eagerRows / 2 } == true, "its tail is bound by cost: \(String(describing: rig.store.drawnEagerRows)) rows")
+            let promptAt = ThreadBlankScreenTests.base + 41 * 60_000
+            rig.store.draft = "Now refactor the thing and run the tests please."
+            await rig.store.send()
+            try await rig.expectTail("sending")
+            await rig.publish { $0.append(ThreadBlankScreenTests.user("u40", "Now refactor the thing and run the tests please.", at: promptAt)) }
+            try await rig.expectTail("the echo persisted with pi running")
+            for k in 0..<4 {
+                await rig.publish(provisional: [ThreadBlankScreenTests.streamingReply(1 + k)])
+                try await rig.expectTail("streaming text \(k)")
+            }
+            // A reply of a few paragraphs and a fence, parsed where it lands. (A reply of 8 KB or more is parsed off the main thread and draws
+            // as nothing for a frame or two when it lands, in a thread of cheap rows as in this one.)
+            await rig.publish(running: false) {
+                $0.append(ThreadBlankScreenTests.reply("a40", ThreadBlankScreenTests.prose(3, 40) + "\n\n" + ThreadBlankScreenTests.code(40), at: promptAt + 60_000))
+            }
+            try await rig.expectTail("the reply landing")
+            try await rig.expectNoBlankBand("the reply drawn")
+        }
     }
 
     /// A thread whose rows are cheap has nothing to bound: its thirty rows are laid out as before.
