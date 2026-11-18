@@ -26,10 +26,12 @@ function writeAuth(file, data) {
 }
 
 const providers = {
-  anthropic: { id: "anthropic", name: "Anthropic", auth: { oauth: { name: "Anthropic (Claude Pro/Max)" } } },
-  "openai-codex": { id: "openai-codex", name: "OpenAI Codex", auth: { oauth: { name: "OpenAI (ChatGPT Plus/Pro)" } } },
-  "github-copilot": { id: "github-copilot", name: "GitHub Copilot", auth: { oauth: { name: "GitHub Copilot" } } },
-  deepseek: { id: "deepseek", name: "DeepSeek", auth: { apiKey: { name: "DeepSeek API key" } } },
+  anthropic: { id: "anthropic", name: "Anthropic", auth: { oauth: { name: "Anthropic (Claude Pro/Max)", login: browserLogin } } },
+  "openai-codex": { id: "openai-codex", name: "OpenAI Codex", auth: { oauth: { name: "OpenAI (ChatGPT Plus/Pro)", login: browserLogin } } },
+  "github-copilot": { id: "github-copilot", name: "GitHub Copilot", auth: { oauth: { name: "GitHub Copilot", login: deviceLogin } } },
+  deepseek: { id: "deepseek", name: "DeepSeek", auth: { apiKey: { name: "DeepSeek API key", login: keyLogin } } },
+  "fixture-login": { id: "fixture-login", name: "Acme account", auth: { oauth: { name: "Acme subscription" } } },
+  "fixture-key": { id: "fixture-key", name: "Acme key account", auth: { apiKey: { name: "Acme credentials", login: keyLogin } } },
 };
 const models = {
   deepseek: [
@@ -99,6 +101,12 @@ async function keyLogin(interaction) {
   return { type: "api_key", key };
 }
 
+// The bridge loads provider services without creating an agent session.
+export const SettingsManager = { create: () => ({}) };
+export async function createAgentSessionServices({ modelRuntime }) {
+  return { modelRuntime, resourceLoader: { getExtensions: () => ({ errors: [] }) }, diagnostics: [] };
+}
+
 export class ModelRuntime {
   constructor(options) {
     this.authPath = options.authPath;
@@ -110,6 +118,10 @@ export class ModelRuntime {
 
   getProvider(id) {
     return providers[id];
+  }
+
+  getProviders() {
+    return Object.values(providers);
   }
 
   getModels(id) {
@@ -133,6 +145,18 @@ export class ModelRuntime {
       credential = await browserLogin(interaction);
     } else if (providerId === "github-copilot") {
       credential = await deviceLogin(interaction);
+    } else if (providerId === "fixture-login" && type === "oauth") {
+      const region = await interaction.prompt({ type: "select", message: "Choose region", options: [{ id: "east", label: "East" }, { id: "west", label: "West" }] });
+      const tenant = await interaction.prompt({ type: "text", message: "Tenant" });
+      const password = await interaction.prompt({ type: "secret", message: "Account password" });
+      if (region !== "west" || tenant !== "acme" || password !== " fixture-password ") throw Error("The fixture rejected the answer.");
+      credential = oauthCredential();
+    } else if (providerId === "fixture-key" && type === "api_key") {
+      const password = await interaction.prompt({ type: "secret", message: "Account password" });
+      const tenant = await interaction.prompt({ type: "text", message: "Tenant" });
+      const region = await interaction.prompt({ type: "select", message: "Choose region", options: [{ id: "east", label: "East" }, { id: "west", label: "West" }] });
+      if (region !== "west" || tenant !== "acme" || password !== " !fixture$password ") throw Error("The fixture rejected the answer.");
+      credential = { type: "api_key", key: password, env: { ACME_TENANT: tenant } };
     } else if (providerId === "deepseek" && type === "api_key") {
       credential = await keyLogin(interaction);
     } else {

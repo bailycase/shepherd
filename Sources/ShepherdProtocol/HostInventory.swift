@@ -150,6 +150,24 @@ public struct HostSubagentProfileText: Codable, Hashable, Sendable {
     }
 }
 
+/// Interactive methods reported by Pi after loading enabled provider extensions.
+public struct HostProviderSignIn: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var oauth: String?
+    public var apiKey: String?
+    /// Pi's verified one-field key login can use Shepherd's existing checked-key form.
+    public var keyForm: Bool?
+
+    public init(id: String, name: String, oauth: String? = nil, apiKey: String? = nil, keyForm: Bool? = nil) {
+        self.id = id
+        self.name = name
+        self.oauth = oauth
+        self.apiKey = apiKey
+        self.keyForm = keyForm
+    }
+}
+
 /// One provider of a host's pi and how its sign-in stands, as Settings ▸ Sign-in's row says it.
 /// Never a key or token: the state, its words, and saved accounts by opaque id and name.
 public struct HostProviderStatus: Codable, Hashable, Sendable, Identifiable {
@@ -185,11 +203,15 @@ public struct HostProviderStatus: Codable, Hashable, Sendable, Identifiable {
     public var accountList: [HostProviderAccount]?
     /// Switches to the next account when the active one hits a limit.
     public var rotate: Bool?
+    /// Effective provider methods, absent from older hosts. Neither a credential nor an endpoint.
+    public var signIn: HostProviderSignIn?
 
     public init(id: String, name: String, badge: String, auth: Auth, detail: String? = nil, problem: String? = nil,
-                accounts: Int = 0, activeAccount: String? = nil, accountList: [HostProviderAccount]? = nil, rotate: Bool? = nil) {
+                accounts: Int = 0, activeAccount: String? = nil, accountList: [HostProviderAccount]? = nil, rotate: Bool? = nil,
+                signIn: HostProviderSignIn? = nil) {
         self.accountList = accountList
         self.rotate = rotate
+        self.signIn = signIn
         self.id = id
         self.name = name
         self.badge = badge

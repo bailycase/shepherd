@@ -33,7 +33,7 @@ enum SlashLogin {
     /// The draft as one of these, or nil: "/login", "/login anthropic", "/LOGIN  Anthropic " (a
     /// provider by id or by name, case aside), "/logout kimi". Whatever follows the provider, on
     /// any line, is dropped, never sent: a key pasted after "/login deepseek" must not reach pi.
-    static func parse(_ draft: String) -> Command? {
+    static func parse(_ draft: String, choices: [Choice] = []) -> Command? {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.hasPrefix("/") else { return nil }
         let words = text.dropFirst().split(whereSeparator: \.isWhitespace).map(String.init)
@@ -42,12 +42,13 @@ enum SlashLogin {
         // A name of several words on the command's line ("OpenAI Codex"), else the first word.
         let line = text.dropFirst().split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
         let named = line.split(whereSeparator: \.isWhitespace).dropFirst().joined(separator: " ")
-        return Command(verb: verb, provider: provider(named: named) ?? provider(named: words[1]))
+        return Command(verb: verb, provider: provider(named: named, choices: choices) ?? provider(named: words[1], choices: choices))
     }
 
     /// A provider by id or name, as Sign-in lists them.
-    static func provider(named name: String) -> String? {
+    static func provider(named name: String, choices: [Choice] = []) -> String? {
         let wanted = name.lowercased()
+        if let choice = choices.first(where: { $0.id.lowercased() == wanted || $0.name?.lowercased() == wanted }) { return choice.id }
         return providers.first { $0.lowercased() == wanted || PiSignInCatalog.name($0).lowercased() == wanted }
     }
 
@@ -76,6 +77,7 @@ enum SlashLogin {
         var id: String
         var plan: String
         var state: SHSlashCommand.Status
+        var name: String? = nil
 
         /// Not signed in comes first: that's what /login is for.
         var needsSignIn: Bool { state.tone == .tertiary || state.tone == .attention }
@@ -87,9 +89,14 @@ enum SlashLogin {
         let rows = page.subscriptions + page.apiKeys
         var seen = Set<String>()
         var choices: [Choice] = []
-        for provider in providers where seen.insert(provider).inserted {
+        for provider in rows.map(\.id) + page.addable where seen.insert(provider).inserted {
             let row = rows.first { $0.id == provider }
-            let plan = PiSignInCatalog.subscription(provider)?.plan ?? "\(PiSignInCatalog.name(provider)) API key"
+            let name = row?.name ?? page.providerNames[provider] ?? PiSignInCatalog.name(provider)
+            let plan: String
+            switch row?.auth {
+            case .signedIn(let value)?, .expired(let value)?, .notSignedIn(let value)?, .signingIn(let value)?: plan = value ?? "Account"
+            default: plan = "\(name) API key"
+            }
             let state: SHSlashCommand.Status
             switch row?.auth {
             case .signedIn?: state = .init("Signed in", tone: .done)
@@ -99,9 +106,9 @@ enum SlashLogin {
             case .signingIn?: state = .init("Signing in…", tone: .secondary)
             case .notSignedIn?, .noKey?, nil: state = .init("Not signed in", tone: .tertiary)
             }
-            choices.append(Choice(id: provider, plan: plan, state: state))
+            choices.append(Choice(id: provider, plan: plan, state: state, name: name))
         }
-        let subscriptions = Set(PiSignInCatalog.subscriptions.map(\.id))
+        let subscriptions = Set(page.subscriptions.map(\.id))
         // Subscriptions first among equals, then the rest by name.
         return choices.enumerated().sorted { a, b in
             if a.element.needsSignIn != b.element.needsSignIn { return a.element.needsSignIn }
@@ -114,9 +121,9 @@ enum SlashLogin {
     /// The rows for `partial`: ids or names that start with it first, then those that contain it.
     static func matches(_ partial: String, in choices: [Choice]) -> [Choice] {
         guard !partial.isEmpty else { return choices }
-        let prefixed = choices.filter { $0.id.hasPrefix(partial) || PiSignInCatalog.name($0.id).lowercased().hasPrefix(partial) }
+        let prefixed = choices.filter { $0.id.hasPrefix(partial) || ($0.name ?? PiSignInCatalog.name($0.id)).lowercased().hasPrefix(partial) }
         let containing = choices.filter { choice in
-            !prefixed.contains(choice) && (choice.id.contains(partial) || PiSignInCatalog.name(choice.id).lowercased().contains(partial))
+            !prefixed.contains(choice) && (choice.id.contains(partial) || (choice.name ?? PiSignInCatalog.name(choice.id)).lowercased().contains(partial))
         }
         return prefixed + containing
     }

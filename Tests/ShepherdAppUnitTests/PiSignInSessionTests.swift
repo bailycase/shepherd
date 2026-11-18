@@ -116,7 +116,7 @@ struct PiSignInSessionTests {
     @Test func aKeyCannotBeSavedBeforeItsCheckIsRequested() {
         let (session, _, _) = Self.session("deepseek", key: true)
         #expect(session.flow == .key && session.variable == "DEEPSEEK_API_KEY", "the variable pi reads is offered")
-        session.handle(.prompt(PiSignInPrompt(id: "p1", kind: .secret, message: "Enter DeepSeek API key")))
+        session.handle(.prompt(PiSignInPrompt(id: "p1", kind: .secret, message: "Enter DeepSeek API key", keyForm: true)))
         #expect(session.phase == .key && !session.keyCheck.allowsSave)
         session.handle(.checked(id: "c9", .works(models: ["x"])))
         #expect(session.keyCheck == .idle, "a check the sheet didn't ask for is ignored")
@@ -129,7 +129,7 @@ struct PiSignInSessionTests {
     func aReplyForThePreviousKeyCannotEnableSaveDuringDebounce(change: String) {
         let (session, _, _) = Self.session("deepseek", key: true)
         defer { session.end() }
-        session.handle(.prompt(PiSignInPrompt(id: "p1", kind: .secret, message: "Key")))
+        session.handle(.prompt(PiSignInPrompt(id: "p1", kind: .secret, message: "Key", keyForm: true)))
         // No suspension here: the new key's debounced request cannot have been dispatched.
         switch change {
         case "mode": session.setKeyMode(.variable)
@@ -150,6 +150,27 @@ struct PiSignInSessionTests {
     func theKeyFormSavesAKeyOrAVariableName(mode: PiSignInSession.KeyMode, key: String, variable: String, input: PiKeyInput?) {
         let session = PiSignInSession(preview: "deepseek", flow: .key, phase: .key, keyMode: mode, key: key, variable: variable)
         #expect(session.keyInput == input)
+    }
+
+    @Test func providerQuestionsDoNotBecomeApiKeysOrKeepAnAnswerAfterThePromptCloses() {
+        let (_, store, _) = Self.session("anthropic")
+        let session = PiSignInSession(provider: "acme", subscription: PiSignInCatalog.account(id: "acme", name: "Acme"),
+                                      origin: .settings, store: store)
+        let choice = PiSignInPrompt(id: "p1", kind: .select, message: "Region", options: [.init(id: "west", label: "West")])
+        session.handle(.prompt(choice))
+        session.submitPrompt("unoffered")
+        #expect(session.phase == .prompt(choice))
+        session.submitPrompt("west")
+        #expect(session.phase == .saving)
+        let secret = PiSignInPrompt(id: "p2", kind: .secret, message: "Account password")
+        session.handle(.prompt(secret))
+        session.promptAnswer = " fixture-password "
+        #expect(session.method == .oauth && session.flow == .browser && session.keyCheck == .idle)
+        #expect(session.phase == .prompt(secret))
+        session.handle(.promptClosed("p2"))
+        #expect(session.promptAnswer.isEmpty && session.phase == .saving)
+        session.submitPrompt("stale answer")
+        #expect(session.phase == .saving)
     }
 
     @Test func pickingUpAgentsIsCounted() {

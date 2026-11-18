@@ -1104,7 +1104,7 @@ struct Composer: View, Equatable {
 
     private func sendDraft(delivery: NativeThreadDelivery) {
         // `/login …` typed out and sent: Sign-in opens; nothing reaches pi.
-        if slashLogin != nil, let command = SlashLogin.parse(store.draft) {
+        if let slashLogin, let command = SlashLogin.parse(store.draft, choices: slashLogin.choices()) {
             openLogin(command)
             return
         }

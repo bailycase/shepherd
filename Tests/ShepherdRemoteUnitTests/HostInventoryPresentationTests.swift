@@ -10,6 +10,16 @@ import ShepherdProtocol
 struct HostInventoryPresentationTests {
     typealias P = HostInventoryPresentation
 
+    @Test func unconfiguredKeysBelongInTheAddMenuNotTheSavedAccountsList() {
+        let available = HostProviderStatus(id: "acme", name: "Acme", badge: "API key", auth: .notSignedIn,
+                                           signIn: HostProviderSignIn(id: "acme", name: "Acme", apiKey: "Acme credentials", keyForm: false))
+        let saved = HostProviderStatus(id: "saved", name: "Saved", badge: "API key", auth: .apiKey)
+        let account = HostProviderStatus(id: "account", name: "Account", badge: "Subscription", auth: .notSignedIn)
+        let page = P.providerPage([available, saved, account])
+        #expect(page.addableKeys == [available])
+        #expect(page.groups["API key"] == [saved] && page.groups["Subscription"] == [account])
+    }
+
     @Test func mcpRowsAndValue() {
         let github = HostMCPServer(name: "github", kind: .remote, endpoint: "https://api.githubcopilot.com/mcp/", status: .connected, tools: 12)
         let postgres = HostMCPServer(name: "postgres", kind: .local, endpoint: "npx server-postgres", status: .error, note: "connection refused", tools: nil)

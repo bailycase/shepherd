@@ -26,6 +26,10 @@ final class PiAuthStore {
     private(set) var accounts: [String: PiAccountList] = [:]
     /// Subscription usage by provider (`PiUsage`), read when Sign-in opens.
     private(set) var usage: [String: [PiUsageWindow]] = [:]
+    /// Effective interactive methods from Pi, including enabled provider extensions.
+    private(set) var providers: [PiSignInProvider]?
+    private(set) var providersProblem: String?
+    @ObservationIgnored private var providerRead: Task<Void, Never>?
     /// The provider whose sign-in under way adds an account instead of replacing the active one.
     @ObservationIgnored private var adding: String?
     /// The last sign-in's account bookkeeping, still being saved: a remote client's answer waits on it.
@@ -62,6 +66,43 @@ final class PiAuthStore {
         return PiSignInBridge(line: PiLaunch.signInBridge(node: pi.engine.node, script: script.path, sdk: sdk, home: pi.files))
     }
 
+    /// Refresh when Sign-in opens or provider resources change. Concurrent readers share one subprocess.
+    func refreshProviders() async {
+        if let providerRead { await providerRead.value; return }
+        let read = Task { [weak self] in
+            guard let self else { return }
+            if let problem = await readyHome() { providersProblem = problem; return }
+            do {
+                let bridge = try bridge()
+                defer { bridge.close() }
+                let watchdog = Task {
+                    try? await Task.sleep(for: .seconds(20))
+                    if !Task.isCancelled { bridge.close() }
+                }
+                defer { watchdog.cancel() }
+                bridge.send(.providers)
+                for await reply in bridge.replies {
+                    switch reply {
+                    case .providers(let list):
+                        providers = list
+                        providersProblem = nil
+                        return
+                    case .failed(let failure):
+                        providersProblem = failure.reason
+                        return
+                    default: continue
+                    }
+                }
+                providersProblem = "The sign-in helper stopped before listing providers."
+            } catch {
+                providersProblem = "Couldn’t load sign-in providers."
+            }
+        }
+        providerRead = read
+        await read.value
+        providerRead = nil
+    }
+
     // MARK: Signing in
 
     /// Opens the sheet for `provider` and starts its sign-in: an account's by its catalog flow, a
@@ -71,7 +112,7 @@ final class PiAuthStore {
         if let session, session.provider == provider, session.phase.isLive { return }
         if adding != provider { adding = nil }
         session?.end()
-        let subscription = key ? nil : PiSignInCatalog.subscription(provider)
+        let subscription = key ? nil : PiSignInCatalog.subscriptions(for: providers).first { $0.id == provider }
         let next = PiSignInSession(provider: provider, subscription: subscription, origin: origin, store: self)
         session = next
         next.start()
@@ -301,6 +342,8 @@ final class PiSignInSession: Identifiable {
         case paste(rejected: String?)
         /// The key form.
         case key
+        /// A provider-defined text, secret or selection question.
+        case prompt(PiSignInPrompt)
         /// A pasted code or key went to pi; waiting for it to land.
         case saving
         /// Signed in: `pickedUp` agents started again.
@@ -321,12 +364,15 @@ final class PiSignInSession: Identifiable {
     let provider: String
     let subscription: PiSignInCatalog.Subscription?
     let origin: Origin
+    let method: PiSignInMethod
+    private let usesKeyForm: Bool
     private(set) var flow: Flow
     private(set) var phase: Phase = .starting
     /// The browser page, once pi gave it.
     private(set) var authURL: URL?
     /// The code the user pastes (paste flow).
     var code = ""
+    var promptAnswer = ""
     var keyMode: KeyMode = .paste { didSet { if keyMode != oldValue { scheduleCheck() } } }
     var key = "" { didSet { if key != oldValue { scheduleCheck() } } }
     var variable = "" { didSet { if variable != oldValue { scheduleCheck() } } }
@@ -338,6 +384,7 @@ final class PiSignInSession: Identifiable {
     @ObservationIgnored private var reader: Task<Void, Never>?
     @ObservationIgnored private var checking: Task<Void, Never>?
     @ObservationIgnored private var pendingPrompt: PiSignInPrompt?
+    @ObservationIgnored private var hasPrompted = false
     @ObservationIgnored private var checkCount = 0
     /// Continue was pressed before pi asked for the code.
     @ObservationIgnored private var submitWhenAsked = false
@@ -348,8 +395,10 @@ final class PiSignInSession: Identifiable {
         self.provider = provider
         self.subscription = subscription
         self.origin = origin
+        method = subscription == nil ? .apiKey : .oauth
+        usesKeyForm = store.providers?.first { $0.id == provider }?.keyForm ?? true
         self.store = store
-        flow = subscription.map { $0.flow == .device ? .device : .browser } ?? .key
+        flow = subscription.map { $0.flow == .device ? .device : .browser } ?? (usesKeyForm ? .key : .browser)
         if let names = PiProviders.environmentKeys[provider], let first = names.first { variable = first }
     }
 
@@ -359,6 +408,8 @@ final class PiSignInSession: Identifiable {
         self.provider = provider
         subscription = flow == .key ? nil : PiSignInCatalog.subscription(provider)
         origin = .settings
+        method = flow == .key ? .apiKey : .oauth
+        usesKeyForm = flow == .key
         self.flow = flow
         self.phase = phase
         self.authURL = authURL
@@ -369,7 +420,7 @@ final class PiSignInSession: Identifiable {
         self.keyCheck = keyCheck
     }
 
-    var name: String { PiSignInCatalog.name(provider) }
+    var name: String { subscription?.name ?? store?.providers?.first { $0.id == provider }?.name ?? PiSignInCatalog.name(provider) }
     var site: String { subscription?.site ?? PiSignInCatalog.keyPages[provider] ?? name }
 
     // MARK: Running pi's login
@@ -378,6 +429,8 @@ final class PiSignInSession: Identifiable {
         reader?.cancel()
         bridge?.close()
         pendingPrompt = nil
+        hasPrompted = false
+        promptAnswer = ""
         guard let store else { return }
         if flow != .paste { phase = flow == .key ? .key : .starting }
         reader = Task { [weak self] in
@@ -403,7 +456,6 @@ final class PiSignInSession: Identifiable {
                     self.handle(reply)
                 }
             }
-            let method: PiSignInMethod = flow == .key ? .apiKey : .oauth
             let piFlow = override ?? (flow == .device ? .device : flow == .paste ? .paste : .browser)
             bridge.send(.login(provider: provider, method: method, flow: piFlow))
             if flow != .paste { phase = flow == .key ? .key : .starting }
@@ -416,7 +468,7 @@ final class PiSignInSession: Identifiable {
 
     func handle(_ reply: PiSignInReply) {
         switch reply {
-        case .ready, .info, .progress:
+        case .ready, .providers, .info, .progress:
             break
         case .authURL(let url, _):
             authURL = url
@@ -428,11 +480,28 @@ final class PiSignInSession: Identifiable {
             store?.copy(code)
         case .prompt(let prompt):
             pendingPrompt = prompt
-            if prompt.kind == .secret { flow = .key; phase = .key }
-            if submitWhenAsked, prompt.kind == .manualCode || prompt.kind == .text { submitCode() }
+            promptAnswer = ""
+            if prompt.kind == .secret, method == .apiKey, prompt.keyForm == true, !hasPrompted {
+                flow = .key
+                phase = .key
+                if keyInput != nil { scheduleCheck() }
+            } else if prompt.kind != .manualCode {
+                if flow == .key { flow = .browser }
+                phase = .prompt(prompt)
+            } else if authURL == nil, flow != .paste {
+                flow = .paste
+                phase = .paste(rejected: nil)
+            }
+            hasPrompted = true
+            if submitWhenAsked, prompt.kind == .manualCode { submitCode() }
         case .promptClosed(let id):
-            if pendingPrompt?.id == id { pendingPrompt = nil }
+            if pendingPrompt?.id == id {
+                pendingPrompt = nil
+                promptAnswer = ""
+                if case .prompt = phase { phase = .saving }
+            }
         case .done(let provider, _):
+            promptAnswer = ""
             bridge?.close()
             let count = store?.landed(provider) ?? 0
             phase = .done(pickedUp: count)
@@ -440,13 +509,18 @@ final class PiSignInSession: Identifiable {
             // The login ended: its questions went with it.
             submitWhenAsked = false
             pendingPrompt = nil
+            promptAnswer = ""
             switch failure.code {
             case .cancelled: break
             case .portBusy:
                 // A pasted code's login can meet the taken port too (pi's Anthropic login always
                 // listens): the sheet says so where the browser's would.
-                if flow == .paste { flow = .browser }
-                phase = .portBusy(failure.port ?? 0)
+                if method == .oauth, let port = failure.port {
+                    if flow == .paste { flow = .browser }
+                    phase = .portBusy(port)
+                } else {
+                    phase = .failed(failure.reason)
+                }
             default:
                 if flow == .paste { phase = .paste(rejected: failure.reason) }
                 else if flow == .key { phase = .failed(failure.reason) }
@@ -471,6 +545,18 @@ final class PiSignInSession: Identifiable {
         bridge?.close()
         reader?.cancel()
         checking?.cancel()
+        promptAnswer = ""
+    }
+
+    /// Provider questions are answered verbatim, without key validation or credential interpretation.
+    func submitPrompt(_ value: String? = nil) {
+        guard case .prompt(let asked) = phase, pendingPrompt?.id == asked.id else { return }
+        let answer = value ?? promptAnswer
+        if asked.kind == .select, !asked.options.contains(where: { $0.id == answer }) { return }
+        pendingPrompt = nil
+        promptAnswer = ""
+        phase = .saving
+        bridge?.send(.answer(id: asked.id, value: answer))
     }
 
     /// Open browser again.
@@ -529,7 +615,7 @@ final class PiSignInSession: Identifiable {
     }
 
     func tryAgain() {
-        flow = subscription.map { $0.flow == .device ? .device : .browser } ?? .key
+        flow = subscription.map { $0.flow == .device ? .device : .browser } ?? (usesKeyForm ? .key : .browser)
         keyCheck = .idle
         start()
     }
@@ -567,7 +653,7 @@ final class PiSignInSession: Identifiable {
         let id = "c\(checkCount)"
         // A preview's sheet has no pi to ask.
         guard store != nil else { return }
-        guard flow == .key, let input = keyInput else {
+        guard flow == .key, pendingPrompt?.keyForm == true, let input = keyInput else {
             keyCheck = .idle
             return
         }

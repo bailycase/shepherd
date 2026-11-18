@@ -44,13 +44,18 @@ public enum RemoteHostConfigRequest: Codable, Hashable, Sendable {
     case providerSignOut(provider: String)
     /// Starts an account sign-in on the host: its page opens on the client, which sends back the
     /// code the page shows (`signIn(.complete)`). Answers `.signIn`.
-    case providerSignIn(provider: String)
+    case providerSignIn(provider: String, method: HostProviderSignInMethod? = nil, adding: Bool? = nil)
     /// One of a provider's saved accounts (Settings ▸ Sign-in's account rows). Answers `.providers`,
     /// or `.signIn` for `add`.
     case providerAccount(provider: String, action: HostProviderAccountAction)
 
     /// A sign-in under way (`mcpSignIn`, `providerSignIn`). Answers `.signIn`.
     case signIn(id: UUID, action: HostSignInAction)
+}
+
+public enum HostProviderSignInMethod: String, Codable, Hashable, Sendable {
+    case oauth
+    case apiKey = "api_key"
 }
 
 public enum HostMCPExposure: String, Codable, Hashable, Sendable, CaseIterable {
@@ -79,8 +84,42 @@ public enum HostSignInAction: Codable, Hashable, Sendable {
     case poll
     /// The code a provider's page showed, or for an MCP server the address the browser was sent
     /// back to (`http://127.0.0.1:…/callback?code=…`).
-    case complete(String)
+    case complete(String, promptID: String? = nil)
     case cancel
+}
+
+/// A provider's pending question. Answers travel only from client to host.
+public struct HostSignInPrompt: Codable, Hashable, Sendable, Identifiable {
+    public enum Kind: String, Codable, Hashable, Sendable {
+        case manualCode = "manual_code"
+        case secret, text, select
+    }
+
+    public struct Option: Codable, Hashable, Sendable {
+        public var id: String
+        public var label: String
+        public init(id: String, label: String) {
+            self.id = id
+            self.label = label
+        }
+    }
+
+    public var id: String
+    public var kind: Kind
+    public var message: String
+    public var placeholder: String?
+    public var options: [Option]
+    /// The bridge identified Pi's built-in, single-field API-key login. Never inferred from a secret prompt alone.
+    public var keyForm: Bool?
+
+    public init(id: String, kind: Kind, message: String, placeholder: String? = nil, options: [Option] = [], keyForm: Bool? = nil) {
+        self.id = id
+        self.kind = kind
+        self.message = message
+        self.placeholder = placeholder
+        self.options = options
+        self.keyForm = keyForm
+    }
 }
 
 /// One sign-in under way on a host, as a client draws it. Never a token.
@@ -104,9 +143,11 @@ public struct HostSignInProgress: Codable, Hashable, Sendable {
     public var wantsCode: Bool
     /// Why it failed, or what to do now.
     public var message: String?
+    /// Interactive provider prompt; absent from older hosts and from MCP sign-ins.
+    public var prompt: HostSignInPrompt?
 
     public init(id: UUID, phase: Phase, name: String, authorizationURL: String? = nil, deviceCode: String? = nil,
-                wantsCode: Bool = false, message: String? = nil) {
+                wantsCode: Bool = false, message: String? = nil, prompt: HostSignInPrompt? = nil) {
         self.id = id
         self.phase = phase
         self.name = name
@@ -114,6 +155,7 @@ public struct HostSignInProgress: Codable, Hashable, Sendable {
         self.deviceCode = deviceCode
         self.wantsCode = wantsCode
         self.message = message
+        self.prompt = prompt
     }
 }
 

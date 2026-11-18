@@ -256,6 +256,28 @@ struct PiSignInBridgeTests {
         #expect(try Self.tree(setup.yours) == before, "your pi keeps its own sign-in")
     }
 
+    @Test func theProviderCatalogContainsMethodsButNeverCredentials() async throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        let replies = try setup.bridge()
+        defer { replies.close() }
+        replies.bridge.send(.providers)
+        let list = try await replies.first("interactive providers") { if case .providers(let providers) = $0 { providers } else { nil } }
+        #expect(list.contains(PiSignInProvider(id: "fixture-login", name: "Acme account", oauth: "Acme subscription", keyForm: false)))
+        #expect(list.first { $0.id == "deepseek" }?.apiKey == "DeepSeek API key")
+        #expect(list.first { $0.id == "deepseek" }?.keyForm == true)
+        #expect(try setup.auth().isEmpty, "enumerating providers must not authenticate")
+        replies.expectNoSecrets()
+    }
+
+    @Test func processErrorsNeverExposeExtensionStderr() async throws {
+        let replies = Replies(PiSignInBridge(line: PiLaunch.Line(script: "printf 'fixture-private-password' >&2; exit 17")))
+        defer { replies.close() }
+        let failure = try await replies.failure()
+        #expect(failure.code == .bridge && failure.reason.contains("17"))
+        #expect(!failure.reason.contains("fixture-private-password"))
+    }
+
     @Test func aBridgeThatCantRunSaysSo() async throws {
         let replies = Replies(PiSignInBridge(line: PiLaunch.Line(script: "exit 127")))
         let failure = try await replies.failure()
