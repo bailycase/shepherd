@@ -4,7 +4,7 @@ import ShepherdProtocol
 
 // New thread on a remote host (the iOS client's creation flow): the rows its pickers show, the
 // defaults and worktree base it loads from the host, what may block Start, and the createAgent
-// request it sends. The rules mirror the Mac's New Agent sheet (NewAgentSheet.swift).
+// request it sends. The rules mirror the Mac's New thread page (NewThreadModel.swift).
 
 /// What New thread knows about one host.
 public struct NewThreadHostInput: Equatable, Sendable {
@@ -150,7 +150,7 @@ public struct NewThreadModelGroup: Equatable, Sendable, Identifiable {
 
 /// A host's model and thinking for a new thread, from `creationOptions`. The user's edits
 /// survive the answer when it is for the same host; a new host starts over. Only the newest
-/// request lands (the Mac's `NewAgentTargetDefaults`).
+/// request lands.
 public struct NewThreadDefaults: Equatable, Sendable {
     public private(set) var requestID = UUID()
     public private(set) var hostID: UUID?

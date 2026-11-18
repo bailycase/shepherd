@@ -270,7 +270,6 @@ extension AppLayout {
     // Sheets
     static let renameSheetWidth: CGFloat = 420
     static let confirmSheetWideWidth: CGFloat = 520
-    static let newAgentSheetWidth: CGFloat = 560
     static let newWorktreeSheetWidth: CGFloat = 520
     /// Sign-in's Add an API key row.
     static let addKeyRowHeight: CGFloat = 44

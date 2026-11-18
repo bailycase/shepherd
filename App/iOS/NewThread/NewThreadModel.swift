@@ -6,7 +6,7 @@ import ShepherdRemote
 
 /// One New thread form while it is on screen: the prompt, where it runs (host, repo, worktree),
 /// model and thinking, images, and Start. The rules are `NewThreadRules` (ShepherdRemote),
-/// which mirror the Mac's New Agent sheet; this store asks the host and keeps the answers.
+/// which mirror the Mac's New thread page; this store asks the host and keeps the answers.
 /// Rows are derived once per host change, never in a view's body.
 @MainActor
 @Observable

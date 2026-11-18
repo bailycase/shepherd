@@ -106,8 +106,6 @@ extension AppLayout {
     static let queueHoldRenewal: Duration = .seconds(60)
     /// Row height of the directory picker's list (RemoteDirectoryPicker).
     static let menuRowHeight: CGFloat = 36
-    /// The New Agent sheet's model list.
-    static let modelPickerWidth: CGFloat = 380
 
     /// The thread's side gutters in a thread `width` wide: the full gutter while the widest
     /// column fits between two of them, else the compact one, so a narrow thread keeps its

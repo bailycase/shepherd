@@ -325,7 +325,7 @@ public final class TerminalSurfaceModel {
     /// Retries: on the update that reveals a pane, its terminal view may not
     /// be in the window yet, and AppKit ignores `makeFirstResponder` for a
     /// view with no window. A brand-new agent is the slow case — the process
-    /// spawns, the surface is created, and the New Agent sheet is still
+    /// spawns, the surface is created, and New thread is still
     /// dismissing — so the window has to cover roughly a second, not a frame.
     public func takeKeyboardFocus(remainingAttempts: Int = 40) {
         focusGeneration &+= 1
