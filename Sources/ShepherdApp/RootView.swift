@@ -126,6 +126,7 @@ struct RootView: View {
         // Over a design, the palette's chord jumps to a board instead (JumpInContext).
         .overlay { DesignJumpOverlay(vm: vm) }
         .overlay { ImageViewerOverlay(vm: vm) }
+        .overlay { FileViewerOverlay(vm: vm) }
         .overlay { DiagramViewerOverlay(vm: vm) }
         // ⌘K floats over everything, 18% down and capped to the window; the scrim dismisses.
         .shCommandPalette(isPresented: Binding(
