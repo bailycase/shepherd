@@ -58,11 +58,21 @@ final class NativeThreadStores<Key: Hashable> {
     var mountedBudget = NativeThreadStores.defaultMountedBudget(physicalMemory: ProcessInfo.processInfo.physicalMemory) {
         didSet { if mountedBudget != oldValue { enforceMountedBudget() } }
     }
+    /// How many rows at the end of `store`'s thread its view builds: the rows it last drew (`NativeThreadStore.drawnEagerRows`), or
+    /// where it has not drawn yet, what the rule gives (`NativeThreadStore.eagerTailRows`).
+    private func eagerRows(of store: NativeThreadStore) -> Int {
+        min(eagerRows, store.drawnEagerRows ?? store.eagerTailRows(maxRows: eagerRows, costCap: eagerCostCap, coveringHeight: eagerCoverHeight))
+    }
+
     /// The keys whose threads have a view mounted, hidden or not; nil where no hidden thread has a view to hold rows (a set
     /// of stores nothing mounts), so nothing is released.
     var mounted: (() -> Set<Key>)?
-    /// How many rows at the end of a thread its view builds (`NativeThreadStore.mountedCost`).
+    /// How many rows at the end of a thread its view builds, at most (`NativeThreadStore.mountedCost`).
     var eagerRows = ThreadView.eagerRows
+    /// What the views of those rows may hold before the view builds fewer (`NativeThreadStore.eagerTailRows`).
+    var eagerCostCap = NativeMountedCost.eagerTailCap
+    /// The height of rows a view builds at least, for a thread whose view has not drawn yet (one that has says how many it built).
+    var eagerCoverHeight = AppLayout.eagerTailHeight(cover: AppLayout.eagerCoverHeight(forViewport: AppLayout.windowDefaultHeight))
     /// Readers left scrolled up, most recently shown first, that a pass leaves alone: older ones lose their place once the
     /// budget is over and come back at their tail.
     var keepPinned = 2
@@ -299,7 +309,7 @@ final class NativeThreadStores<Key: Hashable> {
         var costs: [Key: Int] = [:]
         let entries = (Array(mounted.subtracting(shown)) + shown).compactMap { key -> MountedEntry<Key>? in
             guard !onScreen.contains(key), let store = stores[key] else { return nil }
-            let cost = store.mountedCost(eagerRows: eagerRows)
+            let cost = store.mountedCost(eagerRows: eagerRows(of: store))
             guard cost > 0 else { return nil }
             costs[key] = cost
             return MountedEntry(key: key, cost: cost, pinned: pins?.isPinned(store) == true, releasable: store.canReleaseTranscript)
@@ -342,18 +352,19 @@ final class NativeThreadStores<Key: Hashable> {
                 more = true
                 break
             }
+            let eager = eagerRows(of: store)
             // A step of everything (`.max`) lets go of the lazy stack with the rows.
-            let first = room < .max && store.releasesLazyStackFirst(eagerRows: eagerRows)
+            let first = room < .max && store.releasesLazyStackFirst(eagerRows: eager)
             if quiet, first, lazy {
                 more = true
                 continue
             }
-            store.releaseTranscript(bytes: room, eagerRows: eagerRows, keepingLastScreen: true, crossing: quiet)
+            store.releaseTranscript(bytes: room, eagerRows: eager, keepingLastScreen: true, crossing: quiet)
             if quiet, first {
                 lazy = true
-                store.releaseTranscript(bytes: room, eagerRows: eagerRows, keepingLastScreen: true, crossing: true)
+                store.releaseTranscript(bytes: room, eagerRows: eager, keepingLastScreen: true, crossing: true)
             }
-            let gone = (costs[key] ?? 0) - store.mountedCost(eagerRows: eagerRows)
+            let gone = (costs[key] ?? 0) - store.mountedCost(eagerRows: eager)
             freed += gone
             if room < .max { room -= gone }
             taken += 1

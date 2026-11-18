@@ -30,6 +30,14 @@ extension AppLayout {
         let bucket = max(eagerCoverStep, (height / eagerCoverStep).rounded(.up) * eagerCoverStep)
         return Int((bucket * eagerCoverFactor).rounded(.up))
     }
+    /// How many viewports of rows (by the low height estimate, `eagerCoverHeight` each) the eager tail covers at least, whatever its
+    /// rows cost (`NativeThreadStore.eagerTailRows`): the reader's screen and the one above it are never the lazy stack's estimates.
+    static let eagerTailViewports = 2
+    /// How many rows at most cross between the eager tail and the lazy stack each time a thread's rows change (`ThreadEagerTail`): a
+    /// turn's two, which a thread of cheap rows moves it by anyway. A crossing builds the row again and drops its state.
+    static let eagerTailCrossing = 2
+    /// The height of rows, by the low estimate, that the eager tail covers at least in a thread whose `eagerCoverHeight` is `cover`.
+    static func eagerTailHeight(cover: Int) -> Int { cover * eagerTailViewports }
     /// Between a turn's parts: thinking, prose, its activity, cards, the changes card, the footer.
     static let turnItemSpacing: CGFloat = 14
     /// Between consecutive activity lines.

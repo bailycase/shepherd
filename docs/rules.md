@@ -171,6 +171,18 @@ layouts keep their frozen size. The deliberate unmounts are cold parking, only f
 a terminal (`WorkspaceSelection.coldParkCandidates`), and a Project's threads, which its Project
 page draws: its coordinator never mounts here, and a worker only while it is the one open.
 
+A thread lays out for real only the rows at its end that its cost allows (its eager tail; the older rows
+are a lazy stack's, built only as the reader scrolls to them): the last rows whose views add up to
+`NativeMountedCost.eagerTailCap` (`NativeThreadStore.eagerTailRows`), at most `ThreadView.eagerRows` (thirty,
+which is every thread of cheap rows) and never fewer than the rows covering two viewports by the low height
+estimate (`AppLayout.eagerTailViewports`), the streaming reply, or the last row, whatever it costs. A show, a
+history that reloads and a restore build at most that, so a thread of 250 MiB replies builds one where it built
+thirty. The view holds where the tail starts (`ThreadEagerTail`) and moves it toward the rule by at most two rows
+(`AppLayout.eagerTailCrossing`) each time its rows change, so rows never cross between the stacks in bulk under a
+reader (a crossing builds the row again and drops its state); the first draw takes the rule whole. What the view
+last drew is `NativeThreadStore.drawnEagerRows`, which `mountedCost` and the passes that let rows go count, and
+`ThreadRestore` restores up to.
+
 A hidden thread keeps its host, page, history and draft, but its rows are bounded: past
 `NativeThreadStores.mountedBudget` (an eighth of the memory, at most 2 GiB, counted by
 `NativeThreadStore.mountedCost`) the least recently shown hidden threads let their rows go

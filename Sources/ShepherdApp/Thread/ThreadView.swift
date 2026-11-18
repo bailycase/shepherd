@@ -129,6 +129,7 @@ struct ThreadView: View {
     @State private var arrivals = ThreadArrivals()
     @State private var rowIndex = ThreadRowIndex()
     @State private var restore = ThreadRestore()
+    @State private var eagerTail = ThreadEagerTail()
     @State private var shownSignpost = ThreadShownSignpost()
     /// Bumped when another view showing this thread hands the store's loop back to this one (`ThreadReaderPins`).
     @State private var loopRun = 0
@@ -152,7 +153,7 @@ struct ThreadView: View {
         let dormant = kept != nil
         // Shown again, such a thread draws the rows it kept at once (they never went), and the rest after that frame, a step at a time
         // from the newest (`ThreadRestore`): the eager tail grows over the lazy stack's rows, which the second frame brings back.
-        let eagerCount = eagerCount(origins)
+        let eagerCount = eagerCount(origins, rows: rows)
         let restored = restore.plan(active: active, hiddenKept: kept, rows: rows, eagerRows: eagerCount) { [store] drawn in
             store.restoreCost(drawn: drawn, upTo: eagerCount)
         }
@@ -445,7 +446,7 @@ struct ThreadView: View {
             liveResizeGate.wasLive = false
             guard active else { return }
             let live = liveEagerCount(userOrigins)
-            if live < Self.eagerRows { eagerReturning = live }
+            if live < restingCount(userOrigins, rows: listedRows(userOrigins)) { eagerReturning = live }
         }
         .task(id: eagerReturning != nil) {
             if eagerReturning != nil { await returnEagerTail() }
@@ -483,18 +484,33 @@ struct ThreadView: View {
         origins.runtime.isEmpty ? store.listRows : store.listRows.filter { !($0.isUser && origins.hides($0.turn)) }
     }
 
-    /// How many rows at the end of the thread are laid out for real. While the window is
-    /// being live-resized, only enough of them, by the store's low height estimate, to cover
+    /// How many rows at the end of the thread are laid out for real. At rest, the last rows its cost allows (`restingCount`). While the
+    /// window is being live-resized, only enough of them, by the store's low height estimate, to cover
     /// the window (`eagerCover`): every other row stays in the lazy stack, out of each resize
-    /// step's layout pass, and the full tail is laid out again when the drag ends. The full
-    /// tail is what keeps the scroll view's bottom anchor honest when rows land, so a thread
+    /// step's layout pass, and the full tail is laid out again when the drag ends. The tail at rest
+    /// is what keeps the scroll view's bottom anchor honest when rows land, so a thread
     /// at rest always has it.
-    private func eagerCount(_ origins: ProjectUserOrigins) -> Int {
+    private func eagerCount(_ origins: ProjectUserOrigins, rows: [NativeThreadRow]) -> Int {
         // A hidden thread's frame is frozen through the drag; moving its boundary would only rebuild rows.
-        guard active else { liveResizeGate.wasLive = liveResizing; return Self.eagerRows }
+        guard active else { liveResizeGate.wasLive = liveResizing; return eagerTail.held(rows: rows) { ruleCount(origins) } }
         if liveResizing { liveResizeGate.wasLive = true; return liveEagerCount(origins) }
         if liveResizeGate.wasLive, eagerReturning == nil { return liveEagerCount(origins) }
-        return eagerReturning ?? Self.eagerRows
+        return eagerReturning ?? restingCount(origins, rows: rows)
+    }
+
+    /// The tail a thread at rest lays out: where it starts moves toward the rule (`ruleCount`) by a few rows each time the thread's
+    /// rows change (`ThreadEagerTail`), and the store is told what was drawn, which the budget counts (`NativeThreadStore.drawnEagerRows`).
+    private func restingCount(_ origins: ProjectUserOrigins, rows: [NativeThreadRow]) -> Int {
+        let count = eagerTail.update(rows: rows, revision: store.rowStructureRevision, costs: store.rowCostRevision, cover: eagerCover, maxRows: Self.eagerRows,
+                                     crossing: AppLayout.eagerTailCrossing, detached: !follower.sticky) { ruleCount(origins) }
+        if count > 0, store.drawnEagerRows != count { store.drawnEagerRows = count }
+        return count
+    }
+
+    /// How many rows the thread's cost allows at its end (`NativeThreadStore.eagerTailRows`), whatever it drew so far.
+    private func ruleCount(_ origins: ProjectUserOrigins) -> Int {
+        store.eagerTailRows(maxRows: Self.eagerRows, costCap: NativeMountedCost.eagerTailCap,
+                            coveringHeight: AppLayout.eagerTailHeight(cover: eagerCover)) { $0.isUser && origins.hides($0.turn) }
     }
 
     /// The tail that covers the window while it is being live-resized (`eagerCount`).
@@ -508,7 +524,7 @@ struct ThreadView: View {
         while let current = eagerReturning, !Task.isCancelled {
             guard active, !liveResizing else { eagerReturning = nil; return }
             let more = store.restoreStep(drawn: current, bytes: AppLayout.restoreStepBytes)
-            if more == 0 || current + more >= Self.eagerRows { eagerReturning = nil; return }
+            if more == 0 || current + more >= restingCount(userOrigins, rows: listedRows(userOrigins)) { eagerReturning = nil; return }
             eagerReturning = current + more
             try? await Task.sleep(for: AppLayout.restorePause)
         }
@@ -566,14 +582,15 @@ struct ThreadView: View {
                 follower.jumpToLatest()
                 tailGuard.land()
             }
-            _ = restore.advance(rows: listedRows(userOrigins), eagerRows: eagerCount(userOrigins)) { _ in 0 }
+            let rows = listedRows(userOrigins)
+            _ = restore.advance(rows: rows, eagerRows: eagerCount(userOrigins, rows: rows)) { _ in 0 }
         }
         while !Task.isCancelled {
             try? await Task.sleep(for: waiting() ? AppLayout.restoreRetry : AppLayout.restorePause)
             guard !Task.isCancelled else { return }
             if waiting() { continue }
             let rows = listedRows(userOrigins)
-            let more = restore.advance(rows: rows, eagerRows: eagerCount(userOrigins)) { [store] drawn in
+            let more = restore.advance(rows: rows, eagerRows: eagerCount(userOrigins, rows: rows)) { [store] drawn in
                 store.restoreStep(drawn: drawn, bytes: AppLayout.restoreStepBytes)
             }
             if !more { return }
@@ -645,8 +662,10 @@ struct ThreadView: View {
     }
 
     /// How many rows at the end of the thread are laid out for real rather than lazily at
-    /// rest: more than any window shows, few enough that a streamed chunk's relayout stays
-    /// cheap. While the window live-resizes the tail is only as many as cover it (`eagerCount`).
+    /// rest, at most: more than any window shows, few enough that a streamed chunk's relayout stays
+    /// cheap. A thread of heavy rows lays out fewer (`NativeThreadStore.eagerTailRows`: the last rows
+    /// within `NativeMountedCost.eagerTailCap`, and never fewer than two viewports). While the window live-resizes the tail is only
+    /// as many as cover it (`eagerCount`).
     static let eagerRows = 30
 
     /// One view per row whatever it holds, so the lazy stack builds only the rows on screen: a
