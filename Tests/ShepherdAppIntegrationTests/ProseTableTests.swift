@@ -82,6 +82,21 @@ struct ProseTableTests {
         #expect(flip.differing > 0 && flip.differing / 4 < 300, "\(flip.differing / 4) pixels differ")
     }
 
+    /// The card is the same size whether the text is selectable from the first frame or not: the flip above keeps the layout's cached
+    /// measurements, so only a table laid out each way from the start can show unselectable text measuring differently.
+    @Test(arguments: [false, true])
+    func aTableIsTheSameSizeWhetherItsTextIsSelectableFromTheStartOrNot(dark: Bool) async throws {
+        for table in [Self.plainTable, Self.mixedTable] {
+            let cells = table.columns * (table.rows.count + 1)
+            for width in [700, 430] as [CGFloat] {
+                let plain = try await Self.opened(table, width: width, dark: dark, selectable: false)
+                let selectable = try await Self.opened(table, width: width, dark: dark, selectable: true)
+                #expect(plain.selection == 0 && selectable.selection == cells, "selection views: \(plain.selection) then \(selectable.selection) of \(cells)")
+                #expect(plain.card == selectable.card && plain.card.width > 0, "the card at \(width) pt: \(plain.card) then \(selectable.card)")
+            }
+        }
+    }
+
     private struct Flip {
         var cells = 0
         var cardBefore = CGRect.zero
@@ -92,34 +107,46 @@ struct ProseTableTests {
         var bytes = 0
     }
 
+    /// What `window` shows once it has stopped moving and `done` holds, and the table's card.
+    private static func settled(_ window: OffscreenWindow, _ what: String, until done: @escaping () -> Bool = { true })
+        async throws -> (pixels: [UInt8], card: CGRect) {
+        var last: [UInt8] = []
+        var still = 0
+        try await eventuallyOnMain(what) {
+            ListPerf.settle(window)
+            let now = Self.pixels(of: window)
+            still = now == last && done() ? still + 1 : 0
+            last = now
+            return still >= 5
+        }
+        return (last, ListPerf.scrollView(in: window)?.frame ?? .zero)
+    }
+
     /// `table` drawn at `width` before its text is selectable and again once it is, in one window.
     private static func flip(_ table: SHProseTable, width: CGFloat, dark: Bool) async throws -> Flip {
         let selection = Selectability()
         let window = OffscreenWindow(size: CGSize(width: width, height: 420), dark: dark, SelectableTableHost(table: table, selection: selection))
         defer { window.close() }
-        func settled(_ what: String, until done: @escaping () -> Bool) async throws -> (pixels: [UInt8], card: CGRect) {
-            var last: [UInt8] = []
-            var still = 0
-            try await eventuallyOnMain("\(what) at \(width) pt") {
-                ListPerf.settle(window)
-                let now = Self.pixels(of: window)
-                still = now == last && done() ? still + 1 : 0
-                last = now
-                return still >= 5
-            }
-            return (last, ListPerf.scrollView(in: window)?.frame ?? .zero)
-        }
         var result = Flip(cells: table.columns * (table.rows.count + 1))
-        let before = try await settled("the table to stop moving") { true }
+        let before = try await settled(window, "the table to stop moving at \(width) pt")
         result.selectionBefore = selectionViews(in: window)
         selection.on = true
-        let after = try await settled("every cell to take its selection view") { selectionViews(in: window) == result.cells }
+        let after = try await settled(window, "every cell to take its selection view at \(width) pt") { selectionViews(in: window) == result.cells }
         result.selectionAfter = selectionViews(in: window)
         result.cardBefore = before.card
         result.cardAfter = after.card
         result.bytes = after.pixels.count
         result.differing = before.pixels.count == after.pixels.count ? zip(before.pixels, after.pixels).filter { $0 != $1 }.count : after.pixels.count
         return result
+    }
+
+    /// `table` laid out at `width` in a window of its own with its text selectable from the first frame, or not.
+    private static func opened(_ table: SHProseTable, width: CGFloat, dark: Bool, selectable: Bool) async throws -> (card: CGRect, selection: Int) {
+        let window = OffscreenWindow(size: CGSize(width: width, height: 420), dark: dark,
+                                     SelectableTableHost(table: table, selection: Selectability(on: selectable)))
+        defer { window.close() }
+        let card = try await settled(window, "the table to stop moving at \(width) pt").card
+        return (card, selectionViews(in: window))
     }
 
     private static func selectionViews(in window: OffscreenWindow) -> Int {
@@ -209,7 +236,9 @@ private struct TableHost: View {
 /// Whether the table's text is selectable from outside, as the pointer entering it makes it.
 @MainActor @Observable
 private final class Selectability {
-    var on = false
+    var on: Bool
+
+    init(on: Bool = false) { self.on = on }
 }
 
 @MainActor
