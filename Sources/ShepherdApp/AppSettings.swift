@@ -104,6 +104,7 @@ final class AppSettings {
         static let childContext = "shepherd.pi.children.context"
         static let shellPath = "shepherd.pane.shell"
         static let editor = "shepherd.files.editor"
+        static let editorsByType = "shepherd.files.editorsByType"
         static let filesWordWrap = "shepherd.files.wordWrap"
         static let filesMarkdownPreview = "shepherd.files.markdownPreview"
         static let uiDensity = "shepherd.ui.density"
@@ -136,7 +137,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, defaultServiceTier, textGenerationModel, visionModel, queueDelivery, trimToolOutput, notifyOnTurnFinished, deferTools, codemode, compactAtPercent, shellPath, editor,
+            defaultThinking, defaultServiceTier, textGenerationModel, visionModel, queueDelivery, trimToolOutput, notifyOnTurnFinished, deferTools, codemode, compactAtPercent, shellPath, editor, editorsByType,
             piPanesExtension, piReviewExtension, subagentDisplay, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext,
@@ -375,6 +376,23 @@ final class AppSettings {
     /// files); nil opens each file in its system default app.
     var editor: String? {
         didSet { if let editor { store.set(editor, forKey: Key.editor) } else { store.removeObject(forKey: Key.editor) } }
+    }
+
+    /// The app each file type opens in, picked from a file row's Open in menu (OpenInD2): `fileType(of:)` to a bundle
+    /// identifier. A type's pick wins over `editor`.
+    var editorsByType: [String: String] {
+        didSet { if editorsByType.isEmpty { store.removeObject(forKey: Key.editorsByType) } else { store.set(editorsByType, forKey: Key.editorsByType) } }
+    }
+
+    /// The app `url` opens in: its type's pick, else `editor`; nil is the file's own default app.
+    func editor(for url: URL) -> String? {
+        editorsByType[Self.fileType(of: url)] ?? editor
+    }
+
+    /// A file's type for `editorsByType`: its extension in lower case (`.md`), or its name for a file without one (`Makefile`).
+    static func fileType(of url: URL) -> String {
+        let ext = url.pathExtension.lowercased()
+        return ext.isEmpty ? url.lastPathComponent : "." + ext
     }
 
     /// Files tab: wrap long lines instead of horizontal scrolling.
@@ -699,6 +717,7 @@ final class AppSettings {
         childContext = ["fresh", "fork"].contains(context) ? context : "fresh"
         shellPath = store.string(forKey: Key.shellPath) ?? Defaults.shellPath
         editor = store.string(forKey: Key.editor).flatMap { $0.isEmpty ? nil : $0 }
+        editorsByType = (store.dictionary(forKey: Key.editorsByType) as? [String: String] ?? [:]).filter { !$0.value.isEmpty }
         filesWordWrap = store.bool(forKey: Key.filesWordWrap)
         filesMarkdownPreview = store.bool(forKey: Key.filesMarkdownPreview)
         let density = store.double(forKey: Key.uiDensity)
@@ -820,6 +839,7 @@ final class AppSettings {
         childContext = "fresh"
         shellPath = Defaults.shellPath
         editor = nil
+        editorsByType = [:]
         worktreeBaseMode = .fresh
         worktreeFetchBeforeCreate = true
         worktreeGeneratePRDescription = true
@@ -955,7 +975,7 @@ final class AppSettings {
         take(\.sidebarKeepIdleDays), take(\.piPanesExtension), take(\.piReviewExtension), take(\.subagentDisplay),
         take(\.piNativeSubagents), take(\.piMCPExtension), take(\.piBrowserExtension), take(\.piDesignReferences),
         take(\.childConcurrency), take(\.childModel), take(\.childThinking), take(\.childContext), take(\.shellPath),
-        take(\.editor), take(\.filesWordWrap), take(\.filesMarkdownPreview), take(\.worktreeBaseMode),
+        take(\.editor), take(\.editorsByType), take(\.filesWordWrap), take(\.filesMarkdownPreview), take(\.worktreeBaseMode),
         take(\.worktreeFetchBeforeCreate), take(\.worktreeGeneratePRDescription), take(\.worktreeCloseOnMerge),
         take(\.worktreeDeleteAction), take(\.skippedConfirmations), take(\.designToolEnabled),
         take(\.implementOpensThread), take(\.remoteListenerEnabled),

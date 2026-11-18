@@ -223,12 +223,13 @@ extension ShepherdViewModel {
         return (names.isEmpty ? [file.displayPath] : names).map { root + "/" + $0 }
     }
 
-    /// Open a reviewed file in the editor chosen in Settings (the file's default app when none is).
+    /// Open a reviewed file in the app its type opens in (Settings, or a pick from Open in; the file's default app when none is).
     func openReviewFile(_ session: ReviewSession, file: DiffFile) {
         let cwd = session.cwd
         Task {
             let root = await Task.detached { GitDiff.repositoryRoot(cwd: cwd) }.value
-            Self.openInEditor(URL(fileURLWithPath: root).appendingPathComponent(file.displayPath), editor: settings.editor)
+            let url = URL(fileURLWithPath: root).appendingPathComponent(file.displayPath)
+            Self.openInEditor(url, editor: settings.editor(for: url))
         }
     }
 

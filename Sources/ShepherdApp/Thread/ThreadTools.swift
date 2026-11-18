@@ -242,6 +242,8 @@ private struct ActivityCallDetails: View {
             id: call.id, label: call.label, detail: call.detail, isPath: call.isPath, stat: call.stat, failed: call.failed,
             output: open ? call.outputHead : [], moreLines: max(0, call.outputLineCount - call.outputHead.count),
             truncated: call.truncated, isExpanded: open,
+            // An edit's or write's file, or the one a read read: their rows offer Open in (OpenInD).
+            filePath: call.path ?? (call.explore == .read && call.isPath ? call.detail : nil),
             accessibilityLabel: [call.label, call.detail, call.stat, call.failed ? "failed" : nil].compactMap { $0 }.joined(separator: ", "))
     }
 

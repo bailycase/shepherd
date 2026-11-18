@@ -25,9 +25,27 @@ public enum EditorOpener {
     @MainActor public static func installedEditors() -> [URL] {
         let workspace = NSWorkspace.shared
         let apps = Set(workspace.urlsForApplications(toOpen: .plainText) + workspace.urlsForApplications(toOpen: .sourceCode))
-        let folders = ["/Applications/", "/System/Applications/", NSHomeDirectory() + "/Applications/"]
-        return apps.filter { app in folders.contains { app.path.hasPrefix($0) } && isTextEditor(Bundle(url: app)?.infoDictionary) }
-            .sorted { name(of: $0).localizedStandardCompare(name(of: $1)) == .orderedAscending }
+        return sorted(apps.filter { app in isInstalled(app) && isTextEditor(Bundle(url: app)?.infoDictionary) })
+    }
+
+    /// Every installed app that opens `url` (a Markdown viewer as well as an editor), and every text editor (a code file whose
+    /// type no editor declares, `.tsx`, still lists them), by display name, one per bundle identifier.
+    @MainActor public static func applications(toOpen url: URL) -> [URL] {
+        var seen = Set<String>()
+        let apps = (NSWorkspace.shared.urlsForApplications(toOpen: url).filter(isInstalled) + installedEditors()).filter { app in
+            guard let id = Bundle(url: app)?.bundleIdentifier else { return false }
+            return seen.insert(id).inserted
+        }
+        return sorted(apps)
+    }
+
+    /// In an Applications folder: not a test runner's Chrome or a tool's bundled copy.
+    private static func isInstalled(_ app: URL) -> Bool {
+        ["/Applications/", "/System/Applications/", NSHomeDirectory() + "/Applications/"].contains { app.path.hasPrefix($0) }
+    }
+
+    private static func sorted(_ apps: some Sequence<URL>) -> [URL] {
+        apps.sorted { name(of: $0).localizedStandardCompare(name(of: $1)) == .orderedAscending }
     }
 
     /// Whether an app's Info.plist claims the Editor role for plain text or source code (or `.txt`), not only for CSV or TSV.

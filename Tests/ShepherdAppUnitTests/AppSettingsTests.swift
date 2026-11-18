@@ -169,6 +169,25 @@ struct AppSettingsTests {
         #expect(settings.editor == nil && store.object(forKey: AppSettings.Key.editor) == nil)
     }
 
+    /// Open in (OpenInD2): a pick for a file type persists and wins over the editor for that type only; Reset clears it.
+    @Test func anAppPickedForAFileTypeWinsForThatTypeUntilReset() {
+        let store = Fixture.defaults()
+        let settings = AppSettings(store: store)
+        settings.editor = "dev.zed.Zed"
+        settings.editorsByType[AppSettings.fileType(of: URL(fileURLWithPath: "/r/docs/PLAN.MD"))] = "com.example.quillmark"
+        settings.editorsByType[AppSettings.fileType(of: URL(fileURLWithPath: "/r/Makefile"))] = "com.apple.TextEdit"
+
+        let reloaded = AppSettings(store: store)
+        #expect(reloaded.editorsByType == [".md": "com.example.quillmark", "Makefile": "com.apple.TextEdit"])
+        #expect(reloaded.editor(for: URL(fileURLWithPath: "/r/README.md")) == "com.example.quillmark")
+        #expect(reloaded.editor(for: URL(fileURLWithPath: "/r/src/App.tsx")) == "dev.zed.Zed", "another type keeps the editor")
+        #expect(reloaded.editor(for: URL(fileURLWithPath: "/r/Makefile")) == "com.apple.TextEdit")
+
+        settings.resetToDefaults()
+        #expect(settings.editorsByType.isEmpty && store.object(forKey: AppSettings.Key.editorsByType) == nil)
+        #expect(settings.editor(for: URL(fileURLWithPath: "/r/README.md")) == nil)
+    }
+
     /// While pi works: how the queue goes persists, resets, and a new delivery default reaches
     /// the server.
     @Test func theQueueSettingPersistsResetsAndReachesTheServer() {

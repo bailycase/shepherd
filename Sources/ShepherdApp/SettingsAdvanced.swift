@@ -99,7 +99,8 @@ struct AdvancedSettings: View {
     }
 }
 
-/// Settings ▸ Advanced ▸ Editor: the app local files open in (file links in replies, review, project files).
+/// Settings ▸ Advanced ▸ Editor: the app local files open in (file links in replies, review, project files), and the apps
+/// file types were given from a file's Open in menu.
 struct EditorSettings: View {
     @Bindable var settings: AppSettings
     @State private var editors: [URL] = []
@@ -123,8 +124,26 @@ struct EditorSettings: View {
                 }
                 .accessibilityLabel("Open files in")
             }
+            if !settings.editorsByType.isEmpty {
+                SettingsRow(title: "By file type", subtitle: byType + ". Picked from a file’s Open in menu; these win over the app above.") {
+                    Button("Reset") { settings.editorsByType = [:] }
+                        .buttonStyle(.sh(.secondary, size: .s))
+                        .accessibilityLabel("Reset the apps picked for file types")
+                }
+                .shTransition(.disclosure)
+            }
         }
+        .shAnimation(.disclosure, value: settings.editorsByType.isEmpty)
         .task { editors = EditorOpener.installedEditors() }
+    }
+
+    /// ".md: Quillmark · .tsx: Zed"
+    private var byType: String {
+        settings.editorsByType.sorted { $0.key < $1.key }.map { type, id in
+            let name = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id).map(EditorOpener.name(of:)) ?? id
+            return "\(type): \(name)"
+        }
+        .joined(separator: " · ")
     }
 
     private func choose() {
