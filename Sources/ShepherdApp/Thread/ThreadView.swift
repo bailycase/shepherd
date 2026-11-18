@@ -1235,12 +1235,13 @@ final class ThreadRestore {
             self.hiddenKept = nil
         }
         if rows.isEmpty { arrived = false }
-        // The first rows of a thread (it opened, or its history came back) draw their eager tail alone, and the lazy stack after that frame
-        // (`advance`): a stack drawn with them is shown its estimates before the scroll view has been held to the tail, and builds rows at the
-        // top of a thread that are nowhere near its reader.
+        // The first rows of a thread whose tail is bounded by cost (it opened, or its history came back) draw their eager tail alone, and the
+        // lazy stack after that frame (`advance`): a stack drawn with them is shown its estimates before the scroll view has been held to
+        // the tail, and builds rows at the top of the thread that are nowhere near its reader, which for rows that cost that much is
+        // hundreds of megabytes nothing counts. A thread of cheap rows (the most of them are the tail) draws as it always did.
         if !arrived, !rows.isEmpty {
             arrived = true
-            if !restoring, rows.count > eagerRows {
+            if !restoring, rows.count > eagerRows, eagerRows < ThreadView.eagerRows {
                 first = rows[rows.endIndex - eagerRows].id
                 restoring = true
                 history = false
