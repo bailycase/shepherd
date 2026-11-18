@@ -128,6 +128,17 @@ struct NativeEagerTailTests {
         #expect(store.rowCostRevision != revision, "a view looks again at what the tail may hold")
     }
 
+    /// A giant reply lays out its tail alone, so it costs that, and not what its whole text would, while its parse is out.
+    @Test func aGiantReplyCostsByItsTailWhileItsParseIsOut() {
+        let giant = String(repeating: "A line of a very long reply, with a few words in it.\n\n", count: 4_000)
+        #expect(giant.utf8.count > NativeProse.Limits.giantBytes)
+        let store = NativeThreadStore()
+        store.preview(F.snapshot(messages: [F.user("question", id: "u"), F.assistant(giant, id: "a")]))
+        let pending = costs(store)[1] - Cost.rowBase
+        #expect(pending == (NativeProse.Limits.eagerWeight + NativeProse.Limits.weight) * Cost.textByte)
+        #expect(pending < Cost.eagerTailCap, "it does not take a tail of its own")
+    }
+
     /// A reply with no blocks draws as nothing, so the tail is a few points tall until they land; a lazy stack drawn above it would be in
     /// the window and build its rows.
     @Test func theTailAwaitsTheParseOfALargeReplyAndNotOfASmallOne() async {

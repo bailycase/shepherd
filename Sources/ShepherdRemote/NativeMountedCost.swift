@@ -175,8 +175,12 @@ public enum NativeMountedCost {
 
     /// What the views of a reply hold while its parse has not landed (the store parses a large reply off the main thread, and the row has
     /// no blocks until it does): the text at the rate of text, which a reply of fences and tables runs near. Costing it nothing would make a
-    /// thread of large replies look cheap in the moment it is first drawn, and its whole tail would be built.
-    static func pending(_ text: String) -> Int { text.utf8.count * textByte }
+    /// thread of large replies look cheap in the moment it is first drawn, and its whole tail would be built. A giant reply lays out its
+    /// tail alone (`NativeProse.eagerTail`: chunks until `Limits.eagerWeight`, and the one that crosses it), so it costs no more than that.
+    static func pending(_ text: String) -> Int {
+        let bytes = text.utf8.count
+        return (bytes >= NativeProse.Limits.giantBytes ? NativeProse.Limits.eagerWeight + NativeProse.Limits.weight : bytes) * textByte
+    }
 
     /// What the items of a reply hold, without the row around them.
     public static func presentation(_ presentation: NativeTurnPresentation) -> Int {
