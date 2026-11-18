@@ -224,8 +224,12 @@ struct RenderCostReport {
         try await Task.sleep(for: Self.atRest)
         let scroll = try #require(ListPerf.scrollView(in: thread.window))
         #expect(scroll.frame.height <= thread.window.host.bounds.height, "measure the thread, not a nested code scroller")
-        let up = ListPerf.scroll(thread.window, scroll, step: -200, steps: 60)
-        let down = ListPerf.scroll(thread.window, scroll, step: 200, steps: 60)
+        let startOffset = scroll.contentView.bounds.origin.y
+        let up = ListPerf.scroll(thread.window, scroll, step: -200, steps: 60) { thread.input.readerScrolled(upward: true) }
+        let upOffset = scroll.contentView.bounds.origin.y
+        #expect(upOffset < startOffset, "the reader must move toward older turns")
+        let down = ListPerf.scroll(thread.window, scroll, step: 200, steps: 60) { thread.input.readerScrolled(upward: false) }
+        #expect(scroll.contentView.bounds.origin.y > upOffset, "the reader must move back toward the tail")
         report.add("\(label) ↑", scroll: up)
         report.add("\(label) ↓", scroll: down)
         var costs: [Double] = []
