@@ -514,10 +514,27 @@ final class NewThreadState {
         // Where the thread goes when Fleet is on: another Mac, with the words and nothing else. The local host confirms the Mac at send.
         let picker = place.host == nil ? fleetPicker(vm) : .empty
         let held = place.host == nil && limitHolds(vm)
+        let submittedAttachments = attachments
+        // The draft clears once: as the thread shows on This Mac, else when it started.
+        var cleared = false
+        func clearSent() {
+            guard !cleared else { return }
+            cleared = true
+            if prompt == submittedPrompt { prompt = "" }
+            for id in submittedImages { attachments.remove(id) }
+            let sent = Set(submittedReferences.map(\.id))
+            references.removeAll { sent.contains($0.id) }
+            if worktree == submittedWorktree { useProjectDefaults(vm) }
+            if worktreeBase == submittedBase { worktreeBase = nil }
+            if worktreeBranch == submittedBranch { worktreeBranch = nil }
+        }
+        let threadID = AgentID()
+        // Send takes another draft once the thread shows, and this send's end leaves it alone.
+        var released = false
         starting = true
         error = nil
         Task {
-            defer { starting = false }
+            defer { if !released { starting = false } }
             do {
                 if picker.dispatches || held, let spaceID = place.space {
                     let named: String? = if case .mac(let id)? = wherePick { id.uuidString } else { nil }
@@ -544,17 +561,14 @@ final class NewThreadState {
                         worktreeBranch: useWorktree ? NewThreadRules.generatedBranch() : nil,
                         worktreeBase: base?.base, worktreeFetchFirst: base?.fetchFirst, initialImages: images, serviceTier: tier)
                 } else {
-                    let standaloneID = place.space == nil ? AgentID() : nil
                     let spaceID: SpaceID
                     let directory: String
-                    var projectBase: String?
-                    if standaloneID != nil {
+                    if place.space == nil {
                         // The background host makes the thread's folder as it starts it.
                         (spaceID, directory) = (SpaceID(rawValue: ""), "")
                     } else if let space = vm.state.spaces.first(where: { $0.id == place.space }) {
                         spaceID = space.id
                         directory = space.path
-                        projectBase = space.worktreeBase
                     } else {
                         throw AgentStartFailure(message: "That space is gone.")
                     }
@@ -564,7 +578,7 @@ final class NewThreadState {
                     var config = NewAgentConfig(spaceID: spaceID, workingDirectory: directory,
                                                 model: chosenModel.isEmpty ? nil : chosenModel, thinking: level,
                                                 initialPrompt: withPieces ? nil : text)
-                    config.reservedAgentID = standaloneID
+                    config.reservedAgentID = threadID
                     if withPieces {
                         config.openingReferencesPending = true
                         config.initialName = NewAgentConfig.provisionalName(for: text.isEmpty ? Self.pieceName(submittedReferences) : text)
@@ -573,51 +587,34 @@ final class NewThreadState {
                     }
                     config.serviceTier = tier
                     if useWorktree {
-                        let repo = directory
-                        let picked = submittedBranch
-                        let mode = vm.settings.worktreeBaseMode
-                        let fetch = vm.settings.worktreeFetchBeforeCreate
-                        let chosen = submittedBase
-                        let (path, branch, base) = try await Task.detached(priority: .userInitiated) { () -> (String, String, String) in
-                            // A picked base is the start point as it is; otherwise Settings resolves one.
-                            let start: (point: String?, display: String)
-                            if let chosen {
-                                GitWorktree.fetchPicked(repo: repo, base: chosen, fetchFirst: fetch)
-                                start = (chosen, chosen)
-                            } else {
-                                let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch, projectBase: projectBase)
-                                start = (resolution.startPoint, resolution.display)
-                            }
-                            switch picked {
-                            case .existing(let name):
-                                let added = try GitWorktree.addExisting(repo: repo, branch: name)
-                                return (added.path, added.branch, start.display)
-                            case .named(let name):
-                                return (try GitWorktree.add(repo: repo, branch: name, from: start.point), name, start.display)
-                            case nil:
-                                let branch = GitWorktree.generatedBranch()
-                                return (try GitWorktree.add(repo: repo, branch: branch, from: start.point), branch, start.display)
-                            }
-                        }.value
-                        config.workingDirectory = path
-                        config.worktreeBranch = branch
-                        config.worktreeBase = base
-                        config.worktreePath = path
+                        // The host makes the checkout (a fetch, then git worktree add) once the thread shows.
+                        switch submittedBranch {
+                        case .existing(let name): (config.worktreeBranch, config.worktreeBranchExists) = (name, true)
+                        case .named(let name): config.worktreeBranch = name
+                        case nil: config.worktreeBranch = GitWorktree.generatedBranch()
+                        }
+                        config.worktreeBase = submittedBase
                     }
-                    let agentID = try await vm.startAgent(config, focusWindow: false)
+                    // The page goes as the thread shows, before its checkout and pi are ready: the draft clears then.
+                    let agentID = try await vm.startAgent(config, focusWindow: false) {
+                        clearSent()
+                        released = true
+                        self.starting = false
+                    }
                     if withPieces { vm.deliverOpeningDesignReferences(submittedReferences, text: text, images: images, to: agentID) }
                 }
-                if prompt == submittedPrompt { prompt = "" }
-                for id in submittedImages { attachments.remove(id) }
-                let sent = Set(submittedReferences.map(\.id))
-                references.removeAll { sent.contains($0.id) }
-                if worktree == submittedWorktree { useProjectDefaults(vm) }
-                if worktreeBase == submittedBase { worktreeBase = nil }
-                if worktreeBranch == submittedBranch { worktreeBranch = nil }
-            } catch RemoteHostClientError.rejected(_, let message) {
-                self.error = message
+                clearSent()
             } catch {
-                self.error = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+                if case RemoteHostClientError.rejected(_, let message) = error { self.error = message }
+                else { self.error = (error as? LocalizedError)?.errorDescription ?? "\(error)" }
+                // The thread showed, then failed to start (its checkout couldn't be made) and went: the draft comes back
+                // unless another was started, and so does the page, unless the person went elsewhere.
+                guard cleared else { return }
+                if prompt.isEmpty, attachments.isEmpty, references.isEmpty {
+                    (prompt, attachments, references) = (submittedPrompt, submittedAttachments, submittedReferences)
+                    (worktree, worktreeBase, worktreeBranch) = (submittedWorktree, submittedBase, submittedBranch)
+                }
+                if vm.selectionHistory.last == threadID, vm.destination == nil { vm.openNewThread() }
             }
         }
     }
