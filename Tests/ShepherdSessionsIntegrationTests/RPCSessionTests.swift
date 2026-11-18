@@ -402,6 +402,7 @@ struct RPCSessionTests {
         #expect(await h.request(.prompt(message: "die")) == .failure(.exited(code: 3)))
         try await eventually("the exit callback") { h.exit.current.done }
         #expect(h.exit.current.code == 3)
+        #expect(await h.onQueue { h.session.stdoutReadBufferCapacity == 0 }, "an exited session must release its read scratch before retirement")
         #expect(await h.request(.getState) == .failure(.notAlive))
         try await eventually("the dying words on stderr") { h.stderr.current.contains("stub-pi: dying") }
     }
@@ -463,6 +464,7 @@ struct RPCSessionTests {
         #expect(pending == .failure(.notAlive))
         await withCheckedContinuation { continuation in h.queue.async { continuation.resume() } }
         #expect(!h.exit.current.done)
+        #expect(await h.onQueue { h.session.stdoutReadBufferCapacity == 0 }, "shutdown must release the read scratch")
     }
 
     @Test func shutdownBeforeSourceRegistrationClosesReadPipes() async {
