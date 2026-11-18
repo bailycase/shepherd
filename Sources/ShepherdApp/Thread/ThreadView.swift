@@ -176,8 +176,10 @@ struct ThreadView: View {
         // Until the thread has caught up since it came on screen (opening it, or the first pull
         // after switching back to the agent), whatever changes lands at once.
         let catchingUp = arrivals.catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: store.threadVersion)
-        // The history's stack of built rows starts again once the thread has added enough of them behind a reader at the tail.
-        let historyStack = historyBuilt.stack(history: history, onScreen: active, mayLetGo: follower.sticky && !restoreStepping && !catchingUp)
+        // The history's stack of built rows starts again once the thread has added enough of them behind a reader at the tail,
+        // at rest, in the update that adds the next.
+        let atRest = follower.sticky && !follower.userScrolling && !input.decelerating
+        let historyStack = historyBuilt.stack(history: history, onScreen: active, mayLetGo: atRest && !restoreStepping && !catchingUp)
         // Until it has caught up, the live reply's state is read here too: the pull that catches a thread up on
         // a tool boundary changes nothing else, and it must redraw this view so its gate draws that catch-up.
         // After it, the live row and the wait line read them and tool boundaries stay out of this body.
@@ -1043,31 +1045,38 @@ private struct StackID: Hashable {
 /// is, and keeps it built for good; the rows that leave the eager tail join the history at its end, so each turn's reply stays built
 /// behind the tail (about 0.6 MB for one line) for as long as the thread is on screen. A reader at the tail has no use for them, so
 /// once the thread has added `ThreadHistoryBuilt.rows` of them since the stack began, it begins again, with the rows it builds first, as
-/// it does when the thread opens. That is left until the reader is at the tail and the thread is not coming back: a reader in the
-/// history keeps the rows they are reading, and one that scrolled up through it keeps what they passed.
+/// it does when the thread opens. That happens in the update that adds rows, the frame a turn lands in, and only while the reader is at
+/// the tail, at rest, and the thread is not coming back: a reader in the history keeps the rows they are reading, and one that
+/// scrolled up through it keeps what they passed, until the first turn that lands once they are back.
+///
+/// The state of the history's rows goes with the stack: a disclosure opened in one (a tool's lines, a thinking block, a diagram) closes,
+/// as it does when the row leaves the eager tail or the thread is let go.
 ///
 /// A reference, so keeping it never draws the thread; `stack` is read in the thread's body, and is the identity the stack is drawn with.
 @MainActor
 final class ThreadHistoryBuilt {
     /// Rows added at the history's end that the stack may have built.
     static let rows = 16
-    /// Rows added at its end in one update at most: a turn's, with the reply's. More is the history paged in or a thread coming back.
-    private static let step = 4
     private(set) var stack = 0
     private var last: String?
-    private var count = 0
     private var added = 0
 
     /// The stack to draw `history` in. Only rows added while the thread is `onScreen` count (a hidden host does not lay out, so builds
-    /// none), and the stack starts again only when `mayLetGo`: the reader is at the tail and the thread is not coming back.
+    /// none), and the stack starts again only in an update that adds rows, when `mayLetGo`: the reader is at the tail and at rest, and
+    /// the thread is not coming back.
+    ///
+    /// Rows count when the row that was last is still in the history, followed by new ones: paging in at the top leaves the last row as
+    /// it was, and a thread coming back has no rows to compare with, so neither counts.
     func stack(history: ArraySlice<NativeThreadRow>, onScreen: Bool, mayLetGo: Bool) -> Int {
-        defer { last = history.last?.id; count = history.count }
-        if let old = last, history.last?.id != old, history.count > count, history.count - count <= Self.step {
-            if onScreen { added += history.count - count }
+        defer { last = history.last?.id }
+        var grew = false
+        if let old = last, history.last?.id != old, let at = history.lastIndex(where: { $0.id == old }) {
+            grew = true
+            if onScreen { added += history.endIndex - 1 - at }
         } else if history.isEmpty {
             added = 0
         }
-        if onScreen, mayLetGo, added >= Self.rows {
+        if grew, onScreen, mayLetGo, added >= Self.rows {
             stack += 1
             added = 0
         }

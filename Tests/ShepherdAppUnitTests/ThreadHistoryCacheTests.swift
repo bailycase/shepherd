@@ -97,7 +97,18 @@ struct ThreadHistoryBuiltTests {
         let (end, stack) = grow(built, from: 10, by: 3 * ThreadHistoryBuilt.rows, mayLetGo: false)
         #expect(stack == 0)
         _ = built.stack(history: rows(0..<end), onScreen: true, mayLetGo: true)
-        #expect(built.stack == 1, "once they are back at the tail")
+        #expect(built.stack == 0, "back at the tail, an update that adds nothing leaves it")
+        _ = built.stack(history: rows(0..<(end + 2)), onScreen: true, mayLetGo: true)
+        #expect(built.stack == 1, "the next turn that lands once they are back starts it again")
+    }
+
+    @Test func rowsThatComeTogetherBetweenTwoPullsAllCount() {
+        let built = ThreadHistoryBuilt()
+        _ = built.stack(history: rows(0..<10), onScreen: true, mayLetGo: true)
+        _ = built.stack(history: rows(0..<18), onScreen: true, mayLetGo: true)
+        #expect(built.stack == 0)
+        _ = built.stack(history: rows(0..<26), onScreen: true, mayLetGo: true)
+        #expect(built.stack == 1)
     }
 
     @Test func rowsPagedInAboveOrAThreadComingBackAreNotCounted() {
