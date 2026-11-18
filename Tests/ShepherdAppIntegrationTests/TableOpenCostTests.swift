@@ -6,9 +6,10 @@ import Testing
 @testable import ShepherdApp
 @testable import ShepherdUI
 
-/// What opening a thread full of tables builds: cells and layers, counted per table. A table is 12 cells here, and each is a
-/// `Text` under its selection, its padding and its place in the table; the fill and the rules around them are the table's,
-/// not a layer or two of every cell's own, which a thousand tables would multiply.
+/// What opening a thread full of tables builds: cells, layers and selection views, counted per table. A table is 12 cells here, and
+/// each is a `Text` under its padding and its place in the table; the fill and the rules around them are the table's, not a layer or two
+/// of every cell's own, and the text is not selectable until the pointer enters its table, where a view of its own under every cell
+/// held over 40% of what the table built and kept: a thousand tables would multiply each.
 @Suite("Opening a thread of tables", .mainActorExclusive)
 @MainActor
 struct TableOpenCostTests {
@@ -19,6 +20,8 @@ struct TableOpenCostTests {
         var layers = 0
         var cellBodies = 0
         var measured = 0
+        /// Views that make text selectable (`AppKitTextInteractionView`).
+        var selectable = 0
     }
 
     private static func table(_ n: Int) -> String {
@@ -56,8 +59,11 @@ struct TableOpenCostTests {
         }
         let counts = SHRenderProbe.stop()
         func layers(_ layer: CALayer) -> Int { 1 + (layer.sublayers ?? []).reduce(0) { $0 + layers($1) } }
+        func selectable(_ view: NSView) -> Int {
+            (String(describing: type(of: view)).contains("TextInteraction") ? 1 : 0) + view.subviews.reduce(0) { $0 + selectable($1) }
+        }
         return Open(layers: thread.window.host.layer.map(layers) ?? 0, cellBodies: counts["prose.tableCell", default: 0],
-                    measured: counts["prose.tableMeasure", default: 0])
+                    measured: counts["prose.tableMeasure", default: 0], selectable: selectable(thread.window.host))
     }
 
     /// Each cell of an open thread is measured once, and each table adds a bounded number of layers: 61 when every cell carried a
@@ -73,5 +79,14 @@ struct TableOpenCostTests {
         #expect(large.measured - small.measured == 40 * Self.cells, "and measured once: \(small) then \(large)")
         let layers = Double(large.layers - small.layers) / 40
         #expect(layers <= 56, "layers per table: \(layers), \(small) then \(large)")
+    }
+
+    /// A table's text is selectable once the pointer has entered it, so a thread opened and read with the pointer elsewhere builds no
+    /// selection view under any cell (there were 12 a table, which is where the thread's open stall and memory went).
+    @Test func aThreadOfTablesOpensWithNoSelectionViewUnderAnyCell() async throws {
+        let small = try await Self.open(tables: 20)
+        let large = try await Self.open(tables: 60)
+        #expect(large.cellBodies >= 60 * Self.cells, "the cells are built: \(large)")
+        #expect(large.selectable == small.selectable, "40 more tables add no selection view: \(small) then \(large)")
     }
 }
