@@ -76,6 +76,9 @@ struct MountedSwitchTests {
                 ListPerf.settle(window)
             }
             let after = try await Self.counts(running: window, for: Self.afterwards)
+            // The claim still lands, only without the fade: the shown thread's composer holds the keyboard.
+            let shown = try #require(try WorkspaceNavigationTests.deck(in: window).pages[target.tab.id]).host
+            #expect((window.window.firstResponder as? NSView)?.isDescendant(of: shown) == true, "round \(round): the composer holds the keyboard")
 
             // The switch's own frame: the two rows, the two layouts, one pass over each host.
             #expect(frame["sidebar.row", default: 0] <= 2, "round \(round): \(frame)")
