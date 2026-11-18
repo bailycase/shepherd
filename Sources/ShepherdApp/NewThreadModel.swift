@@ -6,7 +6,7 @@ import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
 
-/// Where a new thread runs. Nil space is a standalone thread on This Mac.
+/// Where a new thread runs. Nil space is a standalone thread (No space) on that host.
 struct NewThreadPlace: Hashable {
     var host: UUID?
     var space: SpaceID?
@@ -21,6 +21,8 @@ enum NewThreadPlaces {
         var id: UUID?
         var name: String
         var spaces: [Space]
+        /// It starts threads with no space: This Mac always, a host with `createAgentNoSpaceCapability`.
+        var takesNoSpace = true
     }
 
     static let thisMac = "This Mac"
@@ -28,9 +30,9 @@ enum NewThreadPlaces {
     /// This Mac's projects, then each connected host's, the chosen one checked.
     static func sections(_ hosts: [Host], chosen: NewThreadPlace?) -> [SHPlaceSection] {
         hosts.map { host in
-            SHPlaceSection(id: sectionID(host.id), title: host.name, options: (host.id == nil ? [
-                SHPlaceOption(id: "local/no-space", section: sectionID(nil), title: "No space",
-                              detail: "Own scratch folder", isCurrent: chosen == NewThreadPlace(host: nil, space: nil))
+            SHPlaceSection(id: sectionID(host.id), title: host.name, options: (host.takesNoSpace ? [
+                SHPlaceOption(id: optionID(NewThreadPlace(host: host.id, space: nil)), section: sectionID(host.id), title: "No space",
+                              detail: "Own scratch folder", isCurrent: chosen == NewThreadPlace(host: host.id, space: nil))
             ] : []) + tree(host.spaces).map { space, ancestors in
                 SHPlaceOption(id: optionID(NewThreadPlace(host: host.id, space: space.id)), section: sectionID(host.id),
                               title: space.name, detail: NewThreadRules.abbreviatedPath(space.path),
@@ -54,8 +56,11 @@ enum NewThreadPlaces {
     /// The chip's words: the project and its host ("shepherd", "This Mac").
     static func chip(_ hosts: [Host], chosen: NewThreadPlace?) -> (project: String, host: String) {
         if chosen == NewThreadPlace(host: nil, space: nil) { return ("No space", thisMac) }
-        guard let chosen, let host = hosts.first(where: { $0.id == chosen.host }),
-              let space = host.spaces.first(where: { $0.id == chosen.space }) else {
+        guard let chosen, let host = hosts.first(where: { $0.id == chosen.host }) else {
+            return ("Choose a space", hosts.first?.name ?? thisMac)
+        }
+        if chosen.space == nil, host.takesNoSpace { return ("No space", host.name) }
+        guard let space = host.spaces.first(where: { $0.id == chosen.space }) else {
             return ("Choose a space", hosts.first?.name ?? thisMac)
         }
         return (space.name, host.name)
@@ -67,7 +72,9 @@ enum NewThreadPlaces {
         func exists(_ place: NewThreadPlace?) -> NewThreadPlace? {
             guard let place else { return nil }
             if place == NewThreadPlace(host: nil, space: nil) { return place }
-            guard hosts.contains(where: { $0.id == place.host && $0.spaces.contains { $0.id == place.space } }) else { return nil }
+            guard hosts.contains(where: { host in
+                host.id == place.host && (place.space == nil ? host.takesNoSpace : host.spaces.contains { $0.id == place.space })
+            }) else { return nil }
             return place
         }
         if let chosen = exists(chosen) { return chosen }
@@ -88,7 +95,7 @@ enum NewThreadPlaces {
         guard parts.count == 2 else { return nil }
         let host = parts[0] == "local" ? nil : UUID(uuidString: parts[0])
         if parts[0] != "local", host == nil { return nil }
-        if parts[1] == "no-space" { return host == nil ? NewThreadPlace(host: nil, space: nil) : nil }
+        if parts[1] == "no-space" { return NewThreadPlace(host: host, space: nil) }
         return NewThreadPlace(host: host, space: SpaceID(rawValue: parts[1]))
     }
 
@@ -180,7 +187,8 @@ final class NewThreadState {
     static func hosts(_ vm: ShepherdViewModel) -> [NewThreadPlaces.Host] {
         (vm.localHost != nil ? [NewThreadPlaces.Host(id: nil, name: NewThreadPlaces.thisMac, spaces: vm.visibleSpaces)] : [])
             + vm.remoteHosts.connections.filter { $0.phase == .connected }.map {
-                NewThreadPlaces.Host(id: $0.id, name: $0.config.name, spaces: $0.state.spaces.filter { !$0.hidden })
+                NewThreadPlaces.Host(id: $0.id, name: $0.config.name, spaces: $0.state.spaces.filter { !$0.hidden },
+                                     takesNoSpace: $0.supportsNoSpace)
             }
     }
 
@@ -188,7 +196,8 @@ final class NewThreadState {
     /// the target's defaults.
     func prepare(for vm: ShepherdViewModel) {
         let recent: NewThreadPlace? = if let remote = vm.selectedRemoteAgent, let agent = vm.remoteAgent(remote) {
-            NewThreadPlace(host: remote.hostID, space: agent.spaceID)
+            NewThreadPlace(host: remote.hostID, space: vm.remoteHosts.allConnections.first { $0.id == remote.hostID }?.state.spaces
+                .first { $0.id == agent.spaceID }?.holdsThreads == true ? nil : agent.spaceID)
         } else {
             vm.selectedSpaceID.map { id in
                 NewThreadPlace(host: nil, space: vm.state.spaces.first { $0.id == id }?.holdsThreads == true ? nil : id)
@@ -389,7 +398,7 @@ final class NewThreadState {
     func offersWorktree(_ vm: ShepherdViewModel) -> Bool {
         guard let place else { return false }
         if let host = place.host {
-            return vm.remoteHosts.allConnections.first { $0.id == host }?.supportsWorktreeCreation == true
+            return place.space != nil && vm.remoteHosts.allConnections.first { $0.id == host }?.supportsWorktreeCreation == true
         }
         return vm.state.spaces.first { $0.id == place.space }.map(vm.spaceIsRepo) ?? false
     }
@@ -421,10 +430,10 @@ final class NewThreadState {
             }
             return
         }
-        let space = place?.space
+        // No space asks for the host's defaults with an empty space id.
+        let space = place?.space ?? SpaceID(rawValue: "")
         Task {
             do {
-                guard let space else { throw RemoteHostClientError.rejected(code: "no_space", message: "Choose a space first") }
                 let options = try await vm.remoteHosts.creationOptions(hostID: host, spaceID: space, cwd: nil, fetchFirst: nil)
                 guard defaultsRequest == request else { return }
                 if !edited.model { model = options.model ?? "" }
@@ -549,7 +558,12 @@ final class NewThreadState {
                     }
                     // The host kept it on this Mac (it had the room, and no limit holds it): it starts here as it always did.
                 }
-                if let host = place.host {
+                if let host = place.host, place.space == nil {
+                    // The host makes the thread's folder as it starts it (`createAgentNoSpaceCapability`).
+                    try await vm.createRemoteAgent(
+                        hostID: host, spaceID: SpaceID(rawValue: ""), cwd: nil, model: chosenModel.isEmpty ? nil : chosenModel,
+                        thinking: level, initialPrompt: text, initialImages: images, serviceTier: tier)
+                } else if let host = place.host {
                     guard let space = vm.remoteHosts.allConnections.first(where: { $0.id == host })?.state.spaces
                         .first(where: { $0.id == place.space }) else { throw AgentStartFailure(message: "That space is gone.") }
                     var base: RemoteCreationOptions?

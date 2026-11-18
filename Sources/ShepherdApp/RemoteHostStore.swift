@@ -231,6 +231,8 @@ final class RemoteHostStore {
         var supportsChangesWrites: Bool { client?.capabilities.contains(RemoteProtocol.changesWritesCapability) == true }
         /// The host takes a new thread's images with its opening prompt.
         var supportsCreateAgentImages: Bool { client?.capabilities.contains(RemoteProtocol.createAgentImagesCapability) == true }
+        /// The host starts a thread with no space.
+        var supportsNoSpace: Bool { client?.capabilities.contains(RemoteProtocol.createAgentNoSpaceCapability) == true }
         var supportsWorktreeCreation: Bool {
             client?.capabilities.isSuperset(of: [RemoteProtocol.creationOptionsCapability, RemoteProtocol.worktreeActionsCapability]) == true
         }

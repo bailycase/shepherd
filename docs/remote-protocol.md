@@ -176,7 +176,9 @@
     Mac editor's conflict), or `.failed(message)`. It never creates a file. A client of a host
     without it keeps Files read-only
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions` (and the
-    opening prompt's images behind `agent.create.images.v1`)
+    opening prompt's images behind `agent.create.images.v1`; an empty `spaceID` behind
+    `agent.create.noSpace.v1` starts a thread with no space, in a folder of its own, and asks for
+    the host's defaults)
   - `creationBranches(spaceID:)`, behind `agent.creation.branches.v1`: a space's branches for a
     new worktree's base before any agent exists, answered `agentResult(.changesBranches)`
   - chunked uploads (32 MiB per file)
