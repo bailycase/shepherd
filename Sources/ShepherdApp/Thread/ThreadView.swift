@@ -4,7 +4,9 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
+#if DEBUG
 import Synchronization
+#endif
 
 extension EnvironmentValues {
     /// Keyboard commands for the thread on screen, when the app provides them.
@@ -727,6 +729,7 @@ struct ThreadView: View {
         }
 
         private func resolve() -> Drawn {
+            memory.count(in: store)
             let shell = row.live && row.presentation == nil
             // The turn is kept across the flip, so its first render after it has already appeared. Without this, what
             // that render brings would enter for every reply and not only for one that arrived on screen.
@@ -988,11 +991,40 @@ final class CatchUpGate {
 @MainActor
 final class ThreadRowMemory {
     #if DEBUG
-    /// How many rows have view state alive: the rows a thread keeps built, which the tests pin (`ThreadHistoryRetentionTests`).
-    nonisolated static let built = Atomic<Int>(0)
-    init() { Self.built.add(1, ordering: .relaxed) }
-    deinit { Self.built.subtract(1, ordering: .relaxed) }
+    /// How many rows have view state alive, by the store they are drawn with: the rows a thread keeps built, which the tests pin
+    /// (`ThreadHistoryRetentionTests`). Per store, so other threads drawn in the same process do not move it.
+    private nonisolated static let counts = Mutex<[ObjectIdentifier: Int]>([:])
+    private var counted: ObjectIdentifier?
+
+    static func built(in store: NativeThreadStore) -> Int {
+        counts.withLock { $0[ObjectIdentifier(store)] ?? 0 }
+    }
+
+    deinit {
+        guard let counted else { return }
+        Self.counts.withLock { counts in
+            let left = (counts[counted] ?? 1) - 1
+            counts[counted] = left > 0 ? left : nil
+        }
+    }
     #endif
+
+    /// Counts this row's view state under `store` (`built(in:)`); nothing in a release build.
+    func count(in store: NativeThreadStore) {
+        #if DEBUG
+        let id = ObjectIdentifier(store)
+        guard counted != id else { return }
+        Self.counts.withLock { counts in
+            if let counted {
+                let left = (counts[counted] ?? 1) - 1
+                counts[counted] = left > 0 ? left : nil
+            }
+            counts[id, default: 0] += 1
+        }
+        counted = id
+        #endif
+    }
+
     /// The catch-up gate of the shell: made when the row draws the shell and dropped when it draws a finished reply, so a reply
     /// that goes live again starts from the transcript's verdict, as a row made then would.
     var catchUp: CatchUpGate?

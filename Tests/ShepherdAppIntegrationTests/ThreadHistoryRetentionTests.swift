@@ -61,7 +61,8 @@ struct ThreadHistoryRetentionTests {
         try await eventuallyOnMain("the store and the tail guard to be released") { watched.released }
     }
 
-    /// Turns that are added one at a time to a thread on screen. Each one's rows join the lazy history as the eager tail moves on, and a
+    /// Turns that are added one at a time to a thread on screen. The rows are counted for this thread's store only: other suites draw
+    /// threads in the same process while this one runs. Each one's rows join the lazy history as the eager tail moves on, and a
     /// lazy stack builds, and keeps built, the last row it is handed: a one-line reply's view state is some 0.6 MB, so every turn would
     /// stay in memory for as long as the thread did. A reader at the tail has no use for them: the stack starts again
     /// (`ThreadHistoryBuilt`), and the rows it has built stay within a few turns' worth.
@@ -83,10 +84,11 @@ struct ThreadHistoryRetentionTests {
         let warm = ThreadView.eagerRows
         let more = 60
         await addTurns(0..<warm)
-        let before = ThreadRowMemory.built.load(ordering: .relaxed)
+        let before = ThreadRowMemory.built(in: thread.store)
         await addTurns(warm..<(warm + more))
-        let after = ThreadRowMemory.built.load(ordering: .relaxed)
+        let after = ThreadRowMemory.built(in: thread.store)
         #expect(thread.store.rows.count == 2 * (warm + more), "every turn is a row of the thread")
+        #expect(before > 0, "the thread's rows are counted")
         // Without the restarts every one of the turns' replies stays built: `more` of them.
         #expect(after - before <= ThreadHistoryBuilt.rows, "\(more) more turns left \(after - before) more rows built (\(before) before)")
         // The restarts happen behind the reader: the end of the thread stays where it was through every turn.
@@ -120,9 +122,9 @@ struct ThreadHistoryRetentionTests {
             ListPerf.settle(thread.window)
         }
         let away = clip.bounds.origin.y
-        let before = ThreadRowMemory.built.load(ordering: .relaxed)
+        let before = ThreadRowMemory.built(in: thread.store)
         await addTurns(ThreadView.eagerRows..<(ThreadView.eagerRows + 3 * ThreadHistoryBuilt.rows))
-        let after = ThreadRowMemory.built.load(ordering: .relaxed)
+        let after = ThreadRowMemory.built(in: thread.store)
         #expect(after >= before, "the rows the reader has built stay: \(before) before, \(after) after")
         #expect(abs(clip.bounds.origin.y - away) < 1, "and the reader's place does not move: \(clip.bounds.origin.y) from \(away)")
         thread.close()
