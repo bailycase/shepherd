@@ -117,6 +117,23 @@ struct FleetCornerPreviewTests {
         }
     }
 
+    /// UpdateFooterStates: with an update waiting, `SHUpdateButton` stands where the gear was, in the full and minimized
+    /// corner and in the plain footer Fleet off draws.
+    @Test func theUpdateButtonTakesTheGearsPlace() async throws {
+        let corner = try #require(FleetCorner.make(P.page(Self.threeMacs)))
+        try await Preview.renderMatrix("sidebar-footer-update", size: CGSize(width: Self.size.width, height: 260)) {
+            VStack(spacing: 0) {
+                FleetCornerView(corner: corner, minimized: false, onPage: false, focusedMac: nil, open: { _ in }, setMinimized: { _ in },
+                                settings: {}, updateVersion: "0.2.0")
+                FleetCornerView(corner: corner, minimized: true, onPage: false, focusedMac: nil, open: { _ in }, setMinimized: { _ in },
+                                settings: {}, updateVersion: "0.2.0")
+                SHSidebarFooter(name: "Alex", detail: "This Mac · demo-mac", updateVersion: "0.2.0", settings: {})
+            }
+            .frame(width: Self.size.width)
+            .background(Color.sh.bgBase)
+        }
+    }
+
     // MARK: FleetSubthreads
 
     /// The threads the sidebar scenes draw: This Mac's, the connected mini's, and the dispatch records This Mac keeps.
