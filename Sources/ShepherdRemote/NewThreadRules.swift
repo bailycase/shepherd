@@ -4,7 +4,7 @@ import ShepherdProtocol
 
 // New thread on a remote host (the iOS client's creation flow): the rows its pickers show, the
 // defaults and worktree base it loads from the host, what may block Start, and the createAgent
-// request it sends. The rules mirror the Mac's New Agent sheet (NewAgentSheet.swift).
+// request it sends. The rules mirror the Mac's New thread page (NewThreadModel.swift).
 
 /// What New thread knows about one host.
 public struct NewThreadHostInput: Equatable, Sendable {
@@ -36,6 +36,9 @@ public struct NewThreadHostInput: Equatable, Sendable {
 
     /// The host must accept images atomically with creation, not in a later first send.
     public var supportsImages: Bool { capabilities.contains(RemoteProtocol.createAgentImagesCapability) }
+
+    /// The host starts a thread with no space, in a folder of its own.
+    public var supportsNoSpace: Bool { capabilities.contains(RemoteProtocol.createAgentNoSpaceCapability) }
 }
 
 /// A host in the Host list (Where it runs) and the iPad's Run on popover.
@@ -99,12 +102,18 @@ public enum NewThreadRows {
     public static func repos(_ hosts: [NewThreadHostInput], host selectedHost: UUID?, space selectedSpace: SpaceID?) -> [NewThreadRepoRow] {
         let chosen = hosts.first { $0.id == selectedHost }
         let others = hosts.filter { $0.id != selectedHost && $0.phase.isConnected }
-        let own = (chosen?.spaces ?? []).map { space in
+        // No space comes first on each host that takes it, as on the Mac.
+        let own = (chosen.flatMap { $0.supportsNoSpace ? $0 : nil }.map { host in
+            [NewThreadRepoRow(id: .init(host: host.id, space: NewThreadRules.noSpace), name: NewThreadRules.noSpaceName,
+                              detail: "Own scratch folder", selected: selectedSpace == NewThreadRules.noSpace)]
+        } ?? []) + (chosen?.spaces ?? []).map { space in
             NewThreadRepoRow(id: .init(host: chosen!.id, space: space.id), name: space.name,
                              detail: NewThreadRules.abbreviatedPath(space.path), selected: space.id == selectedSpace)
         }
         let elsewhere = others.flatMap { host in
-            host.spaces.map { space in
+            (host.supportsNoSpace ? [NewThreadRepoRow(id: .init(host: host.id, space: NewThreadRules.noSpace), name: NewThreadRules.noSpaceName,
+                                                      detail: "on \(host.name)", selected: false)] : [])
+            + host.spaces.map { space in
                 NewThreadRepoRow(id: .init(host: host.id, space: space.id), name: space.name, detail: "on \(host.name)", selected: false)
             }
         }
@@ -141,7 +150,7 @@ public struct NewThreadModelGroup: Equatable, Sendable, Identifiable {
 
 /// A host's model and thinking for a new thread, from `creationOptions`. The user's edits
 /// survive the answer when it is for the same host; a new host starts over. Only the newest
-/// request lands (the Mac's `NewAgentTargetDefaults`).
+/// request lands.
 public struct NewThreadDefaults: Equatable, Sendable {
     public private(set) var requestID = UUID()
     public private(set) var hostID: UUID?
@@ -263,6 +272,8 @@ public struct NewThreadDraft: Equatable, Sendable {
     public var attachments: Int
     public var starting: Bool
     public var pendingImports: Int = 0
+    /// No space chosen: the thread works in a folder of its own on the host, never a worktree.
+    public var noSpace = false
 
     public init(prompt: String, host: NewThreadHostInput?, space: Space?, defaults: NewThreadDefaults, worktree: Bool,
                 branch: String, base: NewThreadBase, attachments: Int = 0, starting: Bool = false) {
@@ -285,8 +296,8 @@ public struct NewThreadDraft: Equatable, Sendable {
         return .init(host: host.id, space: space.id, cwd: space.path)
     }
 
-    /// The worktree switch counts only where the host can make one.
-    public var usesWorktree: Bool { worktree && host?.supportsWorktrees == true }
+    /// The worktree switch counts only where the host can make one, in a repo.
+    public var usesWorktree: Bool { worktree && !noSpace && host?.supportsWorktrees == true }
 }
 
 /// Why Start is unavailable. Each says what to do.
@@ -346,12 +357,16 @@ public struct NewThreadCreation: Equatable, Sendable {
 }
 
 public enum NewThreadRules {
+    /// The space id that asks a host for No space (`createAgentNoSpaceCapability`).
+    public static let noSpace = SpaceID(rawValue: "")
+    public static let noSpaceName = "No space"
+
     public static func blocker(_ draft: NewThreadDraft) -> NewThreadBlocker? {
         if draft.starting { return .starting }
         if draft.pendingImports > 0 { return .importingImages }
         guard let host = draft.host else { return .noHost }
         guard host.phase.isConnected else { return .hostOffline(host.name) }
-        guard draft.space != nil else { return .noRepo(host.name) }
+        guard draft.space != nil || (draft.noSpace && host.supportsNoSpace) else { return .noRepo(host.name) }
         if draft.defaults.hostID != host.id || draft.defaults.loading { return .loadingDefaults(host.name) }
         if !draft.defaults.ready { return .defaultsFailed(host.name) }
         if draft.usesWorktree {
@@ -369,12 +384,12 @@ public enum NewThreadRules {
     /// The request Start sends, or nil while something blocks it. The prompt is trimmed and
     /// dropped when empty, and a blank model means the host's default, as on the Mac.
     public static func creation(_ draft: NewThreadDraft) -> NewThreadCreation? {
-        guard blocker(draft) == nil, let space = draft.space else { return nil }
+        guard blocker(draft) == nil, let spaceID = draft.noSpace ? noSpace : draft.space?.id else { return nil }
         let model = draft.defaults.model.trimmingCharacters(in: .whitespaces)
         let prompt = draft.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let worktree = draft.usesWorktree
         return NewThreadCreation(
-            spaceID: space.id,
+            spaceID: spaceID,
             cwd: draft.cwd,
             model: model.isEmpty ? nil : model,
             thinking: draft.defaults.thinking,
@@ -398,7 +413,8 @@ public enum NewThreadRules {
     }
 
     /// The line beside Attach: where the thread will work.
-    public static func worktreeSummary(repo: String?, worktree: Bool) -> String {
+    public static func worktreeSummary(repo: String?, worktree: Bool, noSpace: Bool = false) -> String {
+        if noSpace { return "In its own scratch folder" }
         guard let repo else { return "Choose a repo" }
         return worktree ? "New worktree on \(repo)" : "In \(repo)'s checkout"
     }

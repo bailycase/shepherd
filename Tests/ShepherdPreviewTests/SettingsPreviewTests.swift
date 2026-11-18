@@ -463,26 +463,6 @@ struct SettingsPreviewTests {
 
     // MARK: Creation sheets
 
-    /// `sheet-new-agent` with a model that reasons; `-plain-model` with pi's default one that
-    /// takes no thinking level, so the sheet offers no Thinking row.
-    @Test(arguments: [("sheet-new-agent", true), ("sheet-new-agent-plain-model", false)])
-    func newAgentSheet(name: String, reasons: Bool) async throws {
-        let workspace = try PreviewWorkspace(modelCatalog: {
-            ModelListing(entries: [PiModelCatalog.Entry(id: "qa/gemini-3.1-flash-lite", reasoning: reasons)],
-                         defaultModel: "qa/gemini-3.1-flash-lite")
-        })
-        defer { workspace.stop() }
-        let repo = try makeScratchRepo()
-        defer { try? FileManager.default.removeItem(at: repo) }
-        try await workspace.seed(ShepherdState(spaces: [Space(name: "Shepherd", path: repo.path)]))
-        workspace.vm.selectedSpaceID = workspace.vm.state.spaces.first?.id
-        workspace.vm.settings.defaultModel = "qa/gemini-3.1-flash-lite"
-        try await Preview.render(name, size: CGSize(width: AppLayout.newAgentSheetWidth, height: 640),
-                                 untilGone: reasons ? nil : "Thinking", showing: "gemini-3.1-flash-lite") {
-            NewAgentSheet(vm: workspace.vm)
-        }
-    }
-
     @Test func newWorktreeSheet() async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }

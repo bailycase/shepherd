@@ -261,7 +261,7 @@ struct BrowserPaneTabsTests {
         let shiftT = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.command, .shift], timestamp: 0,
                                                    windowNumber: rig.window.window.windowNumber, context: nil, characters: "T",
                                                    charactersIgnoringModifiers: "t", isARepeat: false, keyCode: 17))
-        #expect(!watcher.handle(shiftT), "⇧⌘T stays New Agent with Options")
+        #expect(!watcher.handle(shiftT), "⇧⌘T is not the Browser's")
         #expect(rig.tabs.pages.count == 2)
         watcher.active = false
         #expect(!watcher.handle(cmdT), "off screen, the chord is not the Browser's")

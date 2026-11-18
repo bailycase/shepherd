@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 import ShepherdProtocol
 
-/// The New Agent sheet's "worktree" option and the space context menu's
+/// New thread's "worktree" option and the space context menu's
 /// "New Worktree…": create a git worktree beside the checkout and start an
 /// agent there. This is the one deliberate exception to "Shepherd does not
 /// mutate repository state" — explicit, user-initiated, and additive (a new

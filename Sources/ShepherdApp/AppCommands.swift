@@ -176,8 +176,6 @@ struct FileCreationMenuItems: View {
         Group {
             Button("New Thread") { later { vm?.openNewThread() } }
                 .keyboardShortcut(keys.shortcut(.newAgent))
-            Button("New Agent with Options…") { later { vm?.showNewAgentSheet = true } }
-                .keyboardShortcut(keys.shortcut(.newAgentOptions))
             Button("New Space…") { later { vm?.addSpaceFromPanel() } }
                 .keyboardShortcut(keys.shortcut(.newSpace))
             if vm?.designToolEnabled == true {
@@ -190,7 +188,7 @@ struct FileCreationMenuItems: View {
     }
 }
 
-/// File ▸ New Thread, New Agent with Options…, New Space…, Import Claude Design Project… (⇧⌘I,
+/// File ▸ New Thread, New Space…, Import Claude Design Project… (⇧⌘I,
 /// with the Design tool on), and ⌘W as Close Terminal.
 struct FileCommands: Commands {
     let launch: ShepherdLaunch<ShepherdViewModel>

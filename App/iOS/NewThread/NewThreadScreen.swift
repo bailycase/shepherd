@@ -172,7 +172,7 @@ private struct NewThreadForm: View {
 
     private func phoneChips(host: Bool) -> some View {
         HStack(spacing: SHSelectorChipMetrics.spacing) {
-            chip(model.space?.name ?? "Choose repo", systemImage: SHGlyph.repository.symbolName, name: "Repo", panel: .workspace, active: .workspace)
+            chip(model.repoName ?? "Choose repo", systemImage: SHGlyph.repository.symbolName, name: "Repo", panel: .workspace, active: .workspace)
             // With one host there's nothing to choose (DuoClosedNewThread).
             if host && model.hostRows.count > 1 {
                 chip(model.host?.name ?? "Choose host", systemImage: "desktopcomputer", name: "Host", panel: .workspace, active: nil)
@@ -193,7 +193,7 @@ private struct NewThreadForm: View {
     }
 
     private var chips: some View {
-        let repo = model.space?.name ?? "Choose repo"
+        let repo = model.repoName ?? "Choose repo"
         let host = model.host?.name ?? "Choose host"
         return SHFlowLayout(spacing: SHSelectorChipMetrics.spacing) {
             chip(repo, systemImage: SHGlyph.repository.symbolName, name: "Repo", panel: pad ? .repo : .workspace, active: pad ? .repo : .workspace)
@@ -279,7 +279,7 @@ private struct NewThreadForm: View {
 
     /// "New worktree on shepherd": opens the worktree's settings.
     private var worktreeSummary: some View {
-        let text = NewThreadRules.worktreeSummary(repo: model.space?.name, worktree: model.usesWorktree)
+        let text = NewThreadRules.worktreeSummary(repo: model.space?.name, worktree: model.usesWorktree, noSpace: model.noSpace)
         return Button {
             model.workspaceAnchor = .worktree
             model.panel = pad ? .worktree : .workspace
@@ -376,7 +376,7 @@ private struct NewThreadPhoneToolbar: ToolbarContent {
             // these two go to its overflow menu, where the switch is the menu's first item.
             Menu {
                 Toggle("New worktree", isOn: Binding(get: { model.worktreeWanted }, set: { model.setWorktree($0) }))
-                    .disabled(model.host?.supportsWorktrees != true)
+                    .disabled(model.host?.supportsWorktrees != true || model.noSpace)
                 Button("Where it runs…", systemImage: "slider.horizontal.3") {
                     model.workspaceAnchor = .worktree
                     model.panel = .workspace
@@ -389,7 +389,7 @@ private struct NewThreadPhoneToolbar: ToolbarContent {
             .tint(model.usesWorktree ? Color.sh.lantern : Color.sh.textSecondary)
             .disabled(model.starting)
             .accessibilityValue(model.usesWorktree ? "On" : "Off")
-            .accessibilityHint(NewThreadRules.worktreeSummary(repo: model.space?.name, worktree: model.usesWorktree))
+            .accessibilityHint(NewThreadRules.worktreeSummary(repo: model.space?.name, worktree: model.usesWorktree, noSpace: model.noSpace))
             NewThreadAttachButton(model: model, inToolbar: true)
         }
     }

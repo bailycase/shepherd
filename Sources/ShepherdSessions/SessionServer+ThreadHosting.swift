@@ -47,15 +47,17 @@ extension SessionServer {
     public func serveThreads(_ hosting: ThreadHosting) {
         onRemoteCreationOptions = { [weak self] spaceID, cwd, fetchFirst, completion in
             Task { @MainActor in
-                guard let self, let space = self.state.spaces.first(where: { $0.id == spaceID }) else {
+                // An empty space is No space: the defaults alone, as no repository has a base.
+                let space = self?.state.spaces.first(where: { $0.id == spaceID })
+                guard self != nil, space != nil || spaceID.rawValue.isEmpty else {
                     return completion(.failure(RemoteCreateAgentError("Space no longer exists")))
                 }
                 let defaults = hosting.defaults()
                 let fetch = fetchFirst ?? defaults.worktreeFetchBeforeCreate
                 let resolution = await Task.detached {
-                    cwd == nil ? GitWorktree.BaseResolution(startPoint: nil, display: "", note: "")
-                        : GitWorktree.resolveBase(repo: cwd ?? space.path, mode: defaults.worktreeBaseMode,
-                                                  fetchFirst: fetch, projectBase: space.worktreeBase)
+                    guard let space, let cwd else { return GitWorktree.BaseResolution(startPoint: nil, display: "", note: "") }
+                    return GitWorktree.resolveBase(repo: cwd, mode: defaults.worktreeBaseMode,
+                                                   fetchFirst: fetch, projectBase: space.worktreeBase)
                 }.value
                 completion(.success(.init(base: resolution.display, note: resolution.note, fetchFirst: fetch,
                                           model: defaults.model, thinking: defaults.thinking, serviceTier: defaults.serviceTier)))

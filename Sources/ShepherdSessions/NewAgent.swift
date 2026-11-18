@@ -9,7 +9,7 @@ public struct AgentStartFailure: Error, CustomStringConvertible {
     public var description: String { message }
 }
 
-/// What a new agent starts from: the New Agent sheet, ⌘N, a worktree, a design, an automation.
+/// What a new agent starts from: New thread (⌘N), a worktree, a design, an automation.
 public struct NewAgentConfig {
     public var spaceID: SpaceID
     public var workingDirectory: String

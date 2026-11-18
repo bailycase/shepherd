@@ -53,6 +53,30 @@ struct ThreadHostingTests {
         #expect(!h.server.state.agents.contains { $0.id == id })
     }
 
+    /// Another Mac starts a thread with no space here: an empty space id, as This Mac's own No space, in a folder of its own.
+    @Test func aClientStartsAThreadWithNoSpace() async throws {
+        try StubPi.installAsEngine()
+        let (h, path, token) = try host()
+        defer { h.stop() }
+        let client = try await connect(path, token)
+        defer { client.disconnect() }
+        #expect(client.capabilities.contains(RemoteProtocol.createAgentNoSpaceCapability))
+
+        let options = try await client.creationOptions(spaceID: SpaceID(rawValue: ""), cwd: nil, fetchFirst: nil)
+        #expect(options.model == "stub/model-a" && options.base.isEmpty)
+        await #expect(throws: RemoteHostClientError.self, "no repository to branch") {
+            try await client.createAgent(spaceID: SpaceID(rawValue: ""), cwd: nil, model: nil, thinking: nil, initialPrompt: "x",
+                                         worktreeBranch: "worktree/x")
+        }
+        let id = try await client.createAgent(spaceID: SpaceID(rawValue: ""), cwd: "/etc", model: nil, thinking: nil, initialPrompt: "Look around")
+        let agent = try #require(h.server.state.agents.first { $0.id == id })
+        let space = try #require(h.server.state.spaces.first { $0.id == agent.spaceID })
+        #expect(space.holdsThreads)
+        let cwd = h.server.state.tabs.first { $0.id == agent.tabID }?.layout.leaves.first?.cwd
+        #expect(cwd?.hasSuffix("/threads/\(id.rawValue)") == true)
+        try await eventuallyOnMain("the stub pi to launch") { StubPi.launches().contains { $0.env["SHEPHERD_AGENT_ID"] == id.rawValue } }
+    }
+
     /// Done is the host's: a finished thread opened on the iPhone (over TCP) leaves the Mac's Done (its app over
     /// host.sock), and the host keeps what was seen. A later completion is unseen everywhere again.
     @Test func openingAFinishedThreadOnOneDeviceClearsDoneOnTheOther() async throws {

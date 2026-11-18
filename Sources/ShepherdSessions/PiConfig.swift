@@ -2,7 +2,7 @@ import Foundation
 
 /// Defensive readers for pi's local configuration. Lives in ShepherdSessions
 /// so the host side can answer a remote client's model listing with the same
-/// logic the local New Agent sheet uses.
+/// logic the local New thread page uses.
 public enum PiConfig {
     /// pi's own override for its agent directory (config and sessions).
     public static let agentDirectoryEnvKey = "PI_CODING_AGENT_DIR"
