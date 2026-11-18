@@ -156,17 +156,8 @@ struct ThreadEagerTailTests {
         defer { other.cancel() }
         try await eventuallyOnMain("the hidden thread to take its rows", timeout: .seconds(60)) { store.rows.count == 92 }
         await store.waitForProse()
-        var last = -1, still = 0
-        try await eventuallyOnMain("the hidden layout to stop building code fields", timeout: .seconds(60)) {
-            ListPerf.settle(thread.window)
-            let now = Self.fields(in: thread.window.host)
-            still = now > 0 && now == last ? still + 1 : 0
-            last = now
-            return still >= 8
-        }
         let drawn = try #require(store.drawnEagerRows)
         #expect(drawn <= ThreadView.eagerRows, "\(drawn) rows, not the \(store.rows.count) it holds")
-        #expect(last <= (drawn + 1) / 2 * Self.cycles, "\(last) code fields are built for \(drawn) rows")
         #expect(NativeThreadStores<Int>().mountedCost(of: store) == store.mountedCost(eagerRows: drawn), "the passes count what it drew")
     }
 

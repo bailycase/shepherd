@@ -472,7 +472,8 @@ struct ThreadView: View {
                 // one that shows another thread (`ThreadRestore.plan`).
                 try? await Task.sleep(for: AppLayout.hiddenStackDelay)
                 while !Task.isCancelled, userActivity?.inputRecent == true { try? await Task.sleep(for: AppLayout.restoreRetry) }
-                if !Task.isCancelled { restore.withdrawStack() }
+                // Only a thread with a stack beyond a tail bounded by cost has one to let go; the others draw nothing again.
+                if !Task.isCancelled, let tail = store.drawnEagerRows, tail < Self.eagerRows, store.rows.count > tail { restore.withdrawStack() }
                 return
             }
             // On screen: this view needs the history whichever view's loop polls the store.
@@ -557,8 +558,8 @@ struct ThreadView: View {
             .scrollTargetLayout()
             // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
             // that host does not run). Its identity changes whenever the rows are let go (a pass, a released history, a hidden
-            // thread that draws its tail alone), and takes them with it.
-            .id(dormant || history.isEmpty))
+            // thread that draws its tail alone), and takes them with it; the thread on screen keeps its own.
+            .id(dormant || (!active && history.isEmpty)))
         }
     }
 
