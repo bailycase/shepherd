@@ -194,11 +194,14 @@ yet while its parse is out (`NativeThreadStore.tailAwaitsParse`), never because 
 thread whose first rows arrive while it is hidden draws its eager tail alone as well, and its stack after the
 first frame it is shown: a stack in a window nobody sees is laid out from the top of the thread and builds rows
 there that nothing counts. A hidden thread that follows its tail lets a stack it had go too, two seconds after
-the switch and never while a key is pressed (`ThreadRestore.withdrawStack`; taking realized rows down costs
-hundreds of milliseconds, which must not land in the turn that shows another thread), and a stack's identity
-changes when it has no rows to draw while its thread is hidden and releasing them (not a thread of a few rows,
-which has none to let go), which is what frees what a hidden host keeps. A reader left in the
-history keeps their stack. Rows that arrive while a tail waits for its stack do not grow it past the rule.
+the switch, never while a key is pressed and not while it is one of the `AppLayout.keptStacks` threads left most
+recently (`ThreadReaderPins.leftRecently`; `ThreadRestore.withdrawStack`): taking realized rows down must not land
+in the turn that shows another thread, and bringing a stack back costs the main thread about what measuring the
+rows at its start does (about 5 ms a MiB of them, the stall after a heavy thread's first frame), which the threads
+a person goes back and forth between do not pay. A stack's identity changes when it has no rows to draw while its
+thread is hidden and releasing them (not a thread of a few rows), which is what frees what a hidden host keeps. A
+reader left in the history keeps their stack. Rows that arrive while a tail waits for its stack do not grow it past
+the rule.
 
 What the view last drew, shown or hidden, is `NativeThreadStore.drawnEagerRows`, which `mountedCost` and the passes
 that let rows go count, and `ThreadRestore` restores up to; the store clears it when its rows are replaced from

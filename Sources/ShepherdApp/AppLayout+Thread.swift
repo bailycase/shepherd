@@ -71,8 +71,14 @@ extension AppLayout {
     /// How long a restore waits to look again while the reader scrolls or is away from the tail.
     static let restoreRetry: Duration = .milliseconds(100)
     /// How long a hidden thread that follows its tail waits before it lets its lazy stack go (`ThreadRestore.withdrawStack`): taking
-    /// the stack's realized rows down costs the main thread hundreds of milliseconds, which must not land in the turn that shows another thread.
+    /// the stack's realized rows down costs the main thread tens to hundreds of milliseconds, which must not land in the turn that shows another thread.
     static let hiddenStackDelay: Duration = .seconds(2)
+    /// How many of the threads left most recently keep their lazy stack (`ThreadReaderPins.leftRecently`): bringing a stack back costs
+    /// the main thread what measuring the rows at its start does (about 5 ms a MiB of them), and the threads a person goes back and forth
+    /// between are these. Each holds what its stack realized, which the budget does not count.
+    static let keptStacks = 3
+    /// How long a hidden thread whose stack is kept (`keptStacks`) waits to ask again whether it still is.
+    static let hiddenStackRecheck: Duration = .seconds(1)
     /// How many `restoreRetry` the first lazy stack waits for the replies at the end of the tail to have their blocks (a large reply is
     /// parsed off the main thread, a giant one in about a second) before it comes anyway: a reader cannot scroll past the eager tail meanwhile.
     static let restoreParseRetries = 30

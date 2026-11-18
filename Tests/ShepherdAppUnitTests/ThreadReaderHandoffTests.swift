@@ -54,6 +54,35 @@ struct ThreadReaderHandoffTests {
         }
     }
 
+    /// The threads left last are the ones a person goes back to: they keep their lazy stack (`AppLayout.keptStacks`), the others let it go.
+    @Test func theThreadsLeftLastAreLeftRecentlyUntilAViewShowsThemAgain() {
+        let pins = ThreadReaderPins()
+        let stores = (0..<5).map { _ in manualStore() }
+        let owners = stores.map { _ in UUID() }
+        func show(_ index: Int) { pins.started(stores[index], owner: owners[index]) {} }
+        func leave(_ index: Int) { pins.stopped(stores[index], owner: owners[index]) }
+        func recent(_ count: Int) -> [Int] { stores.indices.filter { pins.leftRecently(stores[$0], within: count) } }
+
+        #expect(recent(3).isEmpty, "none was shown")
+        for index in 0..<4 { show(index); leave(index) }
+        #expect(recent(3) == [1, 2, 3] && recent(1) == [3] && recent(0).isEmpty)
+        #expect(!pins.leftRecently(stores[4], within: 3), "one never shown is not one left")
+
+        show(1)
+        #expect(recent(3) == [0, 2, 3], "shown again, it is not left: the thread left before the others is among the last three left")
+        leave(1)
+        #expect(recent(3) == [1, 2, 3])
+
+        // Two views show a thread: it is left when the last of them goes.
+        let second = UUID()
+        pins.started(stores[0], owner: owners[0]) {}
+        pins.started(stores[0], owner: second) {}
+        pins.stopped(stores[0], owner: second)
+        #expect(!pins.leftRecently(stores[0], within: 3), "its other view still shows it")
+        leave(0)
+        #expect(recent(1) == [0])
+    }
+
     @Test func theOlderViewKeepsItsHistoryAndRunsTheThreadAgainWhenTheNewerLeaves() async {
         let pins = ThreadReaderPins()
         let stores = NativeThreadStores<String>()

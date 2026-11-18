@@ -468,12 +468,21 @@ struct ThreadView: View {
                 // Hidden: left scrolled up into the history, it stays loaded while this view keeps the place;
                 // following the tail, it lets it go (it reloads to the tail when shown).
                 if follower.sticky { readerPins?.unpin(store, owner: storeOwner) } else { readerPins?.pin(store, owner: storeOwner) }
-                // A little after the switch, and never while a key is being pressed, so that taking its stack down is not a turn of the
-                // one that shows another thread (`ThreadRestore.plan`).
+                // A little after the switch, never while a key is being pressed and not while it is one of the threads left last (the ones
+                // a person goes back to, whose stack comes back with a flip), so that taking its stack down is not a turn of the one that
+                // shows another thread (`ThreadRestore.plan`).
                 try? await Task.sleep(for: AppLayout.hiddenStackDelay)
-                while !Task.isCancelled, userActivity?.inputRecent == true { try? await Task.sleep(for: AppLayout.restoreRetry) }
+                while !Task.isCancelled {
+                    if userActivity?.inputRecent == true {
+                        try? await Task.sleep(for: AppLayout.restoreRetry)
+                    } else if readerPins?.leftRecently(store, within: AppLayout.keptStacks) == true {
+                        try? await Task.sleep(for: AppLayout.hiddenStackRecheck)
+                    } else {
+                        break
+                    }
+                }
                 // Only a thread with a stack beyond a tail bounded by cost has one to let go; the others draw nothing again.
-                if !Task.isCancelled, let tail = store.drawnEagerRows, tail < Self.eagerRows, store.rows.count > tail { restore.withdrawStack() }
+                if !Task.isCancelled, let tail = store.drawnEagerRows, tail < Self.eagerRows, listedRows(userOrigins).count > tail { restore.withdrawStack() }
                 return
             }
             // On screen: this view needs the history whichever view's loop polls the store.

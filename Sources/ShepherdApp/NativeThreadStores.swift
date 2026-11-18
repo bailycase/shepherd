@@ -470,6 +470,8 @@ final class ThreadReaderPins {
     }
     /// Views showing each store, oldest first; the last started the loop that runs.
     private var runners: [ObjectIdentifier: [Runner]] = [:]
+    /// The stores no view shows, the one left longest ago first, until a view shows one again (`leftRecently`).
+    private var left: [ObjectIdentifier] = []
 
     /// `owner`'s view started the store's loop; `resume` has it run the loop again.
     func started(_ store: NativeThreadStore, owner: UUID, resume: @escaping @MainActor () -> Void) {
@@ -478,6 +480,7 @@ final class ThreadReaderPins {
         list.removeAll { $0.owner == owner }
         list.append(Runner(owner: owner, resume: resume))
         runners[id] = list
+        left.removeAll { $0 == id }
     }
 
     /// `owner`'s loop returned while its view still shows the thread: it was stopped or detached
@@ -496,7 +499,21 @@ final class ThreadReaderPins {
         let handsOver = index == list.count - 1 && !list[index].ended
         list.remove(at: index)
         runners[id] = list.isEmpty ? nil : list
+        if list.isEmpty {
+            left.removeAll { $0 == id }
+            left.append(id)
+            if left.count > Self.leftLimit { left.removeFirst(left.count - Self.leftLimit) }
+        }
         if handsOver, let next = list.last { next.resume() }
+    }
+
+    /// How many left stores are remembered: far more than any caller asks about, so that the list never grows with the threads closed.
+    private static let leftLimit = 64
+
+    /// Whether `store` is among the `count` stores that were left most recently: its last view stopped showing it, and no other has
+    /// since, while fewer than `count` other threads were left after it.
+    func leftRecently(_ store: NativeThreadStore, within count: Int) -> Bool {
+        left.suffix(count).contains(ObjectIdentifier(store))
     }
 
     func pin(_ store: NativeThreadStore, owner: UUID) {
