@@ -16,9 +16,13 @@ struct FleetCornerView: View, Equatable {
     let open: (UUID?) -> Void
     let setMinimized: (Bool) -> Void
     let settings: () -> Void
+    /// The version Sparkle found, while it waits: `SHUpdateButton` takes the gear's place (UpdateFooterStates).
+    var updateVersion: String? = nil
+    var update: () -> Void = {}
 
     nonisolated static func == (a: FleetCornerView, b: FleetCornerView) -> Bool {
         a.corner == b.corner && a.minimized == b.minimized && a.onPage == b.onPage && a.focusedMac == b.focusedMac
+            && a.updateVersion == b.updateVersion
     }
 
     var body: some View {
@@ -136,11 +140,15 @@ struct FleetCornerView: View, Equatable {
         .accessibilityLabel(minimized ? "Show Fleet" : "Minimize Fleet")
     }
 
-    private var settingsButton: some View {
-        Button(action: settings) { Image(systemName: "gearshape") }
-            .buttonStyle(.shIcon(size: SHSidebarMetrics.footerAvatar))
-            .shHelp("Fleet settings")
-            .accessibilityLabel("Fleet settings")
+    @ViewBuilder private var settingsButton: some View {
+        if let updateVersion {
+            SHUpdateButton(version: updateVersion, action: update)
+        } else {
+            Button(action: settings) { Image(systemName: "gearshape") }
+                .buttonStyle(.shIcon(size: SHSidebarMetrics.footerAvatar))
+                .shHelp("Fleet settings")
+                .accessibilityLabel("Fleet settings")
+        }
     }
 }
 

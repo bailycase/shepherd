@@ -17,6 +17,7 @@ struct SidebarView: View {
     var vm: ShepherdViewModel
     /// While the window cannot be seen the sidebar rests: its changes land at once and its clocks stop.
     @Environment(\.mainWindowVisible) private var windowVisible
+    private var updater: AppUpdater { .shared }
 
     var body: some View {
         let _ = SHRenderProbe.tick("shell.sidebar")
@@ -40,11 +41,12 @@ struct SidebarView: View {
                                 setMinimized: { vm.fleetCornerMinimized = $0 }, settings: {
                                     vm.settingsSection = .fleet
                                     vm.showSettings = true
-                                })
+                                }, updateVersion: updater.availableVersion, update: { updater.checkForUpdates() })
                     .equatable()
             } else {
                 let footer = vm.sidebarFooterIdentity ?? SidebarDerivation.footer
-                SHSidebarFooter(name: footer.name, detail: footer.detail, settingsShortcut: "⌘,") { vm.showSettings = true }
+                SHSidebarFooter(name: footer.name, detail: footer.detail, settingsShortcut: "⌘,", updateVersion: updater.availableVersion,
+                                settings: { vm.showSettings = true }, update: { updater.checkForUpdates() })
             }
         }
         .environment(\.shMotionPaused, !windowVisible)

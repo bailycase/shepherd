@@ -659,7 +659,7 @@ public struct SHChangesCard: View {
             Button { onOpen(file.path) } label: { content }
                 .buttonStyle(.shRow(radius: 0))
                 .accessibilityLabel(label)
-                .accessibilityHint("Opens the file in the Changes pane")
+                .accessibilityHint("Opens the file and what changed in it")
         } else {
             content.accessibilityElement(children: .ignore).accessibilityLabel(label)
         }

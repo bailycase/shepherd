@@ -585,7 +585,8 @@ struct PaneLeafView: View, Equatable {
                     turnActions: TurnChangesActions(
                         review: { [vm] turnID, path in vm.selectAgent(agentID); vm.openTurnReview(.local(agentID), turnID: turnID, path: path) },
                         undo: { [vm] in await vm.undoTurn(.local(agentID), turnID: $0) },
-                        redo: { [vm] in await vm.redoTurn(.local(agentID), turnID: $0) }),
+                        redo: { [vm] in await vm.redoTurn(.local(agentID), turnID: $0) },
+                        view: { [vm] turnID, path, paths in vm.openFileViewer(agentID, turnID: turnID, path: path, paths: paths) }),
                     restartPi: { [vm] in vm.retryAgentStart(agentID, newConversation: $0) },
                     authNotice: model.authNotice,
                     authActions: ThreadAuthActions(
