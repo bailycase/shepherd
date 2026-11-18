@@ -4,16 +4,16 @@ import ShepherdUI
 import ShepherdRemote
 import ShepherdSessions
 
-/// A local file link in prose opens in the editor chosen in Settings ▸ Advanced; its menu offers the others.
+/// A local file link in prose opens in the app its type opens in (Settings ▸ Advanced, or a pick from Open in); its menu offers the others.
 extension SHProseFileLinks {
     @MainActor static let app = SHProseFileLinks(
-        editorName: { url in EditorOpener.application(for: url, editor: AppSettings.shared.editor).map(EditorOpener.name(of:)) ?? "Editor" },
+        editorName: { url in EditorOpener.application(for: url, editor: AppSettings.shared.editor(for: url)).map(EditorOpener.name(of:)) ?? "Editor" },
         editors: {
             EditorOpener.installedEditors().compactMap { app in
                 Bundle(url: app)?.bundleIdentifier.map { SHFileEditor(id: $0, name: EditorOpener.name(of: app)) }
             }
         },
-        open: { url, editor in ShepherdViewModel.openInEditor(url, editor: editor ?? AppSettings.shared.editor) },
+        open: { url, editor in ShepherdViewModel.openInEditor(url, editor: editor ?? AppSettings.shared.editor(for: url)) },
         reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0]) })
 }
 
