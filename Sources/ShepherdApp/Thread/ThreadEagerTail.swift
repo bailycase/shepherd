@@ -18,6 +18,8 @@ import ShepherdRemote
 ///   that leave are above the two viewports the tail covers, so no one sees them go, and a thread that turned heavy under its reader must
 ///   not keep thirty rows because a turn arrived every time two could leave.
 ///
+/// A thread that is not on screen follows the same rule (`held`), whatever rows arrive while it is hidden.
+///
 /// A reference whose reads in `body` redraw nothing, as `ThreadRowIndex`.
 @MainActor
 final class ThreadEagerTail {
@@ -66,9 +68,13 @@ final class ThreadEagerTail {
         return next
     }
 
-    /// The rows the tail held when last drawn: what a hidden thread draws, whose rows do not change. `rule` for a thread never drawn.
-    func held<Rows: RandomAccessCollection>(rows: Rows, rule: () -> Int) -> Int where Rows.Element == NativeThreadRow, Rows.Index == Int {
-        guard let first, let index = rows.lastIndex(where: { $0.id == first }) else { return min(max(1, rule()), rows.count) }
-        return rows.endIndex - index
+    /// The tail of a thread that is not on screen: the same rule, with the window's height left out. A hidden thread's frame is frozen
+    /// through a window drag and snaps to the new size after it, which would only build rows no one sees; its rows do change (its agent
+    /// runs, queued prompts land), and a tail that kept its first row through those would grow past `maxRows` and past what the rule
+    /// allows, with nothing counting what it holds. `cover` is what a thread that has not drawn takes.
+    func held<Rows: RandomAccessCollection>(rows: Rows, revision: Int, costs: Int, cover: Int, maxRows: Int, crossing: Int, detached: Bool,
+                                            settling: Bool = false, rule: () -> Int) -> Int where Rows.Element == NativeThreadRow, Rows.Index == Int {
+        update(rows: rows, revision: revision, costs: costs, cover: key?.cover ?? cover, maxRows: maxRows, crossing: crossing, detached: detached,
+               settling: settling, rule: rule)
     }
 }

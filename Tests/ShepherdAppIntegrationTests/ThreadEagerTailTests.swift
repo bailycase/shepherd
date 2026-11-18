@@ -138,6 +138,38 @@ struct ThreadEagerTailTests {
         }
     }
 
+    /// The rows that land in a thread while its layout is hidden (another view of the thread polls its store, a queued prompt lands) are
+    /// bound as any rows are: the tail does not keep the row it started at and grow with them, and what the budget counts
+    /// (`drawnEagerRows`) is what the hidden layout built.
+    @Test func aHiddenThreadThatTakesRowsKeepsTheTailTheRuleAllowsAndTheBudgetCountsIt() async throws {
+        let thread = FakeThread(ThreadFixture.snapshot(Self.messages(turns: 6, cycles: Self.cycles)), deckHosting: true)
+        defer { thread.close() }
+        let store = thread.store
+        try await thread.waitUntilReady()
+        await store.waitForProse()
+        ListPerf.settle(thread.window)
+        try await thread.show(false)
+        let before = try #require(store.drawnEagerRows)
+        #expect(before < store.rows.count, "a tail of cost, not of all the rows: \(before) of \(store.rows.count)")
+        let more = ThreadFixture.snapshot(Self.messages(turns: 46, cycles: Self.cycles), revision: 2)
+        let other = Task { await store.run(request: { _ in .snapshot(value: more) }, owner: UUID()) }
+        defer { other.cancel() }
+        try await eventuallyOnMain("the hidden thread to take its rows", timeout: .seconds(60)) { store.rows.count == 92 }
+        await store.waitForProse()
+        var last = -1, still = 0
+        try await eventuallyOnMain("the hidden layout to stop building code fields", timeout: .seconds(60)) {
+            ListPerf.settle(thread.window)
+            let now = Self.fields(in: thread.window.host)
+            still = now > 0 && now == last ? still + 1 : 0
+            last = now
+            return still >= 8
+        }
+        let drawn = try #require(store.drawnEagerRows)
+        #expect(drawn <= ThreadView.eagerRows, "\(drawn) rows, not the \(store.rows.count) it holds")
+        #expect(last <= (drawn + 1) / 2 * Self.cycles, "\(last) code fields are built for \(drawn) rows")
+        #expect(NativeThreadStores<Int>().mountedCost(of: store) == store.mountedCost(eagerRows: drawn), "the passes count what it drew")
+    }
+
     /// A thread whose rows are cheap has nothing to bound: its thirty rows are laid out as before.
     @Test func aCheapThreadStillLaysOutItsWholeTail() async throws {
         let (thread, fields, _) = try await Self.open(turns: 40, cycles: 1)

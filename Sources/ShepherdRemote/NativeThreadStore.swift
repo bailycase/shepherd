@@ -905,6 +905,9 @@ public final class NativeThreadStore {
         Self.foldRepeatedErrors(&rows)
         // Only the rebuilt suffix can change IDs: a stream touches the tail, never the whole thread.
         if !self.rows.dropFirst(rowStart).lazy.map(\.id).elementsEqual(rows.lazy.map(\.id)) { rowStructureRevision &+= 1 }
+        // The rows were replaced from the first one (history that came back, another session): what the view last drew counts rows
+        // that are gone, until it draws these.
+        if rowStart == 0, drawnEagerRows != nil, self.rows.first?.id != rows.first?.id { drawnEagerRows = nil }
         liveRowID = liveReply.map { turns[$0].id }
         if self.rows.count - rowStart != rows.count || self.rows.dropFirst(rowStart) != rows[...] {
             self.rows.replaceSubrange(rowStart..., with: rows)

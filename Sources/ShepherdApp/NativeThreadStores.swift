@@ -59,7 +59,8 @@ final class NativeThreadStores<Key: Hashable> {
         didSet { if mountedBudget != oldValue { enforceMountedBudget() } }
     }
     /// How many rows at the end of `store`'s thread its view builds: the rows it last drew (`NativeThreadStore.drawnEagerRows`), or
-    /// where it has not drawn yet, what the rule gives (`NativeThreadStore.eagerTailRows`).
+    /// where it has not drawn yet, what the rule gives (`NativeThreadStore.eagerTailRows`) for the default window and every row: the
+    /// view may leave some out (a Project's wake-ups) or be another height, which it corrects when it draws.
     private func eagerRows(of store: NativeThreadStore) -> Int {
         min(eagerRows, store.drawnEagerRows ?? store.eagerTailRows(maxRows: eagerRows, costCap: eagerCostCap, coveringHeight: eagerCoverHeight))
     }

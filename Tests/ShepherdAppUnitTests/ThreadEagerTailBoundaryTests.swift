@@ -30,10 +30,17 @@ struct ThreadEagerTailBoundaryTests {
                     detached: detached, settling: settling) { rule }
     }
 
+    /// What a hidden thread draws, the rows it has now.
+    private func held(_ tail: ThreadEagerTail, count: Int, revision: Int, rule: Int, cover: Int = 1, costs: Int = 0, detached: Bool = true,
+                      settling: Bool = false) -> Int {
+        tail.held(rows: Array(Self.all.prefix(count)), revision: revision, costs: costs, cover: cover, maxRows: Self.maxRows, crossing: 2,
+                  detached: detached, settling: settling) { rule }
+    }
+
     @Test func aThreadDrawnForTheFirstTimeTakesTheRuleWhole() {
         let tail = ThreadEagerTail()
         #expect(update(tail, count: 80, revision: 1, rule: 7) == 7)
-        #expect(tail.held(rows: Array(Self.all.prefix(80))) { Issue.record("a thread that has drawn needs no rule"); return 0 } == 7)
+        #expect(held(tail, count: 80, revision: 1, rule: 0) == 7, "a thread that has drawn, its rows unchanged, needs no rule")
     }
 
     /// Thirty rows of cheap turns slide a row each time one arrives, as a fixed thirty did.
@@ -141,9 +148,46 @@ struct ThreadEagerTailBoundaryTests {
     }
 
     @Test func aThreadThatNeverDrewHoldsWhatTheRuleSays() {
+        #expect(held(ThreadEagerTail(), count: 40, revision: 1, rule: 9) == 9)
+        #expect(held(ThreadEagerTail(), count: 5, revision: 1, rule: 9) == 5, "never more than its rows")
+        #expect(held(ThreadEagerTail(), count: 0, revision: 1, rule: 9) == 0)
+    }
+
+    /// Rows that arrive while a thread is hidden (its agent runs, queued prompts land) do not stretch its tail from the row it held: a
+    /// tail of four rows that takes forty is not forty-four, for a reader who left it nor for one who follows it.
+    @Test func rowsThatArriveWhileAThreadIsHiddenDoNotGrowItsTailPastTheRuleOrTheMost() {
+        for detached in [true, false] {
+            let tail = ThreadEagerTail()
+            #expect(update(tail, count: 8, revision: 1, rule: 4, detached: detached) == 4)
+            let rows = held(tail, count: 48, revision: 2, rule: 30, detached: detached)
+            #expect(rows <= Self.maxRows, "\(rows) rows")
+            #expect(rows == 30, "the rule, which these rows allow")
+            let heavy = ThreadEagerTail()
+            #expect(update(heavy, count: 8, revision: 1, rule: 4, detached: detached) == 4)
+            #expect(held(heavy, count: 48, revision: 2, rule: 6, detached: detached) == (detached ? 30 : 6), "a reader who left goes two rows at a time")
+        }
+    }
+
+    /// What a hidden thread draws is what the shown one draws next: the rows it moved while hidden are the rows it holds when shown.
+    @Test func aThreadShownAgainHoldsWhatItHeldWhileHidden() {
         let tail = ThreadEagerTail()
-        #expect(tail.held(rows: Array(Self.all.prefix(40))) { 9 } == 9)
-        #expect(tail.held(rows: Array(Self.all.prefix(5))) { 9 } == 5, "never more than its rows")
-        #expect(tail.held(rows: [NativeThreadRow]()) { 9 } == 0)
+        #expect(update(tail, count: 8, revision: 1, rule: 4, detached: false) == 4)
+        #expect(held(tail, count: 48, revision: 2, rule: 9, detached: false) == 9)
+        #expect(held(tail, count: 48, revision: 2, rule: 9, detached: false) == 9, "nothing changed, nothing moved")
+        #expect(update(tail, count: 48, revision: 2, rule: 9, detached: false) == 9, "shown, at the window it was drawn at")
+    }
+
+    /// A hidden thread's frame is frozen through a window drag and snaps after it: its tail does not move for the window.
+    @Test func aHiddenThreadsTailIgnoresTheWindowItIsDrawnAt() {
+        let tail = ThreadEagerTail()
+        #expect(update(tail, count: 40, revision: 1, rule: 20, cover: 5) == 20)
+        #expect(held(tail, count: 40, revision: 1, rule: 4, cover: 9) == 20, "the window grew, the rows did not change")
+        #expect(held(tail, count: 41, revision: 2, rule: 4, cover: 9, detached: false) == 4, "its rows changed")
+    }
+
+    @Test func aHiddenThreadWithoutRowsHasNoTail() {
+        let tail = ThreadEagerTail()
+        #expect(held(tail, count: 5, revision: 1, rule: 3) == 3)
+        #expect(held(tail, count: 0, revision: 2, rule: 3) == 0)
     }
 }

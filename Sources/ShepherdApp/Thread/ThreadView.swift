@@ -492,20 +492,26 @@ struct ThreadView: View {
     /// is what keeps the scroll view's bottom anchor honest when rows land, so a thread
     /// at rest always has it.
     private func eagerCount(_ origins: ProjectUserOrigins, rows: [NativeThreadRow]) -> Int {
-        // A hidden thread's frame is frozen through the drag; moving its boundary would only rebuild rows.
-        guard active else { liveResizeGate.wasLive = liveResizing; return eagerTail.held(rows: rows) { ruleCount(origins) } }
+        // A hidden thread's frame is frozen through the drag, so its tail ignores the window; its rows still move it (`ThreadEagerTail.held`).
+        guard active else { liveResizeGate.wasLive = liveResizing; return restingCount(origins, rows: rows, hidden: true) }
         if liveResizing { liveResizeGate.wasLive = true; return liveEagerCount(origins) }
         if liveResizeGate.wasLive, eagerReturning == nil { return liveEagerCount(origins) }
         return eagerReturning ?? restingCount(origins, rows: rows)
     }
 
     /// The tail a thread at rest lays out: where it starts moves toward the rule (`ruleCount`) by a few rows each time the thread's
-    /// rows change (`ThreadEagerTail`), and the store is told what was drawn, which the budget counts (`NativeThreadStore.drawnEagerRows`).
-    private func restingCount(_ origins: ProjectUserOrigins, rows: [NativeThreadRow]) -> Int {
-        let count = eagerTail.update(rows: rows, revision: store.rowStructureRevision, costs: store.rowCostRevision, cover: eagerCover, maxRows: Self.eagerRows,
-                                     crossing: AppLayout.eagerTailCrossing, detached: !follower.sticky,
-                                     settling: store.tailAwaitsParse(lastRows: Self.eagerRows)) { ruleCount(origins) }
-        if count > 0, store.drawnEagerRows != count { store.drawnEagerRows = count }
+    /// rows change (`ThreadEagerTail`), on screen or not (the rows of a hidden thread change too), and the store is told what was
+    /// drawn, which the budget counts (`NativeThreadStore.drawnEagerRows`). Written from `body`, as `ThreadRowIndex` is read there: the
+    /// store does not observe it and the same count is written once, so it redraws nothing.
+    private func restingCount(_ origins: ProjectUserOrigins, rows: [NativeThreadRow], hidden: Bool = false) -> Int {
+        let settling = store.tailAwaitsParse(lastRows: Self.eagerRows)
+        let count = hidden
+            ? eagerTail.held(rows: rows, revision: store.rowStructureRevision, costs: store.rowCostRevision, cover: eagerCover, maxRows: Self.eagerRows,
+                             crossing: AppLayout.eagerTailCrossing, detached: !follower.sticky, settling: settling) { ruleCount(origins) }
+            : eagerTail.update(rows: rows, revision: store.rowStructureRevision, costs: store.rowCostRevision, cover: eagerCover, maxRows: Self.eagerRows,
+                               crossing: AppLayout.eagerTailCrossing, detached: !follower.sticky, settling: settling) { ruleCount(origins) }
+        let drawn = count > 0 ? count : nil
+        if store.drawnEagerRows != drawn { store.drawnEagerRows = drawn }
         return count
     }
 
@@ -1205,16 +1211,16 @@ final class ThreadRestore {
     /// which the lazy stack above must not share (it would be laid out against a tail still growing, and build rows).
     @ObservationIgnored private(set) var tailDrawnParsed = true
 
+    /// The first lazy stack still waits for the replies at the end of the tail to draw their blocks, having waited `retries` times
+    /// (`AppLayout.restoreRetry` each): not for ever, so that a parse that does not land cannot keep the older rows from coming back.
+    func waitsForParse(retries: Int) -> Bool { !tailDrawnParsed && retries < AppLayout.restoreParseRetries }
+
     /// The lazy stack is still to come back (the next step brings it): the thread draws only the rows the eager stack holds, so a
     /// reader cannot scroll to older ones.
     var awaitsHistory: Bool { restoring && !history }
 
     /// What the thread draws in this update; nil for all of it. `hiddenKept` is what the hidden view draws
     /// (`NativeThreadStore.transcriptDrawn`, read only while hidden, so that the thread on screen is not drawn again by the store
-    /// The first lazy stack still waits for the replies at the end of the tail to draw their blocks, having waited `retries` times
-    /// (`AppLayout.restoreRetry` each): not for ever, so that a parse that does not land cannot keep the older rows from coming back.
-    func waitsForParse(retries: Int) -> Bool { !tailDrawnParsed && retries < AppLayout.restoreParseRetries }
-
     /// clearing it), and `rows` all the rows once the thread is shown. `owed` is what building the rows between the last `hiddenKept`
     /// and the eager tail costs, beyond their chrome (`NativeThreadStore.restoreCost`), read once as it comes back: a thread that owes
     /// no more than a step (`AppLayout.restoreStepBytes`) draws them all in its first frame, as it would after any release, because
