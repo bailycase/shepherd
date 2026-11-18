@@ -257,6 +257,7 @@ struct ThreadView: View {
                         URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true)
                     })
                     .environment(\.shProseFileLinks, .app)
+                    .environment(\.shOpenIn, .app)
                 }
                 .id(transcriptRevision)
                 // A dispatched thread whose Mac stopped answering: its words fade under the banner, the composer and header don't (FleetRemote).

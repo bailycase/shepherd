@@ -151,7 +151,7 @@ struct BranchUpdateSheet: View {
 
     private func openFiles(_ files: [String]) {
         let root = URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath)
-        for file in files { ShepherdViewModel.openInEditor(root.appendingPathComponent(file), editor: vm.settings.editor) }
+        for file in files.map(root.appendingPathComponent) { ShepherdViewModel.openInEditor(file, editor: vm.settings.editor(for: file)) }
     }
 
     private func ask(_ conflict: BranchGit.Conflict) {
