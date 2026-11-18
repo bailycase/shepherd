@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+@testable import ShepherdSessions
 import ShepherdTestSupport
 import ShepherdUI
 import Testing
@@ -19,6 +20,63 @@ struct NewThreadSlashMenuTests {
         }
     }
 
+    @Test func dollarListsSkillsMidPromptAndTheSkillLeadsTheOpeningMessage() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.attachingASkill() }
+        }
+    }
+
+    /// "$" after some words lists the skills (even with Settings ▸ Skills keeping them out of "/"),
+    /// a row becomes an inline "/skill:" chip without starting the thread, and Send hands pi the
+    /// skill first, as a thread's composer does.
+    @MainActor
+    static func attachingASkill() async throws {
+        AccessibilityNode.enable()
+        try StubPi.installAsEngine()
+        let app = try AppHarness()
+        let space = Fixture.space(path: app.dir.path)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: []))
+        defer { app.stop() }
+        try await seed(app, vm, [
+            NativeCommand(name: "review", description: "Review the diff", source: "prompt"),
+            NativeCommand(name: "skill:debug", description: "Find the cause", source: "skill"),
+        ])
+        app.settings.skillsInSlashMenu = false
+        vm.openNewThread()
+        let draft = vm.newThread
+        try await eventuallyOnMain("the model capabilities to load") { !draft.loadingDefaults && draft.place?.host == nil }
+        let window = OffscreenWindow(size: CGSize(width: 1000, height: 800), dark: true, NewThreadPage(vm: vm, chrome: PageHeaderChrome()))
+        defer { window.close() }
+        var found: NSTextView?
+        try await eventuallyOnMain("the field to take the keyboard") {
+            window.layout()
+            found = (window.window.firstResponder as? NSTextView).flatMap { $0.isFieldEditor ? $0 : nil }
+            return found != nil
+        }
+        let editor = try #require(found)
+        editor.insertText("fix the bug $de", replacementRange: NSRange(location: 0, length: 0))
+
+        func row(_ prefix: String) -> String? {
+            window.layout()
+            return window.elements().compactMap { $0.label }.first { $0.hasPrefix(prefix) }
+        }
+        try await eventuallyOnMain("the skills menu to list the skill") { row("/skill:debug") != nil }
+        #expect(row("/review") == nil, "$ lists skills only")
+
+        try window.press(try #require(row("/skill:debug")))
+        try await eventuallyOnMain("the skill to take the place of $de") { draft.prompt == "fix the bug /skill:debug " }
+        #expect(vm.selectedAgentID == nil, "picking a skill starts nothing")
+
+        draft.send(vm)
+        try await eventuallyOnMain("the new agent to be selected", timeout: .seconds(60)) { vm.selectedAgentID != nil && !draft.starting }
+        let id = try #require(vm.selectedAgentID)
+        let server = app.server
+        try await eventuallyAsync("pi to be sent the skill first", timeout: .seconds(60)) {
+            guard case .snapshot(let snapshot)? = try? await server.nativeThread(agentID: id, request: .snapshot()) else { return false }
+            return snapshot.messages.contains { $0.role == "user" && $0.blocks.contains { $0.text == "/skill:debug fix the bug" } }
+        }
+    }
+
     @MainActor
     static func listingAndChoosing() async throws {
         AccessibilityNode.enable()
@@ -27,10 +85,10 @@ struct NewThreadSlashMenuTests {
         let space = Fixture.space(path: app.dir.path)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: []))
         defer { app.stop() }
-        vm.slashCommands.catalog = [
-            NativeCommand(name: "review", description: "Review the diff", source: "prompt"),
+        try await seed(app, vm, [
             NativeCommand(name: "release-notes", description: "Draft release notes", source: "prompt"),
-        ]
+            NativeCommand(name: "review", description: "Review the diff", source: "prompt"),
+        ])
         app.settings.hiddenSlashCommands = ["release-notes"]
         vm.openNewThread()
         let draft = vm.newThread
@@ -62,5 +120,14 @@ struct NewThreadSlashMenuTests {
             guard case .snapshot(let snapshot)? = try? await server.nativeThread(agentID: id, request: .snapshot()) else { return false }
             return snapshot.messages.contains { $0.role == "user" && $0.blocks.contains { $0.text == "/review" } }
         }
+    }
+
+    /// Lists `commands` the way a thread's pi does, through the host, so the host's own settings
+    /// push can't overwrite them after the test sets the catalog.
+    @MainActor
+    static func seed(_ app: AppHarness, _ vm: ShepherdViewModel, _ commands: [NativeCommand]) async throws {
+        let server = app.server
+        server.queue.async { server.mergeSlashCommands(commands) }
+        try await eventuallyOnMain("the host to list the commands") { vm.slashCommands.catalog == commands }
     }
 }
