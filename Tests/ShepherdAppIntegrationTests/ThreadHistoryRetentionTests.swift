@@ -70,12 +70,14 @@ struct ThreadHistoryRetentionTests {
         try await thread.waitUntilReady()
         var messages: [NativeThreadMessage] = []
         var revision: UInt64 = 1
+        var ends: [CGFloat] = []
         func addTurns(_ range: Range<Int>) async {
             for i in range {
                 messages += [ThreadFixture.user("u\(i)", "Say hi \(i)"), ThreadFixture.assistant("a\(i)", "Hi there, number \(i).")]
                 revision += 1
                 await thread.serve(ThreadFixture.snapshot(messages, revision: revision))
                 ListPerf.settle(thread.window)
+                if let scroll = thread.scrollView, let document = scroll.documentView { ends.append(document.bounds.height - scroll.contentView.bounds.maxY) }
             }
         }
         let warm = ThreadView.eagerRows
@@ -87,6 +89,9 @@ struct ThreadHistoryRetentionTests {
         #expect(thread.store.rows.count == 2 * (warm + more), "every turn is a row of the thread")
         // Without the restarts every one of the turns' replies stays built: `more` of them.
         #expect(after - before <= ThreadHistoryBuilt.rows, "\(more) more turns left \(after - before) more rows built (\(before) before)")
+        // The restarts happen behind the reader: the end of the thread stays where it was through every turn.
+        let steady = ends.suffix(more)
+        #expect(steady.count == more && (steady.max() ?? 0) - (steady.min() ?? 0) <= 1, "the thread's end moved: \(Array(steady))")
         thread.close()
     }
 
