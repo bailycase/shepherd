@@ -436,7 +436,8 @@ extension ShepherdViewModel {
     /// Settings ▸ Pi ▸ Sign-in's nav dot: a sign-in expired, or a provider an agent waits on
     /// isn't signed in.
     var piSignInNeedsAttention: Bool {
-        PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), expired: piAuth.expired, needed: piAuth.needed).needsAttention
+        PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), expired: piAuth.expired, needed: piAuth.needed,
+                          providers: piAuth.providers).needsAttention
     }
 
     /// Opens Settings ▸ Pi ▸ Sign-in, scrolled to `provider` when there is one, and starts its
@@ -448,8 +449,18 @@ extension ShepherdViewModel {
         guard let provider else { return }
         piAuth.focus = provider
         guard start else { return }
-        let known = PiSignInCatalog.subscription(provider) != nil || PiProviders.names[provider] != nil
-        if known { piAuth.signIn(provider, origin: origin) }
+        let known = piAuth.providers?.contains { $0.id == provider } ?? ThreadAuthNotice.known(provider)
+        if known {
+            piAuth.signIn(provider, origin: origin)
+        } else {
+            Task { [weak self] in
+                guard let self else { return }
+                await piAuth.refreshProviders()
+                if piAuth.providers?.contains(where: { $0.id == provider }) == true {
+                    piAuth.signIn(provider, origin: origin)
+                }
+            }
+        }
     }
 }
 
@@ -484,8 +495,8 @@ extension ShepherdViewModel {
         } else if notSignedIn[agentID] != nil {
             notSignedIn[agentID] = nil
         }
-        // Sign-in hears only providers it can sign in to: a model pi has no provider for is the thread's to settle.
-        let needed = Set(notSignedIn.values.compactMap(\.provider).filter(ThreadAuthNotice.known))
+        // Keep the waiting IDs; the sign-in page joins them with the effective provider catalog.
+        let needed = Set(notSignedIn.values.compactMap(\.provider))
         if piAuth.needed != needed { piAuth.needed = needed }
     }
 
@@ -523,6 +534,8 @@ extension ShepherdViewModel {
 
     /// The providers /login lists, with their states in Shepherd's pi now.
     func slashLoginChoices() -> [SlashLogin.Choice] {
-        SlashLogin.choices(PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), expired: piAuth.expired))
+        if piAuth.providers == nil { Task { [weak piAuth] in await piAuth?.refreshProviders() } }
+        return SlashLogin.choices(PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), expired: piAuth.expired,
+                                                  providers: piAuth.providers))
     }
 }

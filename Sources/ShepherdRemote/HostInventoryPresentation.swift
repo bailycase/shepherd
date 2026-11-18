@@ -86,6 +86,17 @@ public enum HostInventoryPresentation {
 
     // MARK: Providers
 
+    public struct ProviderPage: Equatable, Sendable {
+        public var groups: [String: [HostProviderStatus]]
+        public var addableKeys: [HostProviderStatus]
+    }
+
+    public static func providerPage(_ providers: [HostProviderStatus]) -> ProviderPage {
+        let addable = providers.filter { $0.badge == "API key" && $0.auth == .notSignedIn }
+        let existing = providers.filter { $0.badge != "API key" || $0.auth != .notSignedIn }
+        return ProviderPage(groups: Dictionary(grouping: existing, by: \.badge), addableKeys: addable)
+    }
+
     /// The row's word: "Signed in", "Expired · sign in again", "Not signed in", "Signing in…",
     /// "API key", "From the host’s environment", "No key needed". Host-neutral: a client may be
     /// another Mac, and the host may take a sign-in from it (`hostConfig.v1`).

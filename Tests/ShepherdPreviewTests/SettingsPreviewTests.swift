@@ -65,6 +65,60 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Runtime-discovered provider rows and questions, from the real bridge against the fixture SDK.
+    @Test func providerSignIn() async throws {
+        let workspace = try PreviewWorkspace(yourPi: YourPiSurvey())
+        defer { workspace.stop() }
+        let pi = workspace.server.pi
+        let node = try #require(TestNode.url)
+        let script = try PiSignInScript.install(in: workspace.dir)
+        var environment = ProcessInfo.processInfo.environment
+        environment["FAKE_PI_CONTROL"] = workspace.dir.path
+        let auth = PiAuthStore(pi: pi, bridge: {
+            PiSignInBridge(line: PiLaunch.signInBridge(node: .executable(node.path), script: script.path, sdk: FakePiSDK.path, home: pi.files),
+                           environment: environment)
+        })
+        auth.openURL = { _ in }
+        auth.copy = { _ in }
+        auth.readUsage = { _ in [:] }
+        let yours = YourPiModel(pi: pi)
+        await auth.refreshProviders()
+        await yours.refresh()
+        try await Preview.render("provider-sign-in-settings", size: CGSize(width: 960, height: 1100)) {
+            ScrollView { PiSignInSettings(yourPi: yours, auth: auth).padding(SH.Space.xl) }
+                .frame(width: 960, height: 1100)
+                .background(Color.sh.bgWindow)
+        }
+        auth.signIn("fixture-login")
+        let session = try #require(auth.session)
+        defer { auth.closeSheet() }
+        for (kind, answer, surface) in [(PiSignInPrompt.Kind.select, "west", "provider-sign-in-select"),
+                                        (.text, "acme", "provider-sign-in-text"),
+                                        (.secret, " fixture-password ", "provider-sign-in-secret")] {
+            try await eventuallyOnMain("the preview provider's \(kind) question") {
+                if case .prompt(let prompt) = session.phase { return prompt.kind == kind }; return false
+            }
+            if kind == .secret { session.promptAnswer = answer }
+            try await Preview.render(surface, size: CGSize(width: 520, height: 340)) {
+                PiSignInSheet(session: session, close: {})
+            }
+            session.submitPrompt(answer)
+        }
+        try await eventuallyOnMain("the preview account to land") { if case .done = session.phase { return true }; return false }
+        await auth.landing?.value
+        try await Preview.render("provider-sign-in-done", size: CGSize(width: 520, height: 340)) {
+            PiSignInSheet(session: session, close: {})
+        }
+        await yours.refresh()
+        try await Preview.render("provider-sign-in-signed-in", size: CGSize(width: 960, height: 1100), ready: {
+            yours.survey?.logins.contains { $0.provider == "fixture-login" && $0.shepherd == .subscription } == true
+        }) {
+            ScrollView { PiSignInSettings(yourPi: yours, auth: auth).padding(SH.Space.xl) }
+                .frame(width: 960, height: 1100)
+                .background(Color.sh.bgWindow)
+        }
+    }
+
     /// Extensions with the Design tool on, without the removed peer-permission row.
     @Test func settingsExtensionsWithoutAgentPermissions() async throws {
         let workspace = try PreviewWorkspace()

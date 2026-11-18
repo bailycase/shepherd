@@ -111,6 +111,7 @@ struct PiSignInFlowTests {
         let imported = String(decoding: try JSONEncoder().encode(URL(fileURLWithPath: FakePiSDK.path).absoluteString), as: UTF8.self)
         try """
         import { ModelRuntime as Base } from \(imported);
+        export { createAgentSessionServices, SettingsManager } from \(imported);
         import * as fs from 'node:fs';
         import * as path from 'node:path';
         export class ModelRuntime extends Base {
@@ -151,6 +152,37 @@ struct PiSignInFlowTests {
         withObservationTracking { if session.keyCheck.allowsSave { allowed.withValue { $0 = true } } } onChange: {
             Task { @MainActor in watchKeyChecks(session, allowed: allowed) }
         }
+    }
+
+    @Test(arguments: [("fixture-login", PiSignInMethod.oauth), ("fixture-key", .apiKey)])
+    func aDiscoveredProviderUsesAccountLoginAndNativeQuestionsWithoutACatalogEntry(provider: String, method: PiSignInMethod) async throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        let auth = try setup.store()
+        await auth.refreshProviders()
+        #expect(auth.providersProblem == nil)
+        #expect(auth.providers?.contains { $0.id == provider } == true)
+        auth.signIn(provider, key: method == .apiKey)
+        let session = try #require(auth.session)
+        defer { auth.closeSheet() }
+        #expect(session.method == method && session.flow != .key)
+        let questions: [(PiSignInPrompt.Kind, String)] = method == .oauth
+            ? [(.select, "west"), (.text, "acme"), (.secret, " fixture-password ")]
+            : [(.secret, " !fixture$password "), (.text, "acme"), (.select, "west")]
+        for (kind, answer) in questions {
+            try await eventuallyOnMain("the provider's \(kind) question") {
+                if case .prompt(let prompt) = session.phase { return prompt.kind == kind }; return false
+            }
+            session.submitPrompt(answer)
+            #expect(session.promptAnswer.isEmpty)
+        }
+        try await eventuallyOnMain("the unfamiliar account to land") { if case .done = session.phase { return true }; return false }
+        await auth.landing?.value
+        let credential = try #require(try setup.stored()[provider] as? [String: Any])
+        #expect(credential["type"] as? String == (method == .oauth ? "oauth" : "api_key"))
+        if method == .apiKey { #expect(credential["key"] as? String == " !fixture$password ") }
+        await auth.signOut(provider)
+        #expect(try setup.stored()[provider] == nil)
     }
 
     @Test func signingOutRemovesOnlyThatProvidersCredentialFromShepherdsPi() async throws {

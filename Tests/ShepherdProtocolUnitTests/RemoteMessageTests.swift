@@ -381,7 +381,9 @@ enum RemoteSamples {
         .subagent(HostSubagentProfileText(file: "reviewer.md", text: "---\nname: reviewer\n---\nReview.\n", fingerprint: "ab12")),
         .providers([HostProviderStatus(id: "anthropic", name: "Anthropic", badge: "Subscription", auth: .expired, detail: "Claude Pro or Max", accounts: 2, activeAccount: "work"),
                     HostProviderStatus(id: "openai", name: "OpenAI", badge: "API key", auth: .apiKey, problem: "Couldn\u{2019}t sign out."),
-                    HostProviderStatus(id: "local", name: "local", badge: "Custom", auth: .noKey, detail: "http://localhost:11434")]),
+                    HostProviderStatus(id: "local", name: "local", badge: "Custom", auth: .noKey, detail: "http://localhost:11434"),
+                    HostProviderStatus(id: "acme", name: "Acme", badge: "Subscription", auth: .notSignedIn,
+                                       signIn: HostProviderSignIn(id: "acme", name: "Acme", oauth: "Acme account", apiKey: "Acme key", keyForm: false))]),
     ]
     static let hostSettingChanges: [HostSettingChange] = [
         .defaultModel("openai/gpt-5"), .defaultModel(nil), .defaultThinking(.low), .queueDelivery(.all),
@@ -409,10 +411,12 @@ enum RemoteSamples {
         .subagentSave(file: "reviewer.md", text: "---\nname: reviewer\n---\n", fingerprint: "ab12"),
         .subagentDelete(file: "team/scout.md", fingerprint: "cd34"), .subagentRestoreDefaults(expected: ["reviewer.md": "ab12"]),
         .providerKey(provider: "openai", key: "$OPENAI_API_KEY"), .providerSignOut(provider: "openai"), .providerSignIn(provider: "anthropic"),
+        .providerSignIn(provider: "acme", method: .apiKey, adding: true),
         .providerAccount(provider: "anthropic", action: .use(id: "a1")), .providerAccount(provider: "anthropic", action: .remove(id: "a1")),
         .providerAccount(provider: "anthropic", action: .rename(id: "a1", name: "work")), .providerAccount(provider: "anthropic", action: .rotate(true)),
         .providerAccount(provider: "anthropic", action: .add), .providerAccount(provider: "deepseek", action: .addKey("$DEEPSEEK_API_KEY")),
         .signIn(id: op, action: .poll), .signIn(id: op, action: .complete("code#state")), .signIn(id: op, action: .cancel),
+        .signIn(id: op, action: .complete("west", promptID: "p1")),
     ]
     static let configResults: [RemoteHostConfigResult] = [
         .mcp(mcpInventory), .mcpEntry(json: #"{"mcpServers":{"github":{"url":"https://x"}}}"#),
@@ -426,6 +430,11 @@ enum RemoteSamples {
         .signIn(HostSignInProgress(id: op, phase: .waiting, name: "Anthropic", authorizationURL: "https://claude.ai/oauth", wantsCode: true)),
         .signIn(HostSignInProgress(id: op, phase: .waiting, name: "GitHub Copilot", authorizationURL: "https://github.com/login/device", deviceCode: "AB-12")),
         .signIn(HostSignInProgress(id: op, phase: .failed, name: "linear", message: "Cancelled.")),
+        .signIn(HostSignInProgress(id: op, phase: .waiting, name: "Acme",
+                                  prompt: HostSignInPrompt(id: "p1", kind: .secret, message: "Password"))),
+        .signIn(HostSignInProgress(id: op, phase: .waiting, name: "Acme",
+                                  prompt: HostSignInPrompt(id: "p2", kind: .select, message: "Region",
+                                                          options: [.init(id: "west", label: "West")]))),
     ]
 
     static let skillSource = SkillSource(repo: "anthropics/skills", path: "skills/pdf", commit: "3f2a91c0", committedAt: 1_700_000_000)
@@ -808,6 +817,17 @@ struct RemoteRequestTests {
     }
 
     /// An older client's `changes*` reads name no folder: the agent's own.
+    @Test func olderProviderAndSignInPayloadsNeedNoDiscoveryFields() throws {
+        let provider = try JSONDecoder().decode(HostProviderStatus.self, from: Data(#"{"id":"acme","name":"Acme","badge":"Subscription","auth":"notSignedIn","accounts":0}"#.utf8))
+        #expect(provider.signIn == nil)
+        let progress = try JSONDecoder().decode(HostSignInProgress.self, from: Data(#"{"id":"00000000-0000-0000-0000-00000000000A","phase":"waiting","name":"Acme","wantsCode":true}"#.utf8))
+        #expect(progress.prompt == nil && progress.wantsCode)
+        let action = try JSONDecoder().decode(HostSignInAction.self, from: Data(#"{"complete":{"_0":"legacy-code"}}"#.utf8))
+        #expect(action == .complete("legacy-code"))
+        let request = try JSONDecoder().decode(RemoteHostConfigRequest.self, from: Data(#"{"providerSignIn":{"provider":"acme"}}"#.utf8))
+        #expect(request == .providerSignIn(provider: "acme"))
+    }
+
     @Test func anOlderClientsChangesReadsNameNoFolder() throws {
         for json in [#"{"changesOverview":{}}"#, #"{"changesBranches":{}}"#] {
             let query = try JSONDecoder().decode(RemoteAgentQuery.self, from: Data(json.utf8))

@@ -591,7 +591,11 @@ struct PaneLeafView: View, Equatable {
                     authActions: ThreadAuthActions(
                         signIn: { [vm] provider in vm.openSignIn(provider, origin: .agentCard) },
                         useModel: { [vm] model in vm.useAnotherModel(agentID, model: model) },
-                        models: { [vm] in await ModelCatalog.loadLocal(from: vm.pi.catalog).models.map(\.id) }),
+                        models: { [vm] in
+                            await vm.piAuth.refreshProviders()
+                            return await ModelCatalog.loadLocal(from: vm.pi.catalog).models.map(\.id)
+                        },
+                        providerKnown: { [vm] id in vm.piAuth.providers?.contains { $0.id == id } ?? ThreadAuthNotice.known(id) }),
                     slashLogin: vm.slashLoginActions
                 )
                 // Design references reach an ordinary thread only.

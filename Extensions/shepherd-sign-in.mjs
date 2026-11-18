@@ -10,11 +10,13 @@
 //   ("paste" is the browser flow without the callback port's check: a code pasted from the page)
 //   {"type":"answer","id":"p1","value":"…"}      a prompt's answer (a key, a pasted code)
 //   {"type":"cancel"}                            ends the login under way
+//   {"type":"providers"}                         lists interactive provider auth methods
 //   {"type":"logout","provider":"anthropic"}     removes Shepherd's credential for it
 //   {"type":"check","id":"c1","provider":"deepseek","key":"…"} or {…,"variable":"DEEPSEEK_API_KEY"}
 //   ({"type":"check","id":"c2","provider":"anthropic"} alone checks the home's stored login for it)
 // stdout:
 //   {"type":"ready"}
+//   {"type":"providers","providers":[{"id":…, "name":…, "oauth"?:…, "apiKey"?:…}]}
 //   {"type":"event","event":{"type":"auth_url"|"device_code"|"info"|"progress",…}}
 //   {"type":"prompt","id":"p1","kind":"manual_code"|"secret"|"text"|"select","message":…,"placeholder"?,"options"?}
 //   {"type":"promptClosed","id":"p1"}           pi no longer needs that answer (the browser won)
@@ -33,6 +35,15 @@ const [sdkPath, home] = process.argv.slice(2);
 
 /** The callback ports pi's browser sign-ins listen on, checked before the browser opens. */
 const CALLBACK_PORTS = { anthropic: 53692, "openai-codex": 1455, radius: 1456 };
+// Verified single-field key logins in pinned Pi. Everything else uses the provider's questions.
+const KEY_FORMS = new Set([
+  "anthropic", "ant-ling", "azure", "baseten", "cerebras", "deepseek", "fireworks", "github-copilot", "google", "groq",
+  "huggingface", "kimi-coding", "meta", "minimax", "minimax-cn", "mistral", "moonshotai", "moonshotai-cn", "nvidia",
+  "openai", "opencode", "opencode-go", "openrouter", "qwen-token-plan", "qwen-token-plan-cn", "qwen-token-plan-individual",
+  "qwen-token-plan-individual-cn", "together", "typesafe", "vercel-ai-gateway", "xai", "xiaomi", "xiaomi-token-plan-ams",
+  "xiaomi-token-plan-cn", "xiaomi-token-plan-sgp", "zai", "zai-coding-cn",
+]);
+const nativeLogins = new Map();
 
 function send(message) {
   process.stdout.write(JSON.stringify(message) + "\n");
@@ -42,7 +53,7 @@ function send(message) {
 export function clean(reason, secrets = []) {
   let text = String(reason instanceof Error ? reason.message : reason ?? "");
   for (const secret of secrets) {
-    if (secret && secret.length >= 8) text = text.split(secret).join("••••");
+    if (secret) text = text.split(secret).join("••••");
   }
   text = text.split(/\r?\n/)[0];
   text = text.replace(/\s*;?\s*body=.*$/s, "").replace(/\s*;?\s*details=.*$/s, "");
@@ -50,17 +61,35 @@ export function clean(reason, secrets = []) {
   return text.trim().slice(0, 240);
 }
 
+async function storedRuntime() {
+  const sdk = await import(pathToFileURL(sdkPath).href);
+  return sdk.ModelRuntime.create({
+    authPath: path.join(home, "auth.json"),
+    modelsPath: path.join(home, "models.json"),
+    refreshOnCreate: false,
+  });
+}
+
 let runtime;
 async function modelRuntime() {
-  if (!runtime) {
+  return runtime ??= (async () => {
     const sdk = await import(pathToFileURL(sdkPath).href);
-    runtime = await sdk.ModelRuntime.create({
-      authPath: path.join(home, "auth.json"),
-      modelsPath: path.join(home, "models.json"),
-      refreshOnCreate: false,
+    const models = await storedRuntime();
+    for (const provider of models.getProviders()) nativeLogins.set(provider.id, {
+      oauth: provider.auth.oauth?.login, apiKey: provider.auth.apiKey?.login,
     });
-  }
-  return runtime;
+    // Sign-in uses the same installed providers as agents, but never starts a conversation,
+    // runs session handlers, or loads a workspace's code into the global credential store.
+    const services = await sdk.createAgentSessionServices({
+      cwd: home, agentDir: home, modelRuntime: models,
+      settingsManager: sdk.SettingsManager.create(home, home, { projectTrusted: false }),
+      resourceLoaderOptions: { noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true },
+    });
+    if (services.resourceLoader.getExtensions().errors.length || services.diagnostics.some(d => d.type === "error")) {
+      throw new Error("Could not load installed provider extensions.");
+    }
+    return services.modelRuntime;
+  })();
 }
 
 function portFree(port) {
@@ -78,18 +107,18 @@ const prompts = new Map();
 /** What the user typed for this login (a key, a code): kept out of every reason sent back. */
 let typed = [];
 
-function answerAutomatically(prompt, flow) {
-  if (prompt.type === "select") {
+function answerAutomatically(prompt, flow, provider) {
+  if (prompt.type === "select" && ["openai-codex", "radius"].includes(provider)) {
     const want = flow === "device" ? /device/i : /browser/i;
     const option = prompt.options.find((o) => want.test(o.id) || want.test(o.label));
     return option ? option.id : undefined;
   }
   // GitHub Copilot asks for an Enterprise domain first: blank is github.com.
-  if (prompt.type === "text" && /enterprise/i.test(prompt.message)) return "";
+  if (provider === "github-copilot" && prompt.type === "text" && /enterprise/i.test(prompt.message)) return "";
   return undefined;
 }
 
-function interaction(controller, flow) {
+function interaction(controller, flow, provider, { nativeOAuth = false, keyForm = false } = {}) {
   return {
     signal: controller.signal,
     notify(event) {
@@ -109,24 +138,33 @@ function interaction(controller, flow) {
       else if (type === "info" || type === "progress") send({ type: "event", event: { type, message: String(event.message ?? "") } });
     },
     prompt(prompt) {
-      const automatic = answerAutomatically(prompt, flow);
+      if (!["manual_code", "secret", "text", "select"].includes(prompt.type))
+        return Promise.reject(new Error("The provider asked an unsupported sign-in question."));
+      if (prompt.type === "select" && (!Array.isArray(prompt.options) || !prompt.options.length))
+        return Promise.reject(new Error("The provider offered no sign-in choices."));
+      const automatic = nativeOAuth ? answerAutomatically(prompt, flow, provider) : undefined;
       if (automatic !== undefined) return Promise.resolve(automatic);
       const id = `p${++promptCount}`;
       return new Promise((resolve, reject) => {
+        const signal = prompt.signal ? AbortSignal.any([controller.signal, prompt.signal]) : controller.signal;
         const close = () => {
-          if (!prompts.delete(id)) return;
+          const pending = prompts.get(id);
+          if (!pending) return;
+          prompts.delete(id);
           send({ type: "promptClosed", id });
-          reject(new Error("Login cancelled"));
+          pending.reject(new Error("Login cancelled"));
         };
-        prompts.set(id, { resolve, reject });
-        if (prompt.signal) {
-          if (prompt.signal.aborted) return close();
-          prompt.signal.addEventListener("abort", close, { once: true });
-        }
+        prompts.set(id, {
+          resolve(value) { signal.removeEventListener("abort", close); resolve(value); },
+          reject(error) { signal.removeEventListener("abort", close); reject(error); },
+        });
+        if (signal.aborted) return close();
+        signal.addEventListener("abort", close, { once: true });
         send({
           type: "prompt",
           id,
           kind: prompt.type,
+          keyForm: prompt.type === "secret" && keyForm ? true : undefined,
           message: String(prompt.message ?? ""),
           placeholder: prompt.placeholder,
           options: prompt.type === "select" ? prompt.options.map((o) => ({ id: o.id, label: o.label })) : undefined,
@@ -142,22 +180,27 @@ async function startLogin(message) {
   const controller = new AbortController();
   login = controller;
   typed = [];
+  let callbackPort;
   try {
     const models = await modelRuntime();
-    if (!models.getProvider(provider)) {
+    const effective = models.getProvider(provider);
+    if (!effective) {
       return send({ type: "failed", code: "unknownProvider", reason: `Shepherd’s pi doesn’t know ${provider}.` });
     }
-    const port = CALLBACK_PORTS[provider];
+    const native = nativeLogins.get(provider);
+    const nativeOAuth = !!native?.oauth && native.oauth === effective.auth.oauth?.login;
+    const keyForm = KEY_FORMS.has(provider) && !!native?.apiKey && native.apiKey === effective.auth.apiKey?.login;
+    const port = callbackPort = nativeOAuth ? CALLBACK_PORTS[provider] : undefined;
     if (method === "oauth" && flow === "browser" && port && !(await portFree(port))) {
       return send({ type: "failed", code: "portBusy", port, reason: `Another sign-in is using localhost:${port}.` });
     }
-    const credential = await models.login(provider, method, interaction(controller, flow));
+    const credential = await models.login(provider, method, interaction(controller, flow, provider, { nativeOAuth, keyForm }));
     send({ type: "done", provider, credential: credential && credential.type === "oauth" ? "oauth" : "api_key" });
   } catch (error) {
     if (controller.signal.aborted || /Login cancelled/.test(String(error && error.message))) {
       send({ type: "failed", code: "cancelled", reason: "Cancelled." });
     } else if (error && error.code === "EADDRINUSE") {
-      send({ type: "failed", code: "portBusy", port: CALLBACK_PORTS[provider], reason: clean(error) });
+      send({ type: "failed", code: "portBusy", port: error.port ?? callbackPort, reason: clean(error, typed) });
     } else {
       send({ type: "failed", code: "other", reason: clean(error, typed) });
     }
@@ -170,9 +213,27 @@ async function startLogin(message) {
   }
 }
 
-async function logout(message) {
+async function listProviders() {
   try {
     const models = await modelRuntime();
+    const providers = models.getProviders().map(provider => ({
+      id: provider.id,
+      name: provider.name,
+      oauth: provider.auth.oauth?.name,
+      apiKey: provider.auth.apiKey?.login ? provider.auth.apiKey.name : undefined,
+      keyForm: KEY_FORMS.has(provider.id) && !!nativeLogins.get(provider.id)?.apiKey
+        && nativeLogins.get(provider.id).apiKey === provider.auth.apiKey?.login,
+    })).filter(provider => provider.oauth || provider.apiKey);
+    send({ type: "providers", providers });
+  } catch (error) {
+    send({ type: "failed", code: "other", reason: clean(error) });
+  }
+}
+
+async function logout(message) {
+  try {
+    // Removing a credential must work even if an installed extension cannot load.
+    const models = await storedRuntime();
     await models.logout(message.provider);
     send({ type: "loggedOut", provider: message.provider });
   } catch (error) {
@@ -231,6 +292,9 @@ function handle(line) {
       pending.resolve(String(message.value ?? ""));
       break;
     }
+    case "providers":
+      void listProviders();
+      break;
     case "cancel":
       login?.abort();
       break;
@@ -244,8 +308,8 @@ function handle(line) {
 }
 
 if (sdkPath && home) {
-  process.on("uncaughtException", (error) => send({ type: "failed", code: "other", reason: clean(error) }));
-  process.on("unhandledRejection", (error) => send({ type: "failed", code: "other", reason: clean(error) }));
+  process.on("uncaughtException", (error) => send({ type: "failed", code: "other", reason: clean(error, typed) }));
+  process.on("unhandledRejection", (error) => send({ type: "failed", code: "other", reason: clean(error, typed) }));
   const lines = readline.createInterface({ input: process.stdin });
   lines.on("line", handle);
   lines.on("close", () => {

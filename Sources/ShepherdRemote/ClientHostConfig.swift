@@ -121,9 +121,10 @@ public final class ClientHostConfig {
     }
 
     /// Sends the code or address the person pasted for the sign-in under way.
-    public func complete(signInOn host: SettingsHost, with code: String) async {
-        guard let progress = signIns[host.id] else { return }
-        await perform(.signIn(id: progress.id, action: .complete(code)), on: host)
+    public func complete(signInOn host: SettingsHost, with code: String, signInID: UUID? = nil, promptID: String? = nil) async {
+        guard let progress = signIns[host.id], signInID == nil || signInID == progress.id else { return }
+        // IDs belong to the rendered question, never whichever question polling read most recently.
+        await perform(.signIn(id: signInID ?? progress.id, action: .complete(code, promptID: promptID)), on: host)
     }
 
     /// Ends the sign-in under way, and forgets it.

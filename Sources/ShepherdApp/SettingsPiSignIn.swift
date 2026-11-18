@@ -20,7 +20,7 @@ struct PiSignInSettings: View {
 
     var body: some View {
         let page = PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), signingIn: signingIn, expired: auth.expired,
-                                     needed: auth.needed, problems: auth.problems, accounts: auth.accounts)
+                                     needed: auth.needed, problems: auth.problems, accounts: auth.accounts, providers: auth.providers)
         ScrollViewReader { proxy in
             SettingsPage(title: "Sign-in",
                          explanation: "Subscriptions and API keys, the same on every Mac in your fleet: sign in once. They live in Shepherd’s own pi, so your terminal pi keeps its own.") {
@@ -30,6 +30,7 @@ struct PiSignInSettings: View {
                 .disabled(yourPi.survey?.folder == nil || yourPi.busy.contains(YourPiModel.rowID(.logins)))
                 .help(yourPi.survey?.folder == nil ? "Shepherd found no pi of yours." : "Copies every sign-in from your pi again.")
             } content: {
+                if let problem = auth.providersProblem { SHInlineProblem(problem) }
                 SettingsGroup(title: "Subscriptions", footnote: PiSignInWords.sharedLoginNote(page.subscriptions.filter(\.sharedLoginNote).map(\.name))) {
                     ForEach(page.subscriptions) { row in
                         providerRow(row).id(row.id)
@@ -41,7 +42,7 @@ struct PiSignInSettings: View {
                     ForEach(page.apiKeys) { row in
                         providerRow(row).id(row.id)
                     }
-                    AddKeyRow(providers: page.addable) { auth.signIn($0, key: true) }
+                    AddKeyRow(providers: page.addable, names: page.providerNames) { auth.signIn($0, key: true) }
                 }
                 if !page.customProviders.isEmpty {
                     SettingsGroup(title: "Custom providers",
@@ -62,7 +63,10 @@ struct PiSignInSettings: View {
             }
         }
         .task { await yourPi.refresh() }
-        .task { await auth.refreshAccounts() }
+        .task(id: yourPi.survey?.extensions) {
+            await auth.refreshProviders()
+            await auth.refreshAccounts()
+        }
         // Again after a sign-in, sign-out, account switch or new account. Keyed on ids alone: the
         // read saves usage into the accounts, which must not start another read.
         .task(id: UsageInputs(subscriptions: page.subscriptions.map(\.auth),
@@ -143,7 +147,7 @@ struct PiSignInSettings: View {
 
     /// Subscriptions and keys in auth.json can save more than one account; a variable or custom provider can't.
     private func canAddAccount(_ row: ProviderRowModel) -> Bool {
-        guard !row.custom else { return false }
+        guard !row.custom, row.signInAvailable else { return false }
         switch row.auth {
         case .signedIn, .key: return true
         default: return false
@@ -160,10 +164,12 @@ struct PiSignInSettings: View {
                 .help((row.accounts?.accounts.count ?? 0) > 1 ? "Signs out of every saved \(row.name) account." : "")
         case .expired:
             Button("Sign in again") { auth.signIn(row.id) }
+                .disabled(!row.signInAvailable)
                 .buttonStyle(.sh(.primary, size: .s))
                 .accessibilityLabel("Sign in to \(row.name) again")
         case .notSignedIn:
             Button("Sign in") { auth.signIn(row.id) }
+                .disabled(!row.signInAvailable)
                 .buttonStyle(.sh(.secondary, size: .s))
                 .accessibilityLabel("Sign in to \(row.name)")
         case .signingIn:
@@ -172,6 +178,7 @@ struct PiSignInSettings: View {
                 .accessibilityLabel("Cancel signing in to \(row.name)")
         case .key, .environment:
             Button("Change key") { auth.signIn(row.id, key: true) }
+                .disabled(!row.signInAvailable)
                 .buttonStyle(.sh(.secondary, size: .s))
                 .accessibilityLabel("Change \(row.name)’s key")
         case .noKey:
@@ -189,7 +196,7 @@ struct PiSignInSettings: View {
     @ViewBuilder private func menu(_ row: ProviderRowModel) -> some View {
         switch row.auth {
         case .key, .environment:
-            Button("Change key…") { auth.signIn(row.id, key: true) }
+            Button("Change key…") { auth.signIn(row.id, key: true) }.disabled(!row.signInAvailable)
             if canAddAccount(row) {
                 Button("Add another account…") { Task { await auth.addAccount(row.id, key: true) } }
             }
@@ -198,7 +205,7 @@ struct PiSignInSettings: View {
             Button("Remove key", role: .destructive) { Task { await auth.signOut(row.id) } }
                 .disabled({ if case .environment = row.auth { true } else { false } }())
         default:
-            Button("Sign in again") { auth.signIn(row.id) }
+            Button("Sign in again") { auth.signIn(row.id) }.disabled(!row.signInAvailable)
             if canAddAccount(row) {
                 Button("Add another account…") { Task { await auth.addAccount(row.id) } }
             }
@@ -223,6 +230,7 @@ struct PiSignInSettings: View {
 /// Add an API key: a row of its own whose menu lists the providers with no key yet.
 private struct AddKeyRow: View {
     let providers: [String]
+    var names: [String: String] = [:]
     let add: (String) -> Void
     @State private var hovering = false
 
@@ -230,13 +238,13 @@ private struct AddKeyRow: View {
         let sh = Color.sh
         Menu {
             ForEach(providers, id: \.self) { provider in
-                Button(PiSignInCatalog.name(provider)) { add(provider) }
+                Button(names[provider] ?? PiSignInCatalog.name(provider)) { add(provider) }
             }
         } label: {
             HStack(spacing: SHPiSignInMetrics.addGap) {
                 Image(systemName: "plus").font(.shSans(SHPiSignInMetrics.addGlyphSize, .medium)).foregroundStyle(sh.running).frame(width: SHPiSignInMetrics.badge)
                 Text("Add an API key").font(.shSans(SHPiSignInMetrics.proseSize)).foregroundStyle(sh.running)
-                Text(PiSignInPage.addableSummary(providers)).font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1)
+                Text(PiSignInPage.addableSummary(providers, names: names)).font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, SHPiSignInMetrics.rowSides)
