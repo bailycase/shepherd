@@ -1506,7 +1506,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.thinkingLevelsCapability,
             RemoteProtocol.changesCapability,
             RemoteProtocol.nativeContextCapability,
-            RemoteProtocol.createAgentImagesCapability,
+            RemoteProtocol.createAgentImagesCapability, RemoteProtocol.createAgentNoSpaceCapability,
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
             RemoteProtocol.hostUpdateCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostSettingsAgentDefaultsCapability, RemoteProtocol.hostSettingsTextGenerationModelCapability, RemoteProtocol.hostSettingsVisionModelCapability,
             RemoteProtocol.hostInventoryCapability, RemoteProtocol.changesRevertCapability, RemoteProtocol.changesCwdCapability,

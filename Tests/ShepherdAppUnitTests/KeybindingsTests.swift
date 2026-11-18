@@ -10,7 +10,7 @@ struct KeybindingsTests {
 
     /// The default keyboard table is the contract.
     @Test(arguments: [
-        (ShortcutAction.newAgent, "⌘N"), (.newAgentOptions, "⇧⌘T"), (.newSpace, "⇧⌘N"),
+        (ShortcutAction.newAgent, "⌘N"), (.newSpace, "⇧⌘N"),
         (.renameAgent, "⌘R"), (.deleteAgent, "⇧⌘W"), (.commandPalette, "⌘K"),
         (.nextAgent, "⌘↓"), (.previousAgent, "⌘↑"),
         (.newTerminal, "⌘D"), (.closeTerminal, "⌘W"),
@@ -61,7 +61,7 @@ struct KeybindingsTests {
         #expect(ShortcutAction.selectElement.scope == .browser && ShortcutAction.focusAddressBar.scope == .browser
                 && ShortcutAction.browserNewTab.scope == .browser)
         #expect(ShortcutAction.browserNewTab.reachesPastTerminals, "a focused terminal lets ⌘T through")
-        #expect(keys.validate(ShortcutAction.newAgentOptions.defaultChord, for: .browserNewTab) == .conflict(.newAgentOptions))
+        #expect(keys.validate(ShortcutAction.newSpace.defaultChord, for: .browserNewTab) == .conflict(.newSpace))
         #expect(!ShortcutAction.selectElement.sharesScope(with: .copyDesignReference))
         #expect(ShortcutAction.selectElement.sharesScope(with: .alternateSend))
         #expect(keys.validate(ShortcutAction.alternateSend.defaultChord, for: .focusAddressBar) == .conflict(.alternateSend))

@@ -356,7 +356,7 @@ struct NewThreadPlacesTests {
 
     private var hosts: [NewThreadPlaces.Host] {
         [NewThreadPlaces.Host(id: nil, name: "This Mac", spaces: [mono, sub]),
-         NewThreadPlaces.Host(id: hostID, name: "horizon", spaces: [web])]
+         NewThreadPlaces.Host(id: hostID, name: "horizon", spaces: [web], takesNoSpace: false)]
     }
 
     @Test func everyHostsProjectsAreListedFlatWithTheChosenOneChecked() {
@@ -401,6 +401,22 @@ struct NewThreadPlacesTests {
         #expect(options[0].options[0].isCurrent)
         #expect(NewThreadPlaces.chip(hosts, chosen: standalone) == ("No space", "This Mac"))
         #expect(NewThreadPlaces.fallback(hosts, chosen: standalone, recent: NewThreadPlace(host: nil, space: mono.id)) == standalone)
+    }
+
+    /// Any host that starts threads with no space offers No space; one too old to doesn't.
+    @Test func noSpaceCanBeChosenOnAnotherHost() {
+        let newer = UUID()
+        let all = hosts + [NewThreadPlaces.Host(id: newer, name: "orbit", spaces: [])]
+        let elsewhere = NewThreadPlace(host: newer, space: nil)
+        let sections = NewThreadPlaces.sections(all, chosen: elsewhere)
+        #expect(sections.map { $0.options.first?.title } == ["No space", "web", "No space"])
+        #expect(sections[2].options[0].isCurrent && !sections[0].options[0].isCurrent)
+        #expect(NewThreadPlaces.place(sections[2].options[0]) == elsewhere)
+        #expect(NewThreadPlaces.chip(all, chosen: elsewhere) == ("No space", "orbit"))
+        #expect(NewThreadPlaces.fallback(all, chosen: elsewhere, recent: nil) == elsewhere)
+        // A host that can't (or went away) falls back to a project that exists.
+        #expect(NewThreadPlaces.fallback(all, chosen: NewThreadPlace(host: hostID, space: nil), recent: nil)
+                == NewThreadPlace(host: nil, space: mono.id))
     }
 
     @Test func theChipSaysProjectAndHost() {

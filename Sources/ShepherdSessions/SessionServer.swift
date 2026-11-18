@@ -3323,7 +3323,9 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "upload_failed", message: String(describing: error)), to: client)
             }
         case .creationOptions(let id, let spaceID, let cwd, let fetchFirst):
-            guard store.state.spaces.contains(where: { $0.id == spaceID }), let handler = onRemoteCreationOptions else {
+            // An empty space is No space (`createAgentNoSpaceCapability`): the host's defaults, no worktree base.
+            guard spaceID.rawValue.isEmpty || store.state.spaces.contains(where: { $0.id == spaceID }),
+                  let handler = onRemoteCreationOptions else {
                 send(.error(id: id, code: "unavailable", message: "Host creation options unavailable"), to: client)
                 return
             }
@@ -3931,22 +3933,27 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "invalid", message: "A new thread takes up to \(NativeImage.maxPerSend) images of \(NativeImage.maxBytes / 1024 / 1024) MiB each, with a prompt."), to: client)
                 return
             }
-            remoteCreateAgent(
-                id: id,
-                request: RemoteCreateAgentRequest(
-                    spaceID: spaceID,
-                    cwd: cwd,
-                    model: model,
-                    thinking: thinking,
-                    initialPrompt: initialPrompt,
-                    worktreeBranch: worktreeBranch,
-                    worktreeBase: worktreeBase,
-                    worktreeFetchFirst: worktreeFetchFirst,
-                    initialImages: images,
-                    serviceTier: serviceTier
-                ),
-                client: client
+            var request = RemoteCreateAgentRequest(
+                spaceID: spaceID,
+                cwd: cwd,
+                model: model,
+                thinking: thinking,
+                initialPrompt: initialPrompt,
+                worktreeBranch: worktreeBranch,
+                worktreeBase: worktreeBase,
+                worktreeFetchFirst: worktreeFetchFirst,
+                initialImages: images,
+                serviceTier: serviceTier
             )
+            // An empty space is No space (`createAgentNoSpaceCapability`): a folder of its own, no checkout to branch.
+            if spaceID.rawValue.isEmpty {
+                guard worktreeBranch == nil else {
+                    send(.error(id: id, code: "invalid", message: "A thread with no space has no repository for a worktree."), to: client)
+                    return
+                }
+                (request.standalone, request.agentID, request.cwd) = (true, AgentID(), nil)
+            }
+            remoteCreateAgent(id: id, request: request, client: client)
         }
     }
 

@@ -8,7 +8,7 @@ import ShepherdUI
 /// hold-⌘ badges, ⌘, Settings, ⏎/⎋ in sheets) are deliberately not here:
 /// they are structural conventions, not preferences.
 enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
-    case newAgent, newAgentOptions, newSpace, renameAgent
+    case newAgent, newSpace, renameAgent
     case commandPalette, nextAgent, previousAgent
     case deleteAgent
     /// The terminal's chords keep the names they were stored under (a saved chord survives):
@@ -37,7 +37,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     /// Scoped to a thread's Browser tab while it shows (PaneStates › Keyboard): the address field
     /// (⌘L) and Select an element (⇧⌘C). The Browser and a design's canvas never share a screen,
     /// so ⇧⌘C here never meets the canvas's Copy reference. ⌘T opens a new Browser tab
-    /// (BrowserTabs boards); ⇧⌘T is New Agent with Options, so the two never meet.
+    /// (BrowserTabs boards).
     case focusAddressBar, selectElement, browserNewTab
     case saveProjectFile
     /// Shepherd ▸ Quit and Stop Agents, while the background service runs them (C6): turns the
@@ -49,7 +49,6 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     var title: String {
         switch self {
         case .newAgent: return "New Thread"
-        case .newAgentOptions: return "New Agent with Options…"
         case .newSpace: return "New Space…"
         case .renameAgent: return "Rename Agent…"
         case .commandPalette: return "Command Palette"
@@ -120,7 +119,6 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     var defaultChord: KeyChord {
         switch self {
         case .newAgent: return KeyChord(key: "n", command: true)
-        case .newAgentOptions: return KeyChord(key: "t", command: true, shift: true)
         case .newSpace: return KeyChord(key: "n", command: true, shift: true)
         case .renameAgent: return KeyChord(key: "r", command: true)
         case .commandPalette: return KeyChord(key: "k", command: true)

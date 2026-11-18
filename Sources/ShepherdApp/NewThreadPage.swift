@@ -673,8 +673,6 @@ private struct ProjectMenu: View {
             }
             Divider()
             Button("Remove Space…", role: .destructive) { vm.requestSpaceDelete(space.id) }
-        } else if let place, let host = place.host, let space = place.space {
-            Button("New Agent with Options…") { vm.showNewAgentSheetForRemote(hostID: host, spaceID: space) }
         }
     }
 }
