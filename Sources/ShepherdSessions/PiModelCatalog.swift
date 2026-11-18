@@ -119,6 +119,14 @@ public final class PiModelCatalog: @unchecked Sendable {
         return (try? BoundedCommand.run(line.argv, environment: environment, timeout: max(timeout, 30), outputLimit: 1 << 20))?.status == 0
     }
 
+    /// When pi last checked pi.dev for a newer catalog: `models-store.json`'s modification date, which
+    /// every forced refresh rewrites (pi records `checkedAt` even when nothing changed or the check
+    /// failed). Nil before the first check.
+    public var lastChecked: Date? {
+        let path = files.directory.appendingPathComponent("models-store.json").path
+        return (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+    }
+
     /// `refresh()` now and then daily, off the caller's thread, for the catalog's lifetime (the
     /// host's). Wall-clock, so a Mac that slept through the day refreshes when it wakes.
     public func refreshDaily() {

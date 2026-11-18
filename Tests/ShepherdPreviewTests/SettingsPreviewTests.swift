@@ -556,6 +556,27 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Settings ▸ Pi ▸ Models (SettingsPiModels): before a refresh, during one, and after it worked
+    /// or couldn't reach pi.dev.
+    @Test func settingsPiModelsRow() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let catalog = workspace.vm.pi.catalog
+        try FileManager.default.createDirectory(at: workspace.vm.pi.home, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: workspace.vm.pi.home.appendingPathComponent("models-store.json"))
+        try await Preview.render("settings-pi-models", size: CGSize(width: 1000, height: 420)) {
+            SettingsGroup(title: "Shepherd's pi") {
+                PiModelsRow(catalog: catalog)
+                PiModelsRow(catalog: catalog, state: .refreshing)
+                PiModelsRow(catalog: catalog, state: .current)
+                PiModelsRow(catalog: catalog, state: .failed)
+            }
+            .padding(SH.Space.xxl)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Color.sh.bgWindow)
+        }
+    }
+
     // MARK: Dialogs
 
     /// The first launch's sheet, each way it ends (PiImportProgress, PiImportDone, PiImportMissing,
