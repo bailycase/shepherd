@@ -179,9 +179,13 @@ estimate (`AppLayout.eagerTailViewports`), the streaming reply, or the last row,
 history that reloads and a restore build at most that, so a thread of 250 MiB replies builds one where it built
 thirty. The view holds where the tail starts (`ThreadEagerTail`) and moves it toward the rule by at most two rows
 (`AppLayout.eagerTailCrossing`) each time its rows change, so rows never cross between the stacks in bulk under a
-reader (a crossing builds the row again and drops its state); the first draw takes the rule whole. What the view
-last drew is `NativeThreadStore.drawnEagerRows`, which `mountedCost` and the passes that let rows go count, and
-`ThreadRestore` restores up to.
+reader (a crossing builds the row again and drops its state) who has left the tail, and takes it at once for one
+following it; the first draw takes the rule whole. A reply whose parse has not landed (a large one is parsed off the
+main thread) costs by its text until it does, and the lazy stack of the older rows is not drawn until the replies at
+the tail's end have their blocks (`NativeThreadStore.tailAwaitsParse`): they draw as nothing, a few points tall,
+and a stack above them would be in the window and build rows that grow out of view and out of the budget. What the
+view last drew is `NativeThreadStore.drawnEagerRows`, which `mountedCost` and the passes that let rows go count,
+and `ThreadRestore` restores up to.
 
 A hidden thread keeps its host, page, history and draft, but its rows are bounded: past
 `NativeThreadStores.mountedBudget` (an eighth of the memory, at most 2 GiB, counted by
