@@ -611,7 +611,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     description:
       "List the other agent threads in Shepherd: id, name, status (working/blocked/idle/done), and working " +
       "directory. Use it to find a thread the user named. It only reads: it is not a reason to message, " +
-      "steer, read or start any thread, which you may do only when the user explicitly asks you to.",
+      `steer, read${threadsStartThreads ? "" : " or start"} any thread, which you may do only when the user explicitly asks you to.`,
     promptSnippet: line(deferPeers, "List the other agent threads, only to find one the user named"),
     ...later(deferPeers, PEERS),
     promptGuidelines: PEER_GUIDELINES,
@@ -800,7 +800,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
         "and never to offload, parallelize or delegate work: for that, use your own subagents. Wrong: " +
         "starting a thread to run tests or look into a side question. Right: the user said \"open a thread " +
         "in ~/src/api and have it fix the build\". ") +
-      "It nests under you in the sidebar and runs on its own: stopping you doesn't stop it. place: checkout works in cwd " +
+      "It runs on its own: stopping you doesn't stop it. place: checkout works in cwd " +
       "as it is; worktree starts a new worktree from cwd's commit (your uncommitted edits don't go with it), on branch if given. " +
       "Returns the new agent's id. No confirmation is required.",
     promptSnippet: line(deferPeers, threadsStartThreads ? "Start a new agent thread for separate work"

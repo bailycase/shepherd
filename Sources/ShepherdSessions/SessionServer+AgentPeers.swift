@@ -130,7 +130,11 @@ extension SessionServer {
                                                    thinking: thinking ?? defaults.thinking, initialPrompt: prompt)
             // It nests under the thread that started it, one deeper; nothing else ties them together.
             request.startedBy = StartedBy(agentID: sender.id, agentTitle: sender.name, at: Self.nowMilliseconds(), depth: sender.threadDepth + 1)
-            let worktree = (place ?? defaults.subThreadPlace) == .worktree || branch != nil
+            if place == .checkout, branch != nil {
+                respond(.failed(code: "invalid", message: "branch is for place worktree; a checkout works on the branch it has"))
+                return
+            }
+            let worktree = (place ?? (branch != nil ? .worktree : defaults.subThreadPlace)) == .worktree
             let spacePath = state.spaces.first { $0.id == spaceID }?.path
             Task { @MainActor in
                 do {

@@ -100,7 +100,7 @@ struct SidebarListRow: Identifiable, Equatable {
     var foldedUnder: AutomationKey? = nil
     /// This Mac's thread's pull request (`ShepherdViewModel.pullRequestLinks`).
     var pullRequest: SHSidebarRow.Badge? = nil
-    /// A thread another Mac runs for the thread above it in this list (`SidebarSent.arrange`): drawn a level in, with an elbow.
+    /// A thread the thread above it in this list started, here or on another Mac (`SidebarSent.arrange`): drawn a level in, with an elbow.
     var fleetNested = false
     /// The thread that sent a nested row, at the top of its tree; nil for a row that isn't nested.
     var sentRoot: SidebarRowID? = nil

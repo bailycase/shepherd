@@ -466,8 +466,6 @@ public struct FleetSentBy: Equatable, Sendable {
     public var senderHost: String
     /// Epoch milliseconds the dispatch was sent.
     public var at: Double
-    /// The thread that sent it can be opened from here: it is on this Mac or on one this Mac is connected to.
-    public var senderOpens = false
     /// The header names the Mac it runs on: false for a thread another thread started on the same Mac (`StartedBy`).
     public var showsHost = true
 

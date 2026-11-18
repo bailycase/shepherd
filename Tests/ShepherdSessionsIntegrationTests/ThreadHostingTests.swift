@@ -196,6 +196,9 @@ struct ThreadHostingTests {
         try caller.send(.helloAgent(agentID: lead.id))
 
         let web = repo.appendingPathComponent("web").path
+        // A branch belongs to a new worktree: asked for with the checkout as it is, it is refused, not quietly made a worktree.
+        try caller.send(.spawnAgent(id: 9, agentID: lead.id, cwd: web, prompt: "x", place: .checkout, branch: "agent/x"))
+        guard case .error(9, "invalid", _) = try await caller.reply() else { Issue.record("a branch with place checkout was accepted"); return }
         try caller.send(.spawnAgent(id: 1, agentID: lead.id, cwd: web, prompt: "Shard the UI tests", place: .worktree, branch: "agent/shard-ui"))
         guard case .agents(1, let spawned) = try await caller.reply(), let id = spawned.first?.id else { Issue.record("agent_spawn not served"); return }
         let child = try #require(h.server.state.agents.first { $0.id == id })

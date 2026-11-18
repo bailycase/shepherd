@@ -23,7 +23,7 @@ public enum ResponseTimingMark: String, Codable, Hashable, Sendable {
 }
 
 /// Where a thread `agent_spawn` starts works: the folder it is given as it is, or a new worktree of that folder's repository.
-public enum SpawnPlace: String, Codable, Hashable, Sendable, CaseIterable {
+public enum SpawnPlace: String, Codable, Hashable, Sendable {
     case checkout, worktree
 }
 
@@ -101,7 +101,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     case listAgents(id: Int, agentID: AgentID)
     /// Send framed context only (`report`) or start/queue work (`task`, the legacy default).
     case sendToAgent(id: Int, agentID: AgentID, targetAgentID: AgentID, text: String, delivery: AgentMessageDelivery = .task)
-    /// Spawn a new top-level agent thread with an opening prompt; it records the sender as its starter (`Agent.startedBy`).
+    /// Spawn a new agent thread with an opening prompt; it records the sender as its starter (`Agent.startedBy`).
     /// `model` and `thinking` pin the new thread's model and reasoning level; nil takes Shepherd's defaults. `place` says where it works
     /// (nil: Settings ▸ Agents); `branch` names a worktree's branch, an existing one or a new one.
     case spawnAgent(id: Int, agentID: AgentID, cwd: String, prompt: String, model: String? = nil, thinking: String? = nil,

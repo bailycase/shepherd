@@ -4,8 +4,8 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
-// A thread another thread started on any Mac is a thread like any other (FleetSubthreads): the same dot, second line and menu as one that is here, tagged
-// with the Mac that has it. The one relationship a row shows is that it nests under the thread that started it while it works. Work that has no
+// A thread another thread started, here (`agent_spawn`) or on any Mac, is a thread like any other (FleetSubthreads): the same dot, second line and menu as
+// one that is here, tagged with the Mac that has it. The one relationship a row shows is that it nests under the thread that started it while it works. Work that has no
 // thread yet is a row in a starting state ("starting on mini") that becomes the real thread when it starts. Plain values derived with the lists,
 // never in a view's body.
 

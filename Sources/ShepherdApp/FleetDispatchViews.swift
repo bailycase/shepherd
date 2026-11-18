@@ -15,7 +15,6 @@ final class FleetThreadActions: @unchecked Sendable {
     var openResult: @MainActor (FleetDispatchCard) -> Void = { _ in }
     var reviewResult: @MainActor (FleetDispatchCard) -> Void = { _ in }
     /// Opens the thread that sent this one (the header's "sent by" link).
-    var openSender: @MainActor (DispatchedFrom) -> Void = { _ in }
     /// Tries the Mac's link again now (the offline banner's Retry).
     var retryHost: @MainActor () -> Void = {}
     /// The move card's Cancel (a move waiting for the turn to end) and Dismiss (a failed one).
@@ -28,7 +27,6 @@ final class FleetThreadActions: @unchecked Sendable {
 struct FleetThreadSurface: Equatable {
     /// The thread was sent from another thread or by the person: its host, sender and what the From box says.
     var sentBy: FleetSentBy?
-    var dispatched: DispatchedFrom?
     /// The row of the thread that started it, when this Mac can open it ("started by" is then a link).
     var sender: SidebarRowID?
     /// Its dispatch is going: "its last message goes back" shows.
@@ -43,7 +41,7 @@ struct FleetThreadSurface: Equatable {
     var move: FleetMoveCard?
 
     static func == (a: FleetThreadSurface, b: FleetThreadSurface) -> Bool {
-        a.sentBy == b.sentBy && a.dispatched == b.dispatched && a.sender == b.sender && a.goesBack == b.goesBack && a.cards == b.cards && a.parent == b.parent
+        a.sentBy == b.sentBy && a.sender == b.sender && a.goesBack == b.goesBack && a.cards == b.cards && a.parent == b.parent
             && a.actions === b.actions && a.offline == b.offline && a.move == b.move
     }
 

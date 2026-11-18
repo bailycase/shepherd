@@ -8,7 +8,8 @@ import Testing
 
 /// A thread another thread started on another Mac, in the sidebar (FleetSubthreads): it nests under the thread that sent it with its Mac and stage on a second line,
 /// work with no thread yet has a row of its own, a sender says what it sent and folds more than two, a thread that is back leaves the tree, one
-/// that asks you stays in Needs you too, and one whose sender isn't here is a flat "sent by" row. Both sidebar styles.
+/// that asks you stays in Needs you too, and one whose sender isn't here is a flat "sent by" row. Threads `agent_spawn` started here nest the same way.
+/// The Spaces tree nests nothing.
 @Suite("Fleet sidebar sent threads")
 @MainActor
 struct FleetNestingTests {
