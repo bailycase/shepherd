@@ -586,6 +586,8 @@ final class ShepherdViewModel {
     var showCommandPalette = false
     /// An image open full size (ThreadImageOpen); nil when none is.
     var imageViewer: ImageViewerState?
+    /// A file an agent edited, open over the window (OutsideFileE); nil when none is.
+    var fileViewer: FileViewerState?
     /// Stable identity in the window environment, independent of shell geometry.
     let diagramPresentation = SHDiagramPresentation()
     /// A Mermaid diagram open full screen (its source); nil when none is.

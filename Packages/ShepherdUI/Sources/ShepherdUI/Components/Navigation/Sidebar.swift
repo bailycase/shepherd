@@ -639,22 +639,28 @@ private struct SHSidebarAccessoryView: View {
 
 /// The sidebar's footer (SHNavigation): behind a hairline, a 26pt `bgSelected` circle with the
 /// initial, the name in `ui` medium over where it runs in mono 10 `textTertiary` ("This Mac ·
-/// demo-mac"), and a Settings gear. Padded 10pt above and below and 12pt at the sides.
+/// demo-mac"), and a Settings gear. Padded 10pt above and below and 12pt at the sides. While an
+/// update is ready (`updateVersion`), `SHUpdateButton` takes the gear's place (UpdateFooterStates).
 public struct SHSidebarFooter: View, Equatable {
     let name: String
     let detail: String
     let settingsShortcut: String?
+    let updateVersion: String?
     let settings: () -> Void
+    let update: () -> Void
 
-    public init(name: String, detail: String, settingsShortcut: String? = nil, settings: @escaping () -> Void) {
+    public init(name: String, detail: String, settingsShortcut: String? = nil, updateVersion: String? = nil,
+                settings: @escaping () -> Void, update: @escaping () -> Void = {}) {
         self.name = name
         self.detail = detail
         self.settingsShortcut = settingsShortcut
+        self.updateVersion = updateVersion
         self.settings = settings
+        self.update = update
     }
 
     public nonisolated static func == (a: SHSidebarFooter, b: SHSidebarFooter) -> Bool {
-        a.name == b.name && a.detail == b.detail && a.settingsShortcut == b.settingsShortcut
+        a.name == b.name && a.detail == b.detail && a.settingsShortcut == b.settingsShortcut && a.updateVersion == b.updateVersion
     }
 
     /// The avatar's letter: the name's first, capitalized.
@@ -676,10 +682,14 @@ public struct SHSidebarFooter: View, Equatable {
             }
             .accessibilityElement(children: .combine)
             Spacer(minLength: 0)
-            Button(action: settings) { Image(systemName: "gearshape") }
-                .buttonStyle(.shIcon(size: SHSidebarMetrics.footerAvatar))
-                .shHelp("Settings", shortcut: settingsShortcut)
-                .accessibilityLabel("Settings")
+            if let updateVersion {
+                SHUpdateButton(version: updateVersion, action: update)
+            } else {
+                Button(action: settings) { Image(systemName: "gearshape") }
+                    .buttonStyle(.shIcon(size: SHSidebarMetrics.footerAvatar))
+                    .shHelp("Settings", shortcut: settingsShortcut)
+                    .accessibilityLabel("Settings")
+            }
         }
         // The boards' footer is 52pt tall and its rule is 46pt above the bottom edge: the content is the 26pt avatar, 9pt below the rule
         // and 10pt above the bottom; 6pt of the footer's height sits above the rule.
@@ -689,6 +699,26 @@ public struct SHSidebarFooter: View, Equatable {
         .padding(.horizontal, SH.Space.l)
         .overlay(alignment: .top) { SHHairline() }
         .padding(.top, SHSidebarMetrics.footerAboveRule)
+    }
+}
+
+/// An update is ready (UpdateFooterStates, UpdateButton): `square.and.arrow.down` in lantern text, on the
+/// lantern tint when hovered, in the footer gear's 26pt place. It stands in for the gear in `SHSidebarFooter`
+/// and the Fleet corner; the action brings up the update.
+public struct SHUpdateButton: View {
+    let version: String
+    let action: () -> Void
+
+    public init(version: String, action: @escaping () -> Void) {
+        self.version = version
+        self.action = action
+    }
+
+    public var body: some View {
+        Button(action: action) { Image(systemName: "square.and.arrow.down") }
+            .buttonStyle(.shIcon(size: SHSidebarMetrics.footerAvatar, tint: .sh.lanternText, hoverFill: .sh.lanternTint))
+            .shHelp("Update to \(version)…")
+            .accessibilityLabel("Update Shepherd to \(version)")
     }
 }
 
