@@ -70,6 +70,9 @@ extension AppLayout {
     static let restorePause: Duration = .milliseconds(1)
     /// How long a restore waits to look again while the reader scrolls or is away from the tail.
     static let restoreRetry: Duration = .milliseconds(100)
+    /// How long a hidden thread that follows its tail waits before it lets its lazy stack go (`ThreadRestore.withdrawStack`): taking
+    /// the stack's realized rows down costs the main thread hundreds of milliseconds, which must not land in the turn that shows another thread.
+    static let hiddenStackDelay: Duration = .seconds(2)
     /// How many `restoreRetry` the first lazy stack waits for the replies at the end of the tail to have their blocks (a large reply is
     /// parsed off the main thread; ten seconds is past a giant one) before it comes anyway.
     static let restoreParseRetries = 100

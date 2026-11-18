@@ -468,6 +468,11 @@ struct ThreadView: View {
                 // Hidden: left scrolled up into the history, it stays loaded while this view keeps the place;
                 // following the tail, it lets it go (it reloads to the tail when shown).
                 if follower.sticky { readerPins?.unpin(store, owner: storeOwner) } else { readerPins?.pin(store, owner: storeOwner) }
+                // A little after the switch, and never while a key is being pressed, so that taking its stack down is not a turn of the
+                // one that shows another thread (`ThreadRestore.plan`).
+                try? await Task.sleep(for: AppLayout.hiddenStackDelay)
+                while !Task.isCancelled, userActivity?.inputRecent == true { try? await Task.sleep(for: AppLayout.restoreRetry) }
+                if !Task.isCancelled { restore.withdrawStack() }
                 return
             }
             // On screen: this view needs the history whichever view's loop polls the store.
@@ -1211,6 +1216,17 @@ final class ThreadRestore {
     /// which the lazy stack above must not share (it would be laid out against a tail still growing, and build rows).
     @ObservationIgnored private(set) var tailDrawnParsed = true
 
+    /// The thread has been hidden long enough that a tail bounded by cost is all it draws (`plan`). Cleared when it is shown.
+    @ObservationIgnored private var withdrawsStack = false
+
+    /// Has the hidden thread draw only its tail from now on: raises `steps`, which draws the next update. A thread whose tail is not
+    /// bounded by cost, or whose reader is in its history, draws what it did.
+    func withdrawStack() {
+        guard !withdrawsStack else { return }
+        withdrawsStack = true
+        steps &+= 1
+    }
+
     /// The first lazy stack still waits for the replies at the end of the tail to draw their blocks, having waited `retries` times
     /// (`AppLayout.restoreRetry` each): not for ever, so that a parse that does not land cannot keep the older rows from coming back.
     func waitsForParse(retries: Int) -> Bool { !tailDrawnParsed && retries < AppLayout.restoreParseRetries }
@@ -1234,11 +1250,11 @@ final class ThreadRestore {
         guard active else {
             self.hiddenKept = hiddenKept
             noteArrival(rows: rows, eagerRows: eagerRows)
-            // A hidden thread that follows its tail and whose tail is bounded by cost draws that tail alone: its lazy stack is laid out from
-            // the top of a thread no one scrolls, builds the oldest rows there, and keeps them, hundreds of megabytes nothing counts. The
-            // stack comes after the first frame it is shown, as for any first show. A reader left in the history keeps the stack that holds
-            // their place.
-            if following, rows.count > eagerRows, eagerRows < ThreadView.eagerRows, !restoring || history {
+            // A hidden thread that follows its tail and whose tail is bounded by cost draws that tail alone, once it has been hidden a
+            // while (`withdrawStack`): its lazy stack is laid out from the top of a thread no one scrolls, builds the oldest rows there, and
+            // keeps them, hundreds of megabytes nothing counts. The stack comes after the first frame it is shown, as for any first show.
+            // A reader left in the history keeps the stack that holds their place.
+            if following, withdrawsStack, rows.count > eagerRows, eagerRows < ThreadView.eagerRows, !restoring || history {
                 if !restoring { first = rows[rows.endIndex - eagerRows].id }
                 restoring = true
                 history = false
@@ -1251,6 +1267,7 @@ final class ThreadRestore {
             finish()
             return nil
         }
+        withdrawsStack = false
         if !begun {
             begun = true
             // At least one row, so that the first frame is not blank.

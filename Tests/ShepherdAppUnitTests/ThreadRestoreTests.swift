@@ -197,7 +197,9 @@ struct ThreadRestoreTests {
         // Shown, it has its stack and every row.
         _ = restore.plan(active: true, hiddenKept: nil, rows: Array(rows.prefix(2)), eagerRows: 12, owed: { _ in 0 })
         #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 }) == nil && !restore.restoring)
-        // Hidden after that, it draws its tail alone.
+        // Hidden, it keeps its stack at first, so that taking it down is not a turn of the switch; a while after, it draws its tail alone.
+        #expect(restore.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: 12, following: true, owed: { _ in 0 }) == nil)
+        restore.withdrawStack()
         #expect(restore.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: 12, following: true, owed: { _ in 0 })
                 == ThreadRestore.Plan(eager: 12, history: false))
         #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, following: true, owed: { _ in 0 })
@@ -207,9 +209,11 @@ struct ThreadRestoreTests {
         let reader = ThreadRestore()
         _ = reader.plan(active: true, hiddenKept: nil, rows: Array(rows.prefix(2)), eagerRows: 12, owed: { _ in 0 })
         _ = reader.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 })
+        reader.withdrawStack()
         #expect(reader.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: 12, following: false, owed: { _ in 0 }) == nil && !reader.restoring)
         // A thread of cheap rows has no cost to bound and keeps it too.
         let cheap = ThreadRestore()
+        cheap.withdrawStack()
         #expect(cheap.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: ThreadView.eagerRows, following: true, owed: { _ in 0 }) == nil)
     }
 
