@@ -123,11 +123,14 @@ enum ListPerf {
     }
 
     /// Scrolls `scroll` by `step` points at a time (down, or up when `step` is negative) for up to
-    /// `steps` steps or until it stops moving, timing each step's layout and display.
-    static func scroll(_ window: OffscreenWindow, _ scroll: NSScrollView, step: CGFloat, steps: Int) -> Scroll {
+    /// `steps` steps or until it stops moving, timing each step's layout and display. `intent` runs before each
+    /// step: a thread follows its tail back down unless the wheel's intent says a reader moved it.
+    static func scroll(_ window: OffscreenWindow, _ scroll: NSScrollView, step: CGFloat, steps: Int,
+                       intent: () -> Void = {}) -> Scroll {
         var result = Scroll()
         let clip = scroll.contentView
         for _ in 0..<steps {
+            intent()
             let before = clip.bounds.origin.y
             let start = ContinuousClock.now
             let cpu = threadCPU()
