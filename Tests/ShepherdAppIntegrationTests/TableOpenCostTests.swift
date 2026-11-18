@@ -8,8 +8,8 @@ import Testing
 
 /// What opening a thread full of tables builds: cells, layers and selection views, counted per table. A table is 12 cells here, and
 /// each is a `Text` under its padding and its place in the table; the fill and the rules around them are the table's, not a layer or two
-/// of every cell's own, and the text is not selectable until the pointer enters its table, where a view of its own under every cell
-/// held over 40% of what the table built and kept: a thousand tables would multiply each.
+/// of every cell's own, and the text is not selectable until the pointer enters its table, where the view that makes it so under every
+/// cell was the largest part of what the table built and kept: a thousand tables would multiply each.
 @Suite("Opening a thread of tables", .mainActorExclusive)
 @MainActor
 struct TableOpenCostTests {
@@ -67,7 +67,7 @@ struct TableOpenCostTests {
     }
 
     /// Each cell of an open thread is measured once, and each table adds a bounded number of layers: 61 when every cell carried a
-    /// frame, a fill and a rule of its own, 53 with the fill and the rules the table's. A table's body runs three times at open (its
+    /// frame, a fill and a rule of its own, 53 with the fill and the rules the table's, 29 with its text not yet selectable. A table's body runs three times at open (its
     /// first pass, then the width it is offered, then its card's), and a lazy row built ahead of its layout can run its cells' bodies on
     /// each, so a cell's body is bounded by those three where its measuring, which the layout does, is exact.
     @Test func eachTableOfAnOpenThreadBuildsItsCellsOnceAndAddsFewLayers() async throws {
@@ -78,11 +78,11 @@ struct TableOpenCostTests {
         }
         #expect(large.measured - small.measured == 40 * Self.cells, "and measured once: \(small) then \(large)")
         let layers = Double(large.layers - small.layers) / 40
-        #expect(layers <= 56, "layers per table: \(layers), \(small) then \(large)")
+        #expect(layers <= 34, "layers per table: \(layers), \(small) then \(large)")
     }
 
     /// A table's text is selectable once the pointer has entered it, so a thread opened and read with the pointer elsewhere builds no
-    /// selection view under any cell (there were 12 a table, which is where the thread's open stall and memory went).
+    /// selection view under any cell (there were 12 a table, the largest part of what opening the thread cost).
     @Test func aThreadOfTablesOpensWithNoSelectionViewUnderAnyCell() async throws {
         let small = try await Self.open(tables: 20)
         let large = try await Self.open(tables: 60)

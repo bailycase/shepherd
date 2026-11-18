@@ -15,19 +15,34 @@ import UIKit
 ///
 /// A table holds a view for every cell, and a thread holds hundreds of tables, so what a cell holds is what opening a
 /// thread costs. The header's fill and the rows' hairlines are views of the table (`SHTableLayout` lays them under the
-/// cells), not a fill, a frame and a rule of each cell.
+/// cells), not a fill, a frame and a rule of each cell. Nor do the cells select text from the first frame on the Mac: the
+/// view that makes a cell's text selectable is the largest part of what a table builds and holds, so a table's text becomes selectable
+/// once the pointer has entered the table, which always comes before a drag, and stays so. (Selectable text draws a code
+/// span's background on a wrapped cell's last line a pixel narrower and two shorter than text that is not: the table's size
+/// and every other pixel are the same.)
 struct SHProseTableView: View, Equatable {
     let table: SHProseTable
+    /// Whether the cells' text is selectable from the first frame: where there is no pointer to wait for (iOS) it is.
+    let selectable: Bool
     @Environment(\.shProseSize) private var size
     @Environment(\.dynamicTypeSize) private var dynamicType
     @State private var hovering = false
+    /// Whether the pointer has entered the table: set once, never cleared, so a selection is never dropped by the table turning selection off.
+    @State private var entered = false
     @State private var copied = false
     @State private var copies = 0
     @State private var availableWidth: CGFloat?
     @State private var contentWidth: CGFloat?
     @FocusState private var copyFocused: Bool
 
-    nonisolated static func == (lhs: SHProseTableView, rhs: SHProseTableView) -> Bool { lhs.table == rhs.table }
+    init(table: SHProseTable, selectable: Bool = SHPlatform.showsHoverDetails) {
+        self.table = table
+        self.selectable = selectable
+    }
+
+    nonisolated static func == (lhs: SHProseTableView, rhs: SHProseTableView) -> Bool {
+        lhs.table == rhs.table && lhs.selectable == rhs.selectable
+    }
 
     var body: some View {
         let _ = SHRenderProbe.tick("prose.table")
@@ -43,7 +58,10 @@ struct SHProseTableView: View, Equatable {
             .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
             .shBorder(sh.lineSubtle, radius: SH.Radius.m)
             .overlay(alignment: .topTrailing) { copyButton }
-            .onHover { hovering = $0 }
+            .onHover {
+                hovering = $0
+                if $0, !entered { entered = true }
+            }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Table, \(table.rows.count) \(table.rows.count == 1 ? "row" : "rows")")
             Spacer(minLength: 0)
@@ -55,6 +73,7 @@ struct SHProseTableView: View, Equatable {
     private var grid: some View {
         let columns = table.columns
         let rows = table.rows.count
+        let selecting = selectable || entered
         return SHTableLayout(columns: columns, fitting: true, table: table, size: size, dynamicType: dynamicType,
                              viewportWidth: availableWidth) {
             // The rules under the cells: the header's fill, then a hairline under every row but the last, which the
@@ -66,7 +85,7 @@ struct SHProseTableView: View, Equatable {
                 let column = index % columns
                 SHTableCell(text: row < 0 ? table.header[column] : table.rows[row][column],
                             header: row < 0, alignment: table.alignments[column],
-                            copyInset: SHPlatform.showsHoverDetails && column == columns - 1)
+                            copyInset: SHPlatform.showsHoverDetails && column == columns - 1, selectable: selecting)
             }
         }
     }
@@ -107,6 +126,8 @@ struct SHTableCell: View {
     /// the header and the column's alignment holds. On the Mac it shows on hover, over the
     /// header's end.
     let copyInset: Bool
+    /// Whether the text can be selected (`SHProseTableView`).
+    let selectable: Bool
     @Environment(\.shProseSize) private var size
     @Environment(\.shProseFileRoot) private var fileRoot
     @Environment(\.shProseFileLinks) private var fileLinks
@@ -119,12 +140,21 @@ struct SHTableCell: View {
             .lineSpacing(header ? SHTextStyle.ui.lineSpacing(size) : SHTextStyle.headline.lineSpacing(size))
             .foregroundStyle(header ? sh.textSecondary : sh.textPrimary)
             .multilineTextAlignment(alignment.text)
-            .textSelection(.enabled)
+            .modifier(SHCellSelection(selectable: selectable))
             .fixedSize(horizontal: false, vertical: true)
             .modifier(SHFileLinkTargets(actions: SHProseFileLinks.targets(text, root: fileRoot, actions: fileLinks)))
             .padding(EdgeInsets(top: Self.verticalPadding, leading: SH.Space.l,
                                 bottom: Self.verticalPadding, trailing: SH.Space.l + (copyInset ? SHThreadMetrics.codeCopyButton : 0)))
             .accessibilityAddTraits(header ? .isHeader : [])
+    }
+}
+
+/// A cell's text, selectable or explicitly not. The switch happens once per table, before any selection exists to lose.
+private struct SHCellSelection: ViewModifier {
+    let selectable: Bool
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if selectable { content.textSelection(.enabled) } else { content.textSelection(.disabled) }
     }
 }
 

@@ -60,6 +60,75 @@ struct ProseTableTests {
         }
     }
 
+    /// A table's text is selectable once the pointer has entered it (`selectable` is what that turns on): the cells take their selection
+    /// views then, and the table does not move, resize or draw a pixel differently, at a width where a column wraps and where none does.
+    @Test(arguments: [false, true])
+    func aTableBecomesSelectableWithoutMovingAPixel(dark: Bool) async throws {
+        for width in [700, 430] as [CGFloat] {
+            let flip = try await Self.flip(Self.plainTable, width: width, dark: dark)
+            #expect(flip.cardBefore == flip.cardAfter && flip.cardBefore.width > 0, "the card keeps its size: \(flip.cardBefore) then \(flip.cardAfter)")
+            #expect(flip.selectionBefore == 0 && flip.selectionAfter == flip.cells, "no selection view before the pointer comes, one a cell after")
+            #expect(flip.differing == 0, "\(flip.differing) of \(flip.bytes) bytes differ at \(width) pt, \(dark ? "dark" : "light")")
+        }
+    }
+
+    /// A code span's background on the last line of a wrapped cell is a pixel wider and two taller in text that is not selectable, which is
+    /// how SwiftUI draws it: the table's size and everything else it draws are unchanged.
+    @Test func aWrappedCodeSpanIsAPixelLargerUntilThePointerEntersItsTable() async throws {
+        let flip = try await Self.flip(Self.mixedTable, width: 430, dark: false)
+        #expect(flip.cardBefore == flip.cardAfter && flip.cardBefore.width > 0, "the card keeps its size: \(flip.cardBefore) then \(flip.cardAfter)")
+        #expect(flip.selectionBefore == 0 && flip.selectionAfter == flip.cells)
+        // 218 pixels: the box's right edge and its bottom two rows, under the last line of the one cell that wraps.
+        #expect(flip.differing > 0 && flip.differing / 4 < 300, "\(flip.differing / 4) pixels differ")
+    }
+
+    private struct Flip {
+        var cells = 0
+        var cardBefore = CGRect.zero
+        var cardAfter = CGRect.zero
+        var selectionBefore = 0
+        var selectionAfter = 0
+        var differing = 0
+        var bytes = 0
+    }
+
+    /// `table` drawn at `width` before its text is selectable and again once it is, in one window.
+    private static func flip(_ table: SHProseTable, width: CGFloat, dark: Bool) async throws -> Flip {
+        let selection = Selectability()
+        let window = OffscreenWindow(size: CGSize(width: width, height: 420), dark: dark, SelectableTableHost(table: table, selection: selection))
+        defer { window.close() }
+        func settled(_ what: String, until done: @escaping () -> Bool) async throws -> (pixels: [UInt8], card: CGRect) {
+            var last: [UInt8] = []
+            var still = 0
+            try await eventuallyOnMain("\(what) at \(width) pt") {
+                ListPerf.settle(window)
+                let now = Self.pixels(of: window)
+                still = now == last && done() ? still + 1 : 0
+                last = now
+                return still >= 5
+            }
+            return (last, ListPerf.scrollView(in: window)?.frame ?? .zero)
+        }
+        var result = Flip(cells: table.columns * (table.rows.count + 1))
+        let before = try await settled("the table to stop moving") { true }
+        result.selectionBefore = selectionViews(in: window)
+        selection.on = true
+        let after = try await settled("every cell to take its selection view") { selectionViews(in: window) == result.cells }
+        result.selectionAfter = selectionViews(in: window)
+        result.cardBefore = before.card
+        result.cardAfter = after.card
+        result.bytes = after.pixels.count
+        result.differing = before.pixels.count == after.pixels.count ? zip(before.pixels, after.pixels).filter { $0 != $1 }.count : after.pixels.count
+        return result
+    }
+
+    private static func selectionViews(in window: OffscreenWindow) -> Int {
+        func count(_ view: NSView) -> Int {
+            (String(describing: type(of: view)).contains("TextInteraction") ? 1 : 0) + view.subviews.reduce(0) { $0 + count($1) }
+        }
+        return count(window.host)
+    }
+
     /// What the window shows, as bytes.
     private static func pixels(of window: OffscreenWindow) -> [UInt8] {
         let view = window.host
@@ -67,6 +136,20 @@ struct ProseTableTests {
         view.cacheDisplay(in: view.bounds, to: rep)
         guard let data = rep.bitmapData else { return [] }
         return Array(UnsafeBufferPointer(start: data, count: rep.bytesPerRow * rep.pixelsHigh))
+    }
+
+    /// Every alignment, a header and rows, a column that wraps, and bold words, with no code span.
+    private static var plainTable: SHProseTable {
+        SHProseTable(
+            alignments: [.leading, .center, .trailing, .leading],
+            header: ["Area", "Count", "Share", "Notes"].map { SHProseInline.attributed($0) },
+            rows: [
+                ["Terminals", "6", "19%", "Open, run, read, focus and close a terminal the agent started, each of them by the name it was given"],
+                ["Peers", "8", "26%", "List, send, read and steer another agent"],
+                ["Notes", "2", "6%", "Notify, and **review**"],
+                ["Everything else together", "1,234", "100%", "A longer sentence of plain words that wraps over a couple of lines in its column"],
+            ].map { $0.map { SHProseInline.attributed($0) } },
+            markdown: "")
     }
 
     /// Every alignment, a header and rows, a column that wraps, and inline code in it, as the thread styles them.
@@ -116,7 +199,27 @@ private struct TableHost: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SHProseTableView(table: table).equatable()
+            SHProseTableView(table: table, selectable: true).equatable()
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// Whether the table's text is selectable from outside, as the pointer entering it makes it.
+@MainActor @Observable
+private final class Selectability {
+    var on = false
+}
+
+@MainActor
+private struct SelectableTableHost: View {
+    let table: SHProseTable
+    let selection: Selectability
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SHProseTableView(table: table, selectable: selection.on).equatable()
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
