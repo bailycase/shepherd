@@ -123,8 +123,10 @@ struct ThreadHistoryRetentionTests {
         }
         let away = clip.bounds.origin.y
         let before = ThreadRowMemory.built(in: thread.store)
+        let stack = ThreadHistoryBuilt.drawn(in: thread.store)
         await addTurns(ThreadView.eagerRows..<(ThreadView.eagerRows + 3 * ThreadHistoryBuilt.rows))
         let after = ThreadRowMemory.built(in: thread.store)
+        #expect(ThreadHistoryBuilt.drawn(in: thread.store) == stack, "the stack the reader reads in does not start again")
         #expect(after >= before, "the rows the reader has built stay: \(before) before, \(after) after")
         #expect(abs(clip.bounds.origin.y - away) < 1, "and the reader's place does not move: \(clip.bounds.origin.y) from \(away)")
         thread.close()

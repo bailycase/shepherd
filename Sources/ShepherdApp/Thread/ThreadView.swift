@@ -180,6 +180,7 @@ struct ThreadView: View {
         // at rest, in the update that adds the next.
         let atRest = follower.sticky && !follower.userScrolling && !input.decelerating
         let historyStack = historyBuilt.stack(history: history, onScreen: active, mayLetGo: atRest && !restoreStepping && !catchingUp)
+        let _ = historyBuilt.note(in: store)
         // Until it has caught up, the live reply's state is read here too: the pull that catches a thread up on
         // a tool boundary changes nothing else, and it must redraw this view so its gate draws that catch-up.
         // After it, the live row and the wait line read them and tool boundaries stay out of this body.
@@ -1060,6 +1061,31 @@ final class ThreadHistoryBuilt {
     private(set) var stack = 0
     private var last: String?
     private var added = 0
+
+    #if DEBUG
+    /// The stack each thread's history was last drawn in, by store, which the tests pin (`ThreadHistoryRetentionTests`). Per store, so
+    /// other threads drawn in the same process do not move it.
+    private nonisolated static let drawn = Mutex<[ObjectIdentifier: Int]>([:])
+    private var noted: ObjectIdentifier?
+
+    static func drawn(in store: NativeThreadStore) -> Int {
+        drawn.withLock { $0[ObjectIdentifier(store)] ?? 0 }
+    }
+
+    deinit {
+        guard let noted else { return }
+        Self.drawn.withLock { $0[noted] = nil }
+    }
+    #endif
+
+    /// Notes the stack drawn under `store` (`drawn(in:)`); nothing in a release build.
+    func note(in store: NativeThreadStore) {
+        #if DEBUG
+        let id = ObjectIdentifier(store)
+        noted = id
+        Self.drawn.withLock { $0[id] = stack }
+        #endif
+    }
 
     /// The stack to draw `history` in. Only rows added while the thread is `onScreen` count (a hidden host does not lay out, so builds
     /// none), and the stack starts again only in an update that adds rows, when `mayLetGo`: the reader is at the tail and at rest, and
