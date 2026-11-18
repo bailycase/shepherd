@@ -158,7 +158,7 @@ struct MountedBudgetTests {
         let stores = work.stores
         stores.releaseDelay = .zero
         stores.releaseSpacing = .zero
-        let one = work.store(0).mountedCost(eagerRows: stores.eagerRows)
+        let one = stores.mountedCost(of: work.store(0))
         let perThread = try work.fields(0)
         let floor = work.store(0).mountedCost(eagerRows: work.store(0).keptRows)
         #expect(one > 0 && perThread > 0 && floor > 0 && floor < one / 2, "a thread holds rows that cost something: \(one) bytes, \(perThread) fields, \(floor) in its last screen")
@@ -171,7 +171,7 @@ struct MountedBudgetTests {
 
         let whole = 1...3, last = 4, kept = 5...7
         func atLastScreen(_ index: Int) -> Bool { work.store(index).transcriptDrawn == work.store(index).keptRows }
-        func hidden() -> Int { (1..<8).reduce(0) { $0 + work.store($1).mountedCost(eagerRows: stores.eagerRows) } }
+        func hidden() -> Int { (1..<8).reduce(0) { $0 + stores.mountedCost(of: work.store($1)) } }
         try await eventuallyOnMain("the oldest hidden threads to let their rows go, down to the budget, and the others to keep theirs", timeout: .seconds(60)) {
             ListPerf.settle(work.window)
             return whole.allSatisfy(atLastScreen) && work.store(last).transcriptReleased
@@ -201,19 +201,19 @@ struct MountedBudgetTests {
         defer { work.window.close() }
         let stores = work.stores
         stores.pause = { _ in try? await Task.sleep(for: .seconds(3600)) }
-        let one = work.store(0).mountedCost(eagerRows: stores.eagerRows)
+        let one = stores.mountedCost(of: work.store(0))
         #expect(one > 0)
         stores.busy = { .idle }
         stores.releaseStep = one / 4
         stores.releaseCeiling = one * 8
         stores.mountedBudget = one * 5 / 2
-        func hidden(except shown: Int) -> Int { (0..<6).filter { $0 != shown }.reduce(0) { $0 + work.store($1).mountedCost(eagerRows: stores.eagerRows) } }
+        func hidden(except shown: Int) -> Int { (0..<6).filter { $0 != shown }.reduce(0) { $0 + stores.mountedCost(of: work.store($1)) } }
 
         var previous = 0
         for index in [1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5] {
             try await work.show(index)
             #expect(stores.runMountedPass() && stores.runMountedPass())
-            let left = work.store(previous).mountedCost(eagerRows: stores.eagerRows)
+            let left = stores.mountedCost(of: work.store(previous))
             #expect(hidden(except: index) <= stores.mountedBudget + left + one / 4,
                     "after showing \(index): \(hidden(except: index)) held by the hidden threads, a budget of \(stores.mountedBudget) and \(left) in the one just left")
             previous = index
@@ -305,7 +305,7 @@ struct MountedBudgetTests {
         for index in [1, 0] { try await work.show(index) }
         let store = work.store(1)
         let fences = try work.fields(1)
-        let step = store.mountedCost(eagerRows: work.stores.eagerRows) / 4
+        let step = work.stores.mountedCost(of: store) / 4
         #expect(fences > 0 && step > 0)
 
         for _ in 0..<2 { #expect(work.stores.enforceMountedBudget(budget: 0, keep: 0, step: step).threads == 1) }

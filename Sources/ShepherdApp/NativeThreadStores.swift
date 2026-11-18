@@ -64,6 +64,9 @@ final class NativeThreadStores<Key: Hashable> {
         min(eagerRows, store.drawnEagerRows ?? store.eagerTailRows(maxRows: eagerRows, costCap: eagerCostCap, coveringHeight: eagerCoverHeight))
     }
 
+    /// What the views of `store`'s thread hold, as the passes count it (`NativeThreadStore.mountedCost` of the rows its view builds).
+    func mountedCost(of store: NativeThreadStore) -> Int { store.mountedCost(eagerRows: eagerRows(of: store)) }
+
     /// The keys whose threads have a view mounted, hidden or not; nil where no hidden thread has a view to hold rows (a set
     /// of stores nothing mounts), so nothing is released.
     var mounted: (() -> Set<Key>)?
@@ -309,7 +312,7 @@ final class NativeThreadStores<Key: Hashable> {
         var costs: [Key: Int] = [:]
         let entries = (Array(mounted.subtracting(shown)) + shown).compactMap { key -> MountedEntry<Key>? in
             guard !onScreen.contains(key), let store = stores[key] else { return nil }
-            let cost = store.mountedCost(eagerRows: eagerRows(of: store))
+            let cost = mountedCost(of: store)
             guard cost > 0 else { return nil }
             costs[key] = cost
             return MountedEntry(key: key, cost: cost, pinned: pins?.isPinned(store) == true, releasable: store.canReleaseTranscript)
@@ -364,7 +367,7 @@ final class NativeThreadStores<Key: Hashable> {
                 lazy = true
                 store.releaseTranscript(bytes: room, eagerRows: eager, keepingLastScreen: true, crossing: true)
             }
-            let gone = (costs[key] ?? 0) - store.mountedCost(eagerRows: eager)
+            let gone = (costs[key] ?? 0) - mountedCost(of: store)
             freed += gone
             if room < .max { room -= gone }
             taken += 1
