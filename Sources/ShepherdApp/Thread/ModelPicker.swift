@@ -77,7 +77,9 @@ struct ModelCatalog: Sendable {
     /// own for the `current` model when the thread reports them (`currentLevels`), else the
     /// catalog's.
     func list(query: String, recent: [String], current: String?, currentLevels: [String]? = nil) -> SHModelList {
-        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        // Each word typed must appear in the id: ids join words with hyphens, people type spaces.
+        let words = query.lowercased().split(separator: " ").map(String.init)
+        func matches(_ key: String) -> Bool { words.allSatisfy { key.contains($0) } }
         let currentLine = currentLevels.flatMap { $0.isEmpty ? nil : NativeThinkingLevel.line($0) }
         func subtitle(_ id: String, catalog: String?) -> String? {
             id == current ? currentLine ?? catalog : catalog
@@ -90,12 +92,12 @@ struct ModelCatalog: Sendable {
         // Recent has no provider header: a name two providers offer is spelled out.
         let recentOptions = recent.compactMap { id -> SHModelOption? in
             if let model = model(id) {
-                guard q.isEmpty || model.key.contains(q) else { return nil }
+                guard matches(model.key) else { return nil }
                 var row = option(model)
                 row.title = title(id)
                 return row
             }
-            return q.isEmpty
+            return words.isEmpty
                 ? SHModelOption(id: id, title: nativeModelShortName(id), subtitle: subtitle(id, catalog: nil), isCurrent: id == current)
                 : nil
         }
@@ -103,7 +105,7 @@ struct ModelCatalog: Sendable {
         let recentIDs = Set(recent)
         var providers: [String] = []
         var byProvider: [String: [SHModelOption]] = [:]
-        for model in models where !recentIDs.contains(model.id) && (q.isEmpty || model.key.contains(q)) {
+        for model in models where !recentIDs.contains(model.id) && matches(model.key) {
             if byProvider[model.provider] == nil { providers.append(model.provider) }
             byProvider[model.provider, default: []].append(option(model))
         }

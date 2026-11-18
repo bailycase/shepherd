@@ -75,11 +75,11 @@ extension FleetThreadRow {
 /// A thread in Home, Recents and the sidebar; a design's row (MobileAgents) wears the nib and
 /// "design · 4 boards". Home's rows (DuoClosedHome) say what a working thread does as a verb
 /// ("Running python") and where any other works ("Shepherd"); the host's name shows only while
-/// rows from several hosts mix, and no row has a chevron.
+/// rows from several hosts mix (never in the sidebar, where it crowds the title), and no row has a chevron.
 struct ThreadRow: View, Equatable {
     let row: FleetThreadRow
     var selected = false
-    /// The sidebar's rows are one line: the title, and the host it lives on.
+    /// The sidebar's rows are one line: the title alone.
     var compact = false
 
     var body: some View {
@@ -87,7 +87,7 @@ struct ThreadRow: View, Equatable {
         let failed = compact && row.failed
         SHListRow(row.title, subtitle: compact ? nil : row.inboxLine, clock: compact ? nil : row.clock?.rowClock,
                   leading: row.design != nil ? .symbol("pencil.tip") : .state(failed ? .failed : AgentState(row.status)),
-                  trailing: failed ? .meta("failed") : row.hostTag.map { .host($0) } ?? .none,
+                  trailing: failed ? .meta("failed") : compact ? .none : row.hostTag.map { .host($0) } ?? .none,
                   chevron: false, selected: selected, dimmed: row.offline, compact: compact)
             // The dot alone says the state; VoiceOver hears it.
             .accessibilityValue((failed ? "failed" : FleetModel.statusWord(row.status)) + (row.offline ? ", host offline" : ""))

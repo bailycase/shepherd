@@ -42,6 +42,11 @@ extension FixtureCatalog {
             // Check, read only: what the fleet needs against each Mac (the phone's list form of FleetCheck).
             FixtureScreen(name: "fleet-check", hosts: FleetFixtureData.hosts(snapshot: FleetFixtureData.checked()), routes: [.settings(.fleet)], tab: .settings,
                           prepare: { app in await FleetFixtureData.settle(app) }, setup: { FleetScreen.preview = .check }),
+            // Check, with Mac mini behind the fleet's newest build: the Shepherd row's Update, and while the host carries one out the state with Cancel.
+            FixtureScreen(name: "fleet-check-update", hosts: FleetFixtureData.hosts(snapshot: FleetFixtureData.behind()), routes: [.settings(.fleet)], tab: .settings,
+                          prepare: { app in await FleetFixtureData.settle(app) }, setup: { FleetScreen.preview = .check }),
+            FixtureScreen(name: "fleet-check-updating", hosts: FleetFixtureData.hosts(snapshot: FleetFixtureData.behind(job: .waitingForThreads)), routes: [.settings(.fleet)],
+                          tab: .settings, prepare: { app in await FleetFixtureData.settle(app) }, setup: { FleetScreen.preview = .check }),
             FixtureScreen(name: "fleet-busy", hosts: FleetFixtureData.hosts(snapshot: FleetFixtureData.busy()), routes: [.settings(.fleet)],
                           tab: .settings, prepare: { app in await FleetFixtureData.settle(app) }),
         ]
@@ -101,6 +106,25 @@ enum FleetFixtureData {
         snapshot.macs[1].checkAge = 110
         snapshot.macs[2].check = FleetCheckReport(items: [need("22.4"), muse(.ok), disk("1.2 TB"), sleep("Sleeps after 10 min", .warn)], packageManager: "brew")
         snapshot.macs[2].checkAge = 7_200
+        return snapshot
+    }
+
+    /// `checked()` with Mac mini on build 671 while the others run 675 and all are awake; `job` is what the host carries out on it.
+    static func behind(job: FleetUpdateStatus.Stage? = nil) -> FleetSnapshot {
+        func build(_ number: String) -> FleetCheckItem {
+            FleetCheckItem(id: "build", group: .system, name: "Shepherd", why: "Same build on every Mac", state: .ok, value: "Build \(number)", kind: .build)
+        }
+        var snapshot = checked()
+        for index in snapshot.macs.indices {
+            snapshot.macs[index].check?.items.append(build(index == 1 ? "671" : "675"))
+            snapshot.macs[index].check?.items.removeAll { $0.id != "build" && $0.id != "disk" }
+        }
+        snapshot.app = "Shepherd Nightly"
+        for index in snapshot.peers.indices { snapshot.peers[index].takesUpdates = true }
+        snapshot.macs[1].sample?.activeAgents = 2
+        if let job {
+            snapshot.updates = [FleetUpdateStatus(hostID: mini, stage: job, when: .idle, fromBuild: "671", threads: 2, startedAt: 1, updatedAt: 2)]
+        }
         return snapshot
     }
 

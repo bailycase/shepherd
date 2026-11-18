@@ -114,6 +114,9 @@ public enum RemoteProtocol {
     /// them to pi with it. An older host would drop them without a word, so a client refuses to
     /// create an agent with images there.
     public static let createAgentImagesCapability = "agent.create.images.v1"
+    /// The host takes `createAgent` and `creationOptions` with an empty space id: a thread with no
+    /// space, in a folder of its own, as This Mac's "No space". Older hosts refuse the unknown space.
+    public static let createAgentNoSpaceCapability = "agent.create.noSpace.v1"
     /// The host serves `RemoteRequest.instructions`: its root instruction files for pi, their
     /// history, save and restore (Settings ▸ Instructions). Older hosts have none to show.
     public static let instructionsCapability = "instructions.v1"
@@ -276,12 +279,20 @@ public enum RemoteProtocol {
     /// (`FleetSnapshot.clientView` carries the move records). Offered to every client, devices included, while Fleet runs; it gives no part
     /// in the fleet's store. A client lists it in `hello` (`clientCapabilities`) to be sent the moves in `fleetRead`.
     public static let fleetMoveViewCapability = "fleet.move.view.v1"
+    /// A Mac can be asked to update Shepherd on another Mac of its fleet (`FleetUpdateWire.swift`): the request `hostUpdate` is served from a
+    /// peer (over the connection either Mac opened) with `installWhenIdle` and `cancel` as two more steps, and the host reports the job it
+    /// carries out (`FleetSnapshot.updates`). Offered with `fleet.v1` while the host has an updater, so to members only; a Mac that doesn't
+    /// list it is shown "Update Shepherd on it yourself" and is never sent the request.
+    public static let fleetUpdateCapability = "fleet.update.v1"
+    /// A client may ask the host to update a Mac of its fleet (`FleetAction.update`) and read the job (`FleetSnapshot.updates`). Offered to every
+    /// client, devices included, while Fleet runs and the host has an updater; it gives no part in the fleet's store.
+    public static let fleetUpdateViewCapability = "fleet.update.view.v1"
     /// A link between two Macs works whichever of them opened it: the host sends a peer's requests back over the connection that peer
     /// opened (`RemoteReply.fleetPeerCall`, answered `RemoteRequest.fleetPeerAnswer`) and takes `fleetRoutes` (`FleetRoutesWire.swift`).
     /// Offered with `fleet.v1`; a peer lists it in `hello` to say its own connection may carry such calls.
     public static let fleetLinkCapability = "fleet.link.v1"
     /// What a Mac that dials a peer lists in `hello`: it takes the peer's requests back over that connection.
-    public static let fleetLinkClientCapabilities = [fleetLinkCapability, fleetSyncCapability, fleetPressureCapability, fleetCheckCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetMoveCapability]
+    public static let fleetLinkClientCapabilities = [fleetLinkCapability, fleetSyncCapability, fleetPressureCapability, fleetCheckCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetMoveCapability, fleetUpdateCapability]
     /// The host finds Macs through the person's own iCloud: it keeps a Join record while its code is shown and looks one up
     /// for `FleetAction.findAndPair`, and a presence record lets paired Macs find each other after an address change. Nothing
     /// new crosses between Macs, so a Mac without it pairs and links as before. Offered with `fleet.v1`, so to members only.
@@ -304,9 +315,9 @@ public enum RemoteProtocol {
     /// Capabilities a client device is never offered (`FleetAccess`): the ones for taking part in the
     /// fleet's store (`fleet.v1`, sync), and the one for enrolling (a device already has its token). Later fleet
     /// units (credentials, dispatch) add theirs here.
-    public static let fleetMemberCapabilities: Set<String> = [fleetCapability, fleetSyncCapability, fleetDevicesCapability, fleetPressureCapability, fleetCheckCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetMoveCapability, fleetRendezvousCapability, fleetLinkCapability, fleetPairLinkCapability]
+    public static let fleetMemberCapabilities: Set<String> = [fleetCapability, fleetSyncCapability, fleetDevicesCapability, fleetPressureCapability, fleetCheckCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetMoveCapability, fleetRendezvousCapability, fleetLinkCapability, fleetPairLinkCapability, fleetUpdateCapability]
     /// Every capability of the fleet service: offered by a host whose service runs, which is every host that started.
-    public static let fleetServiceCapabilities: Set<String> = fleetMemberCapabilities.union([fleetViewCapability, fleetFollowCapability, fleetMoveViewCapability])
+    public static let fleetServiceCapabilities: Set<String> = fleetMemberCapabilities.union([fleetViewCapability, fleetFollowCapability, fleetMoveViewCapability, fleetUpdateViewCapability])
     /// Settings ▸ Experiments ▸ Design tool switched from a client (`HostSettingChange.designToolEnabled`).
     /// Offered while the tool is off too: it is not one of `designCapabilities`.
     public static let designToolExperimentCapability = "experiments.designTool.v1"
@@ -327,7 +338,7 @@ public enum RemoteProtocol {
     /// The host saves a file of a thread's folder (`RemoteAgentQuery.fileWrite`), only over the text the client
     /// edited from (`ThreadFileSaveResult.changed` otherwise). Served only to a client offered `filesCapability`.
     public static let filesWriteCapability = "files.write.v1"
-    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostSettingsTextGenerationModelCapability, hostSettingsVisionModelCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, checkoutReadCapability, pullRequestLinkCapability, fleetCapability, fleetSyncCapability, fleetDevicesCapability, fleetPressureCapability, fleetCheckCapability, fleetViewCapability, fleetFollowCapability, fleetMoveViewCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetMoveCapability, fleetRendezvousCapability, fleetLinkCapability, fleetPairLinkCapability]
+    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostSettingsTextGenerationModelCapability, hostSettingsVisionModelCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, createAgentNoSpaceCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, checkoutReadCapability, pullRequestLinkCapability, fleetCapability, fleetSyncCapability, fleetDevicesCapability, fleetPressureCapability, fleetCheckCapability, fleetViewCapability, fleetFollowCapability, fleetMoveViewCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetMoveCapability, fleetRendezvousCapability, fleetLinkCapability, fleetPairLinkCapability, fleetUpdateCapability, fleetUpdateViewCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -519,13 +530,17 @@ public struct RemoteThreadStart: Codable, Hashable, Sendable {
     public var worktreeBranch: String?
     public var worktreeBase: String?
     public var worktreePath: String?
+    /// The new worktree checks out `worktreeBranch` as it is (local, or "origin/x"), not a new branch from `worktreeBase`.
+    public var worktreeBranchExists: Bool?
 
     public init(spaceID: SpaceID?, cwd: String? = nil, model: String? = nil, thinking: ThinkingLevel? = nil, serviceTier: ServiceTier? = nil,
                 initialPrompt: String? = nil, initialImages: [NativeImage]? = nil, name: String? = nil, piSessionID: String? = nil,
-                agentID: AgentID? = nil, worktreeBranch: String? = nil, worktreeBase: String? = nil, worktreePath: String? = nil) {
+                agentID: AgentID? = nil, worktreeBranch: String? = nil, worktreeBase: String? = nil, worktreePath: String? = nil,
+                worktreeBranchExists: Bool? = nil) {
         self.spaceID = spaceID; self.cwd = cwd; self.model = model; self.thinking = thinking; self.serviceTier = serviceTier
         self.initialPrompt = initialPrompt; self.initialImages = initialImages; self.name = name; self.piSessionID = piSessionID
         self.agentID = agentID; self.worktreeBranch = worktreeBranch; self.worktreeBase = worktreeBase; self.worktreePath = worktreePath
+        self.worktreeBranchExists = worktreeBranchExists
     }
 }
 

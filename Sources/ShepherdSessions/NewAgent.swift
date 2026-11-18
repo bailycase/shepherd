@@ -9,7 +9,7 @@ public struct AgentStartFailure: Error, CustomStringConvertible {
     public var description: String { message }
 }
 
-/// What a new agent starts from: the New Agent sheet, ⌘N, a worktree, a design, an automation.
+/// What a new agent starts from: New thread (⌘N), a worktree, a design, an automation.
 public struct NewAgentConfig {
     public var spaceID: SpaceID
     public var workingDirectory: String
@@ -35,6 +35,9 @@ public struct NewAgentConfig {
     /// Actual checkout path for imported worktrees whose directory name does
     /// not follow Shepherd's generated repo-branch convention.
     public var worktreePath: String?
+    /// With no `worktreePath`, the host makes the worktree: on `worktreeBranch` as it is when true, else a
+    /// new branch from `worktreeBase` (nil lets Settings ▸ Worktrees resolve one).
+    public var worktreeBranchExists = false
     /// An automation's watch agent: spawned with SHEPHERD_AUTOMATION=1 so
     /// the panes extension withholds the automation_* tools (a watcher must
     /// never create watchers).

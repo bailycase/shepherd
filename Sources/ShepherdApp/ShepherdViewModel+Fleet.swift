@@ -96,6 +96,23 @@ extension ShepherdViewModel {
         }
     }
 
+    /// Try again on a failed thread's sidebar row: started again as it was asked.
+    func retryDispatch(_ id: UUID) async {
+        await fleet.retryDispatch(id, host: nil)
+    }
+
+    /// Delete on a sidebar row that has no thread yet: stops one that hasn't started, and removes one that failed (hidden on this Mac only, as the host
+    /// keeps its record for the Recent work log). What no longer exists is forgotten with it.
+    func deleteDispatch(_ id: UUID) {
+        let records = fleetPage.sidebarFleet.records
+        guard let record = records.first(where: { $0.id == id }) else { return }
+        if record.state == .failed {
+            dismissedDispatches = dismissedDispatches.union([id]).intersection(records.map(\.id))
+        } else {
+            Task { await fleet.cancelDispatch(id) }
+        }
+    }
+
     /// A button on a dispatch card.
     func perform(_ action: FleetCardAction, on card: FleetDispatchCard) {
         switch action {

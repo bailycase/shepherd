@@ -100,6 +100,22 @@ struct NativeThreadStoresHistoryTests {
         return stores
     }
 
+    @Test func overBudgetIsWhatAPassCanTakeAndNotWhatTheThreadsHold() {
+        func over(_ entries: [Mounted], keepPinned: Int = 2, budget: Int) -> Int {
+            NativeThreadStores<String>.overBudget(entries, keep: 1, keepPinned: keepPinned, budget: budget)
+        }
+        // Oldest first: b is a reader, kept as one of the two most recent; d, the newest, is never taken.
+        let entries = [Mounted(key: "a", cost: 100, pinned: false), Mounted(key: "b", cost: 100, pinned: true),
+                       Mounted(key: "c", cost: 100, pinned: false), Mounted(key: "d", cost: 400, pinned: false)]
+        #expect(over(entries, budget: 700) == 0, "at the budget nothing")
+        #expect(over(entries, budget: 600) == 100, "over by what the pass can take")
+        #expect(over(entries, budget: 0) == 200, "the threads hold 700 over the budget and a pass can take a and c: not b, a reader kept, nor d, the newest")
+        #expect(over(entries, keepPinned: 0, budget: 0) == 300, "a reader past the ones kept can go")
+        #expect(over([Mounted(key: "a", cost: 100, pinned: false, releasable: false), Mounted(key: "b", cost: 900, pinned: false)], budget: 0) == 0,
+                "the newest alone, and a thread with nothing more to give")
+        #expect(over([], budget: 0) == 0)
+    }
+
     @Test func viewReleasesTakeUnpinnedThenOlderPinnedPastTheBudget() {
         // Oldest first, a hundred bytes each; b, d and e are readers left scrolled up.
         let entries = [Mounted(key: "a", cost: 100, pinned: false), Mounted(key: "b", cost: 100, pinned: true),
@@ -308,6 +324,232 @@ struct NativeThreadStoresHistoryTests {
         #expect(stores.enforceMountedBudget(budget: 0, keep: 0).threads == 1 && b.transcriptDrawn == 8, "then the next thread's turn, a having no more to give")
         let unlimited = stores.enforceMountedBudget(budget: 0, keep: 0, limit: .max, step: .max)
         #expect(unlimited.threads == 1 && b.transcriptDrawn == 4, "a step of everything lets all of a thread but its last screen go in one")
+    }
+
+    /// Showing a thread builds its rows again, hundreds of megabytes of them in a few seconds, and the time before the next show gives the
+    /// passes a few looks: a pass that took a step of one thread however far over the budget the threads were never caught up with the shows.
+    @Test func aPassFarOverTheBudgetLetsGoOfWhatItIsOverByWhenTheAppIsQuiet() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c", "d", "e", "f"], selected: "f", pauses: pauses, turns: 6)
+        stores.releaseStep = stores.store(for: "a").mountedCost(eagerRows: 1)
+        stores.busy = { .idle }
+        stores.mountedBudget = 0
+        #expect(stores.runMountedPass() == true)
+        for key in ["a", "b", "c", "d"] {
+            let store = stores.store(for: key)
+            #expect(store.transcriptDrawn == store.keptRows, "\(key) is down to its last screen after one pass: it was far over")
+        }
+        #expect(!stores.store(for: "e").transcriptReleased, "the newest hidden thread stays")
+    }
+
+    /// A quiet pass takes what the threads are over by, no more than the ceiling (a row over at the most, the row that crosses it goes), and a
+    /// pass while a thread streams, the step.
+    @Test func aQuietPassTakesNoMoreThanTheCeilingAndAStreamingOneNoMoreThanAStep() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c", "d", "e", "f"], selected: "f", pauses: pauses, turns: 6)
+        let b = stores.store(for: "b")
+        let row = stores.store(for: "a").mountedCost(eagerRows: 1)
+        func hidden() -> Int { ["a", "b", "c", "d", "e"].reduce(0) { $0 + stores.store(for: $1).mountedCost(eagerRows: stores.eagerRows) } }
+        let whole = hidden()
+        stores.releaseStep = row
+        stores.patience = 1
+        stores.mountedBudget = 0
+        var wait = ThreadPassWait.streaming
+        stores.busy = { wait }
+        let afterBudget = hidden()
+        #expect(afterBudget < whole, "setting the budget runs a pass of a step")
+        #expect(stores.runMountedPass() == false, "a stream: it waits its looks")
+        #expect(stores.runMountedPass() == true)
+        let streaming = afterBudget - hidden()
+        #expect(streaming > 0 && streaming <= row * 2 && b.transcriptDrawn == nil, "a stream gives it a step, a row over at the most, of one thread: \(streaming) of \(row)")
+
+        // Over the budget by more than the ceiling and not far over: the ceiling is what it takes.
+        wait = .idle
+        stores.releaseCeiling = row
+        stores.mountedBudget = hidden() - row * 7 / 2
+        let over = hidden() - stores.mountedBudget
+        #expect(over > stores.releaseCeiling && !stores.farOverBudget(), "over by \(over), a ceiling of \(row), not far over")
+        let before = hidden()
+        #expect(stores.runMountedPass() == true)
+        let quiet = before - hidden()
+        #expect(quiet > 0 && quiet <= row * 2 && quiet < over, "a quiet pass takes the ceiling, a row over at the most: \(quiet) of \(row), over by \(over)")
+    }
+
+    /// A step that lets go of a thread's lazy stack costs a layout of its whole host: a quiet pass lets go of one lazy stack and goes on to the
+    /// rows after it, which a pass that only waited for its turn would have taken a pass later; any other pass takes the lazy stack alone.
+    @Test func aQuietPassLetsGoOfOneLazyStackAndTheRowsAfterIt() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses, turns: 8)
+        stores.eagerRows = 8
+        let a = stores.store(for: "a"), b = stores.store(for: "b")
+        #expect(a.rows.count == 16 && a.transcriptDrawn == nil && b.transcriptDrawn == nil)
+        #expect(stores.enforceMountedBudget(budget: 0, limit: .max, ceiling: stores.releaseCeiling).threads == 1)
+        #expect(a.transcriptDrawn == a.keptRows, "a's lazy stack and its rows, in one pass")
+        #expect(b.transcriptDrawn == nil, "b's lazy stack waits for the next pass")
+        #expect(stores.enforceMountedBudget(budget: 0, limit: .max, ceiling: stores.releaseCeiling).threads == 1 && b.transcriptDrawn == b.keptRows)
+    }
+
+    /// A step of everything lets go of the lazy stack with the rows, thread after thread: the room it has left after one is still everything.
+    @Test func aStepOfEverythingTakesEveryThreadDownToItsLastScreenInOnePass() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses, turns: 8)
+        stores.eagerRows = 8
+        #expect(stores.enforceMountedBudget(budget: 0, keep: 0, limit: .max, step: .max).threads == 3)
+        for key in ["a", "b", "c"] {
+            let store = stores.store(for: key)
+            #expect(store.transcriptDrawn == store.keptRows, "\(key) goes whole, a lazy stack and all")
+        }
+    }
+
+    /// Far over the budget, more rows are built by the shows meanwhile than the passes let go of in the seconds a stream lasts: typing still holds a
+    /// pass off, a stream no longer does, and the pass that runs lets go of the ceiling at most, as much as a quiet pass of a thread near the budget:
+    /// the stream it runs beside stalls no longer than that.
+    @Test func aStreamHoldsNoPassOffOnceTheThreadsAreFarOverTheBudget() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let keys = ["a", "b", "c", "d", "e", "f"]
+        let stores = mountedStores(keys, selected: "f", pauses: pauses, turns: 6)
+        let row = stores.store(for: "a").mountedCost(eagerRows: 1)
+        func hidden() -> Int { keys.dropLast().reduce(0) { $0 + stores.store(for: $1).mountedCost(eagerRows: stores.eagerRows) } }
+        let held = hidden()
+        stores.releaseStep = row
+        stores.releaseCeiling = row * 2
+        var wait = ThreadPassWait.streaming
+        stores.busy = { wait }
+        stores.mountedBudget = held - row
+        #expect(!stores.farOverBudget(), "a row over is not far over")
+        #expect(stores.runMountedPass() == false, "a stream holds a pass off while the threads are about at the budget")
+
+        stores.mountedBudget = held / 3
+        let over = hidden() - stores.mountedBudget
+        #expect(stores.farOverBudget() && over > row * 8, "far over, by more than the ceiling of two rows many times: \(over) of \(row)")
+        let before = hidden()
+        #expect(stores.runMountedPass() == true, "far over, a stream holds none off")
+        let taken = before - hidden()
+        #expect(taken > 0 && taken <= row * 3, "the ceiling at most, a row over at the most, and not what they are over by: \(taken) of \(row), over by \(over)")
+        wait = .input
+        #expect(stores.runMountedPass() == false, "typing holds it off all the same")
+    }
+
+    /// The newest hidden thread is never taken, a reader kept or a thread at its last screen has nothing to give, so what they hold is
+    /// no part of what a pass has to catch up with: far over is what a pass can take, not what the threads hold over the budget.
+    @Test func memoryNoPassCanTakeIsNotFarOverTheBudget() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c"], selected: "c", pauses: pauses, turns: 6)
+        let a = stores.store(for: "a"), b = stores.store(for: "b")
+        let row = a.mountedCost(eagerRows: 1)
+        a.releaseTranscript(keepingLastScreen: true)
+        #expect(!a.canReleaseTranscript && b.canReleaseTranscript)
+        stores.releaseCeiling = row
+        stores.releaseStep = row
+        stores.busy = { .streaming }
+        stores.mountedBudget = 0
+        let held = a.mountedCost(eagerRows: stores.eagerRows) + b.mountedCost(eagerRows: stores.eagerRows)
+        #expect(held > max(stores.mountedBudget / 4, stores.releaseCeiling), "the hidden threads hold more than the far-over threshold: \(held) of \(row)")
+        #expect(!stores.farOverBudget(), "b is the newest hidden thread and a has nothing more to give")
+        #expect(stores.runMountedPass() == false, "a stream still holds the pass off, as it is owed to do")
+    }
+
+    /// The looks while the person types or scrolls read nothing, and a pass reads the hidden threads once, however it decides what to do.
+    @Test func aPassReadsTheHiddenThreadsOnceAndALookWhileTypingNotAtAll() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let keys = ["a", "b", "c", "d"]
+        let stores = mountedStores(keys, selected: "d", pauses: pauses, turns: 6)
+        var reads = 0
+        stores.mounted = {
+            reads += 1
+            return Set(keys)
+        }
+        stores.mountedBudget = 0
+        reads = 0
+        var wait = ThreadPassWait.input
+        stores.busy = { wait }
+        #expect(stores.runMountedPass() == false && reads == 0, "typing: a look reads nothing, read \(reads) times")
+        wait = .streaming
+        #expect(stores.runMountedPass() == false && reads == 1, "a stream's look reads them once, read \(reads) times")
+        reads = 0
+        wait = .idle
+        #expect(stores.runMountedPass() == true && reads == 1, "a pass reads them once, read \(reads) times")
+    }
+
+    /// A stream's pass after its patience lasted, with the threads not far over, is one thread's step and no more: it does not go on to the
+    /// threads after it with what that one left of the step.
+    @Test func aStreamsPassAfterItsPatienceTakesOneThread() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses, turns: 6)
+        let a = stores.store(for: "a"), b = stores.store(for: "b")
+        let row = a.mountedCost(eagerRows: 1)
+        stores.releaseStep = row
+        stores.patience = 1
+        stores.busy = { .streaming }
+        stores.mountedBudget = 0
+        stores.releaseStep = row * 40
+        #expect(!stores.farOverBudget(), "the ceiling is more than the threads hold")
+        #expect(a.transcriptDrawn != nil && b.transcriptDrawn == nil, "setting the budget took a row of a")
+        #expect(stores.runMountedPass() == false)
+        #expect(stores.runMountedPass() == true)
+        #expect(a.transcriptDrawn == a.keptRows && b.transcriptDrawn == nil, "a, down to its last screen with the step to spare: b waits for the next pass")
+    }
+
+    /// Far over the budget the pass of a quiet app lets go of what they are over by too, not only the quiet ceiling's: the one that took a
+    /// row between two steps of a restore that builds one never caught up with it.
+    @Test func aQuietPassFarOverTheBudgetLetsGoOfMoreThanTheCeiling() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses, turns: 6)
+        let row = stores.store(for: "a").mountedCost(eagerRows: 1)
+        let held = ["a", "b", "c"].reduce(0) { $0 + stores.store(for: $1).mountedCost(eagerRows: stores.eagerRows) }
+        func hidden() -> Int { ["a", "b", "c"].reduce(0) { $0 + stores.store(for: $1).mountedCost(eagerRows: stores.eagerRows) } }
+        stores.releaseStep = row
+        stores.releaseCeiling = row * 3
+        stores.busy = { .idle }
+        stores.mountedBudget = held - row * 6
+        #expect(!stores.farOverBudget(), "six rows over, with a ceiling of three, is not far over")
+        var before = hidden()
+        #expect(stores.runMountedPass() == true)
+        #expect(before - hidden() <= row * 4, "near the budget a pass takes the ceiling at most: \(before - hidden()) of \(row)")
+        stores.mountedBudget = 0
+        #expect(stores.farOverBudget())
+        before = hidden()
+        #expect(stores.runMountedPass() == true)
+        #expect(before - hidden() > row * 5, "far over it takes what they are over by: \(before - hidden()) of \(row)")
+    }
+
+    /// A step that crosses goes on to the row that does not fit, so that it is not spent on small rows ahead of a large one.
+    @Test func aStepThatCrossesLetsGoOfTheRowThatDoesNotFit() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c"], selected: "c", pauses: pauses, turns: 6)
+        let a = stores.store(for: "a"), b = stores.store(for: "b")
+        let count = a.rows.count
+        let oldest = a.mountedCost(eagerRows: count) - a.mountedCost(eagerRows: count - 1)
+        let next = a.mountedCost(eagerRows: count - 1) - a.mountedCost(eagerRows: count - 2)
+        #expect(oldest > 0 && next > 0 && b.rows.count == count)
+        let bytes = oldest + next - 1
+        a.releaseTranscript(bytes: bytes)
+        #expect(a.transcriptDrawn == count - 1, "one byte short of two rows takes one")
+        b.releaseTranscript(bytes: bytes, crossing: true)
+        #expect(b.transcriptDrawn == count - 2, "crossing takes the second, which does not fit")
+    }
+
+    /// A stream never holds the passes off for good: after the default patience (forty looks, ten seconds at the default spacing) a pass runs.
+    @Test func aStreamHoldsAPassOffForTenSecondsAtMost() {
+        let pauses = Pauses()
+        defer { pauses.end() }
+        let stores = mountedStores(["a", "b", "c", "d"], selected: "d", pauses: pauses, turns: 6)
+        #expect(stores.releaseSpacing * stores.patience == .seconds(10))
+        stores.busy = { .streaming }
+        let b = stores.store(for: "b")
+        stores.mountedBudget = 0
+        for look in 1...stores.patience { #expect(stores.runMountedPass() == false && b.transcriptDrawn == nil, "look \(look): a stream holds it off") }
+        #expect(stores.runMountedPass() == true && b.transcriptReleased, "and the next look runs, whatever else streams")
     }
 
     @Test func aBudgetReachedHalfwayThroughAThreadStopsThere() {

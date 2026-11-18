@@ -117,6 +117,23 @@ struct FleetCornerPreviewTests {
         }
     }
 
+    /// UpdateFooterStates: with an update waiting, `SHUpdateButton` stands where the gear was, in the full and minimized
+    /// corner and in the plain footer Fleet off draws.
+    @Test func theUpdateButtonTakesTheGearsPlace() async throws {
+        let corner = try #require(FleetCorner.make(P.page(Self.threeMacs)))
+        try await Preview.renderMatrix("sidebar-footer-update", size: CGSize(width: Self.size.width, height: 260)) {
+            VStack(spacing: 0) {
+                FleetCornerView(corner: corner, minimized: false, onPage: false, focusedMac: nil, open: { _ in }, setMinimized: { _ in },
+                                settings: {}, updateVersion: "0.2.0")
+                FleetCornerView(corner: corner, minimized: true, onPage: false, focusedMac: nil, open: { _ in }, setMinimized: { _ in },
+                                settings: {}, updateVersion: "0.2.0")
+                SHSidebarFooter(name: "Alex", detail: "This Mac · demo-mac", updateVersion: "0.2.0", settings: {})
+            }
+            .frame(width: Self.size.width)
+            .background(Color.sh.bgBase)
+        }
+    }
+
     // MARK: FleetSubthreads
 
     /// The threads the sidebar scenes draw: This Mac's, the connected mini's, and the dispatch records This Mac keeps.
@@ -215,7 +232,7 @@ struct FleetCornerPreviewTests {
         var regenerate = Self.thread("Regenerate API client", .done, in: space, at: 9)
         regenerate.dispatchedFrom = DispatchedFrom(hostID: P.studio, hostName: "Mac Studio", agentID: AgentID(), agentTitle: "Release prep", dispatchID: UUID(), at: 1)
         var hardenKids: [Agent] = [], hardenRecords: [FleetDispatchRecord] = []
-        for (index, state) in [FleetDispatchState.running, .running, .done, .done].enumerated() {
+        for (index, state) in [FleetDispatchState.running, .running, .running, .done].enumerated() {
             let dispatch = UUID()
             hardenKids.append(Self.thread("Webhook task \(index + 1)", state == .done ? .done : .working, in: space, at: 10 + Double(index), from: harden, dispatch: dispatch, seen: true))
             hardenRecords.append(Self.record(state, "Webhook task \(index + 1)", sender: harden, id: dispatch, minutes: 10 + Double(index)))
@@ -232,11 +249,10 @@ struct FleetCornerPreviewTests {
         let (workspace, vm) = try await mount(cast, selected: speed.id)
         defer { workspace.stop() }
         let lists = vm.presentedSidebarLists
-        #expect(lists.working.first { $0.title == "Speed up checkout CI" }?.subtitle?.text == "3 sent · 1 back")
-        #expect(lists.working.first { $0.title == "Harden webhook retries" }?.subtitle?.text == "4 sent · 2 back")
+        #expect(lists.working.first { $0.title == "Speed up checkout CI" }?.subtitle == nil, "a thread says nothing of what it started")
         #expect(lists.working.first { $0.title == "Harden webhook retries" }?.fold != nil)
-        #expect(lists.working.first { $0.title == "Rebuild search index" }?.subtitle?.text == "Auto · no Mac has room")
-        #expect(lists.needsYou.first { $0.title == "Backfill order totals" }?.subtitle?.text == "from Migrate orders to Postgres 17")
+        #expect(lists.working.first { $0.title == "Split slow UI tests" }?.subtitle?.text == "waiting for studio to wake")
+        #expect(lists.working.first { $0.title == "Rebuild search index" }?.subtitle?.text == "waiting for a Mac with room")
         try await Preview.renderMatrix("fleet-corner-sidebar", size: Self.size) { SidebarView(vm: vm).frame(width: Self.size.width, height: Self.size.height) }
         // The same threads under Spaces.
         workspace.settings.sidebarStyle = .projects
@@ -244,7 +260,7 @@ struct FleetCornerPreviewTests {
     }
 
     /// Where the first text line beginning `prefix` starts, in points from the sidebar's left edge, as the rendered pixels say it (Vision's boxes).
-    static func textX(_ prefix: String, in view: some View, size: CGSize) throws -> CGFloat? {
+    static func textX(_ prefix: String, after: CGFloat, in view: some View, size: CGSize) throws -> CGFloat? {
         let window = NSWindow(contentRect: NSRect(origin: CGPoint(x: -30_000, y: -30_000), size: size), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.appearance = NSAppearance(named: .aqua)
@@ -261,9 +277,14 @@ struct FleetCornerPreviewTests {
         let request = VNRecognizeTextRequest()
         request.usesLanguageCorrection = false
         request.recognitionLevel = .accurate
-        try VNImageRequestHandler(cgImage: try #require(bitmap.cgImage)).perform([request])
+        // Only what is right of `after`, so a row's dot and elbow are never read as the start of its title (a row ends in an ellipsis when its Mac's tag
+        // takes the room, and Vision then reads the dot and the title as one line).
+        let image = try #require(bitmap.cgImage)
+        let cut = Int(after * scale)
+        let cropped = try #require(image.cropping(to: CGRect(x: cut, y: 0, width: image.width - cut, height: image.height)))
+        try VNImageRequestHandler(cgImage: cropped).perform([request])
         let hit = request.results?.first { $0.topCandidates(1).first?.string.hasPrefix(prefix) == true }
-        return hit.map { $0.boundingBox.minX * size.width }
+        return hit.map { after + $0.boundingBox.minX * (size.width - after) }
     }
 
     /// The same inset in every path: in both sidebar styles, a sent thread's title starts 18pt right of its sender's (FleetCornerFull: x57 against x39 at the
@@ -285,8 +306,8 @@ struct FleetCornerPreviewTests {
                 try await eventuallyOnMain("the rows to draw") { vm.presentedSidebarLists.working.contains { $0.fleetNested } || style == .projects }
                 var sender: CGFloat?, child: CGFloat?
                 try await eventuallyOnMain("\(name) rows' text to be read", timeout: .seconds(20)) {
-                    sender = try Self.textX("Speed up", in: view, size: size)
-                    child = try Self.textX("Fix flaky", in: view, size: size)
+                    sender = try Self.textX("Speed up", after: style == .activity ? 31 : 50, in: view, size: size)
+                    child = try Self.textX("Fix flaky", after: style == .activity ? 47 : 68, in: view, size: size)
                     return sender != nil && child != nil
                 }
                 let delta = try #require(child) - (try #require(sender))
@@ -306,8 +327,8 @@ struct FleetCornerPreviewTests {
         let speed = Self.thread("Speed up checkout CI", .working, in: space, at: 1)
         var cast = Cast()
         cast.local = [speed]
-        func pre(_ state: FleetDispatchState, _ title: String, target: UUID? = nil, host: String? = nil, at: Double) {
-            cast.records.append(Self.record(state, title, sender: speed, target: target, host: host, minutes: at))
+        func pre(_ state: FleetDispatchState, _ title: String, target: UUID? = nil, host: String? = nil, at: Double, clone: String? = nil) {
+            cast.records.append(Self.record(state, title, sender: speed, target: target, host: host, minutes: at, clone: clone))
         }
         @discardableResult
         func thread(_ state: FleetDispatchState, _ title: String, status: AgentStatus, target: UUID? = P.mini, host: String? = "Mac mini", at: Double, clone: String? = nil,
@@ -322,31 +343,56 @@ struct FleetCornerPreviewTests {
         pre(.waitingRoom, "Lint the monorepo", at: 19)
         pre(.waitingWake, "Split slow UI tests", target: P.studio, host: "Mac Studio", at: 18)
         pre(.heldLimit, "Audit feature flags", at: 17)
-        thread(.preparing, "Port the web client", status: .working, at: 16, clone: "payments-web")
-        thread(.preparing, "Backfill order totals", status: .working, target: P.here, host: "MacBook Pro", at: 15)
+        pre(.preparing, "Port the web client", target: P.mini, host: "Mac mini", at: 16, clone: "payments-web")
+        pre(.preparing, "Backfill order totals", target: P.here, host: "MacBook Pro", at: 15)
         let fixFlaky = thread(.running, "Fix flaky payment test", status: .working, at: 14)
         thread(.running, "Pick a shard count", status: .blocked, at: 13)
-        thread(.failed, "Profile cold launch", status: .idle, target: P.studio, host: "Mac Studio", at: 12, failure: FleetDispatchCode.hostNotReady, detail: "xcodebuild exited 65")
+        thread(.failed, "Profile cold launch", status: .idle, target: P.studio, host: "Mac Studio", at: 12, failure: FleetDispatchCode.hostNotReady, detail: "Xcode")
         thread(.delivering, "Trim build warnings", status: .working, at: 11)
         thread(.done, "Bump Swift tools to 6.2", status: .done, at: 30)
-        // A thread another of these sent: it nests flat under the top sender, "via" the one that sent it.
+        // A thread another of these started: it nests flat under the top one.
         cast.local.append(Self.thread("Shard UI tests", .working, in: space, at: 10, from: fixFlaky, senderHost: P.mini, senderHostName: "Mac mini"))
         let live = cast.records.filter { $0.state.countsAgainstCap }.count
         let (workspace, vm) = try await mount(cast, cap: live, selected: speed.id)
         defer { workspace.stop() }
         let working = vm.presentedSidebarLists.working
-        #expect(working.first?.subtitle?.text == "12 sent · 1 back")
         let lines = working.compactMap { $0.subtitle?.text }
-        #expect(lines.contains("held · \(live) of \(live) sends live"))
-        #expect(working.last?.subtitle?.text == "via Fix flaky payment test · This Mac · running")
+        #expect(lines.contains("waiting for another thread to finish") && lines.contains("starting") && lines.contains("cloning payments-web on mini"))
+        #expect(lines.contains("Xcode isn't installed") == false, "a thread that exists reads as the thread it is, not by its record")
+        #expect(!lines.contains { $0.contains("sent") || $0.contains("via ") || $0.contains("delivering") })
+        #expect(working.last?.title == "Shard UI tests" && working.last?.fleetNested == true)
         try await Preview.renderMatrix("fleet-subthreads", size: CGSize(width: Self.size.width, height: 1000)) {
             SidebarView(vm: vm).frame(width: Self.size.width, height: 1000)
         }
     }
 
+    /// A thread started from New thread on a Mac that failed before it had a thread: Done, with its red dot, the Mac as its tag (never its id) and what the
+    /// Mac lacks. A second names a Mac that has left the fleet. Their menu is a thread's: Delete, and Try again.
+    @Test func aFailedSentThreadIsInDoneWithItsReason() async throws {
+        let space = Space(name: "payments-api", path: "/tmp/p")
+        var cast = Cast()
+        cast.local = [Self.thread("Speed up checkout CI", .working, in: space, at: 1), Self.thread("Pick a shard count", .idle, in: space, at: 90)]
+        var test = Self.record(.failed, "test", sender: nil, target: nil, host: nil, minutes: 30, failure: FleetDispatchCode.hostNotReady, detail: "bearcli")
+        test.requestedHost = P.studio.uuidString
+        var gone = Self.record(.failed, "Rebuild search index", sender: nil, target: nil, host: nil, minutes: 50, failure: FleetDispatchCode.hostNotReady, detail: "Xcode")
+        gone.requestedHost = UUID().uuidString
+        cast.records = [test, gone]
+        let (workspace, vm) = try await mount(cast, minimized: true, selected: cast.local[0].id)
+        defer { workspace.stop() }
+        let lists = vm.presentedSidebarLists
+        #expect(lists.working.map(\.title) == ["Speed up checkout CI"])
+        #expect(lists.done.map(\.title) == ["test", "Rebuild search index"])
+        #expect(lists.done.map { $0.subtitle?.text } == ["bearcli isn't installed", "a Mac that left · Xcode isn't installed"])
+        #expect(lists.done.map(\.accessory) == [.tag("studio"), .none])
+        #expect(lists.done.allSatisfy { $0.leading == .dot(.failed) && $0.subtitle?.tone == .failed })
+        try await Preview.renderMatrix("fleet-failed-sent-row", size: CGSize(width: Self.size.width, height: 460)) {
+            SidebarView(vm: vm).frame(width: Self.size.width, height: 460)
+        }
+    }
+
     // MARK: FleetDispatch: the sender's thread
 
-    /// The thread that sent the work draws each sent piece as one line: back, delivering, and one that goes when a Mac wakes.
+    /// The thread that started the work draws each piece as one line in a thread's words: done, working, and one that waits for a Mac to wake.
     @Test func theSendersThreadDrawsCompactRows() async throws {
         let sender = Agent(name: "Speed up checkout CI", spaceID: SpaceID(), tabID: TabID())
         var records = [

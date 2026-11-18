@@ -126,6 +126,8 @@ final class RPCSession: @unchecked Sendable {
     private var writeSource: DispatchSourceWrite?
     private var procSource: DispatchSourceProcess?
     private var reapTimer: DispatchSourceTimer?
+    private var stdoutReadBuffer = [UInt8](repeating: 0, count: 64 * 1024)
+    var stdoutReadBufferCapacity: Int { stdoutReadBuffer.capacity }
     private var stdoutBuffer = Data()
     /// Set after an oversize record: skip bytes until the next LF.
     private var discardingRecord = false
@@ -541,12 +543,11 @@ final class RPCSession: @unchecked Sendable {
     /// for its whole length.
     private func drainStdout(budget: Int = RPCSession.readBudgetPerTurn) {
         guard !stdoutClosed, !stdoutSuspended else { return }
-        var buf = [UInt8](repeating: 0, count: 64 * 1024)
         var read = 0
         while true {
-            let n = Darwin.read(stdoutFD, &buf, buf.count)
+            let n = Darwin.read(stdoutFD, &stdoutReadBuffer, stdoutReadBuffer.count)
             if n > 0 {
-                feedStdout(Data(bytes: buf, count: n))
+                feedStdout(Data(bytes: stdoutReadBuffer, count: n))
                 read += n
                 updateStdoutPressure()
                 if stdoutSuspended || read >= budget { return }
@@ -773,6 +774,8 @@ final class RPCSession: @unchecked Sendable {
     }
 
     private func cancelStdoutSource() {
+        // Closed sessions may remain retained for late consumers; their read scratch must not.
+        stdoutReadBuffer.removeAll(keepingCapacity: false)
         if stdoutSuspended {
             stdoutSuspended = false
             stdoutSource?.resume()

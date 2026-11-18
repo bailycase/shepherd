@@ -256,6 +256,12 @@ final class ShepherdViewModel {
         didSet { sidebarDefaults.set(fleetCornerMinimized, forKey: Self.fleetCornerMinimizedKey) }
     }
     static let fleetCornerMinimizedKey = "shepherd.sidebar.fleetCornerMinimized"
+    /// Failed threads with no Mac to run on that the person deleted from the sidebar (`SidebarFleet.dismissed`). Hidden on this Mac only,
+    /// never synced.
+    var dismissedDispatches: Set<UUID> = [] {
+        didSet { sidebarDefaults.set(dismissedDispatches.map(\.uuidString).sorted(), forKey: Self.dismissedDispatchesKey) }
+    }
+    static let dismissedDispatchesKey = "shepherd.sidebar.dismissedDispatches"
     static let designJumpRecentsKey = "shepherd.designs.jumpRecents"
     var collapsedActivitySections: Set<SidebarActivitySection> = [] {
         didSet { sidebarDefaults.set(collapsedActivitySections.map(\.rawValue).sorted(), forKey: Self.collapsedActivitySectionsKey) }
@@ -434,9 +440,6 @@ final class ShepherdViewModel {
         }
         set { spacePickerTarget = newValue.map { .host($0) } }
     }
-    /// Pre-selection for the New Agent sheet (a remote space header's `+`);
-    /// consumed by the sheet's onAppear.
-    var newAgentPreselect: (hostID: UUID, spaceID: SpaceID)?
     /// Each remote automation's runs as its host last sent them, oldest first (read for the sheet).
     var remoteAutomationRuns: [AutomationKey: [AutomationRun]] = [:]
     /// Remote automation changes on their way, so their controls wait.
@@ -466,12 +469,6 @@ final class ShepherdViewModel {
     /// would see no change. Ephemeral.
     var sidebarRevealRequest = 0
 
-    /// A remote space header's `+`: the New Agent sheet opens pointed at
-    /// that host and space.
-    func showNewAgentSheetForRemote(hostID: UUID, spaceID: SpaceID) {
-        newAgentPreselect = (hostID, spaceID)
-        showNewAgentSheet = true
-    }
     /// Space pending removal confirmation (alert in RootView) — removal
     /// kills the space's agents. The user's own removal skips it once "Don't ask again" was
     /// checked (`requestSpaceDelete`); another process's request always confirms.
@@ -517,7 +514,6 @@ final class ShepherdViewModel {
             }
         }
     }
-    var showNewAgentSheet = false
     /// Whether the in-window settings surface is visible.
     /// The workspace column's size and window, kept current without redrawing anything.
     @ObservationIgnored let workspaceColumn = LiveResizeColumn()
@@ -580,6 +576,8 @@ final class ShepherdViewModel {
     var showCommandPalette = false
     /// An image open full size (ThreadImageOpen); nil when none is.
     var imageViewer: ImageViewerState?
+    /// A file an agent edited, open over the window (OutsideFileE); nil when none is.
+    var fileViewer: FileViewerState?
     /// Stable identity in the window environment, independent of shell geometry.
     let diagramPresentation = SHDiagramPresentation()
     /// A Mermaid diagram open full screen (its source); nil when none is.
@@ -734,6 +732,7 @@ final class ShepherdViewModel {
         sidebarHidden = sidebarDefaults.bool(forKey: "shepherd.sidebarHidden")
         collapsedProjects = Set(sidebarDefaults.stringArray(forKey: Self.collapsedProjectsKey) ?? [])
         fleetCornerMinimized = sidebarDefaults.bool(forKey: Self.fleetCornerMinimizedKey)
+        dismissedDispatches = Set((sidebarDefaults.stringArray(forKey: Self.dismissedDispatchesKey) ?? []).compactMap(UUID.init(uuidString:)))
         if let data = sidebarDefaults.data(forKey: Self.designJumpRecentsKey),
            let recents = try? JSONDecoder().decode(DesignJumpRecents.self, from: data) {
             designJumpRecents = recents

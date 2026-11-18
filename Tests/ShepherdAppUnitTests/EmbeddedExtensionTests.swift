@@ -18,12 +18,21 @@ struct EmbeddedExtensionTests {
         let files = (try? FileManager.default.contentsOfDirectory(atPath: extensionsDirectory.path)) ?? []
         return files.filter { $0.hasSuffix(".ts") || $0.hasSuffix(".mjs") }.sorted()
             + ["design-skill/SKILL.md", "design-skill/format.md"]
+            + PanesExtension.skillFiles.map { "shepherd-skill/\($0.source)" }
     }
 
     @Test(arguments: canonical)
     func theBundledCopyIsByteIdenticalToTheRepositorysFile(name: String) throws {
         let repository = try Data(contentsOf: Self.extensionsDirectory.appendingPathComponent(name))
         #expect(EmbeddedExtensions.data(name) == repository, "the bundle's Extensions/\(name) is not the repository's")
+    }
+
+    /// A file added to the built-in skill's folder is installed too, and its entry lands as SKILL.md.
+    @Test func theShepherdSkillInstallsEveryFileOfItsFolder() throws {
+        let folder = Self.extensionsDirectory.appendingPathComponent("shepherd-skill")
+        let files = try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
+        #expect(PanesExtension.skillFiles.map(\.source).sorted() == files)
+        #expect(PanesExtension.skillFiles.filter { $0.installed == "SKILL.md" }.map(\.source) == ["shepherd.md"])
     }
 
     @Test func installingWritesTheFileOnceAndRewritesItWhenItDiffers() throws {

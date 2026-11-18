@@ -60,7 +60,9 @@ public enum DesignImport {
         }
     }
 
-    public static let maxFiles = 512
+    /// A sanity bound, not a budget: `maxProjectBytes` is the real limit. It keeps an imported folder or git tree
+    /// from turning into an unbounded walk.
+    public static let maxFiles = 10_000
     public static let maxFileBytes = 16 * 1024 * 1024
     /// What an export reads of a project's other files, in all. An import takes up to
     /// `maxProjectBytes`.

@@ -138,6 +138,33 @@ struct RemoteDeckTests {
             }
         }
 
+        /// Runs the window until a spring has no more to do and a stretch of passes finds nothing to lay out.
+        func holdStill() async throws {
+            var quiet = 0
+            try await eventuallyOnMain("the window to hold still", timeout: .seconds(30)) {
+                ListPerf.settle(window)
+                let counts = ListPerf.counting { ListPerf.settle(window) }
+                quiet = counts["remoteDeck.layout", default: 0] + counts["remoteDeck.hiddenLayout", default: 0] == 0 ? quiet + 1 : 0
+                return quiet >= 30
+            }
+        }
+
+        /// The probe counts of running the window for `span`.
+        func counts(running span: Duration) async throws -> [String: Int] {
+            let end = ContinuousClock.now + span
+            SHRenderProbe.start()
+            do {
+                try await eventuallyOnMain("the window to run for \(span)", timeout: .seconds(30)) {
+                    ListPerf.settle(window)
+                    return ContinuousClock.now >= end
+                }
+            } catch {
+                SHRenderProbe.stop()
+                throw error
+            }
+            return SHRenderProbe.stop()
+        }
+
         /// Shows thread `index` and counts everything its draw builds, until the window is quiet.
         @discardableResult
         func show(_ index: Int) async throws -> [String: Int] {
@@ -208,6 +235,41 @@ struct RemoteDeckTests {
             #expect(rig.transcript === (index == 0 ? scrollA : scrollB), "switch \(step) to \(name) shows the thread it showed before")
         }
         #expect(abs(clip.bounds.origin.y - place) < 1, "A keeps the reader's place: \(clip.bounds.origin.y) from \(place)")
+    }
+
+    // MARK: Switching without springs
+
+    /// How long the window runs after a switch's frame, longer than any of the springs a switch could set off.
+    private static let afterwards = Duration.milliseconds(700)
+
+    /// A switch between two mounted remote threads is a visibility flip, as a local one is
+    /// (`MountedSwitchTests`): a spring left running in either page (the composer's ring fading with
+    /// focus) lays that page out again on every frame for a third of a second, whoever sees it.
+    @Test func aRemoteSwitchLeavesNeitherLayoutRunningASpringAfterItsFrame() async throws {
+        let rig = try await Rig()
+        defer { rig.close() }
+        _ = try await rig.firstVisit(0)
+        _ = try await rig.firstVisit(1)
+        _ = try await rig.show(0)
+        try await rig.holdStill()
+
+        for round in 0..<4 {
+            let index = round.isMultiple(of: 2) ? 1 : 0
+            let frame = ListPerf.counting {
+                rig.select(index)
+                ListPerf.settle(rig.window)
+            }
+            let after = try await rig.counts(running: Self.afterwards)
+
+            // The switch's own frame: the two pages, one pass over each host.
+            #expect(frame["layout.remoteLayout", default: 0] <= 2, "round \(round): \(frame)")
+            #expect(frame["thread.view", default: 0] <= 2, "round \(round): \(frame)")
+            #expect(frame["remoteDeck.hiddenLayout", default: 0] <= 2, "round \(round): \(frame)")
+            // And then nothing: no host is laid out again, and the composer's claim takes one more body.
+            #expect(after["remoteDeck.hiddenLayout", default: 0] == 0, "round \(round), after the frame: \(after)")
+            #expect(after["remoteDeck.layout", default: 0] <= 2, "round \(round), after the frame: \(after)")
+            #expect(after["composer.body", default: 0] <= 1, "round \(round), after the frame: \(after)")
+        }
     }
 
     @Test func aRemoteSwitchKeepsTheThreadAndItsDraftMountedThroughAMaximizedPanel() async throws {

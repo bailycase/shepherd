@@ -299,7 +299,7 @@ extension ShepherdViewModel {
     }
 
     func markAllSidebarDoneSeen() {
-        for row in sidebarLists.done {
+        for row in sidebarLists.done where row.id.dispatchID == nil {
             if let completion = row.completion { markSidebarSeen(row.id, completion) }
         }
     }

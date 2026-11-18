@@ -772,10 +772,10 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     const busy = await Promise.all(Array.from({ length: 4 }, (_, i) => h.call("start", { task: `SHELL:sleep 30 >/dev/null 2>&1 & echo $! > '${dir}/busy-${i}'; wait`, role: "worker" })));
     // Each child writes its own pid file; they start in parallel, so wait for all four, not just the last.
     await until(() => [0, 1, 2, 3].every((i) => fs.existsSync(path.join(dir, `busy-${i}`))));
-    await assert.rejects(h.call("start", { task: "over capacity" }), /Four children/);
-    await assert.rejects(fleet.runtime.send(ask.id, "cap must reject", "steer"), /Four children are already active; wait or cancel first/);
+    await assert.rejects(h.call("start", { task: "over capacity" }), /Four helpers are already running\. Wait for one to finish or cancel one \(shepherd_child_cancel\), then try again\./);
+    await assert.rejects(fleet.runtime.send(ask.id, "cap must reject", "steer"), /Four helpers are already running\./);
     fs.writeFileSync(path.join(askDir, "control", "steer-requests", "cap.json"), JSON.stringify({ message: "cap must reject" }));
-    await until(() => askStatus().controlRequestID === "cap" && askStatus().controlNotice === "control failed: Four children are already active; wait or cancel first");
+    await until(() => askStatus().controlRequestID === "cap" && askStatus().controlNotice === "control failed: Four helpers are already running. Wait for one to finish or cancel one (shepherd_child_cancel), then try again.");
     // Card Stop goes through the same channel and waits for exit.
     assert.deepEqual(await childCommand({ runID: busy[0].id, action: "cancel" }), { type: "childCommandResult", id: controlSequence });
     assert.equal((await h.call("result", { id: busy[0].id })).state, "stopped");

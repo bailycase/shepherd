@@ -114,6 +114,7 @@ struct Composer: View, Equatable {
     @State private var dismissal = ComposerMenuDismissal()
     /// Owned here, not by the thread: claiming the keyboard redraws the composer alone.
     @State private var composing = false
+    @State private var claimed = ClaimedLayout()
     /// "Up next": what the stack shows of the store's queue, and its own view state.
     @State private var ownQueueStack = QueueStackState()
     private var queueStack: QueueStackState { queueState ?? ownQueueStack }
@@ -143,10 +144,17 @@ struct Composer: View, Equatable {
     }
 
     /// When the field claims the keyboard: the thread taking it, or a question giving the card
-    /// back.
+    /// back. `active` is in it so that a claim made as the layout comes on screen or goes off it
+    /// is told from one made on screen.
     private struct FieldClaim: Equatable {
+        var active: Bool
         var focused: Bool
         var question: Bool
+    }
+
+    /// Whether the layout was on screen at the last claim.
+    private final class ClaimedLayout {
+        var active: Bool?
     }
 
     /// How long pi may keep the thread waiting before the composer says it is starting: `delay`
@@ -547,14 +555,18 @@ struct Composer: View, Equatable {
         }
         // Let any deferred AppKit focus release finish before claiming the field (again once a
         // question gives the card back).
-        .task(id: FieldClaim(focused: active && isFocused, question: questionKey != nil)) {
-            composing = false
+        .task(id: FieldClaim(active: active, focused: active && isFocused, question: questionKey != nil)) {
+            // The layout coming on screen or going off it is a flip: the card's ring follows at once, as the
+            // toolbar does, and a spring it left running would lay the whole layout out again on every frame.
+            let flip = claimed.active != active
+            claimed.active = active
+            claim(false, flip: flip)
             guard active && isFocused, questionKey == nil, menu == nil else { return }
             await Task.yield()
             // A chip can focus its pane and open a menu in the same click. The menu already
             // claimed its search field; a deferred pane claim must not take it back.
             guard !Task.isCancelled, menu == nil else { return }
-            composing = true
+            claim(true, flip: flip)
         }
         // A normal start is over before the delay: only a slow pi is ever said to be starting.
         .task(id: StartingWait(awaiting: active && store.awaitingPi, blank: store.session == nil)) {
@@ -755,6 +767,13 @@ struct Composer: View, Equatable {
         let all = input.attachments.items
         presentImages(ImageViewerState(images: all.map(ViewerImage.init), index: all.firstIndex { $0.id == attachment.id } ?? 0,
                                            origin: "Waiting to send"))
+    }
+
+    private func claim(_ value: Bool, flip: Bool) {
+        guard flip else { composing = value; return }
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) { composing = value }
     }
 
     private var card: some View {

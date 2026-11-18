@@ -65,7 +65,10 @@ struct FleetScreen: View {
                         SHSegmentedPicker("Fleet view", selection: $tab, options: [(.macs, "Macs"), (.check, page.check.tabTitle)])
                     }
                     if tab == .check, serves {
-                        FleetCheckList(check: page.check, capitals: navigator.hingeClosed == nil)
+                        FleetCheckList(check: page.check, capitals: navigator.hingeClosed == nil,
+                                       updates: fleet.canUpdate(store.hosts) ? FleetCheckList.Updates(
+                                           start: { mac, when in Task { await fleet.update(mac, .start(when: when), store.hosts) } },
+                                           cancel: { mac in Task { await fleet.update(mac, .cancel, store.hosts) } }) : nil)
                     } else {
                         Macs(rows: rows, wide: wide, closed: navigator.hingeClosed == true, open: navigator.hingeClosed == false, actions: actions) { weight, id in
                             fleet.choose(weight, for: id, store.hosts)
@@ -74,7 +77,7 @@ struct FleetScreen: View {
                     if tab == .check, serves {
                         EmptyView()
                     } else if serves {
-                        FleetSectionLabel(title: wide ? "Dispatches today" : "Dispatches", capitals: navigator.hingeClosed == nil)
+                        FleetSectionLabel(title: wide ? "Recent work today" : "Recent work", capitals: navigator.hingeClosed == nil)
                             .padding(.top, wide ? SH.Space.s : 0)
                         FleetDispatchesCard()
                     } else {

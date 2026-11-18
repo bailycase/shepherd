@@ -47,15 +47,17 @@ extension SessionServer {
     public func serveThreads(_ hosting: ThreadHosting) {
         onRemoteCreationOptions = { [weak self] spaceID, cwd, fetchFirst, completion in
             Task { @MainActor in
-                guard let self, let space = self.state.spaces.first(where: { $0.id == spaceID }) else {
+                // An empty space is No space: the defaults alone, as no repository has a base.
+                let space = self?.state.spaces.first(where: { $0.id == spaceID })
+                guard self != nil, space != nil || spaceID.rawValue.isEmpty else {
                     return completion(.failure(RemoteCreateAgentError("Space no longer exists")))
                 }
                 let defaults = hosting.defaults()
                 let fetch = fetchFirst ?? defaults.worktreeFetchBeforeCreate
                 let resolution = await Task.detached {
-                    cwd == nil ? GitWorktree.BaseResolution(startPoint: nil, display: "", note: "")
-                        : GitWorktree.resolveBase(repo: cwd ?? space.path, mode: defaults.worktreeBaseMode,
-                                                  fetchFirst: fetch, projectBase: space.worktreeBase)
+                    guard let space, let cwd else { return GitWorktree.BaseResolution(startPoint: nil, display: "", note: "") }
+                    return GitWorktree.resolveBase(repo: cwd, mode: defaults.worktreeBaseMode,
+                                                   fetchFirst: fetch, projectBase: space.worktreeBase)
                 }.value
                 completion(.success(.init(base: resolution.display, note: resolution.note, fetchFirst: fetch,
                                           model: defaults.model, thinking: defaults.thinking, serviceTier: defaults.serviceTier)))
@@ -212,6 +214,7 @@ extension SessionServer {
         if let moved = request.moved { return try await adoptMovedThread(request, moved, hosting: hosting) }
         let defaults = hosting.defaults()
         var spaceID = request.spaceID, cwd = request.cwd
+        var makeCheckout: (@Sendable () async throws -> String)?
         if request.standalone, let agentID = request.agentID {
             (spaceID, cwd) = try await standaloneThreadFolder(for: agentID)
         }
@@ -239,28 +242,62 @@ extension SessionServer {
         } else if let branch = request.worktreeBranch {
             let repo = config.workingDirectory
             let fetchFirst = request.worktreeFetchFirst ?? defaults.worktreeFetchBeforeCreate
-            let chosen = request.worktreeBase?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let (path, base) = try await Task.detached {
+            let trimmed = request.worktreeBase?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let chosen = trimmed?.isEmpty == false ? trimmed : nil
+            let exists = request.worktreeBranchExists
+            // An existing remote branch ("origin/x") is checked out as a local x tracking it (`addExisting`).
+            let local = exists && branch.hasPrefix("origin/") ? String(branch.dropFirst("origin/".count)) : branch
+            let path = GitWorktree.destination(repo: repo, branch: local)
+            try await Task.detached {
                 guard try GitWorktree.primaryCheckout(at: repo) == GitWorktree.primaryCheckout(at: space.path) else {
                     throw RemoteCreateAgentError("Choose a directory in the selected space's repository")
                 }
-                if let chosen, !chosen.isEmpty { return (try GitWorktree.add(repo: repo, branch: branch, from: chosen), chosen) }
-                let resolution = GitWorktree.resolveBase(repo: repo, mode: defaults.worktreeBaseMode, fetchFirst: fetchFirst,
-                                                         projectBase: space.worktreeBase)
-                return (try GitWorktree.add(repo: repo, branch: branch, from: resolution.startPoint), resolution.display)
+                guard !FileManager.default.fileExists(atPath: path) else { throw GitWorktree.Failure(message: "\(path) already exists") }
             }.value
+            // Makes the checkout and returns its base as shown. The fetch and git worktree add take seconds in a real
+            // repository, so this runs once the thread shows.
+            makeCheckout = {
+                try await Task.detached {
+                    let start: (point: String?, display: String)
+                    if let chosen {
+                        GitWorktree.fetchPicked(repo: repo, base: chosen, fetchFirst: fetchFirst)
+                        start = (chosen, chosen)
+                    } else {
+                        let resolution = GitWorktree.resolveBase(repo: repo, mode: defaults.worktreeBaseMode, fetchFirst: fetchFirst,
+                                                                 projectBase: space.worktreeBase)
+                        start = (resolution.startPoint, resolution.display)
+                    }
+                    if exists { _ = try GitWorktree.addExisting(repo: repo, branch: branch) }
+                    else { _ = try GitWorktree.add(repo: repo, branch: branch, from: start.point) }
+                    return start.display
+                }.value
+            }
             config.workingDirectory = path
-            config.worktreeBranch = branch
-            config.worktreeBase = base
+            config.worktreeBranch = local
+            config.worktreeBase = chosen
             config.worktreePath = path
         }
         config.dispatchedFrom = request.dispatchedFrom
-        // A thread Fleet started for work in a folder of the repository starts in that folder of its fresh checkout.
+        // A thread Fleet started for work in a folder of the repository starts in that folder of its fresh checkout,
+        // so its checkout is made before the thread is.
         if let subdirectory = request.subdirectory, config.worktreePath != nil {
+            if let made = makeCheckout {
+                config.worktreeBase = try await made()
+                makeCheckout = nil
+            }
             let folder = URL(fileURLWithPath: config.workingDirectory).appendingPathComponent(subdirectory).path
             if Self.folderExists(folder) { config.workingDirectory = folder }
         }
-        return try await startNewAgent(config, launch: hosting.launch(), defaultServiceTier: defaults.serviceTier, mcp: hosting.mcp)
+        // Otherwise the thread shows at once, with its opening prompt, and its checkout is made while it does.
+        let picked = config.worktreeBase
+        let prepare = makeCheckout.map { made in
+            { @MainActor (id: AgentID) async throws in
+                let base = try await made()
+                if picked == nil { try await self.setAgentWorktree(id, base: base) }
+            }
+        }
+        return try await startNewAgent(config, launch: hosting.launch(), defaultServiceTier: defaults.serviceTier, mcp: hosting.mcp,
+                                       prepare: prepare)
     }
 
     /// A client's action on one of its threads.

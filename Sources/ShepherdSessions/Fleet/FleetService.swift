@@ -60,6 +60,13 @@ final class FleetService: @unchecked Sendable {
     var onPeerCall: ((Int32, Int, RemoteRequest) -> Void)?
     /// Server queue: close `connection`, a Mac's link that stopped answering.
     var onCloseConnection: ((Int32, String) -> Void)?
+    /// Server queue: serve `request` of the Mac `peer`, which asked this one to update itself, through the host's updater
+    /// (`SessionServer.serveHostUpdate`). Returns why nothing was started, if so; `reply` is called once, nil when the updater didn't answer in time.
+    var onHostUpdate: ((RemoteHostUpdateRequest, UUID, @escaping () -> Bool, @escaping (HostUpdateStatus?) -> Void) -> (code: String, message: String)?)?
+    /// This host's own updater, for an update of this Mac that a client asked for (`FleetAction.update` with this Mac's id); nil when it has none.
+    var localHostUpdate: (@Sendable (RemoteHostUpdateRequest) async -> HostUpdateStatus?)?
+    /// What this host's app is called ("Shepherd Nightly"): the words of the Update panel.
+    var appName: String?
 
     /// How this host opens a connection to a route of a peer and says hello with the token it presents. Tests replace it to refuse a
     /// route, or to send one somewhere else.
@@ -89,6 +96,8 @@ final class FleetService: @unchecked Sendable {
     let dispatch: FleetDispatch
     /// The content index of this Mac's repositories and the manifests the Macs hold of each other (`fleet.snapshot.v1`).
     let index: FleetIndexService
+    /// The updates of Macs this host carries out (`fleet.update.v1`).
+    let updates: FleetUpdates
     private var devices: FleetDevices
     private var join: (window: FleetJoinWindow, owner: Int32)? {
         // However the window ends (used, cancelled, expired, locked out, its screen closed), its record in iCloud goes with it.
@@ -193,6 +202,7 @@ final class FleetService: @unchecked Sendable {
         let pressure = pressure ?? FleetPressure(queue: queue, clock: clock)
         self.pressure = pressure
         dispatch = FleetDispatch(queue: queue, directory: directory, hostID: identity.hostID, pressure: pressure, clock: clock)
+        updates = FleetUpdates(queue: queue, clock: clock)
         index = FleetIndexService(queue: queue, directory: directory.appendingPathComponent("index", isDirectory: true), clock: clock)
         syncEngine = try FleetSync(queue: queue, directory: directory.appendingPathComponent("store", isDirectory: true),
                              mac: identity.hostID, name: { name }, clock: clock)
@@ -212,6 +222,13 @@ final class FleetService: @unchecked Sendable {
             return link.active
         }
         dispatch.onChange = { [weak self] in self?.changed() }
+        updates.onChange = { [weak self] in self?.changed() }
+        updates.onUpdated = { [weak self] hostID in Task { await self?.check(hostID) } }
+        updates.name = { [weak self] hostID in
+            guard let self else { return "that Mac" }
+            return hostID == self.identity.hostID ? "this Mac" : self.peers.record(hostID)?.name ?? "that Mac"
+        }
+        updates.reach = { [weak self] in self?.updateReach($0) ?? .notInFleet }
         // A thread that was there to fix something on a Mac has ended: that Mac looks at itself again.
         dispatch.onFixEnded = { [weak self] hostID in Task { await self?.check(hostID) } }
     }
@@ -267,6 +284,7 @@ final class FleetService: @unchecked Sendable {
         pressure.stop()
         syncEngine.stop()
         dispatch.stop()
+        updates.stop()
         discovery?.stop()
     }
 
@@ -497,6 +515,17 @@ final class FleetService: @unchecked Sendable {
                 if let report = await pressure.checkNow() { reply(.fleetCheckReport(id: id, report: report)) }
                 else { reply(Self.refusal(id, "unsupported", "This Mac doesn't make a Check report.")) }
             }
+        case .hostUpdate(let id, let request):
+            // A Mac of the fleet asks this one to update itself, over the connection either opened. The host's updater is the whole answer.
+            guard caller.access == .member, let from = caller.peerHostID else {
+                return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet asks another to update."))
+            }
+            guard let serve = onHostUpdate else { return reply(Self.refusal(id, "unsupported", "Remote updates are unavailable.")) }
+            let alive: () -> Bool = { [weak self] in self.map { !$0.stopped && $0.peers.record(from).map { !$0.revoked } == true } ?? false }
+            let refusal = serve(request, from, alive) { status in
+                reply(status.map { .hostUpdate(id: id, status: $0) } ?? Self.refusal(id, "timeout", "Update handler timed out."))
+            }
+            if let refusal { reply(Self.refusal(id, refusal.code, refusal.message)) }
         case .fleetPressureNow(let id):
             guard caller.access == .member else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only a Mac in the fleet asks for a sample.")) }
             Task { [pressure] in
@@ -597,6 +626,11 @@ final class FleetService: @unchecked Sendable {
             // A client that looks at the Fleet page may ask the host to sample while it does; it changes nothing else.
             if !caller.isLocal, caller.authenticated, caller.access.mayViewFleet, case .watching(let on) = action {
                 pressure.watch(on, connection: caller.connection)
+                return reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView(withMoves: caller.readsMoves))))
+            }
+            // So may it ask a Mac of the fleet to update itself: an action on that Mac, like starting a thread there.
+            if !caller.isLocal, caller.authenticated, caller.access.mayViewFleet, case .update(let hostID, let command) = action {
+                if let refusal = update(hostID, command) { return reply(Self.refusal(id, refusal.code, refusal.message)) }
                 return reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView(withMoves: caller.readsMoves))))
             }
             guard caller.isLocal else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only this Mac's app changes its fleet.")) }
@@ -1011,7 +1045,7 @@ final class FleetService: @unchecked Sendable {
                 guard case .fleetDevices = answer else { return reply(answer) }
                 self?.queue.async {
                     guard let self else { return }
-                    reply(.fleetResult(id: id, result: FleetResult(snapshot: self.snapshot(), appToken: token)))
+                    reply(.fleetResult(id: id, result: FleetResult(snapshot: self.snapshot(), appToken: token, appDevice: app.deviceID)))
                 }
             }
         case .sendThread(let thread):
@@ -1041,13 +1075,39 @@ final class FleetService: @unchecked Sendable {
                 case .failure(let refusal): reply(Self.refusal(id, refusal.code, refusal.message))
                 }
             }
+        case .update(let hostID, let command):
+            if let refusal = update(hostID, command) { return reply(Self.refusal(id, refusal.code, refusal.message)) }
+            reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot())))
         case .cancelDispatch(let dispatchID):
             guard dispatch.record(dispatchID) != nil else {
-                return reply(Self.refusal(id, FleetDispatchProtocol.Code.unknownDispatch, "This Mac has no such dispatch."))
+                return reply(Self.refusal(id, FleetDispatchProtocol.Code.unknownDispatch, "This Mac has no such thread."))
             }
             dispatch.cancel(dispatchID)
             reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot(), dispatch: dispatch.record(dispatchID)?.summary)))
         }
+    }
+
+    /// Starts or stops the update of the Mac `hostID` (this one included). Returns why not, if so.
+    private func update(_ hostID: UUID, _ command: FleetUpdateCommand) -> (code: String, message: String)? {
+        switch command {
+        case .start(let when): return updates.start(hostID, when: when)
+        case .cancel: updates.cancel(hostID); return nil
+        }
+    }
+
+    /// How the update of `hostID` reaches that Mac now: this host's own updater for this Mac, else the link to it.
+    private func updateReach(_ hostID: UUID) -> FleetUpdates.Reach {
+        if hostID == identity.hostID {
+            guard let local = localHostUpdate else { return .notInFleet }
+            return .ready { request in
+                guard let status = await local(request) else { throw RemoteHostClientError.timeout }
+                return status
+            }
+        }
+        guard peers.record(hostID).map({ !$0.revoked }) == true else { return .notInFleet }
+        guard let link = links[hostID], link.phase == .connected, let client = link.active else { return .offline }
+        guard (dispatch.capabilityOverride?(hostID) ?? client.capabilities).contains(RemoteProtocol.fleetUpdateCapability) else { return .old }
+        return .ready { request in try await client.fleetHostUpdate(request) }
     }
 
     private static func failure(_ id: Int, _ error: Error) -> RemoteReply {
@@ -1177,7 +1237,8 @@ final class FleetService: @unchecked Sendable {
                              advertising: discovery?.isAdvertising ?? false, peers: statuses, join: window,
                              sync: syncStatus, devices: FleetDevicesSnapshot(devices: clients, code: code),
                              macs: pressure.macs(thisMac: identity.hostID, peerIDs: statuses.map(\.hostID)),
-                             dispatches: dispatch.log(), index: index.status(), members: viewMembers(), limits: dispatch.limitStatuses())
+                             dispatches: dispatch.log(), index: index.status(), members: viewMembers(), limits: dispatch.limitStatuses(),
+                             updates: updates.statuses(), app: appName)
     }
 
     /// A thread's request to `provider` failed with `error` (server queue): when it is a rate limit or "overloaded", sign-ins are shared, so
@@ -1198,7 +1259,9 @@ final class FleetService: @unchecked Sendable {
         return FleetPeerStatus(hostID: record.hostID, name: record.name, kind: record.kind, host: link?.route?.host ?? record.addresses.first?.host,
                                port: link?.route?.port ?? record.addresses.first?.port, pairedAt: record.pairedAt, link: link?.phase ?? .offline,
                                lastSeen: link?.lastSeen, reach: reach,
-                               takesThreads: link?.phase == .connected ? dispatch.capabilities(of: record.hostID)?.contains(RemoteProtocol.fleetMoveCapability) : nil)
+                               takesThreads: link?.phase == .connected ? dispatch.capabilities(of: record.hostID)?.contains(RemoteProtocol.fleetMoveCapability) : nil,
+                               takesUpdates: link?.phase == .connected
+                                   ? (dispatch.capabilityOverride?(record.hostID) ?? link?.active?.capabilities)?.contains(RemoteProtocol.fleetUpdateCapability) : nil)
     }
 
     // MARK: - Persistence (server queue)
@@ -1565,7 +1628,7 @@ final class FleetService: @unchecked Sendable {
         case .fleetIntroduce(let id, _), .fleetRevoke(let id, _, _), .fleetSync(let id, _), .fleetPressure(let id, _), .fleetReadiness(let id, _),
              .fleetPressureNow(let id), .fleetCheck(let id, _), .fleetCheckNow(let id), .fleetRepoManifest(let id, _), .fleetSnapshotPart(let id, _, _), .fleetBlobPush(let id, _, _),
              .fleetDispatchCreate(let id, _), .fleetDispatchControl(let id, _, _), .fleetDispatchChanged(let id, _),
-             .fleetDispatchResult(let id, _, _, _), .fleetSyncDevices(let id, _), .fleetRoutes(let id, _):
+             .fleetDispatchResult(let id, _, _, _), .fleetSyncDevices(let id, _), .fleetRoutes(let id, _), .hostUpdate(let id, _):
             return id
         default:
             return nil

@@ -130,11 +130,16 @@ public struct FleetPeerStatus: Codable, Hashable, Identifiable, Sendable {
     /// Whether this Mac can take a thread that moves to it (`RemoteProtocol.fleetMoveCapability`): false only while its link is up and it
     /// lacks the capability (it runs an older Shepherd); nil while the link is down or from a host that doesn't say.
     public var takesThreads: Bool?
+    /// Whether this Mac can be asked to update itself (`RemoteProtocol.fleetUpdateCapability`): false only while its link is up and it lacks
+    /// the capability (an older Shepherd, whose person updates it there); nil while the link is down or from a host that doesn't say.
+    public var takesUpdates: Bool?
     public var id: UUID { hostID }
 
     public init(hostID: UUID, name: String, kind: FleetPeerKind = .mac, host: String? = nil, port: UInt16? = nil,
-                pairedAt: Double, link: Link, lastSeen: Double? = nil, reach: FleetPeerReach? = nil, takesThreads: Bool? = nil) {
+                pairedAt: Double, link: Link, lastSeen: Double? = nil, reach: FleetPeerReach? = nil, takesThreads: Bool? = nil,
+                takesUpdates: Bool? = nil) {
         self.takesThreads = takesThreads
+        self.takesUpdates = takesUpdates
         self.reach = reach
         self.hostID = hostID
         self.name = name
@@ -222,12 +227,18 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
     public var members: [FleetViewMember]
     /// The providers limiting the fleet's requests now (`FleetLimitStatus`), sorted by provider. Empty from a host that doesn't say.
     public var limits: [FleetLimitStatus]
+    /// The updates this host is carrying out on Macs of its fleet, or has just ended (`FleetUpdateStatus`); empty from a host that doesn't update Macs.
+    public var updates: [FleetUpdateStatus]
+    /// What the host's app is called ("Shepherd Nightly"): the words of the Update panel. Nil from a host that doesn't say.
+    public var app: String?
 
     public init(enabled: Bool = false, hostID: UUID? = nil, name: String = "", build: String? = nil, addresses: [String] = [],
                 port: UInt16? = nil, routes: [FleetReportedRoute] = [], advertising: Bool = false, peers: [FleetPeerStatus] = [], join: FleetJoinStatus? = nil,
                 sync: FleetSyncStatus? = nil, devices: FleetDevicesSnapshot? = nil, macs: [FleetMacState] = [],
                 dispatches: [FleetDispatchRecord] = [], index: FleetIndexStatus? = nil, members: [FleetViewMember] = [],
-                limits: [FleetLimitStatus] = []) {
+                limits: [FleetLimitStatus] = [], updates: [FleetUpdateStatus] = [], app: String? = nil) {
+        self.updates = updates
+        self.app = app
         self.limits = limits
         self.members = members
         self.routes = routes
@@ -247,7 +258,7 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         self.sync = sync
     }
 
-    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, routes, advertising, peers, join, macs, devices, sync, dispatches, index, members, limits }
+    private enum CodingKeys: String, CodingKey { case enabled, hostID, name, build, addresses, port, routes, advertising, peers, join, macs, devices, sync, dispatches, index, members, limits, updates, app }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -270,6 +281,8 @@ public struct FleetSnapshot: Codable, Hashable, Sendable {
         index = try c.decodeIfPresent(FleetIndexStatus.self, forKey: .index)
         members = (try? c.decodeIfPresent([FleetViewMember].self, forKey: .members)) ?? []
         limits = (try? c.decodeIfPresent([FleetLimitStatus].self, forKey: .limits)) ?? []
+        updates = (try? c.decodeIfPresent([FleetUpdateStatus].self, forKey: .updates)) ?? []
+        app = try c.decodeIfPresent(String.self, forKey: .app)
     }
 }
 
@@ -285,10 +298,11 @@ extension FleetSnapshot {
         FleetSnapshot(enabled: enabled, hostID: hostID, name: name,
                       peers: peers.map {
                           FleetPeerStatus(hostID: $0.hostID, name: $0.name, kind: $0.kind, pairedAt: $0.pairedAt, link: $0.link, lastSeen: $0.lastSeen,
-                                          takesThreads: $0.takesThreads)
+                                          takesThreads: $0.takesThreads, takesUpdates: $0.takesUpdates)
                       },
                       // A thread that is moving shows its progress wherever it is open; nothing else a Mac sent.
-                      macs: macs, dispatches: moves ? dispatches.filter { $0.kind == .move } : [], members: members, limits: limits)
+                      macs: macs, dispatches: moves ? dispatches.filter { $0.kind == .move } : [], members: members, limits: limits,
+                      updates: updates, app: app)
     }
 }
 
@@ -341,6 +355,10 @@ public enum FleetAction: Codable, Hashable, Sendable {
     /// Move a thread of this Mac to another Mac (`RemoteProtocol.fleetMoveCapability`, `FleetMoveWire.swift`). Answered with the move's
     /// record (`FleetResult.dispatch`), or refused with the reason. Cancelling it is `cancelDispatch`.
     case moveThread(FleetMoveRequest)
+    /// Update Shepherd on the Mac `hostID` (this one included), or stop that (`RemoteProtocol.fleetUpdateCapability`, `FleetUpdateWire.swift`). A
+    /// client device may ask it too (`RemoteProtocol.fleetUpdateViewCapability`): it is an action on that Mac, like starting a thread there.
+    /// Answered with the snapshot, which carries the job (`FleetSnapshot.updates`).
+    case update(hostID: UUID, FleetUpdateCommand)
 }
 
 /// The answer to `fleetRead` and `fleetAction`: the snapshot after it, plus what the action made.
@@ -363,13 +381,16 @@ public struct FleetResult: Codable, Hashable, Sendable {
     public var deviceCode: Join?
     /// The token this Mac's app was given, answering `FleetAction.enrollApp`. Over the local socket only.
     public var appToken: String?
+    /// The device that token is, with `appToken`: the app checks it is still in the fleet before it reuses the token.
+    public var appDevice: UUID?
     /// The dispatch `FleetAction.sendThread`, `retryDispatch` or `cancelDispatch` made or changed, with its task and result
     /// text left out like the log's (`FleetDispatchRecord.summary`).
     public var dispatch: FleetDispatchRecord?
 
     public init(snapshot: FleetSnapshot, join: Join? = nil, paired: FleetPeerStatus? = nil,
-                deviceCode: Join? = nil, appToken: String? = nil, dispatch: FleetDispatchRecord? = nil) {
+                deviceCode: Join? = nil, appToken: String? = nil, appDevice: UUID? = nil, dispatch: FleetDispatchRecord? = nil) {
         self.dispatch = dispatch
+        self.appDevice = appDevice
         self.deviceCode = deviceCode
         self.appToken = appToken
         self.snapshot = snapshot

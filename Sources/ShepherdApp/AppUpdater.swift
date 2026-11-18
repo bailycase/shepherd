@@ -188,6 +188,9 @@ final class AppUpdater {
     let edition: ShepherdEdition
 
     private(set) var channel: UpdateChannel
+    /// The version Sparkle found and holds, until it is installed or skipped: the sidebar footer's
+    /// gear becomes `SHUpdateButton`, which calls `checkForUpdates()` to bring it up.
+    private(set) var availableVersion: String?
     /// Shepherd moved this install off the retired nightly channel and hasn't said so yet.
     private(set) var nightlyMovedNoticePending: Bool
 
@@ -212,9 +215,15 @@ final class AppUpdater {
         }
         remoteDriver = RemoteUpdateDriver(status: HostUpdateStatus(
             version: version, build: info?["CFBundleVersion"] as? String ?? "",
-            channel: store.resolveWithoutMigrating(version: version).rawValue, phase: available ? .idle : .unsupported))
+            channel: store.resolveWithoutMigrating(version: version).rawValue, phase: available ? .idle : .unsupported),
+            delegate: ChannelDelegate.shared)
         updater = SPUUpdater(hostBundle: .main, applicationBundle: .main,
                              userDriver: remoteDriver, delegate: ChannelDelegate.shared)
+        // A paired device's check holds its own offer (`remoteDriver.status`); the button is for this Mac's.
+        ChannelDelegate.shared.didChangeAvailable = { [weak self] version in
+            guard let self, version == nil || !self.remoteDriver.remote else { return }
+            self.availableVersion = version
+        }
         if available {
             do { try updater.start(); started = true }
             catch { remoteDriver.status.phase = .unsupported; remoteDriver.status.error = error.localizedDescription }
@@ -257,6 +266,10 @@ final class AppUpdater {
 
     func remoteUpdate(_ request: RemoteHostUpdateRequest, authorized: @escaping () async -> Bool) async -> HostUpdateStatus {
         guard available, started, await authorized(), let server = gate else { return remoteDriver.status }
+        if request == .cancel {
+            remoteDriver.cancelRemote()
+            return remoteDriver.status
+        }
         if request == .status {
             var status = remoteDriver.status
             let reason = await server.blockReason()
@@ -274,12 +287,21 @@ final class AppUpdater {
         handlingRemoteRequest = true
         defer { handlingRemoteRequest = false }
         switch request {
-        case .status: break
+        case .status, .cancel: break
         case .check:
+            // A new look lets go of an offer held for idle threads (the host that held it for them may be gone).
+            if remoteDriver.status.waitingForIdle { remoteDriver.cancelRemote() }
             guard canCheck else { return remoteDriver.status }
             remoteDriver.status.channel = channel.rawValue
             remoteDriver.begin()
             updater.checkForUpdates()
+        case .installWhenIdle(let offerID, let consent):
+            // The host counts the threads and sends `install` when they have settled: this only keeps the offer until then.
+            guard consent, remoteDriver.holdForIdle(offerID) else {
+                var status = remoteDriver.status
+                if !consent || status.offerID != offerID { status.error = "Confirm the current update before installing and restarting." }
+                return status
+            }
         case .install(let offerID, let consent):
             guard consent, remoteDriver.status.phase == .available,
                   remoteDriver.status.offerID == offerID else {
@@ -384,10 +406,34 @@ struct HostUpdateGate: Sendable {
 
 /// Feed selection: every channel reads its own appcast beside Info.plist's SUFeedURL, so a
 /// Shepherd Nightly build reads Shepherd Nightly's feed even if its SUFeedURL were wrong.
-private final class ChannelDelegate: NSObject, SPUUpdaterDelegate {
+private final class ChannelDelegate: NSObject, SPUUpdaterDelegate, SPUStandardUserDriverDelegate {
     static let shared = ChannelDelegate()
     var didDownload: (@MainActor () -> Void)?
     var didFinish: (@MainActor () -> Void)?
+    /// The version a check found, or nil once there is none to install (none found, or skipped).
+    var didChangeAvailable: (@MainActor (String?) -> Void)?
+
+    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        MainActor.assumeIsolated { didChangeAvailable?(item.displayVersionString) }
+    }
+
+    func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
+        MainActor.assumeIsolated { didChangeAvailable?(nil) }
+    }
+
+    func updater(_ updater: SPUUpdater, userDidMake choice: SPUUserUpdateChoice, forUpdate updateItem: SUAppcastItem,
+                 state: SPUUserUpdateState) {
+        guard choice == .skip else { return }
+        MainActor.assumeIsolated { didChangeAvailable?(nil) }
+    }
+
+    /// Sparkle's gentle reminders: an update found in the background waits behind the footer's update
+    /// button instead of opening its window, unless the check ran as Shepherd came to the front.
+    var supportsGentleScheduledUpdateReminders: Bool { true }
+
+    func standardUserDriverShouldHandleShowingScheduledUpdate(_ update: SUAppcastItem, andInImmediateFocus immediateFocus: Bool) -> Bool {
+        immediateFocus
+    }
 
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
         MainActor.assumeIsolated { didFinish?() }

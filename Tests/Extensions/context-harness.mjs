@@ -201,7 +201,14 @@ export async function startThread(options = {}) {
     Object.assign(env, { SHEPHERD_CHILD: "1", SHEPHERD_CHILD_TOOLS: JSON.stringify(HELPER_TOOLS) });
   } else if (names.length > 0) {
     Object.assign(env, { SHEPHERD_AGENT_ID: "agent-fixture", SHEPHERD_SOCKET: socketPath, SHEPHERD_EXT_STATUS: extension("shepherd-status.ts") });
-    if (wants("panes")) env.SHEPHERD_EXT_PANES = extension("shepherd-panes.ts");
+    if (wants("panes")) {
+      env.SHEPHERD_EXT_PANES = extension("shepherd-panes.ts");
+      // The built-in skill as PanesExtension.installedSkillDirectory lays it out: shepherd.md as SKILL.md.
+      const skill = path.join(support, "shepherd-skill"), source = path.join(root, "Extensions", "shepherd-skill");
+      fs.mkdirSync(skill, { recursive: true });
+      for (const name of fs.readdirSync(source)) fs.copyFileSync(path.join(source, name), path.join(skill, name === "shepherd.md" ? "SKILL.md" : name));
+      env.SHEPHERD_SKILL_DIR = skill;
+    }
     if (wants("browser")) env.SHEPHERD_EXT_BROWSER = extension("shepherd-browser.ts");
     if (designAgent) Object.assign(env, { SHEPHERD_DESIGN_ID: "design-fixture", SHEPHERD_DESIGN_SKILL_DIR: path.join(root, "Extensions", "design-skill") });
     if (options.instructions !== false) env.SHEPHERD_INSTRUCTIONS_DIR = instructions;

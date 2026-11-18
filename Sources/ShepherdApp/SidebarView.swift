@@ -17,6 +17,7 @@ struct SidebarView: View {
     var vm: ShepherdViewModel
     /// While the window cannot be seen the sidebar rests: its changes land at once and its clocks stop.
     @Environment(\.mainWindowVisible) private var windowVisible
+    private var updater: AppUpdater { .shared }
 
     var body: some View {
         let _ = SHRenderProbe.tick("shell.sidebar")
@@ -40,11 +41,12 @@ struct SidebarView: View {
                                 setMinimized: { vm.fleetCornerMinimized = $0 }, settings: {
                                     vm.settingsSection = .fleet
                                     vm.showSettings = true
-                                })
+                                }, updateVersion: updater.availableVersion, update: { updater.checkForUpdates() })
                     .equatable()
             } else {
                 let footer = vm.sidebarFooterIdentity ?? SidebarDerivation.footer
-                SHSidebarFooter(name: footer.name, detail: footer.detail, settingsShortcut: "⌘,") { vm.showSettings = true }
+                SHSidebarFooter(name: footer.name, detail: footer.detail, settingsShortcut: "⌘,", updateVersion: updater.availableVersion,
+                                settings: { vm.showSettings = true }, update: { updater.checkForUpdates() })
             }
         }
         .environment(\.shMotionPaused, !windowVisible)
@@ -184,7 +186,7 @@ struct SentFoldAction: ViewModifier {
 
     func body(content: Content) -> some View {
         if let fold {
-            content.accessibilityAction(named: fold.open ? "Hide sent threads" : "Show sent threads") { vm.toggleRunGroup(fold.key) }
+            content.accessibilityAction(named: fold.open ? "Hide threads it started" : "Show threads it started") { vm.toggleRunGroup(fold.key) }
         } else {
             content
         }
@@ -314,20 +316,18 @@ struct SidebarRowMenu: View {
     }
 }
 
-/// A dispatch with no thread yet: what its card offers on the Fleet page (Cancel, Run on This Mac now, Send to another Mac).
+/// A thread that has no Mac to run on yet, or failed before it had one: a thread's menu as far as it exists. Delete stops one that hasn't started and
+/// removes one that failed; Try again is offered on a failed one only.
 private struct SidebarDispatchMenu: View {
     var vm: ShepherdViewModel
     let dispatch: UUID
 
     var body: some View {
-        Button("Show in Fleet") { vm.openFleet() }
-        if let card = vm.fleetPage.page.dispatchCards.first(where: { $0.id == dispatch }) {
-            let actions = card.actions.filter { if case .openOthers = $0 { false } else { $0 != .open } }
-            if !actions.isEmpty { Divider() }
-            ForEach(actions, id: \.self) { action in
-                Button(action.title) { vm.perform(action, on: card) }
-            }
+        if vm.fleetPage.sidebarFleet.record(dispatch)?.state == .failed {
+            Button("Try again") { Task { await vm.retryDispatch(dispatch) } }
+            Divider()
         }
+        Button("Delete Agent", role: .destructive) { vm.deleteDispatch(dispatch) }
     }
 }
 

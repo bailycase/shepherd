@@ -15,5 +15,7 @@ struct SubagentModelFieldTests {
         let options = SubagentModelField.sections(choices: ids, query: "GEMINI-flash", current: ids[0])[0].options
         #expect(options.map(\.id) == [ids[0]])
         #expect(options[0].isCurrent)
+        #expect(SubagentModelField.sections(choices: ids, query: "gemini flash", current: nil)[0].options.map(\.id) == [ids[0]],
+                "words typed with spaces match the hyphenated id")
     }
 }

@@ -17,6 +17,19 @@ extension AppLayout {
     static let gutterCompact: CGFloat = 16
     static let threadTop: CGFloat = 28
     static let turnSpacing: CGFloat = 28
+    /// The viewport heights the eager tail's cover is worked out at: a window drag changes the
+    /// tail a few times, not at every point of height.
+    static let eagerCoverStep: CGFloat = 200
+    /// How far past the viewport the eager tail's low height estimate must reach before the
+    /// older rows can stay lazy (`NativeRowHeight`): a quarter-window of slack for where the
+    /// estimate runs high.
+    static let eagerCoverFactor: CGFloat = 1.25
+    /// How many points of estimated height (`NativeRowHeight`) the eager tail covers in a
+    /// thread `height` tall.
+    static func eagerCoverHeight(forViewport height: CGFloat) -> Int {
+        let bucket = max(eagerCoverStep, (height / eagerCoverStep).rounded(.up) * eagerCoverStep)
+        return Int((bucket * eagerCoverFactor).rounded(.up))
+    }
     /// Between a turn's parts: thinking, prose, its activity, cards, the changes card, the footer.
     static let turnItemSpacing: CGFloat = 14
     /// Between consecutive activity lines.
@@ -93,8 +106,6 @@ extension AppLayout {
     static let queueHoldRenewal: Duration = .seconds(60)
     /// Row height of the directory picker's list (RemoteDirectoryPicker).
     static let menuRowHeight: CGFloat = 36
-    /// The New Agent sheet's model list.
-    static let modelPickerWidth: CGFloat = 380
 
     /// The thread's side gutters in a thread `width` wide: the full gutter while the widest
     /// column fits between two of them, else the compact one, so a narrow thread keeps its

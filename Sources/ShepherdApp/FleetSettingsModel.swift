@@ -293,10 +293,10 @@ final class FleetSettingsModel {
     }
 
     /// A token for this Mac's app to reach the other Macs of the fleet with, made by the host; nil while it is away.
-    func enrollApp(name: String) async -> String? {
+    func enrollApp(name: String) async -> RemoteHostStore.AppEnrollment? {
         guard let client = try? host(), let result = try? await client.fleetAction(.enrollApp(name: name)) else { return nil }
         apply(result)
-        return result.appToken
+        return result.appToken.map { RemoteHostStore.AppEnrollment(deviceID: result.appDevice, token: $0) }
     }
 
     // MARK: Adding: another Mac's code is entered here
@@ -401,6 +401,21 @@ final class FleetSettingsModel {
         } catch {
             problem = Self.words(error)
             return false
+        }
+    }
+
+    /// Update Shepherd on the Mac `hostID` (this one included), or stop that: the host carries it out and keeps the job, which the page reads from
+    /// the snapshot. Nil when it was taken, else the host's reason in words.
+    func updateMac(_ hostID: UUID, _ command: FleetUpdateCommand) async -> String? {
+        do {
+            guard let client = try host() else { return Self.words(RemoteHostClientError.disconnected) }
+            guard client.capabilities.contains(RemoteProtocol.fleetUpdateViewCapability) else {
+                return "This Mac's background service can't update Shepherd on a Mac yet. Quit and open Shepherd again."
+            }
+            apply(try await client.fleetAction(.update(hostID: hostID, command)))
+            return nil
+        } catch {
+            return Self.words(error)
         }
     }
 

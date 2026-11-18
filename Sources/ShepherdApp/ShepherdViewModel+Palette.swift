@@ -31,9 +31,6 @@ extension ShepherdViewModel {
             items.append(PaletteItem(id: "action.removeSpace", kind: .action("removeSpace"), section: .commands,
                                      title: "Remove space…", subtitle: space.name, icon: "trash"))
         }
-        items.append(PaletteItem(id: "action.newAgentOptions", kind: .action("newAgentOptions"), section: .commands,
-                                 title: "New agent with options…", shortcut: keys.display(.newAgentOptions),
-                                 icon: "slider.horizontal.3"))
         items.append(PaletteItem(id: "action.newSpace", kind: .action("newSpace"), section: .commands,
                                  title: "New space…", shortcut: keys.display(.newSpace), icon: "square.stack"))
         for connection in remoteHosts.connections where connection.phase == .connected {
@@ -361,7 +358,6 @@ extension ShepherdViewModel {
             case "newAgent": openNewThread()
             case "renameSpace": spaceRenameTarget = newThread.place?.space
             case "removeSpace": requestSpaceDelete(newThread.place?.space)
-            case "newAgentOptions": showNewAgentSheet = true
             case "newSpace": addSpaceFromPanel()
             case "rename": renameSelectedAgent()
             case "togglePin": if let target = pinTarget { togglePin(target) }

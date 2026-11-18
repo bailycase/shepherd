@@ -196,9 +196,6 @@ final class RemoteHostStore {
         var supportsInstructions: Bool { client?.capabilities.contains(RemoteProtocol.instructionsCapability) == true }
         /// The host serves Settings ▸ Skills (`skills.v1`).
         var supportsSkills: Bool { client?.capabilities.contains(RemoteProtocol.skillsCapability) == true }
-        var supportsHostUpdate: Bool { client?.capabilities.contains(RemoteProtocol.hostUpdateCapability) == true }
-        /// The client for update requests, while connected and capable.
-        var updateClient: RemoteHostClient? { supportsHostUpdate ? client : nil }
         var supportsProjects: Bool {
             client?.capabilities.contains(RemoteProtocol.projectsV2Capability) == true
                 || client?.capabilities.contains(RemoteProtocol.projectsCapability) == true
@@ -234,6 +231,8 @@ final class RemoteHostStore {
         var supportsChangesWrites: Bool { client?.capabilities.contains(RemoteProtocol.changesWritesCapability) == true }
         /// The host takes a new thread's images with its opening prompt.
         var supportsCreateAgentImages: Bool { client?.capabilities.contains(RemoteProtocol.createAgentImagesCapability) == true }
+        /// The host starts a thread with no space.
+        var supportsNoSpace: Bool { client?.capabilities.contains(RemoteProtocol.createAgentNoSpaceCapability) == true }
         var supportsWorktreeCreation: Bool {
             client?.capabilities.isSuperset(of: [RemoteProtocol.creationOptionsCapability, RemoteProtocol.worktreeActionsCapability]) == true
         }
@@ -292,6 +291,19 @@ final class RemoteHostStore {
     var fleetMembers: Set<UUID> {
         get { Set((defaults.stringArray(forKey: Self.fleetMembersKey) ?? []).compactMap(UUID.init(uuidString:))) }
         set { defaults.set(newValue.map(\.uuidString).sorted(), forKey: Self.fleetMembersKey) }
+    }
+
+    /// The device the host made this app (`FleetAction.enrollApp`) and its token.
+    struct AppEnrollment: Codable, Equatable {
+        /// Nil from a host older than `FleetResult.appDevice`: such an enrollment is used but not saved.
+        var deviceID: UUID?
+        var token: String
+    }
+    static let appEnrollmentKey = "shepherd.remote.hosts.appEnrollment"
+    /// Saved, so a Mac out of reach is retried on the same token, after a relaunch too, rather than the app enrolling as a new device each try.
+    var appEnrollment: AppEnrollment? {
+        get { defaults.data(forKey: Self.appEnrollmentKey).flatMap { try? JSONDecoder().decode(AppEnrollment.self, from: $0) } }
+        set { defaults.set(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: Self.appEnrollmentKey) }
     }
 
     @ObservationIgnored var onProjectionChanged: (() -> Void)?
@@ -1221,6 +1233,12 @@ final class RemotePaneSession {
 }
 
 extension RemoteHostStore.Phase {
+    /// Why the connection failed, while it has.
+    var failure: RemoteHostFailure? {
+        if case .failed(let failure) = self { return failure }
+        return nil
+    }
+
     enum Kind: Hashable { case disconnected, connecting, connected, failed(RemoteHostFailure.Kind) }
 
     /// The phase with its failure's kind, not its detail: what the workspace's placeholders

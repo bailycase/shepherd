@@ -358,18 +358,21 @@ public enum NativeModelChoices {
         return String(model[..<slash])
     }
 
-    /// One section per provider in the host's order, the models matching `query` (a
-    /// case-insensitive part of the id), each with its line from `thinking` (`thinkingLines`).
+    /// One section per provider in the host's order, the models matching `query` (each word
+    /// typed appears in the id, ignoring case), each with its line from `thinking` (`thinkingLines`).
     /// The current model is marked, and listed even when the host's catalog lacks it.
     public static func sections(_ models: [String], current: String?, query: String = "",
                                 thinking: [String: String] = [:]) -> [NativeModelSection] {
-        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        // Each word typed must appear in the id: ids join words with hyphens, people type spaces.
+        let words = query.lowercased().split(separator: " ").map(String.init)
         var ids = models
         if let current, !ids.contains(current) { ids.insert(current, at: 0) }
         var order: [String] = []
         var byProvider: [String: [NativeModelChoice]] = [:]
         var seen: Set<String> = []
-        for id in ids where seen.insert(id).inserted && (q.isEmpty || id.lowercased().contains(q)) {
+        for id in ids where seen.insert(id).inserted {
+            let key = id.lowercased()
+            guard words.allSatisfy({ key.contains($0) }) else { continue }
             let provider = provider(id)
             if byProvider[provider] == nil { order.append(provider) }
             byProvider[provider, default: []].append(NativeModelChoice(id: id, title: shortName(id), thinking: thinking[id],

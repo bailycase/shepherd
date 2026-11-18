@@ -58,7 +58,7 @@ public struct FleetDispatchCard: Identifiable, Equatable, Sendable {
     public var title: String
     /// The Mac it went to, as the tag names it; nil while none is chosen.
     public var host: String?
-    /// "Working", "Done", "Waiting for room", "Held", "Starting", "Not sent".
+    /// "Working", "Done", "Waiting for room", "Waiting", "Starting", "Not sent".
     public var pill: String
     public var tone: FleetTone
     /// A row's line under the title, or a state card's words.
@@ -113,6 +113,15 @@ public struct FleetCardContext: Sendable {
     }
 }
 
+extension FleetSnapshot {
+    /// This Mac and every peer by host id: the names a dispatch's Mac id reads as.
+    public var macNames: [UUID: String] {
+        var names = Dictionary(peers.map { ($0.hostID, $0.name) }, uniquingKeysWith: { first, _ in first })
+        if let hostID { names[hostID] = name }
+        return names
+    }
+}
+
 public enum FleetDispatchPresentation {
     // MARK: Cards
 
@@ -124,14 +133,15 @@ public enum FleetDispatchPresentation {
 
     /// The card of one record. `records` is every record the Mac holds, for what a card says of the others.
     public static func card(_ record: FleetDispatchRecord, among records: [FleetDispatchRecord], in context: FleetCardContext) -> FleetDispatchCard {
-        let host = hostName(of: record)
+        let macs = context.snapshot.macNames
+        let host = hostName(of: record, macs: macs)
         var card = FleetDispatchCard(
             id: record.id, layout: .state, state: record.state, title: record.title.isEmpty ? "Untitled" : record.title, host: host, pill: "", tone: .tertiary,
             detail: "", actions: [], parentAgentID: record.parentAgentID, parentHostID: record.parentHostID, targetHostID: record.targetHostID,
             remoteAgentID: record.remoteAgentID, createdAt: record.createdAt, updatedAt: record.updatedAt)
         switch record.state {
         case .placing:
-            (card.pill, card.tone) = ("Placing", .tertiary)
+            (card.pill, card.tone) = ("Starting", .tertiary)
             card.detail = "Choosing the Mac with the most room."
             card.actions = [.cancel]
         case .waitingRoom:
@@ -153,13 +163,13 @@ public enum FleetDispatchPresentation {
             if let other = alternative(to: record, in: context) { actions.append(.sendTo(other.id, other.name)) }
             card.actions = actions + [.cancel]
         case .heldLimit:
-            (card.pill, card.tone) = ("Held", .warn)
+            (card.pill, card.tone) = ("Waiting", .warn)
             let others = liveSiblings(of: record, among: records).count
             let who = record.parentTitle.isEmpty ? "This thread" : record.parentTitle
             card.detail = "\(who) already has \(others) \(others == 1 ? "thread" : "threads") running on other Macs. This one goes when one of them finishes."
             card.actions = others > 0 ? [.openOthers(others)] : []
         case .heldRestart:
-            (card.pill, card.tone) = ("Held", .warn)
+            (card.pill, card.tone) = ("Waiting", .warn)
             card.detail = "Shepherd restarted before this was sent. Nothing is sent again by itself."
             card.actions = [.send, .cancel]
         case .waitingTurn:
@@ -188,22 +198,22 @@ public enum FleetDispatchPresentation {
         case .running:
             card.layout = .row
             (card.pill, card.tone) = ("Working", .active)
-            card.detail = rowDetail(record)
+            card.detail = rowDetail(record, macs: macs)
             card.actions = [.open, .stop]
         case .delivering:
             card.layout = .row
-            (card.pill, card.tone) = ("Delivering", .active)
-            card.detail = rowDetail(record)
+            (card.pill, card.tone) = ("Working", .active)
+            card.detail = rowDetail(record, macs: macs)
             card.actions = [.open]
         case .done:
             card.layout = .row
             (card.pill, card.tone) = ("Done", .good)
-            card.detail = rowDetail(record)
+            card.detail = rowDetail(record, macs: macs)
             card.actions = [.open]
         case .cancelled:
             card.layout = .row
             (card.pill, card.tone) = ("Stopped", .tertiary)
-            card.detail = rowDetail(record)
+            card.detail = rowDetail(record, macs: macs)
             card.actions = record.remoteAgentID == nil ? [] : [.open]
         case .failed:
             (card.pill, card.tone) = ("Not sent", .bad)
@@ -219,28 +229,47 @@ public enum FleetDispatchPresentation {
     static func compact(_ card: FleetDispatchCard, record: FleetDispatchRecord, host: String?) -> FleetDispatchCard.Compact? {
         let name = host.map(FleetWherePicker.tagName)
         switch record.state {
-        case .done: return .init(words: "back", tone: .good, timed: true)
-        case .delivering: return .init(words: "delivering", tone: .active, timed: true)
+        case .done: return .init(words: "done", tone: .good, timed: true)
+        case .delivering: return .init(words: "working", tone: .active, timed: true)
         case .running: return .init(words: "working", tone: .active, timed: true)
         case .cancelled: return .init(words: "stopped", tone: .tertiary, timed: true)
-        case .placing: return .init(words: "placing", tone: .tertiary, timed: false)
+        case .placing: return .init(words: "starting", tone: .tertiary, timed: false)
         case .waitingRoom:
-            return .init(words: record.limitProvider == nil ? "no Mac has room" : "waiting for the limit", tone: .tertiary, timed: false)
-        case .waitingWake: return .init(words: "goes when \(name ?? "it") wakes", tone: .tertiary, timed: false)
-        case .heldLimit: return .init(words: "held until one finishes", tone: .warn, timed: false)
+            return .init(words: record.limitProvider == nil ? "waiting for a Mac with room" : "waiting for the limit", tone: .tertiary, timed: false)
+        case .waitingWake: return .init(words: "waiting for \(name ?? "its Mac") to wake", tone: .tertiary, timed: false)
+        case .heldLimit: return .init(words: "waiting for another thread to finish", tone: .warn, timed: false)
         case .waitingTurn: return .init(words: "moves when its turn ends", tone: .tertiary, timed: false)
         case .heldRestart, .preparing, .failed: return nil
         }
     }
 
-    /// The Mac a card's tag names: where it went, else the one named.
-    static func hostName(of record: FleetDispatchRecord) -> String? {
-        record.targetHostName ?? record.requestedHost.flatMap { FleetPlacement.isAuto($0) ? nil : $0 }
+    /// What a Mac that is no longer in the fleet is called.
+    public static let macLeft = "a Mac that left"
+
+    /// The Mac a record names by id: where it went, else the one a thread from New thread asked for (`requestedHost` holds its id then).
+    static func hostID(of record: FleetDispatchRecord) -> UUID? {
+        record.targetHostID ?? record.requestedHost.flatMap { UUID(uuidString: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    }
+
+    /// The Mac a card's tag names: where it went, else the one named. An id is never shown: `macs` (`FleetSnapshot.macNames`) gives its
+    /// name, and a Mac it doesn't know has left the fleet. A name a person or an agent typed (`requestedHost`) stands as it is.
+    static func hostName(of record: FleetDispatchRecord, macs: [UUID: String]) -> String? {
+        if let name = record.targetHostName { return name }
+        if let id = record.targetHostID { return macs[id] ?? macLeft }
+        return requestedName(record.requestedHost, macs: macs)
+    }
+
+    /// The Mac a dispatch asked for: a name as it was typed, an id as its Mac's name; nil for Auto.
+    static func requestedName(_ requested: String?, macs: [UUID: String]) -> String? {
+        guard let requested, !FleetPlacement.isAuto(requested) else { return nil }
+        guard let id = UUID(uuidString: requested.trimmingCharacters(in: .whitespacesAndNewlines)) else { return requested }
+        return macs[id] ?? macLeft
     }
 
     /// How a sentence names a Mac, as the boards write it: "the mini" for "Mac mini", the name as it is for any other ("iMac").
     /// `capitalized` opens a sentence.
     static func the(_ name: String, capitalized: Bool = false) -> String {
+        if name == macLeft { return capitalized ? "A Mac that left" : name }
         guard name.hasPrefix("Mac "), name.count > 4 else { return name }
         return (capitalized ? "The " : "the ") + FleetWherePicker.shortName(name)
     }
@@ -256,14 +285,14 @@ public enum FleetDispatchPresentation {
 
     /// The line under a placed dispatch's title: why it went there, what it started from, and where it works.
     /// "Auto: Mac mini had 3.4× the room · payments-api @ 4e1c9a2 · new worktree fleet/fix-flaky-payment".
-    static func rowDetail(_ record: FleetDispatchRecord) -> String {
+    static func rowDetail(_ record: FleetDispatchRecord, macs: [UUID: String]) -> String {
         var parts: [String] = []
-        let why = whyWords(record)
+        let why = whyWords(record, macs: macs)
         if !why.isEmpty { parts.append(why) }
         if let sha = record.commitSHA { parts.append("\(repoName(record.repoKey)) @ \(short(sha))") }
         else { parts.append(repoName(record.repoKey)) }
         if let branch = record.branch { parts.append("new worktree \(branch)") }
-        if !record.without.isEmpty { parts.append("Started on \(hostName(of: record) ?? "that Mac") without: \(withoutWords(record.without))") }
+        if !record.without.isEmpty { parts.append("Started on \(hostName(of: record, macs: macs) ?? "that Mac") without: \(withoutWords(record.without))") }
         return parts.joined(separator: " · ")
     }
 
@@ -271,8 +300,8 @@ public enum FleetDispatchPresentation {
     public static func withoutWords(_ commands: [String]) -> String { joined(commands.map { "\($0) (MCP)" }) }
 
     /// Why it went where it did, from the codes the sender's host recorded.
-    static func whyWords(_ record: FleetDispatchRecord) -> String {
-        let host = hostName(of: record) ?? "that Mac"
+    static func whyWords(_ record: FleetDispatchRecord, macs: [UUID: String]) -> String {
+        let host = hostName(of: record, macs: macs) ?? "that Mac"
         let codes = record.reasonCodes
         let ratio = codes.compactMap(\.ratio).first
         if let skip = codes.first(where: { $0.code == .localIneligible })?.skip {
@@ -334,7 +363,7 @@ public enum FleetDispatchPresentation {
 
     /// "Mac Studio has been asleep since 10:42. The thread starts there when it wakes. It never moves on its own."
     static func asleepWords(_ record: FleetDispatchRecord, in context: FleetCardContext) -> String {
-        let name = hostName(of: record) ?? "That Mac"
+        let name = hostName(of: record, macs: context.snapshot.macNames) ?? "That Mac"
         let since = context.snapshot.peers.first { $0.hostID == record.targetHostID }?.lastSeen.map {
             Date(timeIntervalSince1970: $0 / 1000).formatted(Date.FormatStyle(locale: context.locale, calendar: context.calendar,
                                                                               timeZone: context.calendar.timeZone).hour().minute())
@@ -364,7 +393,7 @@ public enum FleetDispatchPresentation {
 
     /// Why it wasn't sent, in a sentence, from the code.
     static func failureWords(_ record: FleetDispatchRecord, in context: FleetCardContext) -> String {
-        let host = hostName(of: record).map { the($0, capitalized: true) } ?? "That Mac"
+        let host = hostName(of: record, macs: context.snapshot.macNames).map { the($0, capitalized: true) } ?? "That Mac"
         let repo = repoName(record.repoKey)
         let sha = record.commitSHA.map(short)
         switch record.failure {
@@ -380,9 +409,9 @@ public enum FleetDispatchPresentation {
         case FleetDispatchCode.hostNotReady:
             return "\(host) lacks something the thread needs" + (record.failureDetail.flatMap { $0 == "unknown" ? nil : " (\($0))" } ?? "") + "."
         case FleetDispatchCode.noSuchHost:
-            return "No Mac named \(record.requestedHost ?? "that") is in the fleet."
+            return "No Mac named \(requestedName(record.requestedHost, macs: context.snapshot.macNames) ?? "that") is in the fleet."
         case FleetDispatchCode.peerGone:
-            return "\(host) stopped answering and doesn't know this dispatch. Run it again, or run it here."
+            return "\(host) stopped answering and doesn't know this thread. Run it again, or run it here."
         case FleetDispatchCode.snapshotTooLarge:
             return "The changes to send are too large to send. Run it here, or commit and push them first."
         case FleetDispatchCode.snapshotMismatch, FleetDispatchCode.snapshotFailed:
@@ -424,7 +453,7 @@ public enum FleetDispatchPresentation {
 
 // MARK: - The dispatched thread
 
-/// What the dispatched thread draws of where it came from (FleetRemote): the header's host pill and "sent by" link, the
+/// What the dispatched thread draws of where it came from (FleetRemote): the header's host pill and "started by" link, the
 /// From box over the task, and the line saying where its last message goes. Derived from `Agent.dispatchedFrom`.
 public struct FleetSentBy: Equatable, Sendable {
     /// The Mac running the thread, as the header's pill names it.
@@ -442,9 +471,6 @@ public struct FleetSentBy: Equatable, Sendable {
 
     /// "From Speed up checkout CI on This Mac".
     public var fromLine: String { "From \(sender) on \(senderHost)" }
-
-    /// "sent by Speed up checkout CI".
-    public var sentByLine: String { "sent by \(sender)" }
 
     /// "When this finishes, its last message goes back to Speed up checkout CI. You can still talk to it here."
     public var goesBackLine: String? {

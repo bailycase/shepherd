@@ -747,7 +747,7 @@ final class AppSettings {
         min(fontSizeRange.upperBound, max(fontSizeRange.lowerBound, size))
     }
 
-    /// What a ⌘N agent and the New Agent sheet start with.
+    /// What a new thread starts with.
     var agentDefaults: AgentDefaults {
         let trimmed = defaultModel.trimmingCharacters(in: .whitespaces)
         return AgentDefaults(model: trimmed.isEmpty ? nil : trimmed, thinking: defaultThinking)

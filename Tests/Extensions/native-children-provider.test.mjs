@@ -118,7 +118,7 @@ test("a model the helper's own catalog lacks names the providers the helper has"
 
 // ---- D: errors that say what to do ----
 
-test("agent and role together are refused, naming what to pass", async () => {
+test("agent and role that disagree are refused, naming what to pass", async () => {
   const dir = tempDir("both");
   try {
     const home = scratchHome(dir);
@@ -126,14 +126,15 @@ test("agent and role together are refused, naming what to pass", async () => {
       const h = await harness(dir);
       try {
         await assert.rejects(h.call("start", { task: "x", agent: "scout", role: "worker" }),
-          /Pass either an agent profile or a role, not both.*role is an alias for agent.*scout, reviewer, planner, worker/);
+          /agent "scout" and role "worker" disagree\. Pass only agent.*role is an alias of agent.*label in name/);
+        await assert.rejects(h.call("start", { task: "x", agent: "scout", role: "lane", name: "named" }), /agent "scout" and role "lane" disagree\./);
         assert.deepEqual(await h.call("result", {}), [], "nothing was started");
       } finally { await h.shutdown(); }
     });
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("an unknown role lists the roles and the discovered profiles, and suggests the nearest", async () => {
+test("a profile that is a near miss of a real one lists the roles and profiles and suggests the nearest", async () => {
   const dir = tempDir("unknown");
   try {
     const home = scratchHome(dir);
@@ -143,12 +144,11 @@ test("an unknown role lists the roles and the discovered profiles, and suggests 
       const h = await harness(dir);
       try {
         await assert.rejects(h.call("start", { task: "x", role: "design-editor" }), (error) => {
-          assert.match(error.message, /^Unknown agent "design-editor"\. Roles: scout, reviewer, planner, worker\. Profiles: design-composer-editor, notes\./);
-          assert.match(error.message, /Did you mean design-composer-editor\?/);
-          assert.match(error.message, /Pass one of them as agent \(role is an alias\)/);
+          assert.match(error.message, /^Unknown agent "design-editor"\. Did you mean design-composer-editor\? Pass agent: "design-composer-editor", and name: "design-editor" if it is only a label\. Roles: scout, reviewer, planner, worker\. Profiles: design-composer-editor, notes\./);
           return true;
         });
-        await assert.rejects(h.call("start", { task: "x", agent: "zzz" }), (error) => !/Did you mean/.test(error.message) && /Unknown agent "zzz"/.test(error.message));
+        // With a label given, a name that is no profile is the model's mistake to fix, not a label to guess.
+        await assert.rejects(h.call("start", { task: "x", agent: "zzz", name: "lane" }), (error) => !/Did you mean/.test(error.message) && /^Unknown agent "zzz"\. agent picks a profile; a label goes in name\./.test(error.message));
       } finally { await h.shutdown(); }
     });
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
@@ -165,13 +165,13 @@ test("a model whose provider isn't loaded fails at the start, says which provide
       try {
         // A profile names it: the message names the profile, once, before anything launches.
         await assert.rejects(h.call("start", { task: "x", agent: "design-composer-editor" }), (error) => {
-          assert.match(error.message, /^Agent profile design-composer-editor names missing\/gpt-6-astra, but provider "missing" isn't loaded in this Pi\./);
+          assert.match(error.message, /^Model missing\/gpt-6-astra isn't loaded\. Agent profile design-composer-editor names missing\/gpt-6-astra, but provider "missing" isn't loaded in this Pi\./);
           assert.match(error.message, /Did you mean custom\/gpt-6-astra\?/);
-          assert.match(error.message, /Providers this Pi has: custom, fixture\.$/);
+          assert.match(error.message, /Providers this Pi has: custom, fixture\. Fix model: in the profile, or pass model as one of those\.$/);
           return true;
         });
         // A call names it.
-        await assert.rejects(h.call("start", { task: "x", role: "scout", model: "missing/gpt-6-astra:high" }), /The model argument names missing\/gpt-6-astra:high, but provider "missing" isn't loaded.*Did you mean custom\/gpt-6-astra\?/);
+        await assert.rejects(h.call("start", { task: "x", role: "scout", model: "missing/gpt-6-astra:high" }), /Model missing\/gpt-6-astra isn't loaded\. The model argument names missing\/gpt-6-astra:high, but provider "missing" isn't loaded.*Did you mean custom\/gpt-6-astra\?.*Pass model as one of those, or omit model to use the thread's\.$/);
         // A loaded provider without that id (Pi would take it as a custom model, which a helper never lists).
         await assert.rejects(h.call("start", { task: "x", role: "scout", model: "custom/claude-sonnet-5-5" }), (error) => {
           assert.match(error.message, /provider "custom" has no model "claude-sonnet-5-5" in this Pi\./);
@@ -191,7 +191,13 @@ test("the message helpers are pure, and cap a long provider list", () => {
   assert.match(children.modelNotFound("x/y", many), /Providers this Pi has: p00, .*, p23 and 6 more\.$/);
   assert.equal(children.modelNotFound("missing/m", [{ provider: "custom", id: "m" }, { provider: "other", id: "m" }], { origin: "Profile a" }).includes("custom/m or other/m"), true);
   assert.match(children.unknownAgentMessage("a", [{ name: "a", source: "user", filePath: "/x/a.md" }, { name: "a", source: "project", filePath: "/p/a.md" }], [{ name: "a", source: "user", filePath: "/x/a.md" }, { name: "a", source: "project", filePath: "/p/a.md" }]),
-    /^Ambiguous agent "a": it names a \(user, \/x\/a\.md\) and a \(project, \/p\/a\.md\)\./);
-  assert.match(children.unknownAgentMessage("q", [{ name: "scout", source: "bundled" }]), /Profiles: none discovered/);
-  assert.match(children.unknownAgentMessage("q", []), /none \(the default files were removed\)/);
+    /^Ambiguous agent "a"\. It names a \(user, \/x\/a\.md\) and a \(project, \/p\/a\.md\)\. Pass agent as one profile's full name\./);
+  assert.match(children.unknownAgentMessage("quokka", [{ name: "scout", source: "bundled" }]), /Profiles: none discovered/);
+  assert.match(children.unknownAgentMessage("quokka", []), /none \(the default files were removed\)/);
+});
+
+test("a name is close to a profile when it is a longer form of it or a couple of letters off", () => {
+  const agents = ["scout", "reviewer", "planner", "worker", "design-composer-editor"].map((name) => ({ name }));
+  for (const near of ["reviewr", "planer", "trust-scout", "project-foundation-reviewer", "design-editor", "Scout", "wroker"]) assert(children.closeAgents(near, agents).length, near);
+  for (const far of ["card-network-rules", "researcher", "general", "CI monitor", "migration-audit", "performance-profiler", "ci-watcher"]) assert.deepEqual(children.closeAgents(far, agents), [], far);
 });

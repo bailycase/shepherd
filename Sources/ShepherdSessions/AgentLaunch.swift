@@ -80,6 +80,7 @@ public enum AgentLaunch {
             socketPath: ShepherdPaths.socketURL().path,
             extensionPath: try StatusExtension.installedPath(),
             panesExtensionPath: wantsPanes(for: agent, enabled: settings.panes) ? try PanesExtension.installedPath() : nil,
+            shepherdSkillDirectory: wantsPanes(for: agent, enabled: settings.panes) ? try PanesExtension.installedSkillDirectory() : nil,
             reviewExtensionPath: wantsReview(for: agent, enabled: settings.review) ? try ReviewExtension.installedPath() : nil,
             subagentsExtensionPath: settings.subagentDisplay ? try SubagentsExtension.installedPath() : nil,
             childrenExtensionPath: agent.coordinatorFor == nil ? try ChildrenExtension.installedPath() : nil,

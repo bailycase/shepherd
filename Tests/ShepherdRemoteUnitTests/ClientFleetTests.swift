@@ -31,6 +31,13 @@ final class FakeFleetClient: FakeSettingsClient, FleetViewClient, @unchecked Sen
             return FleetResult(snapshot: try answer.get())
         }
     }
+
+    func fleetUpdate(_ hostID: UUID, _ command: FleetUpdateCommand) async throws -> FleetResult {
+        try state.withLock {
+            calls.append("update(\(hostID), \(command))")
+            return FleetResult(snapshot: try answer.get())
+        }
+    }
 }
 
 @MainActor
@@ -165,5 +172,25 @@ struct ClientFleetTests {
         let fleet = Self.fleet()
         for _ in 0..<7 { await fleet.refresh(hosts) }
         #expect(client.requests.filter { $0 == "settings.fetch" }.count == 2, "the first read and the seventh")
+    }
+
+    @Test func updateIsAskedOfTheMacThePageIsReadFromAndShownAtOnce() async {
+        let client = FakeFleetClient(Page.snapshot())
+        let id = UUID()
+        let capable = SettingsHost(id: id, name: "MacBook Pro", client: client,
+                                   capabilities: [RemoteProtocol.hostSettingsCapability, RemoteProtocol.fleetViewCapability, RemoteProtocol.fleetUpdateViewCapability])
+        let fleet = Self.fleet()
+        await fleet.refresh([capable])
+        #expect(fleet.canUpdate([capable]))
+        await fleet.update(Page.studio, .start(when: .idle), [capable])
+        #expect(client.fleetCalls.last == "update(\(Page.studio), start(when: ShepherdProtocol.FleetUpdateWhen.idle))" && fleet.problem == nil)
+    }
+
+    @Test func aMacThatCantCarryItOutShowsNoUpdateAndSaysWhyIfAsked() async {
+        let client = FakeFleetClient(Page.snapshot())
+        let old = Self.host("MacBook Pro", client)
+        let fleet = Self.fleet()
+        await fleet.refresh([old])
+        #expect(!fleet.canUpdate([old]))
     }
 }

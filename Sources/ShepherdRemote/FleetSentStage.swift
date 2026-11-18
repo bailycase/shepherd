@@ -1,101 +1,87 @@
 import Foundation
 import ShepherdCore
 
-// Where a thread sent to another Mac is, in the words of one sidebar line (FleetSubthreads): "<Mac> · <stage>". The stage comes from the dispatch
-// record the sending Mac keeps; for a thread whose record this Mac can't see (the sender is another Mac), from the thread's own state.
+// What a thread that has not started on its Mac yet says on its sidebar row, as any thread's second line does: "starting on mini", "waiting for
+// mini to wake", "cloning payments-web on mini", or why it failed. The row is a normal thread's: the Mac is its tag, never part of the words.
+// The stage comes from the record the sending Mac keeps.
 
 public struct FleetSentStage: Equatable, Sendable {
     public enum Phase: Equatable, Sendable {
-        case placing, noRoom, waitingWake, held, cloning, preparing, running, asking, failed, delivering
-        /// The work is finished and its result is with the sender: the thread leaves the tree.
+        case placing, noRoom, waitingWake, held, cloning, preparing, running, failed
+        /// The work is finished.
         case back
     }
 
     public var phase: Phase
     /// The Mac it is on, as a tag ("mini", "This Mac"); nil until one is chosen.
     public var host: String?
-    /// What it is doing, after the Mac: "cloning payments-web", "goes when it wakes".
+    /// What it is doing: "starting on mini", "waiting for mini to wake".
     public var words: String
-    /// When it began running, in epoch milliseconds: the line ends with how long ("running 4m").
-    public var runningSince: Double?
 
     /// A state's color, the sidebar's: the Mac's app turns each into its `AgentState`.
     public enum Mark: Equatable, Sendable {
-        case hollow, running, attention, failed, done
+        case hollow, running, failed, done
     }
 
-    /// The row's dot: hollow while it waits, blue while it works, amber while it asks you, red when it failed, green when it is delivering.
+    /// The row's dot: hollow while it waits, blue while it starts, red when it failed.
     public var dot: Mark {
         switch phase {
         case .placing, .noRoom, .waitingWake, .held: .hollow
         case .cloning, .preparing, .running: .running
-        case .asking: .attention
         case .failed: .failed
-        case .delivering, .back: .done
+        case .back: .done
         }
     }
 
-    /// The color of the words: quiet (nil) while it waits, blue while it works, amber when it asks you, red when it failed.
+    /// The color of the words: quiet (nil) while it waits, blue while it starts, red when it failed.
     public var tone: Mark? {
         switch phase {
         case .placing, .noRoom, .waitingWake, .held, .back: nil
-        case .cloning, .preparing, .running, .delivering: .running
-        case .asking: .attention
+        case .cloning, .preparing, .running: .running
         case .failed: .failed
         }
     }
 
-    /// "mini · cloning payments-web", "no Mac has room · next: mini". `elapsed` follows a running thread's words ("4m").
-    public func line(elapsed: String? = nil) -> String {
-        let said = [words, phase == .running ? elapsed : nil].compactMap { $0 }.joined(separator: " ")
-        guard let host else { return said }
-        return "\(host) · \(said)"
+    /// The row's Mac tag: the Mac's name, nothing for This Mac, for one that has left, or before one is chosen.
+    public var tag: String? {
+        guard let host, host != "This Mac", host != FleetDispatchPresentation.macLeft else { return nil }
+        return host
     }
 
     // MARK: From a record
 
-    /// The stage of a dispatch this Mac sent. `thread` is the state of the thread that runs it, when this Mac can see it: a thread that asks
-    /// reads "asking you" whatever its record says. `viewer` is this Mac's fleet id, `next` the Mac Auto picks next, `live` and `cap` the
-    /// sender's sends going and the most it may have.
-    public static func of(_ record: FleetDispatchRecord, thread: AgentStatus? = nil, viewer: UUID?, next: String?, live: Int, cap: Int) -> FleetSentStage {
-        let host = tag(record.targetHostID, name: record.targetHostName ?? record.requestedHost.flatMap { FleetPlacement.isAuto($0) ? nil : $0 }, viewer: viewer)
+    /// The stage of a dispatch this Mac sent. `viewer` is this Mac's fleet id; `macs` names the Macs of the fleet by id
+    /// (`FleetSnapshot.macNames`): a thread sent from New thread names its Mac by id until one is chosen.
+    public static func of(_ record: FleetDispatchRecord, viewer: UUID?, macs: [UUID: String] = [:]) -> FleetSentStage {
+        let host = tag(FleetDispatchPresentation.hostID(of: record), name: FleetDispatchPresentation.hostName(of: record, macs: macs), viewer: viewer)
+        /// " on mini": where it happens, for a Mac other than this one.
+        let on = host.flatMap { $0 == "This Mac" ? nil : " on \($0)" } ?? ""
         switch record.state {
         case .placing:
-            return FleetSentStage(phase: .placing, words: "placing · choosing a Mac")
+            return FleetSentStage(phase: .placing, words: "starting")
         case .waitingRoom:
             if let provider = record.limitProvider {
                 return FleetSentStage(phase: .noRoom, words: "waiting for \(NativeTurnError.providerName(provider))'s limit")
             }
-            return FleetSentStage(phase: .noRoom, words: "no Mac has room" + (next.map { " · next: \(FleetWherePicker.tagName($0))" } ?? ""))
+            return FleetSentStage(phase: .noRoom, words: "waiting for a Mac with room")
         case .waitingWake:
-            return FleetSentStage(phase: .waitingWake, host: host, words: "goes when it wakes")
+            return FleetSentStage(phase: .waitingWake, host: host, words: "waiting for \(host ?? "its Mac") to wake")
         case .heldLimit:
-            return FleetSentStage(phase: .held, words: "held · \(live) of \(cap) sends live")
+            return FleetSentStage(phase: .held, words: "waiting for another thread to finish")
         case .heldRestart:
-            return FleetSentStage(phase: .held, words: "held since the restart")
+            return FleetSentStage(phase: .held, words: "paused by the restart")
         case .waitingTurn:
-            return FleetSentStage(phase: .waitingWake, host: host, words: "moves when its turn ends")
+            return FleetSentStage(phase: .waitingWake, host: host, words: "moving when its turn ends")
         case .preparing:
-            if let clone = record.clone { return FleetSentStage(phase: .cloning, host: host, words: "cloning \(clone.name)") }
-            return FleetSentStage(phase: .preparing, host: host, words: "preparing worktree")
-        case .running:
-            if thread == .blocked { return FleetSentStage(phase: .asking, host: host, words: "asking you") }
-            return FleetSentStage(phase: .running, host: host, words: "running", runningSince: record.updatedAt)
-        case .delivering:
-            return FleetSentStage(phase: .delivering, host: host, words: "delivering")
+            if let clone = record.clone { return FleetSentStage(phase: .cloning, host: host, words: "cloning \(clone.name)\(on)") }
+            return FleetSentStage(phase: .preparing, host: host, words: "starting\(on)")
+        case .running, .delivering:
+            return FleetSentStage(phase: .running, host: host, words: "working")
         case .done, .cancelled:
-            return FleetSentStage(phase: .back, host: host, words: "back")
+            return FleetSentStage(phase: .back, host: host, words: "done")
         case .failed:
-            return FleetSentStage(phase: .failed, host: host, words: failureWords(record))
-        }
-    }
-
-    /// The stage of a thread whose record isn't on this Mac, from its own state and the Mac it runs on.
-    public static func of(thread status: AgentStatus, host: String) -> FleetSentStage {
-        switch status {
-        case .working: FleetSentStage(phase: .running, host: host, words: "running")
-        case .blocked: FleetSentStage(phase: .asking, host: host, words: "asking you")
-        case .idle, .done: FleetSentStage(phase: .back, host: host, words: "back")
+            let why = failureWords(record)
+            return FleetSentStage(phase: .failed, host: host, words: host == FleetDispatchPresentation.macLeft ? "\(host!) · \(why)" : why)
         }
     }
 
@@ -105,12 +91,21 @@ public struct FleetSentStage: Equatable, Sendable {
         return name.map(FleetWherePicker.tagName)
     }
 
-    /// Why a dispatch failed, in a few words: the Mac's own detail when it has a short one, else the code's.
+    /// Why a dispatch failed, in a few words: what the Mac lacked when it was not ready, else its own short detail, else the code's.
     static func failureWords(_ record: FleetDispatchRecord) -> String {
-        if let detail = record.failureDetail?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty, detail != "unknown",
-           !detail.contains("\n"), detail.count <= 40 {
-            return detail
+        let detail = record.failureDetail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let short = detail.isEmpty || detail.contains("\n") || detail.count > 40 ? nil : detail
+        if record.failure == FleetDispatchCode.hostNotReady, let short {
+            // The placement's words (`FleetPlacement.named`): a tool it lacks, "unknown" before it has reported, "unreachable" when it didn't answer.
+            switch short {
+            case "unknown": return "hasn't reported yet"
+            case "unreachable": return "isn't answering"
+            case _ where short.hasSuffix(" models"): return "can't run \(short)"
+            case _ where !short.contains(" "): return "\(short) isn't installed"
+            default: break
+            }
         }
+        if let short, short != "unknown" { return short }
         switch record.failure {
         case FleetDispatchCode.repoMissing: return "repository missing"
         case FleetDispatchCode.cloneFailed: return "couldn't clone"
@@ -122,19 +117,7 @@ public struct FleetSentStage: Equatable, Sendable {
         case FleetDispatchCode.refused: return "refused it"
         case FleetDispatchCode.snapshotTooLarge: return "changes too large"
         case FleetDispatchCode.snapshotMismatch, FleetDispatchCode.snapshotFailed: return "changes didn't arrive"
-        default: return "not sent"
+        default: return "didn't start"
         }
     }
-}
-
-/// A sender's second line: "3 sent · 1 back", "1 sent · asking you".
-public enum FleetSentSummary {
-    /// How many it sent and how many came back; with none back yet, that one of them asks you. A thread that asks is in Needs you, so the line stays short.
-    public static func line(sent: Int, back: Int, asking: Bool) -> String? {
-        guard sent > 0 else { return nil }
-        return ["\(sent) sent", back > 0 ? "\(back) back" : asking ? "asking you" : nil].compactMap { $0 }.joined(separator: " · ")
-    }
-
-    /// More than this many sent threads fold under their sender until it is opened or one of them is on screen.
-    public static let foldsAbove = 2
 }

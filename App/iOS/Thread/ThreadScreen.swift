@@ -567,13 +567,11 @@ struct ThreadTranscript: View {
 /// phone, the name over "● Idle · ⧉ pi/swiftui-previews": the status word and the worktree's
 /// branch, or "⌂ your checkout" in lantern when pi works in the space's own checkout.
 /// On iPad, the name, the branch chip (`SHBranchChip`: the files changed, and the host when there
-/// are several), and a status pill with the running turn's time, on one line.
+/// are several) and any goal, on one line; no status pill, the sidebar's dot says the state.
 struct ThreadTitle: View {
     struct Status: Equatable {
         var state: AgentState
         var label: String
-        /// When the running turn's prompt was sent (ms); nil at rest.
-        var runningSince: Double?
 
         @MainActor init(store: NativeThreadStore, agent: Agent?) {
             if store.loadError != nil { state = .failed; label = "Error" }
@@ -583,29 +581,22 @@ struct ThreadTitle: View {
             else if store.lastTurnFailed { state = .failed; label = AgentState.failed.label }
             else if let agent { state = AgentState(agent.status); label = state.label }
             else { state = .idle; label = AgentState.idle.label }
-            runningSince = store.running && store.dialogs.isEmpty ? store.lastPromptAt : nil
-        }
-
-        func meta(now: Date) -> NativeThreadMeta {
-            NativeThreadMeta(runningSince: runningSince, now: now.timeIntervalSince1970 * 1000)
         }
     }
 
     let name: String
     let status: Status
     var branch: AgentBranchLabel?
-    /// iPad: the name, the chip and a pill on one line.
+    /// iPad: the one-line title without the phone's status line.
     var wide = false
     var goalTime: String? = nil
     var goalStore: NativeThreadStore? = nil
 
     var body: some View {
         Group {
-            // Only a running turn's clock ticks, and only the iPad pill shows it.
-            if wide, status.runningSince != nil {
-                TimelineView(.periodic(from: .now, by: 1)) { context in pill(status.meta(now: context.date)) }
-            } else if wide {
-                pill(status.meta(now: .distantPast))
+            if wide {
+                // No pill: VoiceOver still hears the state.
+                row.accessibilityValue(status.label)
             } else {
                 compact
             }
@@ -644,7 +635,7 @@ struct ThreadTitle: View {
         }
     }
 
-    private func pill(_ meta: NativeThreadMeta) -> some View {
+    private var row: some View {
         HStack(spacing: SH.Space.m) {
             Text(name).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             if let branch {
@@ -658,8 +649,6 @@ struct ThreadTitle: View {
                 }
                 .layoutPriority(-1)
             }
-            SHStatusPill(status.state, label: meta.elapsed.map { "\(status.label) · \($0)" } ?? status.label)
-                .fixedSize()
             ThreadGoalHeader(store: goalStore, time: goalTime)
         }
     }

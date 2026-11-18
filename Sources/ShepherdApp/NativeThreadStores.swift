@@ -27,14 +27,17 @@ enum ThreadPassWait: Equatable {
 ///
 /// Row views: a hidden layout stays mounted and its thread keeps the views of its last rows, which are most of what the
 /// app holds (`NativeThreadStore.mountedCost` estimates them). Past `mountedBudget` bytes of them in all, the least
-/// recently shown hidden threads let their rows go (`NativeThreadStore.releaseTranscript`), one thread a pass and `releaseStep`
-/// bytes of its rows at a time, unpinned ones first, then readers left scrolled up beyond the `keepPinned` most recently
-/// shown. The newest hidden thread, the ones on screen and the selected one are never taken. Only the thread view's rows go,
+/// recently shown hidden threads let their rows go (`NativeThreadStore.releaseTranscript`), a pass at a time and the oldest
+/// rows of the thread shown longest ago first: `releaseStep` bytes of them from one thread, or what the hidden threads are over by,
+/// at most `releaseCeiling` while the app is idle or a stream lasts and a pass can take much off them, and at most `releaseFarCeiling`
+/// while the app is idle and a pass can take much off them (`farOverBudget`). Unpinned threads go first, then readers left scrolled up beyond
+/// the `keepPinned` most recently shown. The newest hidden thread, the ones on screen and the selected one are never taken. Only the thread view's rows go,
 /// and not its last screen (`NativeThreadStore.keptRows`): the host, the page, the history, the caches, the draft and the rows
 /// at the end of the thread stay, so showing a thread draws its tail in the update that shows it, never blank and with nothing
 /// to build, and the rows above it come back after that frame (`ThreadView`). A reader taken this way comes back at the tail of
 /// its thread, not at its place (`ThreadView`). A pass waits (`busy`) for as long as the person scrolls or types, and while a thread
-/// on screen streams for at most `patience` looks, so that a long stream cannot hold it off for good: it takes no more than a step of rows.
+/// on screen streams for at most `patience` looks, so that a long stream cannot hold it off for good (it takes a step then), or not
+/// at all while it can take much off the hidden threads (`farOverBudget`; it takes `releaseCeiling` at most).
 @MainActor
 final class NativeThreadStores<Key: Hashable> {
     private var stores: [Key: NativeThreadStore] = [:]
@@ -66,10 +69,24 @@ final class NativeThreadStores<Key: Hashable> {
     /// How long after the last show the first pass runs, and between the passes that follow while the budget is over.
     var releaseDelay: Duration = .seconds(2)
     var releaseSpacing: Duration = .milliseconds(250)
-    /// The estimated bytes of one thread's rows a pass lets go of, at most (a row larger than it goes whole, as a pass lets go
-    /// of at least one). A pass costs the main thread a layout of the whole mounted tree, tens of milliseconds, whether it takes
-    /// one row or eight, so a smaller step makes more passes and more of those stalls for the same memory, and shortens none.
+    /// How long after a show the first pass runs while the hidden threads are far over the budget (`farOverBudget`): the shows come
+    /// faster than passes that waited `releaseDelay` for each let go of what they build.
+    var releaseUrgentDelay: Duration = .milliseconds(500)
+    /// The estimated bytes of rows a pass lets go of, at most (a row larger than it goes whole, as a pass lets go of at least one), from one
+    /// thread, after a thread on screen has streamed for `patience` looks without a pass being far over the budget (`farOverBudget`); it is
+    /// also the least a quiet pass takes. A pass costs the main thread a layout of the whole mounted tree, tens of milliseconds, whether it
+    /// takes one row or eight, so a smaller step makes more passes and more of those stalls for the same memory, and shortens none.
     var releaseStep = 32 << 20
+    /// What a pass lets go of, at most, while the app is idle (no key or scroll, no thread on screen streaming), or a thread streams and a
+    /// pass can take much off the hidden threads (`farOverBudget`): what they are over by, if that is more than a step. Showing a thread
+    /// builds its rows again, hundreds of megabytes of them in a few seconds, and the time to the next show gives the passes a few looks: a
+    /// step a pass never caught up with the shows while the person switched from one thread to the next, and the hidden threads grew to
+    /// the abort. A stream's pass takes no more than this, so that it stalls the stream no more than a quiet one's.
+    var releaseCeiling = 128 << 20
+    /// What a pass lets go of, at most, while the app is idle and a pass can take much off the hidden threads (`farOverBudget`). Letting rows
+    /// go costs the main thread a sixth of what building them does, and a pass that takes one 250 MB row between two steps of a restore that
+    /// builds one lets go of no more than the restore builds: the threads stayed at 5 GB or more, and the app aborted after fifty minutes.
+    var releaseFarCeiling = 1 << 30
     /// What the app is doing that a pass waits for (`ThreadPassWait`): it waits `releaseSpacing` and looks again.
     var busy: (() -> ThreadPassWait)?
     /// How many looks in a row a pass waits for a thread on screen to stop streaming before it runs anyway (ten seconds at the default
@@ -167,12 +184,16 @@ final class NativeThreadStores<Key: Hashable> {
 
     /// `key`'s thread came on screen: the least recent threads past the bounds let their history go,
     /// after the pass that showed it (views ask for stores as they draw), and the hidden threads' rows are
-    /// looked at once the show has settled (`releaseDelay` after the last one).
+    /// looked at once the show has settled (`releaseDelay` after the last one, `releaseUrgentDelay` while they are far over the budget).
     func noteShown(_ key: Key) {
         recent.removeAll { $0 == key }
         recent.append(key)
-        Task { @MainActor [weak self] in self?.enforceHistoryBounds() }
-        scheduleMountedPass(after: releaseDelay)
+        // After the show, not in it: views call this as they draw, and the costs read here are never read, or tracked, in a view body.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            enforceHistoryBounds()
+            scheduleMountedPass(after: farOverBudget() ? releaseUrgentDelay : releaseDelay)
+        }
     }
 
     /// Releases what `Self.evictions` picks. Costs are read here, once per thread shown, never in a view body.
@@ -231,18 +252,23 @@ final class NativeThreadStores<Key: Hashable> {
         Int(min(2 << 30, physicalMemory / 8))
     }
 
+    /// The threads a pass may take from, in the order it takes them, from `entries` (oldest first, the hidden threads that hold rows): the
+    /// oldest unpinned ones with rows beyond their last screen, then the readers (pinned) older than the `keepPinned` most recent. The `keep`
+    /// newest are never taken, whatever they are.
+    private static func takeable(_ entries: [MountedEntry<Key>], keep: Int, keepPinned: Int) -> [MountedEntry<Key>] {
+        let newest = Set(entries.suffix(max(0, keep)).map(\.key))
+        let readers = Set(entries.filter(\.pinned).suffix(max(0, keepPinned)).map(\.key))
+        return entries.filter { $0.releasable && !$0.pinned && !newest.contains($0.key) }
+            + entries.filter { $0.releasable && $0.pinned && !readers.contains($0.key) && !newest.contains($0.key) }
+    }
+
     /// The keys whose rows to let go, in the order to take them, from `entries` (oldest first, the hidden threads that hold
-    /// rows): while their costs add up to more than `budget`, the oldest unpinned ones, then the readers (pinned) older than
-    /// the `keepPinned` most recent. The `keep` newest are never taken, whatever they are.
+    /// rows): while their costs add up to more than `budget`, the threads `takeable` names.
     static func viewReleases(_ entries: [MountedEntry<Key>], keep: Int, keepPinned: Int, budget: Int) -> [Key] {
         var total = entries.reduce(0) { $0 + $1.cost }
         guard total > budget else { return [] }
-        let newest = Set(entries.suffix(max(0, keep)).map(\.key))
-        let readers = Set(entries.filter(\.pinned).suffix(max(0, keepPinned)).map(\.key))
-        let order = entries.filter { $0.releasable && !$0.pinned && !newest.contains($0.key) }
-            + entries.filter { $0.releasable && $0.pinned && !readers.contains($0.key) && !newest.contains($0.key) }
         var released: [Key] = []
-        for entry in order {
+        for entry in takeable(entries, keep: keep, keepPinned: keepPinned) {
             guard total > budget else { break }
             total -= entry.cost
             released.append(entry.key)
@@ -250,13 +276,22 @@ final class NativeThreadStores<Key: Hashable> {
         return released
     }
 
-    /// Lets the rows of the hidden threads go while their estimated views (`mountedCost`) add up to more than the budget:
-    /// `step` bytes of at most `limit` threads (`releaseStep` unless given), then the next pass `releaseSpacing` later while it is
-    /// still over, so that no one pass tears down much. Threads on screen, selected or holding nothing (released whole already)
-    /// are not asked. Costs are read here, in a pass, never in a view body. Returns the threads it took from and the bytes it took.
-    @discardableResult
-    func enforceMountedBudget(budget: Int? = nil, keep: Int = 1, keepPinned: Int? = nil, limit: Int = 1, step: Int? = nil) -> (threads: Int, bytes: Int) {
-        guard let mounted = mounted?() else { return (0, 0) }
+    /// How far over `budget` the hidden threads are by what a pass can take: what they hold over it, at most what the threads `takeable`
+    /// names hold. The `keep` newest, the readers kept and the threads with nothing beyond their last screen hold memory that no pass
+    /// frees, so they are not part of what a pass has to catch up with.
+    static func overBudget(_ entries: [MountedEntry<Key>], keep: Int, keepPinned: Int, budget: Int) -> Int {
+        let held = entries.reduce(0) { $0 + $1.cost }
+        guard held > budget else { return 0 }
+        return min(held - budget, takeable(entries, keep: keep, keepPinned: keepPinned).reduce(0) { $0 + $1.cost })
+    }
+
+    /// What `mountedEntries` read: the hidden threads that hold rows, oldest first, and what each one's views hold.
+    typealias MountedSnapshot = (entries: [MountedEntry<Key>], costs: [Key: Int])
+
+    /// The hidden threads that hold rows, oldest first, and what their views hold (`mountedCost`); nil where nothing mounts a thread. The
+    /// threads on screen and the selected one are not in it, and neither are threads that hold nothing (released whole already).
+    private func mountedEntries() -> MountedSnapshot? {
+        guard let mounted = mounted?() else { return nil }
         recent.removeAll { stores[$0] == nil }
         let onScreen = self.onScreen
         // Threads never shown (a hidden view built from a preview) count as the oldest.
@@ -269,19 +304,66 @@ final class NativeThreadStores<Key: Hashable> {
             costs[key] = cost
             return MountedEntry(key: key, cost: cost, pinned: pins?.isPinned(store) == true, releasable: store.canReleaseTranscript)
         }
+        return (entries, costs)
+    }
+
+    /// A pass can take more than a quarter of the budget or the ceiling, whichever is more, off the hidden threads (`overBudget`: not the
+    /// newest one, the readers kept or what holds nothing more to give): waiting for a stream to end, or for the show that came before to
+    /// settle, means more rows built meanwhile than the passes then let go of, and the abort this budget exists to prevent.
+    func farOverBudget() -> Bool {
+        mountedEntries().map { isFarOver($0.entries) } ?? false
+    }
+
+    private func isFarOver(_ entries: [MountedEntry<Key>]) -> Bool {
+        Self.overBudget(entries, keep: 1, keepPinned: keepPinned, budget: mountedBudget) > max(mountedBudget / 4, releaseCeiling)
+    }
+
+    /// Lets the rows of the hidden threads go while their estimated views (`mountedCost`) add up to more than the budget: `step`
+    /// bytes of them in all (`releaseStep` unless given), the oldest rows of the thread `viewReleases` names first, from at most
+    /// `limit` threads, then the next pass `releaseSpacing` later while it is still over, so that no one pass tears down much. A thread's
+    /// first step lets go of its lazy stack's rows, which the estimate does not count, and ends the pass (the thread's own rows
+    /// are for the next). `ceiling`, for a pass while the app is idle or the threads are far over the budget (`farOverBudget`): what
+    /// the threads are over by is the step if that is more, at most `ceiling`, a row that does not fit goes too (a step is not
+    /// spent on small rows before a large one), and a thread goes on to its rows in the pass that let go of its lazy stack, but one
+    /// lazy stack a pass. Threads on screen, selected or holding nothing are not asked. Costs are read here, in a pass, never in a
+    /// view body. Returns the threads it took from and the bytes it took.
+    @discardableResult
+    func enforceMountedBudget(budget: Int? = nil, keep: Int = 1, keepPinned: Int? = nil, limit: Int = 1, step: Int? = nil, ceiling: Int? = nil, snapshot: MountedSnapshot? = nil) -> (threads: Int, bytes: Int) {
+        guard let (entries, costs) = snapshot ?? mountedEntries() else { return (0, 0) }
         let budget = budget ?? mountedBudget
+        let held = entries.reduce(0) { $0 + $1.cost }
         let releases = Self.viewReleases(entries, keep: keep, keepPinned: keepPinned ?? self.keepPinned, budget: budget)
-        var freed = 0, more = releases.count > limit
-        for key in releases.prefix(limit) {
+        let quiet = ceiling != nil
+        var room = step ?? ceiling.map { max(releaseStep, min(held - budget, $0)) } ?? releaseStep
+        var freed = 0, taken = 0, more = false, lazy = false
+        for key in releases {
             guard let store = stores[key] else { continue }
-            store.releaseTranscript(bytes: step ?? releaseStep, eagerRows: eagerRows, keepingLastScreen: true)
-            freed += (costs[key] ?? 0) - store.mountedCost(eagerRows: eagerRows)
+            guard taken < limit, room > 0 else {
+                more = true
+                break
+            }
+            // A step of everything (`.max`) lets go of the lazy stack with the rows.
+            let first = room < .max && store.releasesLazyStackFirst(eagerRows: eagerRows)
+            if quiet, first, lazy {
+                more = true
+                continue
+            }
+            store.releaseTranscript(bytes: room, eagerRows: eagerRows, keepingLastScreen: true, crossing: quiet)
+            if quiet, first {
+                lazy = true
+                store.releaseTranscript(bytes: room, eagerRows: eagerRows, keepingLastScreen: true, crossing: true)
+            }
+            let gone = (costs[key] ?? 0) - store.mountedCost(eagerRows: eagerRows)
+            freed += gone
+            if room < .max { room -= gone }
+            taken += 1
             if store.canReleaseTranscript { more = true }
             SHRenderProbe.tick("thread.rowsReleased")
             AppSignposts.thread.emitEvent("thread rows released")
+            if first, !quiet { break }
         }
-        if more, entries.reduce(0, { $0 + $1.cost }) - freed > budget { scheduleMountedPass(after: releaseSpacing) }
-        return (min(limit, releases.count), freed)
+        if more, held - freed > budget { scheduleMountedPass(after: releaseSpacing) }
+        return (taken, freed)
     }
 
     /// The next pass, `delay` from now in place of any waiting.
@@ -299,22 +381,32 @@ final class NativeThreadStores<Key: Hashable> {
     }
 
     /// A scheduled pass: the budget is enforced unless the app is busy (`busy`), when the pass waits and looks again: for as long as
-    /// the person types or scrolls, and while a thread streams up to `patience` times in a row. Returns whether it ran.
+    /// the person types or scrolls, and while a thread streams up to `patience` times in a row, unless a pass can take much off the
+    /// hidden threads (`farOverBudget`). What a pass lets go of depends on what the app is doing: a gibibyte at most while it is idle and the
+    /// threads are far over the budget, `releaseCeiling` while it is idle, or a thread streams and they are far over, and a step of one
+    /// thread after a stream's patience, so that a stream's pass never tears down more than a quiet one's. Returns whether it ran.
     @discardableResult
     func runMountedPass() -> Bool {
-        switch busy?() ?? .idle {
-        case .input:
+        let wait = busy?() ?? .idle
+        // The looks while the person types or scrolls read no costs.
+        if wait == .input {
             scheduleMountedPass(after: releaseSpacing)
             return false
-        case .streaming where putOff < patience:
+        }
+        let snapshot = mountedEntries()
+        let farOver = snapshot.map { isFarOver($0.entries) } ?? false
+        if wait == .streaming, putOff < patience, !farOver {
             putOff += 1
             scheduleMountedPass(after: releaseSpacing)
             return false
-        case .streaming, .idle:
-            break
         }
         putOff = 0
-        enforceMountedBudget()
+        let ceiling: Int? = switch (wait, farOver) {
+        case (.idle, true): releaseFarCeiling
+        case (.idle, false), (.streaming, true): releaseCeiling
+        case (.streaming, false), (.input, _): nil
+        }
+        enforceMountedBudget(limit: ceiling == nil ? 1 : .max, ceiling: ceiling, snapshot: snapshot)
         return true
     }
 

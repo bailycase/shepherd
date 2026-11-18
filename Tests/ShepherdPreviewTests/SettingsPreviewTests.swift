@@ -463,26 +463,6 @@ struct SettingsPreviewTests {
 
     // MARK: Creation sheets
 
-    /// `sheet-new-agent` with a model that reasons; `-plain-model` with pi's default one that
-    /// takes no thinking level, so the sheet offers no Thinking row.
-    @Test(arguments: [("sheet-new-agent", true), ("sheet-new-agent-plain-model", false)])
-    func newAgentSheet(name: String, reasons: Bool) async throws {
-        let workspace = try PreviewWorkspace(modelCatalog: {
-            ModelListing(entries: [PiModelCatalog.Entry(id: "qa/gemini-3.1-flash-lite", reasoning: reasons)],
-                         defaultModel: "qa/gemini-3.1-flash-lite")
-        })
-        defer { workspace.stop() }
-        let repo = try makeScratchRepo()
-        defer { try? FileManager.default.removeItem(at: repo) }
-        try await workspace.seed(ShepherdState(spaces: [Space(name: "Shepherd", path: repo.path)]))
-        workspace.vm.selectedSpaceID = workspace.vm.state.spaces.first?.id
-        workspace.vm.settings.defaultModel = "qa/gemini-3.1-flash-lite"
-        try await Preview.render(name, size: CGSize(width: AppLayout.newAgentSheetWidth, height: 640),
-                                 untilGone: reasons ? nil : "Thinking", showing: "gemini-3.1-flash-lite") {
-            NewAgentSheet(vm: workspace.vm)
-        }
-    }
-
     @Test func newWorktreeSheet() async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
@@ -553,6 +533,27 @@ struct SettingsPreviewTests {
         workspace.vm.settingsSection = .pi
         try await Preview.render("settings-pi-none", size: CGSize(width: 1280, height: 900)) {
             SettingsView(vm: workspace.vm)
+        }
+    }
+
+    /// Settings ▸ Pi ▸ Models (SettingsPiModels): before a refresh, during one, and after it worked
+    /// or couldn't reach pi.dev.
+    @Test func settingsPiModelsRow() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let catalog = workspace.vm.pi.catalog
+        try FileManager.default.createDirectory(at: workspace.vm.pi.home, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: workspace.vm.pi.home.appendingPathComponent("models-store.json"))
+        try await Preview.render("settings-pi-models", size: CGSize(width: 1000, height: 420)) {
+            SettingsGroup(title: "Shepherd's pi") {
+                PiModelsRow(catalog: catalog)
+                PiModelsRow(catalog: catalog, state: .refreshing)
+                PiModelsRow(catalog: catalog, state: .current)
+                PiModelsRow(catalog: catalog, state: .failed)
+            }
+            .padding(SH.Space.xxl)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Color.sh.bgWindow)
         }
     }
 

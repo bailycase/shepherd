@@ -168,6 +168,7 @@ struct ThreadTailFlowTests {
     @MainActor @Observable
     final class DeckModel {
         var active = true
+        var liveResizing = false
         var panel = false
         var panelHeight: CGFloat = 260
         /// The thread offers the subagent tray (`inspectSubagent` is given), as the app's does.
@@ -203,6 +204,7 @@ struct ThreadTailFlowTests {
                 .shAnimation(.content, value: panel)
             }
             .environment(\.shMotionPaused, !active)
+            .environment(\.liveResizing, model.liveResizing)
             .environment(\.threadCommands, commands)
         }
     }
@@ -851,6 +853,35 @@ struct ThreadTailFlowTests {
             await deck.publish { $0.subagents = [] }
             #expect(deck.store.tray == nil)
             try await deck.expectTail("the tray gone")
+        }
+    }
+
+    /// A live window resize, during which the thread lays out only the rows that cover it:
+    /// the tail stays drawn at every size, fewer rows are built while it lasts, and the full
+    /// eager tail is back when it ends.
+    @Test(.timingSensitive) func liveResizingTheWindowKeepsTheTail() async throws {
+        func builtRows(in view: NSView) -> Int {
+            (view is ThreadTailGuard.RowMarker ? 1 : 0) + view.subviews.reduce(0) { $0 + builtRows(in: $1) }
+        }
+        try await Self.withDeck(size: Self.tall, native: true) { deck in
+            try await deck.open()
+            let full = builtRows(in: deck.page)
+            deck.model.liveResizing = true
+            deck.layout()
+            let live = builtRows(in: deck.page)
+            #expect(live < full - 8, "live resizing lays out fewer rows: \(live) of \(full) built")
+            for height in [900.0, 700.0, 500.0, 800.0, 1100.0] {
+                deck.resize(to: CGSize(width: 1400, height: height))
+                try await deck.expectTail("live resized to \(height) tall")
+            }
+            for width in [1000.0, 700.0, 1400.0] {
+                deck.resize(to: CGSize(width: width, height: 900))
+                try await deck.expectTail("live resized to \(width) wide")
+            }
+            deck.model.liveResizing = false
+            deck.layout()
+            try await deck.expectTail("the live resize over")
+            #expect(builtRows(in: deck.page) >= full - 2, "the full eager tail is built again")
         }
     }
 

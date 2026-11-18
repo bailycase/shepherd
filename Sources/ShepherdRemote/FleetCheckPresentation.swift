@@ -106,9 +106,11 @@ public struct FleetCheckDetail: Equatable, Sendable {
     /// What Fix everything on this Mac covers.
     public var fixAllCount: Int
     public var rowID: String
+    /// Updating Shepherd on the Mac: its panel section, for the build row of a Mac that is behind.
+    public var update: FleetUpdateOffer?
 
     public static let none = FleetCheckDetail(pill: "", pillTone: .quiet, title: "", body: "", effect: "", mac: nil, macName: "", command: nil,
-                                              commandNote: nil, fixable: false, fixing: nil, ignored: false, ignorable: false, fixAllCount: 0, rowID: "")
+                                              commandNote: nil, fixable: false, fixing: nil, ignored: false, ignorable: false, fixAllCount: 0, rowID: "", update: nil)
 }
 
 /// A thread's job: what the agent on a Mac is asked to fix.
@@ -139,6 +141,11 @@ public struct FleetCheckPage: Equatable, Sendable {
     public var footer: String
     /// The tab's label: "Check · 6", or "Check".
     public var tabTitle: String { count > 0 ? "Check · \(count)" : "Check" }
+    /// The Macs whose build is behind the fleet's newest, not set aside, that can be asked to update and aren't being updated: "Update every Mac"
+    /// is offered for two or more.
+    public var updatable: [UUID] = []
+    /// The panel's Update section of each Mac that is behind (not set aside), in the columns' order: the phone draws them under the Shepherd row.
+    public var updateOffers: [FleetUpdateOffer] = []
 
     /// What each Mac reports, for the panel and the fixes.
     var entries: [UUID: Entry] = [:]
@@ -154,6 +161,14 @@ public struct FleetCheckPage: Equatable, Sendable {
         /// Items that differ here, by id, as presented (a build behind the fleet's newest differs, though the Mac says ok).
         var attention: Set<String>
         var asleep: Bool
+        /// The build this Mac runs, as the number ("671"); nil before it reported one.
+        var build: String?
+        /// What the host carries out to update it, if anything; whether it can be asked to (nil while its link is down); the threads working on it.
+        var update: FleetUpdateStatus?
+        var takesUpdates: Bool?
+        var working: Int?
+        /// What the host's app is called.
+        var product: String = "Shepherd"
     }
 
     /// One row's words across Macs: every repository that asks, the files that say so, and the newest build.
@@ -173,9 +188,17 @@ public struct FleetCheckPage: Equatable, Sendable {
     /// Whether `mac` has reported what it found.
     public func reported(_ mac: UUID) -> Bool { entries[mac]?.reported == true }
 
-    /// What needs doing on `mac`, short: the words of the Mac card's Ready line ("node 22", "muse CLI", "disk").
+    /// What needs doing on `mac`, short: the words of the Mac card's Ready line ("node 22", "muse CLI", "disk", "build 671").
     public func shortNames(needing mac: UUID) -> [String] {
-        groups.flatMap(\.rows).filter { $0.attention.contains(mac) }.map(\.short)
+        groups.flatMap(\.rows).filter { $0.attention.contains(mac) }.map { row in
+            row.id == "build" ? "build \(entries[mac]?.build ?? "")".trimmingCharacters(in: .whitespaces) : row.short
+        }
+    }
+
+    /// The build `mac` runs when it is behind the fleet's newest and that isn't set aside: the Mac card's "Behind · build 671" and its Update….
+    public func behindBuild(of mac: UUID) -> String? {
+        guard entries[mac]?.attention.contains("build") == true else { return nil }
+        return entries[mac]?.build ?? ""
     }
 
     /// The first row that needs something on `mac`: where a Mac card's Check… lands.
@@ -231,6 +254,10 @@ public enum FleetCheckPresentation {
         let states = Dictionary(snapshot.macs.map { ($0.hostID, $0) }, uniquingKeysWith: { first, _ in first })
         let columns = cards.map { FleetCheckColumn(id: $0.id, name: $0.name, status: $0.status, since: $0.since) }
 
+        // What the host carries out to update each Mac, and whether each can be asked to.
+        let updates = Dictionary(snapshot.updates.map { ($0.hostID, $0) }, uniquingKeysWith: { first, _ in first })
+        let peers = Dictionary(snapshot.peers.map { ($0.hostID, $0) }, uniquingKeysWith: { first, _ in first })
+
         // Fix threads that run, by Mac and item.
         var fixing = local
         let running: Set<FleetDispatchState> = [.placing, .waitingRoom, .waitingWake, .heldLimit, .heldRestart, .preparing, .running]
@@ -270,8 +297,12 @@ public enum FleetCheckPresentation {
                 guard let item = byMac[card.id], isAttention(item, newestBuild: merged[id]?.newestBuild) else { continue }
                 if !set.contains(id) { attention.insert(id) }
             }
+            let mine = card.status == .thisMac
             entries[card.id] = FleetCheckPage.Entry(name: card.name, packageManager: state?.check?.packageManager ?? "", reported: state?.check != nil, ignored: set,
-                                                    fixing: fixing[card.id] ?? [:], attention: attention, asleep: card.status == .asleep)
+                                                    fixing: fixing[card.id] ?? [:], attention: attention, asleep: card.status == .asleep,
+                                                    build: rows["build"]?[card.id].flatMap { buildNumber($0.value) }.map(String.init),
+                                                    update: updates[card.id], takesUpdates: mine ? true : peers[card.id]?.takesUpdates,
+                                                    working: state?.sample?.activeAgents, product: snapshot.app ?? "Shepherd")
         }
 
         var page = FleetCheckPage.empty
@@ -304,6 +335,14 @@ public enum FleetCheckPresentation {
         }
 
         // The words around it.
+        page.updatable = cards.compactMap { card in
+            guard let entry = entries[card.id], entry.attention.contains("build"), entry.takesUpdates != false, entry.update?.stage.isRunning != true else { return nil }
+            return card.id
+        }
+        page.updateOffers = cards.compactMap { card in
+            guard let entry = entries[card.id], entry.attention.contains("build") else { return nil }
+            return FleetUpdateOffer.make(mac: card.id, entry: entry, newest: merged["build"]?.newestBuild)
+        }
         page.count = entries.values.reduce(0) { $0 + $1.attention.count }
         let by = cards.compactMap { card -> String? in
             let n = entries[card.id]?.attention.count ?? 0
@@ -482,7 +521,7 @@ public enum FleetCheckPresentation {
             detail.pill = "Fails on \(name)"
             detail.title = "\(name) can’t reach \(item.tool ?? row.name)"
             detail.body = "git gets no answer from \(item.tool ?? "the remote") on \(name) (\(row.why)). Its ssh key or sign-in there may be missing."
-            detail.effect = "Auto still sends work there, but a dispatch that has to fetch or clone from it fails with git’s own words."
+            detail.effect = "Auto still sends work there, but a thread that has to fetch or clone from it fails with git’s own words."
         case .provider:
             detail.pill = "Fails on \(name)"
             detail.title = "\(item.value) on \(name)"
@@ -491,7 +530,7 @@ public enum FleetCheckPresentation {
         case .disk:
             detail.pill = "Low on \(name)"
             detail.title = "\(item.value) free on \(name)"
-            detail.body = "Each dispatch makes a worktree, and a first dispatch can clone a whole repo. Below 50 GB, a big clone can fill the disk."
+            detail.body = "Each thread sent there makes a worktree, and the first can clone a whole repo. Below 50 GB, a big clone can fill the disk."
             detail.effect = "Nothing is stopped: Auto still sends work to \(name), and a clone that doesn’t fit fails with git’s own words."
         case .sleep:
             let minutes = item.value.split(separator: " ").compactMap { Int($0) }.first
@@ -502,8 +541,9 @@ public enum FleetCheckPresentation {
         case .build:
             detail.pill = "Behind on \(name)"
             detail.title = "\(name) runs \(item.value.lowercasedFirst)"
-            detail.body = "The rest of the fleet runs build \(merged.newestBuild ?? ""). \(name) updates when Shepherd does there."
-            detail.effect = "Until then it may lack what the newer build added. Sync and dispatch still work between the builds."
+            detail.body = "The rest of the fleet runs build \(merged.newestBuild ?? "")."
+            detail.effect = "Until it updates it skips what \(merged.newestBuild ?? "the newer build") added, like pairing links. Sync and threads still work between the builds."
+            if attention { detail.update = FleetUpdateOffer.make(mac: mac, entry: entry, newest: merged.newestBuild) }
         case .other:
             detail.pill = "Differs on \(name)"
             detail.title = "\(row.name) on \(name)"

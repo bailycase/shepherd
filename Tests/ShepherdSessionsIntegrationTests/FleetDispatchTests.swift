@@ -71,7 +71,8 @@ struct FleetDispatchTests {
         init(_ name: String, origin: Origin, busy: UInt64 = 20, repoKey: String? = FleetDispatchTests.repoKey, dir: URL? = nil, port: UInt16 = 0,
              sendWork: Bool = true, cap: Int = HostSettings.fleetThreadCapDefault, checkout: Bool = true,
              uncommitted: FleetUncommittedChanges = .sendThem, links: SessionServer.FleetLinkOptions? = nil, gate: FleetTestGate? = nil,
-             mcp: [String: String] = [:], lacking: Set<String> = [], noXcode: Bool = false, isolatedPi: Bool = false) async throws {
+             mcp: [String: String] = [:], lacking: Set<String> = [], noXcode: Bool = false, isolatedPi: Bool = false,
+             prepare: (@Sendable (SessionServer) async -> Void)? = nil) async throws {
             self.name = name
             meter = FleetPressureIntegrationTests.Meter(busy: busy)
             settings = Locked(HostSettings(fleetThreadsCanSend: sendWork, fleetThreadCap: cap, fleetUncommitted: uncommitted))
@@ -79,6 +80,8 @@ struct FleetDispatchTests {
             // A Mac of its own pi home: the conversations of two Macs never meet in one folder (a move writes one).
             let host = try ScratchServer(dir: scratch, pi: isolatedPi ? PiSetup(engine: PiSetup.app.engine, home: scratch.appendingPathComponent("pi"), userHome: scratch.path) : .app)
             let server = host.server
+            // Before the listener opens: what the host offers is read when a peer says hello.
+            await prepare?(server)
             server.configureFleet(name: name, advertises: false)
             let (meter, clock) = (meter, clock)
             var sources = meter.sources
@@ -115,6 +118,8 @@ struct FleetDispatchTests {
                     ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard, worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
                 }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
             }
+            // Serving threads installs the host's own window relay, which a test's updater stands in for.
+            await prepare?(server)
             let settings = settings
             server.setFleetHostSettings { [weak server] change in
                 let now = settings.withValue { $0.apply(change); return $0 }

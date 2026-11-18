@@ -521,9 +521,12 @@ extension NativeActivityCall {
             kind = .subagents
             label = "spawn"
             let task = string("task").flatMap { $0.split(whereSeparator: \.isNewline).first.map(String.init) }
-            subagent = string("agent") ?? string("role") ?? string("name")
-                ?? task.flatMap { $0.split(separator: " ").first.map(String.init) } ?? "subagent"
-            detail = [subagent, task].compactMap { $0 }.joined(separator: " · ")
+            // `agent` picks the profile, `role` is its old alias, `name` is the helper's label, which leads.
+            let profile = string("agent") ?? string("role")
+            let given = string("name")
+            subagent = given ?? profile ?? task.flatMap { $0.split(separator: " ").first.map(String.init) } ?? "subagent"
+            detail = [subagent, given == nil ? nil : profile, task].compactMap { $0 }.joined(separator: " · ")
+            if failed { failure = nativeSubagentFailure(output) }
         case "design_read":
             kind = .explore
             explore = .read
@@ -783,6 +786,9 @@ public func nativeActivityBurst(_ calls: [NativeActivityCall]) -> NativeActivity
         label = failedLabel(first)
         if first.kind == .run {
             meta = [first.commandHead ?? first.detail, first.stat ?? "failed"]
+        } else if first.kind == .subagents {
+            // The reason is the whole story of a refused start; the task it was for is in the call.
+            meta = [first.failure ?? "failed"]
         } else {
             meta = [first.isPath ? (first.detail as NSString).lastPathComponent : first.detail, first.failure ?? "failed"]
         }
@@ -804,6 +810,15 @@ public func nativeActivityBurst(_ calls: [NativeActivityCall]) -> NativeActivity
     return NativeActivityBurst(id: first.id, kind: first.kind, state: state, calls: calls, label: label,
                                meta: meta.joined(separator: " · "),
                                accessibilityLabel: ([label] + meta + [word]).joined(separator: ", "))
+}
+
+/// Why a `shepherd_child_start` was refused, from the first sentence of its error ("Unknown agent
+/// "card-network-rules". Did you mean…" reads "Unknown agent card-network-rules").
+func nativeSubagentFailure(_ output: String) -> String? {
+    let sentence = nativeFirstSentence(output, limit: 80)
+        .replacingOccurrences(of: "\"", with: "")
+        .trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+    return sentence.isEmpty ? nil : sentence
 }
 
 func nativeRunningLabel(_ call: NativeActivityCall) -> String {

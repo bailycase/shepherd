@@ -16,4 +16,19 @@ public enum PanesExtension {
         return url.path
     }
     public static var extensionSource: String { EmbeddedExtensions.source("shepherd-panes.ts") }
+
+    /// The skill files under `Extensions/shepherd-skill/`. The bundle flattens resources, so the entry file can't be called
+    /// `SKILL.md` there (the design skill's is); it is installed under that name.
+    static let skillFiles = [(source: "shepherd.md", installed: "SKILL.md")]
+        + ["shepherd-thread.md", "shepherd-helpers.md", "shepherd-projects.md", "shepherd-fleet.md"].map { (source: $0, installed: $0) }
+
+    /// `<support>/shepherd-skill/`: the built-in skill on how to work in Shepherd, which the panes extension hands pi
+    /// (`SHEPHERD_SKILL_DIR`). Rewritten whenever a file differs from the bundle's.
+    public static func installedSkillDirectory() throws -> String {
+        let directory = ShepherdPaths.supportDirectory().appendingPathComponent("shepherd-skill", isDirectory: true)
+        for file in skillFiles {
+            try EmbeddedExtensions.install("shepherd-skill/\(file.source)", at: directory.appendingPathComponent(file.installed))
+        }
+        return directory.path
+    }
 }

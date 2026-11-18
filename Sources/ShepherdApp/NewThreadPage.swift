@@ -61,12 +61,27 @@ struct NewThreadPage: View {
                                      skills: vm.settings.skillsInSlashMenu, goals: vm.settings.goalsEnabled, place: draft.place)
     }
 
-    /// The prompt after "/" while it is one word the slash menu lists for, as in the thread composer.
+    /// The skills "$" lists: Settings ▸ Skills keeps them out of "/" only, as in the thread composer.
+    private var skills: [NativeCommand] {
+        NewThreadState.slashCommands(catalog: vm.slashCommands.catalog, hidden: vm.slashCommands.hidden,
+                                     skills: true, goals: false, place: draft.place).filter { $0.source == "skill" }
+    }
+
+    /// The "/" (commands) or "$" (skills) being typed at the end of the prompt, unless Esc closed its menu.
+    private var commandToken: ComposerCommandToken? {
+        draft.prompt == dismissedQuery ? nil : ComposerCommandToken.token(in: draft.prompt)
+    }
+
+    /// What the open menu lists: the commands for "/", the skills for "$".
+    private var menuCommands: [NativeCommand] { commandToken?.sigil == "$" ? skills : commands }
+
+    /// The query the menu matches, as in the thread composer: skills are named "skill:<name>", so
+    /// "$" matches past that, and mid-prompt a token matching nothing is prose ("see /tmp").
     private var commandQuery: String? {
-        let prompt = draft.prompt
-        guard prompt.hasPrefix("/"), !prompt.contains(where: \.isWhitespace), prompt != dismissedQuery,
-              !commands.isEmpty else { return nil }
-        return String(prompt.dropFirst()).lowercased()
+        guard let token = commandToken, !menuCommands.isEmpty, !token.isSkill(in: skills) else { return nil }
+        let query = (token.sigil == "$" ? "skill:" + token.text : token.text).lowercased()
+        guard token.startsDraft || !SlashMatchCache.matches(query: query, in: menuCommands).isEmpty else { return nil }
+        return query
     }
 
     private var commandMatches: [NativeCommand] { commandQuery == nil ? [] : slash.matches }
@@ -78,7 +93,7 @@ struct NewThreadPage: View {
     var body: some View {
         let _ = SHRenderProbe.tick("newThread.page")
         let query = commandQuery
-        let _ = slash.update(query: query, commands: commands)
+        let _ = slash.update(query: query, commands: menuCommands)
         VStack(spacing: 0) {
             DestinationPageHeader(title: "New thread", chrome: chrome)
             VStack(spacing: AppLayout.newThreadGap) {
@@ -212,7 +227,7 @@ struct NewThreadPage: View {
                 if commandQuery != nil {
                     let matches = commandMatches
                     guard matches.indices.contains(commandIndex) else { return .ignored }
-                    draft.prompt = "/\(matches[commandIndex].name) "
+                    complete(matches[commandIndex])
                     return .handled
                 }
                 guard mentionShown else { return .ignored }
@@ -497,11 +512,31 @@ struct NewThreadPage: View {
 
     /// A slash row chosen: "/name" becomes the prompt and starts the thread when it can, as the
     /// thread composer sends it.
+    /// A row picked: a skill becomes an inline chip and the person keeps typing; a command starts
+    /// the thread, unless words came before it, which become its arguments for the person to send.
     private func choose(_ command: NativeCommand) {
-        draft.prompt = "/\(command.name)"
+        if attachSkill(command) { return }
+        let token = commandToken
+        draft.prompt = token?.draft(running: command.name, then: "") ?? "/\(command.name)"
         dismissedQuery = nil
         composing = true
+        guard token?.before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true else { return }
         if draft.blocker(vm) == nil { draft.send(vm) }
+    }
+
+    private func complete(_ command: NativeCommand) {
+        if attachSkill(command) { return }
+        draft.prompt = commandToken?.draft(running: command.name, then: " ") ?? "/\(command.name) "
+        dismissedQuery = nil
+    }
+
+    /// A skill takes the place of its "$de" or "/skill:de" as an inline chip, as in the thread composer.
+    private func attachSkill(_ command: NativeCommand) -> Bool {
+        guard command.source == "skill", let token = commandToken else { return false }
+        draft.prompt = ComposerSkillToken.draft(picking: command.name, for: token)
+        dismissedQuery = nil
+        composing = true
+        return true
     }
 
     // MARK: Design references
@@ -513,7 +548,8 @@ struct NewThreadPage: View {
         ZStack(alignment: .topLeading) {
             if let query = commandQuery, menu == nil {
                 let slash = slash
-                SHSlashMenu(commands: slash.rows, total: commands.count, query: query, selection: $commandIndex,
+                SHSlashMenu(commands: slash.rows, total: menuCommands.count, query: query,
+                            title: commandToken?.sigil == "$" ? "Skills" : "Commands", selection: $commandIndex,
                             maxHeight: SHComposerMetrics.modelPickerMaxHeight) { command in
                     if let match = slash.matches.first(where: { $0.name == command.name }) { choose(match) }
                 }
@@ -637,8 +673,6 @@ private struct ProjectMenu: View {
             }
             Divider()
             Button("Remove Space…", role: .destructive) { vm.requestSpaceDelete(space.id) }
-        } else if let place, let host = place.host, let space = place.space {
-            Button("New Agent with Options…") { vm.showNewAgentSheetForRemote(hostID: host, spaceID: space) }
         }
     }
 }

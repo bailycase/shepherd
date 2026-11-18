@@ -1188,15 +1188,33 @@ public final class RemoteHostClient: @unchecked Sendable {
         guard capabilities.contains(RemoteProtocol.hostUpdateCapability) else {
             throw RemoteHostClientError.rejected(code: "unsupported", message: "This host does not support remote updates.")
         }
+        return try await sendHostUpdate(request)
+    }
+
+    /// The same request of another Mac of the fleet, over the link to it (whichever Mac opened it): a Mac that lacks
+    /// `RemoteProtocol.fleetUpdateCapability` is never asked, as an older one would answer `installWhenIdle` with a decoding error.
+    public func fleetHostUpdate(_ request: RemoteHostUpdateRequest) async throws -> HostUpdateStatus {
+        guard capabilities.contains(RemoteProtocol.fleetUpdateCapability) else {
+            throw RemoteHostClientError.rejected(code: "unsupported", message: "That Mac can't be updated from here.")
+        }
+        return try await sendHostUpdate(request)
+    }
+
+    private func sendHostUpdate(_ request: RemoteHostUpdateRequest) async throws -> HostUpdateStatus {
+        let installs: Bool
+        switch request {
+        case .install, .installWhenIdle: installs = true
+        case .status, .check, .cancel: installs = false
+        }
         let reply: RemoteReply
         do { reply = try await self.request { .hostUpdate(id: $0, request: request) } }
         catch RemoteHostClientError.timeout {
-            if case .install = request {
+            if installs {
                 throw RemoteHostClientError.outcomeUnknown(message: "Update outcome unknown. Reconnect and refresh status; do not retry installation automatically.")
             }
             throw RemoteHostClientError.timeout
         } catch RemoteHostClientError.disconnected {
-            if case .install = request {
+            if installs {
                 throw RemoteHostClientError.outcomeUnknown(message: "Host disconnected during update. Reconnect and refresh status; do not retry installation automatically.")
             }
             throw RemoteHostClientError.disconnected
@@ -1224,7 +1242,7 @@ public final class RemoteHostClient: @unchecked Sendable {
             case .projectsEnabled: "toggle the Projects experiment"
             case .fleetWeight: "change where Fleet sends work"
             case .fleetThreadsCanSend, .fleetThreadCap: "change what threads may send"
-            case .fleetUncommitted, .fleetSnapshotExcludes: "change what a dispatch carries"
+            case .fleetUncommitted, .fleetSnapshotExcludes: "change what a thread sent to another Mac carries"
             case .fleetCheckIgnore: "set aside what Check finds"
             case .fleetAutoDispatch, .fleetBatteryCountsHalf: "change how Fleet picks a Mac"
             case .designToolEnabled: "toggle the Design tool experiment"

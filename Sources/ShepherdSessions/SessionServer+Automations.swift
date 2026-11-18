@@ -72,21 +72,36 @@ extension SessionServer {
     }
 
     /// Starts a new agent with no app: adds its thread, spawns its pi, sends its opening prompt
-    /// and binds the session to its pane. `mcp` is what its pi gets for MCP.
+    /// and binds the session to its pane. `mcp` is what its pi gets for MCP. `prepare` makes its
+    /// folder after the thread shows (a new worktree's checkout); when it fails the thread goes.
     @MainActor
     public func startNewAgent(_ config: NewAgentConfig, launch: AgentLaunchSettings, defaultServiceTier: ServiceTier,
-                              mcp: @escaping AgentSpawn.MCP = { _, _, _, _, _ in nil }) async throws -> AgentID {
+                              mcp: @escaping AgentSpawn.MCP = { _, _, _, _, _ in nil },
+                              prepare: (@MainActor (AgentID) async throws -> Void)? = nil) async throws -> AgentID {
         guard state.spaces.contains(where: { $0.id == config.spaceID }) else {
             throw AgentStartFailure(message: "space no longer exists")
         }
-        guard Self.folderExists(config.workingDirectory) else {
+        guard prepare != nil || Self.folderExists(config.workingDirectory) else {
             throw AgentStartFailure(message: "\(config.workingDirectory) is missing")
         }
         let id = config.reservedAgentID ?? AgentID()
         creatingAgents.insert(id)
         defer { creatingAgents.remove(id) }
-        let (agent, tab, pane) = config.thread(id: id, in: state, defaultServiceTier: defaultServiceTier)
+        var (agent, tab, pane) = config.thread(id: id, in: state, defaultServiceTier: defaultServiceTier)
         try await addAgent(agent, withTab: tab)
+        if let prepare {
+            do {
+                try await prepare(id)
+            } catch {
+                try? await deleteAgent(id)
+                throw error
+            }
+            // Closed while its folder was made, or recorded since (its base).
+            guard let current = state.agents.first(where: { $0.id == id }) else {
+                throw AgentStartFailure(message: "the thread was closed while it started")
+            }
+            agent = current
+        }
         var spawn = AgentSpawn(agent: agent, cwd: AgentLaunch.resolvedCwd(pane.cwd), settings: launch)
         spawn.isAutomation = config.isAutomation
         spawn.mcp = mcp

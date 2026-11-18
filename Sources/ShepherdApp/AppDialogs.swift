@@ -11,10 +11,6 @@ struct AppDialogs: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .sheet(isPresented: $vm.showNewAgentSheet) {
-                NewAgentSheet(vm: vm)
-                    .dialogSheetFrame()
-            }
             // The first launch's sheet; closing it, whichever way, starts restored agents. A sign-in
             // it opens shows over it.
             .sheet(item: Binding(get: { vm.yourPi.importSheet }, set: { if $0 == nil { vm.finishImport() } }),
