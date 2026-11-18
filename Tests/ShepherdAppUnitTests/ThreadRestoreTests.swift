@@ -77,6 +77,47 @@ struct ThreadRestoreTests {
         #expect(few.keptRows == few.rows.count && frame.plan == nil && !frame.restoring)
     }
 
+    /// The first rows of a thread (it opened, or its history came back) draw their eager tail alone, and the lazy stack the frame after:
+    /// a stack drawn with them is shown its estimates before the scroll view is held to the tail, and builds rows at the top.
+    @Test func theFirstRowsOfAThreadDrawTheirEagerTailAloneAndTheLazyStackAfterThatFrame() {
+        let long = store(turns: 24)
+        let rows = long.rows, eager = 30
+        #expect(rows.count == 48)
+        let owed: (Int) -> Int = { long.restoreCost(drawn: $0, upTo: eager) }
+        let restore = ThreadRestore()
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: [NativeThreadRow](), eagerRows: eager, owed: owed) == nil, "no rows, nothing to hold back")
+        let first = restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, owed: owed)
+        #expect(first == ThreadRestore.Plan(eager: 30, history: false) && restore.restoring && restore.awaitsHistory)
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, owed: owed) == first, "until the step that brings the stack")
+        let more = restore.advance(rows: rows, eagerRows: eager) { _ in Issue.record("the stack takes no rows"); return 0 }
+        #expect(more && !restore.awaitsHistory)
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, owed: owed) == nil, "the stack and every row are drawn")
+        #expect(!restore.restoring)
+        // A thread whose tail is cost-bound holds the rows it is allowed, not thirty.
+        let heavy = ThreadRestore()
+        #expect(heavy.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 6, owed: owed) == ThreadRestore.Plan(eager: 6, history: false))
+    }
+
+    @Test func aThreadWithNoRowsBeyondItsEagerTailHasNoStackToWaitFor() {
+        let short = store(turns: 10)
+        let restore = ThreadRestore()
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: short.rows, eagerRows: 30, owed: { _ in 0 }) == nil)
+        #expect(!restore.restoring)
+    }
+
+    /// What a hidden view drew is drawn: showing it again is a flip, and does not take its stack away for a frame; one whose history was let
+    /// go draws its first rows again as any thread does.
+    @Test func aThreadThatDrewItsRowsWhileHiddenKeepsItsStackAndOneThatLostThemWaitsAgain() {
+        let long = store(turns: 24)
+        let rows = long.rows
+        let restore = ThreadRestore()
+        _ = restore.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: 30, owed: { _ in 0 })
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 30, owed: { _ in 0 }) == nil)
+        _ = restore.plan(active: false, hiddenKept: nil, rows: [NativeThreadRow](), eagerRows: 30, owed: { _ in 0 })
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: [NativeThreadRow](), eagerRows: 30, owed: { _ in 0 }) == nil)
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 30, owed: { _ in 0 }) == ThreadRestore.Plan(eager: 30, history: false))
+    }
+
     /// The lazy stack comes back with the first step, and until it does a reader cannot scroll to the rows above the last screen.
     @Test func aRestoreAwaitsItsLazyStackUntilItsFirstStep() {
         let long = store(turns: 12, heavy: { _ in true })

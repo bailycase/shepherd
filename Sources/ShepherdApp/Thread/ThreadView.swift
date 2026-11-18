@@ -160,10 +160,7 @@ struct ThreadView: View {
         let restoreStepping = restore.restoring
         let drawn = rows.suffix(kept ?? restored.map { $0.history ? rows.count : $0.eager } ?? rows.count)
         let eager = drawn.suffix(restored?.eager ?? eagerCount)
-        // Until the replies at the end have their blocks (a large reply is parsed off the main thread) they draw as nothing, and the tail
-        // is a few points tall: a lazy stack above it would be in the window, and build its rows (which then grow to their full size, out
-        // of view and out of the budget). The stack comes when the tail has its content, with the window held to the tail, and stays.
-        let history = drawn.prefix(eagerTail.drawsHistory(rows: rows.count, settling: store.tailAwaitsParse(lastRows: eager.count)) ? drawn.count - eager.count : 0)
+        let history = drawn.prefix(drawn.count - eager.count)
         // A Project's accepted messages the transcript has not taken in: waiting ones go to the composer's Up next, outcomes stay here.
         let held = projectSend?.held() ?? []
         // A row's background needs only the boundary ID, not a captured copy of the transcript.
@@ -577,7 +574,13 @@ struct ThreadView: View {
         func waiting() -> Bool { scrolling() || !follower.sticky || userActivity?.inputRecent == true }
         if restore.awaitsHistory {
             try? await Task.sleep(for: AppLayout.restorePause)
-            while scrolling(), !Task.isCancelled { try? await Task.sleep(for: AppLayout.restoreRetry) }
+            // Replies still to be parsed (a large one is parsed off the main thread) draw as nothing, and a tail a few points tall leaves the
+            // stack in the window, where it builds rows that grow to their full size out of view and out of the budget.
+            func awaitingParse() -> Bool {
+                let rows = listedRows(userOrigins)
+                return store.tailAwaitsParse(lastRows: eagerCount(userOrigins, rows: rows))
+            }
+            while scrolling() || awaitingParse(), !Task.isCancelled { try? await Task.sleep(for: AppLayout.restoreRetry) }
             guard !Task.isCancelled else { return }
             // The stack's height comes in above whatever the reader is looking at, and a scroll view held to nothing keeps its offset
             // from the top: a reader who scrolled away in the moments before it comes goes back to the tail, held there as it grows.
@@ -1190,6 +1193,9 @@ final class ThreadRestore {
     @ObservationIgnored private var hiddenKept: Int?
     /// This showing has begun (or needed no restore).
     @ObservationIgnored private var begun = false
+    /// The thread has had rows since it last had none: what its view drew, hidden or shown, has been drawn with the rows that came, so
+    /// the lazy stack above its eager tail has had its first frame.
+    @ObservationIgnored private var arrived = false
 
     /// The lazy stack is still to come back (the next step brings it): the thread draws only the rows the eager stack holds, so a
     /// reader cannot scroll to older ones.
@@ -1207,6 +1213,7 @@ final class ThreadRestore {
         _ = steps
         guard active else {
             self.hiddenKept = hiddenKept
+            arrived = !rows.isEmpty
             // Hidden halfway through, it keeps the rows it has and waits for the next showing: the rest is not built for no one.
             // Unless a pass has let those go again (`hiddenKept` below what the restore had): the next showing starts again from
             // the rows kept, as after any release, and does not build the difference in its first frame.
@@ -1227,8 +1234,21 @@ final class ThreadRestore {
             }
             self.hiddenKept = nil
         }
+        if rows.isEmpty { arrived = false }
+        // The first rows of a thread (it opened, or its history came back) draw their eager tail alone, and the lazy stack after that frame
+        // (`advance`): a stack drawn with them is shown its estimates before the scroll view has been held to the tail, and builds rows at the
+        // top of a thread that are nowhere near its reader.
+        if !arrived, !rows.isEmpty {
+            arrived = true
+            if !restoring, rows.count > eagerRows {
+                first = rows[rows.endIndex - eagerRows].id
+                restoring = true
+                history = false
+            }
+        }
         guard restoring else { return nil }
-        guard let first, let index = rows.lastIndex(where: { $0.id == first }), rows.endIndex - index < eagerRows else {
+        // The tail alone is a whole eager tail, one that waits for its lazy stack.
+        guard let first, let index = rows.lastIndex(where: { $0.id == first }), rows.endIndex - index < eagerRows || !history else {
             finish()
             return nil
         }

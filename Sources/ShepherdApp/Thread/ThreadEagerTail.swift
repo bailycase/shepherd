@@ -22,7 +22,6 @@ final class ThreadEagerTail {
     private var first: String?
     private var key: Key?
     private var count = 0
-    private var drewHistory = false
 
     private struct Key: Equatable {
         let revision: Int
@@ -62,18 +61,6 @@ final class ThreadEagerTail {
         self.first = rows[rows.endIndex - next].id
         count = next
         return next
-    }
-
-    /// Whether the lazy stack of the rows before the tail is drawn, given that the replies at the tail's end `settling` have no blocks yet. It
-    /// waits for them the first time the thread has rows and is drawn from then on (a reader in its history must not lose it because a
-    /// large reply arrived), until the thread has no rows again (its history was let go).
-    func drawsHistory(rows: Int, settling: Bool) -> Bool {
-        if rows == 0 {
-            drewHistory = false
-            return true
-        }
-        if !settling { drewHistory = true }
-        return drewHistory
     }
 
     /// The rows the tail held when last drawn: what a hidden thread draws, whose rows do not change. `rule` for a thread never drawn.

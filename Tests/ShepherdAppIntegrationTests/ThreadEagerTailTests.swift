@@ -5,6 +5,7 @@ import ShepherdRemote
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdRemote
 @testable import ShepherdUI
 
 /// A thread lays out for real only the rows at its end that its cost allows, whatever its history holds: counted in what the
@@ -32,6 +33,8 @@ struct ThreadEagerTailTests {
     private static func open(turns: Int, cycles: Int) async throws -> (thread: FakeThread, fields: Int, peak: Int) {
         let thread = FakeThread(ThreadFixture.snapshot(messages(turns: turns, cycles: cycles)), deckHosting: true)
         try await thread.waitUntilReady()
+        // Large replies are parsed off the main thread, and the rows hold nothing before their parse lands.
+        await thread.store.waitForProse()
         var last = -1, still = 0, peak = 0
         try await eventuallyOnMain("the thread to stop building code fields", timeout: .seconds(60)) {
             ListPerf.settle(thread.window)
