@@ -4,6 +4,7 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
+import Synchronization
 
 extension EnvironmentValues {
     /// Keyboard commands for the thread on screen, when the app provides them.
@@ -524,8 +525,13 @@ struct ThreadView: View {
                 ForEach(history) { row in
                     rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                 }
+                // The stack builds the last row it is handed, off screen as it is, and keeps it built. The rows that leave the eager tail
+                // join the history's end, so without an element after them each turn's reply would stay built (about 0.6 MB for one
+                // line). This one is built in their place, empty; the spacing it brings is taken back below.
+                if !history.isEmpty { Color.clear.frame(height: 0).accessibilityHidden(true) }
             }
             .scrollTargetLayout()
+            .padding(.bottom, history.isEmpty ? 0 : -spacing)
             // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
             // that host does not run). Its identity changes only while the rows are let go, and takes them with it.
             .id(dormant))
@@ -978,7 +984,13 @@ final class CatchUpGate {
 
 /// What a transcript row keeps between its renders (`ThreadRowContent`). A reference, so keeping it current never redraws the row.
 @MainActor
-private final class ThreadRowMemory {
+final class ThreadRowMemory {
+    #if DEBUG
+    /// How many rows have view state alive: the rows a thread keeps built, which the tests pin (`ThreadHistoryRetentionTests`).
+    nonisolated static let built = Atomic<Int>(0)
+    init() { Self.built.add(1, ordering: .relaxed) }
+    deinit { Self.built.subtract(1, ordering: .relaxed) }
+    #endif
     /// The catch-up gate of the shell: made when the row draws the shell and dropped when it draws a finished reply, so a reply
     /// that goes live again starts from the transcript's verdict, as a row made then would.
     var catchUp: CatchUpGate?
