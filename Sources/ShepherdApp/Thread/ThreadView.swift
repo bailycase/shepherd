@@ -578,8 +578,12 @@ struct ThreadView: View {
             try? await Task.sleep(for: AppLayout.restorePause)
             // Replies still to be parsed (a large one is parsed off the main thread) draw as nothing, and a tail a few points tall leaves the
             // stack in the window, where it builds rows that grow to their full size out of view and out of the budget. The update that
-            // brings their blocks builds them, and the stack comes in the one after it.
-            while scrolling() || !restore.tailDrawnParsed, !Task.isCancelled { try? await Task.sleep(for: AppLayout.restoreRetry) }
+            // brings their blocks builds them, and the stack comes in the one after it. A parse that does not land holds it back only so long.
+            var parseRetries = 0
+            while scrolling() || restore.waitsForParse(retries: parseRetries), !Task.isCancelled {
+                if !restore.tailDrawnParsed { parseRetries += 1 }
+                try? await Task.sleep(for: AppLayout.restoreRetry)
+            }
             guard !Task.isCancelled else { return }
             // The stack's height comes in above whatever the reader is looking at, and a scroll view held to nothing keeps its offset
             // from the top: a reader who scrolled away in the moments before it comes goes back to the tail, held there as it grows.
@@ -1207,6 +1211,10 @@ final class ThreadRestore {
 
     /// What the thread draws in this update; nil for all of it. `hiddenKept` is what the hidden view draws
     /// (`NativeThreadStore.transcriptDrawn`, read only while hidden, so that the thread on screen is not drawn again by the store
+    /// The first lazy stack still waits for the replies at the end of the tail to draw their blocks, having waited `retries` times
+    /// (`AppLayout.restoreRetry` each): not for ever, so that a parse that does not land cannot keep the older rows from coming back.
+    func waitsForParse(retries: Int) -> Bool { !tailDrawnParsed && retries < AppLayout.restoreParseRetries }
+
     /// clearing it), and `rows` all the rows once the thread is shown. `owed` is what building the rows between the last `hiddenKept`
     /// and the eager tail costs, beyond their chrome (`NativeThreadStore.restoreCost`), read once as it comes back: a thread that owes
     /// no more than a step (`AppLayout.restoreStepBytes`) draws them all in its first frame, as it would after any release, because

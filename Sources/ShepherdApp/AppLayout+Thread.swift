@@ -70,6 +70,9 @@ extension AppLayout {
     static let restorePause: Duration = .milliseconds(1)
     /// How long a restore waits to look again while the reader scrolls or is away from the tail.
     static let restoreRetry: Duration = .milliseconds(100)
+    /// How many `restoreRetry` the first lazy stack waits for the replies at the end of the tail to have their blocks (a large reply is
+    /// parsed off the main thread; ten seconds is past a giant one) before it comes anyway.
+    static let restoreParseRetries = 100
     /// The estimated bytes (`NativeThreadStore.restoreStep`) of rows one step draws, at most; a row larger than it goes whole.
     /// About a code-heavy reply, whose views take tens of milliseconds to build.
     static let restoreStepBytes = 4 << 20

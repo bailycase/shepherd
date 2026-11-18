@@ -109,6 +109,43 @@ struct ThreadRestoreTests {
         #expect(restore.tailDrawnParsed)
     }
 
+    /// A reply with no blocks to draw (whitespace before a tool call, a comment) is not one whose parse is awaited, so the stack comes after
+    /// the frame that drew the tail as it does for any other thread, and not when the wait runs out.
+    @Test func aTailWhoseLastReplyHasNothingToDrawStillGetsItsStack() {
+        for reply in ["\n\n", "<!-- c -->"] {
+            let messages = (0..<24).flatMap { i in
+                [NativeThreadMessage(entryID: "u\(i)", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "question \(i)")]),
+                 NativeThreadMessage(entryID: "a\(i)", role: "assistant",
+                                     blocks: ((i == 23 ? [reply] : []) + ["answer \(i)"]).map { NativeThreadBlock(kind: .text, text: $0) })]
+            }
+            let long = NativeThreadStore()
+            long.preview(NativeThreadSnapshot(piSessionID: "session", generation: "generation", revision: 1, running: false, supportedActions: [],
+                                              dialogsSupported: true, dialogs: [], messages: messages, provisional: [], clipped: false))
+            let rows = long.rows, eager = 12
+            #expect(rows.count == 48)
+            #expect(rows.last?.presentation?.items.contains { if case .prose(_, let text, let prose) = $0 { text == reply && prose.isEmpty } else { false } } == true,
+                    "the premise: a reply among the last rows with text and no blocks")
+            let awaited = long.tailAwaitsParse(lastRows: eager)
+            #expect(!awaited, "\(reply.debugDescription)")
+            let restore = ThreadRestore()
+            let first = restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, tailParsed: !awaited, owed: { _ in 0 })
+            #expect(first == ThreadRestore.Plan(eager: 12, history: false) && restore.awaitsHistory)
+            #expect(!restore.waitsForParse(retries: 0), "nothing to wait for")
+            #expect(restore.advance(rows: rows, eagerRows: eager) { _ in 0 } && !restore.awaitsHistory, "the stack comes")
+        }
+    }
+
+    /// A parse that does not land holds the stack back only so long.
+    @Test func theStackWaitsForAParseOnlyForSoLong() {
+        let long = store(turns: 24)
+        let restore = ThreadRestore()
+        _ = restore.plan(active: true, hiddenKept: nil, rows: long.rows, eagerRows: 12, tailParsed: false, owed: { _ in 0 })
+        #expect(restore.awaitsHistory && !restore.tailDrawnParsed)
+        #expect(restore.waitsForParse(retries: 0) && restore.waitsForParse(retries: AppLayout.restoreParseRetries - 1))
+        #expect(!restore.waitsForParse(retries: AppLayout.restoreParseRetries), "the stack comes with the tail still without its blocks")
+        #expect(restore.advance(rows: long.rows, eagerRows: 12) { _ in 0 } && !restore.awaitsHistory)
+    }
+
     @Test func aThreadWithNoRowsBeyondItsEagerTailHasNoStackToWaitFor() {
         let short = store(turns: 10)
         let restore = ThreadRestore()

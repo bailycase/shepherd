@@ -77,10 +77,13 @@ public struct NativeTurnPresentation: Equatable, Sendable {
             }
         }
 
-        /// A reply whose parse has not landed: it has text and no blocks (a large one is parsed off the main thread), and draws as nothing.
+        /// A reply with the text of one that is parsed off the main thread (`NativeThreadStore.offMainProseBytes`) and no blocks, which draws
+        /// as nothing until its parse lands: the estimate that costs and sizes its row meanwhile. A text with nothing to draw (whitespace,
+        /// a comment) has no blocks once parsed either, so only the store, which knows whether a parse is out, says that one is awaited
+        /// (`NativeThreadStore.tailAwaitsParse`).
         public var awaitsParse: Bool {
-            if case .prose(_, let text, let prose) = self { return prose.isEmpty && !text.isEmpty }
-            return false
+            guard case .prose(_, let text, let prose) = self, prose.isEmpty, text.utf8.count >= NativeThreadStore.offMainProseBytes else { return false }
+            return text.contains { !$0.isWhitespace }
         }
     }
 

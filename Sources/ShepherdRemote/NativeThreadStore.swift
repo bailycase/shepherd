@@ -1757,10 +1757,17 @@ public final class NativeThreadStore {
         return taken
     }
 
-    /// Whether a reply among the last `count` rows of the list the view draws has not had its parse land: a large reply is parsed off the
-    /// main thread (`offMainProseBytes`), and its row draws as nothing, a few points tall, until it does.
+    /// Whether a reply among the last `count` rows of the list the view draws has a parse out that has not landed: a large reply is parsed
+    /// off the main thread (`offMainProseBytes`), and its row draws as nothing, a few points tall, until it does. A reply that has no
+    /// blocks and no parse out (its text is whitespace or a comment) is not awaited: nothing is coming.
     public func tailAwaitsParse(lastRows count: Int) -> Bool {
-        listRows.suffix(count).contains { row in row.presentation?.items.contains(where: \.awaitsParse) == true }
+        guard !proseParsing.isEmpty else { return false }
+        return listRows.suffix(count).contains { row in
+            row.presentation?.items.contains { item in
+                guard case .prose(let id, _, let prose) = item, prose.isEmpty else { return false }
+                return proseParsing[ProseKey(turn: row.id, item: id)] != nil
+            } == true
+        }
     }
 
     /// How many rows at the end of the thread its view lays out for real, as it last drew them (`ThreadEagerTail`); nil until it has.

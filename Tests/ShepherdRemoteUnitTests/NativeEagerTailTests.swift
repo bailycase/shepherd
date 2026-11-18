@@ -152,6 +152,50 @@ struct NativeEagerTailTests {
         #expect(!small.tailAwaitsParse(lastRows: 6), "a short reply is parsed at once")
     }
 
+    /// A reply with a text that has no blocks once parsed (the whitespace a model emits before a tool call, a comment) is not one whose
+    /// parse is awaited: nothing is coming, and a view that waited for it would wait for ever.
+    private func reply(_ texts: [String]) -> NativeThreadMessage {
+        NativeThreadMessage(entryID: "a", role: "assistant", blocks: texts.map { NativeThreadBlock(kind: .text, text: $0) })
+    }
+
+    private func hasEmptyProse(_ store: NativeThreadStore) -> Bool {
+        store.rows.last?.presentation?.items.contains { if case .prose(_, _, let prose) = $0 { prose.isEmpty } else { false } } == true
+    }
+
+    @Test func aReplyWithATextThatHasNothingToDrawIsNotAwaited() async {
+        for text in ["\n\n", " ", "\n", "<!-- c -->"] {
+            let store = NativeThreadStore()
+            store.preview(F.snapshot(messages: [F.user("question", id: "u"), reply([text, "Done."])]))
+            #expect(hasEmptyProse(store), "the premise: \(text.debugDescription) is a text with no blocks")
+            #expect(!store.tailAwaitsParse(lastRows: 6), "\(text.debugDescription)")
+        }
+    }
+
+    /// The same of a text large enough to be parsed off the main thread: it is awaited while the parse is out, and not when it lands with
+    /// nothing, which leaves the row as it was.
+    @Test func aLargeTextWithNothingToDrawIsAwaitedOnlyWhileItsParseIsOut() async {
+        let blank = String(repeating: "\n", count: NativeThreadStore.offMainProseBytes + 1)
+        let store = NativeThreadStore()
+        store.preview(F.snapshot(messages: [F.user("question", id: "u"), reply([blank, "Done."])]))
+        #expect(hasEmptyProse(store) && store.tailAwaitsParse(lastRows: 6), "its parse is out")
+        await store.waitForProse()
+        #expect(hasEmptyProse(store), "it landed with no blocks")
+        #expect(!store.tailAwaitsParse(lastRows: 6), "and none are coming")
+    }
+
+    /// The estimate that costs and sizes a row whose parse is out (`NativeMountedCost`, `NativeRowHeight`) is for text that is parsed off
+    /// the main thread and has something to draw.
+    @Test func onlyAnUnparsedTextOfALargeReplyIsEstimatedAsText() {
+        let large = String(repeating: "word ", count: NativeThreadStore.offMainProseBytes / 5 + 1)
+        func item(_ text: String, _ prose: NativeProse) -> NativeTurnPresentation.Item { .prose(id: "p", text: text, prose: prose) }
+        #expect(item(large, .empty).awaitsParse)
+        #expect(!item(large, NativeProseState(large, streaming: false).prose).awaitsParse, "its blocks landed")
+        #expect(!item("Done.", .empty).awaitsParse, "a short text is parsed at once")
+        #expect(!item("\n\n", .empty).awaitsParse)
+        #expect(!item(String(repeating: " \n", count: NativeThreadStore.offMainProseBytes), .empty).awaitsParse, "nothing to draw")
+        #expect(Cost.item(item("\n\n", .empty)) == Cost.item(item("", .empty)))
+    }
+
     @Test func aStreamedChunkLeavesTheCostRevisionAlone() async {
         let host = FakeHost(F.snapshot(running: true, messages: messages(3, cycles: { _ in 0 }) + [F.user("go", id: "u-go")],
                                        provisional: [F.assistant("chunk", status: "streaming", id: "live")]))
