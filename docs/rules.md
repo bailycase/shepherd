@@ -191,8 +191,9 @@ its end have their blocks: a stack drawn with them, or above a tail of replies t
 tall, would be in the window and build rows that grow out of view and out of the budget. A reply has no blocks
 yet while its parse is out (`NativeThreadStore.tailAwaitsParse`), never because its text has nothing to draw
 (whitespace, a comment), and the wait is bounded (`AppLayout.restoreParseRetries`), so the stack always comes. A
-thread whose first rows arrive while it is hidden draws its lazy stack with them, as a hidden view always did
-(showing it is a flip), and the rows that stack builds beyond the eager tail are not in the budget's count.
+thread whose first rows arrive while it is hidden draws its eager tail alone as well, and its stack after the
+first frame it is shown: a stack in a window nobody sees is laid out from the top of the thread and builds rows
+there that nothing counts. Rows that arrive while a tail waits for its stack do not grow it past the rule.
 
 What the view last drew, shown or hidden, is `NativeThreadStore.drawnEagerRows`, which `mountedCost` and the passes
 that let rows go count, and `ThreadRestore` restores up to; the store clears it when its rows are replaced from

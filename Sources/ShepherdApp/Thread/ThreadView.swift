@@ -1202,8 +1202,7 @@ final class ThreadRestore {
     @ObservationIgnored private var hiddenKept: Int?
     /// This showing has begun (or needed no restore).
     @ObservationIgnored private var begun = false
-    /// The thread has had rows since it last had none: what its view drew, hidden or shown, has been drawn with the rows that came, so
-    /// the lazy stack above its eager tail has had its first frame.
+    /// The thread has had rows since it last had none, and `plan` has seen them, hidden or shown (`noteArrival`).
     @ObservationIgnored private var arrived = false
 
     /// The last update drew the replies at the end of the eager tail with their blocks (`NativeThreadStore.tailAwaitsParse` was false):
@@ -1233,13 +1232,11 @@ final class ThreadRestore {
         tailDrawnParsed = tailParsed
         guard active else {
             self.hiddenKept = hiddenKept
-            arrived = !rows.isEmpty
+            noteArrival(rows: rows, eagerRows: eagerRows)
             // Hidden halfway through, it keeps the rows it has and waits for the next showing: the rest is not built for no one.
             // Unless a pass has let those go again (`hiddenKept` below what the restore had): the next showing starts again from
             // the rows kept, as after any release, and does not build the difference in its first frame.
-            if restoring, let first, let index = rows.lastIndex(where: { $0.id == first }), self.hiddenKept.map({ $0 >= rows.endIndex - index }) ?? true {
-                return Plan(eager: rows.endIndex - index, history: history)
-            }
+            if let plan = underway(rows: rows, eagerRows: eagerRows), self.hiddenKept.map({ $0 >= plan.eager }) ?? true { return plan }
             begun = false
             finish()
             return nil
@@ -1254,26 +1251,45 @@ final class ThreadRestore {
             }
             self.hiddenKept = nil
         }
-        if rows.isEmpty { arrived = false }
-        // The first rows of a thread whose tail is bounded by cost (it opened, or its history came back) draw their eager tail alone, and the
-        // lazy stack after that frame (`advance`): a stack drawn with them is shown its estimates before the scroll view has been held to
-        // the tail, and builds rows at the top of the thread that are nowhere near its reader, which for rows that cost that much is
-        // hundreds of megabytes nothing counts. A thread of cheap rows (the most of them are the tail) draws as it always did.
-        if !arrived, !rows.isEmpty {
-            arrived = true
-            if !restoring, rows.count > eagerRows, eagerRows < ThreadView.eagerRows {
-                first = rows[rows.endIndex - eagerRows].id
-                restoring = true
-                history = false
-            }
-        }
+        noteArrival(rows: rows, eagerRows: eagerRows)
         guard restoring else { return nil }
         // The tail alone is a whole eager tail, one that waits for its lazy stack.
-        guard let first, let index = rows.lastIndex(where: { $0.id == first }), rows.endIndex - index < eagerRows || !history else {
+        guard let plan = underway(rows: rows, eagerRows: eagerRows), plan.eager < eagerRows || !plan.history else {
             finish()
             return nil
         }
-        return Plan(eager: rows.endIndex - index, history: history)
+        return plan
+    }
+
+    /// What a restore under way draws: the eager stack from the row it has reached. A tail that waits for its lazy stack is the rule's at
+    /// most, whatever rows arrive meanwhile (a hidden thread waits as long as it stays hidden), the row it starts from moving with them.
+    private func underway<Rows: BidirectionalCollection>(rows: Rows, eagerRows: Int) -> Plan? where Rows.Element == NativeThreadRow, Rows.Index == Int {
+        guard restoring, let first, let index = rows.lastIndex(where: { $0.id == first }) else { return nil }
+        var eager = rows.endIndex - index
+        if !history, eager > eagerRows {
+            eager = eagerRows
+            self.first = rows[rows.endIndex - eager].id
+        }
+        return Plan(eager: eager, history: history)
+    }
+
+    /// The first rows of a thread whose tail is bounded by cost (it opened, or its history came back), hidden or shown, draw their eager
+    /// tail alone, and the lazy stack after the frame that shows it (`advance`): a stack drawn with them is shown its estimates before the
+    /// scroll view has been held to the tail, and builds rows at the top of the thread that are nowhere near its reader, which for rows
+    /// that cost that much is hundreds of megabytes nothing counts. A thread of cheap rows (the most of them are the tail) draws as it
+    /// always did.
+    private func noteArrival<Rows: BidirectionalCollection>(rows: Rows, eagerRows: Int) where Rows.Element == NativeThreadRow, Rows.Index == Int {
+        if rows.isEmpty {
+            arrived = false
+            return
+        }
+        guard !arrived else { return }
+        arrived = true
+        if !restoring, rows.count > eagerRows, eagerRows < ThreadView.eagerRows {
+            first = rows[rows.endIndex - eagerRows].id
+            restoring = true
+            history = false
+        }
     }
 
     /// Draws the next step: the lazy stack first, then rows. `step` is how many more rows to take, given how many the eager stack

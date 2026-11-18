@@ -153,15 +153,49 @@ struct ThreadRestoreTests {
         #expect(!restore.restoring)
     }
 
-    /// What a hidden view drew is drawn: showing it again is a flip, and does not take its stack away for a frame; one whose history was let
-    /// go draws its first rows again as any thread does.
-    @Test func aThreadThatDrewItsRowsWhileHiddenKeepsItsStackAndOneThatLostThemWaitsAgain() {
+    /// The first rows of a thread that arrive while it is hidden (a seeded history, another view polling it) draw its eager tail alone, as
+    /// they do when it is shown: a lazy stack drawn with them in a window nobody sees is laid out from the top of the thread, and builds the
+    /// rows there that nothing counts. It comes after the first frame the thread is shown, with the scroll view at the tail.
+    @Test func aThreadWhoseRowsArriveWhileHiddenDrawsItsTailAloneAndItsStackAfterItIsShown() {
+        let long = store(turns: 24)
+        let rows = long.rows
+        let restore = ThreadRestore()
+        let hidden = restore.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 })
+        #expect(hidden == ThreadRestore.Plan(eager: 12, history: false) && restore.awaitsHistory)
+        #expect(restore.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 }) == hidden, "it waits as long as it stays hidden")
+        let shown = restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 })
+        #expect(shown == ThreadRestore.Plan(eager: 12, history: false) && restore.awaitsHistory, "and is shown as its tail")
+        #expect(restore.advance(rows: rows, eagerRows: 12) { _ in 0 } && !restore.awaitsHistory)
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 }) == nil, "then the stack and every row are drawn")
+        // A thread of cheap rows, whose tail is the most there is, draws its stack with it hidden as it always did.
+        let cheap = ThreadRestore()
+        #expect(cheap.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: ThreadView.eagerRows, owed: { _ in 0 }) == nil && !cheap.restoring)
+    }
+
+    /// Rows that arrive while the tail waits for its stack (a hidden thread waits as long as it stays hidden) are the rule's rows at most:
+    /// the tail does not keep the row it started from and grow with them.
+    @Test func rowsThatArriveWhileATailWaitsForItsStackDoNotGrowIt() {
+        let long = store(turns: 24)
+        let rows = long.rows
+        let restore = ThreadRestore()
+        #expect(restore.plan(active: false, hiddenKept: nil, rows: Array(rows.prefix(20)), eagerRows: 12, owed: { _ in 0 }) == ThreadRestore.Plan(eager: 12, history: false))
+        for count in [24, 31, 48] {
+            let plan = restore.plan(active: false, hiddenKept: nil, rows: Array(rows.prefix(count)), eagerRows: 12, owed: { _ in 0 })
+            #expect(plan == ThreadRestore.Plan(eager: 12, history: false), "\(count) rows")
+        }
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 }) == ThreadRestore.Plan(eager: 12, history: false))
+        let smaller = restore.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: 6, owed: { _ in 0 })
+        #expect(smaller == ThreadRestore.Plan(eager: 6, history: false), "or what the rule says now")
+    }
+
+    /// One whose history was let go draws its first rows again as any thread does.
+    @Test func aThreadThatLostItsRowsWhileHiddenWaitsAgain() {
         let long = store(turns: 24)
         let rows = long.rows
         let restore = ThreadRestore()
         _ = restore.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 })
-        #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 }) == nil)
         _ = restore.plan(active: false, hiddenKept: nil, rows: [NativeThreadRow](), eagerRows: 12, owed: { _ in 0 })
+        #expect(!restore.restoring)
         #expect(restore.plan(active: true, hiddenKept: nil, rows: [NativeThreadRow](), eagerRows: 12, owed: { _ in 0 }) == nil)
         #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 }) == ThreadRestore.Plan(eager: 12, history: false))
     }
