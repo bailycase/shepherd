@@ -62,8 +62,9 @@ struct ThreadHistoryRetentionTests {
     }
 
     /// Turns that are added one at a time to a thread on screen. Each one's rows join the lazy history as the eager tail moves on, and a
-    /// lazy stack builds, and keeps built, the last row it is handed: a one-line reply's view state is about 0.6 MB, so every turn
-    /// would have stayed in memory for as long as the thread did.
+    /// lazy stack builds, and keeps built, the last row it is handed: a one-line reply's view state is some 0.6 MB, so every turn would
+    /// stay in memory for as long as the thread did. A reader at the tail has no use for them: the stack starts again
+    /// (`ThreadHistoryBuilt`), and the rows it has built stay within a few turns' worth.
     @Test func aThreadThatGrowsTurnByTurnKeepsOnlyItsTailBuilt() async throws {
         let thread = FakeThread(ThreadFixture.snapshot([]))
         try await thread.waitUntilReady()
@@ -84,25 +85,41 @@ struct ThreadHistoryRetentionTests {
         await addTurns(warm..<(warm + more))
         let after = ThreadRowMemory.built.load(ordering: .relaxed)
         #expect(thread.store.rows.count == 2 * (warm + more), "every turn is a row of the thread")
-        #expect(after - before < more / 4, "\(more) more turns left \(after - before) more rows built (\(before) before)")
+        // Without the restarts every one of the turns' replies stays built: `more` of them.
+        #expect(after - before <= ThreadHistoryBuilt.rows, "\(more) more turns left \(after - before) more rows built (\(before) before)")
         thread.close()
     }
 
-    /// The element the history's stack ends with (`ThreadView.historyColumn`) is not a gap: every row, the last of the history and the
-    /// first of the tail included, stands the column's spacing from the one before it.
-    @Test func theHistorysEndAddsNoSpaceBeforeTheTail() async throws {
-        let rows = ThreadView.eagerRows + 4
-        let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(rows)), size: CGSize(width: 900, height: 12_000))
+    /// A reader who has scrolled up through the history keeps the rows they passed: the stack does not start again under them while
+    /// the thread grows.
+    @Test func aReaderAwayFromTheTailKeepsTheHistoryTheyHaveBuilt() async throws {
+        let thread = FakeThread(ThreadFixture.snapshot([]))
         try await thread.waitUntilReady()
-        ListPerf.settle(thread.window)
-        func markers(_ view: NSView) -> [ThreadTailGuard.RowMarker] {
-            (view as? ThreadTailGuard.RowMarker).map { [$0] } ?? view.subviews.flatMap(markers)
+        var messages: [NativeThreadMessage] = []
+        var revision: UInt64 = 1
+        func addTurns(_ range: Range<Int>) async {
+            for i in range {
+                messages += [ThreadFixture.user("u\(i)", "Say hi \(i)"), ThreadFixture.assistant("a\(i)", "Hi there, number \(i). " + ThreadFixture.answer)]
+                revision += 1
+                await thread.serve(ThreadFixture.snapshot(messages, revision: revision))
+                ListPerf.settle(thread.window)
+            }
         }
-        let document = try #require(thread.scrollView?.documentView)
-        let frames = markers(thread.window.host).map { ($0.rowID, $0.convert($0.bounds, to: document)) }.sorted { $0.1.minY < $1.1.minY }
-        #expect(frames.map(\.0) == thread.store.rows.map(\.id), "every row is built, in order")
-        let gaps = zip(frames, frames.dropFirst()).map { $1.1.minY - $0.1.maxY }
-        #expect(gaps.allSatisfy { abs($0 - AppLayout.turnSpacing) < 0.5 }, "gaps between rows: \(gaps)")
+        await addTurns(0..<ThreadView.eagerRows)
+        let scroll = try #require(thread.scrollView)
+        let clip = scroll.contentView
+        for _ in 0..<8 {
+            thread.input.readerScrolled(upward: true)
+            clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 0, y: clip.bounds.origin.y - 400), size: clip.bounds.size)).origin)
+            scroll.reflectScrolledClipView(clip)
+            ListPerf.settle(thread.window)
+        }
+        let away = clip.bounds.origin.y
+        let before = ThreadRowMemory.built.load(ordering: .relaxed)
+        await addTurns(ThreadView.eagerRows..<(ThreadView.eagerRows + 3 * ThreadHistoryBuilt.rows))
+        let after = ThreadRowMemory.built.load(ordering: .relaxed)
+        #expect(after >= before, "the rows the reader has built stay: \(before) before, \(after) after")
+        #expect(abs(clip.bounds.origin.y - away) < 1, "and the reader's place does not move: \(clip.bounds.origin.y) from \(away)")
         thread.close()
     }
 }
