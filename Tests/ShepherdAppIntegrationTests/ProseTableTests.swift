@@ -97,6 +97,54 @@ struct ProseTableTests {
         }
     }
 
+    /// The pointer over a table arms its cells in steps, never all at once, so a table of hundreds of cells takes its selection views over
+    /// many turns of the run loop where one stalled it; a cell is built again only for its own step; and the pointer leaving stops the
+    /// arming where it was, with every cell armed so far still armed.
+    @Test func aTableUnderThePointerTakesItsSelectionViewsInSteps() async throws {
+        let table = Self.table(rows: 200, columns: 4)
+        let cells = table.columns * (table.rows.count + 1)
+        let pointer = Selectability()
+        let window = OffscreenWindow(size: CGSize(width: 900, height: 600), dark: false, PointerTableHost(table: table, pointer: pointer))
+        defer { window.close() }
+        _ = try await Self.settled(window, "the table to stop moving")
+        #expect(Self.selectionViews(in: window) == 0, "no selection view until the pointer is over the table")
+
+        SHRenderProbe.start()
+        defer { SHRenderProbe.stop() }
+        pointer.on = true
+        var seen = 0
+        try await eventuallyOnMain("the first cells to take their selection views") {
+            ListPerf.settle(window)
+            seen = Self.selectionViews(in: window)
+            return seen > 0
+        }
+        pointer.on = false
+        var last = -1
+        var still = 0
+        try await eventuallyOnMain("the arming to stop where it was") {
+            ListPerf.settle(window)
+            let now = Self.selectionViews(in: window)
+            still = now == last ? still + 1 : 0
+            last = now
+            return still >= 10
+        }
+        #expect(last >= seen && last < cells, "the pointer leaving stops the arming part of the way: \(seen) of \(cells), then \(last)")
+
+        pointer.on = true
+        var partial = 0
+        var previous = last
+        try await eventuallyOnMain("every cell to take its selection view") {
+            ListPerf.settle(window)
+            let now = Self.selectionViews(in: window)
+            if now > previous && now < cells { partial += 1 }
+            previous = now
+            return now == cells
+        }
+        #expect(partial > 0, "the arming resumes in steps, not all at once")
+        let built = SHRenderProbe.count("prose.tableCell")
+        #expect(built <= 2 * cells, "each cell is built for its own step, not at every step: \(built) for \(cells) cells")
+    }
+
     private struct Flip {
         var cells = 0
         var cardBefore = CGRect.zero
@@ -207,6 +255,15 @@ struct ProseTableTests {
         return last
     }
 
+    /// `rows` rows of short cells in `columns` columns.
+    private static func table(rows: Int, columns: Int) -> SHProseTable {
+        SHProseTable(
+            alignments: Array(repeating: .leading, count: columns),
+            header: (0..<columns).map { AttributedString("Column \($0)") },
+            rows: (0..<rows).map { row in (0..<columns).map { AttributedString("row \(row) column \($0)") } },
+            markdown: "")
+    }
+
     /// Cells whose natural width passes the column cap, so every column shrinks with the window.
     private static func table(rows: Int) -> SHProseTable {
         func cell(_ row: Int, _ column: Int) -> AttributedString {
@@ -233,12 +290,27 @@ private struct TableHost: View {
     }
 }
 
-/// Whether the table's text is selectable from outside, as the pointer entering it makes it.
+/// Whether the table's text is selectable, or the pointer is over the table, from outside: what the pointer entering it makes true.
 @MainActor @Observable
 private final class Selectability {
     var on: Bool
 
     init(on: Bool = false) { self.on = on }
+}
+
+/// A table with the pointer put over it, or taken away, from outside.
+@MainActor
+private struct PointerTableHost: View {
+    let table: SHProseTable
+    let pointer: Selectability
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SHProseTableView(table: table, selectable: false, pointerOver: pointer.on).equatable()
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
 }
 
 @MainActor

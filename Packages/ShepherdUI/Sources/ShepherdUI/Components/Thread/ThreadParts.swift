@@ -71,6 +71,9 @@ public enum SHThreadMetrics {
     #endif
     /// The narrowest a table column shrinks to: past it, the table scrolls sideways instead.
     public static let tableColumnMin: CGFloat = 88
+    /// A table under the pointer takes this many cells' selection views a step, with `tableSelectionPause` between steps.
+    static let tableSelectionStep = 24
+    static let tableSelectionPause: Duration = .milliseconds(8)
     /// A local image in prose fits within this box.
     public static let proseImageMaxWidth: CGFloat = 360
     public static let proseImageMaxHeight: CGFloat = 240

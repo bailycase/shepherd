@@ -13,36 +13,37 @@ import UIKit
 /// its card, never widening the thread. Copy (on hover on the Mac, always on iOS) copies it as
 /// Markdown.
 ///
-/// A table holds a view for every cell, and a thread holds hundreds of tables, so what a cell holds is what opening a
-/// thread costs. The header's fill and the rows' hairlines are views of the table (`SHTableLayout` lays them under the
-/// cells), not a fill, a frame and a rule of each cell. Nor do the cells select text from the first frame on the Mac: the
-/// view that makes a cell's text selectable is the largest part of what a table builds and holds, so a table's text becomes selectable
-/// once the pointer has entered the table, which always comes before a drag, and stays so. (Selectable text draws a code
-/// span's background on a wrapped cell's last line a pixel narrower and two shorter than text that is not: the table's size
-/// and every other pixel are the same.)
+/// The header's fill and the rules are the table's own views, not each cell's. On the Mac a cell's text becomes selectable once
+/// the pointer is over its table, in steps of cells, not at open: the view that makes text selectable is the largest part of
+/// what a cell builds. (Selectable text draws a wrapped code span's last-line box a pixel narrower and two shorter.)
 struct SHProseTableView: View, Equatable {
     let table: SHProseTable
     /// Whether the cells' text is selectable from the first frame: where there is no pointer to wait for (iOS) it is.
     let selectable: Bool
+    /// Whether the pointer is over the table without the table having seen it: how a test, which cannot post input, puts it there.
+    let pointerOver: Bool
     @Environment(\.shProseSize) private var size
     @Environment(\.dynamicTypeSize) private var dynamicType
     @State private var hovering = false
-    /// Whether the pointer has entered the table: set once, never cleared, so a selection is never dropped by the table turning selection off.
-    @State private var entered = false
+    /// How many cells, in reading order, the pointer has made selectable. Never fewer than before, so a selection is never dropped.
+    @State private var armed = 0
     @State private var copied = false
     @State private var copies = 0
     @State private var availableWidth: CGFloat?
     @State private var contentWidth: CGFloat?
     @FocusState private var copyFocused: Bool
 
-    init(table: SHProseTable, selectable: Bool = SHPlatform.showsHoverDetails) {
+    init(table: SHProseTable, selectable: Bool = SHPlatform.showsHoverDetails, pointerOver: Bool = false) {
         self.table = table
         self.selectable = selectable
+        self.pointerOver = pointerOver
     }
 
     nonisolated static func == (lhs: SHProseTableView, rhs: SHProseTableView) -> Bool {
-        lhs.table == rhs.table && lhs.selectable == rhs.selectable
+        lhs.table == rhs.table && lhs.selectable == rhs.selectable && lhs.pointerOver == rhs.pointerOver
     }
+
+    private var over: Bool { hovering || pointerOver }
 
     var body: some View {
         let _ = SHRenderProbe.tick("prose.table")
@@ -58,10 +59,8 @@ struct SHProseTableView: View, Equatable {
             .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
             .shBorder(sh.lineSubtle, radius: SH.Radius.m)
             .overlay(alignment: .topTrailing) { copyButton }
-            .onHover {
-                hovering = $0
-                if $0, !entered { entered = true }
-            }
+            .onHover { hovering = $0 }
+            .task(id: over) { await arm() }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Table, \(table.rows.count) \(table.rows.count == 1 ? "row" : "rows")")
             Spacer(minLength: 0)
@@ -73,7 +72,8 @@ struct SHProseTableView: View, Equatable {
     private var grid: some View {
         let columns = table.columns
         let rows = table.rows.count
-        let selecting = selectable || entered
+        // Read here, in `body`, so the table builds again as the pointer arms more of it.
+        let armed = armed
         return SHTableLayout(columns: columns, fitting: true, table: table, size: size, dynamicType: dynamicType,
                              viewportWidth: availableWidth) {
             // The rules under the cells: the header's fill, then a hairline under every row but the last, which the
@@ -85,8 +85,20 @@ struct SHProseTableView: View, Equatable {
                 let column = index % columns
                 SHTableCell(text: row < 0 ? table.header[column] : table.rows[row][column],
                             header: row < 0, alignment: table.alignments[column],
-                            copyInset: SHPlatform.showsHoverDetails && column == columns - 1, selectable: selecting)
+                            copyInset: SHPlatform.showsHoverDetails && column == columns - 1, selectable: selectable || index < armed)
             }
+        }
+    }
+
+    /// Makes the cells selectable a step at a time while the pointer is over the table, a pause between steps for the run loop to draw
+    /// and take input: a table of hundreds of cells takes its selection views in a few hundred milliseconds, not in one stall.
+    private func arm() async {
+        guard over, !selectable else { return }
+        let total = table.columns * (table.rows.count + 1)
+        while armed < total {
+            armed = min(total, armed + SHThreadMetrics.tableSelectionStep)
+            guard armed < total else { return }
+            do { try await Task.sleep(for: SHThreadMetrics.tableSelectionPause) } catch { return }
         }
     }
 
@@ -149,7 +161,7 @@ struct SHTableCell: View {
     }
 }
 
-/// A cell's text, selectable or explicitly not. The switch happens once per table, before any selection exists to lose.
+/// A cell's text, selectable or explicitly not. A cell switches once, on to stay, so no selection is lost to it.
 private struct SHCellSelection: ViewModifier {
     let selectable: Bool
 
@@ -223,7 +235,8 @@ struct SHTableLayout: Layout {
         var measured: (widths: [CGFloat], heights: [CGFloat])?
     }
 
-    /// How many of `subviews` come before the cells: the cells are the last `columns` of every row of the table.
+    /// How many of `subviews` come before the cells: every row of an `SHProseTable` is `columns` wide, so the cells are the last
+    /// `columns * (rows + 1)`.
     private func ruleCount(_ subviews: Subviews) -> Int {
         max(0, subviews.count - columns * (inputs.table.rows.count + 1))
     }
@@ -262,6 +275,7 @@ struct SHTableLayout: Layout {
                 let index = rules + row * columns + column
                 guard index < subviews.count else { return }
                 // A cell is as wide as its content and sits in its column as its alignment says (at the start when it is wider).
+                // Measured again each pass, on purpose: caching it gained 0.3%.
                 let cell = subviews[index]
                 let spare = max(0, widths[column] - cell.dimensions(in: ProposedViewSize(width: widths[column], height: nil)).width)
                 cell.place(at: CGPoint(x: x + spare * inputs.table.alignments[column].share, y: y), anchor: .topLeading,
