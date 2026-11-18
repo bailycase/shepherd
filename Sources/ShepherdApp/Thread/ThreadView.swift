@@ -4,6 +4,9 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
+#if DEBUG
+import Synchronization
+#endif
 
 extension EnvironmentValues {
     /// Keyboard commands for the thread on screen, when the app provides them.
@@ -129,6 +132,7 @@ struct ThreadView: View {
     @State private var arrivals = ThreadArrivals()
     @State private var rowIndex = ThreadRowIndex()
     @State private var restore = ThreadRestore()
+    @State private var historyBuilt = ThreadHistoryBuilt()
     @State private var shownSignpost = ThreadShownSignpost()
     /// Bumped when another view showing this thread hands the store's loop back to this one (`ThreadReaderPins`).
     @State private var loopRun = 0
@@ -172,6 +176,12 @@ struct ThreadView: View {
         // Until the thread has caught up since it came on screen (opening it, or the first pull
         // after switching back to the agent), whatever changes lands at once.
         let catchingUp = arrivals.catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: store.threadVersion)
+        // The history's stack of built rows starts again once the thread has added enough of them behind a reader at the tail,
+        // at rest, in the update that adds the next. Rows the tail gives to it while a live resize shrinks it are not the thread's.
+        let atRest = follower.sticky && !follower.userScrolling && !input.decelerating
+        let historyStack = historyBuilt.stack(history: history, onScreen: active, mayLetGo: atRest && !restoreStepping && !catchingUp,
+                                              tailMoves: eagerCount != Self.eagerRows)
+        let _ = historyBuilt.note(in: store)
         // Until it has caught up, the live reply's state is read here too: the pull that catches a thread up on
         // a tool boundary changes nothing else, and it must redraw this view so its gate draws that catch-up.
         // After it, the live row and the wait line read them and tool boundaries stay out of this body.
@@ -201,8 +211,8 @@ struct ThreadView: View {
                             else { emptyState }
                         }
                         if let day = leadDayTitle(rows) { SHLeadDaySeparator(word: day) }
-                        historyColumn(history, tail: eager, spacing: spacing, dormant: dormant, running: running, catchingUp: catchingUp,
-                                      arrived: arrived, settled: settled, historyRowID: historyRowID)
+                        historyColumn(history, tail: eager, spacing: spacing, dormant: dormant, stack: historyStack, running: running,
+                                      catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                         ForEach(eager) { row in
                             rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                         }
@@ -518,8 +528,10 @@ struct ThreadView: View {
     /// The lazy stack of the rows older than the eager tail, drawn again only when what its rows are built from changes
     /// (`ThreadHistoryCache`).
     private func historyColumn(_ history: ArraySlice<NativeThreadRow>, tail: ArraySlice<NativeThreadRow>, spacing: CGFloat, dormant: Bool,
-                               running: Bool, catchingUp: Bool, arrived: Set<String>, settled: Bool, historyRowID: String?) -> some View {
-        let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, boundary: historyRowID, running: running, detached: !follower.sticky)
+                               stack: Int, running: Bool, catchingUp: Bool, arrived: Set<String>, settled: Bool,
+                               historyRowID: String?) -> some View {
+        let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, stack: stack, boundary: historyRowID, running: running,
+                             detached: !follower.sticky)
         return ThreadHistoryColumn(key: key) {
             AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
                 ForEach(history) { row in
@@ -528,19 +540,21 @@ struct ThreadView: View {
             }
             .scrollTargetLayout()
             // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
-            // that host does not run). Its identity changes only while the rows are let go, and takes them with it.
-            .id(dormant))
+            // that host does not run). Its identity changes only while the rows are let go, and takes them with it. It changes too when
+            // the thread has added enough rows for the stack to have built more than a reader at the tail has any use for
+            // (`ThreadHistoryBuilt`).
+            .id(StackID(dormant: dormant, built: stack)))
         }
     }
 
     /// What the history's rows are built from. None while there is no history, and for a thread whose rows also read what cannot be
     /// compared (a Project's references, a design's comments): the stack is drawn every time.
     private func historyKey(_ history: ArraySlice<NativeThreadRow>, tail: ArraySlice<NativeThreadRow>, arrived: Set<String>, dormant: Bool,
-                            boundary: String?, running: Bool, detached: Bool) -> ThreadHistoryCache.Key? {
+                            stack: Int, boundary: String?, running: Bool, detached: Bool) -> ThreadHistoryCache.Key? {
         guard !history.isEmpty, !leadColumn, projectActionCards == nil, commentCards == nil else { return nil }
         // The key leaves out what only the live reply reads, which is always among the tail's rows (`ThreadHistoryCache`).
         assert(Self.eagerRows >= 1)
-        return ThreadHistoryCache.Key(rows: history, dormant: dormant, boundary: boundary, running: running, detached: detached,
+        return ThreadHistoryCache.Key(rows: history, dormant: dormant, stack: stack, boundary: boundary, running: running, detached: detached,
                                       arrived: ThreadHistoryCache.Key.arrivals(in: history, tail: tail, among: arrived),
                                       inspected: inspectedRunID, fleet: fleetThread,
                                       actions: [review != nil, turnActions != nil, inspectSubagent != nil, steerSubagent != nil],
@@ -720,6 +734,7 @@ struct ThreadView: View {
         }
 
         private func resolve() -> Drawn {
+            memory.count(in: store)
             let shell = row.live && row.presentation == nil
             // The turn is kept across the flip, so its first render after it has already appeared. Without this, what
             // that render brings would enter for every reply and not only for one that arrived on screen.
@@ -979,12 +994,125 @@ final class CatchUpGate {
 
 /// What a transcript row keeps between its renders (`ThreadRowContent`). A reference, so keeping it current never redraws the row.
 @MainActor
-private final class ThreadRowMemory {
+final class ThreadRowMemory {
+    #if DEBUG
+    /// How many rows have view state alive, by the store they are drawn with: the rows a thread keeps built, which the tests pin
+    /// (`ThreadHistoryRetentionTests`). Per store, so other threads drawn in the same process do not move it.
+    private nonisolated static let counts = Mutex<[ObjectIdentifier: Int]>([:])
+    private var counted: ObjectIdentifier?
+
+    static func built(in store: NativeThreadStore) -> Int {
+        counts.withLock { $0[ObjectIdentifier(store)] ?? 0 }
+    }
+
+    deinit {
+        guard let counted else { return }
+        Self.counts.withLock { counts in
+            let left = (counts[counted] ?? 1) - 1
+            counts[counted] = left > 0 ? left : nil
+        }
+    }
+    #endif
+
+    /// Counts this row's view state under `store` (`built(in:)`); nothing in a release build.
+    func count(in store: NativeThreadStore) {
+        #if DEBUG
+        let id = ObjectIdentifier(store)
+        guard counted != id else { return }
+        Self.counts.withLock { counts in
+            if let counted {
+                let left = (counts[counted] ?? 1) - 1
+                counts[counted] = left > 0 ? left : nil
+            }
+            counts[id, default: 0] += 1
+        }
+        counted = id
+        #endif
+    }
+
     /// The catch-up gate of the shell: made when the row draws the shell and dropped when it draws a finished reply, so a reply
     /// that goes live again starts from the transcript's verdict, as a row made then would.
     var catchUp: CatchUpGate?
     /// Whether the last render drew the shell; nil until the first.
     var shell: Bool?
+}
+
+/// The identity the history's lazy stack is drawn with: it changes while the thread is let go (`dormant`) and each time the stack
+/// starts again (`ThreadHistoryBuilt`).
+private struct StackID: Hashable {
+    let dormant: Bool
+    let built: Int
+}
+
+/// What the history's lazy stack has built, and when it starts again. A lazy stack builds the last row it is handed, off screen as it
+/// is, and keeps it built for good; the rows that leave the eager tail join the history at its end, so each turn's reply stays built
+/// behind the tail (about 0.6 MB for one line) for as long as the thread is on screen. A reader at the tail has no use for them, so
+/// once the thread has added `ThreadHistoryBuilt.rows` of them since the stack began, it begins again, with the rows it builds first, as
+/// it does when the thread opens. That happens in the update that adds rows, the frame a turn lands in, and only while the reader is at
+/// the tail, at rest, and the thread is not coming back: a reader in the history keeps the rows they are reading, and one that
+/// scrolled up through it keeps what they passed, until the first turn that lands once they are back.
+///
+/// The state of the history's rows goes with the stack: a disclosure opened in one (a tool's lines, a thinking block, a diagram) closes,
+/// as it does when the row leaves the eager tail or the thread is let go.
+///
+/// A reference, so keeping it never draws the thread; `stack` is read in the thread's body, and is the identity the stack is drawn with.
+@MainActor
+final class ThreadHistoryBuilt {
+    /// Rows added at the history's end that the stack may have built.
+    static let rows = 16
+    private(set) var stack = 0
+    private var last: String?
+    private var added = 0
+
+    #if DEBUG
+    /// The stack each thread's history was last drawn in, by store, which the tests pin (`ThreadHistoryRetentionTests`). Per store, so
+    /// other threads drawn in the same process do not move it.
+    private nonisolated static let drawn = Mutex<[ObjectIdentifier: Int]>([:])
+    private var noted: ObjectIdentifier?
+
+    static func drawn(in store: NativeThreadStore) -> Int {
+        drawn.withLock { $0[ObjectIdentifier(store)] ?? 0 }
+    }
+
+    deinit {
+        guard let noted else { return }
+        Self.drawn.withLock { $0[noted] = nil }
+    }
+    #endif
+
+    /// Notes the stack drawn under `store` (`drawn(in:)`); nothing in a release build.
+    func note(in store: NativeThreadStore) {
+        #if DEBUG
+        let id = ObjectIdentifier(store)
+        noted = id
+        Self.drawn.withLock { $0[id] = stack }
+        #endif
+    }
+
+    /// The stack to draw `history` in. Only rows added while the thread is `onScreen` count (a hidden host does not lay out, so builds
+    /// none), and the stack starts again only in an update that adds rows, when `mayLetGo`: the reader is at the tail and at rest, and
+    /// the thread is not coming back.
+    ///
+    /// Rows count when the row that was last is still in the history, followed by new ones: paging in at the top leaves the last row as
+    /// it was, and a thread coming back has no rows to compare with, so neither counts. Nor do rows while the tail is not its full size
+    /// (`tailMoves`: a live resize, and the tail growing back after it): the rows that move into the history then are no turn's, and the
+    /// stack builds none of them but the last.
+    func stack(history: ArraySlice<NativeThreadRow>, onScreen: Bool, mayLetGo: Bool, tailMoves: Bool = false) -> Int {
+        defer { last = history.last?.id }
+        let counts = onScreen && !tailMoves
+        var grew = false
+        if let old = last, history.last?.id != old, let at = history.lastIndex(where: { $0.id == old }) {
+            grew = true
+            if counts { added += history.endIndex - 1 - at }
+        } else if history.isEmpty {
+            added = 0
+        }
+        if grew, counts, mayLetGo, added >= Self.rows {
+            stack += 1
+            added = 0
+        }
+        return stack
+    }
 }
 
 /// The lazy stack of the rows older than the eager tail, kept as the view it was while what its rows are built from has not changed (`Key`:
@@ -1007,6 +1135,8 @@ final class ThreadHistoryCache {
     struct Key: Equatable {
         let rows: ArraySlice<NativeThreadRow>
         let dormant: Bool
+        /// Which stack of `ThreadHistoryBuilt` the rows are drawn in.
+        var stack = 0
         let boundary: String?
         let running: Bool
         let detached: Bool
