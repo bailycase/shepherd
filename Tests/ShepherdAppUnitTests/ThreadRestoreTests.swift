@@ -188,6 +188,31 @@ struct ThreadRestoreTests {
         #expect(smaller == ThreadRestore.Plan(eager: 6, history: false), "or what the rule says now")
     }
 
+    /// A hidden thread that follows its tail draws that tail alone, whichever way its stack came to be drawn: a stack in a window nobody
+    /// scrolls builds the oldest rows and keeps them. A reader left in the history keeps the stack that holds their place.
+    @Test func aHiddenThreadThatFollowsItsTailLosesItsStackAndAReaderKeepsIt() {
+        let long = store(turns: 24)
+        let rows = long.rows
+        let restore = ThreadRestore()
+        // Shown, it has its stack and every row.
+        _ = restore.plan(active: true, hiddenKept: nil, rows: Array(rows.prefix(2)), eagerRows: 12, owed: { _ in 0 })
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 }) == nil && !restore.restoring)
+        // Hidden after that, it draws its tail alone.
+        #expect(restore.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: 12, following: true, owed: { _ in 0 })
+                == ThreadRestore.Plan(eager: 12, history: false))
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, following: true, owed: { _ in 0 })
+                == ThreadRestore.Plan(eager: 12, history: false), "and shown again, the stack waits for its first frame")
+        #expect(restore.advance(rows: rows, eagerRows: 12) { _ in 0 } && !restore.awaitsHistory)
+        // A reader who is not at the tail keeps the stack.
+        let reader = ThreadRestore()
+        _ = reader.plan(active: true, hiddenKept: nil, rows: Array(rows.prefix(2)), eagerRows: 12, owed: { _ in 0 })
+        _ = reader.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 })
+        #expect(reader.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: 12, following: false, owed: { _ in 0 }) == nil && !reader.restoring)
+        // A thread of cheap rows has no cost to bound and keeps it too.
+        let cheap = ThreadRestore()
+        #expect(cheap.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: ThreadView.eagerRows, following: true, owed: { _ in 0 }) == nil)
+    }
+
     /// One whose history was let go draws its first rows again as any thread does.
     @Test func aThreadThatLostItsRowsWhileHiddenWaitsAgain() {
         let long = store(turns: 24)

@@ -154,7 +154,7 @@ struct ThreadView: View {
         // Shown again, such a thread draws the rows it kept at once (they never went), and the rest after that frame, a step at a time
         // from the newest (`ThreadRestore`): the eager tail grows over the lazy stack's rows, which the second frame brings back.
         let eagerCount = eagerCount(origins, rows: rows)
-        let restored = restore.plan(active: active, hiddenKept: kept, rows: rows, eagerRows: eagerCount,
+        let restored = restore.plan(active: active, hiddenKept: kept, rows: rows, eagerRows: eagerCount, following: follower.sticky,
                                     tailParsed: !store.tailAwaitsParse(lastRows: eagerCount)) { [store] drawn in
             store.restoreCost(drawn: drawn, upTo: eagerCount)
         }
@@ -1225,14 +1225,23 @@ final class ThreadRestore {
     /// no more than a step (`AppLayout.restoreStepBytes`) draws them all in its first frame, as it would after any release, because
     /// there is nothing to spread (a dozen rows of one line owe nothing), and a last screen that is all it drew might not fill its
     /// window (`ThreadTailAnchor`).
-    func plan<Rows: BidirectionalCollection>(active: Bool, hiddenKept: Int?, rows: Rows, eagerRows: Int, tailParsed: Bool = true,
-                                             owed: (Int) -> Int) -> Plan?
+    func plan<Rows: BidirectionalCollection>(active: Bool, hiddenKept: Int?, rows: Rows, eagerRows: Int, following: Bool = true,
+                                             tailParsed: Bool = true, owed: (Int) -> Int) -> Plan?
     where Rows.Element == NativeThreadRow, Rows.Index == Int {
         _ = steps
         tailDrawnParsed = tailParsed
         guard active else {
             self.hiddenKept = hiddenKept
             noteArrival(rows: rows, eagerRows: eagerRows)
+            // A hidden thread that follows its tail and whose tail is bounded by cost draws that tail alone: its lazy stack is laid out from
+            // the top of a thread no one scrolls, builds the oldest rows there, and keeps them, hundreds of megabytes nothing counts. The
+            // stack comes after the first frame it is shown, as for any first show. A reader left in the history keeps the stack that holds
+            // their place.
+            if following, rows.count > eagerRows, eagerRows < ThreadView.eagerRows, !restoring || history {
+                if !restoring { first = rows[rows.endIndex - eagerRows].id }
+                restoring = true
+                history = false
+            }
             // Hidden halfway through, it keeps the rows it has and waits for the next showing: the rest is not built for no one.
             // Unless a pass has let those go again (`hiddenKept` below what the restore had): the next showing starts again from
             // the rows kept, as after any release, and does not build the difference in its first frame.
