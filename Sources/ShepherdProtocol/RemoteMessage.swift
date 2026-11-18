@@ -527,13 +527,17 @@ public struct RemoteThreadStart: Codable, Hashable, Sendable {
     public var worktreeBranch: String?
     public var worktreeBase: String?
     public var worktreePath: String?
+    /// The new worktree checks out `worktreeBranch` as it is (local, or "origin/x"), not a new branch from `worktreeBase`.
+    public var worktreeBranchExists: Bool?
 
     public init(spaceID: SpaceID?, cwd: String? = nil, model: String? = nil, thinking: ThinkingLevel? = nil, serviceTier: ServiceTier? = nil,
                 initialPrompt: String? = nil, initialImages: [NativeImage]? = nil, name: String? = nil, piSessionID: String? = nil,
-                agentID: AgentID? = nil, worktreeBranch: String? = nil, worktreeBase: String? = nil, worktreePath: String? = nil) {
+                agentID: AgentID? = nil, worktreeBranch: String? = nil, worktreeBase: String? = nil, worktreePath: String? = nil,
+                worktreeBranchExists: Bool? = nil) {
         self.spaceID = spaceID; self.cwd = cwd; self.model = model; self.thinking = thinking; self.serviceTier = serviceTier
         self.initialPrompt = initialPrompt; self.initialImages = initialImages; self.name = name; self.piSessionID = piSessionID
         self.agentID = agentID; self.worktreeBranch = worktreeBranch; self.worktreeBase = worktreeBase; self.worktreePath = worktreePath
+        self.worktreeBranchExists = worktreeBranchExists
     }
 }
 

@@ -215,7 +215,7 @@ struct LocalHostRoutingTests {
         #expect(s.vm.newThread.error == nil)
     }
 
-    /// A new thread in a worktree: the checkout is made here, as in process, and the host's
+    /// A new thread in a worktree: the host makes the checkout as the thread shows, and the
     /// thread runs in it; a standalone thread gets its own folder on the host.
     @Test func aWorktreeThreadAndAStandaloneThreadStartOnTheHost() async throws {
         try StubPi.installAsEngine()
@@ -232,7 +232,9 @@ struct LocalHostRoutingTests {
             s.vm.selectedAgentID.flatMap(s.onHost)?.worktreeBranch == "agent/fix-login"
         }
         let agent = try #require(s.vm.selectedAgentID.flatMap(s.onHost))
-        #expect(agent.worktreePath.map { FileManager.default.fileExists(atPath: $0) } == true)
+        try await eventuallyOnMain("its checkout", timeout: .seconds(20)) {
+            agent.worktreePath.map { FileManager.default.fileExists(atPath: $0) } == true
+        }
         #expect(s.vm.newThread.error == nil)
 
         // "No space" in the place menu, as in process: This Mac's first option, a standalone thread.
@@ -254,6 +256,61 @@ struct LocalHostRoutingTests {
         #expect(s.host.server.state.spaces.first { $0.id == standalone.spaceID }?.holdsThreads == true)
         #expect(standalone.worktreeBranch == nil && s.vm.newThread.error == nil)
         #expect(s.vm.state.agents.contains { $0.id == standalone.id }, "a local thread of the app's own")
+    }
+
+    /// A worktree thread shows, selected and with its draft cleared, before its checkout is made
+    /// (held here by a post-checkout hook) and its pi starts in it.
+    @Test func aWorktreeThreadShowsBeforeItsCheckoutIsMade() async throws {
+        try StubPi.installAsEngine()
+        let s = try await Self.setUp()
+        defer { s.stop() }
+        let gate = s.host.dir.appendingPathComponent("checkout-gate")
+        let hook = URL(fileURLWithPath: s.space.path).appendingPathComponent(".git/hooks/post-checkout")
+        try "#!/bin/sh\nwhile [ ! -e '\(gate.path)' ]; do sleep 0.05; done\n".write(to: hook, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hook.path)
+        defer { FileManager.default.createFile(atPath: gate.path, contents: nil) }
+
+        s.vm.openNewThread(in: s.space.id)
+        s.vm.newThread.worktree = true
+        s.vm.newThread.worktreeBranch = .named("agent/fix-login")
+        s.vm.newThread.prompt = "Fix the login redirect"
+        try await eventuallyOnMain("the new thread's defaults") { s.vm.newThread.blocker(s.vm) == nil }
+        s.vm.newThread.send(s.vm)
+        try await eventuallyOnMain("the thread, selected while its checkout is made") {
+            s.vm.selectedAgentID.flatMap(s.onHost)?.worktreeBranch == "agent/fix-login"
+        }
+        let agent = try #require(s.vm.selectedAgentID.flatMap(s.onHost))
+        let pane = { s.host.server.state.tabs.first { $0.id == agent.tabID }?.layout.leaf(withID: agent.paneID ?? PaneID()) }
+        #expect(pane()?.sessionID == nil, "its pi waits for the checkout")
+        #expect(s.vm.newThread.prompt.isEmpty && s.vm.newThread.blocker(s.vm) != "Starting…")
+
+        FileManager.default.createFile(atPath: gate.path, contents: nil)
+        try await eventuallyOnMain("its pi in the checkout", timeout: .seconds(20)) { pane()?.sessionID != nil }
+        #expect(pane()?.cwd == agent.worktreePath && agent.worktreePath.map { FileManager.default.fileExists(atPath: $0) } == true)
+        #expect(s.onHost(agent.id)?.worktreeBase == "main", "the base Settings resolved")
+        #expect(s.vm.newThread.error == nil)
+    }
+
+    /// A worktree that can't be made (its branch is taken): the thread goes, and the New thread
+    /// page comes back with the reason and the draft.
+    @Test func aWorktreeThatCantBeMadeBringsTheDraftBack() async throws {
+        try StubPi.installAsEngine()
+        let s = try await Self.setUp()
+        defer { s.stop() }
+        _ = try git(["branch", "agent/taken"], in: URL(fileURLWithPath: s.space.path))
+
+        s.vm.openNewThread(in: s.space.id)
+        s.vm.newThread.worktree = true
+        s.vm.newThread.worktreeBranch = .named("agent/taken")
+        s.vm.newThread.prompt = "Fix the login redirect"
+        try await eventuallyOnMain("the new thread's defaults") { s.vm.newThread.blocker(s.vm) == nil }
+        s.vm.newThread.send(s.vm)
+        try await eventuallyOnMain("the page back, with the reason and the draft", timeout: .seconds(20)) {
+            s.vm.newThread.error != nil && s.vm.newThread.blocker(s.vm) == nil
+        }
+        #expect(s.vm.destination == .newThread)
+        #expect(s.vm.newThread.prompt == "Fix the login redirect" && s.vm.newThread.worktreeBranch == .named("agent/taken"))
+        #expect(s.host.server.state.agents.isEmpty && s.vm.state.agents.isEmpty)
     }
 
     @Test func aTerminalOpensAndClosesOnTheHost() async throws {

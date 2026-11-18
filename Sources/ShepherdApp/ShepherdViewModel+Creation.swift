@@ -202,16 +202,18 @@ extension ShepherdViewModel {
     /// `focusWindow: false` selects it without making the window key: the New thread page sends
     /// from the key window already.
     @discardableResult
-    func startAgent(_ config: NewAgentConfig, selectAfter: Bool = true, focusWindow: Bool = true) async throws -> AgentID {
+    func startAgent(_ config: NewAgentConfig, selectAfter: Bool = true, focusWindow: Bool = true,
+                    shown: (@MainActor () -> Void)? = nil) async throws -> AgentID {
         guard let host = localHost else { throw BackgroundHostClient.HostStarting() }
-        return try await startHostedAgent(config, host: host, selectAfter: selectAfter, focusWindow: focusWindow)
+        return try await startHostedAgent(config, host: host, selectAfter: selectAfter, focusWindow: focusWindow, shown: shown)
     }
 
     /// `startAgent` as the background host's client: the host makes the thread (its worktree, when
     /// `config` names a branch without a checkout; its own folder, for a standalone thread whose
-    /// space doesn't exist yet), and it shows and selects here as the host's push lands.
+    /// space doesn't exist yet), and it shows and selects here as the host's push lands, before its
+    /// checkout and pi are ready. `shown` runs then (or not at all, when it fails first).
     private func startHostedAgent(_ config: NewAgentConfig, host: RemoteHostStore.Connection,
-                                  selectAfter: Bool, focusWindow: Bool) async throws -> AgentID {
+                                  selectAfter: Bool, focusWindow: Bool, shown: (@MainActor () -> Void)?) async throws -> AgentID {
         let space = state.spaces.first { $0.id == config.spaceID }
         guard config.designID == nil, config.coordinatorFor == nil, space != nil || config.reservedAgentID != nil else {
             throw AgentStartFailure(message: space == nil ? "space no longer exists" : "Shepherd's background service can't start this kind of thread yet.")
@@ -227,28 +229,48 @@ extension ShepherdViewModel {
         let empty = PiSessionPreview.empty(sessionID: "", model: config.model ?? PiConfig.defaultModel(in: pi.home),
                                            thinking: config.thinking.rawValue)
         threadStores.store(for: id).preview(opening.map { $0.preview(empty) } ?? empty)
+        let start = RemoteThreadStart(
+            spaceID: space?.id, cwd: space == nil ? nil : config.workingDirectory, model: config.model, thinking: config.thinking,
+            serviceTier: config.serviceTier, initialPrompt: config.initialPrompt, initialImages: config.initialImages,
+            name: config.initialName, piSessionID: config.piSessionID, agentID: id,
+            worktreeBranch: config.worktreeBranch, worktreeBase: config.worktreeBase, worktreePath: config.worktreePath,
+            worktreeBranchExists: config.worktreeBranchExists ? true : nil)
+        let show = { @MainActor [weak self] in
+            guard let self else { return }
+            if selectAfter {
+                selectAgent(id)
+                if focusWindow {
+                    NSApp?.activate(ignoringOtherApps: false)
+                    window?.makeKeyAndOrderFront(nil)
+                }
+            }
+            shown?()
+        }
+        // The host adds the thread, and pushes it, before it makes its checkout and starts its pi: it
+        // shows then, not at the reply. ponytail: polls for the push; a push waiter if this shows.
+        let onPush = Task { @MainActor [weak self] in
+            while !Task.isCancelled, let self {
+                if state.agents.contains(where: { $0.id == id }) { show(); return true }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            return false
+        }
         do {
-            _ = try await remoteHosts.startThread(hostID: host.id, RemoteThreadStart(
-                spaceID: space?.id, cwd: space == nil ? nil : config.workingDirectory, model: config.model, thinking: config.thinking,
-                serviceTier: config.serviceTier, initialPrompt: config.initialPrompt, initialImages: config.initialImages,
-                name: config.initialName, piSessionID: config.piSessionID, agentID: id,
-                worktreeBranch: config.worktreeBranch, worktreeBase: config.worktreeBase, worktreePath: config.worktreePath))
+            _ = try await remoteHosts.startThread(hostID: host.id, start)
         } catch {
+            onPush.cancel()
             sidebarPreparingOpeningTurns.remove(id)
             sidebarOpeningTurns.remove(id)
             throw error
         }
-        // ponytail: polls for the host's push (it usually lands before the reply); a push waiter if this shows.
-        for _ in 0..<100 where !state.agents.contains(where: { $0.id == id }) { try await Task.sleep(for: .milliseconds(20)) }
+        onPush.cancel()
+        if await !onPush.value {
+            // The reply came first: the push follows it.
+            for _ in 0..<100 where !state.agents.contains(where: { $0.id == id }) { try await Task.sleep(for: .milliseconds(20)) }
+            show()
+        }
         // Its revisions could not be asked for before the host had it.
         if sidebarOpeningTurns.contains(id) { watchThreadRevisions(of: threadStores.live.union(sidebarOpeningTurns)) }
-        if selectAfter {
-            selectAgent(id)
-            if focusWindow {
-                NSApp?.activate(ignoringOtherApps: false)
-                window?.makeKeyAndOrderFront(nil)
-            }
-        }
         if !config.openingReferencesPending {
             sidebarPreparingOpeningTurns.remove(id)
             reconcileSidebarOpeningTurn(id)

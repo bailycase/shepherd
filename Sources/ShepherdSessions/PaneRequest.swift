@@ -15,6 +15,8 @@ public struct RemoteCreateAgentRequest: Sendable {
     public var worktreeBase: String?
     public var worktreeFetchFirst: Bool?
     public var worktreeBranch: String?
+    /// `worktreeBranch` exists (local, or "origin/x"): the new worktree checks it out as it is.
+    public var worktreeBranchExists = false
     /// This Mac's own app's thread only (`RemoteRequest.startThread`): its name, the pi session it
     /// resumes, its id, an existing checkout of `worktreeBranch`, and a folder of its own.
     public var name: String?
