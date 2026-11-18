@@ -1739,11 +1739,13 @@ public final class NativeThreadStore {
     /// is always one of them, however much it costs (a thread draws something). Rows are costed where `mountedCost` costs them,
     /// and `hidden` names the ones the view leaves out, which do not count. Cheap rows are all `maxRows`, as ever.
     public func eagerTailRows(maxRows: Int, costCap: Int, coveringHeight height: Int, skipping hidden: (NativeThreadRow) -> Bool = { _ in false }) -> Int {
-        let count = min(rows.count, rowCosts.count, rowHeights.count)
+        // The list the view draws, not `rows`: the view reads this in its body, which a streamed chunk must not redraw (it changes `rows`).
+        let list = listRows
+        let count = min(list.count, rowCosts.count, rowHeights.count)
         var cost = 0, covered = 0, taken = 0, index = count, reachedLive = liveRowID == nil
         while taken < maxRows, index > 0 {
             index -= 1
-            let row = rows[index]
+            let row = list[index]
             if hidden(row) { continue }
             let next = rowCosts[index]
             if taken > 0, reachedLive, covered >= height, cost + next > costCap { break }
