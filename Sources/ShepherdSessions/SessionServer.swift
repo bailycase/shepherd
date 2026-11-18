@@ -3870,6 +3870,7 @@ public final class SessionServer: @unchecked Sendable {
             request.piSessionID = thread.piSessionID
             request.agentID = thread.agentID
             request.worktreePath = thread.worktreePath
+            request.worktreeBranchExists = thread.worktreeBranchExists == true
             request.standalone = thread.spaceID == nil
             guard !request.standalone || thread.agentID != nil else {
                 send(.error(id: id, code: "invalid", message: "A standalone thread needs its id."), to: client)

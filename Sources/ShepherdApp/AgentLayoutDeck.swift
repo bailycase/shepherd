@@ -49,6 +49,9 @@ struct AgentLayoutDeck: View, Equatable {
                 .equatable()
                 // Nor draw its spinners and glows where no one sees them.
                 .environment(\.shMotionPaused, !model.isVisible)
+                // Nor run a spring there: a hidden layout is laid out again on every frame of one (the
+                // composer's ring letting go of focus as the layout is hidden), for no one.
+                .transaction { if !model.isVisible { $0.disablesAnimations = true } }
         }
     }
 

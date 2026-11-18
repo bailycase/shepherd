@@ -689,6 +689,8 @@ struct RemoteRequestTests {
                                                       serviceTier: .fast, initialPrompt: "fix it", name: "Fix it (fork)", piSessionID: "sess-1",
                                                       agentID: S.agent, worktreeBranch: "agent/fix", worktreeBase: "main",
                                                       worktreePath: "/tmp/acme-web-worktrees/fix")),
+        .startThread(id: 6, thread: RemoteThreadStart(spaceID: S.space, cwd: "/tmp/acme-web", agentID: S.agent,
+                                                      worktreeBranch: "origin/fix", worktreeBranchExists: true)),
         .createAgent(id: 6, spaceID: S.space, cwd: "/tmp/checkout", model: "anthropic/claude-4", thinking: .high,
                      initialPrompt: "fix the \"thing\"\nplease", worktreeBranch: "worktree/a", worktreeBase: "origin/release",
                      worktreeFetchFirst: false,
