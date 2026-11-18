@@ -163,18 +163,21 @@ private struct SHButtonLabelStyle: LabelStyle {
 
 /// An icon-only button (Controls board): always a circle, 28pt (44 on iOS). Default, hover
 /// (`bgHover`), on (lantern tint, for a pane toggle while its pane is open), bordered, focus,
-/// disabled. Always give it an accessibility label.
+/// disabled. Always give it an accessibility label. `hoverFill` replaces `bgHover` for a tinted
+/// button that lights up in its own color (`SHUpdateButton`).
 public struct SHIconButtonStyle: ButtonStyle {
     let bordered: Bool
     let isOn: Bool
     let size: CGFloat
     let tint: Color?
+    let hoverFill: Color?
 
-    public init(bordered: Bool = false, isOn: Bool = false, size: CGFloat = SH.Height.controlM, tint: Color? = nil) {
+    public init(bordered: Bool = false, isOn: Bool = false, size: CGFloat = SH.Height.controlM, tint: Color? = nil, hoverFill: Color? = nil) {
         self.bordered = bordered
         self.isOn = isOn
         self.size = size
         self.tint = tint
+        self.hoverFill = hoverFill
     }
 
     public func makeBody(configuration: Configuration) -> some View {
@@ -186,8 +189,9 @@ extension ButtonStyle where Self == SHIconButtonStyle {
     /// `.buttonStyle(.shIcon)`.
     public static var shIcon: SHIconButtonStyle { SHIconButtonStyle() }
 
-    public static func shIcon(bordered: Bool = false, isOn: Bool = false, size: CGFloat = SH.Height.controlM, tint: Color? = nil) -> SHIconButtonStyle {
-        SHIconButtonStyle(bordered: bordered, isOn: isOn, size: size, tint: tint)
+    public static func shIcon(bordered: Bool = false, isOn: Bool = false, size: CGFloat = SH.Height.controlM, tint: Color? = nil,
+                              hoverFill: Color? = nil) -> SHIconButtonStyle {
+        SHIconButtonStyle(bordered: bordered, isOn: isOn, size: size, tint: tint, hoverFill: hoverFill)
     }
 }
 
@@ -206,7 +210,7 @@ private struct SHIconButton: View {
         #endif
         let active = enabled && (hovering || configuration.isPressed)
         let foreground: Color = style.tint ?? (style.isOn ? sh.lanternText : active ? sh.textPrimary : sh.textSecondary)
-        let fill: Color = style.isOn ? sh.lanternTint : configuration.isPressed && enabled ? sh.bgSelected : active ? sh.bgHover : .clear
+        let fill: Color = style.isOn ? sh.lanternTint : configuration.isPressed && enabled ? sh.bgSelected : active ? style.hoverFill ?? sh.bgHover : .clear
         configuration.label
             .font(.system(size: 14, weight: .medium))
             .symbolRenderingMode(.monochrome)
