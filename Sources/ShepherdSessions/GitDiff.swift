@@ -113,6 +113,58 @@ public enum GitDiff {
         return files
     }
 
+    /// What git says changed in one file, as the thread's file viewer shows it: the whole file, in the repository that holds it.
+    public struct FileChange: Equatable, Sendable {
+        public enum Source: Equatable, Sendable {
+            /// The working tree against HEAD.
+            case uncommitted
+            /// A file git does not track yet, all of it added.
+            case untracked
+            /// The last commit that touched the file, against its first parent.
+            case commit(shortID: String, subject: String)
+        }
+
+        public let file: DiffFile
+        public let source: Source
+    }
+
+    /// `path`'s change in the repository that holds it, read-only: its uncommitted edits, or the whole file when git does not
+    /// track it, else the last commit that touched it. nil when no repository holds it or git has nothing for it. Every unchanged
+    /// line comes with the hunks, so folds open without asking git again. Blocking.
+    public static func fileChange(path: String) -> FileChange? {
+        let directory = (path as NSString).deletingLastPathComponent
+        guard let realDirectory = ThreadFileSystem.canonicalRealpath(directory),
+              let top = try? runGit(["rev-parse", "--show-toplevel"], cwd: realDirectory), top.status == 0 else { return nil }
+        let root = top.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        let realRoot = ThreadFileSystem.canonicalRealpath(root) ?? root
+        let realPath = realDirectory + "/" + (path as NSString).lastPathComponent
+        guard !root.isEmpty, realPath.hasPrefix(realRoot + "/") else { return nil }
+        let relative = String(realPath.dropFirst(realRoot.count + 1))
+        // Context past any file the viewer reads (its 2 MB cap), small enough for git's own arithmetic.
+        let whole = "--unified=1000000"
+        func diff(_ arguments: [String], allowed: Set<Int32> = [0]) -> DiffFile? {
+            guard let result = try? runGit(["-c", "core.quotepath=off"] + arguments, cwd: realRoot), allowed.contains(result.status) else { return nil }
+            return parse(result.stdout).first
+        }
+
+        let tracked = (try? runGit(["ls-files", "--error-unmatch", "--", relative], cwd: realRoot))?.status == 0
+        guard tracked else {
+            guard FileManager.default.fileExists(atPath: realPath) else { return nil }
+            return diff(["diff", "--no-color", "--no-ext-diff", whole, "--no-index", "--", "/dev/null", relative], allowed: [0, 1])
+                .map { FileChange(file: $0, source: .untracked) }
+        }
+        if (try? runGit(["rev-parse", "--verify", "-q", "HEAD"], cwd: realRoot))?.status == 0,
+           let file = diff(["diff", "--no-color", "--no-ext-diff", whole, "HEAD", "--", relative]) {
+            return FileChange(file: file, source: .uncommitted)
+        }
+        guard let log = try? runGit(["log", "-1", "--format=%h%x00%s", "--", relative], cwd: realRoot), log.status == 0 else { return nil }
+        let parts = log.stdout.trimmingCharacters(in: .newlines).split(separator: "\0", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        guard let shortID = parts.first, !shortID.isEmpty,
+              let file = diff(["show", "--no-color", "--no-ext-diff", "--format=", "--diff-merges=first-parent", whole, shortID, "--", relative])
+        else { return nil }
+        return FileChange(file: file, source: .commit(shortID: shortID, subject: parts.count > 1 ? parts[1] : ""))
+    }
+
     private enum GitDiffError: Error, CustomStringConvertible {
         case couldNotStart(String)
         case commandFailed(command: String, status: Int32, stderr: String)
@@ -146,6 +198,8 @@ public enum GitDiff {
     private static func run(_ argv: [String], cwd: String) throws -> GitResult {
         var environment = ProcessInfo.processInfo.environment
         environment["GIT_TERMINAL_PROMPT"] = "0"; environment["GH_PROMPT_DISABLED"] = "1"
+        // Reads never take the index lock to refresh it (`git diff` would otherwise write the user's index).
+        environment["GIT_OPTIONAL_LOCKS"] = "0"
         do {
             let result = try BoundedCommand.run(argv, directory: URL(fileURLWithPath: cwd), environment: environment, timeout: 600)
             return GitResult(status: result.status, stdout: String(decoding: result.output, as: UTF8.self),
