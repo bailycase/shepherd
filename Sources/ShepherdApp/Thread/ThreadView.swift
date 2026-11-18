@@ -203,8 +203,8 @@ struct ThreadView: View {
                             else { emptyState }
                         }
                         if let day = leadDayTitle(rows) { SHLeadDaySeparator(word: day) }
-                        historyColumn(history, tail: eager, spacing: spacing, dormant: dormant, running: running, catchingUp: catchingUp,
-                                      arrived: arrived, settled: settled, historyRowID: historyRowID)
+                        historyColumn(history, tail: eager, spacing: spacing, dormant: dormant, releasing: !active && (rows.isEmpty || restoreStepping),
+                                      running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                         ForEach(eager) { row in
                             rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                         }
@@ -547,7 +547,7 @@ struct ThreadView: View {
     /// The lazy stack of the rows older than the eager tail, drawn again only when what its rows are built from changes
     /// (`ThreadHistoryCache`).
     private func historyColumn(_ history: ArraySlice<NativeThreadRow>, tail: ArraySlice<NativeThreadRow>, spacing: CGFloat, dormant: Bool,
-                               running: Bool, catchingUp: Bool, arrived: Set<String>, settled: Bool, historyRowID: String?) -> some View {
+                               releasing: Bool, running: Bool, catchingUp: Bool, arrived: Set<String>, settled: Bool, historyRowID: String?) -> some View {
         let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, boundary: historyRowID, running: running, detached: !follower.sticky)
         return ThreadHistoryColumn(key: key) {
             AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
@@ -558,8 +558,9 @@ struct ThreadView: View {
             .scrollTargetLayout()
             // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
             // that host does not run). Its identity changes whenever the rows are let go (a pass, a released history, a hidden
-            // thread that draws its tail alone), and takes them with it; the thread on screen keeps its own.
-            .id(dormant || (!active && history.isEmpty)))
+            // thread that draws its tail alone: `releasing`), and takes them with it. A thread with no history to let go (one of a few
+            // rows) and the one on screen keep their own.
+            .id(dormant || (releasing && history.isEmpty)))
         }
     }
 

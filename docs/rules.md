@@ -196,7 +196,8 @@ first frame it is shown: a stack in a window nobody sees is laid out from the to
 there that nothing counts. A hidden thread that follows its tail lets a stack it had go too, two seconds after
 the switch and never while a key is pressed (`ThreadRestore.withdrawStack`; taking realized rows down costs
 hundreds of milliseconds, which must not land in the turn that shows another thread), and a stack's identity
-changes whenever it has no rows to draw, which is what frees what a hidden host keeps. A reader left in the
+changes when it has no rows to draw while its thread is hidden and releasing them (not a thread of a few rows,
+which has none to let go), which is what frees what a hidden host keeps. A reader left in the
 history keeps their stack. Rows that arrive while a tail waits for its stack do not grow it past the rule.
 
 What the view last drew, shown or hidden, is `NativeThreadStore.drawnEagerRows`, which `mountedCost` and the passes
