@@ -177,9 +177,10 @@ struct ThreadView: View {
         // after switching back to the agent), whatever changes lands at once.
         let catchingUp = arrivals.catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: store.threadVersion)
         // The history's stack of built rows starts again once the thread has added enough of them behind a reader at the tail,
-        // at rest, in the update that adds the next.
+        // at rest, in the update that adds the next. Rows the tail gives to it while a live resize shrinks it are not the thread's.
         let atRest = follower.sticky && !follower.userScrolling && !input.decelerating
-        let historyStack = historyBuilt.stack(history: history, onScreen: active, mayLetGo: atRest && !restoreStepping && !catchingUp)
+        let historyStack = historyBuilt.stack(history: history, onScreen: active, mayLetGo: atRest && !restoreStepping && !catchingUp,
+                                              tailMoves: eagerCount != Self.eagerRows)
         let _ = historyBuilt.note(in: store)
         // Until it has caught up, the live reply's state is read here too: the pull that catches a thread up on
         // a tool boundary changes nothing else, and it must redraw this view so its gate draws that catch-up.
@@ -1092,17 +1093,20 @@ final class ThreadHistoryBuilt {
     /// the thread is not coming back.
     ///
     /// Rows count when the row that was last is still in the history, followed by new ones: paging in at the top leaves the last row as
-    /// it was, and a thread coming back has no rows to compare with, so neither counts.
-    func stack(history: ArraySlice<NativeThreadRow>, onScreen: Bool, mayLetGo: Bool) -> Int {
+    /// it was, and a thread coming back has no rows to compare with, so neither counts. Nor do rows while the tail is not its full size
+    /// (`tailMoves`: a live resize, and the tail growing back after it): the rows that move into the history then are no turn's, and the
+    /// stack builds none of them but the last.
+    func stack(history: ArraySlice<NativeThreadRow>, onScreen: Bool, mayLetGo: Bool, tailMoves: Bool = false) -> Int {
         defer { last = history.last?.id }
+        let counts = onScreen && !tailMoves
         var grew = false
         if let old = last, history.last?.id != old, let at = history.lastIndex(where: { $0.id == old }) {
             grew = true
-            if onScreen { added += history.endIndex - 1 - at }
+            if counts { added += history.endIndex - 1 - at }
         } else if history.isEmpty {
             added = 0
         }
-        if grew, onScreen, mayLetGo, added >= Self.rows {
+        if grew, counts, mayLetGo, added >= Self.rows {
             stack += 1
             added = 0
         }

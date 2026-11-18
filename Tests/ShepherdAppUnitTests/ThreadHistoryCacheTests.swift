@@ -123,6 +123,21 @@ struct ThreadHistoryBuiltTests {
         #expect(built.stack == 0)
     }
 
+    @Test func rowsTheTailMovesIntoTheHistoryAreNotCounted() {
+        let built = ThreadHistoryBuilt()
+        _ = built.stack(history: rows(0..<10), onScreen: true, mayLetGo: true)
+        // A live resize hands the history the rows the tail gives up in one update, and more as the window goes on changing.
+        _ = built.stack(history: rows(0..<30), onScreen: true, mayLetGo: true, tailMoves: true)
+        _ = built.stack(history: rows(0..<40), onScreen: true, mayLetGo: true, tailMoves: true)
+        #expect(built.stack == 0, "the first frame of the drag")
+        // The tail grows back: the history is shorter again, and only the thread's own rows count from there.
+        _ = built.stack(history: rows(0..<10), onScreen: true, mayLetGo: true)
+        let (end, stack) = grow(built, from: 10, by: ThreadHistoryBuilt.rows - 2)
+        #expect(stack == 0, "the drag's rows did not add up with these")
+        _ = built.stack(history: rows(0..<(end + 2)), onScreen: true, mayLetGo: true)
+        #expect(built.stack == 1)
+    }
+
     @Test func aHiddenThreadsGrowthIsNotCounted() {
         let built = ThreadHistoryBuilt()
         _ = built.stack(history: rows(0..<10), onScreen: false, mayLetGo: true)

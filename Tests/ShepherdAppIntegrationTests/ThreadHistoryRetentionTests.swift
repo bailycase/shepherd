@@ -131,4 +131,28 @@ struct ThreadHistoryRetentionTests {
         #expect(abs(clip.bounds.origin.y - away) < 1, "and the reader's place does not move: \(clip.bounds.origin.y) from \(away)")
         thread.close()
     }
+
+    /// A live window resize moves rows from the eager tail into the history in one update: the tail drops to the rows that cover the
+    /// window (`ThreadView.eagerCount`), and with it as many rows as the history takes before its stack would start again. They are no
+    /// turn's, so the stack does not start again in the drag's first frame, nor while the tail grows back after it.
+    @Test func aLiveResizeAtTheTailDoesNotStartTheHistoryStackAgain() async throws {
+        func builtRows(in view: NSView) -> Int {
+            (view is ThreadTailGuard.RowMarker ? 1 : 0) + view.subviews.reduce(0) { $0 + builtRows(in: $1) }
+        }
+        let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(ThreadView.eagerRows * 3)))
+        try await thread.waitUntilReady()
+        let scroll = try #require(thread.scrollView)
+        let tail = thread.store.eagerRowCount(coveringHeight: AppLayout.eagerCoverHeight(forViewport: scroll.bounds.height), maxRows: ThreadView.eagerRows)
+        #expect(ThreadView.eagerRows - tail >= ThreadHistoryBuilt.rows, "the drag moves rows enough to start the stack again: \(tail) of \(ThreadView.eagerRows) stay in the tail")
+        let full = builtRows(in: thread.window.host)
+        let stack = ThreadHistoryBuilt.drawn(in: thread.store)
+        thread.visibility.liveResizing = true
+        ListPerf.settle(thread.window)
+        #expect(builtRows(in: thread.window.host) < full - 8, "the drag lays out fewer rows: \(builtRows(in: thread.window.host)) of \(full)")
+        #expect(ThreadHistoryBuilt.drawn(in: thread.store) == stack, "the drag's first frame started the stack again")
+        thread.visibility.liveResizing = false
+        try await eventuallyOnMain("the tail back at its size") { builtRows(in: thread.window.host) >= ThreadView.eagerRows }
+        #expect(ThreadHistoryBuilt.drawn(in: thread.store) == stack, "the stack started again once the tail was back")
+        thread.close()
+    }
 }
