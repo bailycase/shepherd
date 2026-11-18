@@ -76,6 +76,12 @@ public struct NativeTurnPresentation: Equatable, Sendable {
             case .question(let row): "question:" + row.id
             }
         }
+
+        /// A reply whose parse has not landed: it has text and no blocks (a large one is parsed off the main thread), and draws as nothing.
+        public var awaitsParse: Bool {
+            if case .prose(_, let text, let prose) = self { return prose.isEmpty && !text.isEmpty }
+            return false
+        }
     }
 
     public var items: [Item]

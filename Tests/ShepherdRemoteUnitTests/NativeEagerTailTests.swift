@@ -128,6 +128,19 @@ struct NativeEagerTailTests {
         #expect(store.rowCostRevision != revision, "a view looks again at what the tail may hold")
     }
 
+    /// A reply with no blocks draws as nothing, so the tail is a few points tall until they land; a lazy stack drawn above it would be in
+    /// the window and build its rows.
+    @Test func theTailAwaitsTheParseOfALargeReplyAndNotOfASmallOne() async {
+        let large = NativeThreadStore()
+        large.preview(F.snapshot(messages: messages(3, cycles: { _ in 12 })))
+        #expect(large.tailAwaitsParse(lastRows: 1) && large.tailAwaitsParse(lastRows: 6))
+        #expect(!large.tailAwaitsParse(lastRows: 0))
+        await large.waitForProse()
+        #expect(!large.tailAwaitsParse(lastRows: 6), "its blocks landed")
+        let small = await store(3, cycles: { _ in 0 })
+        #expect(!small.tailAwaitsParse(lastRows: 6), "a short reply is parsed at once")
+    }
+
     @Test func aStreamedChunkLeavesTheCostRevisionAlone() async {
         let host = FakeHost(F.snapshot(running: true, messages: messages(3, cycles: { _ in 0 }) + [F.user("go", id: "u-go")],
                                        provisional: [F.assistant("chunk", status: "streaming", id: "live")]))

@@ -160,7 +160,10 @@ struct ThreadView: View {
         let restoreStepping = restore.restoring
         let drawn = rows.suffix(kept ?? restored.map { $0.history ? rows.count : $0.eager } ?? rows.count)
         let eager = drawn.suffix(restored?.eager ?? eagerCount)
-        let history = drawn.prefix(drawn.count - eager.count)
+        // Until the replies at the end have their blocks (a large reply is parsed off the main thread) they draw as nothing, and the tail
+        // is a few points tall: a lazy stack above it would be in the window, and build its rows (which then grow to their full size, out
+        // of view and out of the budget). The stack comes when the tail has its content, with the window held to the tail, and stays.
+        let history = drawn.prefix(eagerTail.drawsHistory(rows: rows.count, settling: store.tailAwaitsParse(lastRows: eager.count)) ? drawn.count - eager.count : 0)
         // A Project's accepted messages the transcript has not taken in: waiting ones go to the composer's Up next, outcomes stay here.
         let held = projectSend?.held() ?? []
         // A row's background needs only the boundary ID, not a captured copy of the transcript.

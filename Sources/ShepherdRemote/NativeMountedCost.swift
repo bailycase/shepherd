@@ -164,7 +164,7 @@ public enum NativeMountedCost {
     /// What one item of a reply holds. A prose item holds what its view lays out (`NativeProse.eagerCost`).
     public static func item(_ item: NativeTurnPresentation.Item) -> Int {
         switch item {
-        case .prose(_, let text, let prose): prose.isEmpty && !text.isEmpty ? pending(text) : prose.eagerCost
+        case .prose(_, let text, let prose): item.awaitsParse ? pending(text) : prose.eagerCost
         case .activity(_, let bursts): bursts.count * line
         case .subagents(_, let lines): lines.count * line
         case .images(_, let images): images.count * NativeMarkdownBlock.imageFloor * imageWeight

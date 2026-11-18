@@ -67,8 +67,8 @@ struct ThreadEagerTailTests {
         #expect(tail > 2 * Self.cap, "the thirty rows at the end hold \(tail >> 20) MiB, the fixture is heavy enough")
         let allowed = Self.rowsWithin(Self.cap, of: store)
         #expect(allowed >= 4 && allowed < ThreadView.eagerRows / 2 + 4, "\(allowed) rows fit the cap")
-        // The lazy stack builds a few rows ahead of the window above the tail.
-        let ceiling = (allowed / 2 + 3) * Self.cycles
+        // The lazy stack above the tail builds nothing: the window is at the tail, and the stack is drawn once the tail has its content.
+        let ceiling = allowed / 2 * Self.cycles
         #expect(fields <= ceiling, "\(fields) code fields are built, \(ceiling) at most for \(allowed) rows")
         #expect(peak <= ceiling, "and never more on the way: \(peak) code fields at most")
         #expect(fields >= Self.cycles, "the last reply is built")
@@ -94,7 +94,7 @@ struct ThreadEagerTailTests {
         }
         let allowed = Self.rowsWithin(Self.cap, of: store)
         #expect(allowed >= 4 && allowed < ThreadView.eagerRows / 2 + 4, "\(allowed) rows fit the cap")
-        let ceiling = (allowed / 2 + 3) * Self.cycles
+        let ceiling = allowed / 2 * Self.cycles
         #expect(last <= ceiling, "\(last) code fields are built, \(ceiling) at most for \(allowed) rows")
         #expect(last >= Self.cycles, "the last reply is built")
     }

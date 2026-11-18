@@ -125,6 +125,18 @@ struct ThreadEagerTailBoundaryTests {
         #expect(asked == 4, "a reply's parse landing changes what a row costs")
     }
 
+    /// The stack of older rows waits for the tail's replies to have their blocks the first time, and a reader in it never loses it after.
+    @Test func theHistoryWaitsForTheTailTheFirstTimeAndStaysOnceDrawn() {
+        let tail = ThreadEagerTail()
+        #expect(tail.drawsHistory(rows: 0, settling: true), "no rows, nothing to hold back")
+        #expect(!tail.drawsHistory(rows: 40, settling: true))
+        #expect(!tail.drawsHistory(rows: 42, settling: true))
+        #expect(tail.drawsHistory(rows: 42, settling: false))
+        #expect(tail.drawsHistory(rows: 44, settling: true), "a large reply arriving later leaves the reader's stack alone")
+        #expect(tail.drawsHistory(rows: 0, settling: false), "its history was let go")
+        #expect(!tail.drawsHistory(rows: 40, settling: true), "and the next load waits again")
+    }
+
     @Test func aThreadThatNeverDrewHoldsWhatTheRuleSays() {
         let tail = ThreadEagerTail()
         #expect(tail.held(rows: Array(Self.all.prefix(40))) { 9 } == 9)

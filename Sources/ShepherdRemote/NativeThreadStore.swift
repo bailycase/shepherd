@@ -1757,6 +1757,12 @@ public final class NativeThreadStore {
         return taken
     }
 
+    /// Whether a reply among the last `count` rows of the list the view draws has not had its parse land: a large reply is parsed off the
+    /// main thread (`offMainProseBytes`), and its row draws as nothing, a few points tall, until it does.
+    public func tailAwaitsParse(lastRows count: Int) -> Bool {
+        listRows.suffix(count).contains { row in row.presentation?.items.contains(where: \.awaitsParse) == true }
+    }
+
     /// How many rows at the end of the thread its view lays out for real, as it last drew them (`ThreadEagerTail`); nil until it has.
     /// What `mountedCost` and a pass that lets rows go (`NativeThreadStores`) read, so that they count the rows the view builds and
     /// not the ones the rule would pick now. Written by the view, never observed.
