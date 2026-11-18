@@ -43,6 +43,8 @@ How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 - Branch from `nightly` (`feat/…`, `fix/…`), open the PR into `nightly`. Conventional commits
   (`feat:`, `fix:`, `docs:`, `test:`, `chore:`). No AI attribution in commits or PR bodies.
+- Platform parity: a user-facing change ships on the Mac app and the iPhone and iPad client (`App/iOS`)
+  in the same PR, unless the user scopes it to one. Say in the PR what each platform got.
 - Start an authorized change without a separate issue or plan. Read the affected code and relevant
   doc sections; ask only when scope or a consent boundary below is unresolved.
 - Reuse tests that protect the affected behavior; add or extend coverage for new behavior or a
