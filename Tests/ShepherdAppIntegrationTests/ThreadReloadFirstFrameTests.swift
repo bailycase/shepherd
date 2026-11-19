@@ -175,4 +175,39 @@ struct ThreadReloadFirstFrameTests {
         #expect(ThreadRowMemory.built(in: store) >= first)
         #expect(distances.allSatisfy { abs($0) < 2 }, "the end of the thread stayed where it was: \(distances)")
     }
+
+    /// The pull that was to catch a thread that kept only its tail up fails (the host cannot serve it, or pi is not up): nothing is going
+    /// to move its tail or add rows above it, so its lazy stack does not wait for it for as long as `AppLayout.restoreParseRetries`
+    /// looks, three seconds in which the reader cannot scroll above the tail.
+    @Test(arguments: [false, true])
+    func aHeavyThreadWhosePullDoesNotLandBringsItsStackWithoutWaitingTheWholeBound(piIsStarting: Bool) async throws {
+        let messages = ThreadEagerTailTests.messages(turns: 40, cycles: ThreadEagerTailTests.cycles)
+        let thread = FakeThread(ThreadFixture.snapshot(messages), deckHosting: true)
+        try await thread.waitUntilReady()
+        await thread.store.waitForProse()
+        ListPerf.settle(thread.window)
+        let tail = try #require(thread.store.drawnEagerRows)
+        #expect(tail < ThreadView.eagerRows / 2, "its tail is bound by cost: \(tail) rows")
+        defer { thread.close() }
+        try await leaveTheDeck(thread)
+        let store = thread.store
+        #expect(store.keepsOnlyTail && store.rows.count > tail)
+
+        let requests = thread.snapshotRequests
+        thread.failing = !piIsStarting
+        thread.starting = piIsStarting
+        thread.visibility.active = true
+        thread.visibility.motionPaused = false
+        ListPerf.settle(thread.window)
+        let first = ThreadRowMemory.built(in: store)
+        #expect(first > 0 && first <= tail, "the first frame drew the eager tail alone: \(first) rows of \(tail)")
+        try await eventuallyOnMain("the pull to have failed") { thread.snapshotRequests > requests && !store.ready }
+        let bound = AppLayout.restoreRetry * AppLayout.restoreParseRetries
+        try await eventuallyOnMain("the lazy stack to come before the bound the pull is waited for", timeout: bound - .milliseconds(1_000)) {
+            ListPerf.settle(thread.window)
+            return ThreadRowMemory.built(in: store) > tail
+        }
+        #expect(store.catchUp == nil, "the thread was never caught up")
+        #expect(try abs(distanceFromTail(thread)) < 2, "the end of the thread stayed where it was")
+    }
 }

@@ -402,6 +402,9 @@ public final class NativeThreadStore {
     /// after moves as usual (`CatchUpGate`). Not observed: it changes no pixel itself, so
     /// catching up costs no pass of its own.
     @ObservationIgnored public private(set) var catchUp: CatchUp?
+    /// The first pull since `run` started has ended without catching the thread up: it failed (`loadError`) or pi is not up (`starting`),
+    /// and what the thread shows will not change by it any time soon. Cleared with `catchUp`, and by the pull that lands. Not observed.
+    @ObservationIgnored public private(set) var catchUpFailed = false
     /// Bumped whenever what the thread's rows show changes (rows, the live "Thinking…", the
     /// notices, readiness), and what the composer and the toolbar show (`chromeVersion`). Not
     /// observed: views read them as they render.
@@ -415,7 +418,13 @@ public final class NativeThreadStore {
 
     /// The first pull since `run` started has landed.
     private func caughtUp() {
+        catchUpFailed = false
         if catchUp == nil { catchUp = CatchUp(thread: threadVersion, chrome: chromeVersion) }
+    }
+
+    /// A pull ended without landing (`catchUpFailed`).
+    private func catchUpMissed() {
+        if catchUp == nil { catchUpFailed = true }
     }
 
     /// How long `starting` may last before it is reported as an error. Polling continues, so
@@ -1565,6 +1574,7 @@ public final class NativeThreadStore {
         guard resting != was else { return }
         if !resting {
             catchUp = nil
+            catchUpFailed = false
             pollWake.signal()
             restWake.signal()
         }
@@ -1595,6 +1605,7 @@ public final class NativeThreadStore {
         // Pieces still being asked for stop; the ones held stay for the next poll.
         images.cancelAll()
         catchUp = nil
+        catchUpFailed = false
         // Visibility does not restart pi or its readiness deadline.
         if busy { busy = false }
         if loadingOlder { loadingOlder = false }
@@ -2030,6 +2041,7 @@ public final class NativeThreadStore {
                 caughtUp()
             case .snapshot(var value) where value.initializing == true:
                 // Startup questions are live, but this is not a replacement history page.
+                catchUpMissed()
                 value.messages = messages
                 value.olderCursor = olderCursor
                 resetPresentationSession(value)
@@ -2149,6 +2161,7 @@ public final class NativeThreadStore {
 
     /// Any failure but `native_starting`: the thread is not starting, it is in trouble.
     private func setLoadError(_ message: String) {
+        catchUpMissed()
         endStarting()
         clearStartProblem()
         resumeStartWaiters(false)
@@ -2160,6 +2173,7 @@ public final class NativeThreadStore {
     /// pi has not answered yet (the host is still binding or booting it): quiet, with no
     /// error, until it has taken longer than `startingLimit`.
     private func noteStarting() {
+        catchUpMissed()
         if ready { ready = false }
         // The host cannot serve pi, so cached work is no longer running, even when pi stays off on purpose.
         if settledRunning {

@@ -137,6 +137,37 @@ struct ThreadReleasedTailTests {
         #expect(store.keepsOnlyTail && store.messages == all && store.rows == rows && store.olderCursor == cursor, "nothing was cut")
     }
 
+    /// The first lazy stack of a thread that kept only its tail waits for the pull that catches it up (`ThreadRestore.waitsForPull`),
+    /// and has no reason to wait for one that is not coming.
+    @Test func aPullThatFailsOrFindsPiNotUpIsMarkedAsOneThatDoesNotCatchTheThreadUp() async {
+        let (store, host) = await hidden(session(turns: 5))
+        store.releaseToTail(rows: 30, maxBytes: .max)
+        #expect(store.catchUp == nil && !store.catchUpFailed, "nothing has been asked yet")
+
+        let failing = Task { await store.run(request: { _ in .failure(code: "unavailable", message: "The host cannot serve this thread.") }) }
+        await until { store.loadError != nil }
+        #expect(store.catchUp == nil && store.catchUpFailed && store.keepsOnlyTail)
+        failing.cancel()
+        store.suspend()
+        #expect(!store.catchUpFailed, "the next run has not failed yet")
+
+        host.starting = true
+        var task = await start(store, host)
+        #expect(store.starting && store.catchUp == nil && store.catchUpFailed)
+        host.starting = false
+        await store.refresh()
+        #expect(store.catchUp != nil && !store.catchUpFailed && !store.starting, "the pull that lands catches it up")
+        task.cancel()
+
+        store.suspend()
+        host.starting = true
+        task = await start(store, host)
+        defer { task.cancel(); store.stop() }
+        #expect(store.catchUpFailed)
+        store.suspend()
+        #expect(!store.catchUpFailed && store.catchUp == nil)
+    }
+
     @Test func aThreadOnScreenKeepsEverything() async {
         let host = FakeHost(F.snapshot(messages: session(turns: 100)))
         let store = manualStore()

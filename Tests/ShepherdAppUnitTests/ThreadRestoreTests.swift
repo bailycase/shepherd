@@ -115,6 +115,27 @@ struct ThreadRestoreTests {
         #expect(holding.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, owed: owed) == nil && !holding.awaitsPull)
     }
 
+    /// The lazy stack of a thread that kept only its tail waits for its pull for the looks the parse is waited for, and not at all for
+    /// one that has landed or is not coming (it failed, or pi is not up), and a thread that holds its history waits for none.
+    @Test func theFirstStackWaitsForThePullOnlyWhileItIsOnItsWay() {
+        let long = store(turns: 24)
+        let rows = long.rows, eager = 12
+        let owed: (Int) -> Int = { long.restoreCost(drawn: $0, upTo: eager) }
+        let tail = ThreadRestore()
+        _ = tail.plan(active: false, hiddenKept: 0, rows: rows, eagerRows: eager, owed: owed)
+        _ = tail.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, keepsOnlyTail: true, owed: owed)
+        #expect(tail.waitsForPull(landed: false, failed: false, retries: 0))
+        #expect(tail.waitsForPull(landed: false, failed: false, retries: AppLayout.restoreParseRetries - 1))
+        #expect(!tail.waitsForPull(landed: false, failed: false, retries: AppLayout.restoreParseRetries), "not for ever")
+        #expect(!tail.waitsForPull(landed: true, failed: false, retries: 0), "it landed")
+        #expect(!tail.waitsForPull(landed: false, failed: true, retries: 0), "it failed, or pi is not up: nothing is on its way")
+
+        let holding = ThreadRestore()
+        _ = holding.plan(active: false, hiddenKept: 0, rows: rows, eagerRows: eager, owed: owed)
+        _ = holding.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, owed: owed)
+        #expect(!holding.waitsForPull(landed: false, failed: false, retries: 0))
+    }
+
     /// A thread that holds its history and let its rows go (the mounted budget's pass) draws what it owes in its first frame when that is
     /// no more than a step, as it did before, and its stack waits for no pull.
     @Test func aThreadThatHoldsItsHistoryAndLetItsRowsGoDrawsWhatItOwesAtOnce() {
