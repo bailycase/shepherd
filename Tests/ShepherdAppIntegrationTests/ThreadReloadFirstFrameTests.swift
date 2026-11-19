@@ -26,7 +26,8 @@ struct ThreadReloadFirstFrameTests {
     }
 
     /// The thread is hidden, and the stores around it have shown another thread since, past `retainedHistories`, so the bounds take
-    /// what they take of it.
+    /// what they take of it. Returns once the hidden view has drawn what it kept: it records that as it is drawn
+    /// (`ThreadRestore.plan`), and a thread shown before it has was never let go as far as the restore is concerned.
     @discardableResult
     private func leaveTheDeck(_ thread: FakeThread) async throws -> NativeThreadStores<String> {
         let stores = NativeThreadStores<String>()
@@ -38,6 +39,12 @@ struct ThreadReloadFirstFrameTests {
         try await thread.show(false)
         stores.noteShown("other")
         stores.enforceHistoryBounds()
+        let store = thread.store
+        try await eventuallyOnMain("the hidden thread to draw only what it kept") {
+            ListPerf.settle(thread.window)
+            guard store.keepsOnlyTail, let kept = store.transcriptDrawn else { return false }
+            return ThreadRowMemory.built(in: store) <= kept
+        }
         return stores
     }
 
@@ -48,14 +55,14 @@ struct ThreadReloadFirstFrameTests {
         return document.bounds.height - (clip.bounds.origin.y + clip.bounds.height - scroll.contentInsets.bottom)
     }
 
-    @Test func aThreadPastTheBoundsDrawsItsTailBeforeItsPullReturns() async throws {
+    @Test func aThreadPastTheBoundsDrawsItsLastScreenBeforeItsPullReturns() async throws {
         let thread = try await openPaged()
         defer { thread.close() }
         try await leaveTheDeck(thread)
         let store = thread.store
         let tail = Array(Self.session.suffix(10))
         #expect(store.messages.suffix(10) == tail, "the end of the thread is what it kept")
-        #expect(!store.rows.isEmpty && store.holdsHistory)
+        #expect(!store.rows.isEmpty && store.holdsHistory && store.keptRows > 0)
 
         // The thread comes back with its pull on its way.
         let requests = thread.snapshotRequests
@@ -64,10 +71,16 @@ struct ThreadReloadFirstFrameTests {
         thread.visibility.motionPaused = false
         ListPerf.settle(thread.window)
         defer { thread.releaseSnapshots() }
-        try await eventuallyOnMain("the pull to be on its way") { thread.snapshotRequests > requests }
-        ListPerf.settle(thread.window)
         let first = ThreadRowMemory.built(in: store)
-        #expect(first >= ThreadView.eagerRows, "its first frame drew its tail: \(first) rows built")
+        #expect(first >= store.keptRows, "its first frame drew the rows it kept: \(first) rows built of \(store.keptRows)")
+        #expect(try abs(distanceFromTail(thread)) < 2, "at the end of the thread")
+        try await eventuallyOnMain("the pull to be on its way") { thread.snapshotRequests > requests }
+
+        thread.releaseSnapshots()
+        try await eventuallyOnMain("the rest of its tail to come back", timeout: .seconds(30)) {
+            ListPerf.settle(thread.window)
+            return ThreadRowMemory.built(in: store) >= min(store.rows.count, ThreadView.eagerRows)
+        }
         #expect(try abs(distanceFromTail(thread)) < 2, "at the end of the thread")
     }
 
@@ -81,25 +94,29 @@ struct ThreadReloadFirstFrameTests {
         thread.visibility.active = true
         thread.visibility.motionPaused = false
         ListPerf.settle(thread.window)
-        try await eventuallyOnMain("the pull to be on its way") { thread.snapshotRequests > requests }
-        ListPerf.settle(thread.window)
+        defer { thread.releaseSnapshots() }
         let ids = store.rows.suffix(ThreadView.eagerRows).map(\.id)
-        #expect(ids.count == ThreadView.eagerRows && ThreadRowMemory.built(in: store) >= ids.count, "the first frame drew its tail")
+        #expect(ids.count == ThreadView.eagerRows && store.keptRows > 0)
         var built = [ThreadRowMemory.built(in: store)]
         var distances = [try distanceFromTail(thread)]
+        #expect(built[0] >= store.keptRows, "the first frame drew what it kept: \(built[0]) rows")
+        try await eventuallyOnMain("the pull to be on its way") { thread.snapshotRequests > requests }
 
         thread.releaseSnapshots()
         try await eventuallyOnMain("the pull to land") { store.catchUp != nil }
-        for _ in 0..<10 {
+        var still = 0
+        try await eventuallyOnMain("the rest of its tail to come back", timeout: .seconds(30)) {
             ListPerf.settle(thread.window)
             built.append(ThreadRowMemory.built(in: store))
             distances.append(try distanceFromTail(thread))
-            try await Task.sleep(for: .milliseconds(20))
+            still = built.last == built.dropLast().last ? still + 1 : 0
+            return built.last! >= ids.count && still >= 5
         }
         #expect(store.rows.suffix(ids.count).map(\.id) == ids, "the rows it drew are the rows it has, with the same identities")
         #expect(built == built.sorted(), "no row was built again, none went: \(built)")
         #expect(distances.allSatisfy { abs($0) < 2 }, "the reader stayed at the end of the thread: \(distances)")
     }
+
     /// A thread of heavy rows, whose eager tail is a few of them with more above: its first frame draws that tail alone, from what it kept,
     /// and the lazy stack of the older rows waits for the pull that catches it up. Neither moves the end of the thread.
     @Test func aHeavyThreadDrawsItsEagerTailAloneAndItsStackAfterThePull() async throws {
@@ -121,11 +138,19 @@ struct ThreadReloadFirstFrameTests {
         thread.visibility.motionPaused = false
         ListPerf.settle(thread.window)
         defer { thread.releaseSnapshots() }
-        try await eventuallyOnMain("the pull to be on its way") { thread.snapshotRequests > requests }
-        ListPerf.settle(thread.window)
         let first = ThreadRowMemory.built(in: store)
         #expect(first > 0 && first <= tail, "the first frame drew the eager tail alone: \(first) rows of \(tail), \(store.rows.count) in the thread")
         #expect(try abs(distanceFromTail(thread)) < 2)
+
+        // The lazy stack waits for the pull while it is held: no frame until it lands has more than the tail.
+        try await eventuallyOnMain("the pull to be on its way") { thread.snapshotRequests > requests }
+        var held = [first]
+        for _ in 0..<10 {
+            ListPerf.settle(thread.window)
+            held.append(ThreadRowMemory.built(in: store))
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(store.catchUp == nil && held.allSatisfy { $0 <= tail }, "the stack stayed out while the pull was held: \(held), tail \(tail)")
 
         thread.releaseSnapshots()
         try await eventuallyOnMain("the pull to land") { store.catchUp != nil }
