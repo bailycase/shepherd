@@ -97,6 +97,24 @@ struct ThreadRestoreTests {
                 && !short.restoring && !short.awaitsPull)
     }
 
+    /// A release that cut nothing (the thread held no more than a tail) leaves the same thread: it comes back as a tail does, its eager tail
+    /// alone, where a thread that holds its history draws every row it owes in its first frame.
+    @Test func aThreadReleasedToATailThatCutNothingRestoresAsATailDoes() {
+        let long = store(turns: 24)
+        let rows = long.rows, eager = 12
+        long.releaseToTail(rows: ThreadView.eagerRows, maxBytes: .max)
+        #expect(long.keepsOnlyTail && long.rows == rows, "nothing was cut")
+        let owed: (Int) -> Int = { long.restoreCost(drawn: $0, upTo: eager) }
+        let restore = ThreadRestore()
+        _ = restore.plan(active: false, hiddenKept: 0, rows: rows, eagerRows: eager, owed: owed)
+        let first = restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, keepsOnlyTail: long.keepsOnlyTail, owed: owed)
+        #expect(first == ThreadRestore.Plan(eager: 12, history: false) && restore.awaitsPull)
+
+        let holding = ThreadRestore()
+        _ = holding.plan(active: false, hiddenKept: 0, rows: rows, eagerRows: eager, owed: owed)
+        #expect(holding.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, owed: owed) == nil && !holding.awaitsPull)
+    }
+
     /// A thread that holds its history and let its rows go (the mounted budget's pass) draws what it owes in its first frame when that is
     /// no more than a step, as it did before, and its stack waits for no pull.
     @Test func aThreadThatHoldsItsHistoryAndLetItsRowsGoDrawsWhatItOwesAtOnce() {

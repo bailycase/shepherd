@@ -1697,6 +1697,9 @@ public final class NativeThreadStore {
         settleTask = nil
         if settledRunning { settledRunning = false }
         cutHistory(to: tailStart(rows: rows, maxBytes: maxBytes))
+        // Set when nothing was cut as well (a thread that held no more than a tail): it leaves the threads that hold their history for
+        // the tail tier, bounded with the other tails, and it comes back as a tail does. Threads of a few heavy replies are most of
+        // them, and what draws their first frame right is that restore (the eager tail alone, the lazy stack after the pull).
         keepsOnlyTail = true
         // Still more than it may hold: its last question and answer alone.
         if retainedHistoryBytes > maxBytes, let last = lastHeldQuestion, last > 0 {
