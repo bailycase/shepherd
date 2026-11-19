@@ -71,6 +71,44 @@ struct ThreadRestoreTests {
         #expect(frame.plan == nil && !frame.restoring, "\(turns) turns draw every row at once")
     }
 
+    /// A thread that let go of its older history and kept its end (`NativeThreadStore.releaseToTail`): its hidden view draws none of the
+    /// rows, what it owes is little, and its tail is bound by cost with more rows above it. The first frame draws that tail alone and the
+    /// lazy stack comes after it, as for rows that arrive: the stack's first screen would be built with the tail, rows as heavy as it. The
+    /// stack waits for the pull that catches the thread up.
+    @Test func aThreadThatKeptOnlyItsTailDrawsItsEagerTailAloneAndTheLazyStackAfterThatFrame() {
+        let long = store(turns: 24)
+        let rows = long.rows, eager = 12
+        let owed: (Int) -> Int = { long.restoreCost(drawn: $0, upTo: eager) }
+        #expect(owed(1) <= AppLayout.restoreStepBytes, "what it owes is no more than a step")
+        let restore = ThreadRestore()
+        _ = restore.plan(active: false, hiddenKept: 0, rows: rows, eagerRows: eager, owed: owed)
+        let first = restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, keepsOnlyTail: true, owed: owed)
+        #expect(first == ThreadRestore.Plan(eager: 12, history: false) && restore.restoring && restore.awaitsHistory && restore.awaitsPull)
+        let more = restore.advance(rows: rows, eagerRows: eager) { _ in Issue.record("the stack takes no rows"); return 0 }
+        #expect(more && restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, keepsOnlyTail: true, owed: owed) == nil,
+                "the stack and every row are drawn")
+        #expect(!restore.awaitsPull, "and nothing is waited for any more")
+
+        // A thread that is no more than its tail has no stack to hold back: it draws at once.
+        let short = ThreadRestore()
+        let few = store(turns: 6).rows
+        _ = short.plan(active: false, hiddenKept: 0, rows: few, eagerRows: few.count, owed: owed)
+        #expect(short.plan(active: true, hiddenKept: nil, rows: few, eagerRows: few.count, keepsOnlyTail: true, owed: owed) == nil
+                && !short.restoring && !short.awaitsPull)
+    }
+
+    /// A thread that holds its history and let its rows go (the mounted budget's pass) draws what it owes in its first frame when that is
+    /// no more than a step, as it did before, and its stack waits for no pull.
+    @Test func aThreadThatHoldsItsHistoryAndLetItsRowsGoDrawsWhatItOwesAtOnce() {
+        let long = store(turns: 24)
+        let rows = long.rows, eager = 12
+        let owed: (Int) -> Int = { long.restoreCost(drawn: $0, upTo: eager) }
+        let restore = ThreadRestore()
+        _ = restore.plan(active: false, hiddenKept: 0, rows: rows, eagerRows: eager, owed: owed)
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, owed: owed) == nil, "all of it is drawn at once")
+        #expect(!restore.restoring && !restore.awaitsPull)
+    }
+
     @Test func aThreadThatKeptEveryRowRestoresNothing() {
         let few = store(turns: 2)
         let frame = firstFrame(few)

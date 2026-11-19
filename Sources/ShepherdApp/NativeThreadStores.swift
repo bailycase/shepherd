@@ -20,10 +20,13 @@ enum ThreadPassWait: Equatable {
 /// Threads off screen are bounded across threads in two tiers, each by recency of showing.
 ///
 /// Loaded history: past the `retainedHistories` most recently shown, or past `historyBudget` bytes in all, the threads
-/// shown longest ago let their history go (`NativeThreadStore.release`) and reload when shown again. The store, its
-/// draft, attachments and deck identity stay. A thread is never released while on screen, selected (`protected`),
-/// pinned by a view showing it or scrolled into its history (`ThreadReaderPins`), or while the store says it holds
-/// unsettled work (`canReleaseHistory`); protected threads may keep the total over budget.
+/// shown longest ago let their older history go and keep its end (`NativeThreadStore.releaseToTail`: the last `tailRows` rows,
+/// at most `tailCap` bytes, with what they were derived from), so showing one draws its last screen, or its eager tail, in its first
+/// frame, before the pull that catches it up has returned. Past `tailBudget` bytes of such tails in all, the ones shown longest ago go whole
+/// (`NativeThreadStore.release`) and reload when shown again. The store, its draft, attachments and deck identity stay. A
+/// thread is never released while on screen, selected (`protected`), pinned by a view showing it or scrolled into its history
+/// (`ThreadReaderPins`), or while the store says it holds unsettled work (`canReleaseHistory`); protected threads may keep the
+/// total over budget.
 ///
 /// Row views: a hidden layout stays mounted and its thread keeps the views of its last rows, which are most of what the
 /// app holds (`NativeThreadStore.mountedCost` estimates them). Past `mountedBudget` bytes of them in all, the least
@@ -46,6 +49,13 @@ final class NativeThreadStores<Key: Hashable> {
     var retainedHistories = 8
     /// Bytes of history (`retainedHistoryBytes`) kept across threads before older ones release it.
     var historyBudget = 96 * 1024 * 1024
+    /// Rows at the end of a thread that a release of its older history keeps (`NativeThreadStore.releaseToTail`): what its eager
+    /// tail can draw, at most.
+    var tailRows = ThreadView.eagerRows
+    /// Bytes (`retainedHistoryBytes`) one such tail holds at most; the last question and its answer stay whatever they hold.
+    var tailCap = 4 * 1024 * 1024
+    /// Bytes of tails kept across threads before the ones shown longest ago go whole.
+    var tailBudget = 64 * 1024 * 1024
     /// Readers scrolled into a hidden thread's history, shared by every window's views.
     var pins: ThreadReaderPins?
     /// Keys that are never released whatever their recency (the selected thread).
@@ -214,12 +224,18 @@ final class NativeThreadStores<Key: Hashable> {
     func enforceHistoryBounds() {
         recent.removeAll { stores[$0] == nil }
         let protected = (protected?() ?? []).union(live).union(recent.suffix(1))
-        let entries = recent.compactMap { key -> HistoryEntry<Key>? in
-            guard let store = stores[key], store.holdsHistory else { return nil }
-            let pinned = protected.contains(key) || pins?.isPinned(store) == true || !store.canReleaseHistory
-            return HistoryEntry(key: key, bytes: store.retainedHistoryBytes, pinned: pinned)
+        /// The threads that hold history, oldest first: whole ones, or the ones that already hold only their tails.
+        func entries(tails: Bool) -> [HistoryEntry<Key>] {
+            recent.compactMap { key -> HistoryEntry<Key>? in
+                guard let store = stores[key], store.holdsHistory, store.keepsOnlyTail == tails else { return nil }
+                let pinned = protected.contains(key) || pins?.isPinned(store) == true || !store.canReleaseHistory
+                return HistoryEntry(key: key, bytes: store.retainedHistoryBytes, pinned: pinned)
+            }
         }
-        for key in Self.evictions(entries, keep: retainedHistories, budget: historyBudget) {
+        for key in Self.evictions(entries(tails: false), keep: retainedHistories, budget: historyBudget) {
+            stores[key]?.releaseToTail(rows: tailRows, maxBytes: tailCap)
+        }
+        for key in Self.evictions(entries(tails: true), keep: .max, budget: tailBudget) {
             stores[key]?.release()
         }
     }

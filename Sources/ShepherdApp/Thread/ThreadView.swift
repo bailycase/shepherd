@@ -159,7 +159,7 @@ struct ThreadView: View {
         // from the newest (`ThreadRestore`): the eager tail grows over the lazy stack's rows, which the second frame brings back.
         let eagerCount = eagerCount(origins, rows: rows)
         let restored = restore.plan(active: active, hiddenKept: kept, rows: rows, eagerRows: eagerCount, following: follower.sticky,
-                                    tailParsed: !store.tailAwaitsParse(lastRows: eagerCount)) { [store] drawn in
+                                    tailParsed: !store.tailAwaitsParse(lastRows: eagerCount), keepsOnlyTail: store.keepsOnlyTail) { [store] drawn in
             store.restoreCost(drawn: drawn, upTo: eagerCount)
         }
         let restoreStepping = restore.restoring
@@ -624,9 +624,21 @@ struct ThreadView: View {
             // Replies still to be parsed (a large one is parsed off the main thread) draw as nothing, and a tail a few points tall leaves the
             // stack in the window, where it builds rows that grow to their full size out of view and out of the budget. The update that
             // brings their blocks builds them, and the stack comes in the one after it. A parse that does not land holds it back only so long.
-            var parseRetries = 0
-            while scrolling() || restore.waitsForParse(retries: parseRetries), !Task.isCancelled {
+            // So does the pull that catches the thread up, for a thread whose first frame came before it because it kept only its tail
+            // (`ThreadRestore.awaitsPull`): what it brings changes the tail and adds rows above it, and a stack built before it is built
+            // against a tail that is still to move. And the scroll view of such a thread, until it has stopped reporting and rests on its
+            // end (`ThreadTailGuard.rests`): the pull may land with the tail's rows still being measured, and a stack that joins in the
+            // middle of that is laid out where the viewport was, and builds the heavy rows it finds there. Each waits no longer than the
+            // replies do.
+            var parseRetries = 0, pullRetries = 0, restRetries = 0
+            func pullPending() -> Bool { restore.awaitsPull && store.catchUp == nil && pullRetries < AppLayout.restoreParseRetries }
+            func tailMoving() -> Bool {
+                restore.awaitsPull && restRetries < AppLayout.restoreParseRetries && !tailGuard.rests(quietFor: AppLayout.restoreQuiet)
+            }
+            while scrolling() || restore.waitsForParse(retries: parseRetries) || pullPending() || tailMoving(), !Task.isCancelled {
                 if !restore.tailDrawnParsed { parseRetries += 1 }
+                if pullPending() { pullRetries += 1 }
+                if tailMoving() { restRetries += 1 }
                 try? await Task.sleep(for: AppLayout.restoreRetry)
             }
             guard !Task.isCancelled else { return }
@@ -1379,6 +1391,11 @@ final class ThreadRestore {
     /// The thread has been hidden long enough that a tail bounded by cost is all it draws (`plan`). Cleared when it is shown.
     @ObservationIgnored private var withdrawsStack = false
 
+    /// This restore began with the thread holding only its tail (`NativeThreadStore.keepsOnlyTail`): its first frame came before the pull
+    /// that catches it up, and the lazy stack waits for that pull (`ThreadView.restoreRows`). Not for a restore of rows that were let go
+    /// from a thread that holds its history, whose pull brings no rows above the tail.
+    @ObservationIgnored private(set) var awaitsPull = false
+
     /// Has the hidden thread draw only its tail from now on: raises `steps`, which draws the next update. A thread whose tail is not
     /// bounded by cost, or whose reader is in its history, draws what it did.
     func withdrawStack() {
@@ -1401,9 +1418,10 @@ final class ThreadRestore {
     /// and the eager tail costs, beyond their chrome (`NativeThreadStore.restoreCost`), read once as it comes back: a thread that owes
     /// no more than a step (`AppLayout.restoreStepBytes`) draws them all in its first frame, as it would after any release, because
     /// there is nothing to spread (a dozen rows of one line owe nothing), and a last screen that is all it drew might not fill its
-    /// window (`ThreadTailAnchor`).
+    /// window (`ThreadTailAnchor`). `keepsOnlyTail` is whether the thread holds only the end of its history, as it is shown
+    /// (`NativeThreadStore.keepsOnlyTail`): its restore waits for the pull that catches it up (`awaitsPull`).
     func plan<Rows: BidirectionalCollection>(active: Bool, hiddenKept: Int?, rows: Rows, eagerRows: Int, following: Bool = true,
-                                             tailParsed: Bool = true, owed: (Int) -> Int) -> Plan?
+                                             tailParsed: Bool = true, keepsOnlyTail: Bool = false, owed: (Int) -> Int) -> Plan?
     where Rows.Element == NativeThreadRow, Rows.Index == Int {
         _ = steps
         tailDrawnParsed = tailParsed
@@ -1435,7 +1453,16 @@ final class ThreadRestore {
                 first = rows[rows.endIndex - kept].id
                 restoring = true
                 history = false
+            } else if keepsOnlyTail, self.hiddenKept != nil, rows.count > eagerRows, eagerRows < ThreadView.eagerRows {
+                // What it owes costs no more than a step, but a tail bounded by cost sits above a lazy stack of rows that cost as much or
+                // more: a thread that let go of its older history and kept its end (`NativeThreadStore.releaseToTail`) comes back as rows
+                // that arrive do (`noteArrival`), its eager tail in the first frame and the stack after it, not the stack's first screen
+                // with it. A thread that holds its history and let its rows go draws what it owes in the first frame, as it always did.
+                first = rows[rows.endIndex - eagerRows].id
+                restoring = true
+                history = false
             }
+            awaitsPull = keepsOnlyTail && restoring
             self.hiddenKept = nil
         }
         noteArrival(rows: rows, eagerRows: eagerRows)
@@ -1505,6 +1532,7 @@ final class ThreadRestore {
 
     private func finish() {
         restoring = false
+        awaitsPull = false
         first = nil
         history = false
     }

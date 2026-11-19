@@ -11,6 +11,8 @@ final class FakeHost {
     var snapshot: NativeThreadSnapshot
     /// While true, snapshot requests answer that the agent's pi is still starting.
     var starting = false
+    /// While true, a snapshot request that names the revision it holds answers that nothing changed, as a host does.
+    var answersUnchanged = false
     var next: [Result<NativeThreadResult, Error>] = []
     var action: (NativeThreadRequest) throws -> NativeThreadResult = { _ in .failure(code: "x", message: "unscripted") }
     private(set) var requests: [NativeThreadRequest] = []
@@ -24,9 +26,12 @@ final class FakeHost {
         requests.append(request)
         onRequest?(request)
         if !next.isEmpty { return try next.removeFirst().get() }
-        guard case .snapshot = request else { return try action(request) }
+        guard case .snapshot(let session, _, let after) = request else { return try action(request) }
         defer { onServed?(); onServed = nil }
         if starting { return .failure(code: NativeThreadCode.starting, message: "pi is starting.") }
+        if answersUnchanged, after == snapshot.revision, session == snapshot.piSessionID {
+            return .unchanged(piSessionID: snapshot.piSessionID, generation: snapshot.generation, revision: snapshot.revision)
+        }
         return .snapshot(value: snapshot)
     }
 
@@ -83,11 +88,11 @@ func manualStore(startingLimit: Duration = .seconds(60)) -> NativeThreadStore {
 /// Starts the store's run loop and returns once the first answer (a snapshot, or pi still
 /// starting) has been applied.
 @MainActor
-func start(_ store: NativeThreadStore, _ host: FakeHost) async -> Task<Void, Never> {
+func start(_ store: NativeThreadStore, _ host: FakeHost, connection: AnyHashable? = nil) async -> Task<Void, Never> {
     var task: Task<Void, Never>?
     await withCheckedContinuation { (served: CheckedContinuation<Void, Never>) in
         host.onServed = { served.resume() }
-        task = Task { await store.run { try host.handle($0) } }
+        task = Task { await store.run(request: { try host.handle($0) }, connection: connection) }
     }
     return task!
 }

@@ -390,4 +390,31 @@ struct ThreadTailGuardTests {
         #expect(rig.landings == 0, "a wheel tick that interrupts recovery must not jump back to the tail")
         #expect(rig.gap > 90, "the view stayed where the reader's last move left it")
     }
+
+    /// What a restore waits for before its first lazy stack joins (`ThreadView.restoreRows`): the scroll view reports nothing new for a
+    /// while and rests on the end of its document.
+    @Test func aScrollViewRestsOnItsEndOnceItsReadingsHaveStopped() async throws {
+        let rig = Rig()
+        defer { rig.close() }
+        rig.guardian.distance = 0
+        #expect(!rig.guardian.rests(quietFor: .seconds(60)), "a reading has just been taken")
+        try await eventuallyOnMain("the readings to have stopped for 30 ms") { rig.guardian.rests(quietFor: .milliseconds(30)) }
+        rig.guardian.distance = 0
+        #expect(!rig.guardian.rests(quietFor: .seconds(60)), "each reading starts the quiet again, whatever it says")
+    }
+
+    @Test func aScrollViewAwayFromItsEndDoesNotRestWhateverItsReadingsSay() async throws {
+        let rig = Rig()
+        defer { rig.close() }
+        rig.clip.scroll(to: NSPoint(x: 0, y: rig.clip.bounds.origin.y - 400))
+        rig.scroll.reflectScrolledClipView(rig.clip)
+        #expect(rig.gap > 100)
+        #expect(!rig.guardian.rests(quietFor: .zero))
+        rig.scrollToEnd()
+        #expect(rig.guardian.rests(quietFor: .zero))
+    }
+
+    @Test func aGuardWithNoScrollViewHasNothingToWaitFor() {
+        #expect(ThreadTailGuard().rests(quietFor: .seconds(60)))
+    }
 }

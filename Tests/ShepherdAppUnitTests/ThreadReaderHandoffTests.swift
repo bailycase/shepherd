@@ -123,7 +123,7 @@ struct ThreadReaderHandoffTests {
         }
         stores.enforceHistoryBounds()
         #expect(store.holdsHistory, "A still shows it: its pin keeps the history")
-        #expect(!stores.store(for: "other").holdsHistory)
+        #expect(stores.store(for: "other").keepsOnlyTail)
         #expect(pins.isPinned(store), "the newer view's leaving removed only its own pin")
         #expect(stores.existing(for: "shared") === store)
     }

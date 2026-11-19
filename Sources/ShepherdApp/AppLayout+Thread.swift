@@ -82,6 +82,11 @@ extension AppLayout {
     /// How many `restoreRetry` the first lazy stack waits for the replies at the end of the tail to have their blocks (a large reply is
     /// parsed off the main thread, a giant one in about a second) before it comes anyway: a reader cannot scroll past the eager tail meanwhile.
     static let restoreParseRetries = 30
+    /// How long the scroll view of a thread that kept only its tail (`NativeThreadStore.releaseToTail`) must have gone without a new
+    /// reading before its first lazy stack joins (`ThreadTailGuard.rests`). The tail's rows are still being measured after the frame
+    /// that drew them, and a stack that joined within about a tenth of a second of a reading was laid out while the viewport was
+    /// still where the end of the thread had been, built the heavy reply it found there and left the reader in the middle of the thread.
+    static let restoreQuiet: Duration = .milliseconds(300)
     /// The estimated bytes (`NativeThreadStore.restoreStep`) of rows one step draws, at most; a row larger than it goes whole.
     /// About a code-heavy reply, whose views take tens of milliseconds to build.
     static let restoreStepBytes = 4 << 20
