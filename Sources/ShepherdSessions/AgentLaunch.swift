@@ -21,6 +21,8 @@ public struct AgentLaunchSettings: Equatable, Sendable {
     public var browser = true
     public var trimToolOutput = false
     public var deferTools = false
+    /// Settings ▸ Experiments ▸ Computer use.
+    public var computerUse = false
 
     public init() {}
 }
@@ -103,6 +105,7 @@ public enum AgentLaunch {
             mcp: agent.coordinatorFor == nil ? try mcp() : nil,
             worktreeOwningSpace: worktreeOwningSpace,
             browserExtensionPath: wantsBrowser(for: agent, enabled: settings.browser) ? try BrowserExtension.installedPath() : nil,
+            computerUse: try computerUse(for: agent, enabled: settings.computerUse, isAutomation: isAutomation),
             contextExtensionPath: settings.trimToolOutput ? try ContextExtension.installedPath() : nil,
             projectContext: try project.map { (try ProjectContextExtension.installedPath(), try ProjectContextExtension.context($0), agent.coordinatorFor != nil) },
             deferTools: settings.deferTools,
@@ -131,6 +134,16 @@ public enum AgentLaunch {
     /// `--no-extensions` and none of Shepherd's variables).
     public static func wantsBrowser(for agent: Agent, enabled: Bool) -> Bool {
         enabled && agent.designID == nil && agent.coordinatorFor == nil
+    }
+
+    /// Computer use is for threads a person started and watches: never a design's agent, a project's
+    /// coordinator or worker, an automation run or a thread it started, or work sent from another Mac.
+    /// Nil also when this build ships no driver.
+    public static func computerUse(for agent: Agent, enabled: Bool, isAutomation: Bool,
+                                   driver: String? = ComputerUseExtension.driver()) throws -> (extensionPath: String, driver: String, home: String)? {
+        guard enabled, !isAutomation, agent.designID == nil, agent.coordinatorFor == nil, agent.projectWorkerFor == nil,
+              agent.automationOrigin == nil, agent.dispatchedFrom == nil, let driver else { return nil }
+        return (try ComputerUseExtension.installedPath(), driver, ComputerUseExtension.home())
     }
 
     /// design_get and design_note are for threads: a design's agent never gets them (it reads its

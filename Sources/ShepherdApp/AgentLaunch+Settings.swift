@@ -46,6 +46,7 @@ extension AppSettings {
         launch.browser = piBrowserExtension
         launch.trimToolOutput = trimToolOutput
         launch.deferTools = deferTools
+        launch.computerUse = computerUseEnabled
         return launch
     }
 }
