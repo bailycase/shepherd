@@ -391,7 +391,7 @@ struct ThreadTranscript: View {
                 // A send that goes in now re-attaches; a follow-up that waits in Up next leaves
                 // the reader where they are, now and when it goes.
                 guard !store.lastSendQueued else { return }
-                follow { $0.sent(queued: false); return false }
+                follow { $0.sent(queued: false, turnPresent: store.lastSendShownEarly); return false }
                 tailPin.asked(lander(proxy))
             }
             .onChange(of: rows.last(where: \.isUser)?.id) { _, id in

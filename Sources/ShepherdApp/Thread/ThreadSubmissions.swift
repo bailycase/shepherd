@@ -4,10 +4,10 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Sends the store has captured but the host has not accepted, at the thread's tail in the held
-/// message style (a pending bubble with its note under it):
+/// Sends the store captured and the host did not accept, at the thread's tail in the held
+/// message style (a pending bubble with its note under it). A send still waiting ("Sending…") is a row of the
+/// transcript itself (`NativeThreadStore.rows`), the turn its accepted echo and the host's message then keep:
 ///
-/// - sending: "Sending…", nothing to do yet;
 /// - failed (the host refused it): Restore puts the words, files, references, elements and
 ///   images back in the composer, only when the composer is empty so nothing typed since is
 ///   overwritten; Discard lets it go;
@@ -19,7 +19,8 @@ struct ThreadSubmissions: View {
     let input: ThreadInput
 
     var body: some View {
-        ForEach(store.submissions) { submission in
+        // A send still waiting for the host is in the transcript itself (its row says "Sending…"); only its outcomes are here.
+        ForEach(store.submissions.filter { $0.state != .sending }) { submission in
             SubmissionRow(submission: submission, restorable: Self.canRestore(submission, store: store, input: input),
                           discardable: store.canDiscardSubmission(submission.id),
                           restore: { Self.restore(submission.id, store: store, input: input) },
@@ -51,7 +52,7 @@ struct ThreadSubmissions: View {
 
     static func note(_ state: NativeThreadSubmission.State, restorable: Bool) -> String {
         switch state {
-        case .sending: "Sending…"
+        case .sending: NativeThreadSubmission.sendingNote
         case .failed: restorable ? "Not sent. Restore it to edit and send again." : "Not sent. Clear the composer to restore it."
         case .uncertain: "Delivery unknown. It may have reached the agent; check the thread before sending it again."
         }
