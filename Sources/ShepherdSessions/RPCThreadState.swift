@@ -1311,6 +1311,12 @@ final class RPCThreadState {
         let settle: (Result<RPCResponse, RPCError>) -> Void = { result in
             completion(Self.dispatchFailure(result) ?? accepted)
         }
+        // A client reconciles its picked value on the first pull after acceptance. Publish pi's
+        // effective settings first, including a thinking level clamped to what the model supports.
+        func settleSetting(_ result: Result<RPCResponse, RPCError>) {
+            guard Self.dispatchFailure(result) == nil else { settle(result); return }
+            refreshState { _ in settle(result) }
+        }
         switch request {
         case .send(_, _, _, let text, let delivery, let images, let designContext, let designReferences, let browserElements):
             let images = images ?? []
@@ -1350,10 +1356,7 @@ final class RPCThreadState {
             }
             let provider = String(model[..<slash])
             let id = String(model[model.index(after: slash)...])
-            session.request(.setModel(provider: provider, modelId: id)) { [weak self] result in
-                settle(result)
-                self?.refreshState()
-            }
+            session.request(.setModel(provider: provider, modelId: id), completion: settleSetting)
         case .setThinking(_, _, _, let level):
             // pi clamps a level the model lacks to the nearest one it takes.
             guard ThinkingLevel(rawValue: level) != nil else {
@@ -1361,10 +1364,7 @@ final class RPCThreadState {
                     + ThinkingLevel.allCases.map(\.rawValue).joined(separator: ", ") + "."))
                 return
             }
-            session.request(.setThinkingLevel(level: level)) { [weak self] result in
-                settle(result)
-                self?.refreshState()
-            }
+            session.request(.setThinkingLevel(level: level), completion: settleSetting)
         case .goal(_, _, _, let action, let expectedID, let expectedRevision, let expectedState):
             guard goalsEnabled && goalsAvailable else { completion(.failure(code: "unsupported", message: "Enable Goals in Settings > Experiments.")); return }
             guard action.isValid else { completion(.failure(code: "invalid", message: "A goal needs text up to 32768 characters.")); return }

@@ -477,6 +477,8 @@ public final class NativeThreadStore {
     @ObservationIgnored private var aliases: [String: String] = [:]
     /// Snapshot requests started so far. A change of this client's (a queue edit, an echo)
     /// stands until a snapshot requested after the host accepted it arrives.
+    // Only the picked control leads the host. Capabilities and the session snapshot stay authoritative.
+    @ObservationIgnored private var settingPick: (id: UUID, action: NativeThreadRequest, acceptedAfter: Int?)?
     @ObservationIgnored private var pulls = 0
     @ObservationIgnored private var overlays: [QueueOverlay] = []
     /// Queued messages this client holds (an editor open on them). A thread off screen cannot
@@ -1054,11 +1056,18 @@ public final class NativeThreadStore {
         if widgets != self.widgets { self.widgets = widgets }
         let commands = value?.commands ?? []
         if commands != self.commands { self.commands = commands }
-        if value?.model != model { model = value?.model }
-        if value?.thinking != thinking { thinking = value?.thinking }
+        var shownModel = value?.model, shownThinking = value?.thinking
+        var tier = value?.serviceTier.flatMap(ServiceTier.init(rawValue:)) ?? .standard
+        switch settingPick?.action {
+        case .setModel(_, _, _, let pick): shownModel = pick
+        case .setThinking(_, _, _, let pick): shownThinking = pick
+        case .setServiceTier(_, _, _, let pick): tier = ServiceTier(rawValue: pick) ?? tier
+        default: break
+        }
+        if shownModel != model { model = shownModel }
+        if shownThinking != thinking { thinking = shownThinking }
         let levels = NativeThinkingLevel.levels(value?.thinkingLevels)
         if levels != thinkingLevels { thinkingLevels = levels }
-        let tier = value?.serviceTier.flatMap(ServiceTier.init(rawValue:)) ?? .standard
         if tier != serviceTier { serviceTier = tier }
         let tiers = (value?.serviceTiers ?? []).compactMap(ServiceTier.init(rawValue:))
         if tiers != serviceTiers { serviceTiers = tiers }
@@ -1327,6 +1336,7 @@ public final class NativeThreadStore {
 
     private func resetPresentationSession(_ value: NativeThreadSnapshot) {
         guard snapshot?.piSessionID != value.piSessionID || snapshot?.generation != value.generation else { return }
+        settingPick = nil
         cancelProse()
         presentationCache = [:]
         thinkingCache = [:]
@@ -1515,6 +1525,7 @@ public final class NativeThreadStore {
             }
         }
         resumeStartWaiters(false)
+        if settingPick != nil { settingPick = nil; deriveChrome() }
         epoch = UUID()
         // A loop resting ends too.
         restWake.signal()
@@ -1842,6 +1853,7 @@ public final class NativeThreadStore {
                     Self.signposter.endInterval("Thread history join await", joiningWait)
                     guard !Task.isCancelled, epoch == run, recentRequest == ticket else { return }
                 }
+                if let accepted = settingPick?.acceptedAfter, accepted < pull { settingPick = nil }
                 settlePending(value, sameSession: sameSession, pull: pull)
                 settleRunning(value.running, catchingUp: catchUp == nil)
                 if !resetHistory, sameSession, value.olderCursor != nil,
@@ -1875,6 +1887,7 @@ public final class NativeThreadStore {
                     clearStartProblem()
                     // Nothing changed on the host: whatever this client changed before it asked
                     // is in the snapshot it already has, or was refused.
+                    if let accepted = settingPick?.acceptedAfter, accepted < pull { settingPick = nil; deriveChrome() }
                     let before = overlays.count
                     overlays.removeAll { $0.accepted.map { $0 < pull } ?? false }
                     if overlays.count != before { deriveQueue() }
@@ -2637,6 +2650,12 @@ public final class NativeThreadStore {
         busy = true
         notice = nil
         inFlight.insert(operation)
+        switch action {
+        case .setModel, .setThinking, .setServiceTier:
+            settingPick = (operation, action, nil)
+            deriveChrome()
+        default: break
+        }
         if let submission {
             let interval = Self.signposter.beginInterval("Thread submit capture")
             submissions.append(submission)
@@ -2739,12 +2758,17 @@ public final class NativeThreadStore {
             } else { notice = String(describing: error) }
         }
         guard epoch == run else { return wasAccepted }
+        if settingPick?.id == operation {
+            if wasAccepted { settingPick?.acceptedAfter = pulls }
+            else { settingPick = nil; deriveChrome() }
+        }
         busy = !startWaiters.isEmpty || inFlight.contains { $0 != operation }
         // inFlight still gates new actions through reconciliation, without marking a known
         // acceptance unknown if visibility changes while its refresh is in flight.
         // Actions retain the ready-to-send contract. A stale-session refusal, startup answer
         // or actual connection loss still takes refresh's full bootstrap path.
         await refresh()
+        if settingPick?.id == operation, !ready || Task.isCancelled { settingPick = nil; deriveChrome() }
         return wasAccepted
     }
 
