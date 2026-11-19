@@ -167,7 +167,9 @@ At launch only the visible layout mounts, and nothing but showing an agent mount
 nobody has opened has no mounted layout, so nothing may wait for its layout to draw: its pi, its
 terminals (a terminal a tool or another device opens starts its own shell), its browser page, its
 status and notifications, and remote clients all work without one. During a live resize hidden
-layouts keep their frozen size. The deliberate unmounts are cold parking, only for a layout holding
+layouts keep their frozen size and take no layout pass (SwiftUI marks every hosting view for one on each frame of
+the drag): each takes the one it owes a turn of the run loop apart after the drag (`DeckCatchUp`), and a hidden
+thread is never told of the drag (`liveResizing` reads false in it). The deliberate unmounts are cold parking, only for a layout holding
 a terminal (`WorkspaceSelection.coldParkCandidates`), and a Project's threads, which its Project
 page draws: its coordinator never mounts here, and a worker only while it is the one open.
 
