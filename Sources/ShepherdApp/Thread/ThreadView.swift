@@ -604,7 +604,7 @@ struct ThreadView: View {
                 }
                 .scrollTargetLayout()
                 // Its height, kept in a reference (no redraw): what stands in for the stack while it is parked (`parksHistory`).
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { gate.historyHeight = $0 }
+                .background { Color.clear.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { gate.historyHeight = $0 } }
                 // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
                 // that host does not run). Its identity changes whenever the rows are let go (a pass, a released history, a hidden
                 // thread that draws its tail alone: `releasing`), and takes them with it. A thread with no history to let go (one of a few
