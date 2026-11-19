@@ -177,10 +177,11 @@ are a lazy stack's, built only as the reader scrolls to them): the last rows who
 which is every thread of cheap rows) and never fewer than the rows covering two viewports by the low height
 estimate (`AppLayout.eagerTailViewports`), the streaming reply, or the last row, whatever it costs. A show, a
 history that reloads and a restore build at most that, so a thread of 250 MiB replies builds one where it built
-thirty. The view holds where the tail starts (`ThreadEagerTail`) and moves it toward the rule by at most two rows
-(`AppLayout.eagerTailCrossing`) each time its rows change, so rows never cross between the stacks in bulk under a
-reader (a crossing builds the row again and drops its state) who has left the tail, and takes it at once for one
-following it; the first draw takes the rule whole. A hidden thread's tail follows the same rule whatever rows
+thirty. The view holds where the tail starts (`ThreadEagerTail`) and moves it toward the rule each time its rows
+change. Rows that leave it go at once for a reader following the tail (they are above the two viewports it covers)
+and two at a time (`AppLayout.eagerTailCrossing`) for one who has left it, so that no bulk of rows crosses where
+they can see it (a crossing builds the row again and drops its state); rows that come back, which are built, come
+two at a time for everyone. The first draw takes the rule whole. A hidden thread's tail follows the same rule whatever rows
 arrive while it is hidden (another view of the thread polls it, a queued prompt lands), ignoring only the
 window's height, which its frozen frame does not report. A reply whose parse has not landed (a large one is
 parsed off the main thread) costs by its text until it does.
