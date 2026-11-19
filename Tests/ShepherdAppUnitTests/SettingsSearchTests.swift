@@ -90,8 +90,6 @@ struct SettingsSearchTests {
         (".shepherd", .skills, ["Installed"]),
         ("copied", .skills, ["Installed"]),
         ("agent skills", .skills, ["Installed"]),
-        ("oauth", .tools, ["In every prompt"]),
-        ("exposure", .tools, ["In every prompt"]),
         // Settings ▸ Pi ▸ Sign-in, and what comes from your pi.
         ("auth.json", .models, ["Subscriptions", "API keys"]),
         ("subscription", .models, ["Subscriptions"]),

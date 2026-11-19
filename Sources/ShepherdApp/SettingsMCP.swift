@@ -66,9 +66,6 @@ struct MCPSettings<Extras: View>: View {
                         }
                     }
                     SettingsGroup(title: "How the agent uses them", trailing: store.configPath) {
-                        SettingsRow(title: "In every prompt", subtitle: store.budget.note) {
-                            SettingsValue(text: store.budget.tokens)
-                        }
                         SettingsRow(title: "Also use a repo’s .mcp.json", subtitle: "Off: only these servers, in every repo") {
                             SettingsSwitch(label: "Also use a repo’s .mcp.json", isOn: projectConfig)
                         }

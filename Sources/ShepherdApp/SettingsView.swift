@@ -4,8 +4,8 @@ import AppKit
 import ShepherdCore
 import ShepherdProtocol
 
-/// Settings replaces the window content in place. A 220pt nav on `bgBase` (search on ⌘F, the
-/// pages in three groups, no icons) beside one centered 620pt column; Spaces fills the detail
+/// Settings is a modal over the window (`SettingsOverlay`). A 220pt nav on `bgBase` (search on ⌘F,
+/// the pages in three groups, no icons) beside one centered 620pt column; Spaces fills the detail
 /// area. Esc goes up a level: a sub-page to its parent, a page out of Settings.
 ///
 /// Everything here is wired: a row exists only if changing it changes the app.
@@ -14,7 +14,6 @@ struct SettingsView: View {
     private var themes: ThemeManager { .shared }
     @State private var searchText = ""
     @FocusState private var searchFocused: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var query: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -49,13 +48,7 @@ struct SettingsView: View {
                 SpaceResourceDialogs(projects: vm.projects, project: project)
             }
         }
-        .background { WindowChrome() }
         .preferredColorScheme(themes.mode.colorScheme)
-        .ignoresSafeArea()
-        // Settings replaces the window content: it cross-fades in and out on the sheet motion
-        // however `showSettings` changed (⌘,, the app menu, Back, Esc, the palette).
-        .transition(SH.Motion.content.transition(reduceMotion: reduceMotion)
-            .animation(SH.Motion.sheet.animation(reduceMotion: reduceMotion)))
         .onChange(of: searchText) { Self.showFirstMatch(of: matchingSections, in: vm) }
         .background {
             // ⌘F focuses the search field.
@@ -78,15 +71,10 @@ struct SettingsView: View {
             (title: group.title, sections: group.sections.filter { matching.contains($0) })
         }.filter { !$0.sections.isEmpty }
         return VStack(alignment: .leading, spacing: 0) {
-            // The window controls' strip: draggable, nothing else lives up here.
-            Color.clear
-                .frame(height: AppLayout.settingsWindowStripHeight)
-                .contentShape(Rectangle())
-                .gesture(WindowDragGesture())
-
             SHSettingsSearchField("Search", text: $searchText, placement: .navigation)
                 .focused($searchFocused)
                 .padding(.horizontal, SHSettingsNavMetrics.sidePadding)
+                .padding(.top, SH.Space.xl)
                 .padding(.bottom, SH.Space.m)
 
             ScrollView(.vertical) {
@@ -270,10 +258,62 @@ struct SettingsView: View {
         }
         .shAnimation(.content, value: vm.settingsSection == .projects && vm.projects.selected != nil)
         .background(Color.sh.bgWindow)
-        .overlay(alignment: .top) {
-            // The window has no title bar; the strip above the content still drags it.
-            Color.clear.frame(height: AppLayout.settingsWindowStripHeight).contentShape(Rectangle()).gesture(WindowDragGesture())
+    }
+
+    /// ✕ and a click on the scrim: out of Settings, through an unsaved profile's guard.
+    static func close(_ vm: ShepherdViewModel) {
+        guard vm.projectCookies.pending == nil, !vm.projectCookies.clearing else { return }
+        let leave = { vm.showSettings = false }
+        if vm.settingsSection == .subagents { vm.subagentDefinitions.leave(leave) } else { leave() }
+    }
+}
+
+/// Settings as a modal (SettingsModal): 980 × 680 at most, centered over the window on its scrim,
+/// radius 12 with a `lineStrong` line and the popover's shadow, ✕ in its top-right corner.
+struct SettingsOverlay: View {
+    var vm: ShepherdViewModel
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                if vm.showSettings {
+                    Color.sh.modalScrim
+                        .contentShape(Rectangle())
+                        .onTapGesture { SettingsView.close(vm) }
+                        .accessibilityHidden(true)
+                        .shTransition(.content)
+                    let shape = RoundedRectangle(cornerRadius: SH.Radius.l)
+                    SettingsView(vm: vm)
+                        .clipShape(shape)
+                        .shBorder(Color.sh.lineStrong, radius: SH.Radius.l)
+                        .shFloatBackground(shape.fill(Color.sh.bgWindow))
+                        .overlay(alignment: .topTrailing) {
+                            Button { SettingsView.close(vm) } label: {
+                                Image(systemName: "xmark")
+                                    .font(.sh(.caption))
+                                    .foregroundStyle(Color.sh.textSecondary)
+                                    .frame(width: SH.Height.controlS, height: SH.Height.controlS)
+                                    .background(Color.sh.bgHover, in: Circle())
+                                    .contentShape(Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .shHelp("Close (Esc)")
+                            .accessibilityLabel("Close settings")
+                            .padding(SH.Space.l)
+                        }
+                        .frame(width: min(AppLayout.settingsModalWidth, geo.size.width - 2 * AppLayout.settingsModalMargin),
+                               height: min(AppLayout.settingsModalHeight, geo.size.height - 2 * AppLayout.settingsModalMargin))
+                        // VoiceOver stays inside Settings while it is up.
+                        .accessibilityAddTraits(.isModal)
+                        .shTransition(.overlay, anchor: .center)
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
+        .ignoresSafeArea()
+        .allowsHitTesting(vm.showSettings)
+        // However `showSettings` changed: ⌘,, the app menu, ✕, Esc, the palette.
+        .shAnimation(.overlay, value: vm.showSettings)
     }
 }
 
@@ -363,8 +403,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     /// Row titles on the page, as the search lists them under the section.
     var items: [String] {
         switch self {
-        case .general: ["Keep agents running", "Turn finished", "Questions and failures", "Open files in", "By file type", "Channel", "Check automatically", "Version"]
-        case .appearance: ["Mode", "Theme", "Sidebar rows", "Density", "Text size", "Sidebar width", "Organize by", "Keep idle threads",
+        case .general: ["Keep agents running", "Turn finished", "Open files in", "By file type", "Channel", "Check automatically", "Version"]
+        case .appearance: ["Mode", "Sidebar rows", "Density", "Text size", "Sidebar width", "Organize by", "Keep idle threads",
                            "Font", "Size", "Shell"]
         case .models: ["Re-import from pi", "Subscriptions", "Anthropic", "OpenAI Codex", "GitHub Copilot", "xAI", "Kimi", "Radius",
                        "API keys", "Add an API key", "Custom providers",
@@ -378,7 +418,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .projects: ["Add space", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
         case .fromYourPi: ["Source", "Last brought over", "Re-import all", "Logins", "Custom providers", "Default model",
                            "Instructions", "Skills", "Prompts", "Themes", "Imported extensions"]
-        case .tools: ["Add server", "Import…", "In every prompt", "Also use a repo’s .mcp.json",
+        case .tools: ["Add server", "Import…", "Also use a repo’s .mcp.json",
                       "Terminals and agent tools", "Diff review", "MCP servers", "Browser", "Design references",
                       "Commands in the / menu"]
         case .piSlashCommands: ["Off", "Extensions", "Prompt templates", "Skills"]
@@ -443,7 +483,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                            "Imported extensions": ["packages", "npm", "full access", "switch on", "didn't load"]]
         case .tools: ["Add server": ["remote", "local", "url", "command", "stdio", "http", "sse", "mcp", "servers", "connectors"],
                       "Import…": ["claude desktop", "cursor", "vs code", "paste json", "mcpServers"],
-                      "In every prompt": ["tokens", "prompt", "budget", "search", "direct", "tool search", "exposure", "oauth", "sign in", "login"],
                       "Also use a repo’s .mcp.json": ["project", "repository", ".mcp.json"],
                       "Terminals and agent tools": ["panes", "notifications", "automations"],
                       "Diff review": ["review_diff"], "MCP servers": ["tool search"], "Browser": ["screenshots"],

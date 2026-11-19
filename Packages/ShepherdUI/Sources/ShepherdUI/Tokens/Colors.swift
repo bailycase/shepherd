@@ -88,6 +88,8 @@ public final class SHPalette: Sendable {
     public let scrim: Color
     /// Behind the Export sheet and an open image: black at 55% in both appearances (DZExport).
     public let sheetScrim: Color
+    /// Behind the Settings modal: black at 18% (light) / 45% (dark) (SettingsModal).
+    public let modalScrim: Color
     /// Labels on a `failed` fill (the dangerFill button, the failed count badge).
     public let textOnFailed: Color
     /// The Dynamic Island is always black, whatever the appearance (GlanceIsland): its text, its
@@ -220,6 +222,7 @@ public final class SHPalette: Sendable {
         scrim = Color(light: scrimBlack, dark: scrimBlack)
         let sheetBlack = HexColor(red: 0, green: 0, blue: 0, alpha: 0.55)
         sheetScrim = Color(light: sheetBlack, dark: sheetBlack)
+        modalScrim = Color(light: HexColor(red: 0, green: 0, blue: 0, alpha: 0.18), dark: HexColor(red: 0, green: 0, blue: 0, alpha: 0.45))
         textOnFailed = Color(light: "#ffffff", dark: "#ffffff")
         islandText = Color(light: "#f4f5f7", dark: "#f4f5f7")
         let islandWhite = { (alpha: Double) in HexColor(red: 1, green: 1, blue: 1, alpha: alpha) }
