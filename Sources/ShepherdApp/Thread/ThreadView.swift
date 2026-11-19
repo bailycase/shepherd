@@ -217,7 +217,7 @@ struct ThreadView: View {
                         if let day = leadDayTitle(rows) { SHLeadDaySeparator(word: day) }
                         historyColumn(history, tail: eager, spacing: spacing, dormant: dormant, releasing: !active && (rows.isEmpty || restoreStepping),
                                       stack: historyStack, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled,
-                                      historyRowID: historyRowID)
+                                      historyRowID: historyRowID, parked: parksHistory)
                         ForEach(eager) { row in
                             rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                         }
@@ -554,6 +554,13 @@ struct ThreadView: View {
     /// live-resized or the one growing back after it (`eagerCount`, which keeps the gate it reads).
     private var tailAtRest: Bool { !liveResizing && !liveResizeGate.wasLive && eagerReturning == nil }
 
+    /// Whether the history above the tail stands down while the window is dragged, and while the tail grows back after it: the reader at
+    /// the tail sees none of it (the tail covers the window, `eagerCount`), a lazy stack is measured again at every width a drag passes
+    /// through, and now and then it lays out the whole history from its top, tens of milliseconds a time. A stack that comes back with the
+    /// tail full-sized builds nothing, for the tail is out of its reach; one that came back under the small tail built a screen of rows.
+    /// A reader who has scrolled up reads the history, so for them it stays.
+    private var parksHistory: Bool { active && follower.sticky && (liveResizing || !tailAtRest) }
+
     /// The tail that covers the window while it is being live-resized (`eagerCount`).
     private func liveEagerCount(_ origins: ProjectUserOrigins) -> Int {
         store.eagerRowCount(coveringHeight: eagerCover, maxRows: Self.eagerRows) { $0.isUser && origins.hides($0.turn) }
@@ -573,25 +580,33 @@ struct ThreadView: View {
 
     /// The lazy stack of the rows older than the eager tail, drawn again only when what its rows are built from changes
     /// (`ThreadHistoryCache`).
+    @ViewBuilder
     private func historyColumn(_ history: ArraySlice<NativeThreadRow>, tail: ArraySlice<NativeThreadRow>, spacing: CGFloat, dormant: Bool,
                                releasing: Bool, stack: Int, running: Bool, catchingUp: Bool, arrived: Set<String>, settled: Bool,
-                               historyRowID: String?) -> some View {
-        let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, stack: stack, boundary: historyRowID, running: running,
-                             detached: !follower.sticky)
-        return ThreadHistoryColumn(key: key) {
-            AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
-                ForEach(history) { row in
-                    rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
+                               historyRowID: String?, parked: Bool) -> some View {
+        if parked {
+            // Out of sight and out of every frame of the drag: the room the history had, as it was.
+            Color.clear.frame(height: liveResizeGate.historyHeight)
+        } else {
+            let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, stack: stack, boundary: historyRowID, running: running,
+                                 detached: !follower.sticky)
+            ThreadHistoryColumn(key: key) { [gate = liveResizeGate] in
+                AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
+                    ForEach(history) { row in
+                        rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
+                    }
                 }
+                .scrollTargetLayout()
+                // Its height, kept in a reference (no redraw): what stands in for the stack while it is parked (`parksHistory`).
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { gate.historyHeight = $0 }
+                // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
+                // that host does not run). Its identity changes whenever the rows are let go (a pass, a released history, a hidden
+                // thread that draws its tail alone: `releasing`), and takes them with it. A thread with no history to let go (one of a few
+                // rows) and the one on screen keep their own. It changes too when the thread on screen has added enough rows for the stack
+                // to have built more than a reader at the tail has any use for (`ThreadHistoryBuilt`), which it does only on screen and once
+                // its restore is done: the two never change it in the same update.
+                .id(StackID(dormant: dormant || (releasing && history.isEmpty), built: stack)))
             }
-            .scrollTargetLayout()
-            // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
-            // that host does not run). Its identity changes whenever the rows are let go (a pass, a released history, a hidden
-            // thread that draws its tail alone: `releasing`), and takes them with it. A thread with no history to let go (one of a few
-            // rows) and the one on screen keep their own. It changes too when the thread on screen has added enough rows for the stack
-            // to have built more than a reader at the tail has any use for (`ThreadHistoryBuilt`), which it does only on screen and once
-            // its restore is done: the two never change it in the same update.
-            .id(StackID(dormant: dormant || (releasing && history.isEmpty), built: stack)))
         }
     }
 
@@ -1669,6 +1684,8 @@ struct ThreadTailAnchor: ViewModifier {
 @MainActor
 final class LiveResizeGate {
     var wasLive = false
+    /// The history stack's height as last measured, which a drag's stand-in for it takes.
+    var historyHeight: CGFloat = 0
 }
 
 /// Measured insets, read by the composer and padding rather than the transcript builder.

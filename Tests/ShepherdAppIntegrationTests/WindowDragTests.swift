@@ -6,8 +6,8 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-/// What dragging the window's edge costs, counted: the layouts out of sight take no pass in it, and the threads out of sight do not
-/// hear of it. Counts hold on a busy runner; timings don't.
+/// What dragging the window's edge costs, counted: the layouts out of sight take no pass in it, the threads out of sight do not
+/// hear of it, and the history above the tail the reader follows is not drawn in it. Counts hold on a busy runner; timings don't.
 @Suite("Dragging the window's edge", .mainActorExclusive)
 @MainActor
 struct WindowDragTests {
@@ -97,5 +97,48 @@ struct WindowDragTests {
         }
         // The layout on screen reads it at the drag's start and at its end; the five hidden ones would add ten more.
         #expect(counts["thread.view", default: 0] <= agents.count, "\(counts)")
+    }
+
+    private func builtRows(in view: NSView) -> Int {
+        (view is ThreadTailGuard.RowMarker ? 1 : 0) + view.subviews.reduce(0) { $0 + builtRows(in: $1) }
+    }
+
+    /// The reader at the tail reads none of the history while the window is dragged, and the tail covers the window: the history is not
+    /// laid out, row by row, at every width the drag passes through. It is back when the drag ends, and the tail grows back with it.
+    @Test func theHistoryStandsDownWhileFollowingTheTailThroughADrag() async throws {
+        let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(ThreadView.eagerRows * 3)))
+        try await thread.waitUntilReady()
+        defer { thread.close() }
+        let scroll = try #require(thread.scrollView)
+        let tail = thread.store.eagerRowCount(coveringHeight: AppLayout.eagerCoverHeight(forViewport: scroll.bounds.height),
+                                              maxRows: ThreadView.eagerRows)
+        let full = builtRows(in: thread.window.host)
+
+        thread.visibility.liveResizing = true
+        ListPerf.settle(thread.window)
+        let live = builtRows(in: thread.window.host)
+        #expect(live <= tail, "only the tail is built while the window is dragged: \(live) built, the tail covers it in \(tail) rows (\(full) at rest)")
+        let dragged = ListPerf.counting {
+            for step in 1...8 {
+                thread.window.window.setContentSize(NSSize(width: 900 - CGFloat(step) * 30, height: 800))
+                ListPerf.settle(thread.window)
+            }
+        }
+        #expect(dragged["thread.rowBuilder", default: 0] == 0, "no row is built in the steps of a drag: \(dragged)")
+        #expect(builtRows(in: thread.window.host) <= tail)
+
+        thread.visibility.liveResizing = false
+        try await eventuallyOnMain("the tail back at its size") { builtRows(in: thread.window.host) >= min(full, ThreadView.eagerRows) }
+
+        // The history is back once the tail is: a reader who scrolls up to it finds its rows built.
+        let tailRows = builtRows(in: thread.window.host)
+        let clip = scroll.contentView
+        for _ in 0..<12 {
+            thread.input.readerScrolled(upward: true)
+            clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 0, y: clip.bounds.origin.y - 600), size: clip.bounds.size)).origin)
+            scroll.reflectScrolledClipView(clip)
+            ListPerf.settle(thread.window)
+        }
+        #expect(builtRows(in: thread.window.host) > tailRows, "the history above the tail is laid out again for a reader who scrolls to it")
     }
 }
