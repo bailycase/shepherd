@@ -394,6 +394,19 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// The Computer use card, off (the default) and on with its two permission rows.
+    @Test(arguments: [false, true])
+    func settingsComputerUseExperiment(_ enabled: Bool) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.settings.computerUseEnabled = enabled
+        workspace.vm.settingsSection = .experiments
+        try await Preview.renderMatrix(enabled ? "settings-experiments-computer-use-on" : "settings-experiments-computer-use-off",
+                                       size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
     /// The Projects card beside Goals and the Design tool, off (the default) and on, in both appearances and at text size 1.3.
     @Test(arguments: [false, true])
     func settingsProjectsExperiment(_ enabled: Bool) async throws {

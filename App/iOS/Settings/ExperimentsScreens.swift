@@ -153,7 +153,7 @@ private struct SuggestedInstructionsCard: View {
 }
 
 /// One host's switchable experiments, each shown only where the host takes its switch: Goals,
-/// Projects and the Design tool.
+/// Projects, the Design tool and Computer use.
 private struct HostExperiments: View {
     let host: SettingsHost
     let settings: HostSettings
@@ -178,6 +178,12 @@ private struct HostExperiments: View {
                                text: "Describe a page or flow and a design agent draws it as HTML boards on a canvas. Adds Designs to the host's sidebar and “Start a design” to New thread.") {
                 Image(systemName: "paintbrush.pointed")
             } toggle: { post(.designToolEnabled($0)) }
+        }
+        if host.serves(RemoteProtocol.computerUseExperimentCapability) {
+            HostExperimentCard(title: "Computer use", host: host.name, isOn: settings.computerUseEnabled,
+                               text: "New threads can use the apps on the Mac: read windows, click, type and choose menus, in the background without taking its mouse or keyboard. Threads already running get it when they restart. Allow Accessibility and Screen Recording for Shepherd on the Mac.") {
+                Image(systemName: "cursorarrow.rays")
+            } toggle: { post(.computerUseEnabled($0)) }
         }
         SettingsFootnote("Changes apply on \(host.name) at once.")
     }

@@ -47,6 +47,7 @@ extension AppSettings {
         launch.trimToolOutput = trimToolOutput
         launch.deferTools = deferTools
         launch.threadsStartThreads = threadsStartThreads
+        launch.computerUse = computerUseEnabled
         return launch
     }
 }

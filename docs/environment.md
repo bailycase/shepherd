@@ -35,6 +35,9 @@
   - With the matching extension on: `SHEPHERD_EXT_PANES` with `SHEPHERD_SKILL_DIR` (the built-in skill on working in
     Shepherd, which the app writes to the support directory's `shepherd-skill/`), `SHEPHERD_EXT_BROWSER` (the installed
     `shepherd-browser.ts`, for Settings ▸ Pi ▸ Browser tools; never in a design's agent),
+    `SHEPHERD_COMPUTER_USE` and `SHEPHERD_COMPUTER_USE_HOME` (the driver in the bundled `Contents/Helpers/ShepherdComputerUse.app` and
+    `<support>/computer-use`, for Settings ▸ Experiments ▸ Computer use; threads only, never an automation, a design's
+    agent or a coordinator),
     `SHEPHERD_NATIVE_CHILDREN`,
     `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`. The retired `SHEPHERD_CHILD_SCOPE` is
     ignored; profiles load only from `<PI_CODING_AGENT_DIR>/agents`. `SHEPHERD_CHILD_MODEL`,
