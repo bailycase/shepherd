@@ -99,11 +99,30 @@ struct ThreadReleasedTailTests {
         #expect(store.rows.count == store.messages.count + 2 && !store.running)
     }
 
-    @Test func aThreadWithNoQuestionIsLeftAsItIs() async {
+    /// A thread that holds no question (a page that starts inside one long reply, or a thread an automation opened) has no turn to cut at.
+    @Test func aThreadWithNoQuestionWithinItsCapIsLeftAsItIs() async {
         let (store, _) = await hidden((0..<20).map { F.assistant("Note \($0)", id: "a\($0)") })
         let rows = store.rows
-        store.releaseToTail(rows: 2, maxBytes: 1)
+        store.releaseToTail(rows: 2, maxBytes: .max)
         #expect(store.keepsOnlyTail && store.rows == rows && store.messages.count == 20, "nothing to cut at")
+    }
+
+    /// Nothing to cut at and more than the cap: a tail never holds more than its cap but for the last question and its answer, and
+    /// a thread with no question has none, so it goes whole instead of sitting in the tail tier with everything it held.
+    @Test func aThreadWithNoQuestionOverItsCapGoesWhole() async {
+        let (store, _) = await hidden((0..<20).map { F.assistant(String(repeating: "word ", count: 400) + "\($0)", id: "a\($0)") })
+        let whole = store.retainedHistoryBytes
+        store.draft = "keep me"
+        store.releaseToTail(rows: 2, maxBytes: whole / 4)
+        #expect(!store.holdsHistory && !store.keepsOnlyTail && store.rows.isEmpty && store.messages.isEmpty, "\(store.retainedHistoryBytes) of \(whole / 4)")
+        #expect(store.retainedHistoryBytes == 0 && store.draft == "keep me")
+    }
+
+    /// The last question and its answer stay whatever they hold, even when the thread is nothing but them.
+    @Test func aThreadOfOneQuestionKeepsItAndItsAnswerWhateverTheCap() async {
+        let (store, _) = await hidden([F.user("Question", id: "u0"), F.assistant(String(repeating: "word ", count: 4_000), id: "a0")])
+        store.releaseToTail(rows: 2, maxBytes: 1)
+        #expect(store.keepsOnlyTail && store.messages.map(\.entryID) == ["u0", "a0"])
     }
 
     @Test func aThreadOnScreenKeepsEverything() async {

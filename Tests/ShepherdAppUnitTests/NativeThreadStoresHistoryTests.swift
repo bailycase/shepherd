@@ -145,6 +145,30 @@ struct NativeThreadStoresHistoryTests {
         #expect(big.rows.count == 2 && big.rows.last?.id == "u59/reply", "under any cap, the last question and its answer: \(big.rows.count) rows")
     }
 
+    /// A thread that holds no question (a page that starts inside one long reply) has no turn to cut at: past the bounds it keeps what it
+    /// holds if that is within the cap of a tail, and goes whole if it is not.
+    @Test func aThreadWithNoQuestionHoldsNoMoreThanItsTailCapOrNothing() {
+        let stores = NativeThreadStores<String>()
+        stores.retainedHistories = 0
+        let words = String(repeating: "word ", count: 2_000)
+        func notes(_ count: Int, _ text: String) -> NativeThreadSnapshot {
+            var value = snapshot("notes")
+            value.messages = (0..<count).map { NativeThreadMessage(entryID: "a\($0)", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "\(text) \($0)")]) }
+            return value
+        }
+        let over = stores.store(for: "over"), within = stores.store(for: "within")
+        over.preview(notes(30, words))
+        within.preview(notes(3, "Note"))
+        stores.store(for: "newest").preview(snapshot("newest"))
+        for key in ["over", "within", "newest"] { stores.noteShown(key) }
+        let before = over.retainedHistoryBytes, rows = within.rows
+
+        stores.tailCap = before / 4
+        stores.enforceHistoryBounds()
+        #expect(!over.holdsHistory && over.rows.isEmpty && !over.keepsOnlyTail, "\(over.retainedHistoryBytes) of \(stores.tailCap)")
+        #expect(within.keepsOnlyTail && within.rows == rows && within.retainedHistoryBytes <= stores.tailCap, "what fits the cap stays")
+    }
+
     // MARK: Hidden threads' row views
 
     private typealias Mounted = NativeThreadStores<String>.MountedEntry<String>

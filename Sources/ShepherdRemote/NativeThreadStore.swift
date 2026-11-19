@@ -1684,10 +1684,15 @@ public final class NativeThreadStore {
     /// (`catchUp`): what arrived meanwhile lands over the end of the tail without moving the reader, and rows keep their identities. What
     /// it was doing when it left (`settledRunning`) is not shown as live. Its hidden view lets its rows go down to the last screen
     /// (`releaseTranscript`), as a release of the views alone does. Nothing happens while the thread is on screen or owns unsettled or
-    /// recoverable user work (`canReleaseHistory`), and `release` lets the tail go too.
+    /// recoverable user work (`canReleaseHistory`), and `release` lets the tail go too. A thread that holds no question has no turn to
+    /// cut at and none the rule keeps whatever it holds: over `maxBytes` it goes whole.
     public func releaseToTail(rows: Int, maxBytes: Int) {
         guard canReleaseHistory else { return }
         images.releaseHeld()
+        if lastHeldQuestion == nil, retainedHistoryBytes > maxBytes {
+            release()
+            return
+        }
         settleTask?.cancel()
         settleTask = nil
         if settledRunning { settledRunning = false }
