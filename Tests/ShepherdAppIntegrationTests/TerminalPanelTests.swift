@@ -21,7 +21,9 @@ struct TerminalPanelTests {
 
         vm.newTerminalTab()
         try await eventuallyOnMain("the host to open the terminal and the keyboard to follow it") {
-            (vm.focusedPaneID).map { ![agent.piPane.id, agent.auxiliary[0].id].contains($0) } == true
+            app.server.state.tabs.first?.layout.leaves.count == 3
+                && (vm.focusedPaneID).map { id in ![agent.piPane.id, agent.auxiliary[0].id].contains(id)
+                    && app.server.state.tabs.first?.layout.contains(id) == true } == true
         }
 
         let layout = try #require(app.server.state.tabs.first?.layout)
@@ -66,6 +68,7 @@ struct TerminalPanelTests {
         vm.toggleTerminalPanel()
         try await eventuallyOnMain("the host to open the terminal and the keyboard to follow it") {
             vm.focusedPaneID != nil && vm.focusedPaneID != agent.piPane.id && vm.terminalTarget?.tabs.count == 1
+                && app.server.state.tabs.first?.layout.contains(vm.focusedPaneID ?? agent.piPane.id) == true
         }
 
         let layout = try #require(app.server.state.tabs.first?.layout)

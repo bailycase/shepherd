@@ -251,6 +251,8 @@ final class ShepherdViewModel {
     static let collapsedProjectsKey = "shepherd.sidebar.collapsedProjects"
     /// Previews and tests: changes the sidebar's inputs before the lists are derived, where a connected host's fleet identity can't be made up.
     @ObservationIgnored var sidebarSourceAdjust: ((SidebarSource) -> SidebarSource)?
+    /// Tests only: answers the terminal panel's open and close requests in the host's place.
+    @ObservationIgnored var terminalRequests: TerminalRequests?
     /// The Fleet corner is minimized to its one line (FleetCornerMin). This Mac app's own choice, never synced.
     var fleetCornerMinimized = false {
         didSet { sidebarDefaults.set(fleetCornerMinimized, forKey: Self.fleetCornerMinimizedKey) }
@@ -730,6 +732,15 @@ final class ShepherdViewModel {
         self.selectedSpaceID = nil
         self.selectedAgentID = nil
         self.focusedPaneID = nil
+        terminalPanels.onPromotion = { [weak self] key, promotion in
+            guard let self else { return }
+            // The keyboard follows a placeholder to its pane only if it is still on the placeholder.
+            if key.host == nil {
+                if focusedPaneID == promotion.pending { focusedPaneID = promotion.real }
+            } else if remoteFocusedPaneID == promotion.pending {
+                remoteFocusedPaneID = promotion.real
+            }
+        }
 
         // The tree's disclosure keys (collapsed spaces, hosts, This Mac, the Automations
         // footer) stay in older preferences and are no longer read.
@@ -805,6 +816,7 @@ final class ShepherdViewModel {
             self.syncRemoteBrowserDrive()
             self.pruneRemoteDesigns()
             self.pruneSidebarPins()
+            self.reconcileOpenTerminals()
             for (target, review) in self.remoteReviews where review.hostReviewPane {
                 guard let connection = self.remoteHosts.allConnections.first(where: { $0.id == target.hostID }),
                       connection.phase == .connected,
@@ -1204,8 +1216,12 @@ final class ShepherdViewModel {
                 selectedAgentID = nil
             }
         }
+        // A terminal tab that was asked for becomes its pane as the host's layout gets it, with or without a view showing it.
+        reconcileOpenTerminals()
         if let focused = focusedPaneID, activeTab?.layout.contains(focused) == true {
             // Focused pane survived the new snapshot; keep it.
+        } else if let tab = activeTab, terminalPanels.isStarting(focusedPaneID, in: TerminalPanelKey(host: nil, tab: tab.id)) {
+            // A terminal tab still Starting has the keyboard (on no pane): the host's push is not a reason to move it.
         } else {
             syncFocus()
         }

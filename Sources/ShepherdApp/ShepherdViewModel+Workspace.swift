@@ -204,7 +204,9 @@ extension ShepherdViewModel {
     }
 
     /// ⌘W: closes the terminal that has the keyboard. The thread is never closed (⌘⇧W deletes
-    /// the agent): closing it would strand a running pi with nothing to come back to.
+    /// the agent): closing it would strand a running pi with nothing to come back to. The tab
+    /// goes at once and the keyboard returns to the thread; a terminal still Starting is closed
+    /// too (`TerminalTabOverlay`).
     func closeFocusedTerminal() {
         if let remote = selectedRemoteAgent {
             if remoteInspectingAgent == remote, let tab = remoteVisibleTab(remote) {
@@ -218,27 +220,26 @@ extension ShepherdViewModel {
                 NSSound.beep()
                 return
             }
+            let key = TerminalPanelKey(host: remote.hostID, tab: tab.id)
+            if terminalPanels.isStarting(remoteFocusedPaneID, in: key), let starting = remoteFocusedPaneID {
+                abandonStartingTerminal(starting, key: key)
+                return
+            }
             let focus = remoteFocusedPaneID.flatMap { tab.layout.contains($0) ? $0 : nil }
                 ?? agent.paneID ?? tab.layout.firstLeaf.id
             guard tab.layout.leaf(withID: focus)?.agentID == nil else {
                 NSSound.beep()
                 return
             }
-            Task {
-                do {
-                    try await remoteHosts.closePane(
-                        hostID: remote.hostID,
-                        agentID: remote.agentID,
-                        paneID: focus
-                    )
-                    remoteFocusedPaneID = agent.paneID ?? tab.layout.firstLeaf.id
-                } catch {
-                    NSSound.beep()
-                }
-            }
+            closeTerminalPane(focus, key: key, ref: remote, thread: agent.paneID, layout: tab.layout)
             return
         }
         guard let tab = activeTab else { NSSound.beep(); return }
+        let key = TerminalPanelKey(host: nil, tab: tab.id)
+        if terminalPanels.isStarting(focusedPaneID, in: key), let starting = focusedPaneID {
+            abandonStartingTerminal(starting, key: key)
+            return
+        }
         let focus = focusedPaneID.flatMap { tab.layout.contains($0) ? $0 : nil } ?? tab.layout.firstLeaf.id
         if tab.layout.leaf(withID: focus)?.agentID != nil {
             NSSound.beep()
@@ -255,20 +256,16 @@ extension ShepherdViewModel {
         guard let tabIndex = state.tabs.firstIndex(where: { $0.layout.contains(paneID) }),
               let pane = state.tabs[tabIndex].layout.leaf(withID: paneID),
               pane.agentID == nil,
-              let newLayout = state.tabs[tabIndex].layout.closing(pane: paneID) else {
+              state.tabs[tabIndex].layout.closing(pane: paneID) != nil else {
             return false
         }
+        let layout = state.tabs[tabIndex].layout
         let tabID = state.tabs[tabIndex].id
         guard let agent = state.agents.first(where: { $0.tabID == tabID }), let ref = localRef(agent.id) else { return false }
-        // The background host closes its terminal; the layout follows its push.
-        Task {
-            do { try await remoteHosts.closePane(hostID: ref.hostID, agentID: ref.agentID, paneID: paneID) }
-            catch { fail("Couldn’t close the terminal", error) }
-        }
         discardReviewSession(paneID)
-        if focusedPaneID == paneID {
-            focusedPaneID = newLayout.firstLeaf.id
-        }
+        // The tab goes and the keyboard returns to the thread now; the background host closes
+        // its terminal and the layout follows its push.
+        closeTerminalPane(paneID, key: TerminalPanelKey(host: nil, tab: tabID), ref: ref, thread: agent.paneID, layout: layout)
         return true
     }
 
