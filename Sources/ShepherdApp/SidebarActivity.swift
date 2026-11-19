@@ -198,7 +198,7 @@ extension ShepherdViewModel {
         }
     }
 
-    /// Selecting a sender, or a thread it sent, shows what it sent, in either sidebar style.
+    /// Selecting a sender, or a thread it sent, shows what it sent (Activity: the Spaces tree folds none).
     func openSentFoldsHoldingSelection() {
         guard let selected = selectedSidebarRow else { return }
         for row in sidebarLists.all where row.id == selected {

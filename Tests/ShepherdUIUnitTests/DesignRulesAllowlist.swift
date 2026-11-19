@@ -83,7 +83,6 @@ enum DesignRuleAllowlist {
         .init(.symbolRenameUnderAnimation, "App/iOS/Settings/ExperimentsScreens.swift", 2, kind),
         .init(.symbolRenameUnderAnimation, "App/iOS/Settings/SkillsScreens.swift", 1, unanimated("whether a skill is picked; the screen animates its list and search, not the pick")),
         .init(.symbolRenameUnderAnimation, "App/iOS/Thread/ThreadApps.swift", 2, "A menu item, and the menu's label in the thread's toolbar, which follows whether the app runs and which nothing in this file animates."),
-        .init(.symbolRenameUnderAnimation, "App/iOS/Thread/ThreadScreen.swift", 1, kind),
         .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Browser/Browser.swift", 1, unanimated("whether the console drawer is open; BrowserPane flips it with no animation")),
         .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/ContextMeter.swift", 1, kind),
         .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/ModelSettings.swift", 1, kind),

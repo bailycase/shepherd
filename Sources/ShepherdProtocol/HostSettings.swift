@@ -123,6 +123,10 @@ public struct HostSettings: Codable, Hashable, Sendable {
     /// Settings ▸ Experiments ▸ Design tool (`designToolExperimentCapability`). Older hosts omit
     /// it, which reads as false.
     public var designToolEnabled: Bool
+    /// Settings ▸ Agents ▸ Threads can start threads and Where they work (`hostSettingsSubThreadsCapability`).
+    /// Older hosts omit them, which reads as off and the same checkout.
+    public var threadsStartThreads: Bool
+    public var subThreadPlace: SpawnPlace
     /// Settings ▸ Experiments ▸ Computer use (`computerUseExperimentCapability`). Older hosts omit
     /// it, which reads as false.
     public var computerUseEnabled: Bool
@@ -185,7 +189,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
                 worktreeBase: WorktreeBase = .fresh, fetchBeforeCreating: Bool = true, commitRemainingWork: Bool = true,
                 generatePRDescriptions: Bool = true, deleteLocalBranch: Bool = true, mergePRAutomatically: Bool = false,
                 mergeMethod: MergeMethod = .squash, closeOnMerge: Bool = false, backgroundService: Bool? = nil,
-                designToolEnabled: Bool = false, computerUseEnabled: Bool = false,
+                designToolEnabled: Bool = false, threadsStartThreads: Bool = false, subThreadPlace: SpawnPlace = .checkout, computerUseEnabled: Bool = false,
                 subagentDefaults: SubagentDefaults = SubagentDefaults(), worktreeDeleteAction: WorktreeDeleteAction = .ask,
                 skillsInSlashMenu: Bool = true, mcpProjectConfig: Bool = false,
                 slashCommands: [NativeCommand] = [], hiddenSlashCommands: [String] = [],
@@ -217,6 +221,8 @@ public struct HostSettings: Codable, Hashable, Sendable {
         self.closeOnMerge = closeOnMerge
         self.backgroundService = backgroundService
         self.designToolEnabled = designToolEnabled
+        self.threadsStartThreads = threadsStartThreads
+        self.subThreadPlace = subThreadPlace
         self.computerUseEnabled = computerUseEnabled
         self.subagentDefaults = subagentDefaults
         self.worktreeDeleteAction = worktreeDeleteAction
@@ -246,7 +252,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         case worktreeBase, fetchBeforeCreating, commitRemainingWork, generatePRDescriptions
         case deleteLocalBranch, mergePRAutomatically, mergeMethod, closeOnMerge, backgroundService, listenerPort, listenerProblem, listenerProblemDetail, bundledExtensions, installedExtensions
         case updatePiDaily, updateExtensionsDaily, fleetWeights, fleetThreadsCanSend, fleetThreadCap, fleetAutoDispatch, fleetBatteryCountsHalf, fleetUncommitted, fleetSnapshotExcludes, fleetCheckIgnores
-        case designToolEnabled, computerUseEnabled, subagentDefaults, worktreeDeleteAction
+        case designToolEnabled, threadsStartThreads, subThreadPlace, computerUseEnabled, subagentDefaults, worktreeDeleteAction
         case skillsInSlashMenu, mcpProjectConfig, slashCommands, hiddenSlashCommands
     }
 
@@ -278,6 +284,8 @@ public struct HostSettings: Codable, Hashable, Sendable {
         listenerProblem = try c.decodeIfPresent(String.self, forKey: .listenerProblem)
         listenerProblemDetail = try c.decodeIfPresent(String.self, forKey: .listenerProblemDetail)
         designToolEnabled = try c.decodeIfPresent(Bool.self, forKey: .designToolEnabled) ?? false
+        threadsStartThreads = try c.decodeIfPresent(Bool.self, forKey: .threadsStartThreads) ?? false
+        subThreadPlace = (try? c.decodeIfPresent(SpawnPlace.self, forKey: .subThreadPlace)) ?? nil ?? .checkout
         computerUseEnabled = try c.decodeIfPresent(Bool.self, forKey: .computerUseEnabled) ?? false
         subagentDefaults = (try? c.decodeIfPresent(SubagentDefaults.self, forKey: .subagentDefaults)) ?? nil ?? SubagentDefaults()
         worktreeDeleteAction = (try? c.decodeIfPresent(WorktreeDeleteAction.self, forKey: .worktreeDeleteAction)) ?? nil ?? .ask
@@ -339,6 +347,8 @@ public struct HostSettings: Codable, Hashable, Sendable {
         case .fleetAutoDispatch(let on): fleetAutoDispatch = on
         case .fleetBatteryCountsHalf(let on): fleetBatteryCountsHalf = on
         case .designToolEnabled(let on): designToolEnabled = on
+        case .threadsStartThreads(let on): threadsStartThreads = on
+        case .subThreadPlace(let place): subThreadPlace = place
         case .computerUseEnabled(let on): computerUseEnabled = on
         case .subagentDefaults(var defaults):
             defaults.concurrency = min(SubagentDefaults.concurrencyRange.upperBound, max(SubagentDefaults.concurrencyRange.lowerBound, defaults.concurrency))
@@ -410,6 +420,9 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
     case fleetBatteryCountsHalf(Bool)
     /// `RemoteProtocol.designToolExperimentCapability`: offered while the tool is off too.
     case designToolEnabled(Bool)
+    /// `RemoteProtocol.hostSettingsSubThreadsCapability`.
+    case threadsStartThreads(Bool)
+    case subThreadPlace(SpawnPlace)
     /// `RemoteProtocol.computerUseExperimentCapability`.
     case computerUseEnabled(Bool)
     /// The cases below need `RemoteProtocol.hostSettingsV2Capability`.
@@ -434,6 +447,7 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
         case .textGenerationModel: RemoteProtocol.hostSettingsTextGenerationModelCapability
         case .visionModel: RemoteProtocol.hostSettingsVisionModelCapability
         case .designToolEnabled: RemoteProtocol.designToolExperimentCapability
+        case .threadsStartThreads, .subThreadPlace: RemoteProtocol.hostSettingsSubThreadsCapability
         case .computerUseEnabled: RemoteProtocol.computerUseExperimentCapability
         case .subagentDefaults, .worktreeDeleteAction, .skillsInSlashMenu, .mcpProjectConfig, .slashCommand:
             RemoteProtocol.hostSettingsV2Capability

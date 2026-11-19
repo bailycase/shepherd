@@ -144,6 +144,7 @@ public enum StatusExtension {
         contextExtensionPath: String? = nil,
         projectContext: (path: String, json: String, coordinator: Bool)? = nil,
         deferTools: Bool = false,
+        threadsStartThreads: Bool = false,
         userHome: String = NSHomeDirectory(),
         model: String?,
         thinking: ThinkingLevel?
@@ -227,6 +228,8 @@ public enum StatusExtension {
         if let contextExtensionPath { env["SHEPHERD_EXT_CONTEXT"] = contextExtensionPath }
         // Settings ▸ Agents ▸ Defer rarely used tools: the browser, other-thread, automation and review tools are loaded by a search.
         if deferTools { env["SHEPHERD_DEFER_TOOLS"] = "1" }
+        // Settings ▸ Agents ▸ Threads can start threads: agent_spawn's words let the agent start one on its own.
+        if threadsStartThreads { env["SHEPHERD_THREADS_START_THREADS"] = "1" }
         // Fast or Standard is the agent's own (the host keeps its file), so every agent gets this.
         env.merge(ServiceTierExtension.environment(for: agentID, in: home)) { _, value in value }
         // Keep the controller loaded so the experiment can change without restarting pi.

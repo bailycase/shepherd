@@ -31,17 +31,6 @@ struct BranchCardOther: Equatable, Identifiable {
     var detail: String
 }
 
-/// What git says once the card opens: the lines changed since the base, and how far behind it the
-/// branch is. `base` nil when no base resolves (no origin, no such branch).
-struct BranchCardGit: Equatable, Sendable {
-    var additions = 0
-    var deletions = 0
-    var base: String?
-    var behind = 0
-    /// Commits Push sends: ahead of the upstream, or of the base before the first push.
-    var ahead = 0
-}
-
 struct BranchCardStatus: Equatable, Sendable {
     var git: BranchCardGit
     var pull: PullRequestSummary?
@@ -72,66 +61,11 @@ struct BranchCardHandle: Equatable {
     static func == (a: Self, b: Self) -> Bool { a.agentID == b.agentID }
 }
 
-/// The card's git reads, in one checkout. Blocking; call off the main thread.
-enum BranchCardGitReader {
-    static func read(cwd: String, base: String?, executable: String = "/usr/bin/git") -> BranchCardGit {
-        var environment = ProcessInfo.processInfo.environment
-        environment["GIT_TERMINAL_PROMPT"] = "0"
-        let directory = (cwd as NSString).expandingTildeInPath
-        func git(_ arguments: [String]) -> String? {
-            guard let result = try? BoundedCommand.run([executable, "--no-optional-locks", "-C", directory] + arguments,
-                                                       environment: environment, timeout: 10, outputLimit: 1 << 20),
-                  result.status == 0 else { return nil }
-            return String(decoding: result.output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        // A worktree's recorded base (origin's copy first); else origin's default branch.
-        let candidates = base.map { ["origin/\($0)", $0] } ?? [git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])].compactMap { $0 }
-        let ref = candidates.first { git(["rev-parse", "--verify", "--quiet", "\($0)^{commit}"]) != nil }
-        var status = BranchCardGit()
-        if let ref {
-            status.base = baseName(ref)
-            status.behind = git(["rev-list", "--count", "HEAD..\(ref)"]).flatMap { Int($0) } ?? 0
-        }
-        status.ahead = (git(["rev-list", "--count", "@{upstream}..HEAD"]) ?? ref.flatMap { git(["rev-list", "--count", "\($0)..HEAD"]) })
-            .flatMap { Int($0) } ?? 0
-        // ponytail: tracked files only (`git diff` skips untracked ones); the Changes pane has the full count.
-        let from = ref.flatMap { git(["merge-base", $0, "HEAD"]) } ?? "HEAD"
-        (status.additions, status.deletions) = shortstat(git(["diff", "--shortstat", from]) ?? "")
-        return status
-    }
-
-    /// "origin/main" reads as "main".
-    static func baseName(_ ref: String) -> String { ref.hasPrefix("origin/") ? String(ref.dropFirst("origin/".count)) : ref }
-
-    /// `git diff --shortstat`: " 3 files changed, 71 insertions(+), 8 deletions(-)".
-    static func shortstat(_ text: String) -> (additions: Int, deletions: Int) {
-        var additions = 0, deletions = 0
-        for part in text.split(separator: ",") {
-            let words = part.split(separator: " ")
-            guard let count = words.first.flatMap({ Int($0) }), let kind = words.dropFirst().first else { continue }
-            if kind.hasPrefix("insertion") { additions = count } else if kind.hasPrefix("deletion") { deletions = count }
-        }
-        return (additions, deletions)
-    }
-}
-
 extension BranchCardModel {
-    /// Every other thread in the space on a branch of its own: the ones asking first, then running,
-    /// then the most recently active.
+    /// Every other thread in the space on a branch of its own (`AgentBranchPeer.peers`).
     static func others(of agent: Agent, in agents: [Agent], now: Date = Date()) -> [BranchCardOther] {
-        let own = AgentBranchLabel(agent: agent)?.branch
-        var seen: Set<String> = own.map { [$0] } ?? []
-        func rank(_ status: AgentStatus) -> Int { status == .blocked ? 0 : status == .working ? 1 : 2 }
-        let peers = agents.filter { $0.id != agent.id && $0.spaceID == agent.spaceID }
-            .sorted { (rank($0.status), -($0.lastActiveAt ?? 0)) < (rank($1.status), -($1.lastActiveAt ?? 0)) }
-        return peers.compactMap { peer in
-            guard let branch = AgentBranchLabel(agent: peer)?.branch, seen.insert(branch).inserted else { return nil }
-            let detail = switch peer.status {
-            case .blocked: "asked you"
-            case .working: "running"
-            default: peer.lastActiveAt.map { ForgePresentation.age(Date(timeIntervalSince1970: $0 / 1000), now: now) } ?? ""
-            }
-            return BranchCardOther(id: peer.id, branch: branch, state: AgentState(peer.status), detail: detail)
+        AgentBranchPeer.peers(of: agent, in: agents, now: now).map {
+            BranchCardOther(id: $0.id, branch: $0.branch, state: AgentState($0.status), detail: $0.detail)
         }
     }
 }

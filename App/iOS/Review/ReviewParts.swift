@@ -12,6 +12,8 @@ import ShepherdRemote
 struct ReviewSummaryCard: View {
     let totals: ReviewTotals
     let branch: String?
+    /// How far behind its base the branch is and its pull request, under the rest (GitPhoneD-changes).
+    var status: (ref: AgentRef, store: BranchStatusStore, host: MobileHost?)?
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -35,6 +37,13 @@ struct ReviewSummaryCard: View {
             Text(totals.viewedText).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
                 .accessibilityLabel("Viewed")
                 .accessibilityValue(totals.viewedText)
+            if let status, status.store.status?.pull != nil || (status.store.status?.behind ?? 0) > 0 || status.store.status?.conflict != nil {
+                VStack(spacing: 0) {
+                    SHHairline()
+                    BranchStatusRows(ref: status.ref, store: status.store, host: status.host)
+                }
+                .padding(.horizontal, -MobileLayout.gutter + SH.Space.l + SH.Space.xxs)
+            }
         }
         .padding(SH.Space.l + SH.Space.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)

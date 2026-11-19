@@ -102,7 +102,7 @@ struct SettingsPreviewTests {
             workspace.settings.codemode = false
         }
         // Tall enough that the last row still shows at text scale 1.3, where the subtitles wrap to four lines.
-        try await Preview.renderMatrix(surface, size: CGSize(width: 1280, height: 1400)) {
+        try await Preview.renderMatrix(surface, size: CGSize(width: 1280, height: 1750)) {
             SettingsView(vm: workspace.vm)
         }
     }

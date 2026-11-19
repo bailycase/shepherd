@@ -51,3 +51,31 @@ public struct AgentBranchLabel: Equatable, Sendable {
         return directory.map { "\(summary)\n\($0)" } ?? summary
     }
 }
+
+/// Another thread's branch in the same space, for the branch card (Mac) and the branch sheet (iOS).
+public struct AgentBranchPeer: Equatable, Sendable, Identifiable {
+    public var id: AgentID
+    public var branch: String
+    public var status: AgentStatus
+    /// "asked you", "running", or how long since it last worked ("3d").
+    public var detail: String
+
+    /// Every other thread in `agent`'s space on a branch of its own: the ones asking first, then
+    /// running, then the most recently active.
+    public static func peers(of agent: Agent, in agents: [Agent], now: Date = Date()) -> [AgentBranchPeer] {
+        let own = AgentBranchLabel(agent: agent)?.branch
+        var seen: Set<String> = own.map { [$0] } ?? []
+        func rank(_ status: AgentStatus) -> Int { status == .blocked ? 0 : status == .working ? 1 : 2 }
+        let peers = agents.filter { $0.id != agent.id && $0.spaceID == agent.spaceID }
+            .sorted { (rank($0.status), -($0.lastActiveAt ?? 0)) < (rank($1.status), -($1.lastActiveAt ?? 0)) }
+        return peers.compactMap { peer in
+            guard let branch = AgentBranchLabel(agent: peer)?.branch, seen.insert(branch).inserted else { return nil }
+            let detail = switch peer.status {
+            case .blocked: "asked you"
+            case .working: "running"
+            default: peer.lastActiveAt.map { ForgePresentation.age(Date(timeIntervalSince1970: $0 / 1000), now: now) } ?? ""
+            }
+            return AgentBranchPeer(id: peer.id, branch: branch, status: peer.status, detail: detail)
+        }
+    }
+}

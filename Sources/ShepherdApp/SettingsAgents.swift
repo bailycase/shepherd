@@ -88,6 +88,18 @@ struct AgentSettings: View {
                     SettingsSwitch(label: "Notify when a turn finishes", isOn: $settings.notifyOnTurnFinished)
                 }
             }
+            SettingsGroup(title: "Threads a thread starts") {
+                SettingsRow(title: "Threads can start threads",
+                            subtitle: "A thread may start another for separate work without being asked. Off, it starts one only when you ask. "
+                                + "A thread started this way nests under the one that started it, three deep at most. New agents follow a change; running ones at their next launch.") {
+                    SettingsSwitch(label: "Threads can start threads", isOn: $settings.threadsStartThreads)
+                }
+                SettingsRow(title: "Where they work",
+                            subtitle: "When the thread starting one doesn't say. **Same checkout** works in its folder, on its branch. **New worktree** starts from its commit, on a branch of its own.") {
+                    SHSegmentedPicker("Where they work", selection: $settings.subThreadPlace,
+                                      options: [(SpawnPlace.checkout, "Same checkout"), (.worktree, "New worktree")])
+                }
+            }
             SettingsGroup(title: "Context") {
                 SettingsRow(title: "Compact at",
                             subtitle: "How full an agent lets its context get before it compacts on its own, as a share of the model's window. "

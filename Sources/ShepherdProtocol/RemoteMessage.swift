@@ -218,6 +218,11 @@ public enum RemoteProtocol {
     public static let changesWritesCapability = "changes.writes.v1"
     /// `RemoteAgentQuery.pullRequest`: the host looks a thread's branch's pull request up again.
     public static let pullRequestLinkCapability = "pullrequest.link.v1"
+    /// `RemoteAgentQuery.branchStatus`, `.branchUpdate` and `.branchAbort`: a device's branch sheet reads
+    /// how far a thread's branch is behind its base and its pull request, and runs Update from the base.
+    public static let branchStatusCapability = "branch.status.v1"
+    /// `HostSettingChange.threadsStartThreads` and `.subThreadPlace`: Settings ▸ Agents ▸ Threads a thread starts.
+    public static let hostSettingsSubThreadsCapability = "hostSettings.subThreads.v1"
     /// The host starts a thread's stopped pi again on request (`RemoteAgentAction.restartPi`).
     public static let agentRestartCapability = "agent.restart.v1"
     /// The host keeps which completion of each thread was opened (`Agent.seenCompletedAt`) and
@@ -340,7 +345,7 @@ public enum RemoteProtocol {
     /// The host saves a file of a thread's folder (`RemoteAgentQuery.fileWrite`), only over the text the client
     /// edited from (`ThreadFileSaveResult.changed` otherwise). Served only to a client offered `filesCapability`.
     public static let filesWriteCapability = "files.write.v1"
-    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostSettingsTextGenerationModelCapability, hostSettingsVisionModelCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, createAgentNoSpaceCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, computerUseExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, checkoutReadCapability, pullRequestLinkCapability, fleetCapability, fleetSyncCapability, fleetDevicesCapability, fleetPressureCapability, fleetCheckCapability, fleetViewCapability, fleetFollowCapability, fleetMoveViewCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetMoveCapability, fleetRendezvousCapability, fleetLinkCapability, fleetPairLinkCapability, fleetUpdateCapability, fleetUpdateViewCapability]
+    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostSettingsTextGenerationModelCapability, hostSettingsVisionModelCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, createAgentNoSpaceCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, computerUseExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, checkoutReadCapability, pullRequestLinkCapability, branchStatusCapability, hostSettingsSubThreadsCapability, fleetCapability, fleetSyncCapability, fleetDevicesCapability, fleetPressureCapability, fleetCheckCapability, fleetViewCapability, fleetFollowCapability, fleetMoveViewCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetMoveCapability, fleetRendezvousCapability, fleetLinkCapability, fleetPairLinkCapability, fleetUpdateCapability, fleetUpdateViewCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -709,6 +714,14 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     /// Looks the thread's branch's pull request up again and answers it (`pullRequestLinkCapability`):
     /// the side pane's Pull request tab.
     case pullRequest
+    /// The thread's branch against its base and its pull request, as the Mac's branch card reads them
+    /// (`branchStatusCapability`). Answered `.branchStatus`.
+    case branchStatus
+    /// Update from the base, the branch card's Update on the person's tap: fetch `base`, then rebase or merge
+    /// onto it; refused on a dirty tree (`branchStatusCapability`). Answered `.branchUpdate`.
+    case branchUpdate(base: String, rebase: Bool)
+    /// `git rebase --abort` or `git merge --abort` after an Update stopped on conflicts. Answered `.ok`.
+    case branchAbort
 
     /// `files`, `fileRead` or `fileWrite`: answered by the host's server itself.
     public var isFiles: Bool {
@@ -776,6 +789,42 @@ public enum RemoteAgentResult: Codable, Hashable, Sendable {
     case fileWrite(ThreadFileSaveResult)
     /// The thread's branch's pull request (`RemoteAgentQuery.pullRequest`); nil for none, or gh couldn't say.
     case pullRequest(ThreadPullRequest?)
+    case branchStatus(RemoteBranchStatus)
+    /// nil when the update went through; else the conflict it stopped on.
+    case branchUpdate(RemoteBranchConflict?)
+}
+
+/// A thread's branch as its checkout has it (`RemoteAgentQuery.branchStatus`).
+public struct RemoteBranchStatus: Codable, Hashable, Sendable {
+    /// The base it is compared with ("main"); nil when none resolves.
+    public var base: String?
+    public var behind: Int
+    public var additions: Int
+    public var deletions: Int
+    public var pull: PullRequestSummary?
+    /// An Update left stopped on conflicts.
+    public var conflict: RemoteBranchConflict?
+
+    public init(base: String?, behind: Int = 0, additions: Int = 0, deletions: Int = 0, pull: PullRequestSummary? = nil,
+                conflict: RemoteBranchConflict? = nil) {
+        self.base = base
+        self.behind = behind
+        self.additions = additions
+        self.deletions = deletions
+        self.pull = pull
+        self.conflict = conflict
+    }
+}
+
+/// A rebase or merge stopped on conflicts: which, and the files both sides changed.
+public struct RemoteBranchConflict: Codable, Hashable, Sendable {
+    public var rebase: Bool
+    public var files: [String]
+
+    public init(rebase: Bool, files: [String]) {
+        self.rebase = rebase
+        self.files = files
+    }
 }
 
 /// Client → host. The first message on a connection must be a successful

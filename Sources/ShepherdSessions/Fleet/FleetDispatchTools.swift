@@ -34,14 +34,13 @@ extension FleetDispatch {
         }
     }
 
-    /// Why a thread may not use the fleet tools, or nil: a dispatched thread, a project worker, a
-    /// coordinator, a design's agent and an automation run never send work on (`fleet_scope`).
+    /// Why a thread may not use the fleet tools, or nil: a project worker, a coordinator, a design's agent and an automation
+    /// run never send work on (`fleet_scope`). How deep a thread is limits only what it starts (`depthProblem`).
     static func scopeProblem(for agentID: AgentID, in state: ShepherdState, unattended: Set<AgentID>) -> FleetDispatchRefusal? {
         guard let agent = state.agents.first(where: { $0.id == agentID }) else {
             return FleetDispatchRefusal(code: "no_such_agent", message: "unknown agent \(agentID)")
         }
-        let reason: String? = if agent.dispatchedFrom != nil { "a dispatched thread" }
-            else if state.isProjectWorker(agentID) { "a project worker" }
+        let reason: String? = if state.isProjectWorker(agentID) { "a project worker" }
             else if state.isProjectCoordinator(agent) { "a project coordinator" }
             else if state.isDesignAgent(agent) { "a design's agent" }
             else if unattended.contains(agentID) { "an automation run" }
@@ -50,4 +49,12 @@ extension FleetDispatch {
         return FleetDispatchRefusal(code: FleetDispatchCode.fleetScope,
                                     message: "\(reason.prefix(1).uppercased() + reason.dropFirst()) can't send work to other Macs. Ask the thread that started it.")
     }
+
+    /// Why a thread may not start another, here or on another Mac, or nil: it is `StartedBy.maxDepth` threads below one the person started.
+    static func depthProblem(for agentID: AgentID, in state: ShepherdState) -> FleetDispatchRefusal? {
+        guard let agent = state.agents.first(where: { $0.id == agentID }), agent.threadDepth >= StartedBy.maxDepth else { return nil }
+        return FleetDispatchRefusal(code: FleetDispatchCode.tooDeep, message: tooDeep)
+    }
+
+    static let tooDeep = "This thread is \(StartedBy.maxDepth) threads below one the person started, so it can't start more. Do the work here, or ask the thread that started it."
 }

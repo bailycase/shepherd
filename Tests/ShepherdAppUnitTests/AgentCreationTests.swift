@@ -530,6 +530,19 @@ struct AgentLaunchCommandTests {
         #expect(command().env["SHEPHERD_DEFER_TOOLS"] == nil, "no variable unless the setting asked")
     }
 
+    /// Settings ▸ Agents ▸ Threads can start threads: one variable agent_spawn's words read, only when on; a terminal blanks it.
+    @Test func threadsCanStartThreadsBringsOneVariableOnlyWhenOn() throws {
+        func launch(_ on: Bool) throws -> SessionCommand {
+            try StatusExtension.command(
+                home: Self.home, cwd: "/tmp/project", agentID: AgentID(rawValue: "agent-id"), piSessionID: "s",
+                socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts", panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil,
+                subagentsExtensionPath: nil, threadsStartThreads: on, model: nil, thinking: nil)
+        }
+        #expect(try launch(true).env["SHEPHERD_THREADS_START_THREADS"] == "1")
+        #expect(try launch(false).env["SHEPHERD_THREADS_START_THREADS"] == nil)
+        #expect(ShellIntegration.command(shell: ["/bin/zsh"]).env["SHEPHERD_THREADS_START_THREADS"] == "")
+    }
+
     @Test func ordinaryDesignToolsDoNotTurnAThreadIntoADesignAgent() throws {
         let launch = try StatusExtension.command(
             home: Self.home, cwd: "/tmp/project", agentID: AgentID(rawValue: "agent-id"),

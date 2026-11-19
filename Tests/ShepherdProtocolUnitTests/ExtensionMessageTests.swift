@@ -75,6 +75,7 @@ struct ExtensionMessageTests {
         .sendToAgent(id: 17, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), text: "CI is green", delivery: .report),
         .spawnAgent(id: 18, agentID: agent, cwd: "/tmp/repo", prompt: "Fix the tests."),
         .spawnAgent(id: 19, agentID: agent, cwd: "/tmp/repo", prompt: "Fix the tests.", model: "claude-fable-5-1", thinking: "low"),
+        .spawnAgent(id: 20, agentID: agent, cwd: "/tmp/repo", prompt: "Fix the tests.", place: .worktree, branch: "agent/split-ui-tests"),
         .moveAgent(id: 118, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), spaceID: SpaceID(rawValue: "s2")),
         .fleetListHosts(id: 130, agentID: agent),
         .fleetDispatch(id: 131, agentID: agent, dispatchID: nil, task: "Fix the flaky test.", title: nil, host: nil, model: nil, thinking: nil),

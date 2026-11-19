@@ -57,6 +57,8 @@
     output is on, and `SHEPHERD_DEFER_TOOLS=1` while Defer rarely used tools is on, for a thread's and an automation's
     agent and never a design's (docs/context-budget.md). The extensions register the browser, other-thread,
     automation, review and ordinary-thread design tools `deferred` when they read it, and the launch adds `-e builtin:tool-search`.
+  - `SHEPHERD_THREADS_START_THREADS=1` while Settings ▸ Agents ▸ Threads can start threads is on: `agent_spawn`'s words let the
+    agent start a thread for separate work unasked. Off, the host also refuses agent_spawn in a turn a person didn't start.
   - `SHEPHERD_COMMAND_LIMIT_SECONDS`: a test seam, never set by the app. A bash call with no timeout gets 20 minutes
     (`shepherd-status.ts` for an agent, `shepherd-children.ts` for a helper); this variable replaces that number.
   - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`,

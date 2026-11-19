@@ -413,7 +413,7 @@ struct WorkspaceHeaderView: View {
                             move: vm.fleetMoveHeader(for: row), moveWorking: vm.moveSubject(row)?.agent.status == .working || vm.moveSubject(row)?.agent.status == .blocked,
                             moveTo: { vm.moveThread(row, to: $0, when: $1) },
                             sentBy: fleet?.sentBy, sentByOnline: online,
-                            openSender: fleet?.sentBy?.senderOpens == true ? fleet?.dispatched.map { from in { vm.openSender(of: from) } } : nil,
+                            openSender: fleet?.sender.map { row in { vm.selectSidebarRow(row) } },
                             apps: apps, runApp: { vm.runQuickApp($0, showOutput: true) }, stopApp: { vm.stopApp($0) },
                             restartApp: { vm.restartApp($0) }, appOutput: { vm.showAppOutput($0) }, editApps: { vm.openAppsSettings() })
             .equatable()

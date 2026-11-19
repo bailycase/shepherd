@@ -28,7 +28,7 @@ struct ChangesScreen: View {
                     }
                     let branch = store.overview?.branch ?? agent?.worktreeBranch
                     if !store.entries.isEmpty || branch != nil {
-                        ReviewSummaryCard(totals: store.totals, branch: branch)
+                        ReviewSummaryCard(totals: store.totals, branch: branch, status: (ref, BranchStatusStore.of(ref), host))
                     }
                     ReviewLoadState(store: store) { store.refresh() }
                     if !store.entries.isEmpty {
@@ -62,6 +62,7 @@ struct ChangesScreen: View {
             }
         }
         .background(Color.sh.bgBase)
+        .task(id: host?.session) { await BranchStatusStore.of(ref).load(host) }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ReviewActionBar(store: store, commitDirectly: CommitHooks.available(host: host)
                             ? { navigator.present(.review(.commit(ref))) } : nil) { sent in if sent { dismiss() } }

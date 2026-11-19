@@ -100,7 +100,7 @@ struct SidebarListRow: Identifiable, Equatable {
     var foldedUnder: AutomationKey? = nil
     /// This Mac's thread's pull request (`ShepherdViewModel.pullRequestLinks`).
     var pullRequest: SHSidebarRow.Badge? = nil
-    /// A thread another Mac runs for the thread above it in this list (`SidebarSent.arrange`): drawn a level in, with an elbow.
+    /// A thread the thread above it in this list started, here or on another Mac (`SidebarSent.arrange`): drawn a level in, with an elbow.
     var fleetNested = false
     /// The thread that sent a nested row, at the top of its tree; nil for a row that isn't nested.
     var sentRoot: SidebarRowID? = nil
@@ -398,10 +398,8 @@ enum SidebarDerivation {
                                notSignedIn: notSignedIn, waiting: source.waiting.contains(agent.id),
                                opening: source.openingTurns.contains(agent.id), since: source.statusSince[agent.id])
             if let pull = source.pullRequests[agent.id] { row.attach(pull) }
-            if let info = sentInfo(of: agent, source), let dispatch = agent.dispatchedFrom?.dispatchID {
-                sent[row.id] = info
-                sentThreads.insert(dispatch)
-            }
+            if let info = sentInfo(of: agent, source) { sent[row.id] = info }
+            if let dispatch = agent.dispatchedFrom?.dispatchID { sentThreads.insert(dispatch) }
             // A manual automation's watcher run folds under it while live; a triggered run's thread is ordinary but
             // folds under its automation while that is on (as in the space tree). One waiting on you stays in Needs you;
             // a run of an automation that isn't active is a thread like any other.
@@ -455,10 +453,8 @@ enum SidebarDerivation {
                 var parent: Automation?
                 if !host.offline, let candidate = watcher ?? origin, live || candidate.activeTrigger { parent = candidate }
                 var row = remoteRow(agent, host: host, automation: watcher != nil, needsYou: needsYou, folded: parent != nil)
-                if let info = sentInfo(of: agent, source), let dispatch = agent.dispatchedFrom?.dispatchID {
-                    sent[row.id] = info
-                    sentThreads.insert(dispatch)
-                }
+                if let info = sentInfo(of: agent, host: host.id, source) { sent[row.id] = info }
+                if let dispatch = agent.dispatchedFrom?.dispatchID { sentThreads.insert(dispatch) }
                 if let parent {
                     tally(&row, parent, host: host.id, hostIndex: hostIndex + 1, hostName: host.name, agent: agent,
                           running: agent.status == .working, watcher: live, needsYou: needsYou)
