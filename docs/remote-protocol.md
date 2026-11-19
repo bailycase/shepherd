@@ -223,7 +223,10 @@
     card git action); this Mac's `focusThread` does the same for the thread it shows, as do the
     host's own review loads and commits from review. The `pullRequest` agent query, behind
     `pullrequest.link.v1`, has the host look the thread's branch's pull request up again and
-    answers it (the side pane's Pull request tab).
+    answers it (the side pane's Pull request tab). The `branchStatus`, `branchUpdate` and
+    `branchAbort` agent queries, behind `branch.status.v1`, are a device's branch sheet: the host
+    reads how far the thread's branch is behind its base, its diffstat and pull request, and runs the
+    branch card's Update from the base (or Abort after a conflict) in the thread's checkout.
   - **Terminal compatibility** (no wire or capability change): a current client's +, ⌘D and ⌘J send the same `openPane` they
     always did, naming the thread as `relativeTo` (axis horizontal, `TerminalPanel.newTabAnchor`).
     A current host ignores `axis` and `relativeTo` and opens a new tab in the thread's folder (or
@@ -298,7 +301,9 @@
     the Mac's defaults). `experiments.designTool.v1` switches the Design tool; it is offered while
     the tool is off (it is not one of `designCapabilities`), and turning it on re-offers
     `designs.v1` with `capabilitiesChanged`. The bundled extension list gains `designReferences`. `experiments.computerUse.v1` switches Computer use (`computerUseEnabled`, missing from an older host: off); running threads follow at their next start. `hostSettings.closeOnMerge.v1` adds Close threads
-    when their pull request merges (missing from an older host: off).
+    when their pull request merges (missing from an older host: off). `hostSettings.subThreads.v1`
+    adds Threads can start threads and Where they work (`threadsStartThreads`, `subThreadPlace`;
+    missing from an older host: off and the same checkout).
   - `hostInventory` (`hostInventory.v1`): read-only, what the host's Settings ▸ MCP, Subagents and
     Sign-in show (`RemoteHostInventoryRequest`: `mcp`, `subagents`, `subagent(file:)`,
     `providers`), answered by the host through `HostStores`. A sign-in column in words that name no machine ("Not

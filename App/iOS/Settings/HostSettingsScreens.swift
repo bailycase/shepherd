@@ -98,6 +98,20 @@ struct DefaultsScreen: View {
                     SettingsFootnote("New threads follow a change; running ones at their next launch.")
                 }
             }
+            if host.serves(RemoteProtocol.hostSettingsSubThreadsCapability) {
+                SettingsSection("Threads a thread starts") {
+                    SHListCard {
+                        SettingsSwitchRow("Threads can start threads",
+                                          note: "A thread may start another for separate work without being asked. Off, it starts one only when you ask. Three deep at most.",
+                                          isOn: settings.threadsStartThreads) { store.hostSettings.post(.threadsStartThreads($0), on: host) }
+                        SettingsControlRow("Where they work", note: "When the thread starting one doesn't say.") {
+                            SettingsPicker("Where they work", selection: settings.subThreadPlace, options: SpawnPlace.allCases,
+                                           title: { $0 == .checkout ? "Same checkout" : "New worktree" }) { store.hostSettings.post(.subThreadPlace($0), on: host) }
+                        }
+                    }
+                    SettingsFootnote("New threads follow a change; running ones at their next launch.")
+                }
+            }
             SettingsSection("While the agent is working") {
                 SHListCard {
                     SettingsControlRow("When a turn ends, send the queue", note: "All at once arrives as one turn, in order.") {

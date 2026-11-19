@@ -230,7 +230,7 @@ no local checkout or branch is touched; bodies go on stdin): comment, review, me
 when ready, and deleting the head branch on GitHub only when the person ticks it), Clean up's
 deletion of a merged pull request's head branch on GitHub (never a fork's), convert to draft and
 mark ready, close and reopen, edit a title, and re-run a run's failed jobs. Its Remove the worktree
-is the confirmed Delete Worktree. The branch card's actions (`BranchGit.swift`, in the agent's own
+is the confirmed Delete Worktree. The branch card's actions (`ShepherdSessions/BranchGit.swift`, in the agent's own
 checkout, each on the person's click; branch names pass `check-ref-format` and never reach git as
 options): Commit (`commit --only` of the ticked files, new ones intent-to-add first and taken back
 if the commit fails; refused while a rebase or merge is stopped), Amend the last commit (`commit
@@ -238,7 +238,8 @@ if the commit fails; refused while a rebase or merge is stopped), Amend the last
 has the commit, Commit & push is off and the card's Push is refused, never forced, with how to
 replace it by hand), Push (`push -u origin` of the current branch, never forced), Update from the base (fetch
 the base, then rebase or merge onto it; refused on a dirty tree; a conflict stops, and Abort runs
-`rebase --abort` or `merge --abort`), Switch branch (`switch`, a remote branch to a tracking local
+`rebase --abort` or `merge --abort`; a paired device's branch sheet sends the same Update and Abort to
+the host as `branchUpdate` and `branchAbort`, each on the person's tap), Switch branch (`switch`, a remote branch to a tracking local
 copy), New branch from here (`switch -c`), Rename branch (`branch -m`, local only), and Fetch from
 origin (`fetch origin`, remote-tracking refs only); Change base rewrites only Shepherd's record. A
 new thread's worktree on an existing branch (`GitWorktree.addExisting`: `worktree add`, a remote

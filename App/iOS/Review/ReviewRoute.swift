@@ -11,10 +11,12 @@ enum ReviewRoute: Hashable, Codable {
     /// Commit from review on iPhone (Commit/): the message, the files, push or a pull request,
     /// run by the host. Presented; on iPad it is a popover beside Commit….
     case commit(AgentRef)
+    /// The branch sheet the thread's ••• Branch opens (GitPhoneA, Thread/ThreadBranch.swift). Presented.
+    case branch(AgentRef)
 
     var thread: AgentRef {
         switch self {
-        case .changes(let ref, _), .diff(let ref, _), .commit(let ref): ref
+        case .changes(let ref, _), .diff(let ref, _), .commit(let ref), .branch(let ref): ref
         }
     }
 }
@@ -49,6 +51,8 @@ struct ReviewDestination: View {
             DiffScreen(ref: ref, path: path)
         case .commit(let ref):
             CommitScreen(ref: ref)
+        case .branch(let ref):
+            ThreadBranchSheet(ref: ref)
         }
     }
 }

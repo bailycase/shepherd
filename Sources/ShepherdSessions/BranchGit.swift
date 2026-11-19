@@ -1,28 +1,35 @@
 import Foundation
-import ShepherdSessions
 
 /// The branch card's git changes in an agent's checkout, each on the person's click (docs/rules.md
 /// "Only these paths mutate repositories"): Commit (the ticked files only, or Amend the last
 /// commit), Push (never forced), Update from the base (fetch, then rebase or merge; a conflict
 /// stops and Abort restores the branch), Switch branch, New branch from here and Rename branch. Every name reaches git only after `check-ref-format --branch`, never as an
 /// option. Blocking; call off the main thread.
-enum BranchGit {
-    struct Failure: Error, LocalizedError, Equatable {
-        var message: String
-        var errorDescription: String? { message }
+public enum BranchGit {
+    public struct Failure: Error, LocalizedError, Equatable {
+        public var message: String
+        public var errorDescription: String? { message }
+        public init(message: String) { self.message = message }
     }
 
     /// A rebase or merge stopped on conflicts: which, how far a rebase got, and the files both sides changed.
-    struct Conflict: Equatable, Sendable {
-        enum Kind: Equatable, Sendable { case rebase, merge }
-        var kind: Kind
+    public struct Conflict: Equatable, Sendable {
+        public enum Kind: Equatable, Sendable { case rebase, merge }
+        public var kind: Kind
         /// A rebase's commit it stopped at and how many it replays.
-        var step: Int?
-        var steps: Int?
-        var files: [String]
+        public var step: Int?
+        public var steps: Int?
+        public var files: [String]
+
+        public init(kind: Kind, step: Int? = nil, steps: Int? = nil, files: [String]) {
+            self.kind = kind
+            self.step = step
+            self.steps = steps
+            self.files = files
+        }
     }
 
-    enum Update: Equatable, Sendable {
+    public enum Update: Equatable, Sendable {
         case done
         case conflict(Conflict)
     }
@@ -30,12 +37,12 @@ enum BranchGit {
     // MARK: Reading
 
     /// Commits on HEAD its upstream lacks; nil when the branch has no upstream yet.
-    static func ahead(cwd: String) -> Int? {
+    public static func ahead(cwd: String) -> Int? {
         (try? git(["rev-list", "--count", "@{upstream}..HEAD"], cwd: cwd)).flatMap { Int($0) }
     }
 
     /// A rebase or merge stopped in this checkout, else nil.
-    static func conflict(cwd: String) -> Conflict? {
+    public static func conflict(cwd: String) -> Conflict? {
         func exists(_ gitPath: String) -> String? {
             guard let path = try? git(["rev-parse", "--path-format=absolute", "--git-path", gitPath], cwd: cwd),
                   FileManager.default.fileExists(atPath: path) else { return nil }
@@ -55,7 +62,7 @@ enum BranchGit {
     }
 
     /// Why Amend can't replace the last commit, else nil: there is none, or a rebase or merge is stopped.
-    static func amendBlocked(cwd: String) -> String? {
+    public static func amendBlocked(cwd: String) -> String? {
         guard (try? git(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], cwd: cwd)) != nil else { return "There’s no commit to amend yet." }
         if conflict(cwd: cwd) != nil { return "A rebase or merge is in progress." }
         return nil
@@ -63,13 +70,13 @@ enum BranchGit {
 
     /// The remote-tracking ref that already has the last commit ("origin/agent/x"), else nil.
     /// Amending it makes the branch differ from that ref, so a push afterwards is refused.
-    static func pushedTo(cwd: String) -> String? {
+    public static func pushedTo(cwd: String) -> String? {
         let remotes = (try? git(["branch", "--remotes", "--contains", "HEAD", "--format=%(refname:short)"], cwd: cwd)) ?? ""
         return remotes.split(separator: "\n").map(String.init).first { !$0.hasSuffix("/HEAD") }
     }
 
     /// A name git takes as a new branch, else why not.
-    static func invalidName(_ name: String, cwd: String) -> String? {
+    public static func invalidName(_ name: String, cwd: String) -> String? {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if name.isEmpty { return "Name the branch." }
         if name.hasPrefix("-") || (try? git(["check-ref-format", "--branch", name], cwd: cwd)) == nil {
@@ -85,7 +92,7 @@ enum BranchGit {
 
     /// `git push -u origin refs/heads/<b>:refs/heads/<b>`: never forced, so a diverged remote refuses.
     /// A rejection after the branch was rewritten here (amended after it was pushed) says so.
-    static func push(cwd: String, branch: String) throws {
+    public static func push(cwd: String, branch: String) throws {
         try checkName(branch, cwd: cwd)
         do {
             try git(["push", "--set-upstream", "origin", "refs/heads/\(branch):refs/heads/\(branch)"], cwd: cwd, timeout: 120)
@@ -97,7 +104,7 @@ enum BranchGit {
 
     /// origin's copy of `branch` was once this branch's tip and HEAD has moved off it (an amend or
     /// reset here), rather than someone else pushing to it.
-    static func rewrittenAfterPush(cwd: String, branch: String) -> Bool {
+    public static func rewrittenAfterPush(cwd: String, branch: String) -> Bool {
         guard let remote = try? git(["rev-parse", "--verify", "--quiet", "refs/remotes/origin/\(branch)"], cwd: cwd),
               (try? git(["merge-base", "--is-ancestor", remote, "HEAD"], cwd: cwd)) == nil,
               let tips = try? git(["reflog", "--format=%H", "refs/heads/\(branch)"], cwd: cwd) else { return false }
@@ -108,7 +115,7 @@ enum BranchGit {
     /// stays staged. `amend` replaces the last commit instead (`amendBlocked` must be nil; with no
     /// paths only the message changes). Returns the new commit's short id.
     @discardableResult
-    static func commit(cwd: String, paths: [String], message: String, amend: Bool) throws -> String {
+    public static func commit(cwd: String, paths: [String], message: String, amend: Bool) throws -> String {
         if conflict(cwd: cwd) != nil { throw Failure(message: "A rebase or merge is in progress here. Finish or abort it first.") }
         if amend, let reason = amendBlocked(cwd: cwd) { throw Failure(message: reason) }
         guard amend || !paths.isEmpty else { throw Failure(message: "Choose at least one file.") }
@@ -130,7 +137,7 @@ enum BranchGit {
     /// Fetch `base` from origin (best effort: offline keeps the cached ref), then rebase or merge
     /// HEAD onto it. A dirty tree is refused first so nothing of the person's is rewritten; a
     /// conflict leaves git stopped for Abort, the editor or the agent.
-    static func update(cwd: String, base: String, rebase: Bool) throws -> Update {
+    public static func update(cwd: String, base: String, rebase: Bool) throws -> Update {
         try checkName(base, cwd: cwd)
         if conflict(cwd: cwd) != nil { throw Failure(message: "A rebase or merge is already in progress here.") }
         let dirty = (try? git(["status", "--porcelain", "--untracked-files=no"], cwd: cwd)) ?? ""
@@ -148,7 +155,7 @@ enum BranchGit {
     }
 
     /// `git rebase --abort` or `git merge --abort`: the branch exactly as it was before Update.
-    static func abort(cwd: String, _ kind: Conflict.Kind) throws {
+    public static func abort(cwd: String, _ kind: Conflict.Kind) throws {
         try git([kind == .rebase ? "rebase" : "merge", "--abort"], cwd: cwd)
     }
 
@@ -156,7 +163,7 @@ enum BranchGit {
     /// when there is none. git refuses a branch another worktree has, or changes it would overwrite.
     /// Returns the local branch now checked out.
     @discardableResult
-    static func switchBranch(cwd: String, to name: String) throws -> String {
+    public static func switchBranch(cwd: String, to name: String) throws -> String {
         if name.hasPrefix("origin/") {
             let local = String(name.dropFirst("origin/".count))
             try checkName(local, cwd: cwd)
@@ -173,20 +180,20 @@ enum BranchGit {
     }
 
     /// `git switch -c <name>` from HEAD, carrying uncommitted changes along.
-    static func createBranch(cwd: String, name: String) throws {
+    public static func createBranch(cwd: String, name: String) throws {
         if let problem = invalidName(name, cwd: cwd) { throw Failure(message: problem) }
         try git(["switch", "--create", name.trimmingCharacters(in: .whitespacesAndNewlines)], cwd: cwd)
     }
 
     /// `git branch -m <old> <new>`: the local branch only; a pushed one keeps its remote name.
-    static func renameBranch(cwd: String, from old: String, to new: String) throws {
+    public static func renameBranch(cwd: String, from old: String, to new: String) throws {
         try checkName(old, cwd: cwd)
         if let problem = invalidName(new, cwd: cwd) { throw Failure(message: problem) }
         try git(["branch", "--move", old, new.trimmingCharacters(in: .whitespacesAndNewlines)], cwd: cwd)
     }
 
     /// `git fetch origin`: the picker's Fetch from origin. Remote-tracking refs only.
-    static func fetchAll(cwd: String) throws {
+    public static func fetchAll(cwd: String) throws {
         try git(["fetch", "--quiet", "origin"], cwd: cwd, timeout: GitWorktree.networkTimeout * 3)
     }
 
@@ -199,7 +206,7 @@ enum BranchGit {
     }
 
     @discardableResult
-    static func git(_ arguments: [String], cwd: String, timeout: TimeInterval = 60) throws -> String {
+    public static func git(_ arguments: [String], cwd: String, timeout: TimeInterval = 60) throws -> String {
         var environment = ProcessInfo.processInfo.environment
         environment["GIT_TERMINAL_PROMPT"] = "0"
         // A rebase or merge never stops for an editor: merges keep git's message.
@@ -218,5 +225,67 @@ enum BranchGit {
             throw Failure(message: text.isEmpty ? "git \(arguments.first ?? "") failed (exit \(result.status))." : text)
         }
         return String(decoding: result.output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// What git says once the card opens: the lines changed since the base, and how far behind it the
+/// branch is. `base` nil when no base resolves (no origin, no such branch).
+public struct BranchCardGit: Equatable, Sendable {
+    public var additions = 0
+    public var deletions = 0
+    public var base: String?
+    public var behind = 0
+    /// Commits Push sends: ahead of the upstream, or of the base before the first push.
+    public var ahead = 0
+
+    public init(additions: Int = 0, deletions: Int = 0, base: String? = nil, behind: Int = 0, ahead: Int = 0) {
+        self.additions = additions
+        self.deletions = deletions
+        self.base = base
+        self.behind = behind
+        self.ahead = ahead
+    }
+}
+
+/// The card's git reads, in one checkout. Blocking; call off the main thread.
+public enum BranchCardGitReader {
+    public static func read(cwd: String, base: String?, executable: String = "/usr/bin/git") -> BranchCardGit {
+        var environment = ProcessInfo.processInfo.environment
+        environment["GIT_TERMINAL_PROMPT"] = "0"
+        let directory = (cwd as NSString).expandingTildeInPath
+        func git(_ arguments: [String]) -> String? {
+            guard let result = try? BoundedCommand.run([executable, "--no-optional-locks", "-C", directory] + arguments,
+                                                       environment: environment, timeout: 10, outputLimit: 1 << 20),
+                  result.status == 0 else { return nil }
+            return String(decoding: result.output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        // A worktree's recorded base (origin's copy first); else origin's default branch.
+        let candidates = base.map { ["origin/\($0)", $0] } ?? [git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])].compactMap { $0 }
+        let ref = candidates.first { git(["rev-parse", "--verify", "--quiet", "\($0)^{commit}"]) != nil }
+        var status = BranchCardGit()
+        if let ref {
+            status.base = baseName(ref)
+            status.behind = git(["rev-list", "--count", "HEAD..\(ref)"]).flatMap { Int($0) } ?? 0
+        }
+        status.ahead = (git(["rev-list", "--count", "@{upstream}..HEAD"]) ?? ref.flatMap { git(["rev-list", "--count", "\($0)..HEAD"]) })
+            .flatMap { Int($0) } ?? 0
+        // ponytail: tracked files only (`git diff` skips untracked ones); the Changes pane has the full count.
+        let from = ref.flatMap { git(["merge-base", $0, "HEAD"]) } ?? "HEAD"
+        (status.additions, status.deletions) = shortstat(git(["diff", "--shortstat", from]) ?? "")
+        return status
+    }
+
+    /// "origin/main" reads as "main".
+    public static func baseName(_ ref: String) -> String { ref.hasPrefix("origin/") ? String(ref.dropFirst("origin/".count)) : ref }
+
+    /// `git diff --shortstat`: " 3 files changed, 71 insertions(+), 8 deletions(-)".
+    public static func shortstat(_ text: String) -> (additions: Int, deletions: Int) {
+        var additions = 0, deletions = 0
+        for part in text.split(separator: ",") {
+            let words = part.split(separator: " ")
+            guard let count = words.first.flatMap({ Int($0) }), let kind = words.dropFirst().first else { continue }
+            if kind.hasPrefix("insertion") { additions = count } else if kind.hasPrefix("deletion") { deletions = count }
+        }
+        return (additions, deletions)
     }
 }

@@ -128,6 +128,7 @@ struct HostSettingsMappingTests {
         .subagentDefaults(HostSettings.SubagentDefaults(concurrency: 9, model: "openai/gpt-5-mini", thinking: .high, context: .fork)),
         .worktreeDeleteAction(.removeWorktree), .skillsInSlashMenu(false), .mcpProjectConfig(true), .slashCommand(name: "review", on: false),
         .closeOnMerge(true), .closeOnMerge(false),
+        .threadsStartThreads(true), .subThreadPlace(.worktree),
     ])
     func aChangeReadsBackAsTheProtocolAppliesIt(_ change: HostSettingChange) {
         let app = AppSettings(store: Fixture.defaults())

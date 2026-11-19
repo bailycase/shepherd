@@ -23,7 +23,7 @@ public enum ResponseTimingMark: String, Codable, Hashable, Sendable {
 }
 
 /// Where a thread `agent_spawn` starts works: the folder it is given as it is, or a new worktree of that folder's repository.
-public enum SpawnPlace: String, Codable, Hashable, Sendable {
+public enum SpawnPlace: String, Codable, Hashable, Sendable, CaseIterable {
     case checkout, worktree
 }
 
