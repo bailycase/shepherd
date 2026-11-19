@@ -294,10 +294,10 @@ struct NativeThreadTests {
         let request = NativeThreadRequest.setModel(expectedSessionID: s.piSessionID, generation: s.generation, operationID: op, model: "anthropic/claude-opus-4/preview")
 
         #expect(try await pi.request(request) == .accepted(operationID: op))
+        let changed = try #require(try await pi.request(.snapshot()).snapshotValue)
+        #expect(changed.model == "anthropic/claude-opus-4/preview" && changed.revision > s.revision)
         let wire = try await pi.waitForStdin("set_model")
         #expect(wire["provider"] as? String == "anthropic" && wire["modelId"] as? String == "claude-opus-4/preview")
-        let changed = try await pi.snapshot("the model to refresh") { $0.model == "anthropic/claude-opus-4/preview" }
-        #expect(changed.revision > s.revision)
     }
 
     @Test func setModelFailuresAreTyped() async throws {
