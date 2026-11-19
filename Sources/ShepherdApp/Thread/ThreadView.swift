@@ -626,12 +626,19 @@ struct ThreadView: View {
             // brings their blocks builds them, and the stack comes in the one after it. A parse that does not land holds it back only so long.
             // So does the pull that catches the thread up, for a thread whose first frame came before it because it kept only its tail
             // (`ThreadRestore.awaitsPull`): what it brings changes the tail and adds rows above it, and a stack built before it is built
-            // against a tail that is still to move. It waits no longer than the replies do.
-            var parseRetries = 0, pullRetries = 0
+            // against a tail that is still to move. And the scroll view of such a thread, until it has stopped reporting and rests on its
+            // end (`ThreadTailGuard.rests`): the pull may land with the tail's rows still being measured, and a stack that joins in the
+            // middle of that is laid out where the viewport was, and builds the heavy rows it finds there. Each waits no longer than the
+            // replies do.
+            var parseRetries = 0, pullRetries = 0, restRetries = 0
             func pullPending() -> Bool { restore.awaitsPull && store.catchUp == nil && pullRetries < AppLayout.restoreParseRetries }
-            while scrolling() || restore.waitsForParse(retries: parseRetries) || pullPending(), !Task.isCancelled {
+            func tailMoving() -> Bool {
+                restore.awaitsPull && restRetries < AppLayout.restoreParseRetries && !tailGuard.rests(quietFor: AppLayout.restoreQuiet)
+            }
+            while scrolling() || restore.waitsForParse(retries: parseRetries) || pullPending() || tailMoving(), !Task.isCancelled {
                 if !restore.tailDrawnParsed { parseRetries += 1 }
                 if pullPending() { pullRetries += 1 }
+                if tailMoving() { restRetries += 1 }
                 try? await Task.sleep(for: AppLayout.restoreRetry)
             }
             guard !Task.isCancelled else { return }

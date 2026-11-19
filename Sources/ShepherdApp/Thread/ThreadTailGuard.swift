@@ -73,7 +73,9 @@ final class ThreadTailGuard {
     var userScrolling = false
     /// How far the visible bottom sits above the end of the content, as the scroll view last
     /// reported it (`NativeScrollProbe`).
-    var distance = 0.0
+    var distance = 0.0 { didSet { readAt = .now } }
+    /// When the scroll view last reported (each reading writes `distance`).
+    private(set) var readAt = ContinuousClock.now
     /// The scroll target at the end of the thread, and how to scroll there.
     var bottomID = ""
     var land: () -> Void = {}
@@ -180,6 +182,15 @@ final class ThreadTailGuard {
     private var shortOfTheTail: Bool {
         guard unsettled, following, tailInView, let scroll = scrollView() else { return false }
         return shortfall(of: scroll) != nil
+    }
+
+    /// The scroll view has reported nothing new for `quiet` and rests on the end of its document, by AppKit's own measure (`slack`).
+    /// A lazy stack joined above the tail sooner is laid out where the viewport still is, not where the end of the thread has moved to,
+    /// and builds the rows it finds there. True when there is no scroll view: nothing is laid out to wait for.
+    func rests(quietFor quiet: Duration) -> Bool {
+        guard let scroll = scrollView() else { return true }
+        guard ContinuousClock.now - readAt >= quiet, let gap = endDistance(of: scroll) else { return false }
+        return gap <= Self.slack
     }
 
     /// How far the visible bottom sits above the end of the document, by AppKit: what SwiftUI's
