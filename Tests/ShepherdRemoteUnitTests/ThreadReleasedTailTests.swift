@@ -178,6 +178,30 @@ struct ThreadReleasedTailTests {
         #expect(store.olderCursor == host.snapshot.olderCursor)
     }
 
+    /// The cap cut the tail inside the host's newest page: the page the first pull brings starts before the tail, so it replaces the
+    /// rows the thread holds (a new history), and the rows of the tail still keep their identities and what was derived for them.
+    @Test func aPullWhosePageStartsBeforeATailTheCapCutKeepsTheRowsOfTheTailAsTheyWere() async {
+        let all = session(turns: 100, text: String(repeating: "word ", count: 400))
+        let (store, host) = await hidden(all)
+        store.releaseToTail(rows: 30, maxBytes: store.retainedHistoryBytes / 40)
+        let tail = store.rows
+        #expect(store.keepsOnlyTail && !tail.isEmpty && store.messages.count < NativeThreadStore.releasedTailMessages,
+                "the cap cut inside the host's newest page: \(store.messages.count) messages")
+
+        host.snapshot.messages = Array(all.suffix(NativeThreadStore.releasedTailMessages))
+        host.snapshot.olderCursor = host.snapshot.messages.first?.entryID
+        host.snapshot.revision = 2
+        let computed = store.rowCostComputations
+        let task = await start(store, host)
+        defer { task.cancel(); store.stop() }
+        #expect(store.catchUp != nil && !store.keepsOnlyTail, "the pull landed, and the thread holds a page again")
+        #expect(store.messages == host.snapshot.messages && store.olderCursor == host.snapshot.olderCursor)
+        #expect(Array(store.rows.suffix(tail.count)) == tail, "the rows of the tail are the rows it had, with the same identities and presentations")
+        // Only the rows the tail did not hold were derived: one reply for each of the turns above it.
+        let above = (store.rows.count - tail.count) / 2
+        #expect(store.rowCostComputations - computed <= above + 2, "\(store.rowCostComputations - computed) computed for \(above) turns above the tail")
+    }
+
     @Test func aPullThatFindsNothingNewLeavesTheTailAsItIs() async {
         let host = FakeHost(F.snapshot(messages: session(turns: 100)))
         let store = manualStore()
