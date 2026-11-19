@@ -17,6 +17,8 @@ final class MobileHost: Identifiable {
     fileprivate(set) var state = ShepherdState()
     /// Membership-only observers (Files retention) need not scan stores on status pushes.
     private(set) var agentIDs: Set<AgentID> = []
+    /// Agents this device is closing: lists leave them out (`threadState`) until the host retires them or refuses.
+    private(set) var closingAgents: Set<AgentID> = []
     /// A new value for every connection that finishes its handshake; nil while none is live.
     /// Work tied to one connection (a thread's poll loop) keys on it.
     fileprivate(set) var session: UUID?
@@ -81,6 +83,12 @@ final class MobileHost: Identifiable {
         self.state = state
         let ids = Set(state.agents.map(\.id))
         if agentIDs != ids { agentIDs = ids }
+        // The host retired them (or never had them): nothing left to hide.
+        if !closingAgents.isEmpty, !closingAgents.isSubset(of: ids) { closingAgents.formIntersection(ids) }
+    }
+
+    func setClosing(_ agent: AgentID, _ closing: Bool) {
+        if closing { closingAgents.insert(agent) } else { closingAgents.remove(agent) }
     }
 }
 
@@ -89,7 +97,7 @@ final class MobileHost: Identifiable {
 extension MobileHost {
     /// The host's state as thread lists read it. Home, the sidebar, Search, New thread and the
     /// widgets all list from this.
-    var threadState: ShepherdState { state }
+    var threadState: ShepherdState { state.hiding(closingAgents) }
 }
 
 /// Every host the phone knows, each with its own `RemoteHostClient`, connected while the app is

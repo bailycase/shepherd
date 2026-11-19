@@ -69,6 +69,21 @@ struct SidebarThreadsCheck {
         studio.push(state([AgentID(rawValue: "keep")]))
         try await waitUntil("a deleted thread's pin goes") { sidebar.state.pins.map(\.agent.rawValue) == ["keep"] }
 
+        // Closing is optimistic: lists (`threadState`) lose the thread at once while the host's state keeps it
+        // until the host retires it; a refusal shows it again, and the host retiring it clears the hiding.
+        let studioHost = hosts.host(studioID)!
+        studioHost.setClosing(keep.agent, true)
+        check(!studioHost.threadState.agents.contains { $0.id == keep.agent } && studioHost.state.agents.contains { $0.id == keep.agent },
+              "a closing thread leaves lists while the host still has it")
+        studioHost.setClosing(keep.agent, false)
+        check(studioHost.threadState.agents.map(\.id) == [keep.agent], "a refused close shows the row again")
+        studioHost.setClosing(keep.agent, true)
+        studio.push(state([]))
+        try await waitUntil("the host retires the closing thread") { studioHost.state.agents.isEmpty }
+        check(studioHost.closingAgents.isEmpty, "a retired thread is no longer hidden")
+        studio.push(state([keep.agent]))
+        try await waitUntil("the host has the agent again") { studioHost.threadState.agents.map(\.id) == [keep.agent] }
+
         // Offline, the actions refuse without sending; forgetting a host takes its pins.
         hosts.disconnect(studioID)
         try await waitUntil("Studio offline again") { hosts.host(studioID)?.phase == .disconnected }
