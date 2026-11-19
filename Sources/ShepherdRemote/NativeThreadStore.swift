@@ -1489,6 +1489,7 @@ public final class NativeThreadStore {
         resetPresentationSession(value)
         if value != snapshot { snapshot = value }
         replaceHistory(value.messages)
+        keepsOnlyTail = false
         if olderCursor != value.olderCursor { olderCursor = value.olderCursor }
         if !previewing { previewing = true }
         derive()
@@ -1637,6 +1638,7 @@ public final class NativeThreadStore {
     public func release() {
         guard canReleaseHistory else { return }
         stop()
+        keepsOnlyTail = false
         if transcriptDrawn != nil { transcriptDrawn = nil }
         drawnEagerRows = nil
         images.releaseHeld()
@@ -1663,6 +1665,97 @@ public final class NativeThreadStore {
         contextInputs = (nil, nil, false, true)
         deriveQueue()
         derive()
+    }
+
+    /// The messages a release to the tail keeps at least: the host's newest page (`RPCThreadState.pageSize`), so that the page the
+    /// first pull brings back starts inside what the thread holds, and lands over its end instead of replacing all of it.
+    nonisolated public static let releasedTailMessages = 50
+
+    /// The thread let go of its older history and holds only the end of it (`releaseToTail`), until a pull brings the newest page or
+    /// older history is paged back in. Read by the stores that bound what threads hold; not observed.
+    @ObservationIgnored public private(set) var keepsOnlyTail = false
+
+    /// The thread is far from the screen: lets go of the older history, of what was derived from it and of the images held, and
+    /// keeps the last `rows` rows (and the host's newest page of messages, whichever is more) with what they were derived from, so
+    /// that showing it again draws the last of them in its first frame, with nothing to pull, parse or derive, instead of nothing until
+    /// the pull has come back. The tail starts where a turn does, is cut further while it holds more than `maxBytes` of
+    /// `retainedHistoryBytes` (never past the last question and its answer), and pages older history in from where it starts
+    /// (`olderCursor`). It stays as a thread that is not on screen is, ready and with its snapshot, so the pull that follows catches it up
+    /// (`catchUp`): what arrived meanwhile lands over the end of the tail without moving the reader, and rows keep their identities. What
+    /// it was doing when it left (`settledRunning`) is not shown as live. Its hidden view lets its rows go down to the last screen
+    /// (`releaseTranscript`), as a release of the views alone does. Nothing happens while the thread is on screen or owns unsettled or
+    /// recoverable user work (`canReleaseHistory`), and `release` lets the tail go too.
+    public func releaseToTail(rows: Int, maxBytes: Int) {
+        guard canReleaseHistory else { return }
+        images.releaseHeld()
+        settleTask?.cancel()
+        settleTask = nil
+        if settledRunning { settledRunning = false }
+        cutHistory(to: tailStart(rows: rows, maxBytes: maxBytes))
+        keepsOnlyTail = true
+        // Still more than it may hold: its last question and answer alone.
+        if retainedHistoryBytes > maxBytes, let last = lastHeldQuestion, last > 0 {
+            cutHistory(to: projection.start(for: turns[last].id))
+        }
+        releaseTranscript(bytes: .max, keepingLastScreen: true)
+    }
+
+    /// The last turn that opens with a question the thread holds (not one of the rows its snapshot's live tail adds).
+    private var lastHeldQuestion: Int? {
+        turns.lastIndex { $0.isUser && projection.start(for: $0.id) < messages.count }
+    }
+
+    /// Where in `messages` the tail of the last `rows` rows starts: at a question, at least `releasedTailMessages` back, not past the last
+    /// question, and no further back than `maxBytes` reaches by a cost estimate of what a message holds once derived (the cache and the
+    /// rows built from it take about as much as the text counted in `retainedHistoryBytes`).
+    private func tailStart(rows: Int, maxBytes: Int) -> Int {
+        guard let lastQuestion = lastHeldQuestion else { return 0 }
+        let pageStart = max(0, messages.count - Self.releasedTailMessages)
+        var first = min(max(0, turns.count - rows), lastQuestion)
+        while first > 0, projection.start(for: turns[first].id) > pageStart { first -= 1 }
+        while first > 0, !turns[first].isUser { first -= 1 }
+        var start = projection.start(for: turns[first].id)
+        var bytes = messageCosts[start...].reduce(0, +) * 8
+        while first < lastQuestion, bytes > maxBytes {
+            var next = first + 1
+            while next < lastQuestion, !turns[next].isUser { next += 1 }
+            let nextStart = projection.start(for: turns[next].id)
+            bytes -= messageCosts[start..<nextStart].reduce(0, +) * 8
+            first = next
+            start = nextStart
+        }
+        return start
+    }
+
+    /// Lets go of the messages before `start` and of what was derived from them, and derives the rows that stay again.
+    private func cutHistory(to start: Int) {
+        if start > 0, start < messages.count {
+            let tail = Array(messages[start...])
+            replaceHistory(tail)
+            olderCursor = tail[0].entryID
+            aliases = aliases.filter { messageIndex[$0.key] != nil }
+        }
+        if var value = snapshot {
+            value.messages = value.messages.filter { messageIndex[$0.entryID] != nil }
+            value.olderCursor = olderCursor
+            if value != snapshot { snapshot = value }
+        }
+        // The caches of the turns that go are dropped by the derive that removes them (`presentationCache`, parses in flight); the
+        // parsed text and calls are kept for the turns that stay.
+        derive()
+        let kept = Set(turns.map(\.id)), held = Set(displayedMessages.map(\.entryID))
+        for key in proseCache.keys where !kept.contains(key.turn) {
+            proseCache[key] = nil
+            cacheBytes -= proseCosts.removeValue(forKey: key) ?? 0
+        }
+        for key in thinkingCache.keys where !kept.contains(key.turn) {
+            thinkingCache[key] = nil
+            cacheBytes -= thinkingCosts.removeValue(forKey: key) ?? 0
+        }
+        for id in callCache.keys where !held.contains(id) {
+            callCache[id] = nil
+            cacheBytes -= callCosts.removeValue(forKey: id) ?? 0
+        }
     }
 
     /// Reloadable history can be evicted only when it owns no unsettled user operation.
@@ -1969,6 +2062,7 @@ public final class NativeThreadStore {
                     historyEpoch = UUID()
                     if loadingOlder { loadingOlder = false }
                 }
+                keepsOnlyTail = false
                 if value != snapshot { snapshot = value }
                 images.configure(sessionID: value.piSessionID, fetch: request)
                 if previewing { previewing = false }
@@ -2213,6 +2307,7 @@ public final class NativeThreadStore {
             case .snapshot(let page) where page.piSessionID == current.piSessionID && page.generation == current.generation:
                 let ids = Set(messages.map(\.entryID))
                 replaceHistory(page.messages.filter { !ids.contains($0.entryID) } + messages)
+                keepsOnlyTail = false
                 olderCursor = page.olderCursor
                 derive()
             case .failure(let code, let message):
