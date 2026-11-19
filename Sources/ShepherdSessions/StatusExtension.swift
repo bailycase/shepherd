@@ -140,6 +140,7 @@ public enum StatusExtension {
         mcp: MCPLaunch? = nil,
         worktreeOwningSpace: String? = nil,
         browserExtensionPath: String? = nil,
+        computerUse: (extensionPath: String, driver: String, home: String)? = nil,
         contextExtensionPath: String? = nil,
         projectContext: (path: String, json: String, coordinator: Bool)? = nil,
         deferTools: Bool = false,
@@ -160,7 +161,7 @@ public enum StatusExtension {
         let askExtensionPath = isAutomation ? nil : AskExtension.path(in: home)
         var extensions = [extensionPath, ServiceTierExtension.path(in: home), instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath,
                           childrenExtensionPath, GoalExtension.path(in: home), askExtensionPath, HooksExtension.path(in: home), namerExtensionPath, design?.extensionPath ?? designTools?.extensionPath, designReferences?.extensionPath,
-                          browserExtensionPath, visionExtensionPath].compactMap { $0 } + (mcp?.extensions ?? toolSearch) + [contextExtensionPath].compactMap { $0 }
+                          browserExtensionPath, computerUse?.extensionPath, visionExtensionPath].compactMap { $0 } + (mcp?.extensions ?? toolSearch) + [contextExtensionPath].compactMap { $0 }
         if let projectContext {
             if projectContext.coordinator { extensions = [extensionPath, ServiceTierExtension.path(in: home)] }
             extensions.append(projectContext.path)
@@ -186,6 +187,11 @@ public enum StatusExtension {
         if panesExtensionPath != nil, let shepherdSkillDirectory { env["SHEPHERD_SKILL_DIR"] = shepherdSkillDirectory }
         // Settings ▸ Pi ▸ Browser tools: the tools on the thread's own page.
         if let browserExtensionPath { env["SHEPHERD_EXT_BROWSER"] = browserExtensionPath }
+        // Settings ▸ Experiments ▸ Computer use: the driver the app ships, and the folder it keeps its state in.
+        if let computerUse {
+            env["SHEPHERD_COMPUTER_USE"] = computerUse.driver
+            env["SHEPHERD_COMPUTER_USE_HOME"] = computerUse.home
+        }
         if let childrenExtensionPath {
             env["SHEPHERD_NATIVE_CHILDREN"] = nativeChildren ? "1" : "0"
             env["SHEPHERD_EXT_CHILDREN"] = childrenExtensionPath
@@ -232,7 +238,7 @@ public enum StatusExtension {
             env["SHEPHERD_PROJECT_CONTEXT"] = projectContext.json
             env["SHEPHERD_PROJECT_COORDINATOR"] = projectContext.coordinator ? "1" : "0"
             if projectContext.coordinator {
-                for key in ["SHEPHERD_EXT_PANES", "SHEPHERD_NATIVE_CHILDREN", "SHEPHERD_EXT_CHILDREN", "SHEPHERD_EXT_BROWSER", "SHEPHERD_DEFER_TOOLS", "SHEPHERD_EXT_GOAL", HooksExtension.environmentKey] { env[key] = "" }
+                for key in ["SHEPHERD_EXT_PANES", "SHEPHERD_NATIVE_CHILDREN", "SHEPHERD_EXT_CHILDREN", "SHEPHERD_EXT_BROWSER", "SHEPHERD_COMPUTER_USE", "SHEPHERD_DEFER_TOOLS", "SHEPHERD_EXT_GOAL", HooksExtension.environmentKey] { env[key] = "" }
                 env["SHEPHERD_GOALS_ENABLED"] = "0"
             }
         }

@@ -83,6 +83,7 @@ enum HostSettingsMapping {
             generatePRDescriptions: app.worktreeGeneratePRDescription,
             closeOnMerge: app.worktreeCloseOnMerge,
             designToolEnabled: app.designToolEnabled,
+            computerUseEnabled: app.computerUseEnabled,
             subagentDefaults: HostSettings.SubagentDefaults(
                 concurrency: app.childConcurrency,
                 model: app.childModel.isEmpty ? nil : app.childModel,
@@ -146,6 +147,7 @@ enum HostSettingsMapping {
             // An older client's switches: Shepherd's pi updates only with Shepherd.
             break
         case .designToolEnabled(let on): app.designToolEnabled = on
+        case .computerUseEnabled(let on): app.computerUseEnabled = on
         case .subagentDefaults(let defaults):
             let range = HostSettings.SubagentDefaults.concurrencyRange
             app.childConcurrency = min(range.upperBound, max(range.lowerBound, defaults.concurrency))

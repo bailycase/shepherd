@@ -24,8 +24,9 @@ const registry = JSON.parse(fs.readFileSync(path.join(root, "Tests/Extensions/co
 const rows = new Map();
 for (const family of registry.families) for (const name of family.tools) rows.set(name, family);
 
-// Tools that register only when something else is on: a design reference, the suggestions experiment.
-const CONDITIONAL = new Set(["design_get", "design_show", "design_note", "suggest_instruction"]);
+// Tools that register only when something else is on: a design reference, the suggestions and computer use experiments.
+const CONDITIONAL = new Set(["design_get", "design_show", "design_note", "suggest_instruction",
+  ...registry.families.find((family) => family.group === "computer").tools]);
 
 // The tools a launch sends the model that Shepherd's extensions registered: not pi's other built-ins (inactive, never sent), and
 // not an MCP server's direct tools, which are the user's (`mcp__<server>__<tool>`, pi's own MCP).

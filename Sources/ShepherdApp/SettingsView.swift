@@ -354,7 +354,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Open files in", "Workspace state", "Extension socket", "Update channel", "Check for updates", "Share diagnostics", "Skipped confirmations", "Reset settings"]
         case .experiments: ["Goals", "Projects", "Suggested instructions", "Learn from", "Can suggest for", "Waiting for you",
-                            "Added from suggestions", "Design tool"]
+                            "Added from suggestions", "Design tool", "Computer use", "Accessibility", "Screen Recording"]
         }
     }
 
@@ -423,7 +423,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .experiments: ["Projects": ["coordinate", "project work", "new project"],
                             "Fleet": ["macs", "pair", "peers", "machines", "bonjour"],
                             "Suggested instructions": ["lessons", "learned"], "Learn from": ["threads", "automations"],
-                            "Design tool": ["designs", "boards", "mockups"]]
+                            "Design tool": ["designs", "boards", "mockups"],
+                            "Computer use": ["apps", "click", "type", "control", "desktop", "permissions"]]
         }
     }
 
