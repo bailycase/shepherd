@@ -655,7 +655,11 @@ def file_lists() -> tuple[str, str]:
     """Only the helpers and the stamp belong to the sandboxed phase. Xcode copies the SDK as a
     folder resource, avoiding thousands of sandbox-exec arguments for its individual files."""
     inputs = [f"{STAGED_IN_XCODE}/{path}" for path in (STAMP, NODE, COMPUTER_USE, COMPUTER_USE_INFO)]
-    outputs = [f"{CONTENTS_IN_XCODE}/{path}" for path in ("Helpers", NODE, COMPUTER_USE_APP)]
+    # The sandbox lets the phase write only these exact paths: every folder and file of the computer-use app,
+    # including the signature codesign writes.
+    computer = (COMPUTER_USE_APP, f"{COMPUTER_USE_APP}/Contents", f"{COMPUTER_USE_APP}/Contents/MacOS", COMPUTER_USE,
+                COMPUTER_USE_INFO, f"{COMPUTER_USE_APP}/Contents/_CodeSignature", f"{COMPUTER_USE_APP}/Contents/_CodeSignature/CodeResources")
+    outputs = [f"{CONTENTS_IN_XCODE}/{path}" for path in ("Helpers", NODE, *computer)]
     return "\n".join(inputs) + "\n", "\n".join(outputs) + "\n"
 
 

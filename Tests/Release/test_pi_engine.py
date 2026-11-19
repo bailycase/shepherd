@@ -569,7 +569,10 @@ class StageTests(unittest.TestCase):
                 outputs = f.read().splitlines()
             self.assertEqual(inputs, [f"$(SRCROOT)/.build/pi-engine/{p}" for p in ("pin.json", "Helpers/node", pi_engine.COMPUTER_USE, pi_engine.COMPUTER_USE_INFO)])
             contents = "$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/"
-            self.assertEqual(outputs, [contents + "Helpers", contents + "Helpers/node", contents + pi_engine.COMPUTER_USE_APP])
+            app = pi_engine.COMPUTER_USE_APP
+            self.assertEqual(outputs, [contents + p for p in (
+                "Helpers", "Helpers/node", app, f"{app}/Contents", f"{app}/Contents/MacOS", pi_engine.COMPUTER_USE,
+                pi_engine.COMPUTER_USE_INFO, f"{app}/Contents/_CodeSignature", f"{app}/Contents/_CodeSignature/CodeResources")])
 
     def test_restaging_reuses_the_cache(self):
         fixture = Fixture()
@@ -879,7 +882,8 @@ class LayoutContractTests(unittest.TestCase):
                     f.write(f"scratch {helper}")
             products = os.path.join(scratch, "products")
             env = {**os.environ, "SRCROOT": scratch, "TARGET_BUILD_DIR": products,
-                   "CONTENTS_FOLDER_PATH": "Test.app/Contents", "CODE_SIGNING_ALLOWED": "NO"}
+                   "CONTENTS_FOLDER_PATH": "Test.app/Contents", "CODE_SIGNING_ALLOWED": "NO",
+                   "TEMP_DIR": os.path.join(scratch, "temp")}
             for config, succeeds in (({"name": "pi", "configDir": ".pi"}, False),
                                      ({"name": "shepherd", "configDir": ".shepherd"}, False),
                                      ({}, False), ({"name": "pi", "configDir": ".shepherd"}, True)):
