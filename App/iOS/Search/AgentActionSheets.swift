@@ -4,14 +4,14 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
-/// Rename a thread's agent on its host. Presented modally; Save sends the new name and closes
-/// once the host took it. A manual name is final there: the namer never replaces it.
+/// Rename a thread's agent on its host. Presented modally; Save shows the new name at once and
+/// closes; the host takes it in the background, and a refusal puts the old name back with the
+/// reason. A manual name is final there: the namer never replaces it.
 struct RenameAgentSheet: View {
     let ref: AgentRef
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
     @State private var name = ""
-    @State private var saving = false
     @State private var error: String?
     @FocusState private var focused: Bool
 
@@ -50,11 +50,7 @@ struct RenameAgentSheet: View {
                 Button("Cancel") { navigator.dismissPresented() }
             }
             ToolbarItem(placement: .confirmationAction) {
-                if saving {
-                    ProgressView().progressViewStyle(SHSpinnerStyle())
-                } else {
-                    Button("Save") { save(next) }.disabled(next == nil || agent == nil)
-                }
+                Button("Save") { save(next) }.disabled(next == nil || agent == nil)
             }
         }
         // On iPad the sheet is a form fitted to what it holds (MobileRoot); a detent would override it.
@@ -66,17 +62,16 @@ struct RenameAgentSheet: View {
     }
 
     private func save(_ next: String?) {
-        guard let next, !saving else { return }
-        saving = true
+        guard let next else { return }
         error = nil
-        Task {
-            do {
-                try await AgentActions.rename(ref, to: next, hosts: hosts)
-                navigator.dismissPresented()
-            } catch {
-                self.error = String(describing: error)
+        do {
+            // The thread shows the name at once; the host takes it in the background.
+            try AgentActions.rename(ref, to: next, hosts: hosts) { [navigator = self.navigator] failure in
+                navigator.present(.search(.problem(title: "Couldn’t rename the thread", message: String(describing: failure))))
             }
-            saving = false
+            navigator.dismissPresented()
+        } catch {
+            self.error = String(describing: error)
         }
     }
 }
@@ -84,7 +79,8 @@ struct RenameAgentSheet: View {
 /// Delete a thread's agent. A plain agent confirms and is retired on its host; its folder stays.
 /// A worktree agent follows the Mac's Delete Worktree Agent: the host describes the checkout and
 /// any work that would be lost, which must be acknowledged, and the delete runs on the host as
-/// an operation whose progress shows here; "Delete agent only" keeps the checkout and branch.
+/// an operation followed in the background (reopening shows its status); "Delete agent only" keeps the checkout and branch.
+/// Confirming closes the thread at once; `ThreadClosingFlow` settles the host's answer.
 struct DeleteAgentSheet: View {
     let ref: AgentRef
     @Environment(MobileHosts.self) private var hosts
@@ -115,7 +111,6 @@ private struct DeleteAgentForm: View {
     let hostName: String?
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
-    @State private var deleting = false
     @State private var error: String?
 
     var body: some View {
@@ -132,12 +127,9 @@ private struct DeleteAgentForm: View {
             }
             Section {
                 Button(role: .destructive, action: delete) {
-                    HStack(spacing: SH.Space.m) {
-                        Text("Delete agent")
-                        if deleting { ProgressView().progressViewStyle(SHSpinnerStyle()) }
-                    }
+                    Text("Delete agent")
                 }
-                .disabled(deleting || name == nil)
+                .disabled(name == nil)
             }
         }
         .font(.sh(.ui))
@@ -149,18 +141,18 @@ private struct DeleteAgentForm: View {
         }
     }
 
+    /// The confirmation is this button: the thread closes at once and the host's answer follows
+    /// (`ThreadClosingFlow`). Only a host that can't be reached keeps the sheet.
     private func delete() {
-        deleting = true
         error = nil
-        Task {
-            do {
-                try await AgentActions.delete(ref, hosts: hosts)
-                navigator.dismissPresented()
-                navigator.close(thread: ref)
-            } catch {
-                self.error = String(describing: error)
-            }
-            deleting = false
+        let client: RemoteHostClient
+        do { client = try AgentActions.client(ref, hosts: hosts) } catch {
+            self.error = String(describing: error)
+            return
+        }
+        let ref = ref
+        ThreadClosingFlow.close(ref, hosts: hosts, navigator: navigator, title: "Couldn’t delete the agent") {
+            try await client.agentAction(agentID: ref.agent, action: .deleteKeepingWorktree)
         }
     }
 }
@@ -272,15 +264,19 @@ private struct DeleteWorktreeAgentForm: View {
         }
     }
 
-    /// A request over the connection the confirmation came from; a status check goes over any.
-    private func query(_ value: RemoteAgentQuery, anyConnection: Bool = false) async throws -> RemoteAgentResult {
+    /// The client of the connection the confirmation came from; a status check goes over any.
+    private func client(anyConnection: Bool = false) throws -> RemoteHostClient {
         guard let host = hosts.host(ref.host), let client = host.connectedClient else {
             throw AgentActions.Failure("The host is offline. Reopen this once it reconnects.")
         }
         guard anyConnection || host.session == session else {
             throw AgentActions.Failure("The connection to \(host.name) changed. Reopen this to check the worktree again.")
         }
-        return try await client.agentQuery(agentID: ref.agent, query: value)
+        return client
+    }
+
+    private func query(_ value: RemoteAgentQuery, anyConnection: Bool = false) async throws -> RemoteAgentResult {
+        try await client(anyConnection: anyConnection).agentQuery(agentID: ref.agent, query: value)
     }
 
     private func load() async {
@@ -295,24 +291,18 @@ private struct DeleteWorktreeAgentForm: View {
 
     private func start() {
         guard let info, WorktreeDeletion.canDelete(info, acknowledged: acknowledged, submitting: submitting) else { return }
-        submitting = true
         error = nil
+        let client: RemoteHostClient
+        do { client = try self.client() } catch {
+            self.error = Self.message(error)
+            return
+        }
+        // Confirmed (with the warning shown): the thread closes at once, and the host's operation is followed
+        // in the background (`ThreadClosingFlow`); reopening the delete shows its status.
+        let (ref, hosts, operations) = (ref, hosts, operations)
         let id = operations.start(ref)
-        Task {
-            do {
-                if case .worktreeOperation(let status) = try await query(WorktreeDeletion.query(info, operationID: id)) {
-                    operation = status
-                }
-            } catch {
-                switch WorktreeDeletion.startFailure(error) {
-                case .refused(let message):
-                    operations.finish(ref)
-                    self.error = message
-                case .unknown(let message):
-                    self.error = message
-                }
-            }
-            submitting = false
+        ThreadClosingFlow.close(ref, hosts: hosts, navigator: navigator, title: "Couldn’t delete the worktree") {
+            try await ThreadClosingFlow.deleteWorktree(ref, info: info, operationID: id, client: client, hosts: hosts, operations: operations)
         }
     }
 
@@ -332,17 +322,15 @@ private struct DeleteWorktreeAgentForm: View {
     }
 
     private func deleteAgentOnly() {
-        submitting = true
         error = nil
-        Task {
-            do {
-                _ = try await query(.deleteKeepingWorktree)
-                navigator.dismissPresented()
-                navigator.close(thread: ref)
-            } catch {
-                self.error = Self.message(error)
-            }
-            submitting = false
+        let client: RemoteHostClient
+        do { client = try self.client() } catch {
+            self.error = Self.message(error)
+            return
+        }
+        let ref = ref
+        ThreadClosingFlow.close(ref, hosts: hosts, navigator: navigator, title: "Couldn’t delete the agent") {
+            _ = try await client.agentQuery(agentID: ref.agent, query: .deleteKeepingWorktree)
         }
     }
 

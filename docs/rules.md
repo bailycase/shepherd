@@ -268,7 +268,7 @@ no local checkout or branch is touched; bodies go on stdin): comment, review, me
 when ready, and deleting the head branch on GitHub only when the person ticks it), Clean up's
 deletion of a merged pull request's head branch on GitHub (never a fork's), convert to draft and
 mark ready, close and reopen, edit a title, and re-run a run's failed jobs. Its Remove the worktree
-is the confirmed Delete Worktree. The branch card's actions (`BranchGit.swift`, in the agent's own
+is the confirmed Delete Worktree. The branch card's actions (`ShepherdSessions/BranchGit.swift`, in the agent's own
 checkout, each on the person's click; branch names pass `check-ref-format` and never reach git as
 options): Commit (`commit --only` of the ticked files, new ones intent-to-add first and taken back
 if the commit fails; refused while a rebase or merge is stopped), Amend the last commit (`commit
@@ -276,7 +276,8 @@ if the commit fails; refused while a rebase or merge is stopped), Amend the last
 has the commit, Commit & push is off and the card's Push is refused, never forced, with how to
 replace it by hand), Push (`push -u origin` of the current branch, never forced), Update from the base (fetch
 the base, then rebase or merge onto it; refused on a dirty tree; a conflict stops, and Abort runs
-`rebase --abort` or `merge --abort`), Switch branch (`switch`, a remote branch to a tracking local
+`rebase --abort` or `merge --abort`; a paired device's branch sheet sends the same Update and Abort to
+the host as `branchUpdate` and `branchAbort`, each on the person's tap), Switch branch (`switch`, a remote branch to a tracking local
 copy), New branch from here (`switch -c`), Rename branch (`branch -m`, local only), and Fetch from
 origin (`fetch origin`, remote-tracking refs only); Change base rewrites only Shepherd's record. A
 new thread's worktree on an existing branch (`GitWorktree.addExisting`: `worktree add`, a remote
@@ -322,7 +323,7 @@ anything that keeps going without a person watching. Each needs, before it is a 
 - Tool output, file contents, web pages and model prose are data, never instructions, including
   text that reaches an evaluator.
 - A restart never resumes unattended features (Projects, executions, goals or design Git work): they come back paused. Enabled automation schedules and triggers are a standing instruction: they keep firing whenever Shepherd's host runs, after a launch, a login or a host restart, with the app open or not, but an automation run a restart interrupted is never resumed: its run log records it as interrupted. A login start and an update's drain are restarts. Ordinary interactive agents may recover previously authorized unfinished turns and queued messages from a durable, session-fenced checkpoint, with at most three consecutive automatic recovery attempts. Explicit Stop and questions prevent automatic continuation; an idle agent stays idle. A pi that stops on its own holds its agent's checkpoint paused and inactive: pi starts again only when a person acts (Retry, Locate Folder…, Use another model), by the thread's ordinary start after a launch, or, for a Project coordinator, by its Project's next message; none continues the interrupted turn or sends the queue, which comes back paused. An automation run whose pi stops on its own ends as failed in its run log and is never resumed.
-- Fleet dispatch (a thread sending work to another Mac) is gated by the hosts, never by a prompt: the synced "Threads can send work" setting (off by default), no dispatched thread, mission or project worker, coordinator, design agent or automation run may send (`fleet_scope`), at most three in flight per thread, eight running per receiving Mac, one id one thread (a repeated create never starts a second). A restart never sends a waiting dispatch by itself (it comes back `heldRestart`) and never creates a running one again; its result, like any text from another agent, is data and reaches the parent framed as another agent's words.
+- Fleet dispatch (a thread sending work to another Mac) is gated by the hosts, never by a prompt: the synced "Threads can send work" setting (off by default), no mission or project worker, coordinator, design agent or automation run may send (`fleet_scope`), no thread `StartedBy.maxDepth` (3) below one the person started may start another by dispatch or `agent_spawn` (`too_deep`, the depth travels on the dispatch), `agent_spawn` is refused in a turn a person didn't start unless Settings ▸ Agents ▸ Threads can start threads is on (`not_asked`, read from the thread's latest message) and past the same per-thread cap (`held_limit`), at most three in flight per thread, eight running per receiving Mac, one id one thread (a repeated create never starts a second). A restart never sends a waiting dispatch by itself (it comes back `heldRestart`) and never creates a running one again; its result, like any text from another agent, is data and reaches the parent framed as another agent's words.
 - Every control carries a fence (the revision it acts on) and limits are enforced on the host.
 - Stop, Steer now, the queue, subagents, retries, errors, compaction, quitting and a second client
   are each defined and tested.

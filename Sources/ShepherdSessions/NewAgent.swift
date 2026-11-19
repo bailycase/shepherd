@@ -54,6 +54,8 @@ public struct NewAgentConfig {
     public var automationOrigin: AutomationOrigin?
     /// A thread Fleet started for another Mac's work (`Agent.dispatchedFrom`).
     public var dispatchedFrom: DispatchedFrom?
+    /// A thread another thread on this Mac started (`Agent.startedBy`).
+    public var startedBy: StartedBy?
     /// A thread another Mac moved here keeps what it was (`FleetMove.swift`).
     public var movedFrom: MovedFrom?
     public var nameIsFinal: Bool?
@@ -135,6 +137,7 @@ public struct NewAgentConfig {
         )
         agent.automationOrigin = automationOrigin
         agent.dispatchedFrom = dispatchedFrom
+        agent.startedBy = startedBy
         agent.movedFrom = movedFrom
         agent.pushMuted = pushMuted
         return (agent, tab, primary)

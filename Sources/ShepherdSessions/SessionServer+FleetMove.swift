@@ -106,6 +106,7 @@ extension SessionServer {
         config.worktreeBase = request.worktreeBase
         config.worktreePath = identity.path
         config.dispatchedFrom = request.dispatchedFrom
+        config.startedBy = request.startedBy
         config.movedFrom = moved.from
         config.nameIsFinal = moved.nameIsFinal
         config.pushMuted = moved.pushMuted
@@ -143,6 +144,7 @@ extension SessionServer {
                 state.agents[index].worktreeBase = request.worktreeBase
                 state.agents[index].worktreePath = request.worktreePath
                 state.agents[index].dispatchedFrom = request.dispatchedFrom
+                state.agents[index].startedBy = request.startedBy
                 state.agents[index].pushMuted = moved.pushMuted
                 state.agents[index].lastActiveAt = moved.lastActiveAt ?? SessionServer.nowMilliseconds()
                 let paneID = state.agents[index].paneID

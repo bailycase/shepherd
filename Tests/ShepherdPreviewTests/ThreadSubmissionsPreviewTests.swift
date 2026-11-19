@@ -54,10 +54,15 @@ struct ThreadSubmissionsPreviewTests {
         let held = Task { await ComposerImageCapture.send(store: store, input: input, delivery: .followUp) }
         defer { held.cancel() }
         try await eventuallyOnMain("three records") { store.submissions.count == 3 }
+        #expect(store.rows.filter(\.isUser).map(\.turn.sendingNote) == ["Sending…"])
         store.draft = "A new draft"
         try await Preview.renderMatrix("thread-submissions", size: CGSize(width: 720, height: 520)) {
             ScrollView {
-                VStack(alignment: .leading, spacing: AppLayout.turnSpacing) { ThreadSubmissions(store: store, input: input) }
+                VStack(alignment: .leading, spacing: AppLayout.turnSpacing) {
+                    // The send still waiting is a row of the transcript ("Sending…"); the outcomes follow it.
+                    ForEach(store.rows.filter(\.isUser)) { UserTurn(turn: $0.turn).equatable() }
+                    ThreadSubmissions(store: store, input: input)
+                }
                     .padding(SH.Space.xxl)
             }
             .background(Color.sh.bgWindow)

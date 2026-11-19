@@ -1304,12 +1304,23 @@ final class RPCThreadState {
     /// An accepted new user send during a running turn. Idempotent operation replay never fires it.
     var onUserInputWhileRunning: (() -> Void)?
 
+    /// Whether the latest message handed to pi came from a person (a client's send), or from another agent: a peer's task, a Fleet
+    /// result or message, a design's brief. Nil before any since this pi started: its opening prompt says (`SessionServer.spawnByPerson`).
+    /// What agent_spawn reads while Threads can start threads is off. pi's own extensions (a helper's result) never pass here.
+    var lastInputFromPerson: Bool?
+
     private func perform(_ request: NativeThreadRequest, operationID: UUID, alone: Bool,
                          recoveryBinding: CheckpointRecoveryBinding?, recoveryAuthorization: @escaping () -> Bool,
                          inputAuthorization: @escaping () -> Bool, completion: @escaping (NativeThreadResult) -> Void) {
         let accepted = NativeThreadResult.accepted(operationID: operationID)
         let settle: (Result<RPCResponse, RPCError>) -> Void = { result in
             completion(Self.dispatchFailure(result) ?? accepted)
+        }
+        // A client reconciles its picked value on the first pull after acceptance. Publish pi's
+        // effective settings first, including a thinking level clamped to what the model supports.
+        func settleSetting(_ result: Result<RPCResponse, RPCError>) {
+            guard Self.dispatchFailure(result) == nil else { settle(result); return }
+            refreshState { _ in settle(result) }
         }
         switch request {
         case .send(_, _, _, let text, let delivery, let images, let designContext, let designReferences, let browserElements):
@@ -1327,6 +1338,7 @@ final class RPCThreadState {
             // references reach here only as the server read them (`SessionServer.nativeThread`).
             let context = Self.sendContext(designContext, references: designReferences, elements: elements)
             let interruptsBackgroundWait = running && delivery == .followUp
+            lastInputFromPerson = true
             send(id: operationID, text: text, delivery: delivery, images: images,
                  // A message with references or elements goes to pi on its own: joined, its fence
                  // would give way.
@@ -1350,10 +1362,7 @@ final class RPCThreadState {
             }
             let provider = String(model[..<slash])
             let id = String(model[model.index(after: slash)...])
-            session.request(.setModel(provider: provider, modelId: id)) { [weak self] result in
-                settle(result)
-                self?.refreshState()
-            }
+            session.request(.setModel(provider: provider, modelId: id), completion: settleSetting)
         case .setThinking(_, _, _, let level):
             // pi clamps a level the model lacks to the nearest one it takes.
             guard ThinkingLevel(rawValue: level) != nil else {
@@ -1361,10 +1370,7 @@ final class RPCThreadState {
                     + ThinkingLevel.allCases.map(\.rawValue).joined(separator: ", ") + "."))
                 return
             }
-            session.request(.setThinkingLevel(level: level)) { [weak self] result in
-                settle(result)
-                self?.refreshState()
-            }
+            session.request(.setThinkingLevel(level: level), completion: settleSetting)
         case .goal(_, _, _, let action, let expectedID, let expectedRevision, let expectedState):
             guard goalsEnabled && goalsAvailable else { completion(.failure(code: "unsupported", message: "Enable Goals in Settings > Experiments.")); return }
             guard action.isValid else { completion(.failure(code: "invalid", message: "A goal needs text up to 32768 characters.")); return }

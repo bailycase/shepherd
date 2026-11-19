@@ -552,11 +552,13 @@ def fat(*slices):
 
 
 def make_engine(contents):
-    """The pinned engine's layout under `contents`, as small stand-ins: an arm64 node that names
-    the pinned version, each package.json at its pinned version, and the files the bundle resolves
+    """The pinned engine's layout under `contents`, as small stand-ins: an arm64 node and
+    computer-use driver that name their pinned versions, each package.json at its pinned version, and the files the bundle resolves
     inside a module by name."""
     pin = release.pi_engine.load_pin()
-    files = {release.pi_engine.NODE: macho(ARM64, f"node v{pin['node']['version']}\0".encode())}
+    files = {release.pi_engine.NODE: macho(ARM64, f"node v{pin['node']['version']}\0".encode()),
+             release.pi_engine.COMPUTER_USE: macho(ARM64, f"cua-driver {pin['computerUse']['version']} ".encode()),
+             release.pi_engine.COMPUTER_USE_INFO: b"<plist/>"}
     engine = release.pi_engine.ENGINE
     packages = {"": (pin["pi"]["name"], pin["pi"]["version"])}
     packages.update({f"node_modules/{path}/": (release.pi_engine.module_name(path), module["version"])
@@ -577,6 +579,7 @@ def make_engine(contents):
         with open(path, "wb") as f:
             f.write(data)
     os.chmod(os.path.join(contents, release.pi_engine.NODE), 0o755)
+    os.chmod(os.path.join(contents, release.pi_engine.COMPUTER_USE), 0o755)
 
 
 class VerifyAppTests(unittest.TestCase):
@@ -690,7 +693,7 @@ class VerifyAppTests(unittest.TestCase):
             "browser": "Browser", "design": "Design", "design-refs": "DesignReferences",
             "panes": "Panes", "review": "Review", "instructions": "Instructions", "namer": "Namer",
             "project-context": "ProjectContext", "status": "Status", "children": "Children",
-            "cli": "Children", "cli-client": "Children",
+            "cli": "Children", "cli-client": "Children", "computer-use": "ComputerUse",
         }
         consumers = [file for file in Path(ROOT, "Extensions").iterdir()
                      if file.is_file() and '"./shepherd-lines.mjs"' in file.read_text()]

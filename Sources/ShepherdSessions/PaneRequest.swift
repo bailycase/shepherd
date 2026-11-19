@@ -27,6 +27,8 @@ public struct RemoteCreateAgentRequest: Sendable {
     /// A thread Fleet started for another Mac's work: where it came from, and the folder of the checkout it works in.
     public var dispatchedFrom: DispatchedFrom?
     public var subdirectory: String?
+    /// A thread another thread on this Mac started (`agent_spawn`).
+    public var startedBy: StartedBy?
     /// A thread another Mac moved here (`FleetMove.swift`): with `agentID`, `piSessionID` and `worktreePath` it is the same thread, its
     /// conversation installed and its pi resumed, never a new one.
     public var moved: Moved?
@@ -206,13 +208,15 @@ public enum AutomationOutcome: Hashable, Sendable {
 public enum AgentPeerRequest: Hashable, Sendable {
     case list(agentID: AgentID)
     case send(agentID: AgentID, targetAgentID: AgentID, text: String, delivery: AgentMessageDelivery = .task)
-    case spawn(agentID: AgentID, cwd: String, prompt: String, model: String? = nil, thinking: ThinkingLevel? = nil)
+    /// `byPerson`: the turn it was called in is one a person started (`SessionServer.spawnByPerson`).
+    case spawn(agentID: AgentID, cwd: String, prompt: String, model: String? = nil, thinking: ThinkingLevel? = nil,
+               place: SpawnPlace? = nil, branch: String? = nil, byPerson: Bool = true)
     case delete(agentID: AgentID, targetAgentID: AgentID, requestID: String)
     case move(agentID: AgentID, targetAgentID: AgentID, spaceID: SpaceID)
 
     public var agentID: AgentID {
         switch self {
-        case .list(let agentID), .send(let agentID, _, _, _), .spawn(let agentID, _, _, _, _), .delete(let agentID, _, _), .move(let agentID, _, _):
+        case .list(let agentID), .send(let agentID, _, _, _), .spawn(let agentID, _, _, _, _, _, _, _), .delete(let agentID, _, _), .move(let agentID, _, _):
             return agentID
         }
     }

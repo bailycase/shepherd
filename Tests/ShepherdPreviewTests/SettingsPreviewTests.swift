@@ -102,7 +102,7 @@ struct SettingsPreviewTests {
             workspace.settings.codemode = false
         }
         // Tall enough that the last row still shows at text scale 1.3, where the subtitles wrap to four lines.
-        try await Preview.renderMatrix(surface, size: CGSize(width: 1280, height: 1400)) {
+        try await Preview.renderMatrix(surface, size: CGSize(width: 1280, height: 1750)) {
             SettingsView(vm: workspace.vm)
         }
     }
@@ -389,6 +389,19 @@ struct SettingsPreviewTests {
         workspace.vm.settings.goalsEnabled = enabled
         workspace.vm.settingsSection = .experiments
         try await Preview.renderMatrix(enabled ? "settings-experiments-goals-on" : "settings-experiments-goals-off",
+                                       size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
+    /// The Computer use card, off (the default) and on with its two permission rows.
+    @Test(arguments: [false, true])
+    func settingsComputerUseExperiment(_ enabled: Bool) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.settings.computerUseEnabled = enabled
+        workspace.vm.settingsSection = .experiments
+        try await Preview.renderMatrix(enabled ? "settings-experiments-computer-use-on" : "settings-experiments-computer-use-off",
                                        size: CGSize(width: 1440, height: 900)) {
             SettingsView(vm: workspace.vm)
         }

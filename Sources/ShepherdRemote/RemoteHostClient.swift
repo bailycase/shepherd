@@ -914,6 +914,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .commitInfo, .commitMessage, .commit: RemoteProtocol.reviewCommitCapability
         case .terminals: RemoteProtocol.terminalActivityCapability
         case .pullRequest: RemoteProtocol.pullRequestLinkCapability
+        case .branchStatus, .branchUpdate, .branchAbort: RemoteProtocol.branchStatusCapability
         case .devServers: RemoteProtocol.browserTunnelCapability
         case .files, .fileRead: RemoteProtocol.filesCapability
         case .fileWrite: RemoteProtocol.filesWriteCapability
@@ -935,7 +936,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         // A drafted commit message and the Changes reads run a model or git over a large tree.
         let slow: Bool
         switch query {
-        case .commitMessage, .changesOverview, .changesList: slow = true
+        case .commitMessage, .changesOverview, .changesList, .branchUpdate: slow = true
         default: slow = false
         }
         let cancellable: Bool
@@ -1246,6 +1247,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             case .fleetCheckIgnore: "set aside what Check finds"
             case .fleetAutoDispatch, .fleetBatteryCountsHalf: "change how Fleet picks a Mac"
             case .designToolEnabled: "toggle the Design tool experiment"
+            case .computerUseEnabled: "toggle the Computer use experiment"
+            case .threadsStartThreads, .subThreadPlace: "change what threads a thread starts"
             case .subagentDefaults, .worktreeDeleteAction, .skillsInSlashMenu, .mcpProjectConfig, .slashCommand, .closeOnMerge: "change this setting"
             default: "change this default"
             }

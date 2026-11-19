@@ -203,8 +203,24 @@ public final class NativeThreadStore {
     /// The word the draft starts with once a space ends it (`ComposerLeadingCommand`).
     public private(set) var draftLeadingCommand: String?
     public private(set) var submissions: [NativeThreadSubmission] = [] {
-        didSet { noteRecoveryChange(from: oldValue) }
+        didSet {
+            noteRecoveryChange(from: oldValue)
+            // A send joins the thread as "Sending…" while it waits, and leaves it when it settles.
+            let was = oldValue.filter { $0.state == .sending }.map(\.id)
+            let sending = submissions.filter { $0.state == .sending }.map(\.id)
+            if was != sending {
+                let kept = Set(sending)
+                outgoing = outgoing.filter { kept.contains($0.key) }
+                derive()
+            }
+        }
     }
+    /// The words of each send the store captured and the host has not answered, as the thread draws them
+    /// (`NativeThreadMessage.sendingStatus`), and whether it waits behind the reply still streaming.
+    @ObservationIgnored private var outgoing: [UUID: (message: NativeThreadMessage, queued: Bool)] = [:]
+    /// The accepted send's turn was already in the thread as "Sending…" when the host took it (a send while a turn runs
+    /// waits in Up next or under the reply instead), so acceptance adds no turn for a reader to land on.
+    @ObservationIgnored public private(set) var lastSendShownEarly = false
     /// Told synchronously whenever the captured records' text changes (a capture, before its words
     /// leave the draft; an acceptance, a discard, a restore), so the app can keep them through a
     /// quit or crash (`NativeRecoveredSubmission`). Text only: never images or attachment payloads.
@@ -481,6 +497,8 @@ public final class NativeThreadStore {
     @ObservationIgnored private var aliases: [String: String] = [:]
     /// Snapshot requests started so far. A change of this client's (a queue edit, an echo)
     /// stands until a snapshot requested after the host accepted it arrives.
+    // Only the picked control leads the host. Capabilities and the session snapshot stay authoritative.
+    @ObservationIgnored private var settingPick: (id: UUID, action: NativeThreadRequest, acceptedAfter: Int?)?
     @ObservationIgnored private var pulls = 0
     @ObservationIgnored private var overlays: [QueueOverlay] = []
     /// Queued messages this client holds (an editor open on them). A thread off screen cannot
@@ -715,14 +733,15 @@ public final class NativeThreadStore {
         let provisional = (snapshot?.provisional ?? []).filter {
             messageIndex[$0.entryID] == nil && ($0.toolCallID == nil || toolCounts[$0.toolCallID!] == nil)
         }
+        let sending = sendingTail()
         let tail: [NativeThreadMessage]
         if snapshot?.queue != nil {
             // The host orders the run (user messages where pi read them) and shows its own
             // pending row for a send; an echo stands in only until the host's next snapshot.
             let live = Set(provisional.map(\.entryID))
-            tail = provisional + pending.filter { !live.contains($0.entryID) }
+            tail = provisional + pending.filter { !live.contains($0.entryID) } + sending.now + sending.queued
         } else {
-            tail = pending.filter { $0.status != "queued" } + provisional + pending.filter { $0.status == "queued" }
+            tail = pending.filter { $0.status != "queued" } + sending.now + provisional + pending.filter { $0.status == "queued" } + sending.queued
         }
         tailPayloadBytes = tail.reduce(0) { $0 + Self.payloadBytes($1) }
         var changed = min(historyDirty, displayedHistoryCount)
@@ -750,7 +769,7 @@ public final class NativeThreadStore {
         }
         let displayed = displayedMessages
         // A steer lands inside the running turn; it does not restart its clock.
-        let promptAt = displayed.last { $0.role == "user" && $0.status != "queued" && $0.origin != .steered }?.timestamp
+        let promptAt = displayed.last { $0.role == "user" && $0.status != "queued" && $0.status != NativeThreadMessage.sendingStatus && $0.origin != .steered }?.timestamp
         // Keep the current turn boundary when its opening message falls outside a history page.
         if let promptAt, promptAt > (lastPromptAt ?? -.infinity) { lastPromptAt = promptAt }
         let runs = snapshot?.subagents ?? []
@@ -814,7 +833,7 @@ public final class NativeThreadStore {
         // The streaming reply is the last one, with only queued follow-ups below it.
         let lastReply = turns.lastIndex { !$0.isUser }
         let liveReply = running ? lastReply.flatMap { index in
-            turns[(index + 1)...].allSatisfy { $0.messages.allSatisfy { $0.status == "queued" } } ? index : nil
+            turns[(index + 1)...].allSatisfy { $0.messages.allSatisfy { $0.status == "queued" || $0.status == NativeThreadMessage.sendingStatus } } ? index : nil
         } : nil
         var rows: [NativeThreadRow] = []
         rows.reserveCapacity(turns.count - rowStart)
@@ -936,6 +955,33 @@ public final class NativeThreadStore {
             listRows.replaceSubrange(rowStart..., with: list)
         }
         deriveChrome()
+    }
+
+    /// The sends captured and not yet answered, as user messages for the thread's tail: under the id the accepted echo
+    /// takes (`pending:<operation>`), so acceptance and the host's own row for it are the same turn. Left out once the
+    /// host shows the message itself (its pending row or pi's saved message names the operation), so it is never drawn twice.
+    private func sendingTail() -> (now: [NativeThreadMessage], queued: [NativeThreadMessage]) {
+        guard !outgoing.isEmpty else { return ([], []) }
+        let recent = messages.suffix(64)
+        let hosted = Set((snapshot?.provisional ?? []).compactMap(\.operationID) + recent.compactMap(\.operationID))
+        var now: [NativeThreadMessage] = [], queued: [NativeThreadMessage] = []
+        for submission in submissions where submission.state == .sending {
+            guard let item = outgoing[submission.id], !hosted.contains(submission.id),
+                  messageIndex[item.message.entryID] == nil else { continue }
+            if item.queued { queued.append(item.message) } else { now.append(item.message) }
+        }
+        return (now, queued)
+    }
+
+    /// The user message a send stands for before the host reads it: "sending" until it is accepted, then "pending"
+    /// (or "queued" behind a turn still running).
+    private func echo(_ operation: UUID, text: String, status: String, images: Int, steered: Bool,
+                      elements: [NativeAttachedElement]) -> NativeThreadMessage {
+        NativeThreadMessage(entryID: "pending:\(operation.uuidString)", role: "user",
+                            blocks: [NativeThreadBlock(kind: .text, text: text)]
+                                + (0..<images).map { _ in NativeThreadBlock(kind: .unsupportedImage, text: "[Image unavailable in native thread]") },
+                            status: status, timestamp: Date().timeIntervalSince1970 * 1000, origin: steered ? .steered : nil,
+                            browserElements: elements.isEmpty ? nil : elements.map(\.element.withoutHTML))
     }
 
     /// Compare only the incoming page, retaining the loaded prefix and its ID indexes. Full
@@ -1069,11 +1115,18 @@ public final class NativeThreadStore {
         if widgets != self.widgets { self.widgets = widgets }
         let commands = value?.commands ?? []
         if commands != self.commands { self.commands = commands }
-        if value?.model != model { model = value?.model }
-        if value?.thinking != thinking { thinking = value?.thinking }
+        var shownModel = value?.model, shownThinking = value?.thinking
+        var tier = value?.serviceTier.flatMap(ServiceTier.init(rawValue:)) ?? .standard
+        switch settingPick?.action {
+        case .setModel(_, _, _, let pick): shownModel = pick
+        case .setThinking(_, _, _, let pick): shownThinking = pick
+        case .setServiceTier(_, _, _, let pick): tier = ServiceTier(rawValue: pick) ?? tier
+        default: break
+        }
+        if shownModel != model { model = shownModel }
+        if shownThinking != thinking { thinking = shownThinking }
         let levels = NativeThinkingLevel.levels(value?.thinkingLevels)
         if levels != thinkingLevels { thinkingLevels = levels }
-        let tier = value?.serviceTier.flatMap(ServiceTier.init(rawValue:)) ?? .standard
         if tier != serviceTier { serviceTier = tier }
         let tiers = (value?.serviceTiers ?? []).compactMap(ServiceTier.init(rawValue:))
         if tiers != serviceTiers { serviceTiers = tiers }
@@ -1342,6 +1395,7 @@ public final class NativeThreadStore {
 
     private func resetPresentationSession(_ value: NativeThreadSnapshot) {
         guard snapshot?.piSessionID != value.piSessionID || snapshot?.generation != value.generation else { return }
+        settingPick = nil
         cancelProse()
         presentationCache = [:]
         thinkingCache = [:]
@@ -1530,6 +1584,7 @@ public final class NativeThreadStore {
             }
         }
         resumeStartWaiters(false)
+        if settingPick != nil { settingPick = nil; deriveChrome() }
         epoch = UUID()
         // A loop resting ends too.
         restWake.signal()
@@ -1901,6 +1956,7 @@ public final class NativeThreadStore {
                     Self.signposter.endInterval("Thread history join await", joiningWait)
                     guard !Task.isCancelled, epoch == run, recentRequest == ticket else { return }
                 }
+                if let accepted = settingPick?.acceptedAfter, accepted < pull { settingPick = nil }
                 settlePending(value, sameSession: sameSession, pull: pull)
                 settleRunning(value.running, catchingUp: catchUp == nil)
                 if !resetHistory, sameSession, value.olderCursor != nil,
@@ -1934,6 +1990,7 @@ public final class NativeThreadStore {
                     clearStartProblem()
                     // Nothing changed on the host: whatever this client changed before it asked
                     // is in the snapshot it already has, or was refused.
+                    if let accepted = settingPick?.acceptedAfter, accepted < pull { settingPick = nil; deriveChrome() }
                     let before = overlays.count
                     overlays.removeAll { $0.accepted.map { $0 < pull } ?? false }
                     if overlays.count != before { deriveQueue() }
@@ -2696,6 +2753,18 @@ public final class NativeThreadStore {
         busy = true
         notice = nil
         inFlight.insert(operation)
+        switch action {
+        case .setModel, .setThinking, .setServiceTier:
+            settingPick = (operation, action, nil)
+            deriveChrome()
+        default: break
+        }
+        if submission != nil, let sentText {
+            // While a turn runs it waits below the reply streaming (whatever its delivery: the host holds it in Up next, or an
+            // older host's echo follows the turn), so the reply's own rows are never moved by it.
+            outgoing[operation] = (echo(operation, text: sentText, status: NativeThreadMessage.sendingStatus, images: images.count,
+                                        steered: false, elements: elements), current.running)
+        }
         if let submission {
             let interval = Self.signposter.beginInterval("Thread submit capture")
             submissions.append(submission)
@@ -2740,6 +2809,7 @@ public final class NativeThreadStore {
                 wasAccepted = true
                 if let sentText {
                     lastSendQueued = queued
+                    lastSendShownEarly = submission != nil && !current.running
                     sentCount += 1
                     if hostQueues && current.running {
                         // The host queued it (or steered it in): it shows in the queue, not the thread.
@@ -2760,12 +2830,8 @@ public final class NativeThreadStore {
                         deriveQueue()
                     } else {
                         let id = "pending:\(operation.uuidString)"
-                        pending.append(NativeThreadMessage(entryID: id, role: "user",
-                                                           blocks: [NativeThreadBlock(kind: .text, text: sentText)],
-                                                           status: queued ? "queued" : "pending",
-                                                           timestamp: Date().timeIntervalSince1970 * 1000,
-                                                           origin: current.running && delivery == .steer ? .steered : nil,
-                                                           browserElements: elements.isEmpty ? nil : elements.map(\.element.withoutHTML)))
+                        pending.append(echo(operation, text: sentText, status: queued ? "queued" : "pending", images: images.count,
+                                            steered: current.running && delivery == .steer, elements: elements))
                         if hostQueues { echoAccepted[id] = pulls }
                     }
                     derive()
@@ -2798,12 +2864,17 @@ public final class NativeThreadStore {
             } else { notice = String(describing: error) }
         }
         guard epoch == run else { return wasAccepted }
+        if settingPick?.id == operation {
+            if wasAccepted { settingPick?.acceptedAfter = pulls }
+            else { settingPick = nil; deriveChrome() }
+        }
         busy = !startWaiters.isEmpty || inFlight.contains { $0 != operation }
         // inFlight still gates new actions through reconciliation, without marking a known
         // acceptance unknown if visibility changes while its refresh is in flight.
         // Actions retain the ready-to-send contract. A stale-session refusal, startup answer
         // or actual connection loss still takes refresh's full bootstrap path.
         await refresh()
+        if settingPick?.id == operation, !ready || Task.isCancelled { settingPick = nil; deriveChrome() }
         return wasAccepted
     }
 

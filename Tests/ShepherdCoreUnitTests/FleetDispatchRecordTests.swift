@@ -68,4 +68,14 @@ struct FleetDispatchRecordTests {
         agent.dispatchedFrom = from
         #expect(try JSONDecoder().decode(Agent.self, from: JSONEncoder().encode(agent)).dispatchedFrom == from)
     }
+
+    @Test func startedByIsWrittenOnlyWhenSetAndDecodesWithoutIt() throws {
+        var agent = Agent(name: "Split slow UI tests", spaceID: SpaceID(), tabID: TabID())
+        let plain = String(decoding: try JSONEncoder().encode(agent), as: UTF8.self)
+        #expect(!plain.contains("startedBy"))
+        #expect(try JSONDecoder().decode(Agent.self, from: Data(plain.utf8)).startedBy == nil)
+        let started = StartedBy(agentID: AgentID(), agentTitle: "Speed up checkout CI", at: 5, depth: 2)
+        agent.startedBy = started
+        #expect(try JSONDecoder().decode(Agent.self, from: JSONEncoder().encode(agent)).startedBy == started)
+    }
 }

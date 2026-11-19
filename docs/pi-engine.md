@@ -12,6 +12,7 @@ imported from the bundle's `index.js`) runs on its node. Nothing runs the `pi` o
 | Path in `Contents/` | What |
 | --- | --- |
 | `Helpers/node` | Node for `arm64` only (Shepherd runs on Apple silicon only), Node's release binary as published. Never stripped |
+| `Helpers/ShepherdComputerUse.app` | The computer-use driver for Settings ▸ Experiments ▸ Computer use: the `arm64` slice of the pinned `cua-driver` release (MIT, noticed in `THIRD-PARTY-NOTICES`) in a background app bundle, so the service each thread starts can draw the agent's cursor. Staging signs it ad hoc; the build signs it with Shepherd's identity and no entitlements |
 | `Resources/pi-engine/package.json` | pi's, with its version and config-dir name |
 | `Resources/pi-engine/dist/` | Pi's upstream modular CLI at `cli.js` and SDK at `index.js`; the published bundle remains present but is not a production entry |
 | `Resources/pi-engine/dist/modes/interactive/{theme,assets}/`, `dist/core/export-html/` | the themes, interactive assets and export templates pi finds beside the bundle |
@@ -29,7 +30,8 @@ the package directory and pi's version.
 
 ## The pin and staging
 
-`scripts/pi-engine-pin.json` pins Node (version, and the SHA-256 of its `darwin-arm64.tar.xz`) and
+`scripts/pi-engine-pin.json` pins Node (version, and the SHA-256 of its `darwin-arm64.tar.xz`), the
+computer-use driver (version, and the SHA-256 of its universal release archive) and
 Pi and its SDK modules by install location, version, registry tarball and `sha512` integrity.
 
 `python3 scripts/pi_engine.py stage` (stdlib only):
@@ -228,11 +230,11 @@ stand-in for pi.dev (`Tests/Extensions/fixtures/catalog-stub.mjs`), never the ne
 
 Xcode's Resources phase copies `.build/pi-engine/Resources/pi-engine` as a native folder resource.
 The sandboxed "Embed pi engine" phase remains last in all three Mac configurations. It checks
-`pin.json`, copies Node into `Contents/Helpers`, and signs Node with `scripts/sign-engine.sh`
+`pin.json`, copies Node and the computer-use driver into `Contents/Helpers`, and signs Node with `scripts/sign-engine.sh`
 when the build signs. Neither phase downloads.
 
-Script sandboxing stays on. `inputs.xcfilelist` declares only Node and the stamp;
-`outputs.xcfilelist` declares `Helpers` and Node. Listing the SDK's thousands of individual
+Script sandboxing stays on. `inputs.xcfilelist` declares only the two helpers and the stamp;
+`outputs.xcfilelist` declares `Helpers` and the two helpers. Listing the SDK's thousands of individual
 paths exceeded macOS's argument limit when Xcode launched `sandbox-exec`. The native folder
 copy avoids that limit without disabling sandboxing. A build before staging fails on missing
 inputs; one after a pin change fails on the stamp. Stage and build again.

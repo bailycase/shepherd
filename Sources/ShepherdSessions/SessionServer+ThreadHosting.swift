@@ -12,14 +12,24 @@ public struct ThreadHosting {
         public var serviceTier: ServiceTier
         public var worktreeBaseMode: WorktreeBaseMode
         public var worktreeFetchBeforeCreate: Bool
+        /// Settings ▸ Agents ▸ Threads a thread starts work in: where `agent_spawn` puts one that doesn't say.
+        public var subThreadPlace: SpawnPlace
+        /// Settings ▸ Agents ▸ Threads can start threads: off, agent_spawn is refused in a turn a person didn't start.
+        public var threadsStartThreads: Bool
+        /// Settings ▸ Fleet ▸ At most per thread: threads one thread started that run at once.
+        public var threadCap: Int
 
         public init(model: String?, thinking: ThinkingLevel, serviceTier: ServiceTier,
-                    worktreeBaseMode: WorktreeBaseMode, worktreeFetchBeforeCreate: Bool) {
+                    worktreeBaseMode: WorktreeBaseMode, worktreeFetchBeforeCreate: Bool, subThreadPlace: SpawnPlace = .checkout,
+                    threadsStartThreads: Bool = false, threadCap: Int = HostSettings.fleetThreadCapDefault) {
+            self.threadsStartThreads = threadsStartThreads
+            self.threadCap = threadCap
             self.model = model
             self.thinking = thinking
             self.serviceTier = serviceTier
             self.worktreeBaseMode = worktreeBaseMode
             self.worktreeFetchBeforeCreate = worktreeFetchBeforeCreate
+            self.subThreadPlace = subThreadPlace
         }
     }
 
@@ -91,10 +101,8 @@ extension SessionServer {
         onRemotePaneRequest = panes
         // An agent's agent_* tools: its peers are this host's threads.
         serveAgentPeers(AgentPeerHosting(
-            defaults: { let defaults = hosting.defaults(); return (defaults.model, defaults.thinking) },
-            startAgent: { [unowned self] config in
-                try await startNewAgent(config, launch: hosting.launch(), defaultServiceTier: hosting.defaults().serviceTier, mcp: hosting.mcp)
-            },
+            defaults: hosting.defaults,
+            startAgent: { [unowned self] request in try await startRequestedAgent(request, hosting: hosting) },
             deleteAgent: { [unowned self] id, done in
                 Task { @MainActor in
                     do { try await deleteAgent(id); done(nil) } catch { done(error) }
@@ -278,6 +286,7 @@ extension SessionServer {
             config.worktreePath = path
         }
         config.dispatchedFrom = request.dispatchedFrom
+        config.startedBy = request.startedBy
         // A thread Fleet started for work in a folder of the repository starts in that folder of its fresh checkout,
         // so its checkout is made before the thread is.
         if let subdirectory = request.subdirectory, config.worktreePath != nil {

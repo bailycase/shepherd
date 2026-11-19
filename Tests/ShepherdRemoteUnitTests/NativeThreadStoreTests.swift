@@ -1205,6 +1205,50 @@ struct NativeThreadStoreTests {
         #expect(model == "p/other" && level == "high")
     }
 
+    /// A poll already on its way must not undo a pick. Only the host's answer (including its
+    /// clamped level or refusal) settles it. Other composer controls need no guessed values.
+    @Test(arguments: ["setModel", "setThinking", "setServiceTier"])
+    func composerShowsThePickBeforeTheHostAnswers(_ action: String) async {
+        let host = FakeHost(F.snapshot(actions: [action], model: "p/current", serviceTier: "standard", serviceTiers: ["standard", "fast"]))
+        host.snapshot.thinking = "low"
+        let store = manualStore()
+        let gate = FirstPullGate()
+        let (opened, open) = AsyncStream<Void>.makeStream()
+        let loop = Task {
+            await store.run { request in
+                if case .snapshot = request { return try host.handle(request) }
+                gate.asked = true
+                for await _ in opened { break }
+                return try host.handle(request)
+            }
+        }
+        defer { loop.cancel(); open.finish() }
+        await until { store.ready }
+        let pick = Task {
+            switch action {
+            case "setModel": await store.setModel("p/new")
+            case "setThinking": await store.setThinking("max")
+            default: await store.setServiceTier(.fast)
+            }
+        }
+        await until { gate.asked }
+        host.snapshot.revision += 1
+        await store.refresh()
+        #expect(store.model == (action == "setModel" ? "p/new" : "p/current"))
+        #expect(store.thinking == (action == "setThinking" ? "max" : "low"))
+        #expect(store.serviceTier == (action == "setServiceTier" ? .fast : .standard))
+        host.acceptAll()
+        if action == "setModel" { host.action = { _ in .failure(code: "unavailable", message: "No such model") } }
+        if action == "setThinking" { host.snapshot.thinking = "high" }
+        if action == "setServiceTier" { host.snapshot.serviceTier = "fast" }
+        host.snapshot.revision += 1
+        open.yield()
+        await pick.value
+        #expect(store.model == "p/current" && store.thinking == host.snapshot.thinking)
+        #expect(store.serviceTier.rawValue == host.snapshot.serviceTier)
+        #expect(store.notice == (action == "setModel" ? "No such model" : nil))
+    }
+
     // MARK: Speed
 
     /// The Speed control follows the host: its action, and a model that offers a tier besides

@@ -390,25 +390,32 @@ struct FleetDispatchTests {
         _ = try parent.info(try await parent.dispatch(key: "on", host: "Mac mini"))
     }
 
-    @Test func aDispatchedThreadCannotSendWork() async throws {
+    @Test func aThreadThreeDeepCannotSendWorkButStillSeesTheFleet() async throws {
         let (a, b, origin) = try await Self.pair()
         defer { a.stop(); b.stop() }
-        // A thread sent from A: its pi (here, a panes connection on B) is refused, whatever B's own settings say.
+        // A thread sent from A by a thread two below the one the person started: three deep on B, whatever B's own settings say.
         b.settings.withValue { $0.apply(.fleetThreadsCanSend(true)) }
         b.server.fleetHostSettingsChanged(b.settings.current)
         let aID = try await a.hostID()
         let viaA = try await b.connectAsPeer(a)
         defer { viaA.disconnect() }
         _ = try await viaA.fleetDispatchCreate(FleetDispatchCreate(dispatchID: UUID(), task: "x", title: "x", repoKey: Self.repoKey, commitSHA: origin.sha,
-                                                                  from: FleetDispatchSender(hostID: aID, hostName: "MacBook Pro", agentTitle: "Ship")))
+                                                                  from: FleetDispatchSender(hostID: aID, hostName: "MacBook Pro", agentID: AgentID(),
+                                                                                            agentTitle: "Ship", depth: 2)))
         try await Self.wait("a dispatched thread") { !b.dispatched.isEmpty }
         let sent = try #require(b.dispatched.first)
+        #expect(sent.threadDepth == 3)
         let dispatched = Parent(agent: sent, extension: try ExtensionClient(path: b.host.socketPath), mac: b)
         try dispatched.hello()
-        guard case .error(_, FleetDispatchCode.fleetScope, _) = try await dispatched.dispatch(key: "chain") else { Issue.record("a dispatched thread sent work on"); return }
-        guard case .error(_, FleetDispatchCode.fleetScope, _) = try await dispatched.call({ .fleetListHosts(id: $0, agentID: sent.id) }) else {
-            Issue.record("a dispatched thread listed the fleet")
-            return
+        guard case .error(_, FleetDispatchCode.tooDeep, _) = try await dispatched.dispatch(key: "chain") else { Issue.record("a thread three deep sent work on"); return }
+        if case .error(_, let code, _) = try await dispatched.call({ .fleetListHosts(id: $0, agentID: sent.id) }) {
+            Issue.record("a thread three deep can't list the fleet: \(code)")
+        }
+        // A sender three deep is refused by the Mac it sends to as well.
+        await #expect(throws: (any Error).self) {
+            try await viaA.fleetDispatchCreate(FleetDispatchCreate(dispatchID: UUID(), task: "y", title: "y", repoKey: Self.repoKey, commitSHA: origin.sha,
+                                                                   from: FleetDispatchSender(hostID: aID, hostName: "MacBook Pro", agentID: AgentID(),
+                                                                                             agentTitle: "Ship", depth: 3)))
         }
 
         // The rest of the table (a project worker, a coordinator, a design's agent, an automation run) is `FleetDispatchScopeTests`.

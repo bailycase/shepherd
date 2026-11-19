@@ -69,7 +69,7 @@ struct AppDialogs: ViewModifier {
                     .dialogSheetFrame()
             }
             .sheet(item: $vm.remoteRenameItem) { item in
-                RenameDialog(title: "Rename agent", name: vm.remoteAgent(item.value)?.name ?? "") { name in
+                RenameDialog(title: "Rename agent", name: vm.remoteAgent(item.value).map { vm.presentedThreadName(.remote(item.value), hostName: $0.name) } ?? "") { name in
                     vm.performRemoteAction(item.value, action: .rename(name: name))
                     vm.remoteRenameTarget = nil
                 } onCancel: {
@@ -92,7 +92,7 @@ struct AppDialogs: ViewModifier {
                 ProjectRenameDialog(vm: vm, space: space)
             }
             .sheet(item: $vm.agentRenameAgent) { agent in
-                RenameDialog(title: "Rename agent", name: agent.name) { name in
+                RenameDialog(title: "Rename agent", name: vm.presentedThreadName(.local(agent.id), hostName: agent.name)) { name in
                     vm.renameAgent(agent.id, to: name)
                     vm.agentRenameTarget = nil
                 } onCancel: {
@@ -269,8 +269,8 @@ struct WorktreeDeleteDialog: View {
         let ref = vm.localRef(agent.id)
         self.init(agent: agent, path: path, settings: vm.settings, probe: {
             if let ref {
-                let info = if let known = vm.hostWorktreeInfo { known } else { try await vm.localHostWorktreeInfo(ref) }
-                vm.hostWorktreeInfo = info
+                let info = if let known = vm.hostWorktreeInfo[agent.id] { known } else { try await vm.localHostWorktreeInfo(ref) }
+                vm.hostWorktreeInfo[agent.id] = info
                 return info.warning
             }
             // No checkout to probe (its space is gone): `git -C ""` would probe the app's own
@@ -279,13 +279,13 @@ struct WorktreeDeleteDialog: View {
             return await Task.detached(priority: .userInitiated) {
                 GitWorktree.unreconciledWork(worktree: path, branch: branch)
             }.value
-        }, cancel: { vm.worktreeDeleteTarget = nil; vm.hostWorktreeInfo = nil }) { removeWorktree in
+        }, cancel: { vm.worktreeDeleteTarget = nil; vm.hostWorktreeInfo[agent.id] = nil }) { removeWorktree in
             // Same dismissal choreography as Remove Space: deleting tears down a mounted layout,
             // so the sheet finishes dismissing first (`onDismiss`).
             let id = agent.id
             vm.afterDialogDismiss = {
                 vm.deleteWorktreeAgent(id, removeWorktree: removeWorktree)
-                vm.hostWorktreeInfo = nil
+                vm.hostWorktreeInfo[id] = nil
             }
             vm.worktreeDeleteTarget = nil
         }

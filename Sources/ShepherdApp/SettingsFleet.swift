@@ -120,7 +120,7 @@ private struct FleetDispatchGroup: View {
                 SettingsSwitch(label: "Auto", isOn: controls.autoDispatch)
             }
             SettingsRow(title: "Threads can send work to other Macs",
-                        subtitle: "A thread hands separate work to the Mac with room and wakes up with the result. Threads it sends can’t send more.") {
+                        subtitle: "A thread hands separate work to the Mac with room and wakes up with the result. Threads three deep can’t send more.") {
                 SettingsSwitch(label: "Threads can send work to other Macs", isOn: controls.threadsCanSend)
             }
             SettingsRow(title: "At most per thread", subtitle: "Threads a thread started that run at once, across every Mac.") {

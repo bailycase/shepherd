@@ -97,6 +97,14 @@ struct ThreadScreen: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
+            // A thread another thread started names it under the header (SubThreadPhone, SubThreadPad).
+            if !arranged, let startedBy = agent?.startedBy {
+                ThreadStartedByLine(startedBy: startedBy)
+                    .padding(.horizontal, MobileLayout.gutter)
+                    .background(Color.sh.bgWindow)
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
             if inlineTitle {
                 HStack(spacing: SH.Space.m) {
                     if sidebarHidden { ThreadSidebarButton() }
@@ -156,7 +164,7 @@ struct ThreadScreen: View {
                 // The system's ••• menu, so it overflows with the bar's items where the bar runs
                 // down the side (iPhone Duo).
                 if agent != nil {
-                    ToolbarOverflowMenu { ThreadOptionsItems(ref: ref, store: store, branch: branch, enabled: key.session != nil) }
+                    ToolbarOverflowMenu { ThreadOptionsItems(ref: ref, store: store, branch: branch, enabled: key.session != nil) { navigator.present(.review(.branch(ref))) } }
                 }
                 // New thread sits lowest in the side column and stays longest (DuoOpenThread); a
                 // horizontal bar leaves it to the sidebar's row.
@@ -391,7 +399,7 @@ struct ThreadTranscript: View {
                 // A send that goes in now re-attaches; a follow-up that waits in Up next leaves
                 // the reader where they are, now and when it goes.
                 guard !store.lastSendQueued else { return }
-                follow { $0.sent(queued: false); return false }
+                follow { $0.sent(queued: false, turnPresent: store.lastSendShownEarly); return false }
                 tailPin.asked(lander(proxy))
             }
             .onChange(of: rows.last(where: \.isUser)?.id) { _, id in
@@ -564,8 +572,7 @@ struct ThreadTranscript: View {
 }
 
 /// The title and status line (MobileThread, MobileQueue, MobileQuestion, iPadThread boards). On a
-/// phone, the name over "● Idle · ⧉ pi/swiftui-previews": the status word and the worktree's
-/// branch, or "⌂ your checkout" in lantern when pi works in the space's own checkout.
+/// phone, the name over "● Idle": the branch is behind the ••• menu's Branch (GitPhoneD).
 /// On iPad, the name, the branch chip (`SHBranchChip`: the files changed, and the host when there
 /// are several) and any goal, on one line; no status pill, the sidebar's dot says the state.
 struct ThreadTitle: View {
@@ -607,28 +614,10 @@ struct ThreadTitle: View {
     private var compact: some View {
         VStack(spacing: SH.Space.xxs) {
             Text(name).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
-            // The branch truncates in the middle; the status word stays whole.
             HStack(spacing: SH.Space.s) {
                 SHStatusDot(status.state)
                 Text(status.label).fontWeight(.medium).foregroundStyle(status.state.textColor).fixedSize()
                 ThreadGoalHeader(store: goalStore, time: goalTime)
-                // A worktree names its branch; your own checkout says so in lantern (MobileQuestion).
-                if let branch {
-                    let checkout = branch.kind == .checkout
-                    let tint = checkout ? Color.sh.lanternText : Color.sh.textTertiary
-                    Text("·").foregroundStyle(tint)
-                    Image(systemName: checkout ? "house" : "square.on.square")
-                        .imageScale(.small)
-                        .foregroundStyle(tint)
-                    if checkout {
-                        Text("your checkout").fontWeight(.medium).foregroundStyle(tint)
-                    } else {
-                        Text(branch.branch)
-                            .font(.sh(.mono))
-                            .foregroundStyle(tint)
-                            .truncationMode(.middle)
-                    }
-                }
             }
             .font(.sh(.caption))
             .lineLimit(1)
@@ -746,9 +735,19 @@ private struct ThreadOptionsItems: View {
     let store: NativeThreadStore
     let branch: AgentBranchLabel?
     let enabled: Bool
+    /// Opens the branch sheet (GitPhoneD's Branch).
+    let openBranch: () -> Void
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
+        if let branch {
+            Section {
+                Button(action: openBranch) {
+                    Label("Branch", systemImage: SHGlyph.gitBranch.symbolName)
+                    Text(BranchStatusStore.of(ref).menuDetail(branch: branch.branch))
+                }
+            }
+        }
         Section {
             ForEach(PadSidePaneTab.allCases, id: \.self) { tab in
                 Button { navigator.open(.paneScreen(tab, thread: ref)) } label: {

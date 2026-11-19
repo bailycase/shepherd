@@ -128,9 +128,13 @@ struct AgentLifecycleTests {
         vm.afterDialogDismiss = { vm.deleteAgent(agents[1].agent.id) }
         vm.agentDeleteTarget = nil
         vm.runAfterDialogDismiss()
+        #expect(vm.selectedAgentID == agents[0].agent.id)
+        #expect(!vm.sidebarLists.all.contains { $0.id == .local(agents[1].agent.id) })
+        #expect(vm.state.agents.count == 3, "navigation does not wait for the host")
+        vm.selectAgent(agents[2].agent.id)
         await app.settle()
 
-        #expect(vm.selectedAgentID == agents[0].agent.id)
+        #expect(vm.selectedAgentID == agents[2].agent.id)
         #expect(vm.state.agents.map(\.id) == [agents[0].agent.id, agents[2].agent.id])
     }
 
@@ -177,6 +181,7 @@ struct AgentLifecycleTests {
         await app.settle()
 
         #expect(vm.remoteActionError != nil)
+        #expect(vm.sidebarLists.all.contains { $0.id == .local(agent.agent.id) })
         #expect(app.server.state == original)
         #expect(vm.state == original)
     }

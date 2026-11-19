@@ -438,6 +438,37 @@ struct AgentLaunchCommandTests {
                 "a design's agent has no Browser")
     }
 
+    /// Settings ▸ Experiments ▸ Computer use: a thread's launch loads the extension and names the bundled
+    /// driver and its state folder; an automation, a design's agent, a coordinator or a build without the
+    /// driver gets none of it.
+    @Test func computerUseReachesOnlyThreadsWithTheBundledDriver() throws {
+        let thread = Agent(name: "t", spaceID: SpaceID(), tabID: TabID())
+        let wanted = try #require(try AgentLaunch.computerUse(for: thread, enabled: true, isAutomation: false, driver: "/tmp/App/computer-use"))
+        #expect(wanted.driver == "/tmp/App/computer-use" && wanted.extensionPath.hasSuffix("shepherd-computer-use.ts"))
+        #expect(try AgentLaunch.computerUse(for: thread, enabled: false, isAutomation: false, driver: "/tmp/d") == nil)
+        #expect(try AgentLaunch.computerUse(for: thread, enabled: true, isAutomation: true, driver: "/tmp/d") == nil)
+        #expect(try AgentLaunch.computerUse(for: thread, enabled: true, isAutomation: false, driver: nil) == nil)
+        var drawing = thread
+        drawing.designID = DesignID()
+        #expect(try AgentLaunch.computerUse(for: drawing, enabled: true, isAutomation: false, driver: "/tmp/d") == nil)
+        var worker = thread
+        worker.projectWorkerFor = ProjectID()
+        #expect(try AgentLaunch.computerUse(for: worker, enabled: true, isAutomation: false, driver: "/tmp/d") == nil, "nobody watches a project's worker")
+
+        let launch = try StatusExtension.command(
+            home: Self.home, cwd: "/tmp/project",
+            agentID: AgentID(rawValue: "agent-id"), piSessionID: "current-session",
+            socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
+            panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil, subagentsExtensionPath: nil,
+            computerUse: ("/tmp/shepherd-computer-use.ts", "/tmp/App/computer-use", "/tmp/support/computer-use"),
+            model: nil, thinking: nil)
+        #expect(launch.argv[3].hasSuffix(" -e '/tmp/shepherd-computer-use.ts'"))
+        #expect(launch.env["SHEPHERD_COMPUTER_USE"] == "/tmp/App/computer-use")
+        #expect(launch.env["SHEPHERD_COMPUTER_USE_HOME"] == "/tmp/support/computer-use")
+        let off = command(enabled: [0, 1, 2, 3, 4])
+        #expect(!off.env.keys.contains { $0.hasPrefix("SHEPHERD_COMPUTER_USE") } && !off.argv[3].contains("computer-use"))
+    }
+
     /// Every agent's pi loads the service tier extension (even a design's) with the agent's own
     /// tier file named; a pi run by hand in a terminal pane gets neither.
     @Test func everyAgentLoadsTheServiceTierExtensionWithItsOwnFile() {
@@ -497,6 +528,19 @@ struct AgentLaunchCommandTests {
         #expect(drawing.argv[3].components(separatedBy: " -e 'builtin:tool-search'").count - 1 == (mcp ? 1 : 0))
         #expect(ShellIntegration.command(shell: ["/bin/zsh"]).env["SHEPHERD_DEFER_TOOLS"] == "")
         #expect(command().env["SHEPHERD_DEFER_TOOLS"] == nil, "no variable unless the setting asked")
+    }
+
+    /// Settings ▸ Agents ▸ Threads can start threads: one variable agent_spawn's words read, only when on; a terminal blanks it.
+    @Test func threadsCanStartThreadsBringsOneVariableOnlyWhenOn() throws {
+        func launch(_ on: Bool) throws -> SessionCommand {
+            try StatusExtension.command(
+                home: Self.home, cwd: "/tmp/project", agentID: AgentID(rawValue: "agent-id"), piSessionID: "s",
+                socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts", panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil,
+                subagentsExtensionPath: nil, threadsStartThreads: on, model: nil, thinking: nil)
+        }
+        #expect(try launch(true).env["SHEPHERD_THREADS_START_THREADS"] == "1")
+        #expect(try launch(false).env["SHEPHERD_THREADS_START_THREADS"] == nil)
+        #expect(ShellIntegration.command(shell: ["/bin/zsh"]).env["SHEPHERD_THREADS_START_THREADS"] == "")
     }
 
     @Test func ordinaryDesignToolsDoNotTurnAThreadIntoADesignAgent() throws {

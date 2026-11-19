@@ -24,6 +24,8 @@ public struct FleetMoveHandoff: Codable, Hashable, Sendable {
     public var pushMuted: Bool
     /// Where the thread came from when another Mac sent it work: it keeps that, so it still nests under its sender.
     public var dispatchedFrom: DispatchedFrom?
+    /// The thread that started it with `agent_spawn` on the sending Mac: it keeps that, and its depth with it.
+    public var startedBy: StartedBy?
     /// The sender's record of that work, when the thread was sent work and hasn't returned its result: the receiver reports to the same
     /// Mac under the same id from now on.
     public var dispatch: FleetDispatchRecord?
@@ -38,7 +40,7 @@ public struct FleetMoveHandoff: Codable, Hashable, Sendable {
     public var unpushedCommits: Int
 
     public init(agentID: AgentID, sessionID: String, name: String, nameIsFinal: Bool, model: String? = nil, thinking: String? = nil,
-                serviceTier: String? = nil, pushMuted: Bool = false, dispatchedFrom: DispatchedFrom? = nil, dispatch: FleetDispatchRecord? = nil,
+                serviceTier: String? = nil, pushMuted: Bool = false, dispatchedFrom: DispatchedFrom? = nil, startedBy: StartedBy? = nil, dispatch: FleetDispatchRecord? = nil,
                 branch: String? = nil, worktreeBase: String? = nil, lastActiveAt: Double? = nil, movedAt: Double, messages: Int = 0,
                 uncommittedFiles: Int = 0, unpushedCommits: Int = 0) {
         self.agentID = agentID
@@ -50,6 +52,7 @@ public struct FleetMoveHandoff: Codable, Hashable, Sendable {
         self.serviceTier = serviceTier
         self.pushMuted = pushMuted
         self.dispatchedFrom = dispatchedFrom
+        self.startedBy = startedBy
         self.dispatch = dispatch
         self.branch = branch
         self.worktreeBase = worktreeBase
@@ -61,7 +64,7 @@ public struct FleetMoveHandoff: Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case agentID, sessionID, name, nameIsFinal, model, thinking, serviceTier, pushMuted, dispatchedFrom, dispatch, branch, worktreeBase
+        case agentID, sessionID, name, nameIsFinal, model, thinking, serviceTier, pushMuted, dispatchedFrom, startedBy, dispatch, branch, worktreeBase
         case lastActiveAt, movedAt, messages, uncommittedFiles, unpushedCommits
     }
 
@@ -76,6 +79,7 @@ public struct FleetMoveHandoff: Codable, Hashable, Sendable {
         serviceTier = try c.decodeIfPresent(String.self, forKey: .serviceTier)
         pushMuted = try c.decodeIfPresent(Bool.self, forKey: .pushMuted) ?? false
         dispatchedFrom = try? c.decodeIfPresent(DispatchedFrom.self, forKey: .dispatchedFrom)
+        startedBy = try? c.decodeIfPresent(StartedBy.self, forKey: .startedBy)
         dispatch = try? c.decodeIfPresent(FleetDispatchRecord.self, forKey: .dispatch)
         branch = try c.decodeIfPresent(String.self, forKey: .branch)
         worktreeBase = try c.decodeIfPresent(String.self, forKey: .worktreeBase)
@@ -97,6 +101,7 @@ public struct FleetMoveHandoff: Codable, Hashable, Sendable {
         try c.encodeIfPresent(serviceTier, forKey: .serviceTier)
         if pushMuted { try c.encode(pushMuted, forKey: .pushMuted) }
         try c.encodeIfPresent(dispatchedFrom, forKey: .dispatchedFrom)
+        try c.encodeIfPresent(startedBy, forKey: .startedBy)
         try c.encodeIfPresent(dispatch, forKey: .dispatch)
         try c.encodeIfPresent(branch, forKey: .branch)
         try c.encodeIfPresent(worktreeBase, forKey: .worktreeBase)

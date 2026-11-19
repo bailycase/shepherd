@@ -332,7 +332,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                            "Sidebar width"]
         case .terminal: ["Font family", "Font size", "Shell"]
         case .agents: ["Default model", "Default thinking level", "Speed for new threads", "Text generation model", "Image reading model",
-                       "When a turn ends, send the queue", "Compact at", "Trim old tool output from the model's context", "Defer rarely used tools", "Codemode"]
+                       "When a turn ends, send the queue", "Threads can start threads", "Where they work", "Compact at",
+                       "Trim old tool output from the model's context", "Defer rarely used tools", "Codemode"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically", "Deleting a worktree agent", "Close threads when their pull request merges"]
         case .subagents: ["Filter subagents", "New subagent", "Restore defaults", "Show in Finder",
                           "Native subagents", "Subagent display", "Concurrency", "Model", "Thinking", "Context"]
@@ -354,7 +355,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Open files in", "Workspace state", "Extension socket", "Update channel", "Check for updates", "Share diagnostics", "Skipped confirmations", "Reset settings"]
         case .experiments: ["Goals", "Projects", "Suggested instructions", "Learn from", "Can suggest for", "Waiting for you",
-                            "Added from suggestions", "Design tool"]
+                            "Added from suggestions", "Design tool", "Computer use", "Accessibility", "Screen Recording"]
         }
     }
 
@@ -368,6 +369,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .agents: ["Default model": ["claude", "gpt", "provider"], "Text generation model": ["name", "title", "rename", "haiku", "naming", "session naming", "generate"], "Image reading model": ["vision", "images", "screenshots", "pictures", "describe", "multimodal"], "Default thinking level": ["reasoning", "effort"],
                        "Speed for new threads": ["fast", "fast mode", "priority", "service tier", "codex", "openai", "standard"],
                        "When a turn ends, send the queue": ["queue", "follow-up", "one per turn", "all at once"],
+                       "Threads can start threads": ["sub-threads", "subthreads", "agent_spawn", "spawn", "nested", "depth"],
+                       "Where they work": ["sub-threads", "worktree", "checkout", "branch", "agent_spawn"],
                        "Compact at": ["compaction", "compacting", "context window", "percent", "full", "tokens", "auto-compact"],
                        "Trim old tool output from the model's context": ["tool results", "clear", "clipping", "context", "tokens", "compaction",
                                                                      "screenshots", "cache"],
@@ -423,7 +426,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .experiments: ["Projects": ["coordinate", "project work", "new project"],
                             "Fleet": ["macs", "pair", "peers", "machines", "bonjour"],
                             "Suggested instructions": ["lessons", "learned"], "Learn from": ["threads", "automations"],
-                            "Design tool": ["designs", "boards", "mockups"]]
+                            "Design tool": ["designs", "boards", "mockups"],
+                            "Computer use": ["apps", "click", "type", "control", "desktop", "permissions"]]
         }
     }
 

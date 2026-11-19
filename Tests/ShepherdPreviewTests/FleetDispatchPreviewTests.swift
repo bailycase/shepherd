@@ -104,7 +104,7 @@ struct FleetDispatchPreviewTests {
     }
 
     func remoteThread(_ fixture: ThreadFixture, sentBy: FleetSentBy, online: Bool, offline: FleetOfflineBanner? = nil) -> some View {
-        var surface = FleetThreadSurface(sentBy: sentBy, dispatched: nil, goesBack: sentBy.fromThread, cards: [], parent: nil, actions: FleetThreadActions())
+        var surface = FleetThreadSurface(sentBy: sentBy, goesBack: sentBy.fromThread, cards: [], parent: nil, actions: FleetThreadActions())
         surface.offline = offline != nil
         return VStack(spacing: 0) {
             ThreadHeader(store: fixture.store, project: "payments-api", title: "Fix flaky payment test", sentBy: sentBy, sentByOnline: online, openSender: sentBy.fromThread ? {} : nil)
@@ -119,8 +119,7 @@ struct FleetDispatchPreviewTests {
 
     @Test func theDispatchedThreadOnlineAndOffline() async throws {
         let from = DispatchedFrom(hostID: P.here, hostName: "MacBook Pro", agentID: Self.sender, agentTitle: Self.senderTitle, dispatchID: UUID(), at: 1_758_830_040_000)
-        var sentBy = FleetSentBy(from, host: "Mac mini", viewer: P.mini)
-        sentBy.senderOpens = true
+        let sentBy = FleetSentBy(from, host: "Mac mini", viewer: P.mini)
         let fixture = ThreadFixture(Self.dispatchedSnapshot(sentBy: Self.senderTitle))
         defer { fixture.store.stop() }
         try await Preview.renderMatrix("fleet4d-remote-online", size: CGSize(width: 1000, height: 720), ready: { fixture.store.ready }) {

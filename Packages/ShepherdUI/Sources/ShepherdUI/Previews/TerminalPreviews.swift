@@ -7,6 +7,7 @@ private enum TerminalSamples {
         SHTerminalTab(id: "make", title: "make dev", activity: .running),
         SHTerminalTab(id: "logs", title: "tail -f logs", activity: .unseen),
         SHTerminalTab(id: "test", title: "go test", activity: .exited(failed: true)),
+        SHTerminalTab(id: "new", title: "Starting…", activity: .starting),
     ]
 
     static let keys = [

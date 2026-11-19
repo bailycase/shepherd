@@ -844,6 +844,8 @@ public final class SessionServer: @unchecked Sendable {
     /// Main actor: new agents `startNewAgent` is still starting, whose pi is its to spawn and bind (a
     /// client's first poll of the thread must not start a second one: `respawnAgent`).
     @MainActor var creatingAgents = Set<AgentID>()
+    /// Main actor: threads agent_spawn is starting now, by the thread that asked (the per-thread cap counts them).
+    @MainActor var spawning: [AgentID: Int] = [:]
     /// Main actor: what every agent's pi start waits for first (`holdStartsForFirstCopy`), and
     /// how many wait for it now.
     @MainActor var firstCopy: Task<Void, Never>?
@@ -1708,6 +1710,7 @@ public final class SessionServer: @unchecked Sendable {
                         guard let self, let thread = self.rpcThread(forAgent: agentID), thread.isServable else {
                             return continuation.resume(returning: false)
                         }
+                        thread.lastInputFromPerson = false
                         thread.send(id: UUID(), text: text, delivery: delivery, images: [], alone: true) { result in
                             if case .accepted = result { continuation.resume(returning: true) } else { continuation.resume(returning: false) }
                         }
@@ -1734,8 +1737,8 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// An agent's `fleet_*` tool. Refused unless Fleet is on and the thread may send work at all (`fleet_scope`:
-    /// a dispatched thread, a project worker, a coordinator, a design's agent or an automation run
-    /// never does); the settings and the per-thread cap are the engine's. Server queue.
+    /// a project worker, a coordinator, a design's agent or an automation run never does); the settings, the depth
+    /// limit and the per-thread cap are the engine's. Server queue.
     private func serveFleetTool(_ message: ExtensionMessage, from client: ExtensionConnection) {
         let id: Int, agentID: AgentID
         switch message {
@@ -5697,7 +5700,7 @@ public final class SessionServer: @unchecked Sendable {
             routeAgentPeerRequest(.move(agentID: agentID, targetAgentID: targetAgentID, spaceID: spaceID), requestID: id, client: client)
         case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
             break // Served ahead of the scope lists above (`serveFleetTool`).
-        case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking):
+        case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking, let place, let branch):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "cwd and prompt are required"), to: client)
                 return
@@ -5714,7 +5717,10 @@ public final class SessionServer: @unchecked Sendable {
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
             guard agentActionAllowed(senderID: agentID, requestID: id, client: client,
                                      problem: spawnProblem(sender: agentID, cwd: cwd)) else { return }
-            routeAgentPeerRequest(.spawn(agentID: agentID, cwd: cwd, prompt: prompt, model: pinnedModel, thinking: level), requestID: id, client: client)
+            let pinnedBranch = branch.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+            routeAgentPeerRequest(.spawn(agentID: agentID, cwd: cwd, prompt: prompt, model: pinnedModel, thinking: level, place: place, branch: pinnedBranch,
+                                         byPerson: spawnByPerson(agentID)),
+                                  requestID: id, client: client)
         case .createAutomation(let id, let name, let prompt, let cwd, let enabled, let start, let deleteAfterRun, let settings):
             let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -6319,9 +6325,20 @@ public final class SessionServer: @unchecked Sendable {
         return nil
     }
 
+    /// Whether the turn a thread calls agent_spawn in is one a person started: its latest message came from a client's send. With none
+    /// since its pi started, its opening prompt's: a person's unless another thread, Fleet or an automation started it. Server queue.
+    func spawnByPerson(_ agentID: AgentID) -> Bool {
+        if let known = rpcThread(forAgent: agentID)?.lastInputFromPerson { return known }
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else { return false }
+        return agent.startedBy == nil && agent.dispatchedFrom == nil && agent.automationOrigin == nil
+            && !Self.unattendedAgentIDs(in: store.state).contains(agentID)
+    }
+
     /// Why a new thread could not be started in `cwd`, or nil.
     private func spawnProblem(sender: AgentID, cwd: String) -> (code: String, message: String)? {
-        guard store.state.agents.contains(where: { $0.id == sender }) else { return ("no_such_agent", "unknown agent \(sender)") }
+        let state = store.state
+        guard state.agents.contains(where: { $0.id == sender }) else { return ("no_such_agent", "unknown agent \(sender)") }
+        if let refusal = FleetDispatch.depthProblem(for: sender, in: state) { return (refusal.code, refusal.message) }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: (cwd as NSString).expandingTildeInPath, isDirectory: &isDirectory),
               isDirectory.boolValue else { return ("no_such_directory", "\(cwd) is not a directory") }
@@ -6380,6 +6397,7 @@ public final class SessionServer: @unchecked Sendable {
               thread.session.isAlive, thread.session.id == pending.sessionID else { return }
         pending.dispatched = true
         peerDeliveries[id] = pending
+        thread.lastInputFromPerson = false
         thread.send(id: UUID(), text: pending.text, delivery: .followUp, images: [], alone: true) { [weak self] result in
             // Refusal stays fenced until exit; successful dispatch or queueing is now tracked.
             if case .accepted = result { self?.peerDeliveries.removeValue(forKey: id) }

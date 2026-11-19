@@ -71,7 +71,7 @@ struct ThreadHeader: View, Equatable {
                     FleetMoveConfirm.make(running: FleetMoveConfirm.runningCall(in: (store.liveRow ?? store.rows.last)?.presentation?.items ?? []), host: host)
                 }, move: moveTo).equatable()
             }
-            if let sentBy { FleetSentByHeader(sentBy: sentBy, online: sentByOnline, openSender: openSender, showsHost: move == nil).equatable() }
+            if let sentBy { FleetSentByHeader(sentBy: sentBy, online: sentByOnline, openSender: openSender, showsHost: move == nil && sentBy.showsHost).equatable() }
         } trailing: {
             ThreadGoalHeader(store: store)
             if let apps {

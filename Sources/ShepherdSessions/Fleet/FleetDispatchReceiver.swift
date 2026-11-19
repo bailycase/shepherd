@@ -41,6 +41,10 @@ extension FleetDispatch {
         if create.kind == .agentDispatch, create.commitSHA == nil {
             return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "A dispatch from a thread names the commit it starts from.")))
         }
+        // The sender holds its threads to the depth limit; a second wall here.
+        if create.kind == .agentDispatch, let depth = create.from.depth, depth >= StartedBy.maxDepth {
+            return reply(.failure(.init(code: FleetDispatchCode.tooDeep, message: FleetDispatch.tooDeep)))
+        }
         if let subdir = create.subdir, !FleetDispatchGit.isSafeSubdirectory(subdir) {
             return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "That folder isn't inside the repository.")))
         }
@@ -78,6 +82,7 @@ extension FleetDispatch {
             move: create.move.map { FleetMoveInfo(agentID: $0.agentID, stage: .conversation, sessionID: $0.sessionID, messages: $0.messages,
                                                   uncommittedFiles: $0.uncommittedFiles, unpushedCommits: $0.unpushedCommits) }, createdAt: now)
         record.updatedAt = record.createdAt
+        record.parentDepth = create.from.depth
         // A name the person gave the branch, or the branch they chose, is the name here; a thread's own dispatch gets `fleet/<title>`.
         let exact = create.start?.branch != nil || create.kind == .move
         // No checkout yet: the Mac gets one first, and says where that stands (the card "Cloning acme-web on Mac mini").
@@ -225,7 +230,8 @@ extension FleetDispatch {
         request.name = record.title
         request.subdirectory = record.subdir
         request.dispatchedFrom = DispatchedFrom(hostID: record.parentHostID, hostName: record.parentHostName, agentID: record.parentAgentID,
-                                                agentTitle: record.parentTitle, dispatchID: record.id, at: record.createdAt)
+                                                agentTitle: record.parentTitle, dispatchID: record.id, at: record.createdAt,
+                                                depth: record.parentAgentID == nil ? 0 : (record.parentDepth ?? 0) + 1)
         return request
     }
 

@@ -8,7 +8,8 @@ import Testing
 
 /// A thread another thread started on another Mac, in the sidebar (FleetSubthreads): it nests under the thread that sent it with its Mac and stage on a second line,
 /// work with no thread yet has a row of its own, a sender says what it sent and folds more than two, a thread that is back leaves the tree, one
-/// that asks you stays in Needs you too, and one whose sender isn't here is a flat "sent by" row. Both sidebar styles.
+/// that asks you stays in Needs you too, and one whose sender isn't here is a flat "sent by" row. Threads `agent_spawn` started here nest the same way.
+/// The Spaces tree nests nothing.
 @Suite("Fleet sidebar sent threads")
 @MainActor
 struct FleetNestingTests {
@@ -290,27 +291,67 @@ struct FleetNestingTests {
 
     // MARK: Spaces style
 
-    @Test func theSpacesTreeNestsTheSameWay() {
+    @Test func theSpacesTreeNestsNothing() {
         let (sender, children, records) = self.sender(sending: [.running])
         var source = source(local: [sender], hosts: [host(children)], records: records)
         source.hosts[0].state.spaces = [space]
         source.hosts[0].state.agents[0].spaceID = space.id
         let tree = SidebarDerivation.tree(source, options: SidebarTreeOptions())
         let rows = tree.projects.first?.rows ?? []
-        #expect(rows.map(\.title) == ["Speed up checkout CI", "Task 1"])
-        #expect(rows.map(\.fleetNested) == [false, true])
+        #expect(Set(rows.map(\.title)) == ["Speed up checkout CI", "Task 1"])
+        #expect(!rows.contains { $0.fleetNested })
     }
 
-    @Test func theSpacesTreeFoldsAndHoldsWorkWithNoThreadYet() {
+    @Test func theSpacesTreeHoldsWorkWithNoThreadYetInTheSendersSpace() {
         let sender = agent("Speed up checkout CI", .working, in: space)
         let records = (0..<3).map { record(.waitingRoom, parent: sender.id, title: "Task \($0 + 1)", target: nil, host: nil, at: Double($0)) }
         let tree = SidebarDerivation.tree(source(local: [sender], records: records), options: SidebarTreeOptions())
-        let key = SidebarSent.foldKey(.local(sender.id))
-        #expect(tree.visibleRows(collapsed: []).map(\.title) == ["Speed up checkout CI"])
-        #expect(tree.visibleRows(collapsed: [key]).map(\.title) == ["Speed up checkout CI", "Task 1", "Task 2", "Task 3"])
-        let items = tree.items(collapsed: [key], selected: nil, shortcuts: false, connected: [])
-        let titles = items.compactMap { item -> String? in if case .row(let row) = item { row.title } else { nil } }
-        #expect(titles == ["Speed up checkout CI", "Task 1", "Task 2", "Task 3"])
+        #expect(Set(tree.visibleRows(collapsed: []).map(\.title)) == ["Speed up checkout CI", "Task 1", "Task 2", "Task 3"])
+        #expect(!tree.visibleRows(collapsed: []).contains { $0.fleetNested })
+    }
+
+    // MARK: Threads a thread on the same Mac started (agent_spawn)
+
+    func started(_ name: String, by sender: Agent, depth: Int = 1, status: AgentStatus = .working, at: Double = 20) -> Agent {
+        var child = agent(name, status, in: space, at: at)
+        child.startedBy = StartedBy(agentID: sender.id, agentTitle: sender.name, at: at, depth: depth)
+        return child
+    }
+
+    @Test func aThreadAThreadStartedHereNestsUnderItInActivityAndLeavesWhenDone() {
+        let sender = agent("Speed up checkout CI", .working, in: space)
+        let child = started("Split slow UI tests", by: sender)
+        let grandchild = started("Shard UI tests", by: child, depth: 2, at: 21)
+        let finished = started("Bump Swift tools", by: sender, status: .done, at: 22)
+        let built = lists(source(local: [sender, child, grandchild, finished]))
+        // A chain sits flat under its top, in the order it was started.
+        #expect(built.working.map(\.title) == ["Speed up checkout CI", "Split slow UI tests", "Shard UI tests"])
+        #expect(built.working.map(\.fleetNested) == [false, true, true])
+        #expect(built.done.map(\.title) == ["Bump Swift tools"])
+    }
+
+    @Test func aThreadAThreadStartedOnAnotherHostNestsUnderItThere() {
+        let sender = agent("Speed up checkout CI", .working, in: remoteSpace)
+        let child = started("Split slow UI tests", by: sender)
+        let built = lists(source(local: [], hosts: [host([sender, child])]))
+        #expect(built.working.map(\.title) == ["Speed up checkout CI", "Split slow UI tests"])
+        #expect(built.working.last?.sentRoot == .remote(RemoteAgentRef(hostID: Self.miniLink, agentID: sender.id)))
+    }
+
+    @Test func aThreadStillNestsUnderItsStarterAfterEitherMovesToAnotherMac() {
+        let sender = agent("Speed up checkout CI", .working, in: space)
+        let child = started("Split slow UI tests", by: sender)
+        // The child moved to the mini; the starter stayed here. Then the other way round.
+        var built = lists(source(local: [sender], hosts: [host([child])]))
+        #expect(built.working.map(\.title) == ["Speed up checkout CI", "Split slow UI tests"] && built.working.last?.fleetNested == true)
+        built = lists(source(local: [child], hosts: [host([sender])]))
+        #expect(built.working.map(\.title) == ["Speed up checkout CI", "Split slow UI tests"] && built.working.last?.fleetNested == true)
+    }
+
+    @Test func aThreadWhoseStarterIsGoneIsAThreadOfItsOwn() {
+        let sender = agent("Speed up checkout CI", .working, in: space)
+        let built = lists(source(local: [started("Split slow UI tests", by: sender)]))
+        #expect(built.working.map(\.title) == ["Split slow UI tests"] && built.working.first?.fleetNested == false)
     }
 
     @Test func aUserThreadWaitingIsInItsSpaceWhenItWasStartedThere() {

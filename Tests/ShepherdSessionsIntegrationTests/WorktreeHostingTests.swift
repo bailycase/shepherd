@@ -147,6 +147,47 @@ struct WorktreeHostingTests {
         #expect(hosted.scratch.server.state.spaces.contains { $0.id == id })
     }
 
+    /// A device's branch sheet: the host reads how far the branch is behind its base, runs Update on
+    /// the person's tap, and a conflict stops it until Abort puts the branch back.
+    @Test func aClientReadsABranchUpdatesItAndAbortsAConflict() async throws {
+        let hosted = try await host()
+        defer { hosted.stop() }
+        let checkout = try GitWorktree.add(repo: hosted.repo.path, branch: "agent/fix-login")
+        let tree = URL(fileURLWithPath: checkout)
+        try "fix\n".write(to: tree.appendingPathComponent("fix.txt"), atomically: true, encoding: .utf8)
+        for args in [["add", "."], ["commit", "-qm", "fix"]] { try git(args, in: tree) }
+        try "# acme-web\nmore\n".write(to: hosted.repo.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        for args in [["add", "."], ["commit", "-qm", "main moves"]] { try git(args, in: hosted.repo) }
+        let agentID = try await addAgent("fix-login", cwd: checkout, in: hosted, branch: "agent/fix-login")
+        func status() async throws -> RemoteBranchStatus? {
+            guard case .branchStatus(let read) = try await hosted.client.agentQuery(agentID: agentID, query: .branchStatus) else { return nil }
+            return read
+        }
+
+        let before = try await status()
+        #expect(before?.base == "main" && before?.behind == 1 && before?.additions == 1 && before?.conflict == nil)
+        guard case .branchUpdate(let stopped) = try await hosted.client.agentQuery(agentID: agentID, query: .branchUpdate(base: "main", rebase: true)) else {
+            Issue.record("expected an update"); return
+        }
+        #expect(stopped == nil)
+        #expect(try await status()?.behind == 0)
+
+        // Both sides change the same line: the rebase stops, and Abort leaves the branch as it was.
+        try "# acme-web\nmain\n".write(to: hosted.repo.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        for args in [["add", "."], ["commit", "-qm", "main again"]] { try git(args, in: hosted.repo) }
+        try "# acme-web\nbranch\n".write(to: tree.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        for args in [["add", "."], ["commit", "-qm", "branch"]] { try git(args, in: tree) }
+        let head = try git(["rev-parse", "HEAD"], in: tree)
+        guard case .branchUpdate(let conflict) = try await hosted.client.agentQuery(agentID: agentID, query: .branchUpdate(base: "main", rebase: true)) else {
+            Issue.record("expected an update"); return
+        }
+        #expect(conflict == RemoteBranchConflict(rebase: true, files: ["README.md"]))
+        #expect(try await status()?.conflict?.files == ["README.md"])
+        _ = try await hosted.client.agentQuery(agentID: agentID, query: .branchAbort)
+        #expect(try await status()?.conflict == nil)
+        #expect(try git(["rev-parse", "HEAD"], in: tree) == head)
+    }
+
     @Test func aClientCommitsAThreadsChangeThroughTheHost() async throws {
         let hosted = try await host()
         defer { hosted.stop() }

@@ -35,6 +35,9 @@
   - With the matching extension on: `SHEPHERD_EXT_PANES` with `SHEPHERD_SKILL_DIR` (the built-in skill on working in
     Shepherd, which the app writes to the support directory's `shepherd-skill/`), `SHEPHERD_EXT_BROWSER` (the installed
     `shepherd-browser.ts`, for Settings ▸ Pi ▸ Browser tools; never in a design's agent),
+    `SHEPHERD_COMPUTER_USE` and `SHEPHERD_COMPUTER_USE_HOME` (the driver in the bundled `Contents/Helpers/ShepherdComputerUse.app` and
+    `<support>/computer-use`, for Settings ▸ Experiments ▸ Computer use; threads only, never an automation, a design's
+    agent or a coordinator),
     `SHEPHERD_NATIVE_CHILDREN`,
     `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`. The retired `SHEPHERD_CHILD_SCOPE` is
     ignored; profiles load only from `<PI_CODING_AGENT_DIR>/agents`. `SHEPHERD_CHILD_MODEL`,
@@ -54,6 +57,8 @@
     output is on, and `SHEPHERD_DEFER_TOOLS=1` while Defer rarely used tools is on, for a thread's and an automation's
     agent and never a design's (docs/context-budget.md). The extensions register the browser, other-thread,
     automation, review and ordinary-thread design tools `deferred` when they read it, and the launch adds `-e builtin:tool-search`.
+  - `SHEPHERD_THREADS_START_THREADS=1` while Settings ▸ Agents ▸ Threads can start threads is on: `agent_spawn`'s words let the
+    agent start a thread for separate work unasked. Off, the host also refuses agent_spawn in a turn a person didn't start.
   - `SHEPHERD_COMMAND_LIMIT_SECONDS`: a test seam, never set by the app. A bash call with no timeout gets 20 minutes
     (`shepherd-status.ts` for an agent, `shepherd-children.ts` for a helper); this variable replaces that number.
   - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`,

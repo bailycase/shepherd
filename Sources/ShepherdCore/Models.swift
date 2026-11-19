@@ -250,6 +250,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// The Mac and thread that sent this thread's work (Fleet), nil for every other thread. Persisted,
     /// written only when set, and sent to every client with the rest of the state.
     public var dispatchedFrom: DispatchedFrom? = nil
+    /// The thread on this Mac that started this one (`agent_spawn`), nil for every other thread. Persisted, written only when set,
+    /// and sent to every client with the rest of the state.
+    public var startedBy: StartedBy? = nil
     /// Where this thread went when it moved to another Mac (`FleetMove.swift`): the tombstone this Mac keeps. A thread with one is
     /// never started, resumed or recovered here, and no client is sent it. Persisted, written only when set.
     public var movedTo: MovedTo? = nil
@@ -261,6 +264,14 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// while it wasn't, nil when the host doesn't track it (an older host: each device decides).
     public var completionSeen: Bool? {
         completedAt.map { $0 <= (seenCompletedAt ?? -.infinity) }
+    }
+
+    /// How many threads started one another above this one: 0 for a thread the person started. One at `StartedBy.maxDepth`
+    /// starts no more, here or on another Mac. A thread another Mac's thread sent with no depth (an older Mac) counts as 1.
+    public var threadDepth: Int {
+        if let startedBy { return startedBy.depth }
+        guard let from = dispatchedFrom, from.agentID != nil else { return 0 }
+        return from.depth ?? 1
     }
 
     public init(
@@ -322,7 +333,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
         case piSessionID, worktreeBranch, worktreeOriginalBranch, reviewTarget, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, coordinatorFor, projectWorkerFor, executionFor, runtime
-        case designGrants, serviceTier, goalState, lastFailure, automationOrigin, completedAt, seenCompletedAt, pushMuted, dispatchedFrom, movedTo, movedFrom
+        case designGrants, serviceTier, goalState, lastFailure, automationOrigin, completedAt, seenCompletedAt, pushMuted, dispatchedFrom, startedBy, movedTo, movedFrom
     }
 
     public init(from decoder: Decoder) throws {
@@ -373,6 +384,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         seenCompletedAt = try c.decodeIfPresent(Double.self, forKey: .seenCompletedAt)
         pushMuted = (try? c.decodeIfPresent(Bool.self, forKey: .pushMuted)) ?? false
         dispatchedFrom = try? c.decodeIfPresent(DispatchedFrom.self, forKey: .dispatchedFrom)
+        startedBy = try? c.decodeIfPresent(StartedBy.self, forKey: .startedBy)
         movedTo = try? c.decodeIfPresent(MovedTo.self, forKey: .movedTo)
         movedFrom = try? c.decodeIfPresent(MovedFrom.self, forKey: .movedFrom)
         // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
@@ -413,6 +425,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(seenCompletedAt, forKey: .seenCompletedAt)
         if pushMuted { try c.encode(true, forKey: .pushMuted) }
         try c.encodeIfPresent(dispatchedFrom, forKey: .dispatchedFrom)
+        try c.encodeIfPresent(startedBy, forKey: .startedBy)
         try c.encodeIfPresent(movedTo, forKey: .movedTo)
         try c.encodeIfPresent(movedFrom, forKey: .movedFrom)
         // Older remote clients default a missing runtime to terminal and would try to attach a
