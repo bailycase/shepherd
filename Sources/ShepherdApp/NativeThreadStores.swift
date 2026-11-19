@@ -21,8 +21,8 @@ enum ThreadPassWait: Equatable {
 ///
 /// Loaded history: past the `retainedHistories` most recently shown, or past `historyBudget` bytes in all, the threads
 /// shown longest ago let their older history go and keep its end (`NativeThreadStore.releaseToTail`: the last `tailRows` rows,
-/// at most `tailCap` bytes, with what they were derived from), so showing one draws those rows in its first frame, before the pull
-/// that catches it up has returned. Past `tailBudget` bytes of such tails in all, the ones shown longest ago go whole
+/// at most `tailCap` bytes, with what they were derived from), so showing one draws its last screen, or its eager tail, in its first
+/// frame, before the pull that catches it up has returned. Past `tailBudget` bytes of such tails in all, the ones shown longest ago go whole
 /// (`NativeThreadStore.release`) and reload when shown again. The store, its draft, attachments and deck identity stay. A
 /// thread is never released while on screen, selected (`protected`), pinned by a view showing it or scrolled into its history
 /// (`ThreadReaderPins`), or while the store says it holds unsettled work (`canReleaseHistory`); protected threads may keep the

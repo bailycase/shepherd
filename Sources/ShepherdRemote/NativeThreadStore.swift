@@ -1677,8 +1677,8 @@ public final class NativeThreadStore {
 
     /// The thread is far from the screen: lets go of the older history, of what was derived from it and of the images held, and
     /// keeps the last `rows` rows (and the host's newest page of messages, whichever is more) with what they were derived from, so
-    /// that showing it again draws them in its first frame, with nothing to pull, parse or derive, instead of nothing until the
-    /// pull has come back. The tail starts where a turn does, is cut further while it holds more than `maxBytes` of
+    /// that showing it again draws the last of them in its first frame, with nothing to pull, parse or derive, instead of nothing until
+    /// the pull has come back. The tail starts where a turn does, is cut further while it holds more than `maxBytes` of
     /// `retainedHistoryBytes` (never past the last question and its answer), and pages older history in from where it starts
     /// (`olderCursor`). It stays as a thread that is not on screen is, ready and with its snapshot, so the pull that follows catches it up
     /// (`catchUp`): what arrived meanwhile lands over the end of the tail without moving the reader, and rows keep their identities. What
