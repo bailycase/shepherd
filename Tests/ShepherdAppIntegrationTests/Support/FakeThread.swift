@@ -76,6 +76,9 @@ final class FakeThread {
     static let pageSize = 50
     /// While true, snapshot requests answer that pi is still starting.
     var starting = false
+    /// While true, a snapshot request is on its way and does not return until `releaseSnapshots()`.
+    var holdingSnapshots = false
+    private var heldSnapshots: [CheckedContinuation<Void, Never>] = []
     private(set) var snapshotRequests = 0
     /// The sends pi was handed.
     private(set) var sends = 0
@@ -105,6 +108,7 @@ final class FakeThread {
             switch value {
             case .snapshot(_, let before, _):
                 self.snapshotRequests += 1
+                if self.holdingSnapshots { await withCheckedContinuation { self.heldSnapshots.append($0) } }
                 if self.starting { return .failure(code: NativeThreadCode.starting, message: "pi is starting.") }
                 guard let history = self.history else { return .snapshot(value: self.snapshot) }
                 let end = before.flatMap { cursor in history.firstIndex { $0.entryID == cursor } } ?? history.count
@@ -127,6 +131,14 @@ final class FakeThread {
         window.show(Hosted(visibility: visibility, store: store, request: request, header: header, commands: commands,
                            reduceMotion: reduceMotion, designCards: designCards, projectCards: projectCards, input: input,
                            showsTray: subagentTray, tailGuard: tailGuard))
+    }
+
+    /// Lets the snapshot requests held by `holdingSnapshots` return, and the ones that follow.
+    func releaseSnapshots() {
+        holdingSnapshots = false
+        let held = heldSnapshots
+        heldSnapshots = []
+        for continuation in held { continuation.resume() }
     }
 
     /// Serves `next` and has the store pull it now, outside any animation.
