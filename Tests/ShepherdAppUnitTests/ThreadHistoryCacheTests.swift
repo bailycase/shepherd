@@ -63,3 +63,87 @@ struct ThreadHistoryCacheTests {
         #expect(ThreadHistoryCache.Key.arrivals(in: history, tail: tail, among: ["gone", "t1"]).isEmpty)
     }
 }
+
+/// When the history's stack starts again (`ThreadHistoryBuilt`).
+@Suite("Thread history built")
+@MainActor
+struct ThreadHistoryBuiltTests {
+    private func rows(_ range: Range<Int>) -> ArraySlice<NativeThreadRow> {
+        range.map { NativeThreadRow(turn: NativeTurn(id: "r\($0)", isUser: false, messages: []), presentation: nil, live: false, promptText: nil, startedAt: nil) }[...]
+    }
+
+    /// Adds `count` rows at the end, two at a time as a turn does, until the stack starts again or they are all added.
+    private func grow(_ built: ThreadHistoryBuilt, from start: Int, by count: Int, onScreen: Bool = true, mayLetGo: Bool = true) -> (end: Int, stack: Int) {
+        var end = start
+        while end < start + count {
+            end += 2
+            _ = built.stack(history: rows(0..<end), onScreen: onScreen, mayLetGo: mayLetGo)
+        }
+        return (end, built.stack)
+    }
+
+    @Test func aStackStartsAgainAfterTheRowsItMayHaveBuiltHaveBeenAdded() {
+        let built = ThreadHistoryBuilt()
+        _ = built.stack(history: rows(0..<10), onScreen: true, mayLetGo: true)
+        let (end, stack) = grow(built, from: 10, by: ThreadHistoryBuilt.rows - 2)
+        #expect(stack == 0, "not before")
+        _ = built.stack(history: rows(0..<(end + 2)), onScreen: true, mayLetGo: true)
+        #expect(built.stack == 1)
+    }
+
+    @Test func aReaderAwayFromTheTailKeepsTheStackUntilTheyAreBack() {
+        let built = ThreadHistoryBuilt()
+        _ = built.stack(history: rows(0..<10), onScreen: true, mayLetGo: false)
+        let (end, stack) = grow(built, from: 10, by: 3 * ThreadHistoryBuilt.rows, mayLetGo: false)
+        #expect(stack == 0)
+        _ = built.stack(history: rows(0..<end), onScreen: true, mayLetGo: true)
+        #expect(built.stack == 0, "back at the tail, an update that adds nothing leaves it")
+        _ = built.stack(history: rows(0..<(end + 2)), onScreen: true, mayLetGo: true)
+        #expect(built.stack == 1, "the next turn that lands once they are back starts it again")
+    }
+
+    @Test func rowsThatComeTogetherBetweenTwoPullsAllCount() {
+        let built = ThreadHistoryBuilt()
+        _ = built.stack(history: rows(0..<10), onScreen: true, mayLetGo: true)
+        _ = built.stack(history: rows(0..<18), onScreen: true, mayLetGo: true)
+        #expect(built.stack == 0)
+        _ = built.stack(history: rows(0..<26), onScreen: true, mayLetGo: true)
+        #expect(built.stack == 1)
+    }
+
+    @Test func rowsPagedInAboveOrAThreadComingBackAreNotCounted() {
+        let built = ThreadHistoryBuilt()
+        _ = built.stack(history: rows(0..<10), onScreen: true, mayLetGo: true)
+        // Older rows join at the top: the last row is the same.
+        let older = (0..<200).map { NativeThreadRow(turn: NativeTurn(id: "o\($0)", isUser: false, messages: []), presentation: nil, live: false, promptText: nil, startedAt: nil) }
+        _ = built.stack(history: (older + rows(0..<10))[...], onScreen: true, mayLetGo: true)
+        // The whole thread comes back at once after being let go.
+        _ = built.stack(history: [], onScreen: true, mayLetGo: true)
+        _ = built.stack(history: rows(0..<300), onScreen: true, mayLetGo: true)
+        #expect(built.stack == 0)
+    }
+
+    @Test func rowsTheTailMovesIntoTheHistoryAreNotCounted() {
+        let built = ThreadHistoryBuilt()
+        _ = built.stack(history: rows(0..<10), onScreen: true, mayLetGo: true)
+        // A live resize hands the history the rows the tail gives up in one update, and more as the window goes on changing.
+        _ = built.stack(history: rows(0..<30), onScreen: true, mayLetGo: true, tailMoves: true)
+        _ = built.stack(history: rows(0..<40), onScreen: true, mayLetGo: true, tailMoves: true)
+        #expect(built.stack == 0, "the first frame of the drag")
+        // The tail grows back: the history is shorter again, and only the thread's own rows count from there.
+        _ = built.stack(history: rows(0..<10), onScreen: true, mayLetGo: true)
+        let (end, stack) = grow(built, from: 10, by: ThreadHistoryBuilt.rows - 2)
+        #expect(stack == 0, "the drag's rows did not add up with these")
+        _ = built.stack(history: rows(0..<(end + 2)), onScreen: true, mayLetGo: true)
+        #expect(built.stack == 1)
+    }
+
+    @Test func aHiddenThreadsGrowthIsNotCounted() {
+        let built = ThreadHistoryBuilt()
+        _ = built.stack(history: rows(0..<10), onScreen: false, mayLetGo: true)
+        let (end, stack) = grow(built, from: 10, by: 3 * ThreadHistoryBuilt.rows, onScreen: false)
+        #expect(stack == 0)
+        _ = built.stack(history: rows(0..<end), onScreen: true, mayLetGo: true)
+        #expect(built.stack == 0, "shown again, it has built nothing for them")
+    }
+}
