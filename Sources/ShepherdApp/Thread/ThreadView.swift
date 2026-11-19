@@ -215,9 +215,10 @@ struct ThreadView: View {
                             else { emptyState }
                         }
                         if let day = leadDayTitle(rows) { SHLeadDaySeparator(word: day) }
-                        historyColumn(history, tail: eager, spacing: spacing, dormant: dormant, releasing: !active && (rows.isEmpty || restoreStepping),
-                                      stack: historyStack, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled,
-                                      historyRowID: historyRowID, parked: parksHistory)
+                        historyColumn(parksHistory ? history.prefix(0) : history, tail: eager, spacing: spacing, dormant: dormant,
+                                      releasing: !active && (rows.isEmpty || restoreStepping), stack: historyStack, running: running,
+                                      catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID,
+                                      parked: parksHistory)
                         ForEach(eager) { row in
                             rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                         }
@@ -562,9 +563,10 @@ struct ThreadView: View {
 
     /// Whether the history above the tail stands down while the window is dragged, and while the tail grows back after it: the reader at
     /// the tail sees none of it (the tail covers the window, `eagerCount`), a lazy stack is measured again at every width a drag passes
-    /// through, and now and then it lays out the whole history from its top, tens of milliseconds a time. A stack that comes back with the
-    /// tail full-sized builds nothing, for the tail is out of its reach; one that came back under the small tail built a screen of rows.
-    /// A reader who has scrolled up reads the history, so for them it stays.
+    /// through, and now and then it lays out the whole history from its top, tens of milliseconds a time. The stack stays, with no rows
+    /// to lay out; the scroll view keeps the tail (`ThreadTailAnchor`) as its content gets shorter and taller above it. A stack that comes
+    /// back with the tail full-sized builds nothing, for the tail is out of its reach; one that came back under the small tail built a
+    /// screen of rows. A reader who has scrolled up reads the history, so for them it stays.
     private var parksHistory: Bool { active && follower.sticky && (liveResizing || !tailAtRest) }
 
     /// The tail that covers the window while it is being live-resized (`eagerCount`).
@@ -586,33 +588,25 @@ struct ThreadView: View {
 
     /// The lazy stack of the rows older than the eager tail, drawn again only when what its rows are built from changes
     /// (`ThreadHistoryCache`).
-    @ViewBuilder
     private func historyColumn(_ history: ArraySlice<NativeThreadRow>, tail: ArraySlice<NativeThreadRow>, spacing: CGFloat, dormant: Bool,
                                releasing: Bool, stack: Int, running: Bool, catchingUp: Bool, arrived: Set<String>, settled: Bool,
                                historyRowID: String?, parked: Bool) -> some View {
-        if parked {
-            // Out of sight and out of every frame of the drag: the room the history had, as it was.
-            Color.clear.frame(height: liveResizeGate.historyHeight)
-        } else {
-            let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, stack: stack, boundary: historyRowID, running: running,
-                                 detached: !follower.sticky)
-            ThreadHistoryColumn(key: key) { [gate = liveResizeGate] in
-                AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
-                    ForEach(history) { row in
-                        rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
-                    }
+        let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, stack: stack, boundary: historyRowID, running: running,
+                             detached: !follower.sticky)
+        return ThreadHistoryColumn(key: key) {
+            AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
+                ForEach(history) { row in
+                    rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                 }
-                .scrollTargetLayout()
-                // Its height, kept in a reference (no redraw): what stands in for the stack while it is parked (`parksHistory`).
-                .background { Color.clear.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { gate.historyHeight = $0 } }
-                // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
-                // that host does not run). Its identity changes whenever the rows are let go (a pass, a released history, a hidden
-                // thread that draws its tail alone: `releasing`), and takes them with it. A thread with no history to let go (one of a few
-                // rows) and the one on screen keep their own. It changes too when the thread on screen has added enough rows for the stack
-                // to have built more than a reader at the tail has any use for (`ThreadHistoryBuilt`), which it does only on screen and once
-                // its restore is done: the two never change it in the same update.
-                .id(StackID(dormant: dormant || (releasing && history.isEmpty), built: stack)))
             }
+            .scrollTargetLayout()
+            // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
+            // that host does not run). Its identity changes whenever the rows are let go (a pass, a released history, a hidden
+            // thread that draws its tail alone: `releasing`), and takes them with it. A thread with no history to let go (one of a few
+            // rows) and the one on screen keep their own. It changes too when the thread on screen has added enough rows for the stack
+            // to have built more than a reader at the tail has any use for (`ThreadHistoryBuilt`), which it does only on screen and once
+            // its restore is done: the two never change it in the same update.
+            .id(StackID(dormant: dormant || (releasing && history.isEmpty), built: stack, parked: parked)))
         }
     }
 
@@ -1129,10 +1123,12 @@ final class ThreadRowMemory {
 }
 
 /// The identity the history's lazy stack is drawn with: it changes while the thread is let go (`dormant`, or the rows being let go,
-/// `ThreadView.historyColumn`) and each time the stack starts again (`ThreadHistoryBuilt`).
+/// `ThreadView.historyColumn`), each time the stack starts again (`ThreadHistoryBuilt`) and as it stands down for a window drag.
 private struct StackID: Hashable {
     let dormant: Bool
     let built: Int
+    /// The stack stands down for a window drag (`ThreadView.parksHistory`): the rows it had built go with it.
+    var parked = false
 }
 
 /// What the history's lazy stack has built, and when it starts again. A lazy stack builds the last row it is handed, off screen as it
@@ -1690,8 +1686,6 @@ struct ThreadTailAnchor: ViewModifier {
 @MainActor
 final class LiveResizeGate {
     var wasLive = false
-    /// The history stack's height as last measured, which a drag's stand-in for it takes.
-    var historyHeight: CGFloat = 0
     /// What the window's height asks the tail to cover as last measured (`ThreadView.eagerCover` follows it, but for a drag's widening).
     var cover = 0
 }
