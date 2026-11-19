@@ -10,7 +10,7 @@ import Foundation
 enum ContextToolGroups {
     static let labels: [String: String] = [
         "pi": "pi tools", "terminal": "terminal tools", "agent": "agent tools", "fleet": "fleet tools", "automation": "automation tools",
-        "review": "review tool", "subagents": "subagent tools", "browser": "browser tools", "mcp": "MCP", "design": "design tools",
+        "review": "review tool", "subagents": "subagent tools", "browser": "browser tools", "computer": "computer use tools", "mcp": "MCP", "design": "design tools",
         "instructions": "instruction suggestions", "other": "other tools",
     ]
 
@@ -20,6 +20,13 @@ enum ContextToolGroups {
         "design_get", "design_show", "design_note", "design_read", "board_write", "board_edit", "boards_edit", "board_search", "board_render", "board_interact", "design_export", "board_extract",
         "canvas_update", "design_check", "comment_list", "comment_reply", "system_read", "system_write", "checkpoint_create",
         "checkpoint_list", "checkpoint_restore", "markup_propose",
+    ]
+
+    /// Settings ▸ Experiments ▸ Computer use (`shepherd-computer-use.ts`'s `TOOLS`).
+    private static let computerTools: Set<String> = [
+        "list_apps", "list_windows", "launch_app", "bring_to_front", "get_window_state", "get_desktop_state", "zoom",
+        "click", "double_click", "right_click", "drag", "scroll", "type_text", "press_key", "hotkey", "set_value",
+        "invoke_menu", "run_steps", "verify_state", "check_permissions",
     ]
 
     /// The group a tool belongs to: a key of `labels`.
@@ -32,6 +39,7 @@ enum ContextToolGroups {
         if name == "review_diff" { return "review" }
         if name.hasPrefix("shepherd_child_") || name == "shepherd_workflow" || name == "shepherd_parent_message" { return "subagents" }
         if name.hasPrefix("browser_") { return "browser" }
+        if computerTools.contains(name) { return "computer" }
         if name == "tool_search" || name.hasPrefix("mcp__") || Self.mcpResourceTools.contains(name) { return "mcp" }
         if designTools.contains(name) { return "design" }
         if name == "suggest_instruction" { return "instructions" }

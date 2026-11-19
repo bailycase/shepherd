@@ -297,7 +297,7 @@
     repo's `.mcp.json`, and the slash commands with their switches (missing from an older host:
     the Mac's defaults). `experiments.designTool.v1` switches the Design tool; it is offered while
     the tool is off (it is not one of `designCapabilities`), and turning it on re-offers
-    `designs.v1` with `capabilitiesChanged`. The bundled extension list gains `designReferences`. `hostSettings.closeOnMerge.v1` adds Close threads
+    `designs.v1` with `capabilitiesChanged`. The bundled extension list gains `designReferences`. `experiments.computerUse.v1` switches Computer use (`computerUseEnabled`, missing from an older host: off); running threads follow at their next start. `hostSettings.closeOnMerge.v1` adds Close threads
     when their pull request merges (missing from an older host: off).
   - `hostInventory` (`hostInventory.v1`): read-only, what the host's Settings ▸ MCP, Subagents and
     Sign-in show (`RemoteHostInventoryRequest`: `mcp`, `subagents`, `subagent(file:)`,
