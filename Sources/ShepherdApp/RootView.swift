@@ -318,7 +318,7 @@ struct WorkspaceHeaderView: View {
                let connection = vm.remoteHosts.allConnections.first(where: { $0.id == remote.hostID }),
                let agent = connection.state.agents.first(where: { $0.id == remote.agentID }) {
                 if vm.remoteInspectingAgent == remote {
-                    PlainHeader(title: "\(agent.name) · terminal", leadingInset: leadingInset, showSidebar: showSidebar)
+                    PlainHeader(title: "\(vm.presentedThreadName(.remote(remote), hostName: agent.name)) · terminal", leadingInset: leadingInset, showSidebar: showSidebar)
                 } else if let (_, design) = vm.remoteDesign(drawnBy: remote) {
                     // The host's design: Export draws here from this Mac's synced copy.
                     let ref = RemoteDesignRef(hostID: remote.hostID, designID: design.id)
@@ -336,7 +336,7 @@ struct WorkspaceHeaderView: View {
                 } else {
                     let space = connection.state.spaces.first { $0.id == agent.spaceID }?.name
                     threadHeader(store: vm.remoteThreadStores.store(for: remote), owner: .remote(remote),
-                                 project: space ?? connection.config.name, title: agent.name,
+                                 project: space ?? connection.config.name, title: vm.presentedThreadName(.remote(remote), hostName: agent.name),
                                  branch: AgentBranchLabel(agent: agent, host: connection.config.name), directory: nil,
                                  showChanges: { vm.openRemoteReview(remote, path: nil) }, rename: { vm.remoteRenameTarget = remote },
                                  pin: vm.offersPin(for: .remote(remote)) ? .remote(remote) : nil, row: .remote(remote),
@@ -370,7 +370,7 @@ struct WorkspaceHeaderView: View {
                     .id(agent.id)
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID,
                       let space = vm.state.spaces.first(where: { $0.id == agent.spaceID }) {
-                threadHeader(store: vm.threadStores.store(for: agent.id), owner: .local(agent.id), project: space.name, title: agent.name,
+                threadHeader(store: vm.threadStores.store(for: agent.id), owner: .local(agent.id), project: space.name, title: vm.presentedThreadName(.local(agent.id), hostName: agent.name),
                              branch: nil, directory: nil,
                              showChanges: { vm.openReview(agentID: agent.id, path: nil) }, rename: { vm.agentRenameTarget = agent.id },
                              pin: vm.offersPin(for: .local(agent.id)) ? .local(agent.id) : nil, row: .local(agent.id),

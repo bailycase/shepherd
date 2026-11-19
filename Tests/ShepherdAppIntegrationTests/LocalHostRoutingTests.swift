@@ -366,7 +366,7 @@ struct LocalHostRoutingTests {
             try "draft\n".write(to: URL(fileURLWithPath: checkout).appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
             s.vm.requestDeleteAgent(agent.id)
             try await eventuallyOnMain("This Mac's dialog") { s.vm.worktreeDeleteTarget == agent.id }
-            #expect(s.vm.hostWorktreeInfo?.warning == "1 uncommitted change")
+            #expect(s.vm.hostWorktreeInfo[agent.id]?.warning == "1 uncommitted change")
             s.vm.worktreeDeleteTarget = nil
             s.vm.deleteWorktreeAgent(agent.id, removeWorktree: true)
             try await eventuallyOnMain("the host to remove it", timeout: .seconds(20)) {

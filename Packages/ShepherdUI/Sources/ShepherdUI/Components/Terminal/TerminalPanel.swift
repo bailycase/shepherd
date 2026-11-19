@@ -52,6 +52,8 @@ public struct SHTerminalTab: Equatable, Identifiable, Sendable {
         case idle
         /// A command runs in it.
         case running
+        /// Asked for, and the host has not given it a shell yet.
+        case starting
         /// It printed something since it was last on screen.
         case unseen
         /// Its process exited; its output stays until the host closes it.
@@ -249,7 +251,7 @@ public struct SHTerminalTabView: View {
     @ViewBuilder private var glyph: some View {
         let sh = Color.sh
         switch tab.activity {
-        case .running:
+        case .running, .starting:
             ProgressView().progressViewStyle(SHSpinnerStyle(size: 11))
         case .exited(let failed):
             Image(systemName: "terminal")
@@ -268,6 +270,7 @@ public struct SHTerminalTabView: View {
         switch tab.activity {
         case .idle: break
         case .running: parts.append("running")
+        case .starting: parts.append("starting")
         case .unseen: parts.append("new output")
         case .exited(let failed): parts.append(failed ? "exited with an error" : "exited")
         }

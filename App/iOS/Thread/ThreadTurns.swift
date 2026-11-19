@@ -24,6 +24,8 @@ struct UserTurnView: View, Equatable {
 
     let bubbles: [Bubble]
     var fromQueue: Int?
+    /// Under the last bubble while the host has not accepted it ("Sending…").
+    var note: String?
     /// The thread's host: a reference chip's picture comes from its files.
     var host: UUID?
 
@@ -39,6 +41,7 @@ struct UserTurnView: View, Equatable {
                    command: bubble.command)
         }
         fromQueue = turn.fromQueue
+        note = turn.sendingNote
     }
 
     var body: some View {
@@ -47,7 +50,7 @@ struct UserTurnView: View, Equatable {
             VStack(alignment: .trailing, spacing: MobileLayout.activitySpacing) {
                 // By position: an echo and the message pi saves for it have different entries,
                 // and the bubble must stay one view to settle in place (70% → 100%).
-                ForEach(Array(bubbles.enumerated()), id: \.offset) { _, bubble in
+                ForEach(Array(bubbles.enumerated()), id: \.offset) { position, bubble in
                     VStack(alignment: .trailing, spacing: SH.Space.s) {
                         ForEach(Array(bubble.references.enumerated()), id: \.offset) { index, crumbs in
                             if let host {
@@ -58,7 +61,8 @@ struct UserTurnView: View, Equatable {
                         }
                         if !bubble.text.isEmpty || bubble.images > 0 || bubble.references.isEmpty || bubble.command != nil {
                             // The skill file is on the agent's host, so touch has Copy and no Open.
-                            SHUserBubble(bubble.text, attachments: Array(repeating: "Image", count: bubble.images), timestamp: bubble.caption) {
+                            SHUserBubble(bubble.text, attachments: Array(repeating: "Image", count: bubble.images), timestamp: bubble.caption,
+                                         note: position == bubbles.count - 1 ? note : nil) {
                                 if let command = bubble.command {
                                     SHSentCommand(kind: command.kind == .skill ? .skill : .prompt, name: command.name,
                                                   meta: command.meta, text: command.text)

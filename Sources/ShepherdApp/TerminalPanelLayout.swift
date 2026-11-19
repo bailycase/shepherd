@@ -49,11 +49,12 @@ func terminalPanelGeometry(
     maximized: Bool,
     height preferred: CGFloat,
     in size: CGSize,
-    appTabs: [TerminalPanelTab] = []
+    appTabs: [TerminalPanelTab] = [],
+    overlay: TerminalTabOverlay = TerminalTabOverlay()
 ) -> TerminalPanelGeometry {
     let width = max(0, size.width)
     let total = max(0, size.height)
-    let tabs = TerminalPanel.tabs(in: layout, thread: thread) + appTabs
+    let tabs = TerminalPanel.tabs(in: layout, thread: thread, overlay: overlay) + appTabs
     let height = CGFloat(TerminalPanelHeight.clamp(Double(preferred), container: Double(total),
                                                    minimum: Double(AppLayout.terminalPanelMinHeight),
                                                    threadMinimum: Double(AppLayout.terminalThreadMinHeight)))

@@ -57,8 +57,18 @@ final class TerminalPanels {
     /// The app each output tab shows.
     private(set) var appKeys: [PaneID: AppKey] = [:]
 
+    /// Tabs asked of a host and not answered yet (opening and closing ones): what the panel draws
+    /// ahead of its layout (`TerminalTabOverlay`).
+    private(set) var overlays: [TerminalPanelKey: TerminalTabOverlay] = [:]
+    /// A placeholder tab became its real pane: the keyboard follows it if it was on the placeholder.
+    @ObservationIgnored var onPromotion: ((TerminalPanelKey, TerminalTabOverlay.Promotion) -> Void)?
+
+    /// Whether the panel showed when a tab was last closed from it, for a refused close to bring it back.
+    @ObservationIgnored var closeRestoresPanel: [TerminalPanelKey: Bool] = [:]
     /// The terminals each layout had when last reconciled: one that appears opens the panel.
     @ObservationIgnored private var known: [TerminalPanelKey: Set<PaneID>] = [:]
+    /// How many tabs the panel showed then, for the panel to close with its last.
+    @ObservationIgnored private var shownCount: [TerminalPanelKey: Int] = [:]
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -81,13 +91,37 @@ final class TerminalPanels {
 
     /// The tab on screen in `layout`.
     func selectedTab(_ key: TerminalPanelKey, layout: PaneNode, thread: PaneID?, focused: PaneID?) -> TerminalPanelTab? {
-        TerminalPanel.selected(tabs(key, layout: layout, thread: thread), chosen: panel(key).chosenTab, focused: focused)
+        selected(key, layout: layout, thread: thread, chosen: panel(key).chosenTab, focused: focused)
     }
 
-    /// The layout's terminals, then its app output tabs.
-    func tabs(_ key: TerminalPanelKey, layout: PaneNode, thread: PaneID?) -> [TerminalPanelTab] {
-        TerminalPanel.tabs(in: layout, thread: thread) + (appTabs[key] ?? [])
+    /// The tab on screen given the panel's `chosen` tab: a placeholder whose pane has arrived is that pane.
+    func selected(_ key: TerminalPanelKey, layout: PaneNode, thread: PaneID?, chosen: PaneID?, focused: PaneID?) -> TerminalPanelTab? {
+        let overlay = overlay(key)
+        let ids = overlay.isEmpty ? [] : TerminalPanel.tabs(in: layout, thread: thread).map(\.id)
+        return TerminalPanel.selected(tabs(key, layout: layout, thread: thread), chosen: overlay.resolved(chosen, in: ids),
+                                      focused: overlay.resolved(focused, in: ids))
     }
+
+    /// The layout's terminals as the panel shows them (a tab being closed gone, a tab being opened
+    /// there and Starting), then its app output tabs.
+    func tabs(_ key: TerminalPanelKey, layout: PaneNode, thread: PaneID?) -> [TerminalPanelTab] {
+        TerminalPanel.tabs(in: layout, thread: thread, overlay: overlay(key)) + (appTabs[key] ?? [])
+    }
+
+    func overlay(_ key: TerminalPanelKey) -> TerminalTabOverlay { overlays[key] ?? TerminalTabOverlay() }
+
+    /// Changes a panel's overlay, and keeps the panel's selection and visibility following it.
+    @discardableResult
+    func updateOverlay<T>(_ key: TerminalPanelKey, _ change: (inout TerminalTabOverlay) -> T) -> T {
+        var overlay = overlay(key)
+        let result = change(&overlay)
+        let stored = overlay.isEmpty ? nil : overlay
+        if overlays[key] != stored { overlays[key] = stored }
+        return result
+    }
+
+    /// Whether `tab` is a tab asked for that the host has not made yet.
+    func isStarting(_ tab: PaneID?, in key: TerminalPanelKey) -> Bool { overlay(key).isPending(tab) }
 
     func appKey(_ tab: PaneID) -> AppKey? { appKeys[tab] }
 
@@ -125,12 +159,24 @@ final class TerminalPanels {
     /// (as they always showed before the panel); after that, a terminal that appears (⌘D, ⌘J
     /// with none, an agent's `terminal_open`, another device's +) opens the panel on its tab, and
     /// the panel closes with its last terminal. Returns the new terminal to focus, if one appeared.
+    /// A tab this Mac asked for is already open and selected as a placeholder (`beginOpenTerminal`):
+    /// its pane arriving takes the placeholder's place without selecting anything again.
     @discardableResult
     func reconcile(_ key: TerminalPanelKey, layout: PaneNode, thread: PaneID?) -> PaneID? {
-        let tabs = TerminalPanel.tabs(in: layout, thread: thread)
-        let terminals = Set(tabs.map(\.id))
+        let raw = TerminalPanel.tabs(in: layout, thread: thread).map(\.id)
+        // What a placeholder holds or has become is no news: its tab was opened and selected already.
+        let claimed = overlay(key).claimed(in: raw)
+        let promotions = updateOverlay(key) { $0.settle(layout: raw) }
+        for promotion in promotions {
+            update(key) { if $0.chosenTab == promotion.pending { $0.chosenTab = promotion.real } }
+            onPromotion?(key, promotion)
+        }
+        let tabs = TerminalPanel.tabs(in: layout, thread: thread, overlay: overlay(key))
+        let terminals = Set(raw)
         let apps = !(appTabs[key] ?? []).isEmpty
-        defer { known[key] = terminals }
+        let before = known[key], beforeCount = shownCount[key]
+        known[key] = terminals
+        shownCount[key] = tabs.count
         // A panel never shows with no tab in it, whichever way it came to.
         if tabs.isEmpty, !apps, panel(key).shown || panel(key).maximized {
             update(key) {
@@ -138,18 +184,19 @@ final class TerminalPanels {
                 $0.maximized = false
             }
         }
-        guard let before = known[key] else {
+        guard let before else {
             if !tabs.isEmpty, panels[key] == nil { update(key) { $0.shown = true } }
             return nil
         }
-        if !apps, TerminalPanel.closesWithLastTerminal(before: before.count, after: terminals.count) {
+        if !apps, TerminalPanel.closesWithLastTerminal(before: beforeCount ?? before.count, after: tabs.count) {
             update(key) {
                 $0.shown = false
                 $0.maximized = false
             }
             return nil
         }
-        guard let added = tabs.map(\.id).last(where: { !before.contains($0) }) else { return nil }
+        guard let added = raw.last(where: { !before.contains($0) && !claimed.contains($0) }),
+              tabs.contains(where: { $0.id == added }) else { return nil }
         update(key) {
             $0.shown = true
             $0.chosenTab = added
@@ -160,6 +207,8 @@ final class TerminalPanels {
     func forget(_ key: TerminalPanelKey) {
         panels[key] = nil
         known[key] = nil
+        shownCount[key] = nil
+        overlays[key] = nil
         activity[key] = nil
         for tab in appTabs.removeValue(forKey: key) ?? [] { appKeys[tab.id] = nil }
     }
@@ -192,9 +241,12 @@ final class TerminalPanels {
     func items(_ key: TerminalPanelKey, tabs: [TerminalPanelTab], selected: TerminalPanelTab?, onScreen: Bool,
                host: String?) -> [SHTerminalTab] {
         let rows = activity[key] ?? [:]
+        let overlay = overlay(key)
         return tabs.map { tab in
             let state: SHTerminalTab.Activity
-            if rows[tab.id]?.isRunning == true {
+            if overlay.isPending(tab.id) {
+                state = .starting
+            } else if rows[tab.id]?.isRunning == true {
                 state = .running
             } else if tab.id != selected?.id || !onScreen, let session = tab.leaf.sessionID, hasUnseen(key, session: session) {
                 state = .unseen

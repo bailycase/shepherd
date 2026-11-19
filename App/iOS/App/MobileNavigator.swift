@@ -56,7 +56,14 @@ final class MobileNavigator {
 
     // iPad
     /// The thread the detail column shows; nil shows the overview.
-    var padSelection: AgentRef?
+    @ObservationIgnored private(set) var recentPadThreads: [AgentRef] = []
+    var padSelection: AgentRef? {
+        didSet {
+            guard let padSelection, padSelection != oldValue else { return }
+            recentPadThreads.removeAll { $0 == padSelection }
+            recentPadThreads.append(padSelection)
+        }
+    }
     /// Screens pushed over the detail's root.
     var padPath: [MobileRoute] = []
     var padColumns: NavigationSplitViewVisibility = .automatic
@@ -178,6 +185,7 @@ final class MobileNavigator {
 
     /// Closes every screen of a forgotten host.
     func forget(host: UUID) {
+        recentPadThreads.removeAll { $0.host == host }
         composerPresentation.forget(host: host)
         if commitPopover?.host == host { commitPopover = nil }
         for tab in Tab.allCases { self[path: tab].removeAll { $0.host == host } }

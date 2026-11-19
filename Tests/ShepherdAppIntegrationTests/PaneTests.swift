@@ -363,7 +363,7 @@ struct PaneLayoutTests {
 
         vm.newTerminalTab()
         try await eventuallyOnMain("the host to open the terminal and the keyboard to follow it") {
-            vm.focusedPaneID != nil && vm.focusedPaneID != agent.piPane.id
+            app.server.state.tabs.first?.layout.leaves.count == 2 && vm.focusedPaneID == app.server.state.tabs.first?.layout.leaves.last?.id
         }
 
         let layout = try #require(app.server.state.tabs.first?.layout)

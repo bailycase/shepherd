@@ -69,7 +69,7 @@ struct UserTurn: View, Equatable {
                        : DesignReferenceFence.withoutHumanLine(bubble.text, count: bubble.references.count),
                    images: bubble.images, caption: bubble.sentAt.map { nativeClockText($0) }, pending: bubble.pending,
                    references: bubble.references, elements: bubble.elements, imageRefs: bubble.imageRefs, command: bubble.command)
-        }, fromQueue: turn.fromQueue, hover: hover)
+        }, fromQueue: turn.fromQueue, note: turn.sendingNote, hover: hover)
     }
 
     /// A transcript's turn (the subagent inspector): `caption` under the last message.

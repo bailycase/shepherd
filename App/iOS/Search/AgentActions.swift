@@ -20,8 +20,34 @@ enum AgentActions {
         return client
     }
 
-    static func rename(_ ref: AgentRef, to name: String, hosts: MobileHosts) async throws {
-        try await perform(ref, .rename(name: name), hosts: hosts)
+    /// Optimistic: the thread shows `name` at once (`MobileHost.agent`, `threadState`) and the host takes it in the
+    /// background, the latest name last. Throws only when it cannot be tried now (host forgotten or offline); a
+    /// refusal later restores the host's name and goes to `failed`.
+    static func rename(_ ref: AgentRef, to name: String, hosts: MobileHosts, failed: @escaping @MainActor (Failure) -> Void) throws {
+        _ = try client(ref, hosts: hosts)
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let host = hosts.host(ref.host), host.submitRename(ref.agent, to: name) else { return }
+        sendRename(ref, host: host, hosts: hosts, failed: failed)
+    }
+
+    private static func sendRename(_ ref: AgentRef, host: MobileHost, hosts: MobileHosts, failed: @escaping @MainActor (Failure) -> Void) {
+        guard let name = host.beginRename(ref.agent) else { return }
+        sendRename(ref, name: name, host: host, hosts: hosts, failed: failed)
+    }
+
+    private static func sendRename(_ ref: AgentRef, name: String, host: MobileHost, hosts: MobileHosts,
+                                   failed: @escaping @MainActor (Failure) -> Void) {
+        Task { @MainActor in
+            var failure: Failure?
+            do { try await perform(ref, .rename(name: name), hosts: hosts) }
+            catch let error as Failure { failure = error }
+            catch { failure = Failure(String(describing: error)) }
+            switch host.endRename(ref.agent, sent: name, failed: failure != nil) {
+            case .resend(let next): sendRename(ref, name: next, host: host, hosts: hosts, failed: failed)
+            case .reverted: if let failure { failed(failure) }
+            case .settled, .ignored: break
+            }
+        }
     }
 
     /// One place up or down within the agent's group; a move past the last agent is two
