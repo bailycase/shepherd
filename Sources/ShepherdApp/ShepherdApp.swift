@@ -468,7 +468,8 @@ public enum ShepherdHost {
                 ThreadHosting(defaults: {
                     ThreadHosting.Defaults(model: settings.defaultModel(piHome: server.pi.home), thinking: settings.defaultThinking,
                                            serviceTier: settings.defaultServiceTier, worktreeBaseMode: settings.worktreeBaseMode,
-                                           worktreeFetchBeforeCreate: settings.worktreeFetchBeforeCreate, subThreadPlace: settings.subThreadPlace)
+                                           worktreeFetchBeforeCreate: settings.worktreeFetchBeforeCreate, subThreadPlace: settings.subThreadPlace,
+                                           threadsStartThreads: settings.threadsStartThreads, threadCap: settings.fleetThreadCap)
                 }, launch: { settings.agentLaunch }, mcp: mcp, shell: shell)
             }
         }

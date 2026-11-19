@@ -112,7 +112,25 @@ extension SessionServer {
                 }
             }
 
-        case .spawn(_, let cwd, let prompt, let model, let thinking, let place, let branch):
+        case .spawn(_, let cwd, let prompt, let model, let thinking, let place, let branch, let byPerson):
+            let defaults = hosting.defaults()
+            guard byPerson || defaults.threadsStartThreads else {
+                respond(.failed(code: "not_asked", message: "You can start a thread only when the user asks for one: this turn wasn't started by the user. "
+                    + "Do the work here, or with your own subagents. (Settings ▸ Agents ▸ Threads can start threads lets you.)"))
+                return
+            }
+            // Threads one thread started that run at once, counting ones still being made and ones made a moment ago whose pi hasn't said
+            // it is working yet.
+            let now = Self.nowMilliseconds()
+            let running = state.agents.count { agent in
+                guard let started = agent.startedBy, started.agentID == sender.id else { return false }
+                return agent.status == .working || agent.status == .blocked
+                    || (agent.status == .idle && agent.completedAt == nil && now - started.at < 60_000)
+            }
+            guard running + spawning[sender.id, default: 0] < defaults.threadCap else {
+                respond(.failed(code: "held_limit", message: "You already have \(defaults.threadCap) threads you started running. Wait for one to finish."))
+                return
+            }
             let expanded = (cwd as NSString).expandingTildeInPath
             var isDirectory: ObjCBool = false
             guard FileManager.default.fileExists(atPath: expanded, isDirectory: &isDirectory),
@@ -125,7 +143,6 @@ extension SessionServer {
             let spaceID = state.spaces.first { !$0.hidden && $0.path == expanded }?.id
                 ?? state.spaces.first { !$0.hidden && expanded.hasPrefix($0.path + "/") }?.id
                 ?? sender.spaceID
-            let defaults = hosting.defaults()
             var request = RemoteCreateAgentRequest(spaceID: spaceID, cwd: expanded, model: model ?? defaults.model,
                                                    thinking: thinking ?? defaults.thinking, initialPrompt: prompt)
             // It nests under the thread that started it, one deeper; nothing else ties them together.
@@ -136,7 +153,9 @@ extension SessionServer {
             }
             let worktree = (place ?? (branch != nil ? .worktree : defaults.subThreadPlace)) == .worktree
             let spacePath = state.spaces.first { $0.id == spaceID }?.path
+            spawning[sender.id, default: 0] += 1
             Task { @MainActor in
+                defer { spawning[sender.id, default: 1] -= 1; if spawning[sender.id] == 0 { spawning[sender.id] = nil } }
                 do {
                     if worktree {
                         guard let spacePath else { throw RemoteCreateAgentError("Space no longer exists") }

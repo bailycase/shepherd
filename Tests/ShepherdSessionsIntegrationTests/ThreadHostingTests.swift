@@ -12,11 +12,11 @@ import ShepherdTestSupport
 @Suite("Threads hosted by the server", .mainActorExclusive)
 @MainActor
 struct ThreadHostingTests {
-    private func host() throws -> (ScratchServer, path: String, token: String) {
+    private func host(threadsStartThreads: Bool = false) throws -> (ScratchServer, path: String, token: String) {
         let h = try ScratchServer.fresh()
         h.server.serveThreads(ThreadHosting(defaults: {
             ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
-                                   worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
+                                   worktreeBaseMode: .head, worktreeFetchBeforeCreate: false, threadsStartThreads: threadsStartThreads)
         }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
         let path = h.dir.appendingPathComponent("h.sock").path
         let tokenURL = h.dir.appendingPathComponent("remote-token")
@@ -181,7 +181,8 @@ struct ThreadHostingTests {
     /// starts none.
     @Test func aThreadStartsAnotherInANewWorktreeAndDepthStopsAChain() async throws {
         try StubPi.installAsEngine()
-        let (h, _, _) = try host()
+        // The threads here were started by threads, so no person started their turns: the setting lets them start more.
+        let (h, _, _) = try host(threadsStartThreads: true)
         defer { h.stop() }
         let repo = try makeScratchRepo(files: ["README.md": "# acme\n", "web/index.html": "<p>hi</p>\n"])
         let head = try git(["rev-parse", "HEAD"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -213,6 +214,40 @@ struct ThreadHostingTests {
         try childCaller.send(.spawnAgent(id: 2, agentID: id, cwd: space.path, prompt: "Go deeper"))
         guard case .error(2, FleetDispatchCode.tooDeep, _) = try await childCaller.reply() else { Issue.record("a thread three deep started another"); return }
         #expect(h.server.state.agents.count == 2)
+    }
+
+    /// With Threads can start threads off, a thread whose turn a person didn't start is refused; one whose turn a person started may start
+    /// threads, at most three running at once.
+    @Test func agentSpawnNeedsAPersonsTurnAndHoldsToTheCap() async throws {
+        try StubPi.installAsEngine()
+        let (h, _, _) = try host()
+        defer { h.stop() }
+        let space = Space(name: "acme-web", path: h.dir.path)
+        try await h.server.addSpace(space)
+        func thread(_ name: String, startedBy: StartedBy? = nil, order: Int) async throws -> Agent {
+            let pane = LeafPane(cwd: space.path)
+            let tab = ShepherdCore.Tab(spaceID: space.id, order: order, layout: .leaf(pane))
+            var agent = Agent(name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true)
+            agent.startedBy = startedBy
+            try await h.server.addAgent(agent, withTab: tab)
+            return agent
+        }
+        let lead = try await thread("lead", order: 0)
+        let sent = try await thread("sent", startedBy: StartedBy(agentID: lead.id, agentTitle: "lead", at: 1, depth: 1), order: 1)
+        let sentCaller = try ExtensionClient(path: h.socketPath)
+        try sentCaller.send(.helloAgent(agentID: sent.id))
+        try sentCaller.send(.spawnAgent(id: 1, agentID: sent.id, cwd: space.path, prompt: "Go on"))
+        guard case .error(1, "not_asked", _) = try await sentCaller.reply() else { Issue.record("a thread no person prompted started one"); return }
+
+        let caller = try ExtensionClient(path: h.socketPath)
+        try caller.send(.helloAgent(agentID: lead.id))
+        for id in 2...4 {
+            try caller.send(.spawnAgent(id: id, agentID: lead.id, cwd: space.path, prompt: "Part \(id)"))
+            guard case .agents(id, _) = try await caller.reply() else { Issue.record("spawn \(id) refused"); return }
+        }
+        try caller.send(.spawnAgent(id: 5, agentID: lead.id, cwd: space.path, prompt: "One too many"))
+        guard case .error(5, "held_limit", _) = try await caller.reply() else { Issue.record("a fourth thread started while three ran"); return }
+        #expect(h.server.state.agents.count { $0.startedBy?.agentID == lead.id } == 4, "the three and the idle one")
     }
 
     @Test func theAppMovesADormantThreadToAnotherSpaceAndItStaysDormant() async throws {

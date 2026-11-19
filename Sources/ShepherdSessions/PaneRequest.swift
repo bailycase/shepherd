@@ -208,14 +208,15 @@ public enum AutomationOutcome: Hashable, Sendable {
 public enum AgentPeerRequest: Hashable, Sendable {
     case list(agentID: AgentID)
     case send(agentID: AgentID, targetAgentID: AgentID, text: String, delivery: AgentMessageDelivery = .task)
+    /// `byPerson`: the turn it was called in is one a person started (`SessionServer.spawnByPerson`).
     case spawn(agentID: AgentID, cwd: String, prompt: String, model: String? = nil, thinking: ThinkingLevel? = nil,
-               place: SpawnPlace? = nil, branch: String? = nil)
+               place: SpawnPlace? = nil, branch: String? = nil, byPerson: Bool = true)
     case delete(agentID: AgentID, targetAgentID: AgentID, requestID: String)
     case move(agentID: AgentID, targetAgentID: AgentID, spaceID: SpaceID)
 
     public var agentID: AgentID {
         switch self {
-        case .list(let agentID), .send(let agentID, _, _, _), .spawn(let agentID, _, _, _, _, _, _), .delete(let agentID, _, _), .move(let agentID, _, _):
+        case .list(let agentID), .send(let agentID, _, _, _), .spawn(let agentID, _, _, _, _, _, _, _), .delete(let agentID, _, _), .move(let agentID, _, _):
             return agentID
         }
     }

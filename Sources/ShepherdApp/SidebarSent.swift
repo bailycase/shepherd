@@ -39,15 +39,23 @@ extension SHSidebarRow.Subtitle.Tone {
 }
 
 extension SidebarDerivation {
-    /// The tree facts of a thread another Mac or thread started; nil for any other. `host` is the connected host it runs on, nil for This Mac:
-    /// a thread `agent_spawn` started sits on the same host as the thread that started it.
+    /// The tree facts of a thread another Mac or thread started; nil for any other. `host` is the connected host it runs on, nil for This Mac.
     static func sentInfo(of agent: Agent, host: UUID? = nil, _ source: SidebarSource) -> SidebarSentInfo? {
         if let started = agent.startedBy {
-            let sender: SidebarRowID = host.map { .remote(RemoteAgentRef(hostID: $0, agentID: started.agentID)) } ?? .local(started.agentID)
-            return SidebarSentInfo(sender: sender, at: started.at)
+            return SidebarSentInfo(sender: startedByRow(started.agentID, near: host, source), at: started.at)
         }
         guard let from = agent.dispatchedFrom else { return nil }
         return SidebarSentInfo(sender: fleetSender(of: agent, source), at: from.at)
+    }
+
+    /// The row of the thread that started one with `agent_spawn`: on the same host, else wherever it is now (either may have moved to another
+    /// Mac since; a thread keeps its id when it moves). Nil when no host this Mac sees has it.
+    static func startedByRow(_ id: AgentID, near host: UUID?, _ source: SidebarSource) -> SidebarRowID? {
+        if let host, source.hosts.first(where: { $0.id == host })?.state.agents.contains(where: { $0.id == id }) == true {
+            return .remote(RemoteAgentRef(hostID: host, agentID: id))
+        }
+        if source.local.agents.contains(where: { $0.id == id }) { return .local(id) }
+        return source.hosts.first { $0.state.agents.contains { $0.id == id } }.map { .remote(RemoteAgentRef(hostID: $0.id, agentID: id)) }
     }
 
     /// The threads this Mac started on other Macs that don't exist yet, and the ones that failed before they did: their own rows, with their facts. A

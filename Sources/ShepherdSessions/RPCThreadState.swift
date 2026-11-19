@@ -1304,6 +1304,11 @@ final class RPCThreadState {
     /// An accepted new user send during a running turn. Idempotent operation replay never fires it.
     var onUserInputWhileRunning: (() -> Void)?
 
+    /// Whether the latest message handed to pi came from a person (a client's send), or from another agent: a peer's task, a Fleet
+    /// result or message, a design's brief. Nil before any since this pi started: its opening prompt says (`SessionServer.spawnByPerson`).
+    /// What agent_spawn reads while Threads can start threads is off. pi's own extensions (a helper's result) never pass here.
+    var lastInputFromPerson: Bool?
+
     private func perform(_ request: NativeThreadRequest, operationID: UUID, alone: Bool,
                          recoveryBinding: CheckpointRecoveryBinding?, recoveryAuthorization: @escaping () -> Bool,
                          inputAuthorization: @escaping () -> Bool, completion: @escaping (NativeThreadResult) -> Void) {
@@ -1327,6 +1332,7 @@ final class RPCThreadState {
             // references reach here only as the server read them (`SessionServer.nativeThread`).
             let context = Self.sendContext(designContext, references: designReferences, elements: elements)
             let interruptsBackgroundWait = running && delivery == .followUp
+            lastInputFromPerson = true
             send(id: operationID, text: text, delivery: delivery, images: images,
                  // A message with references or elements goes to pi on its own: joined, its fence
                  // would give way.

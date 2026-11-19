@@ -49,10 +49,8 @@ extension ShepherdViewModel {
         var surface = FleetThreadSurface(cards: cards, parent: agent.id, actions: fleetThreadActions)
         surface.move = move
         if let started = agent.startedBy {
-            // Another thread on the same Mac started it: the thread's own host, never this Mac's guess.
-            let row: SidebarRowID = hostID.map { .remote(RemoteAgentRef(hostID: $0, agentID: started.agentID)) } ?? .local(started.agentID)
             surface.sentBy = FleetSentBy(started, host: remoteName ?? "This Mac")
-            surface.sender = sidebarRowExists(row) ? row : nil
+            surface.sender = startedByRow(started.agentID, near: hostID)
         } else if let from = agent.dispatchedFrom {
             surface.sentBy = FleetSentBy(from, host: remoteName ?? "This Mac", viewer: thisFleetID)
             surface.sender = senderRow(of: from)
@@ -75,13 +73,14 @@ extension ShepherdViewModel {
         return .remote(RemoteAgentRef(hostID: connection.id, agentID: sender))
     }
 
-    /// Whether the thread a row names is here to open.
-    private func sidebarRowExists(_ row: SidebarRowID) -> Bool {
-        switch row {
-        case .local(let id): state.agents.contains { $0.id == id }
-        case .remote(let ref): remoteHosts.allConnections.first { $0.id == ref.hostID }?.state.agents.contains { $0.id == ref.agentID } == true
-        default: false
+    /// The row of the thread that started one with `agent_spawn`, on the same host or wherever it moved; nil when it isn't anywhere this Mac sees.
+    private func startedByRow(_ id: AgentID, near host: UUID?) -> SidebarRowID? {
+        let hosts = remoteHosts.allConnections
+        if let host, hosts.first(where: { $0.id == host })?.state.agents.contains(where: { $0.id == id }) == true {
+            return .remote(RemoteAgentRef(hostID: host, agentID: id))
         }
+        if state.agents.contains(where: { $0.id == id }) { return .local(id) }
+        return hosts.first { $0.state.agents.contains { $0.id == id } }.map { .remote(RemoteAgentRef(hostID: $0.id, agentID: id)) }
     }
 
     /// The thread a dispatch runs as, on whichever Mac runs it.

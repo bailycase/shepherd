@@ -14,9 +14,16 @@ public struct ThreadHosting {
         public var worktreeFetchBeforeCreate: Bool
         /// Settings ▸ Agents ▸ Threads a thread starts work in: where `agent_spawn` puts one that doesn't say.
         public var subThreadPlace: SpawnPlace
+        /// Settings ▸ Agents ▸ Threads can start threads: off, agent_spawn is refused in a turn a person didn't start.
+        public var threadsStartThreads: Bool
+        /// Settings ▸ Fleet ▸ At most per thread: threads one thread started that run at once.
+        public var threadCap: Int
 
         public init(model: String?, thinking: ThinkingLevel, serviceTier: ServiceTier,
-                    worktreeBaseMode: WorktreeBaseMode, worktreeFetchBeforeCreate: Bool, subThreadPlace: SpawnPlace = .checkout) {
+                    worktreeBaseMode: WorktreeBaseMode, worktreeFetchBeforeCreate: Bool, subThreadPlace: SpawnPlace = .checkout,
+                    threadsStartThreads: Bool = false, threadCap: Int = HostSettings.fleetThreadCapDefault) {
+            self.threadsStartThreads = threadsStartThreads
+            self.threadCap = threadCap
             self.model = model
             self.thinking = thinking
             self.serviceTier = serviceTier

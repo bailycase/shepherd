@@ -338,6 +338,16 @@ struct FleetNestingTests {
         #expect(built.working.last?.sentRoot == .remote(RemoteAgentRef(hostID: Self.miniLink, agentID: sender.id)))
     }
 
+    @Test func aThreadStillNestsUnderItsStarterAfterEitherMovesToAnotherMac() {
+        let sender = agent("Speed up checkout CI", .working, in: space)
+        let child = started("Split slow UI tests", by: sender)
+        // The child moved to the mini; the starter stayed here. Then the other way round.
+        var built = lists(source(local: [sender], hosts: [host([child])]))
+        #expect(built.working.map(\.title) == ["Speed up checkout CI", "Split slow UI tests"] && built.working.last?.fleetNested == true)
+        built = lists(source(local: [child], hosts: [host([sender])]))
+        #expect(built.working.map(\.title) == ["Speed up checkout CI", "Split slow UI tests"] && built.working.last?.fleetNested == true)
+    }
+
     @Test func aThreadWhoseStarterIsGoneIsAThreadOfItsOwn() {
         let sender = agent("Speed up checkout CI", .working, in: space)
         let built = lists(source(local: [started("Split slow UI tests", by: sender)]))
