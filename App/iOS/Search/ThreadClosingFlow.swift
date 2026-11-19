@@ -41,6 +41,14 @@ enum ThreadClosingFlow {
         let before = navigator.place
         navigator.dismissPresented()
         navigator.close(thread: ref)
+        if navigator.layout == .pad, before.padSelection == ref, navigator.padSelection == nil,
+           let last = navigator.recentPadThreads.last(where: { previous in
+               guard previous != ref, let host = hosts.host(previous.host) else { return false }
+               return host.agentIDs.contains(previous.agent) && !host.closingAgents.contains(previous.agent)
+           }) {
+            navigator.padSelection = last
+            navigator.padColumns = before.padColumns
+        }
         let rollback = ThreadClosing.Rollback(before: before, after: navigator.place)
         Task { @MainActor in
             do { try await send() } catch {
@@ -87,8 +95,7 @@ enum ThreadClosingFlow {
             }
             try? await Task.sleep(for: .seconds(2))
             guard let host = hosts.host(ref.host) else { return }
-            // The host retired the agent: done, whatever its status says.
-            if !host.agentIDs.contains(ref.agent) { operations.finish(ref); return }
+            // Retirement can precede checkout cleanup. Only the operation says whether it finished.
             if let polled = host.connectedClient {
                 do { result = try await polled.agentQuery(agentID: ref.agent, query: .worktreeStatus(operationID: operationID)) } catch {
                     // A dropped connection is waited out; a host that no longer knows the operation is not.
