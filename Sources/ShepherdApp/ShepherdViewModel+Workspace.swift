@@ -364,18 +364,8 @@ extension ShepherdViewModel {
         }
     }
 
-    /// A hand-typed name is final: pi's namer must never overwrite it.
-    func renameAgent(_ id: AgentID, to name: String) {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              let agent = state.agents.first(where: { $0.id == id }),
-              agent.name != trimmed else { return }
-        let (hosts, ref) = (remoteHosts, localRef(id))
-        enqueuePersistence("agent rename", failureTitle: "Couldn’t rename the agent") {
-            guard let ref else { throw BackgroundHostClient.HostStarting() }
-            try await hosts.agentAction(ref, action: .rename(name: trimmed))
-        }
-    }
+    /// Optimistic; see `renameThread`.
+    func renameAgent(_ id: AgentID, to name: String) { renameThread(.local(id), to: name) }
 
     /// Persist retirement and wait for the actual process exits before removing a checkout.
     func deleteWorktreeAgent(_ id: AgentID, removeWorktree: Bool) {

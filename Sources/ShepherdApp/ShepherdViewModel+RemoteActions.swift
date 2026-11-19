@@ -9,6 +9,7 @@ extension ShepherdViewModel {
     }
 
     func performRemoteAction(_ target: RemoteAgentRef, action: RemoteAgentAction) {
+        if case .rename(let name) = action { renameThread(.remote(target), to: name); return }
         if case .deleteKeepingWorktree = action, !beginClosingThread(.remote(target)) { return }
         Task {
             do { try await remoteHosts.agentAction(target, action: action) }

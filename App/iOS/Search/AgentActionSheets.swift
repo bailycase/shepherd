@@ -4,14 +4,14 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
-/// Rename a thread's agent on its host. Presented modally; Save sends the new name and closes
-/// once the host took it. A manual name is final there: the namer never replaces it.
+/// Rename a thread's agent on its host. Presented modally; Save shows the new name at once and
+/// closes; the host takes it in the background, and a refusal puts the old name back with the
+/// reason. A manual name is final there: the namer never replaces it.
 struct RenameAgentSheet: View {
     let ref: AgentRef
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
     @State private var name = ""
-    @State private var saving = false
     @State private var error: String?
     @FocusState private var focused: Bool
 
@@ -50,11 +50,7 @@ struct RenameAgentSheet: View {
                 Button("Cancel") { navigator.dismissPresented() }
             }
             ToolbarItem(placement: .confirmationAction) {
-                if saving {
-                    ProgressView().progressViewStyle(SHSpinnerStyle())
-                } else {
-                    Button("Save") { save(next) }.disabled(next == nil || agent == nil)
-                }
+                Button("Save") { save(next) }.disabled(next == nil || agent == nil)
             }
         }
         // On iPad the sheet is a form fitted to what it holds (MobileRoot); a detent would override it.
@@ -66,17 +62,16 @@ struct RenameAgentSheet: View {
     }
 
     private func save(_ next: String?) {
-        guard let next, !saving else { return }
-        saving = true
+        guard let next else { return }
         error = nil
-        Task {
-            do {
-                try await AgentActions.rename(ref, to: next, hosts: hosts)
-                navigator.dismissPresented()
-            } catch {
-                self.error = String(describing: error)
+        do {
+            // The thread shows the name at once; the host takes it in the background.
+            try AgentActions.rename(ref, to: next, hosts: hosts) { [navigator = self.navigator] failure in
+                navigator.present(.search(.problem(title: "Couldn’t rename the thread", message: String(describing: failure))))
             }
-            saving = false
+            navigator.dismissPresented()
+        } catch {
+            self.error = String(describing: error)
         }
     }
 }

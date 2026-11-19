@@ -76,6 +76,7 @@ extension ShepherdViewModel {
                 source.hosts[i].state.agents.removeAll { closingThreads.contains(.remote(.init(hostID: host, agentID: $0.id))) }
             }
         }
+        source = applyingPendingRenames(to: source)
         return sidebarSourceAdjust?(source) ?? source
     }
 

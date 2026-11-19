@@ -664,6 +664,8 @@ final class ShepherdViewModel {
     var selectionHistory: [SidebarRowID] = []
     /// Presentation only. Keep the host's agent, tab, draft and pins until retirement is confirmed.
     var closingThreads: Set<SidebarRowID> = []
+    /// Presentation only: renames the person submitted that the host has not shown yet (`renameThread`).
+    var pendingRenames = PendingAgentRenames<SidebarRowID>()
     /// Workspace mutations are optimistic so the UI stays responsive, but the
     /// server remains authoritative. This tail makes their persistence order
     /// explicit and gives failures one reconciliation path.
@@ -785,6 +787,7 @@ final class ShepherdViewModel {
             self?.refreshProjectHosts()
             guard let self else { return }
             self.syncLocalHostChildren()
+            self.reconcilePendingRenames()
             self.reconcileSidebarCompletions()
             self.notifyRemote()
             let liveRemote = Set(self.remoteHosts.allConnections.flatMap { connection in
@@ -1150,6 +1153,7 @@ final class ShepherdViewModel {
         }
         reconcileSidebarCompletions()
         reconcileThreadStores()
+        reconcilePendingRenames()
         browsers.prune(state: state)
         notifyLocalQuestions()
         // A deleted agent waits on no sign-in.

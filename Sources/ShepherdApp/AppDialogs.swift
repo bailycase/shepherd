@@ -69,7 +69,7 @@ struct AppDialogs: ViewModifier {
                     .dialogSheetFrame()
             }
             .sheet(item: $vm.remoteRenameItem) { item in
-                RenameDialog(title: "Rename agent", name: vm.remoteAgent(item.value)?.name ?? "") { name in
+                RenameDialog(title: "Rename agent", name: vm.remoteAgent(item.value).map { vm.presentedThreadName(.remote(item.value), hostName: $0.name) } ?? "") { name in
                     vm.performRemoteAction(item.value, action: .rename(name: name))
                     vm.remoteRenameTarget = nil
                 } onCancel: {
@@ -92,7 +92,7 @@ struct AppDialogs: ViewModifier {
                 ProjectRenameDialog(vm: vm, space: space)
             }
             .sheet(item: $vm.agentRenameAgent) { agent in
-                RenameDialog(title: "Rename agent", name: agent.name) { name in
+                RenameDialog(title: "Rename agent", name: vm.presentedThreadName(.local(agent.id), hostName: agent.name)) { name in
                     vm.renameAgent(agent.id, to: name)
                     vm.agentRenameTarget = nil
                 } onCancel: {

@@ -15,6 +15,9 @@ final class MobileHost: Identifiable {
     /// The host's last pushed state. It stays after a disconnect, so lists show the last known
     /// agents dimmed until the host is back.
     fileprivate(set) var state = ShepherdState()
+    /// Renames submitted here that `state` does not show yet: `agent(_:)` and `threadState` present them.
+    /// An overlay, so a stale or late snapshot never undoes one and none overwrites the host's state.
+    private(set) var pendingRenames = PendingAgentRenames<AgentID>()
     /// Membership-only observers (Files retention) need not scan stores on status pushes.
     private(set) var agentIDs: Set<AgentID> = []
     /// Agents this device is closing: lists leave them out (`threadState`) until the host retires them or refuses.
@@ -72,7 +75,36 @@ final class MobileHost: Identifiable {
 
     func supports(_ capability: String) -> Bool { capabilities.contains(capability) }
 
-    func agent(_ id: AgentID) -> Agent? { state.agents.first { $0.id == id } }
+    /// The agent as lists and its thread show it: a pending rename's name stands in for the host's.
+    func agent(_ id: AgentID) -> Agent? {
+        guard var agent = state.agents.first(where: { $0.id == id }) else { return nil }
+        agent.name = pendingRenames.presented(id, hostName: agent.name)
+        return agent
+    }
+
+    /// A rename the person submitted: false when there is no such agent or it already shows `name`;
+    /// else true when a request should start now (`beginRename`).
+    func submitRename(_ id: AgentID, to name: String) -> Bool {
+        guard let current = state.agents.first(where: { $0.id == id })?.name,
+              pendingRenames.presented(id, hostName: current) != name else { return false }
+        return pendingRenames.submit(id, name: name, hostName: current)
+    }
+
+    func beginRename(_ id: AgentID) -> String? { pendingRenames.beginSend(id) }
+
+    /// The request for `sent` ended; says what to do next (`PendingAgentRenames.Completion`).
+    func endRename(_ id: AgentID, sent: String, failed: Bool) -> PendingAgentRenames<AgentID>.Completion {
+        let completion = pendingRenames.completed(id, sent: sent, failed: failed)
+        if completion == .settled { observeRenames() }
+        return completion
+    }
+
+    private func observeRenames() {
+        guard !pendingRenames.isEmpty else { return }
+        var next = pendingRenames
+        for id in next.keys { next.observe(id, hostName: state.agents.first { $0.id == id }?.name) }
+        if next != pendingRenames { pendingRenames = next }
+    }
 
     fileprivate func set(_ phase: RemoteHostPhase) {
         if self.phase != phase { self.phase = phase }
@@ -81,6 +113,7 @@ final class MobileHost: Identifiable {
     fileprivate func adopt(_ state: ShepherdState) {
         guard self.state != state else { return }
         self.state = state
+        observeRenames()
         let ids = Set(state.agents.map(\.id))
         if agentIDs != ids { agentIDs = ids }
         // The host retired them (or never had them): nothing left to hide.
@@ -97,7 +130,15 @@ final class MobileHost: Identifiable {
 extension MobileHost {
     /// The host's state as thread lists read it. Home, the sidebar, Search, New thread and the
     /// widgets all list from this.
-    var threadState: ShepherdState { state.hiding(closingAgents) }
+    var threadState: ShepherdState {
+        var presented = state.hiding(closingAgents)
+        guard !pendingRenames.isEmpty else { return presented }
+        for index in presented.agents.indices {
+            let agent = presented.agents[index]
+            presented.agents[index].name = pendingRenames.presented(agent.id, hostName: agent.name)
+        }
+        return presented
+    }
 }
 
 /// Every host the phone knows, each with its own `RemoteHostClient`, connected while the app is
