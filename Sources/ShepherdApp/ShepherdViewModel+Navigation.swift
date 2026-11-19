@@ -68,7 +68,14 @@ extension ShepherdViewModel {
 
     /// The activity groups' inputs, including remote hosts and completion generations.
     var sidebarSource: SidebarSource {
-        let source = derivedSidebarSource
+        var source = derivedSidebarSource
+        if !closingThreads.isEmpty {
+            source.local.agents.removeAll { closingThreads.contains(.local($0.id)) }
+            for i in source.hosts.indices {
+                let host = source.hosts[i].id
+                source.hosts[i].state.agents.removeAll { closingThreads.contains(.remote(.init(hostID: host, agentID: $0.id))) }
+            }
+        }
         return sidebarSourceAdjust?(source) ?? source
     }
 
@@ -212,13 +219,12 @@ extension ShepherdViewModel {
     func selectAgent(_ id: AgentID) {
         remoteInspectionRequest = UUID()
         remoteInspectingAgent = nil
-        guard let agent = state.agents.first(where: { $0.id == id }) else { return }
+        guard !closingThreads.contains(.local(id)), let agent = state.agents.first(where: { $0.id == id }) else { return }
         ShepherdDiagnostics.shared.record(.threadSelected)
         willOpenSidebarThread(design(drawnBy: agent).map { .design($0.id) } ?? .local(id))
         selectedRemoteAgent = nil
         if destination != nil { destination = nil }
-        selectionHistory.removeAll { $0 == id }
-        selectionHistory.append(id)
+        rememberThread(.local(id))
         selectedAgentID = id
         selectedSpaceID = agent.spaceID
         markAutomationRunsRead(id)
@@ -229,21 +235,25 @@ extension ShepherdViewModel {
         focusedPaneID = restoredFocus(forTab: agent.tabID, fallback: agent.paneID)
     }
 
-    /// Reselect the most recently selected agent that still exists, after
-    /// `dying` goes away. Falls back to no selection (the New thread page) when history is empty,
-    /// leaving a hidden space (a stopped automation run's) for a visible one.
-    func selectPreviousAgent(after dying: AgentID) {
-        selectionHistory.removeAll { $0 == dying }
-        while let candidate = selectionHistory.last {
-            if state.agents.contains(where: { $0.id == candidate }) {
-                selectAgent(candidate)
-                return
+    func rememberThread(_ row: SidebarRowID) {
+        selectionHistory.removeAll { $0 == row }
+        selectionHistory.append(row)
+    }
+
+    /// Hide only the row while the host works. Closing a background thread never moves the reader.
+    func beginClosingThread(_ row: SidebarRowID) -> Bool {
+        guard closingThreads.insert(row).inserted else { return false }
+        let shown = selectedRemoteAgent.map(SidebarRowID.remote) ?? selectedAgentID.map(SidebarRowID.local)
+        guard destination == nil, shown == row else { return true }
+        for candidate in selectionHistory.reversed() where !closingThreads.contains(candidate) {
+            if case .local(let id) = candidate, agent(id: id) != nil { selectAgent(id); return true }
+            if case .remote(let ref) = candidate, remoteAgent(ref) != nil {
+                selectRemoteAgent(hostID: ref.hostID, agentID: ref.agentID); return true
             }
-            selectionHistory.removeLast()
         }
         selectedAgentID = nil
-        let standing = WorkspaceSelection.standingSpace(selectedSpaceID, agentSelected: false, in: state)
-        if standing != selectedSpaceID { selectedSpaceID = standing }
+        openNewThread()
+        return true
     }
 
     /// The pane to focus when entering `tabID`.
@@ -261,7 +271,10 @@ extension ShepherdViewModel {
 
     /// A remote row shows that agent's thread, served by its host.
     func selectRemoteAgent(hostID: UUID, agentID: AgentID) {
-        willOpenSidebarThread(.remote(RemoteAgentRef(hostID: hostID, agentID: agentID)))
+        let row = SidebarRowID.remote(RemoteAgentRef(hostID: hostID, agentID: agentID))
+        guard !closingThreads.contains(row) else { return }
+        rememberThread(row)
+        willOpenSidebarThread(row)
         remoteInspectionRequest = UUID()
         remoteInspectingAgent = nil
         if destination != nil { destination = nil }

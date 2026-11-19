@@ -360,12 +360,7 @@ extension ShepherdViewModel {
         case .keepWorktree: deleteAgent(id)
         case .removeWorktree:
             guard let ref = localRef(id) else { worktreeDeleteTarget = id; return }
-            // The host removes the checkout, bound to the loss it reports.
-            Task {
-                let info = try? await localHostWorktreeInfo(ref)
-                if let info, info.warning == nil { deleteLocalHostWorktreeAgent(ref, removing: info) }
-                else { hostWorktreeInfo = info; worktreeDeleteTarget = id }
-            }
+            removeHostWorktree(ref, confirmed: nil)
         }
     }
 
@@ -387,29 +382,15 @@ extension ShepherdViewModel {
         guard removeWorktree else { deleteAgent(id); return }
         guard let ref = localRef(id) else { return fail("Couldn’t delete the worktree", BackgroundHostClient.HostStarting()) }
         // The checkout the dialog showed, with the loss it warned of.
-        let info = hostWorktreeInfo
-        Task {
-            do {
-                let removing = if let info { info } else { try await localHostWorktreeInfo(ref) }
-                deleteLocalHostWorktreeAgent(ref, removing: removing)
-            }
-            catch { fail("Couldn’t delete the worktree", error) }
-        }
+        removeHostWorktree(ref, confirmed: hostWorktreeInfo[id], askBeforeLoss: false)
     }
 
-    /// `completion` hears the outcome once the deletion is persisted (a peer's `agent_delete`
-    /// waits on it).
-    func deleteAgent(_ id: AgentID, completion: (@MainActor (Error?) -> Void)? = nil) {
-        enqueuePersistence("agent deletion") { [weak self] in
-            guard let self else { return }
-            do {
-                try await self.deleteAgentPersisted(id)
-                await MainActor.run { completion?(nil) }
-            } catch {
-                await MainActor.run {
-                    self.fail("Couldn’t delete the agent", error)
-                    completion?(error)
-                }
+    func deleteAgent(_ id: AgentID) {
+        guard beginClosingThread(.local(id)) else { return }
+        enqueuePersistence("agent deletion", failureTitle: "Couldn’t delete the agent") {
+            do { try await self.deleteAgentPersisted(id) }
+            catch {
+                self.closingThreads.remove(.local(id))
                 throw error
             }
         }
@@ -423,8 +404,7 @@ extension ShepherdViewModel {
         childRuns.clear(agent: id)
         forgetNotifications(of: id)
         forgetPullRequestLink(id)
-        if selectedAgentID == id { selectPreviousAgent(after: id) }
-        else { selectionHistory.removeAll { $0 == id } }
+        selectionHistory.removeAll { $0 == .local(id) }
         if let canonical = localHost?.state { adopt(canonical) }
     }
 

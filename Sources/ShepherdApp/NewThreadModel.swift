@@ -629,7 +629,7 @@ final class NewThreadState {
                     (prompt, attachments, references) = (submittedPrompt, submittedAttachments, submittedReferences)
                     (worktree, worktreeBase, worktreeBranch) = (submittedWorktree, submittedBase, submittedBranch)
                 }
-                if vm.selectionHistory.last == threadID, vm.destination == nil { vm.openNewThread() }
+                if vm.selectionHistory.last == .local(threadID), vm.destination == nil { vm.openNewThread() }
             }
         }
     }

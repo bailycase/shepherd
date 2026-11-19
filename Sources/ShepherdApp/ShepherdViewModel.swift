@@ -298,7 +298,7 @@ final class ShepherdViewModel {
     var remoteWorktreeSheet: RemoteAgentRef?
     /// What the background host reported for the worktree in Delete worktree agent's dialog
     /// (`localHost`): the checkout, its loss warning, and the fingerprint its removal is bound to.
-    var hostWorktreeInfo: RemoteWorktreeInfo?
+    var hostWorktreeInfo: [AgentID: RemoteWorktreeInfo] = [:]
     /// What this app last told its background host of the paired Macs it reaches, on which connection.
     @ObservationIgnored var sentProjectHosts: (ObjectIdentifier, [ProjectHostOption])?
     var remoteWorktreeOperationEndpoints: [RemoteAgentRef: UUID] = [:]
@@ -661,7 +661,9 @@ final class ShepherdViewModel {
     /// Recently selected agents, most recent last, no duplicates. When the
     /// selected agent goes away (⌘⇧W, process exit) selection returns to the
     /// agent you were on before it — not the space's blank shell.
-    var selectionHistory: [AgentID] = []
+    var selectionHistory: [SidebarRowID] = []
+    /// Presentation only. Keep the host's agent, tab, draft and pins until retirement is confirmed.
+    var closingThreads: Set<SidebarRowID> = []
     /// Workspace mutations are optimistic so the UI stays responsive, but the
     /// server remains authoritative. This tail makes their persistence order
     /// explicit and gives failures one reconciliation path.
@@ -788,6 +790,12 @@ final class ShepherdViewModel {
             let liveRemote = Set(self.remoteHosts.allConnections.flatMap { connection in
                 connection.state.agents.map { RemoteAgentRef(hostID: connection.id, agentID: $0.id) }
             })
+            if !self.closingThreads.isEmpty {
+                self.closingThreads = self.closingThreads.filter { row in
+                    if case .remote(let ref) = row { return liveRemote.contains(ref) }
+                    return true
+                }
+            }
             self.remoteThreadStores.prune(live: liveRemote)
             self.remoteDeckRefs.removeAll { !liveRemote.contains($0) }
             self.browsers.prune(liveRemote: liveRemote, hosts: self.remoteHosts)
@@ -1092,6 +1100,12 @@ final class ShepherdViewModel {
     /// runs those it finds against the newest push received, which a skipped push may have held back.
     func adopt(_ serverState: ShepherdState, edgesApplied: Bool = false) {
         let newest = latestState
+        if !closingThreads.isEmpty {
+            closingThreads = closingThreads.filter { row in
+                if case .local(let id) = row { return serverState.agents.contains { $0.id == id } }
+                return true
+            }
+        }
         adoption.adoptedDirectly()
         // The host's run log is read on its `automationsChanged` (`loadLocalAutomationRuns`).
         // A status report and a checkout read each broadcast the whole workspace, equal or not.
@@ -1171,10 +1185,14 @@ final class ShepherdViewModel {
         if selectedAgent == nil, destination == nil, selectedRemoteAgent == nil, replacingRun == nil || replacingRun != selectedAgentID {
             // A Project's threads live under the Project: none is shown in its place unless the person opened it before.
             let live = Set(state.agents.filter { $0.coordinatorFor == nil }.map(\.id))
-            if let next = selectionHistory.last(where: live.contains) ?? launchAgentID,
+            if let next = selectionHistory.last(where: { row in
+                guard case .local(let id) = row else { return false }
+                return live.contains(id) && !closingThreads.contains(row)
+            })?.agentID ?? launchAgentID,
                let agent = state.agents.first(where: { $0.id == next && $0.coordinatorFor == nil }),
-               !state.isProjectWorker(next) || selectionHistory.contains(next) {
+               !state.isProjectWorker(next) || selectionHistory.contains(.local(next)) {
                 willOpenSidebarThread(design(drawnBy: agent).map { .design($0.id) } ?? .local(agent.id))
+                rememberThread(.local(agent.id))
                 selectedAgentID = agent.id
                 selectedSpaceID = agent.spaceID
             } else if selectedAgentID != nil {

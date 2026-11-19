@@ -54,7 +54,7 @@ extension ShepherdViewModel {
             cancelReviews(for: agentID)
             childRuns.clear(agent: agentID)
             forgetNotifications(of: agentID)
-            selectionHistory.removeAll { $0 == agentID }
+            selectionHistory.removeAll { $0 == .local(agentID) }
             subagentInspector.runByAgent.removeValue(forKey: agentID)
         }
         if selectedAgentID.map(doomedAgents.contains) == true {
