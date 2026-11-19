@@ -444,8 +444,9 @@ private struct SHActivityCallRowView<Menu: View>: View {
                 .frame(minHeight: SHThreadMetrics.callRowHeight)
             }
             .buttonStyle(.shRow(radius: SH.Radius.xs))
-            .onHover { hovering = row.filePath != nil && $0 }
             .shOpenIn(row.filePath, hovering: hovering, trailing: SH.Space.xs + (row.stat == nil ? 0 : statWidth + 10), width: $openInWidth)
+            // After the overlay: the button covers the pointer, and hover tracked beneath it would end, hide it, and loop.
+            .onHover { hovering = row.filePath != nil && $0 }
             .padding(.horizontal, -SH.Space.xs)
             .contextMenu { menu(row) }
             .help(row.detail)
@@ -716,9 +717,10 @@ private struct SHChangedFileRow: View {
                 content.accessibilityElement(children: .ignore).accessibilityLabel(label)
             }
         }
-        .onHover { hovering = $0 }
         // A deleted file has nothing to open.
         .shOpenIn(file.status == .deleted ? nil : file.path, hovering: hovering, trailing: SH.Space.l + statWidth + SH.Space.m,
                   width: $openInWidth)
+        // After the overlay: the button covers the pointer, and hover tracked beneath it would end, hide it, and loop.
+        .onHover { hovering = $0 }
     }
 }
