@@ -433,7 +433,11 @@ struct ThreadView: View {
         .background { ThreadInputBackground(input: input) }
         .background(Color.sh.bgWindow)
         .onGeometryChange(for: CGFloat.self) { AppLayout.threadGutter(width: $0.size.width) } action: { [composerInset] in composerInset.gutter = $0 }
-        .onGeometryChange(for: Int.self) { AppLayout.eagerCoverHeight(forViewport: $0.size.height) } action: { eagerCover = $0 }
+        .onGeometryChange(for: Int.self) { AppLayout.eagerCoverHeight(forViewport: $0.size.height) } action: { [gate = liveResizeGate] cover in
+            gate.cover = cover
+            // A drag only widens what the tail covers: a window that shrinks and grows back over the same ground builds no row on the way.
+            eagerCover = gate.wasLive ? max(eagerCover, cover) : cover
+        }
         .onHover { hovering = $0 }
         .onDisappear {
             historyAnchor.cancel()
@@ -459,6 +463,8 @@ struct ThreadView: View {
         .onChange(of: liveResizing) { _, resizing in
             guard !resizing else { return }
             liveResizeGate.wasLive = false
+            // The window's own height again, whatever the drag widened it to.
+            if eagerCover != liveResizeGate.cover, liveResizeGate.cover > 0 { eagerCover = liveResizeGate.cover }
             guard active else { return }
             let live = liveEagerCount(userOrigins)
             if live < restingCount(userOrigins, rows: listedRows(userOrigins)) { eagerReturning = live }
@@ -1686,6 +1692,8 @@ final class LiveResizeGate {
     var wasLive = false
     /// The history stack's height as last measured, which a drag's stand-in for it takes.
     var historyHeight: CGFloat = 0
+    /// What the window's height asks the tail to cover as last measured (`ThreadView.eagerCover` follows it, but for a drag's widening).
+    var cover = 0
 }
 
 /// Measured insets, read by the composer and padding rather than the transcript builder.

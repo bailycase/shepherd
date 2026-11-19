@@ -127,6 +127,22 @@ struct WindowDragTests {
         #expect(dragged["thread.rowBuilder", default: 0] == 0, "no row is built in the steps of a drag: \(dragged)")
         #expect(builtRows(in: thread.window.host) <= tail)
 
+        // Taller or shorter only: no row's body runs, and no prose is built again, once the drag has been over the tallest it gets (the
+        // tail covers what the window shows, and a drag only widens that).
+        for height in [960.0, 800.0] {
+            thread.window.window.setContentSize(NSSize(width: 900 - 8 * 30, height: height))
+            ListPerf.settle(thread.window)
+        }
+        let taller = ListPerf.counting {
+            for step in 1...8 {
+                thread.window.window.setContentSize(NSSize(width: 900 - 8 * 30, height: 800 + CGFloat(step % 4) * 40))
+                ListPerf.settle(thread.window)
+            }
+        }
+        for key in ["thread.rowBuilder", "thread.userTurn", "thread.agentTurn", "prose.block"] {
+            #expect(taller[key, default: 0] == 0, "\(key) in the steps of a drag in height: \(taller)")
+        }
+
         thread.visibility.liveResizing = false
         try await eventuallyOnMain("the tail back at its size") { builtRows(in: thread.window.host) >= min(full, ThreadView.eagerRows) }
 
