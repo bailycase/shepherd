@@ -71,6 +71,28 @@ struct ThreadRestoreTests {
         #expect(frame.plan == nil && !frame.restoring, "\(turns) turns draw every row at once")
     }
 
+    /// A thread whose rows were let go and kept (`NativeThreadStore.releaseToTail`): its hidden view draws none of them, what it owes is
+    /// little, and its tail is bound by cost with more rows above it. The first frame draws that tail alone and the lazy stack comes
+    /// after it, as for rows that arrive: the stack's first screen would be built with the tail, rows as heavy as it.
+    @Test func aThreadThatLetItsRowsGoDrawsItsEagerTailAloneAndTheLazyStackAfterThatFrame() {
+        let long = store(turns: 24)
+        let rows = long.rows, eager = 12
+        let owed: (Int) -> Int = { long.restoreCost(drawn: $0, upTo: eager) }
+        #expect(owed(1) <= AppLayout.restoreStepBytes, "what it owes is no more than a step")
+        let restore = ThreadRestore()
+        _ = restore.plan(active: false, hiddenKept: 0, rows: rows, eagerRows: eager, owed: owed)
+        let first = restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, owed: owed)
+        #expect(first == ThreadRestore.Plan(eager: 12, history: false) && restore.restoring && restore.awaitsHistory)
+        let more = restore.advance(rows: rows, eagerRows: eager) { _ in Issue.record("the stack takes no rows"); return 0 }
+        #expect(more && restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, owed: owed) == nil, "the stack and every row are drawn")
+
+        // A thread that is no more than its tail has no stack to hold back: it draws at once.
+        let short = ThreadRestore()
+        let few = store(turns: 6).rows
+        _ = short.plan(active: false, hiddenKept: 0, rows: few, eagerRows: few.count, owed: owed)
+        #expect(short.plan(active: true, hiddenKept: nil, rows: few, eagerRows: few.count, owed: owed) == nil && !short.restoring)
+    }
+
     @Test func aThreadThatKeptEveryRowRestoresNothing() {
         let few = store(turns: 2)
         let frame = firstFrame(few)

@@ -81,6 +81,31 @@ struct ThreadReleasedTailTests {
         #expect(!store.running && store.liveRowID == nil && store.rows.allSatisfy { !$0.live }, "what it was doing when it left is not what it is doing now")
     }
 
+    /// The rows the host adds while a turn runs (its question and the reply so far) are not history: the tail starts in history, and they stay.
+    @Test func theLiveRowsOfAThreadThatLeftRunningStayAfterTheTail() async {
+        let all = session(turns: 100)
+        let live = [F.user("Go on", id: "provisional:u"), F.assistant("Working on it", status: "streaming", id: "provisional:a")]
+        let host = FakeHost(F.snapshot(running: true, messages: all, provisional: live))
+        let store = manualStore()
+        let task = await start(store, host)
+        task.cancel()
+        store.suspend()
+        let rows = store.rows
+        #expect(rows.count == 202)
+
+        store.releaseToTail(rows: 2, maxBytes: .max)
+        #expect(store.messages.first?.role == "user" && store.messages.count >= NativeThreadStore.releasedTailMessages)
+        #expect(store.rows.suffix(2).map(\.id) == rows.suffix(2).map(\.id), "the live rows keep their identities")
+        #expect(store.rows.count == store.messages.count + 2 && !store.running)
+    }
+
+    @Test func aThreadWithNoQuestionIsLeftAsItIs() async {
+        let (store, _) = await hidden((0..<20).map { F.assistant("Note \($0)", id: "a\($0)") })
+        let rows = store.rows
+        store.releaseToTail(rows: 2, maxBytes: 1)
+        #expect(store.keepsOnlyTail && store.rows == rows && store.messages.count == 20, "nothing to cut at")
+    }
+
     @Test func aThreadOnScreenKeepsEverything() async {
         let host = FakeHost(F.snapshot(messages: session(turns: 100)))
         let store = manualStore()

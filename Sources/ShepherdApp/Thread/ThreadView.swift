@@ -1435,6 +1435,13 @@ final class ThreadRestore {
                 first = rows[rows.endIndex - kept].id
                 restoring = true
                 history = false
+            } else if self.hiddenKept != nil, rows.count > eagerRows, eagerRows < ThreadView.eagerRows {
+                // What it owes costs no more than a step, but a tail bounded by cost sits above a lazy stack of rows that cost as much or
+                // more: a thread whose rows were let go and kept (`NativeThreadStore.releaseToTail`) comes back as rows that arrive do
+                // (`noteArrival`), its eager tail in the first frame and the stack after it, not the stack's first screen with it.
+                first = rows[rows.endIndex - eagerRows].id
+                restoring = true
+                history = false
             }
             self.hiddenKept = nil
         }
