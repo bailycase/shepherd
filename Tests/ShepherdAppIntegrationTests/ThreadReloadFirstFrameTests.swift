@@ -48,6 +48,20 @@ struct ThreadReloadFirstFrameTests {
         return stores
     }
 
+    /// Runs `sample` on each of `polls` polls of `eventuallyOnMain`. A thing that must not happen cannot be waited for, so the window it
+    /// is watched over is a count of polls (10 ms each), longer than the looks the restore makes meanwhile (`AppLayout.restoreRetry`).
+    private func watch(_ what: String, polls: Int, _ sample: @MainActor () throws -> Void) async throws {
+        var taken = 0
+        try await eventuallyOnMain(what) {
+            try sample()
+            taken += 1
+            return taken >= polls
+        }
+    }
+
+    /// Polls that span `looks` looks of the restore.
+    private static func polls(looks: Int) -> Int { looks * Int(AppLayout.restoreRetry / .milliseconds(10)) + 1 }
+
     private func distanceFromTail(_ thread: FakeThread) throws -> CGFloat {
         let scroll = try #require(thread.scrollView)
         let document = try #require(scroll.documentView)
@@ -145,20 +159,18 @@ struct ThreadReloadFirstFrameTests {
         // The lazy stack waits for the pull while it is held: no frame until it lands has more than the tail.
         try await eventuallyOnMain("the pull to be on its way") { thread.snapshotRequests > requests }
         var held = [first]
-        for _ in 0..<10 {
+        try await watch("the held pull to be watched for three looks of the restore", polls: Self.polls(looks: 3)) {
             ListPerf.settle(thread.window)
             held.append(ThreadRowMemory.built(in: store))
-            try await Task.sleep(for: .milliseconds(20))
         }
         #expect(store.catchUp == nil && held.allSatisfy { $0 <= tail }, "the stack stayed out while the pull was held: \(held), tail \(tail)")
 
         thread.releaseSnapshots()
         try await eventuallyOnMain("the pull to land") { store.catchUp != nil }
         var distances: [CGFloat] = []
-        for _ in 0..<20 {
+        try await watch("the end of the thread to be watched as the stack comes", polls: Self.polls(looks: 3)) {
             ListPerf.settle(thread.window)
             distances.append(try distanceFromTail(thread))
-            try await Task.sleep(for: .milliseconds(20))
         }
         #expect(ThreadRowMemory.built(in: store) >= first)
         #expect(distances.allSatisfy { abs($0) < 2 }, "the end of the thread stayed where it was: \(distances)")
