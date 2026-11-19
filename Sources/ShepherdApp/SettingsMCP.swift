@@ -23,13 +23,15 @@ struct MCPSettings<Extras: View>: View {
         get { vm.mcpOpenServer }
         nonmutating set { vm.mcpOpenServer = newValue }
     }
+    @State private var query = ""
     @State private var sheet: MCPSheet?
     @State private var removing: String?
     @State private var importing: [MCPServerEntry]?
     @State private var toast: SHToast?
 
     var body: some View {
-        let rows = store.rows(filter: .all, query: "")
+        let all = store.rows(filter: .all, query: "")
+        let rows = store.rows(filter: .all, query: query)
         Group {
             if let name = expanded, let row = store.rows(filter: .all, query: "").first(where: { $0.id == name }) {
                 SettingsPage(title: row.name) { serverPage(row) }
@@ -52,8 +54,12 @@ struct MCPSettings<Extras: View>: View {
                                 Button("Dismiss") { store.problem = nil }.buttonStyle(.sh(.secondary, size: .s))
                             }
                         }
+                        if !all.isEmpty || !query.isEmpty {
+                            SettingsSearchRow(prompt: "Filter servers", text: $query,
+                                              note: store.connectedCount > 0 ? "\(store.connectedCount) connected" : nil)
+                        }
                         if rows.isEmpty {
-                            SettingsRow(title: emptyMessage) { EmptyView() }
+                            SettingsRow(title: query.isEmpty ? emptyMessage : "No servers match") { EmptyView() }
                         }
                         ForEach(rows) { row in
                             MCPListRow(row: row, hint: hint(row), dot: dot(row), actions: rowActions(row.name)).equatable()
@@ -192,9 +198,15 @@ struct MCPSettings<Extras: View>: View {
 
     @ViewBuilder private func signInRow(_ detail: MCPServerDetailModel, actions: MCPServerDetail.Actions) -> some View {
         switch detail.signIn {
-        case .signedIn(let account, _, let note, let title):
+        case .signedIn(let account, let scopes, let note, let title):
             SettingsRow(title: "Sign-in", subtitle: [title, account, note].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "), dot: .on) {
-                Button("Sign out", action: actions.signOut).buttonStyle(.sh(.secondary, size: .s))
+                HStack(spacing: SH.Space.s) {
+                    Button("Sign in again", action: actions.signIn).buttonStyle(.sh(.secondary, size: .s))
+                    Button("Sign out", action: actions.signOut).buttonStyle(.sh(.secondary, size: .s))
+                }
+            }
+            if !scopes.isEmpty {
+                SettingsRow(title: "OAuth scopes") { SettingsValue(text: scopes.joined(separator: " "), mono: true) }
             }
         case .needsSignIn(let title, let note, let again):
             SettingsRow(title: "Sign-in", subtitle: [title, note].filter { !$0.isEmpty }.joined(separator: " · "), dot: .warn) {
@@ -377,85 +389,6 @@ struct MCPServerList: View {
         .shBorder(sh.lineSubtle, radius: AppLayout.mcpCardRadius)
     }
 
-}
-
-// MARK: The rail
-
-/// How the agent uses the servers, what they cost in every prompt, the options, and the hosts.
-private struct MCPRail: View {
-    var store: MCPStore
-    @Bindable private var settings = AppSettings.shared
-
-    init(store: MCPStore) {
-        self.store = store
-    }
-
-    var body: some View {
-        let sh = Color.sh
-        VStack(alignment: .leading, spacing: AppLayout.mcpRailSpacing) {
-            VStack(alignment: .leading, spacing: SH.Space.m) {
-                SHSectionHeader("How the agent uses them", style: .settings).padding(.horizontal, SH.Space.xxs)
-                Text("Servers start with each thread and stop with it, and a running thread keeps the ones it started with. Their tools "
-                    + "wait behind a search until the agent needs one; a server set to Direct declares them all up front. Remote servers "
-                    + "that use OAuth need you to sign in once; pi keeps the token fresh.")
-                    .shText(size: AppLayout.mcpRailTextSize, lineHeight: AppLayout.mcpRailLineHeight)
-                    .foregroundStyle(sh.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, SH.Space.xxs)
-                MCPBudget(tokens: store.budget.tokens, fraction: store.budget.fraction, note: store.budget.note)
-                    .help("The context meter counts this as part of the system prompt.")
-            }
-            VStack(alignment: .leading, spacing: 0) {
-                SHSectionHeader("Options", style: .settings).padding(.horizontal, SH.Space.xxs).padding(.bottom, SH.Space.m)
-                option("Also use a repo’s .mcp.json", note: "Off: only the servers on this page, in every repo.",
-                       isOn: $settings.mcpProjectConfig)
-            }
-            VStack(alignment: .leading, spacing: SH.Space.s) {
-                SHSectionHeader("Where they live", style: .settings) {
-                    Text(store.configPath)
-                        .font(.shMono(AppLayout.mcpPathSize))
-                        .foregroundStyle(sh.textTertiary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(store.dependencies.file.url.path)
-                }
-                .padding(.horizontal, SH.Space.xxs)
-                // One file per Mac, kept the same on every Mac in the fleet: a change here is a change everywhere.
-                HStack(spacing: SH.Space.m) {
-                    Image(systemName: "checkmark")
-                        .font(.shSans(SHSkillMetrics.hostMarkSize - 2, .bold))
-                        .foregroundStyle(sh.done)
-                        .accessibilityHidden(true)
-                    Text("\(store.connectedCount) connected · shared across the fleet")
-                        .font(.shSans(SHSkillMetrics.hostTextSize))
-                        .foregroundStyle(sh.textTertiary)
-                        .lineLimit(1)
-                }
-                .frame(minHeight: SHSkillMetrics.hostRowHeight)
-                .accessibilityElement(children: .combine)
-                .padding(.horizontal, SH.Space.xxs)
-            }
-        }
-    }
-
-    private func option(_ title: String, note: String, isOn: Binding<Bool>) -> some View {
-        let sh = Color.sh
-        return HStack(alignment: .top, spacing: SH.Space.l + SH.Space.xxs) {
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(title)
-                    .font(.shSans(AppLayout.mcpOptionTitleSize, .medium))
-                    .foregroundStyle(sh.textPrimary)
-                Text(note)
-                    .shText(size: AppLayout.mcpNoteSize, lineHeight: AppLayout.mcpNoteLineHeight)
-                    .foregroundStyle(sh.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-            Toggle(title, isOn: isOn).toggleStyle(.shSwitch).labelsHidden()
-        }
-        .padding(.vertical, SH.Space.m + SH.Space.xxs)
-        .overlay(alignment: .top) { SHHairline() }
-    }
 }
 
 // MARK: Sign-in

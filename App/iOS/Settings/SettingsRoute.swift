@@ -20,6 +20,8 @@ enum SettingsRoute: Hashable, Codable {
     case worktrees
     /// A host's MCP servers and its extensions, slash commands and daily updates.
     case tools
+    /// Every slash command the host's pi lists, each with a switch. Opened from Tools.
+    case slashCommands
     /// The fleet's subagent profiles; one profile's Markdown. Opened from Agents.
     case subagents
     case subagent(String)
@@ -65,6 +67,7 @@ struct SettingsDestination: View {
         case .agents: AgentsScreen()
         case .worktrees: WorktreesScreen()
         case .tools: ToolsScreen()
+        case .slashCommands: SlashCommandsScreen()
         case .subagents: SubagentProfilesScreen()
         case .subagent(let file): SubagentProfileScreen(file: file)
         case .spaces: SpacesScreen()

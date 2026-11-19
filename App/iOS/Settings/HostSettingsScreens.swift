@@ -242,14 +242,12 @@ struct ExtensionSections: View {
             if host.serves(RemoteProtocol.hostSettingsV2Capability) {
                 SettingsSection("How the agent uses them") {
                     SHListCard {
-                        SettingsSwitchRow("Skills in the / menu", note: "List every skill as /skill:name in the composer’s slash menu.",
-                                          isOn: settings.skillsInSlashMenu) { post(.skillsInSlashMenu($0)) }
                         SettingsSwitchRow("Also use a repo’s .mcp.json", note: "Off: only the host's own MCP servers, in every repo.",
                                           isOn: settings.mcpProjectConfig) { post(.mcpProjectConfig($0)) }
                     }
                 }
-                SlashCommandsSection(commands: settings.slashCommands, hidden: Set(settings.hiddenSlashCommands)) { name, on in
-                    post(.slashCommand(name: name, on: on))
+                SettingsSection("Slash commands") {
+                    SHListCard { SlashCommandsLink(commands: settings.slashCommands, hidden: Set(settings.hiddenSlashCommands)) }
                 }
             }
             SettingsSection("Installed on \(host.name)") {
@@ -320,6 +318,55 @@ private struct SubagentDefaultsSection: View {
         var next = defaults
         next[keyPath: keyPath] = value
         change(next)
+    }
+}
+
+/// Tools' row for the slash commands: how many are on; opens their screen.
+private struct SlashCommandsLink: View {
+    let commands: [NativeCommand]
+    let hidden: Set<String>
+    @Environment(MobileNavigator.self) private var navigator
+
+    var body: some View {
+        let off = commands.filter { hidden.contains($0.name) }.count
+        Button { navigator.open(.settings(.slashCommands)) } label: {
+            SettingsNavRow("Commands in the / menu", note: commands.isEmpty ? "None listed yet" : "\(commands.count - off) on, \(off) off", value: "Manage")
+        }
+        .buttonStyle(.shRow(radius: 0))
+    }
+}
+
+/// Settings ▸ Tools ▸ Slash commands: every command the host's pi listed, each with a switch.
+struct SlashCommandsScreen: View {
+    @Environment(MobileHosts.self) private var hosts
+
+    var body: some View {
+        let store = SettingsStore.of(hosts)
+        SettingsPageScaffold("Slash commands", store: store) {
+            HostSettingsBody(store: store, explanation: nil) { settings, host in
+                SlashCommandsSection(commands: settings.slashCommands, hidden: Set(settings.hiddenSlashCommands)) { name, on in
+                    store.hostSettings.post(.slashCommand(name: name, on: on), on: host)
+                }
+            }
+        }
+    }
+}
+
+/// Skills ▸ Options: whether the composer's / menu lists every skill.
+struct SkillsSlashMenuSection: View {
+    let store: SettingsStore
+
+    var body: some View {
+        HostSettingsBody(store: store, explanation: nil) { settings, host in
+            if host.serves(RemoteProtocol.hostSettingsV2Capability) {
+                SettingsSection("Options") {
+                    SHListCard {
+                        SettingsSwitchRow("Skills in the / menu", note: "List every skill as /skill:name in the composer’s slash menu.",
+                                          isOn: settings.skillsInSlashMenu) { store.hostSettings.post(.skillsInSlashMenu($0), on: host) }
+                    }
+                }
+            }
+        }
     }
 }
 

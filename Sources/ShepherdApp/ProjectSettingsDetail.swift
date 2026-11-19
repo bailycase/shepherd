@@ -90,7 +90,7 @@ struct ProjectSettingsDetail: View {
         let busy = model.saving || cookies.clearing
         return VStack(alignment: .leading, spacing: SH.Space.m) {
             Button {
-                Task { await model.navigate(model.overview ? .close : .overview) }
+                Task { await model.stepBack() }
             } label: {
                 Text("‹ \(model.overview ? "Spaces" : project.project.name)").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
                     .frame(minHeight: SH.Height.controlS).contentShape(Rectangle())
@@ -254,6 +254,7 @@ struct ProjectSettingsDetail: View {
                 Spacer(minLength: 0)
                 if model.fileLoaded {
                     SettingsOpenIn(text: $model.draft, name: (model.selectedFile?.path as NSString?)?.lastPathComponent ?? "AGENTS.md")
+                        .id(model.selectedFile?.path)
                 }
                 Text(model.tokenText).font(.shMono(AppLayout.projectsPathSize)).foregroundStyle(Color.sh.settingsMuted)
                 Color.sh.lineStrong.frame(width: AppLayout.projectMetadataRule, height: AppLayout.projectDividerHeight)

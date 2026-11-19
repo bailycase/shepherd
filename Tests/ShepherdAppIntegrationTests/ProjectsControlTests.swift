@@ -19,7 +19,7 @@ struct ProjectsControlTests {
     }
 
     private static func nativeTextField(under view: NSView, label: String) -> NSTextField? {
-        if let field = view as? NSTextField, field.accessibilityLabel() == label || field.placeholderString == label || field.stringValue == "does-not-exist" { return field }
+        if let field = view as? NSTextField, field.accessibilityLabel() == label || field.placeholderString == label { return field }
         return view.subviews.lazy.compactMap { nativeTextField(under: $0, label: label) }.first
     }
 
@@ -198,9 +198,16 @@ struct ProjectsControlTests {
         try await eventuallyOnMain("the project list") { model.selected == nil }
         #expect(try String(contentsOf: root.appendingPathComponent("AGENTS.md"), encoding: .utf8) == "# Changed instructions\n")
         window.layout()
-        model.filter = "does-not-exist"
-        try await eventuallyOnMain("the filter") { model.visible.isEmpty }
-        model.filter = ""
+        func type(_ text: String) throws {
+            let field = try #require(nativeTextField(under: window.host, label: "Filter spaces"), "the Filter spaces field")
+            field.stringValue = text
+            field.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: field))
+        }
+        try type("dash")
+        try await eventuallyOnMain("a real match") { model.filter == "dash" && model.visible.map(\.project.name) == ["dashboard"] }
+        try type("does-not-exist")
+        try await eventuallyOnMain("no match") { model.visible.isEmpty }
+        try type("")
         try await eventuallyOnMain("the cleared project filter") { model.filter.isEmpty && model.visible.count == 1 }
         window.layout()
         let add = try ControlPress.press("Add space", under: window.host)

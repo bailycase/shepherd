@@ -56,7 +56,7 @@ struct InstructionsSettings: View {
 
 // MARK: Files
 
-/// The file tabs and the open file's editor.
+/// The open file's editor.
 struct InstructionsMainColumn: View {
     @Bindable var model: InstructionsModel
 
@@ -80,50 +80,6 @@ struct InstructionsMainColumn: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-    }
-}
-
-/// `AGENTS.md` and `APPEND_SYSTEM.md` as underline tabs over a `lineSubtle` rule, each with
-/// what it is for and its size.
-private struct InstructionsFileTabs: View {
-    var model: InstructionsModel
-
-    var body: some View {
-        HStack(alignment: .bottom, spacing: AppLayout.instructionsTabSpacing) {
-            ForEach(InstructionFile.allCases, id: \.self) { file in
-                tab(file)
-            }
-            Spacer(minLength: 0)
-        }
-        .background(alignment: .bottom) { SHHairline() }
-    }
-
-    private func tab(_ file: InstructionFile) -> some View {
-        let sh = Color.sh
-        let chosen = model.file == file
-        let note = InstructionsPresentation.fileNote(file, text: model.text(file))
-        return Button { model.file = file } label: {
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(file.fileName)
-                    .font(.shMono(AppLayout.instructionsTabNameSize, chosen ? .semibold : .medium))
-                    .foregroundStyle(chosen ? sh.textPrimary : sh.textSecondary)
-                Text(note)
-                    .font(.shSans(AppLayout.instructionsTabNoteSize))
-                    .foregroundStyle(sh.textTertiary)
-            }
-            .padding(.horizontal, SH.Space.xxs)
-            .padding(.top, SH.Space.m)
-            .padding(.bottom, SH.Space.m + SH.Space.xxs)
-            .overlay(alignment: .bottom) {
-                if chosen {
-                    Rectangle().fill(sh.textPrimary).frame(height: AppLayout.instructionsTabUnderline)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .shFocusRing(radius: SH.Radius.xs)
-        .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 }
 
@@ -194,86 +150,6 @@ private struct InstructionsEditorCard: View {
             .padding(SH.Space.xxl)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-    }
-}
-
-// MARK: Side column
-
-/// How pi reads the files.
-private struct InstructionsSideColumn: View {
-    let file: InstructionFile
-
-    var body: some View {
-        ScrollView(.vertical) {
-            InstructionsReadingOrder(file: file)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .scrollIndicators(.hidden)
-    }
-}
-
-/// How the agent reads them: five steps in order, each a small card joined to the next, the open
-/// file's own step marked.
-private struct InstructionsReadingOrder: View {
-    let file: InstructionFile
-
-    private var steps: [(title: String, note: String, file: InstructionFile?)] {
-        [
-            ("Agent’s system prompt", "built in", nil),
-            ("Shepherd's AGENTS.md", (file == .agents ? "this file · " : "") + "every repo", .agents),
-            ("AGENTS.md in parent folders", "if any", nil),
-            ("the repo's AGENTS.md", "most specific context", nil),
-            ("Shepherd's APPEND_SYSTEM.md", (file == .appendSystem ? "this file · " : "") + "appended last · wins", .appendSystem),
-        ]
-    }
-
-    var body: some View {
-        let sh = Color.sh
-        VStack(alignment: .leading, spacing: SH.Space.m) {
-            SHSectionHeader("How the agent reads them", style: .settings).padding(.horizontal, SH.Space.xxs)
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
-                    if index > 0 {
-                        Rectangle()
-                            .fill(sh.lineStrong)
-                            .frame(width: AppLayout.instructionsStepConnectorWidth, height: AppLayout.instructionsStepConnectorHeight)
-                            .padding(.leading, AppLayout.instructionsStepConnectorInset)
-                            .accessibilityHidden(true)
-                    }
-                    stepCard(index + 1, title: step.title, note: step.note, marked: step.file == file)
-                }
-            }
-            SettingsNote(text: "Later files win. pi's own files in Shepherd's pi home still load, each just before Shepherd's. "
-                + "A session reads them when it starts: running agents keep the version they started with, "
-                + "new agents and automations get this one.")
-                .padding(.horizontal, SH.Space.xxs)
-        }
-    }
-
-    private func stepCard(_ number: Int, title: String, note: String, marked: Bool) -> some View {
-        let sh = Color.sh
-        return HStack(spacing: SH.Space.m + SH.Space.xxs) {
-            Text("\(number)")
-                .font(.shMono(AppLayout.instructionsNumberSize))
-                .foregroundStyle(sh.textTertiary)
-                .frame(width: AppLayout.instructionsStepNumberWidth, alignment: .leading)
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(title)
-                    .font(.shMono(AppLayout.instructionsStepTitleSize, .semibold))
-                    .foregroundStyle(sh.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Text(note)
-                    .font(.shSans(AppLayout.instructionsStepNoteSize))
-                    .foregroundStyle(sh.textTertiary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, SH.Space.m)
-        .padding(.horizontal, SH.Space.m + SH.Space.xxs)
-        .shCard(fill: marked ? sh.lanternTint : sh.bgRaised, line: marked ? sh.lanternText : sh.lineSubtle)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Step \(number): \(title), \(note)")
     }
 }
 

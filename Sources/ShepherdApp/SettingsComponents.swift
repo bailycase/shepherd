@@ -360,6 +360,26 @@ struct SettingsFilterRow<Value: Hashable>: View {
     }
 }
 
+/// The first row of a list card: a filter field at the left, an optional count or note at the right.
+struct SettingsSearchRow: View {
+    let prompt: String
+    @Binding var text: String
+    var note: String?
+
+    var body: some View {
+        HStack(spacing: SH.Space.m) {
+            SHSearchField(prompt, text: $text).frame(width: AppLayout.settingsFilterWidth)
+            Spacer(minLength: 0)
+            if let note {
+                Text(note).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+            }
+        }
+        .padding(.horizontal, SH.Space.l)
+        .padding(.vertical, SH.Space.s)
+        .frame(minHeight: SH.Height.scaled(SHCardRowMetrics.settingsMinHeight))
+    }
+}
+
 /// The editor card the Settings boards draw: a header row (the file's name in mono, "● edited", the
 /// Open in slot, then its actions), a rule, and the editor under it. It takes the height of the
 /// window's remaining space, never less than `AppLayout.settingsEditorHeight`.
@@ -399,7 +419,7 @@ struct SettingsEditorCard<Actions: View, Content: View>: View {
                         .shTransition(.disclosure)
                 }
                 Spacer(minLength: SH.Space.m)
-                if let openIn { SettingsOpenIn(text: openIn, name: name) }
+                if let openIn { SettingsOpenIn(text: openIn, name: (name as NSString).lastPathComponent).id(name) }
                 actions
             }
             .padding(.vertical, SH.Space.s)
@@ -421,12 +441,14 @@ struct SettingsSheetLabel: View {
     /// A multi-line input's draft, for the Open in ▾ button at the label's right, and the file name it opens as.
     var openIn: Binding<String>?
     var file = "draft.txt"
+    /// What the draft belongs to (a space, say): a new value ends the old watch, so a late save there can't reach this input.
+    var scope: AnyHashable = 0
 
     var body: some View {
         HStack(spacing: SH.Space.s) {
             Text(title).font(.sh(.caption, weight: .semibold)).foregroundStyle(Color.sh.textSecondary)
             Spacer(minLength: 0)
-            if let openIn { SettingsOpenIn(text: openIn, name: file) }
+            if let openIn { SettingsOpenIn(text: openIn, name: file).id(scope) }
         }
         .accessibilityAddTraits(.isHeader)
     }

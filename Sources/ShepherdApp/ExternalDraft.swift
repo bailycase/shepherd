@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import SwiftUI
 import ShepherdUI
 
@@ -17,6 +18,7 @@ import ShepherdUI
     private var lastSeen = ""
     private var sources: [DispatchSourceFileSystemObject] = []
     private var pending: DispatchWorkItem?
+    private var activeObserver: NSObjectProtocol?
     private(set) var isWatching = false
 
     init(name: String, root: URL = ExternalDraft.root) {
@@ -41,6 +43,9 @@ import ShepherdUI
         } catch { return }
         isWatching = true
         arm()
+        activeObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.check() }
+        }
     }
 
     /// Reads the file and passes on its text when it differs from the last text seen.
@@ -53,6 +58,8 @@ import ShepherdUI
     func stop() {
         isWatching = false
         pending?.cancel()
+        if let activeObserver { NotificationCenter.default.removeObserver(activeObserver) }
+        activeObserver = nil
         sources.forEach { $0.cancel() }
         sources = []
         onChange = nil
@@ -75,7 +82,9 @@ import ShepherdUI
         }
     }
 
+    /// The save is applied at once; only re-opening the sources (a new inode after an atomic replace) waits out the burst.
     private func fired() {
+        check()
         pending?.cancel()
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {

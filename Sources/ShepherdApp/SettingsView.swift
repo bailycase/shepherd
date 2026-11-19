@@ -108,7 +108,7 @@ struct SettingsView: View {
                                     ForEach(hits.filter { $0.section.navSelection == section }) { hit in
                                         SettingsSearchHitRow(hit: hit) {
                                             // A server found by name opens with its row open.
-                                            vm.mcpOpenServer = hit.section == .tools && vm.mcp.entry(hit.item) != nil ? hit.item : nil
+                                            vm.mcpOpenServer = hit.isServer && vm.mcp.entry(hit.item) != nil ? hit.item : nil
                                             navigate(to: hit.section)
                                         }
                                     }
@@ -159,6 +159,10 @@ struct SettingsView: View {
     private func goBack() {
         if vm.projectCookies.pending != nil { vm.projectCookies.pending = nil; return }
         guard !vm.projectCookies.clearing else { return }
+        if vm.settingsSection == .projects, vm.projects.selected != nil {
+            if !vm.projects.saving && !vm.projects.resources.saving { Task { await vm.projects.stepBack() } }
+            return
+        }
         if let drill { drill.close(); return }
         let leave = {
             if let parent = vm.settingsSection.parent { vm.settingsSection = parent } else { vm.showSettings = false }
@@ -297,7 +301,9 @@ private struct SettingsSearchHitRow: View {
 struct SettingsSearchHit: Identifiable, Hashable {
     let section: SettingsSection
     let item: String
-    var id: String { "\(section.rawValue)/\(item)" }
+    /// A row found by its own name (an MCP server), not a titled row: a server named like a toggle keeps its own hit.
+    var isServer = false
+    var id: String { "\(section.rawValue)/\(isServer ? "server/" : "")\(item)" }
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
@@ -489,8 +495,11 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     /// Every hit for `query`, page by page in nav order; a hit is named by its page and title.
     /// `rows` are pages' own rows found by name (Tools' MCP servers).
     static func hits(for query: String, rows: [SettingsSection: [String]] = [:]) -> [SettingsSearchHit] {
-        allCases.flatMap { section in
-            section.matches(for: query, rows: rows[section] ?? []).map { SettingsSearchHit(section: section, item: $0) }
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return allCases.flatMap { section in
+            section.matches(for: query).map { SettingsSearchHit(section: section, item: $0) }
+                + (needle.isEmpty ? [] : (rows[section] ?? []).filter { $0.localizedCaseInsensitiveContains(needle) }
+                    .map { SettingsSearchHit(section: section, item: $0, isServer: true) })
         }
     }
 

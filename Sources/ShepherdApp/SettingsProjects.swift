@@ -56,6 +56,9 @@ struct ProjectsSettings: View {
                           links: model.addHost == nil || model.addHost?.unavailable != nil ? [] : [
                               SettingsLink("Add space") { adding = model.addHost.map { vm.addSpaceModel(host: $0) } },
                           ], lazy: true) {
+                if !model.rows.isEmpty {
+                    SettingsSearchRow(prompt: "Filter spaces", text: $model.filter)
+                }
                 if model.visible.isEmpty {
                     SettingsRow(title: model.loading ? "Loading spaces…" : model.rows.isEmpty ? "No spaces yet" : "No spaces match",
                                 subtitle: model.rows.isEmpty && !model.loading ? "Add a folder to get started" : nil) { EmptyView() }

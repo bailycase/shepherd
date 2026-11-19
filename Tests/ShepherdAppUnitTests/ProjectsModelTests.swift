@@ -62,7 +62,8 @@ struct ProjectsModelTests {
         #expect(requests.contains(.save(directory: "/one", file: "AGENTS.md", text: "changed", expected: "old")))
         #expect(!model.dirty)
         model.draft = "discard me"
-        await model.navigate(.close)
+        await model.stepBack()
+        #expect(model.pending == .close && model.selected != nil, "Esc asks before dropping the draft, as the back button does")
         await model.discard()
         #expect(model.selected == nil)
     }

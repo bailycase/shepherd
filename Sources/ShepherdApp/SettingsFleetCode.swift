@@ -91,7 +91,7 @@ struct FleetExcludesSheet: View {
 
     private func field(_ label: String, text: Binding<String>, example: String) -> some View {
         VStack(alignment: .leading, spacing: SH.Space.s) {
-            SettingsSheetLabel(title: label, openIn: text, file: label == "Keep home" ? "keep-home.txt" : "send-anyway.txt")
+            SettingsSheetLabel(title: label, openIn: text, file: label == "Keep home" ? "keep-home.txt" : "send-anyway.txt", scope: selection)
             TextEditor(text: text)
                 .font(.sh(.mono))
                 .scrollContentBackground(.hidden)

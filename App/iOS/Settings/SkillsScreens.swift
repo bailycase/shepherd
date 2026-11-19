@@ -51,6 +51,7 @@ struct SkillsScreen: View {
                 if term.isEmpty {
                     InstalledSkills(model: model, hosts: skillsHosts) { name in navigator.open(.settings(.skill(name))) }
                     PiSkillsSections(model: model, hosts: skillsHosts)
+                    SkillsSlashMenuSection(store: store)
                 } else {
                     SkillSearchResults(term: term, results: results, searching: searching, failure: failure, model: model,
                                        hosts: skillsHosts) { skill in

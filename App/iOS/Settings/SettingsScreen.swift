@@ -216,23 +216,7 @@ private struct SettingsListItem: View {
 struct SettingsPageView: View {
     let page: SettingsPage
 
-    var body: some View {
-        switch page {
-        case .general: NotificationsScreen()
-        case .appearance: AppearanceScreen()
-        case .models: ModelsScreen()
-        case .agents: AgentsScreen()
-        case .instructions: InstructionsScreen()
-        case .skills: SkillsScreen()
-        case .tools: ToolsScreen()
-        case .hooks: HooksScreen()
-        case .spaces: SpacesScreen()
-        case .git: WorktreesScreen()
-        case .fleet: FleetScreen()
-        case .advanced: DiagnosticsScreen()
-        case .experiments: ExperimentsScreen()
-        }
-    }
+    var body: some View { SettingsDestination(route: page.route) }
 }
 
 extension SettingsStore {

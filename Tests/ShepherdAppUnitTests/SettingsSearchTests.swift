@@ -32,6 +32,14 @@ struct SettingsSearchTests {
         #expect(SettingsSearchHit(section: .models, item: "Instructions").id != SettingsSearchHit(section: .fromYourPi, item: "Instructions").id)
     }
 
+    /// A server named like a toggle on its page ("Browser") is a hit of its own, and only it opens the server.
+    @Test func aServerNamedLikeAToggleGetsItsOwnHit() {
+        let hits = SettingsSection.hits(for: "browser", rows: [.tools: ["Browser"]]).filter { $0.section == .tools }
+        #expect(hits.filter { $0.item == "Browser" }.count == 2)
+        #expect(Set(hits.map(\.id)).count == hits.count)
+        #expect(hits.filter(\.isServer).map(\.item) == ["Browser"])
+    }
+
     @Test func everyPageListsItsRows() {
         for section in SettingsSection.allCases {
             #expect(!section.items.isEmpty, "\(section.title) has no searchable rows")

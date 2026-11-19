@@ -347,6 +347,10 @@ final class ProjectsModel {
         } catch { if token == generation { fileError = String(describing: error); fileLoading = false } }
     }
 
+    /// One step up from the open space: its overview, or the Spaces list from the overview. Esc and the back button both
+    /// come here, so the unsaved-changes guard in `navigate` applies to both.
+    func stepBack() async { await navigate(overview ? .close : .overview) }
+
     func navigate(_ action: Pending) async {
         guard !saving, !resources.saving else { return }
         if dirty || category == .skills && resources.dirty { pending = action } else { await apply(action) }
