@@ -624,9 +624,13 @@ struct ThreadView: View {
             // Replies still to be parsed (a large one is parsed off the main thread) draw as nothing, and a tail a few points tall leaves the
             // stack in the window, where it builds rows that grow to their full size out of view and out of the budget. The update that
             // brings their blocks builds them, and the stack comes in the one after it. A parse that does not land holds it back only so long.
-            var parseRetries = 0
-            while scrolling() || restore.waitsForParse(retries: parseRetries), !Task.isCancelled {
+            // So does the pull that catches the thread up, when its first frame came before it (rows kept while it was away): what it
+            // brings changes the tail and adds rows above it, and a stack built before it is built against a tail that is still to move.
+            var parseRetries = 0, pullRetries = 0
+            while scrolling() || restore.waitsForParse(retries: parseRetries) || (store.catchUp == nil && pullRetries < AppLayout.restoreParseRetries),
+                  !Task.isCancelled {
                 if !restore.tailDrawnParsed { parseRetries += 1 }
+                if store.catchUp == nil { pullRetries += 1 }
                 try? await Task.sleep(for: AppLayout.restoreRetry)
             }
             guard !Task.isCancelled else { return }

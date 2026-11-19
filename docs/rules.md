@@ -234,7 +234,8 @@ the remote thread stores has its own budget.
 Showing a thread that let rows go draws that last screen in the pass that shows it and builds
 nothing there (the deck lays the host out as it unhides one, so no frame has the layout without
 them). A thread whose rest costs no more than a step (`AppLayout.restoreStepBytes`, counted beyond
-each row's chrome, so a dozen rows of one line cost nothing) draws all of it there instead. The rest
+each row's chrome, so a dozen rows of one line cost nothing) draws all of it there instead, unless its tail is bound by cost
+and more rows wait above it: it draws that tail and nothing above it, as rows that arrive do. The rest
 comes back after that frame (`ThreadRestore`): first the lazy stack, whatever the person types (it
 builds nothing at the tail, and without it a reader could not scroll to older rows; it waits only
 for a hand on the scroll view or a flick's momentum, and a reader who scrolled away before it came
