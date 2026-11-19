@@ -132,6 +132,7 @@ struct ThreadView: View {
     @State private var arrivals = ThreadArrivals()
     @State private var rowIndex = ThreadRowIndex()
     @State private var restore = ThreadRestore()
+    @State private var eagerTail = ThreadEagerTail()
     @State private var historyBuilt = ThreadHistoryBuilt()
     @State private var shownSignpost = ThreadShownSignpost()
     /// Bumped when another view showing this thread hands the store's loop back to this one (`ThreadReaderPins`).
@@ -156,8 +157,9 @@ struct ThreadView: View {
         let dormant = kept != nil
         // Shown again, such a thread draws the rows it kept at once (they never went), and the rest after that frame, a step at a time
         // from the newest (`ThreadRestore`): the eager tail grows over the lazy stack's rows, which the second frame brings back.
-        let eagerCount = eagerCount(origins)
-        let restored = restore.plan(active: active, hiddenKept: kept, rows: rows, eagerRows: eagerCount) { [store] drawn in
+        let eagerCount = eagerCount(origins, rows: rows)
+        let restored = restore.plan(active: active, hiddenKept: kept, rows: rows, eagerRows: eagerCount, following: follower.sticky,
+                                    tailParsed: !store.tailAwaitsParse(lastRows: eagerCount)) { [store] drawn in
             store.restoreCost(drawn: drawn, upTo: eagerCount)
         }
         let restoreStepping = restore.restoring
@@ -177,10 +179,12 @@ struct ThreadView: View {
         // after switching back to the agent), whatever changes lands at once.
         let catchingUp = arrivals.catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: store.threadVersion)
         // The history's stack of built rows starts again once the thread has added enough of them behind a reader at the tail,
-        // at rest, in the update that adds the next. Rows the tail gives to it while a live resize shrinks it are not the thread's.
+        // at rest, in the update that adds the next. Rows the tail gives to it while a live resize shrinks it, or the rule does, are not
+        // the thread's. `restoreStepping` is true from the first frame of a thread whose tail is bound by cost until its first stack is
+        // back (the wait for the replies to draw their blocks too), so none starts while that stack comes.
         let atRest = follower.sticky && !follower.userScrolling && !input.decelerating
         let historyStack = historyBuilt.stack(history: history, onScreen: active, mayLetGo: atRest && !restoreStepping && !catchingUp,
-                                              tailMoves: eagerCount != Self.eagerRows)
+                                              tailMoves: !tailAtRest, tail: eager.count)
         let _ = historyBuilt.note(in: store)
         // Until it has caught up, the live reply's state is read here too: the pull that catches a thread up on
         // a tool boundary changes nothing else, and it must redraw this view so its gate draws that catch-up.
@@ -211,8 +215,9 @@ struct ThreadView: View {
                             else { emptyState }
                         }
                         if let day = leadDayTitle(rows) { SHLeadDaySeparator(word: day) }
-                        historyColumn(history, tail: eager, spacing: spacing, dormant: dormant, stack: historyStack, running: running,
-                                      catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
+                        historyColumn(history, tail: eager, spacing: spacing, dormant: dormant, releasing: !active && (rows.isEmpty || restoreStepping),
+                                      stack: historyStack, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled,
+                                      historyRowID: historyRowID)
                         ForEach(eager) { row in
                             rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                         }
@@ -456,7 +461,7 @@ struct ThreadView: View {
             liveResizeGate.wasLive = false
             guard active else { return }
             let live = liveEagerCount(userOrigins)
-            if live < Self.eagerRows { eagerReturning = live }
+            if live < restingCount(userOrigins, rows: listedRows(userOrigins)) { eagerReturning = live }
         }
         .task(id: eagerReturning != nil) {
             if eagerReturning != nil { await returnEagerTail() }
@@ -477,6 +482,21 @@ struct ThreadView: View {
                 // Hidden: left scrolled up into the history, it stays loaded while this view keeps the place;
                 // following the tail, it lets it go (it reloads to the tail when shown).
                 if follower.sticky { readerPins?.unpin(store, owner: storeOwner) } else { readerPins?.pin(store, owner: storeOwner) }
+                // A little after the switch, never while a key is being pressed and not while it is one of the threads left last (the ones
+                // a person goes back to, whose stack comes back with a flip), so that taking its stack down is not a turn of the one that
+                // shows another thread (`ThreadRestore.plan`).
+                try? await Task.sleep(for: AppLayout.hiddenStackDelay)
+                while !Task.isCancelled {
+                    if userActivity?.inputRecent == true {
+                        try? await Task.sleep(for: AppLayout.restoreRetry)
+                    } else if readerPins?.leftRecently(store, within: AppLayout.keptStacks) == true {
+                        try? await Task.sleep(for: AppLayout.hiddenStackRecheck)
+                    } else {
+                        break
+                    }
+                }
+                // Only a thread with a stack beyond a tail bounded by cost has one to let go; the others draw nothing again.
+                if !Task.isCancelled, let tail = store.drawnEagerRows, tail < Self.eagerRows, listedRows(userOrigins).count > tail { restore.withdrawStack() }
                 return
             }
             // On screen: this view needs the history whichever view's loop polls the store.
@@ -494,19 +514,45 @@ struct ThreadView: View {
         origins.runtime.isEmpty ? store.listRows : store.listRows.filter { !($0.isUser && origins.hides($0.turn)) }
     }
 
-    /// How many rows at the end of the thread are laid out for real. While the window is
-    /// being live-resized, only enough of them, by the store's low height estimate, to cover
+    /// How many rows at the end of the thread are laid out for real. At rest, the last rows its cost allows (`restingCount`). While the
+    /// window is being live-resized, only enough of them, by the store's low height estimate, to cover
     /// the window (`eagerCover`): every other row stays in the lazy stack, out of each resize
-    /// step's layout pass, and the full tail is laid out again when the drag ends. The full
-    /// tail is what keeps the scroll view's bottom anchor honest when rows land, so a thread
+    /// step's layout pass, and the full tail is laid out again when the drag ends. The tail at rest
+    /// is what keeps the scroll view's bottom anchor honest when rows land, so a thread
     /// at rest always has it.
-    private func eagerCount(_ origins: ProjectUserOrigins) -> Int {
-        // A hidden thread's frame is frozen through the drag; moving its boundary would only rebuild rows.
-        guard active else { liveResizeGate.wasLive = liveResizing; return Self.eagerRows }
+    private func eagerCount(_ origins: ProjectUserOrigins, rows: [NativeThreadRow]) -> Int {
+        // A hidden thread's frame is frozen through the drag, so its tail ignores the window; its rows still move it (`ThreadEagerTail.held`).
+        guard active else { liveResizeGate.wasLive = liveResizing; return restingCount(origins, rows: rows, hidden: true) }
         if liveResizing { liveResizeGate.wasLive = true; return liveEagerCount(origins) }
         if liveResizeGate.wasLive, eagerReturning == nil { return liveEagerCount(origins) }
-        return eagerReturning ?? Self.eagerRows
+        return eagerReturning ?? restingCount(origins, rows: rows)
     }
+
+    /// The tail a thread at rest lays out: where it starts moves toward the rule (`ruleCount`) by a few rows each time the thread's
+    /// rows change (`ThreadEagerTail`), on screen or not (the rows of a hidden thread change too), and the store is told what was
+    /// drawn, which the budget counts (`NativeThreadStore.drawnEagerRows`). Written from `body`, as `ThreadRowIndex` is read there: the
+    /// store does not observe it and the same count is written once, so it redraws nothing.
+    private func restingCount(_ origins: ProjectUserOrigins, rows: [NativeThreadRow], hidden: Bool = false) -> Int {
+        let settling = store.tailAwaitsParse(lastRows: Self.eagerRows)
+        let count = hidden
+            ? eagerTail.held(rows: rows, revision: store.rowStructureRevision, costs: store.rowCostRevision, cover: eagerCover, maxRows: Self.eagerRows,
+                             crossing: AppLayout.eagerTailCrossing, detached: !follower.sticky, settling: settling) { ruleCount(origins) }
+            : eagerTail.update(rows: rows, revision: store.rowStructureRevision, costs: store.rowCostRevision, cover: eagerCover, maxRows: Self.eagerRows,
+                               crossing: AppLayout.eagerTailCrossing, detached: !follower.sticky, settling: settling) { ruleCount(origins) }
+        let drawn = count > 0 ? count : nil
+        if store.drawnEagerRows != drawn { store.drawnEagerRows = drawn }
+        return count
+    }
+
+    /// How many rows the thread's cost allows at its end (`NativeThreadStore.eagerTailRows`), whatever it drew so far.
+    private func ruleCount(_ origins: ProjectUserOrigins) -> Int {
+        store.eagerTailRows(maxRows: Self.eagerRows, costCap: NativeMountedCost.eagerTailCap,
+                            coveringHeight: AppLayout.eagerTailHeight(cover: eagerCover)) { $0.isUser && origins.hides($0.turn) }
+    }
+
+    /// Whether the tail drawn is the one a thread at rest has (`restingCount`), and not the one that covers the window while it is
+    /// live-resized or the one growing back after it (`eagerCount`, which keeps the gate it reads).
+    private var tailAtRest: Bool { !liveResizing && !liveResizeGate.wasLive && eagerReturning == nil }
 
     /// The tail that covers the window while it is being live-resized (`eagerCount`).
     private func liveEagerCount(_ origins: ProjectUserOrigins) -> Int {
@@ -519,7 +565,7 @@ struct ThreadView: View {
         while let current = eagerReturning, !Task.isCancelled {
             guard active, !liveResizing else { eagerReturning = nil; return }
             let more = store.restoreStep(drawn: current, bytes: AppLayout.restoreStepBytes)
-            if more == 0 || current + more >= Self.eagerRows { eagerReturning = nil; return }
+            if more == 0 || current + more >= restingCount(userOrigins, rows: listedRows(userOrigins)) { eagerReturning = nil; return }
             eagerReturning = current + more
             try? await Task.sleep(for: AppLayout.restorePause)
         }
@@ -528,7 +574,7 @@ struct ThreadView: View {
     /// The lazy stack of the rows older than the eager tail, drawn again only when what its rows are built from changes
     /// (`ThreadHistoryCache`).
     private func historyColumn(_ history: ArraySlice<NativeThreadRow>, tail: ArraySlice<NativeThreadRow>, spacing: CGFloat, dormant: Bool,
-                               stack: Int, running: Bool, catchingUp: Bool, arrived: Set<String>, settled: Bool,
+                               releasing: Bool, stack: Int, running: Bool, catchingUp: Bool, arrived: Set<String>, settled: Bool,
                                historyRowID: String?) -> some View {
         let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, stack: stack, boundary: historyRowID, running: running,
                              detached: !follower.sticky)
@@ -540,10 +586,12 @@ struct ThreadView: View {
             }
             .scrollTargetLayout()
             // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
-            // that host does not run). Its identity changes only while the rows are let go, and takes them with it. It changes too when
-            // the thread has added enough rows for the stack to have built more than a reader at the tail has any use for
-            // (`ThreadHistoryBuilt`).
-            .id(StackID(dormant: dormant, built: stack)))
+            // that host does not run). Its identity changes whenever the rows are let go (a pass, a released history, a hidden
+            // thread that draws its tail alone: `releasing`), and takes them with it. A thread with no history to let go (one of a few
+            // rows) and the one on screen keep their own. It changes too when the thread on screen has added enough rows for the stack
+            // to have built more than a reader at the tail has any use for (`ThreadHistoryBuilt`), which it does only on screen and once
+            // its restore is done: the two never change it in the same update.
+            .id(StackID(dormant: dormant || (releasing && history.isEmpty), built: stack)))
         }
     }
 
@@ -573,7 +621,14 @@ struct ThreadView: View {
         func waiting() -> Bool { scrolling() || !follower.sticky || userActivity?.inputRecent == true }
         if restore.awaitsHistory {
             try? await Task.sleep(for: AppLayout.restorePause)
-            while scrolling(), !Task.isCancelled { try? await Task.sleep(for: AppLayout.restoreRetry) }
+            // Replies still to be parsed (a large one is parsed off the main thread) draw as nothing, and a tail a few points tall leaves the
+            // stack in the window, where it builds rows that grow to their full size out of view and out of the budget. The update that
+            // brings their blocks builds them, and the stack comes in the one after it. A parse that does not land holds it back only so long.
+            var parseRetries = 0
+            while scrolling() || restore.waitsForParse(retries: parseRetries), !Task.isCancelled {
+                if !restore.tailDrawnParsed { parseRetries += 1 }
+                try? await Task.sleep(for: AppLayout.restoreRetry)
+            }
             guard !Task.isCancelled else { return }
             // The stack's height comes in above whatever the reader is looking at, and a scroll view held to nothing keeps its offset
             // from the top: a reader who scrolled away in the moments before it comes goes back to the tail, held there as it grows.
@@ -581,14 +636,15 @@ struct ThreadView: View {
                 follower.jumpToLatest()
                 tailGuard.land()
             }
-            _ = restore.advance(rows: listedRows(userOrigins), eagerRows: eagerCount(userOrigins)) { _ in 0 }
+            let rows = listedRows(userOrigins)
+            _ = restore.advance(rows: rows, eagerRows: eagerCount(userOrigins, rows: rows)) { _ in 0 }
         }
         while !Task.isCancelled {
             try? await Task.sleep(for: waiting() ? AppLayout.restoreRetry : AppLayout.restorePause)
             guard !Task.isCancelled else { return }
             if waiting() { continue }
             let rows = listedRows(userOrigins)
-            let more = restore.advance(rows: rows, eagerRows: eagerCount(userOrigins)) { [store] drawn in
+            let more = restore.advance(rows: rows, eagerRows: eagerCount(userOrigins, rows: rows)) { [store] drawn in
                 store.restoreStep(drawn: drawn, bytes: AppLayout.restoreStepBytes)
             }
             if !more { return }
@@ -660,8 +716,10 @@ struct ThreadView: View {
     }
 
     /// How many rows at the end of the thread are laid out for real rather than lazily at
-    /// rest: more than any window shows, few enough that a streamed chunk's relayout stays
-    /// cheap. While the window live-resizes the tail is only as many as cover it (`eagerCount`).
+    /// rest, at most: more than any window shows, few enough that a streamed chunk's relayout stays
+    /// cheap. A thread of heavy rows lays out fewer (`NativeThreadStore.eagerTailRows`: the last rows
+    /// within `NativeMountedCost.eagerTailCap`, and never fewer than two viewports). While the window live-resizes the tail is only
+    /// as many as cover it (`eagerCount`).
     static let eagerRows = 30
 
     /// One view per row whatever it holds, so the lazy stack builds only the rows on screen: a
@@ -1037,8 +1095,8 @@ final class ThreadRowMemory {
     var shell: Bool?
 }
 
-/// The identity the history's lazy stack is drawn with: it changes while the thread is let go (`dormant`) and each time the stack
-/// starts again (`ThreadHistoryBuilt`).
+/// The identity the history's lazy stack is drawn with: it changes while the thread is let go (`dormant`, or the rows being let go,
+/// `ThreadView.historyColumn`) and each time the stack starts again (`ThreadHistoryBuilt`).
 private struct StackID: Hashable {
     let dormant: Bool
     let built: Int
@@ -1062,6 +1120,7 @@ final class ThreadHistoryBuilt {
     static let rows = 16
     private(set) var stack = 0
     private var last: String?
+    private var lastTail: Int?
     private var added = 0
 
     #if DEBUG
@@ -1094,16 +1153,26 @@ final class ThreadHistoryBuilt {
     /// the thread is not coming back.
     ///
     /// Rows count when the row that was last is still in the history, followed by new ones: paging in at the top leaves the last row as
-    /// it was, and a thread coming back has no rows to compare with, so neither counts. Nor do rows while the tail is not its full size
-    /// (`tailMoves`: a live resize, and the tail growing back after it): the rows that move into the history then are no turn's, and the
-    /// stack builds none of them but the last.
-    func stack(history: ArraySlice<NativeThreadRow>, onScreen: Bool, mayLetGo: Bool, tailMoves: Bool = false) -> Int {
-        defer { last = history.last?.id }
+    /// it was, and a thread coming back has no rows to compare with, so neither counts. Nor do rows while the tail is not at its resting
+    /// size (`tailMoves`: a live resize, and the tail growing back after it): the rows that move into the history then are no turn's, and
+    /// the stack builds none of them but the last.
+    ///
+    /// The rows a thread adds land in the eager tail, which holds `tail` of them, and cross into the history as it moves on. At rest the
+    /// tail is a count the rule sets (`NativeThreadStore.eagerTailRows`), fewer than the eager rows for a thread of heavy rows, and it
+    /// differs from one update to the next. So an update counts the rows that joined the history's end together with the tail's change:
+    /// a tail that shrank gave the history rows no turn added (a thread that turned heavy), and one that grew kept a turn's rows that the
+    /// history has yet to take (a reply still being parsed keeps them in the tail until it is).
+    func stack(history: ArraySlice<NativeThreadRow>, onScreen: Bool, mayLetGo: Bool, tailMoves: Bool = false, tail: Int? = nil) -> Int {
+        defer {
+            last = history.last?.id
+            lastTail = tail
+        }
         let counts = onScreen && !tailMoves
         var grew = false
-        if let old = last, history.last?.id != old, let at = history.lastIndex(where: { $0.id == old }) {
-            grew = true
-            if counts { added += history.endIndex - 1 - at }
+        if let old = last, let at = history.lastIndex(where: { $0.id == old }) {
+            let joined = history.endIndex - 1 - at
+            grew = joined > 0
+            if counts { added += max(0, joined + (tail.flatMap { now in lastTail.map { now - $0 } } ?? 0)) }
         } else if history.isEmpty {
             added = 0
         }
@@ -1299,6 +1368,28 @@ final class ThreadRestore {
     @ObservationIgnored private var hiddenKept: Int?
     /// This showing has begun (or needed no restore).
     @ObservationIgnored private var begun = false
+    /// The thread has had rows since it last had none, and `plan` has seen them, hidden or shown (`noteArrival`).
+    @ObservationIgnored private var arrived = false
+
+    /// The last update drew the replies at the end of the eager tail with their blocks (`NativeThreadStore.tailAwaitsParse` was false):
+    /// a large reply is parsed off the main thread and draws as nothing until then, and the update that brings its content builds it,
+    /// which the lazy stack above must not share (it would be laid out against a tail still growing, and build rows).
+    @ObservationIgnored private(set) var tailDrawnParsed = true
+
+    /// The thread has been hidden long enough that a tail bounded by cost is all it draws (`plan`). Cleared when it is shown.
+    @ObservationIgnored private var withdrawsStack = false
+
+    /// Has the hidden thread draw only its tail from now on: raises `steps`, which draws the next update. A thread whose tail is not
+    /// bounded by cost, or whose reader is in its history, draws what it did.
+    func withdrawStack() {
+        guard !withdrawsStack else { return }
+        withdrawsStack = true
+        steps &+= 1
+    }
+
+    /// The first lazy stack still waits for the replies at the end of the tail to draw their blocks, having waited `retries` times
+    /// (`AppLayout.restoreRetry` each): not for ever, so that a parse that does not land cannot keep the older rows from coming back.
+    func waitsForParse(retries: Int) -> Bool { !tailDrawnParsed && retries < AppLayout.restoreParseRetries }
 
     /// The lazy stack is still to come back (the next step brings it): the thread draws only the rows the eager stack holds, so a
     /// reader cannot scroll to older ones.
@@ -1311,21 +1402,32 @@ final class ThreadRestore {
     /// no more than a step (`AppLayout.restoreStepBytes`) draws them all in its first frame, as it would after any release, because
     /// there is nothing to spread (a dozen rows of one line owe nothing), and a last screen that is all it drew might not fill its
     /// window (`ThreadTailAnchor`).
-    func plan<Rows: BidirectionalCollection>(active: Bool, hiddenKept: Int?, rows: Rows, eagerRows: Int, owed: (Int) -> Int) -> Plan?
+    func plan<Rows: BidirectionalCollection>(active: Bool, hiddenKept: Int?, rows: Rows, eagerRows: Int, following: Bool = true,
+                                             tailParsed: Bool = true, owed: (Int) -> Int) -> Plan?
     where Rows.Element == NativeThreadRow, Rows.Index == Int {
         _ = steps
+        tailDrawnParsed = tailParsed
         guard active else {
             self.hiddenKept = hiddenKept
+            noteArrival(rows: rows, eagerRows: eagerRows)
+            // A hidden thread that follows its tail and whose tail is bounded by cost draws that tail alone, once it has been hidden a
+            // while (`withdrawStack`): its lazy stack is laid out from the top of a thread no one scrolls, builds the oldest rows there, and
+            // keeps them, hundreds of megabytes nothing counts. The stack comes after the first frame it is shown, as for any first show.
+            // A reader left in the history keeps the stack that holds their place.
+            if following, withdrawsStack, rows.count > eagerRows, eagerRows < ThreadView.eagerRows, !restoring || history {
+                if !restoring { first = rows[rows.endIndex - eagerRows].id }
+                restoring = true
+                history = false
+            }
             // Hidden halfway through, it keeps the rows it has and waits for the next showing: the rest is not built for no one.
             // Unless a pass has let those go again (`hiddenKept` below what the restore had): the next showing starts again from
             // the rows kept, as after any release, and does not build the difference in its first frame.
-            if restoring, let first, let index = rows.lastIndex(where: { $0.id == first }), self.hiddenKept.map({ $0 >= rows.endIndex - index }) ?? true {
-                return Plan(eager: rows.endIndex - index, history: history)
-            }
+            if let plan = underway(rows: rows, eagerRows: eagerRows), self.hiddenKept.map({ $0 >= plan.eager }) ?? true { return plan }
             begun = false
             finish()
             return nil
         }
+        withdrawsStack = false
         if !begun {
             begun = true
             // At least one row, so that the first frame is not blank.
@@ -1336,12 +1438,45 @@ final class ThreadRestore {
             }
             self.hiddenKept = nil
         }
+        noteArrival(rows: rows, eagerRows: eagerRows)
         guard restoring else { return nil }
-        guard let first, let index = rows.lastIndex(where: { $0.id == first }), rows.endIndex - index < eagerRows else {
+        // The tail alone is a whole eager tail, one that waits for its lazy stack.
+        guard let plan = underway(rows: rows, eagerRows: eagerRows), plan.eager < eagerRows || !plan.history else {
             finish()
             return nil
         }
-        return Plan(eager: rows.endIndex - index, history: history)
+        return plan
+    }
+
+    /// What a restore under way draws: the eager stack from the row it has reached. A tail that waits for its lazy stack is the rule's at
+    /// most, whatever rows arrive meanwhile (a hidden thread waits as long as it stays hidden), the row it starts from moving with them.
+    private func underway<Rows: BidirectionalCollection>(rows: Rows, eagerRows: Int) -> Plan? where Rows.Element == NativeThreadRow, Rows.Index == Int {
+        guard restoring, let first, let index = rows.lastIndex(where: { $0.id == first }) else { return nil }
+        var eager = rows.endIndex - index
+        if !history, eager > eagerRows {
+            eager = eagerRows
+            self.first = rows[rows.endIndex - eager].id
+        }
+        return Plan(eager: eager, history: history)
+    }
+
+    /// The first rows of a thread whose tail is bounded by cost (it opened, or its history came back), hidden or shown, draw their eager
+    /// tail alone, and the lazy stack after the frame that shows it (`advance`): a stack drawn with them is shown its estimates before the
+    /// scroll view has been held to the tail, and builds rows at the top of the thread that are nowhere near its reader, which for rows
+    /// that cost that much is hundreds of megabytes nothing counts. A thread of cheap rows (the most of them are the tail) draws as it
+    /// always did.
+    private func noteArrival<Rows: BidirectionalCollection>(rows: Rows, eagerRows: Int) where Rows.Element == NativeThreadRow, Rows.Index == Int {
+        if rows.isEmpty {
+            arrived = false
+            return
+        }
+        guard !arrived else { return }
+        arrived = true
+        if !restoring, rows.count > eagerRows, eagerRows < ThreadView.eagerRows {
+            first = rows[rows.endIndex - eagerRows].id
+            restoring = true
+            history = false
+        }
     }
 
     /// Draws the next step: the lazy stack first, then rows. `step` is how many more rows to take, given how many the eager stack

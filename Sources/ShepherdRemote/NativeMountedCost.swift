@@ -123,6 +123,13 @@ public enum NativeMountedCost {
     /// The most rows of a last screen, whatever they cost.
     public static let lastScreenRows = 4
 
+    /// What the views of the rows at the end of a thread may hold, in all, for the thread to lay all of them out for real
+    /// (`NativeThreadStore.eagerTailRows`): past it the older rows are the lazy stack's, built as the reader scrolls to them. Building
+    /// costs the main thread about 5 ms a MiB and the attribute graph's table fills at about a GiB of what it holds, so a show that built
+    /// a tail of 250 MiB replies, thirty rows of them, stalled for seconds and, summed over the layouts kept, aborted the app. A
+    /// tail of cheap rows never reaches it.
+    public static let eagerTailCap = 256 * 1024 * 1024
+
     // MARK: Kinds
 
     /// What the views of `block` hold, once built.
@@ -157,13 +164,22 @@ public enum NativeMountedCost {
     /// What one item of a reply holds. A prose item holds what its view lays out (`NativeProse.eagerCost`).
     public static func item(_ item: NativeTurnPresentation.Item) -> Int {
         switch item {
-        case .prose(_, _, let prose): prose.eagerCost
+        case .prose(_, let text, let prose): item.awaitsParse ? pending(text) : prose.eagerCost
         case .activity(_, let bursts): bursts.count * line
         case .subagents(_, let lines): lines.count * line
         case .images(_, let images): images.count * NativeMarkdownBlock.imageFloor * imageWeight
         case .steer(_, let text, _, _): line + text.utf8.count * textByte
         case .thinking, .note, .goalRecord, .hook, .error, .retrying, .compaction, .question: line
         }
+    }
+
+    /// What the views of a reply hold while its parse has not landed (the store parses a large reply off the main thread, and the row has
+    /// no blocks until it does): the text at the rate of text, which a reply of fences and tables runs near. Costing it nothing would make a
+    /// thread of large replies look cheap in the moment it is first drawn, and its whole tail would be built. A giant reply lays out its
+    /// tail alone (`NativeProse.eagerTail`: chunks until `Limits.eagerWeight`, and the one that crosses it), so it costs no more than that.
+    static func pending(_ text: String) -> Int {
+        let bytes = text.utf8.count
+        return (bytes >= NativeProse.Limits.giantBytes ? NativeProse.Limits.eagerWeight + NativeProse.Limits.weight : bytes) * textByte
     }
 
     /// What the items of a reply hold, without the row around them.

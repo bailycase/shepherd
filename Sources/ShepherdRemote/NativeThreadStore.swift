@@ -271,6 +271,10 @@ public final class NativeThreadStore {
     /// Bumped by `derive` when the rows' IDs or order change, never when only a row's content
     /// or live state does (a streamed chunk): views rebuild ID indexes only then. Not observed.
     @ObservationIgnored public private(set) var rowStructureRevision = 0
+    /// Bumped by `derive` when what a row that is not streaming holds (`NativeMountedCost.row`) changes: a large reply's parse landing, a
+    /// turn ending. Never for the streaming reply's growth, which changes with every chunk. Not observed; the eager tail looks again
+    /// when it moves (`ThreadEagerTail`).
+    @ObservationIgnored public private(set) var rowCostRevision = 0
     /// The streaming reply's row, set in the same `derive` as `rows`. Not observed.
     @ObservationIgnored public private(set) var liveRowID: String?
     /// The file an edit or write in flight touches, as the call names it (relative to the
@@ -920,10 +924,21 @@ public final class NativeThreadStore {
         Self.foldRepeatedErrors(&rows)
         // Only the rebuilt suffix can change IDs: a stream touches the tail, never the whole thread.
         if !self.rows.dropFirst(rowStart).lazy.map(\.id).elementsEqual(rows.lazy.map(\.id)) { rowStructureRevision &+= 1 }
+        // The rows were replaced from the first one (history that came back, another session): what the view last drew counts rows
+        // that are gone, until it draws these.
+        if rowStart == 0, drawnEagerRows != nil, self.rows.first?.id != rows.first?.id { drawnEagerRows = nil }
         liveRowID = liveReply.map { turns[$0].id }
         if self.rows.count - rowStart != rows.count || self.rows.dropFirst(rowStart) != rows[...] {
             self.rows.replaceSubrange(rowStart..., with: rows)
         }
+        var costChanged = rowCosts.count - rowStart != costs.count
+        if !costChanged {
+            for (offset, cost) in costs.enumerated() where !rows[offset].live && rowCosts[rowStart + offset] != cost {
+                costChanged = true
+                break
+            }
+        }
+        if costChanged { rowCostRevision &+= 1 }
         rowCosts.replaceSubrange(rowStart..., with: costs)
         rowHeights.replaceSubrange(rowStart..., with: heights)
         assert(rowCosts.count == self.rows.count, "rowCosts runs parallel to rows")
@@ -1623,6 +1638,7 @@ public final class NativeThreadStore {
         guard canReleaseHistory else { return }
         stop()
         if transcriptDrawn != nil { transcriptDrawn = nil }
+        drawnEagerRows = nil
         images.releaseHeld()
         if snapshot != nil { snapshot = nil }
         replaceHistory([])
@@ -1773,6 +1789,49 @@ public final class NativeThreadStore {
         }
         return taken
     }
+
+    /// How many rows at the end of the thread its view lays out for real (its eager tail) while it is at rest: the last rows
+    /// whose views add up to `costCap` (`NativeMountedCost`), at most `maxRows`, and never fewer than the rows that cover `height`
+    /// points by the low estimate of `NativeRowHeight` (a viewport or two, so that no row the reader can reach by scrolling a little is
+    /// a guess the lazy stack estimates) and the streaming reply, which is always reached while it is within `maxRows`. The last row
+    /// is always one of them, however much it costs (a thread draws something). Rows are costed where `mountedCost` costs them,
+    /// and `hidden` names the ones the view leaves out, which do not count. Cheap rows are all `maxRows`, as ever.
+    public func eagerTailRows(maxRows: Int, costCap: Int, coveringHeight height: Int, skipping hidden: (NativeThreadRow) -> Bool = { _ in false }) -> Int {
+        // The list the view draws, not `rows`: the view reads this in its body, which a streamed chunk must not redraw (it changes `rows`).
+        let list = listRows
+        let count = min(list.count, rowCosts.count, rowHeights.count)
+        var cost = 0, covered = 0, taken = 0, index = count, reachedLive = liveRowID == nil
+        while taken < maxRows, index > 0 {
+            index -= 1
+            let row = list[index]
+            if hidden(row) { continue }
+            let next = rowCosts[index]
+            if taken > 0, reachedLive, covered >= height, cost + next > costCap { break }
+            cost += next
+            covered += rowHeights[index]
+            taken += 1
+            if row.live { reachedLive = true }
+        }
+        return taken
+    }
+
+    /// Whether a reply among the last `count` rows of the list the view draws has a parse out that has not landed: a large reply is parsed
+    /// off the main thread (`offMainProseBytes`), and its row draws as nothing, a few points tall, until it does. A reply that has no
+    /// blocks and no parse out (its text is whitespace or a comment) is not awaited: nothing is coming.
+    public func tailAwaitsParse(lastRows count: Int) -> Bool {
+        guard !proseParsing.isEmpty else { return false }
+        return listRows.suffix(count).contains { row in
+            row.presentation?.items.contains { item in
+                guard case .prose(let id, _, let prose) = item, prose.isEmpty else { return false }
+                return proseParsing[ProseKey(turn: row.id, item: id)] != nil
+            } == true
+        }
+    }
+
+    /// How many rows at the end of the thread its view lays out for real, as it last drew them (`ThreadEagerTail`); nil until it has.
+    /// What `mountedCost` and a pass that lets rows go (`NativeThreadStores`) read, so that they count the rows the view builds and
+    /// not the ones the rule would pick now. Written by the view, never observed.
+    @ObservationIgnored public var drawnEagerRows: Int?
 
     /// An estimate of what the views of this thread hold while it is mounted, in bytes (`NativeMountedCost`): the last
     /// `eagerRows` rows the thread's view draws, which it lays out for real whether or not it is on screen, and for the

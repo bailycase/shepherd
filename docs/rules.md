@@ -171,6 +171,44 @@ layouts keep their frozen size. The deliberate unmounts are cold parking, only f
 a terminal (`WorkspaceSelection.coldParkCandidates`), and a Project's threads, which its Project
 page draws: its coordinator never mounts here, and a worker only while it is the one open.
 
+A thread lays out for real only the rows at its end that its cost allows (its eager tail; the older rows
+are a lazy stack's, built only as the reader scrolls to them): the last rows whose views add up to
+`NativeMountedCost.eagerTailCap` (`NativeThreadStore.eagerTailRows`), at most `ThreadView.eagerRows` (thirty,
+which is every thread of cheap rows) and never fewer than the rows covering two viewports by the low height
+estimate (`AppLayout.eagerTailViewports`), the streaming reply, or the last row, whatever it costs. A show, a
+history that reloads and a restore build at most that, so a thread of 250 MiB replies builds one where it built
+thirty. The view holds where the tail starts (`ThreadEagerTail`) and moves it toward the rule each time its rows
+change. Rows that leave it go at once for a reader following the tail (they are above the two viewports it covers)
+and two at a time (`AppLayout.eagerTailCrossing`) for one who has left it, so that no bulk of rows crosses where
+they can see it (a crossing builds the row again and drops its state); rows that come back, which are built, come
+two at a time for everyone. The first draw takes the rule whole. A hidden thread's tail follows the same rule whatever rows
+arrive while it is hidden (another view of the thread polls it, a queued prompt lands), ignoring only the
+window's height, which its frozen frame does not report. A reply whose parse has not landed (a large one is
+parsed off the main thread) costs by its text until it does.
+
+The first rows of a thread (it opened, or its history came back) draw the eager tail alone, and `ThreadRestore`
+brings the lazy stack of the older rows after that frame, once the scroll view is at the tail and the replies at
+its end have their blocks: a stack drawn with them, or above a tail of replies that draw as nothing, a few points
+tall, would be in the window and build rows that grow out of view and out of the budget. A reply has no blocks
+yet while its parse is out (`NativeThreadStore.tailAwaitsParse`), never because its text has nothing to draw
+(whitespace, a comment), and the wait is bounded (`AppLayout.restoreParseRetries`), so the stack always comes. A
+thread whose first rows arrive while it is hidden draws its eager tail alone as well, and its stack after the
+first frame it is shown: a stack in a window nobody sees is laid out from the top of the thread and builds rows
+there that nothing counts. A hidden thread that follows its tail lets a stack it had go too, two seconds after
+the switch, never while a key is pressed and not while it is one of the `AppLayout.keptStacks` threads left most
+recently (`ThreadReaderPins.leftRecently`; `ThreadRestore.withdrawStack`): taking realized rows down must not land
+in the turn that shows another thread, and bringing a stack back costs the main thread about what measuring the
+rows at its start does (about 5 ms a MiB of them, the stall after a heavy thread's first frame), which the threads
+a person goes back and forth between do not pay. A stack's identity changes when it has no rows to draw while its
+thread is hidden and releasing them (not a thread of a few rows), which is what frees what a hidden host keeps. A
+reader left in the history keeps their stack. Rows that arrive while a tail waits for its stack do not grow it past
+the rule.
+
+What the view last drew, shown or hidden, is `NativeThreadStore.drawnEagerRows`, which `mountedCost` and the passes
+that let rows go count, and `ThreadRestore` restores up to; the store clears it when its rows are replaced from
+the first one (history that came back, another session). A thread that has not drawn yet counts as the rule says,
+for the window's default height and every row, the ones its view will leave out too.
+
 A hidden thread keeps its host, page, history and draft, but its rows are bounded: past
 `NativeThreadStores.mountedBudget` (an eighth of the memory, at most 2 GiB, counted by
 `NativeThreadStore.mountedCost`) the least recently shown hidden threads let their rows go

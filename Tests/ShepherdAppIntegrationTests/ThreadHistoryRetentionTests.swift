@@ -5,6 +5,7 @@ import ShepherdRemote
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdRemote
 
 /// What a thread's view holds on to once it is gone. The lazy history stack is kept as the view it was (`ThreadHistoryCache`) and that view
 /// holds the thread that drew it; the scroll monitor AppKit keeps is held by the view's state. Neither may keep the store or the tail guard.
@@ -95,6 +96,39 @@ struct ThreadHistoryRetentionTests {
         let steady = ends.suffix(more)
         #expect(steady.count == more && (steady.max() ?? 0) - (steady.min() ?? 0) <= 1, "the thread's end moved: \(Array(steady))")
         thread.close()
+    }
+
+    /// The same thread when its rows are heavy: the eager tail is bound by what its rows cost and holds fewer than `eagerRows` at rest
+    /// (`NativeThreadStore.eagerTailRows`), and its start follows the rule turn by turn (`ThreadEagerTail`). The stack starts again after
+    /// the rows the thread adds all the same, and not before: what the tail's size is, or that it is not the eager rows, is not what counts.
+    @Test func aHeavyThreadThatGrowsTurnByTurnStartsItsHistoryStackAgainToo() async throws {
+        let cycles = ThreadEagerTailTests.cycles
+        let first = 40
+        var turns = first
+        let thread = FakeThread(ThreadFixture.snapshot(ThreadEagerTailTests.messages(turns: turns, cycles: cycles)), deckHosting: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        await thread.store.waitForProse()
+        ListPerf.settle(thread.window)
+        let tail = try #require(thread.store.drawnEagerRows)
+        #expect(tail < ThreadView.eagerRows / 2, "its tail is bound by cost: \(tail) rows")
+        let stack = ThreadHistoryBuilt.drawn(in: thread.store)
+        var revision: UInt64 = 1
+        // A turn is two rows: a few turns more than `rows` of them are given.
+        let most = ThreadHistoryBuilt.rows / 2 + 4
+        while turns < first + most, ThreadHistoryBuilt.drawn(in: thread.store) == stack {
+            turns += 1
+            revision += 1
+            await thread.serve(ThreadFixture.snapshot(ThreadEagerTailTests.messages(turns: turns, cycles: cycles), revision: revision))
+            await thread.store.waitForProse()
+            ListPerf.settle(thread.window)
+        }
+        let added = 2 * (turns - first)
+        #expect(thread.store.rows.count == 2 * turns)
+        #expect(ThreadHistoryBuilt.drawn(in: thread.store) > stack, "\(added) rows did not start the stack again")
+        // The tail's own moves are no turn's: the rows it gave the history while the thread opened and settled do not add up to the stack's
+        // start before the thread has added its own.
+        #expect(added >= ThreadHistoryBuilt.rows - 2, "the stack started again after \(added) rows")
     }
 
     /// A reader who has scrolled up through the history keeps the rows they passed: the stack does not start again under them while

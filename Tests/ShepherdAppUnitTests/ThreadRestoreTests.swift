@@ -77,6 +77,158 @@ struct ThreadRestoreTests {
         #expect(few.keptRows == few.rows.count && frame.plan == nil && !frame.restoring)
     }
 
+    /// The first rows of a thread (it opened, or its history came back) draw their eager tail alone, and the lazy stack the frame after:
+    /// a stack drawn with them is shown its estimates before the scroll view is held to the tail, and builds rows at the top.
+    @Test func theFirstRowsOfAThreadWhoseTailIsBoundByCostDrawItAloneAndTheLazyStackAfterThatFrame() {
+        let long = store(turns: 24)
+        let rows = long.rows, eager = 12
+        #expect(rows.count == 48)
+        let owed: (Int) -> Int = { long.restoreCost(drawn: $0, upTo: eager) }
+        let restore = ThreadRestore()
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: [NativeThreadRow](), eagerRows: eager, owed: owed) == nil, "no rows, nothing to hold back")
+        let first = restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, owed: owed)
+        #expect(first == ThreadRestore.Plan(eager: 12, history: false) && restore.restoring && restore.awaitsHistory)
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, owed: owed) == first, "until the step that brings the stack")
+        let more = restore.advance(rows: rows, eagerRows: eager) { _ in Issue.record("the stack takes no rows"); return 0 }
+        #expect(more && !restore.awaitsHistory)
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, owed: owed) == nil, "the stack and every row are drawn")
+        #expect(!restore.restoring)
+        // A thread of cheap rows, whose tail is the most there is, draws its stack with it as it always did.
+        let cheap = ThreadRestore()
+        #expect(cheap.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: ThreadView.eagerRows, owed: owed) == nil && !cheap.restoring)
+    }
+
+    /// The stack waits for an update that drew the tail's replies with their blocks: the one that brings them builds them.
+    @Test func theRestoreKnowsWhetherTheLastUpdateDrewTheTailWithItsBlocks() {
+        let long = store(turns: 24)
+        let restore = ThreadRestore()
+        #expect(restore.tailDrawnParsed)
+        _ = restore.plan(active: true, hiddenKept: nil, rows: long.rows, eagerRows: 12, tailParsed: false, owed: { _ in 0 })
+        #expect(!restore.tailDrawnParsed && restore.awaitsHistory)
+        _ = restore.plan(active: true, hiddenKept: nil, rows: long.rows, eagerRows: 12, tailParsed: true, owed: { _ in 0 })
+        #expect(restore.tailDrawnParsed)
+    }
+
+    /// A reply with no blocks to draw (whitespace before a tool call, a comment) is not one whose parse is awaited, so the stack comes after
+    /// the frame that drew the tail as it does for any other thread, and not when the wait runs out.
+    @Test func aTailWhoseLastReplyHasNothingToDrawStillGetsItsStack() {
+        for reply in ["\n\n", "<!-- c -->"] {
+            let messages = (0..<24).flatMap { i in
+                [NativeThreadMessage(entryID: "u\(i)", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "question \(i)")]),
+                 NativeThreadMessage(entryID: "a\(i)", role: "assistant",
+                                     blocks: ((i == 23 ? [reply] : []) + ["answer \(i)"]).map { NativeThreadBlock(kind: .text, text: $0) })]
+            }
+            let long = NativeThreadStore()
+            long.preview(NativeThreadSnapshot(piSessionID: "session", generation: "generation", revision: 1, running: false, supportedActions: [],
+                                              dialogsSupported: true, dialogs: [], messages: messages, provisional: [], clipped: false))
+            let rows = long.rows, eager = 12
+            #expect(rows.count == 48)
+            #expect(rows.last?.presentation?.items.contains { if case .prose(_, let text, let prose) = $0 { text == reply && prose.isEmpty } else { false } } == true,
+                    "the premise: a reply among the last rows with text and no blocks")
+            let awaited = long.tailAwaitsParse(lastRows: eager)
+            #expect(!awaited, "\(reply.debugDescription)")
+            let restore = ThreadRestore()
+            let first = restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, tailParsed: !awaited, owed: { _ in 0 })
+            #expect(first == ThreadRestore.Plan(eager: 12, history: false) && restore.awaitsHistory)
+            #expect(!restore.waitsForParse(retries: 0), "nothing to wait for")
+            #expect(restore.advance(rows: rows, eagerRows: eager) { _ in 0 } && !restore.awaitsHistory, "the stack comes")
+        }
+    }
+
+    /// A parse that does not land holds the stack back only so long.
+    @Test func theStackWaitsForAParseOnlyForSoLong() {
+        let long = store(turns: 24)
+        let restore = ThreadRestore()
+        _ = restore.plan(active: true, hiddenKept: nil, rows: long.rows, eagerRows: 12, tailParsed: false, owed: { _ in 0 })
+        #expect(restore.awaitsHistory && !restore.tailDrawnParsed)
+        #expect(restore.waitsForParse(retries: 0) && restore.waitsForParse(retries: AppLayout.restoreParseRetries - 1))
+        #expect(!restore.waitsForParse(retries: AppLayout.restoreParseRetries), "the stack comes with the tail still without its blocks")
+        #expect(restore.advance(rows: long.rows, eagerRows: 12) { _ in 0 } && !restore.awaitsHistory)
+    }
+
+    @Test func aThreadWithNoRowsBeyondItsEagerTailHasNoStackToWaitFor() {
+        let short = store(turns: 10)
+        let restore = ThreadRestore()
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: short.rows, eagerRows: 20, owed: { _ in 0 }) == nil)
+        #expect(!restore.restoring)
+    }
+
+    /// The first rows of a thread that arrive while it is hidden (a seeded history, another view polling it) draw its eager tail alone, as
+    /// they do when it is shown: a lazy stack drawn with them in a window nobody sees is laid out from the top of the thread, and builds the
+    /// rows there that nothing counts. It comes after the first frame the thread is shown, with the scroll view at the tail.
+    @Test func aThreadWhoseRowsArriveWhileHiddenDrawsItsTailAloneAndItsStackAfterItIsShown() {
+        let long = store(turns: 24)
+        let rows = long.rows
+        let restore = ThreadRestore()
+        let hidden = restore.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 })
+        #expect(hidden == ThreadRestore.Plan(eager: 12, history: false) && restore.awaitsHistory)
+        #expect(restore.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 }) == hidden, "it waits as long as it stays hidden")
+        let shown = restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 })
+        #expect(shown == ThreadRestore.Plan(eager: 12, history: false) && restore.awaitsHistory, "and is shown as its tail")
+        #expect(restore.advance(rows: rows, eagerRows: 12) { _ in 0 } && !restore.awaitsHistory)
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 }) == nil, "then the stack and every row are drawn")
+        // A thread of cheap rows, whose tail is the most there is, draws its stack with it hidden as it always did.
+        let cheap = ThreadRestore()
+        #expect(cheap.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: ThreadView.eagerRows, owed: { _ in 0 }) == nil && !cheap.restoring)
+    }
+
+    /// Rows that arrive while the tail waits for its stack (a hidden thread waits as long as it stays hidden) are the rule's rows at most:
+    /// the tail does not keep the row it started from and grow with them.
+    @Test func rowsThatArriveWhileATailWaitsForItsStackDoNotGrowIt() {
+        let long = store(turns: 24)
+        let rows = long.rows
+        let restore = ThreadRestore()
+        #expect(restore.plan(active: false, hiddenKept: nil, rows: Array(rows.prefix(20)), eagerRows: 12, owed: { _ in 0 }) == ThreadRestore.Plan(eager: 12, history: false))
+        for count in [24, 31, 48] {
+            let plan = restore.plan(active: false, hiddenKept: nil, rows: Array(rows.prefix(count)), eagerRows: 12, owed: { _ in 0 })
+            #expect(plan == ThreadRestore.Plan(eager: 12, history: false), "\(count) rows")
+        }
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 }) == ThreadRestore.Plan(eager: 12, history: false))
+        let smaller = restore.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: 6, owed: { _ in 0 })
+        #expect(smaller == ThreadRestore.Plan(eager: 6, history: false), "or what the rule says now")
+    }
+
+    /// A hidden thread that follows its tail draws that tail alone, whichever way its stack came to be drawn: a stack in a window nobody
+    /// scrolls builds the oldest rows and keeps them. A reader left in the history keeps the stack that holds their place.
+    @Test func aHiddenThreadThatFollowsItsTailLosesItsStackAndAReaderKeepsIt() {
+        let long = store(turns: 24)
+        let rows = long.rows
+        let restore = ThreadRestore()
+        // Shown, it has its stack and every row.
+        _ = restore.plan(active: true, hiddenKept: nil, rows: Array(rows.prefix(2)), eagerRows: 12, owed: { _ in 0 })
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 }) == nil && !restore.restoring)
+        // Hidden, it keeps its stack at first, so that taking it down is not a turn of the switch; a while after, it draws its tail alone.
+        #expect(restore.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: 12, following: true, owed: { _ in 0 }) == nil)
+        restore.withdrawStack()
+        #expect(restore.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: 12, following: true, owed: { _ in 0 })
+                == ThreadRestore.Plan(eager: 12, history: false))
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, following: true, owed: { _ in 0 })
+                == ThreadRestore.Plan(eager: 12, history: false), "and shown again, the stack waits for its first frame")
+        #expect(restore.advance(rows: rows, eagerRows: 12) { _ in 0 } && !restore.awaitsHistory)
+        // A reader who is not at the tail keeps the stack.
+        let reader = ThreadRestore()
+        _ = reader.plan(active: true, hiddenKept: nil, rows: Array(rows.prefix(2)), eagerRows: 12, owed: { _ in 0 })
+        _ = reader.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 })
+        reader.withdrawStack()
+        #expect(reader.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: 12, following: false, owed: { _ in 0 }) == nil && !reader.restoring)
+        // A thread of cheap rows has no cost to bound and keeps it too.
+        let cheap = ThreadRestore()
+        cheap.withdrawStack()
+        #expect(cheap.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: ThreadView.eagerRows, following: true, owed: { _ in 0 }) == nil)
+    }
+
+    /// One whose history was let go draws its first rows again as any thread does.
+    @Test func aThreadThatLostItsRowsWhileHiddenWaitsAgain() {
+        let long = store(turns: 24)
+        let rows = long.rows
+        let restore = ThreadRestore()
+        _ = restore.plan(active: false, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 })
+        _ = restore.plan(active: false, hiddenKept: nil, rows: [NativeThreadRow](), eagerRows: 12, owed: { _ in 0 })
+        #expect(!restore.restoring)
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: [NativeThreadRow](), eagerRows: 12, owed: { _ in 0 }) == nil)
+        #expect(restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: 12, owed: { _ in 0 }) == ThreadRestore.Plan(eager: 12, history: false))
+    }
+
     /// The lazy stack comes back with the first step, and until it does a reader cannot scroll to the rows above the last screen.
     @Test func aRestoreAwaitsItsLazyStackUntilItsFirstStep() {
         let long = store(turns: 12, heavy: { _ in true })
