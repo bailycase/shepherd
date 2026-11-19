@@ -1,38 +1,30 @@
 import SwiftUI
 import ShepherdUI
 
-/// Settings and the sheets: the in-window Settings surface (a 232pt nav beside a 720pt column,
-/// or a wide page) and the size of every modal.
+/// Settings and the sheets: the in-window Settings surface (a 220pt nav beside one 620pt column;
+/// Spaces fills the area) and the size of every modal.
 extension AppLayout {
     // Settings
-    static let settingsNavWidth: CGFloat = 232
     /// The strip at the top of the nav and the page that holds the window controls and drags
     /// the window.
     static let settingsWindowStripHeight: CGFloat = 44
-    /// Back to Shepherd: a 30pt row, not scaled by density.
-    static let settingsBackRowHeight: CGFloat = 30
-    /// Back's chevron column: 10pt, 8 before the words.
-    static let settingsBackGlyphWidth: CGFloat = 10
-    /// Back to Shepherd to the search field: 10pt.
-    static let settingsSearchTop: CGFloat = 10
-    static let settingsNavRowSpacing: CGFloat = SH.Space.xxs
-    static let settingsTop: CGFloat = 44
-    static let settingsBottom: CGFloat = 48
-    /// 48pt either side of the page's column.
-    /// The page title: Geist 22/600, tracked −1%.
-    static let settingsTitleSize: CGFloat = 22
-    /// A second heading inside a page (Pi's From pi): Geist 17/600, the title ramp + 2.
-    static let settingsSectionTitleSize: CGFloat = SHTextStyle.title.size + SH.Space.xxs
-    static let settingsTitleTracking: CGFloat = -0.01
-    /// A group's footnote: Geist 12/1.5.
-    static let settingsFootnoteSize: CGFloat = 12
-    static let settingsFootnoteLineHeight: CGFloat = 1.5
+    /// The page's one column, 56pt under the top.
+    static let settingsColumnWidth: CGFloat = 620
+    static let settingsTop: CGFloat = 56
+    /// Spaces keeps its full-width layout's bottom margin.
+    static let settingsWideBottomSpaces: CGFloat = 48
+    /// An editor drill-in's card: at least this tall.
+    static let settingsEditorHeight: CGFloat = 420
+    /// What the column keeps around an editor card that fills the window: the top margin, the title and the bottom margin.
+    static let settingsEditorChrome: CGFloat = 56 + 44 + SH.Space.xxxl + SH.Space.xl
+    /// A group's footnote line height.
+    static let settingsFootnoteLineHeight: CGFloat = 1.35
     /// A remote host's address in its row ("horizon.starlight.internal:7433"): mono 12.
     static let settingsAddressSize: CGFloat = 12
-    /// Between the page header and each group.
-    static let settingsGroupSpacing: CGFloat = SH.Space.xxl + SH.Space.xs
-    /// A row's content, density-scaled; the row adds 10pt above and below (`SHCardRowFrame`).
-    @MainActor static var settingsRowMinHeight: CGFloat { SH.Height.scaled(SHCardRowMetrics.minHeight) }
+    /// Between the page header and each group, and between groups.
+    static let settingsGroupSpacing: CGFloat = SH.Space.xl
+    /// A row's content, density-scaled; the row adds 6pt above and below (`SHCardRowFrame`).
+    @MainActor static var settingsRowMinHeight: CGFloat { SH.Height.scaled(SHCardRowMetrics.settingsMinHeight) }
     /// Settings ▸ Keyboard: a changed shortcut's Reset, in Geist 12.
     static let shortcutResetSize: CGFloat = 12
     /// The page's explanation: 13.5/1.5.
@@ -60,8 +52,6 @@ extension AppLayout {
     static let settingsWideHeaderWidth: CGFloat = 820
 
     // Settings ▸ Instructions: the editor beside a 330pt side column, 28pt apart.
-    static let instructionsSideWidth: CGFloat = 330
-    static let instructionsColumnSpacing: CGFloat = 28
     /// A host chip: at least 34pt, a 13pt glyph, the name in mono 12.5, a 7pt dot, the state in
     /// Geist 11.
     static let instructionsChipHeight: CGFloat = 34
@@ -70,18 +60,9 @@ extension AppLayout {
     static let instructionsChipDot: CGFloat = 7
     static let instructionsChipWordSize: CGFloat = 11
     /// File tabs: the name in mono 13 over a Geist 11.5 note, 22pt apart, a 2pt underline.
-    static let instructionsTabSpacing: CGFloat = 22
-    static let instructionsTabNameSize: CGFloat = 13
-    static let instructionsTabNoteSize: CGFloat = 11.5
-    static let instructionsTabUnderline: CGFloat = 2
     /// The editor card never shrinks below this, however short the window.
-    static let instructionsEditorMinHeight: CGFloat = 180
     /// The card's header: the path in mono 12 (the comparison in Geist 12.5), "● edited" in
     /// Geist 11.5, Save's ⌘S in mono 10.5 at 60%.
-    static let instructionsPathSize: CGFloat = 12
-    static let instructionsEditedSize: CGFloat = 11.5
-    static let instructionsShortcutSize: CGFloat = 10.5
-    static let instructionsShortcutOpacity: CGFloat = 0.6
     /// The editor: mono 12.5 on 21pt lines, 10pt above and below, a 34pt gutter of mono 10.5
     /// numbers 12pt before the text.
     static let instructionsEditorTextSize: CGFloat = 12.5
@@ -92,12 +73,6 @@ extension AppLayout {
     static let instructionsGutterGap: CGFloat = SH.Space.l
     /// How the agent reads them: small cards joined by a 10pt connector, 1.5pt wide and 17pt in; the
     /// number in a 16pt column, the title in mono 11.5 over a Geist 11 note.
-    static let instructionsStepConnectorHeight: CGFloat = 10
-    static let instructionsStepConnectorInset: CGFloat = 17
-    static let instructionsStepConnectorWidth: CGFloat = 1.5
-    static let instructionsStepNumberWidth: CGFloat = 16
-    static let instructionsStepTitleSize: CGFloat = 11.5
-    static let instructionsStepNoteSize: CGFloat = 11
     /// History: rows at least 30pt, the date in a 60pt mono column, Geist 12; the History
     /// popover's width and the most it grows before it scrolls.
     static let instructionsHistoryRowMinHeight: CGFloat = 30
@@ -191,18 +166,12 @@ extension AppLayout {
     static let skillsRepoFieldTextSize: CGFloat = 13.5
 
     // Settings ▸ MCP servers (SettingsMCP): the servers beside the same 280pt rail as Skills.
-    static let mcpBlockSpacing: CGFloat = 18
-    static let mcpColumnSpacing: CGFloat = 28
-    static let mcpRailWidth: CGFloat = 280
-    static let mcpRailSpacing: CGFloat = 22
     static let mcpExplanationWidth: CGFloat = 700
     static let mcpFilterWidth: CGFloat = 240
+    /// The filter field in a Settings list card's first row.
+    static let settingsFilterWidth: CGFloat = 250
     static let mcpCardRadius: CGFloat = 10
-    static let mcpRailTextSize: CGFloat = 12.5
-    static let mcpRailLineHeight: CGFloat = 1.55
     static let mcpNoteSize: CGFloat = 12
-    static let mcpNoteLineHeight: CGFloat = 1.45
-    static let mcpOptionTitleSize: CGFloat = 13
     static let mcpPathSize: CGFloat = 11
     // The Add server sheet (SettingsMCPAdd, SettingsMCPLocal): 720pt wide (760 for Local),
     // 22pt sides, 34pt fields at radius 7, a 60pt footer.
@@ -210,7 +179,7 @@ extension AppLayout {
     static let mcpSheetLocalWidth: CGFloat = 760
     static let mcpSheetMinHeight: CGFloat = 520
     static let mcpSheetSides: CGFloat = 22
-    static let mcpSheetTitleSize: CGFloat = 17
+    static let mcpSheetTitleSize: CGFloat = SHTextStyle.title.size
     static let mcpSheetTextSize: CGFloat = 12.5
     static let mcpSheetCloseSize: CGFloat = 28
     static let mcpSheetFieldHeight: CGFloat = 34

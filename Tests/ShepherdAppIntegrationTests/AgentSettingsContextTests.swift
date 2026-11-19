@@ -24,9 +24,15 @@ struct AgentSettingsContextTests {
         }
     }
 
-    @Test func compactAtOffersPisDefaultAndEachShareAndHandsTheChoiceOn() async {
+    @Test func compactAtOffersPisDefaultAndEachShareAndHandsAShareOn() async {
         await #expect(processExitsWith: .success) {
-            await recordingErrors { try await Self.choosingACompactionShare() }
+            await recordingErrors { try await Self.choosingACompactionShare(from: nil, choosing: "80%", expecting: 80) }
+        }
+    }
+
+    @Test func compactAtHandsPisDefaultBackAfterAShare() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.choosingACompactionShare(from: 70, choosing: "Default", expecting: nil) }
         }
     }
 
@@ -86,27 +92,27 @@ struct AgentSettingsContextTests {
         #expect(settings.codemode && AppSettings(store: store).codemode)
     }
 
+    /// One menu choice per process: a native menu is chosen as a scenario's last interaction (see `NativeMenuChoice`).
     @MainActor
-    static func choosingACompactionShare() async throws {
+    static func choosingACompactionShare(from start: Int?, choosing title: String, expecting expected: Int?) async throws {
         AccessibilityNode.enable()
         let settings = AppSettings(store: ScratchDefaults())
+        settings.compactAtPercent = start
         var written: [Int?] = []
         settings.onCompactAtChange = { written.append($0) }
         let window = page(settings)
         defer { window.close() }
 
-        // The picker's segments are radio buttons; their labels are the page's own, so they are found by what they say.
-        let titles = ["Default", "60%", "70%", "80%", "90%"]
-        func segments() -> [Control] { window.controls().filter { $0.role == ControlRole.radioButton && titles.contains($0.label ?? "") } }
-        try #require(segments().map(\.label) == titles, "pi's default, then each share: \(window.controls())")
-        #expect(segments().map(\.isSelected) == [true, false, false, false, false], "pi's own compaction until a share is chosen")
-
-        for (title, expected, selected) in [("80%", 80 as Int?, 3), ("60%", 60, 1), ("90%", 90, 4), ("Default", nil, 0), ("70%", 70, 2)] {
-            let pressed = try window.press(title, role: ControlRole.radioButton)
-            #expect(pressed.frame.height >= 24, "\(title) is a whole segment tall: \(pressed)")
-            #expect(settings.compactAtPercent == expected, "pressing \(title)")
-            #expect(segments().map(\.isSelected) == (0..<5).map { $0 == selected }, "\(title) is the segment drawn chosen")
-        }
-        #expect(written == [80, 60, 90, nil, 70], "each choice reached the pi home, in order")
+        // Compact at is a menu: Default, then each share.
+        window.layout()
+        let menu = try #require(AccessibilityNode.all(under: window.host).first {
+            $0.role == ControlRole.menuButton
+                && "\(String(describing: $0.object.perform(NSSelectorFromString("accessibilityTitle"))?.takeUnretainedValue()))".contains("Compact at")
+        }, "Compact at is a menu: \(window.controls())")
+        #expect(menu.value == (start.map { "\($0)%" } ?? "Default"), "it shows the current share")
+        let offered = try await NativeMenuChoice.choose(title, from: menu)
+        #expect(offered == ["Default", "60%", "70%", "80%", "90%"], "pi's default, then each share")
+        #expect(settings.compactAtPercent == expected, "choosing \(title)")
+        #expect(written.last == .some(expected), "the choice reached the pi home: \(written)")
     }
 }

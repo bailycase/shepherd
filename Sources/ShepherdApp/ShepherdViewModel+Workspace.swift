@@ -192,6 +192,7 @@ extension ShepherdViewModel {
         guard showSettings else { return nil }
         switch settingsSection {
         case .subagents: return ("Save Subagent File", subagentDefinitions.canSave)
+        case .instructions where instructions.editing: return ("Save \(instructions.file.fileName)", instructions.canSave)
         case .projects:
             return ("Save Space File", !projects.showingBrowser && !projects.showingHooks && projects.fileLoaded && !projects.saving && projects.selected?.unavailable == nil)
         default: return nil
@@ -200,7 +201,7 @@ extension ShepherdViewModel {
 
     func saveSettingsFile() async {
         guard showSettings else { return }
-        if settingsSection == .subagents { await subagentDefinitions.save() } else if settingsSection == .projects { await projects.save() }
+        if settingsSection == .subagents { await subagentDefinitions.save() } else if settingsSection == .instructions, instructions.editing { await instructions.save() } else if settingsSection == .projects { await projects.save() }
     }
 
     /// ⌘W: closes the terminal that has the keyboard. The thread is never closed (⌘⇧W deletes
@@ -410,7 +411,7 @@ extension ShepherdViewModel {
     /// sign-in (`/login anthropic`, an agent's Sign in to Anthropic). A provider Shepherd doesn't
     /// know opens the page as it is.
     func openSignIn(_ provider: String? = nil, start: Bool = true, origin: PiSignInSession.Origin = .settings) {
-        settingsSection = .piSignIn
+        settingsSection = .models
         showSettings = true
         guard let provider else { return }
         piAuth.focus = provider

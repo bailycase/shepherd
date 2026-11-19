@@ -26,8 +26,11 @@ final class SettingsStore {
     let hooks = ClientHooks()
     /// Settings › Hooks' Add or Edit sheet while it is open.
     var hookEditor: ClientHookEditor?
-    /// Settings ▸ MCP's server editor while it is open: the server it edits and its JSON.
+    /// Settings ▸ Tools' server editor while it is open: the server it edits and its JSON.
     var mcpEditor: MCPEditor?
+
+    /// How many times Settings has read every host: a page of a host's configuration reads its own again each time.
+    private(set) var refreshes = 0
 
     /// The hosts as Settings sees them now.
     private(set) var hosts: [SettingsHost] = []
@@ -81,7 +84,7 @@ final class SettingsStore {
 
     // MARK: Reading
 
-    /// The host Defaults, Worktrees and Extensions show: the first that serves its settings, else the
+    /// The host Models, Agents, Tools and Git show: the first that serves its settings, else the
     /// first. A fleet keeps these the same on every Mac, so which one is only which the phone asks.
     var settingsHost: SettingsHost? {
         hosts.first { $0.serves(RemoteProtocol.hostSettingsCapability) } ?? hosts.first
@@ -90,10 +93,10 @@ final class SettingsStore {
     /// The settings host's settings, once read.
     var settings: HostSettings? { settingsHost.flatMap { hostSettings.settings(of: $0) } }
 
-    /// Defaults' value on the list: the model without its provider ("claude-opus").
+    /// Models' value on the list: the model without its provider ("claude-opus").
     var defaultsValue: String? { settings.map(HostSettingsPresentation.defaultsValue) }
 
-    /// Extensions' value: how many load ("6").
+    /// Tools' value: how many extensions load ("6").
     var extensionsValue: String? { settings.map(HostSettingsPresentation.extensionsValue) }
 
     /// Instructions' value: the files that hold anything ("AGENTS.md, APPEND").
@@ -165,9 +168,9 @@ final class SettingsStore {
     /// About's agent: "agent 0.87.1", from the settings host.
     var agentVersion: String? { HostSettingsPresentation.agentVersion(settings) }
 
-    /// The iPad list's foot names the program beside the Pi page ("pi 0.87.1"), as the Mac's does.
+    /// The iPad list's foot names the program beside Models ("pi 0.87.1"), where the Mac keeps Shepherd's pi.
     func listFootVersion(page: SettingsPage) -> String? {
-        HostSettingsPresentation.agentVersion(settings, namingPi: page == .pi)
+        HostSettingsPresentation.agentVersion(settings, namingPi: page == .models)
     }
 
     /// The app's host (its thread lists, its models), for a Settings host.
@@ -178,6 +181,7 @@ final class SettingsStore {
     /// Reads every connected host's settings, instructions, suggestions and skills afresh, and the
     /// first hooks host's hooks.
     func refresh() async {
+        refreshes += 1
         let hosts = self.hosts
         await hostSettings.refresh(hosts)
         await instructions.refresh(hosts)

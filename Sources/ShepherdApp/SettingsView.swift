@@ -4,9 +4,9 @@ import AppKit
 import ShepherdCore
 import ShepherdProtocol
 
-/// Settings replaces the window content in place. A 232pt nav on `bgBase` (Back to Shepherd,
-/// search on ⌘F, the pages, the versions pinned at the bottom) beside a 720pt content column, or
-/// a wide page (Instructions, Skills, Experiments) that fills the detail area.
+/// Settings replaces the window content in place. A 220pt nav on `bgBase` (search on ⌘F, the
+/// pages in three groups, no icons) beside one centered 620pt column; Spaces fills the detail
+/// area. Esc goes up a level: a sub-page to its parent, a page out of Settings.
 ///
 /// Everything here is wired: a row exists only if changing it changes the app.
 struct SettingsView: View {
@@ -18,11 +18,14 @@ struct SettingsView: View {
 
     private var query: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-    private var availableSections: [SettingsSection] { SettingsSection.allCases }
+    /// The search's hits; a server found by name is a hit on Tools.
+    private var hits: [SettingsSearchHit] { SettingsSection.hits(for: query, rows: [.tools: vm.mcp.rows.map(\.name)]) }
 
+    /// Pages with a hit, or whose name matches; every page when not searching.
     private var matchingSections: [SettingsSection] {
-        guard !query.isEmpty else { return availableSections }
-        return availableSections.filter { !matches($0).isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
+        guard !query.isEmpty else { return SettingsSection.allCases }
+        let hit = Set(hits.map(\.section))
+        return SettingsSection.allCases.filter { hit.contains($0) || $0.title.localizedCaseInsensitiveContains(query) }
     }
 
     var body: some View {
@@ -60,11 +63,20 @@ struct SettingsView: View {
                 .keyboardShortcut("f", modifiers: .command)
                 .opacity(0)
                 .accessibilityHidden(true)
+            // Esc: out of a sub-page, or out of Settings. Invisible; VoiceOver still finds the way back.
+            Button("Back to Shepherd") { goBack() }
+                .keyboardShortcut(.escape, modifiers: [])
+                .buttonStyle(.plain)
+                .foregroundStyle(.clear)
         }
     }
 
     private var nav: some View {
-        let sections = matchingSections
+        let hits = self.hits
+        let matching = Set(matchingSections.map(\.navSelection))
+        let groups = SettingsSection.groups.map { group in
+            (title: group.title, sections: group.sections.filter { matching.contains($0) })
+        }.filter { !$0.sections.isEmpty }
         return VStack(alignment: .leading, spacing: 0) {
             // The window controls' strip: draggable, nothing else lives up here.
             Color.clear
@@ -72,52 +84,39 @@ struct SettingsView: View {
                 .contentShape(Rectangle())
                 .gesture(WindowDragGesture())
 
-            Button {
-                if vm.projectCookies.pending != nil { vm.projectCookies.pending = nil }
-                else if !vm.projectCookies.clearing {
-                    if vm.settingsSection == .subagents { vm.subagentDefinitions.leave { vm.showSettings = false } }
-                    else { vm.showSettings = false }
-                }
-            } label: {
-                HStack(spacing: SH.Space.m) {
-                    SHGlyph.Settings.back.image.frame(width: AppLayout.settingsBackGlyphWidth)
-                        .accessibilityHidden(true)
-                    Text("Back to Shepherd").font(.shSans(SHSettingsNavMetrics.textSize))
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(Color.sh.textSecondary)
-                .padding(.horizontal, SH.Space.m)
-                .frame(minHeight: AppLayout.settingsBackRowHeight)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.shRow(focusColor: .sh.running))
-            .keyboardShortcut(.escape, modifiers: [])
-            .padding(.horizontal, SHSettingsNavMetrics.sidePadding)
-
-            SHSettingsSearchField("Search settings", text: $searchText, placement: .navigation)
+            SHSettingsSearchField("Search", text: $searchText, placement: .navigation)
                 .focused($searchFocused)
                 .padding(.horizontal, SHSettingsNavMetrics.sidePadding)
-                .padding(.top, AppLayout.settingsSearchTop)
-                .padding(.bottom, SH.Space.l)
+                .padding(.bottom, SH.Space.m)
 
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: AppLayout.settingsNavRowSpacing) {
-                    ForEach(sections) { section in
-                        SHSettingsNavRow(section.title, glyph: section.artwork, selected: vm.settingsSection == section,
-                                         attention: section == .piSignIn && vm.piSignInNeedsAttention) {
-                            navigate(to: section)
-                        }
-                        if !query.isEmpty {
-                            ForEach(matches(section), id: \.self) { item in
-                                SettingsSearchHit(title: item, section: section.title) {
-                                    // A server found by name opens with its row open.
-                                    vm.mcpOpenServer = section == .mcp && vm.mcp.entry(item) != nil ? item : nil
+                VStack(alignment: .leading, spacing: SH.Space.m) {
+                    ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                        VStack(alignment: .leading, spacing: 0) {
+                            if let title = group.title {
+                                SHSectionHeader(title, style: .settingsNav)
+                                    .padding(.top, SH.Space.l)
+                                    .padding(.horizontal, SH.Space.m)
+                                    .padding(.bottom, SH.Space.xs)
+                            }
+                            ForEach(group.sections) { section in
+                                SHSettingsNavRow(section.title, selected: vm.settingsSection.navSelection == section,
+                                                 attention: section == .models && vm.piSignInNeedsAttention) {
                                     navigate(to: section)
+                                }
+                                if !query.isEmpty {
+                                    ForEach(hits.filter { $0.section.navSelection == section }) { hit in
+                                        SettingsSearchHitRow(hit: hit) {
+                                            // A server found by name opens with its row open.
+                                            vm.mcpOpenServer = hit.isServer && vm.mcp.entry(hit.item) != nil ? hit.item : nil
+                                            navigate(to: hit.section)
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                    if sections.isEmpty {
+                    if groups.isEmpty {
                         Text("No matching settings")
                             .font(.sh(.caption))
                             .foregroundStyle(Color.sh.textTertiary)
@@ -126,23 +125,15 @@ struct SettingsView: View {
                     }
                 }
                 .padding(.horizontal, SHSettingsNavMetrics.sidePadding)
+                .padding(.bottom, SH.Space.l)
             }
             .scrollIndicators(.hidden)
-
-            Spacer(minLength: 0)
-            Text(versions)
-                .font(.shMono(SHTextStyle.micro.size))
-                .foregroundStyle(Color.sh.textTertiary)
-                .lineLimit(1).truncationMode(.tail)
-                // Aligned with the rows' icons.
-                .padding(.horizontal, SHSettingsNavMetrics.sidePadding + SHSettingsNavMetrics.rowPadding)
-                .padding(.bottom, SH.Space.l)
         }
         .disabled((vm.settingsSection == .projects && (vm.projectCookies.pending != nil || vm.projectCookies.clearing)) ||
                   (vm.settingsSection == .subagents && ((vm.subagentDefinitions.busy && vm.subagentDefinitions.editing) || vm.subagentDefinitions.confirmation != nil)))
         .accessibilityHidden((vm.settingsSection == .projects && vm.projectCookies.pending != nil) ||
                              (vm.settingsSection == .subagents && vm.subagentDefinitions.confirmation != nil))
-        .frame(width: AppLayout.settingsNavWidth - SHSettingsNavMetrics.borderWidth)
+        .frame(width: SHSettingsNavMetrics.width - SHSettingsNavMetrics.borderWidth)
         .background(Color.sh.bgBase.ignoresSafeArea())
     }
 
@@ -151,9 +142,32 @@ struct SettingsView: View {
         else { vm.settingsSection = section }
     }
 
-    /// A page's hits: its rows' titles, and for MCP servers its servers by name.
-    private func matches(_ section: SettingsSection) -> [String] {
-        section.matches(for: query, rows: section == .mcp ? vm.mcp.rows.map(\.name) : [])
+    /// The drill-in the current page has open (an editor, a skill, a server, a space): its parent's
+    /// title and how to close it. Esc and the "‹" button both go through it.
+    private var drill: (parent: String, close: () -> Void)? {
+        switch vm.settingsSection {
+        case .instructions where vm.instructions.editing: ("Instructions", { vm.instructions.editing = false })
+        case .subagents where vm.subagentDefinitions.editing: ("Profiles", { vm.subagentDefinitions.back() })
+        case .skills where vm.skillsOpenSkill != nil: ("Skills", { vm.skillsOpenSkill = nil })
+        case .experiments where vm.experimentsPage != nil: ("Experiments", { vm.experimentsPage = nil })
+        case .tools where vm.mcpOpenServer != nil: ("Tools", { vm.mcpOpenServer = nil })
+        default: nil
+        }
+    }
+
+    /// Esc: the guards the Back row had, then up to the parent page, or out of Settings.
+    private func goBack() {
+        if vm.projectCookies.pending != nil { vm.projectCookies.pending = nil; return }
+        guard !vm.projectCookies.clearing else { return }
+        if vm.settingsSection == .projects, vm.projects.selected != nil {
+            if !vm.projects.saving && !vm.projects.resources.saving { Task { await vm.projects.stepBack() } }
+            return
+        }
+        if let drill { drill.close(); return }
+        let leave = {
+            if let parent = vm.settingsSection.parent { vm.settingsSection = parent } else { vm.showSettings = false }
+        }
+        if vm.settingsSection == .subagents { vm.subagentDefinitions.leave(leave) } else { leave() }
     }
 
     /// Searching shows the first page with a match when the current one has none. It lands at
@@ -166,40 +180,40 @@ struct SettingsView: View {
         withTransaction(instant) { vm.settingsSection = first }
     }
 
-    private var versions: String {
-        let app = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-        return Self.versions(app: "\(ShepherdEdition.current.displayName) \(app)", agent: vm.pi.engine.version,
-                             on: vm.settingsSection)
-    }
-
-    /// "Shepherd 0.1.0 · agent 0.87.1", or "Shepherd Nightly 0.0.0-nightly.… · agent 0.87.1".
-    /// The Pi page names the program: "· pi 0.87.1", as the SettingsPi boards draw.
-    static func versions(app: String, agent: String?, on section: SettingsSection) -> String {
-        app + (agent.map { " · \(section == .pi ? "pi" : "agent") \($0)" } ?? "")
-    }
-
     /// The page: every Settings page is this host's own; Fleet shares the content that crosses hosts.
     @ViewBuilder private var page: some View {
-        localPage
+        if let back = drill?.parent ?? vm.settingsSection.parent?.title {
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                Button { goBack() } label: {
+                    Text("‹ \(back)").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .shFocusRing(radius: SH.Radius.xs, color: .sh.running)
+                .accessibilityLabel("Back to \(back)")
+                localPage
+            }
+        } else {
+            localPage
+        }
     }
 
     @ViewBuilder private var localPage: some View {
         switch vm.settingsSection {
+        case .general: GeneralSettings(vm: vm)
         case .appearance: AppearanceSettings(vm: vm)
-        case .terminal: TerminalSettings(vm: vm)
-        case .agents: AgentSettings(pi: vm.pi, settings: vm.settings)
-        case .subagents: SubagentsSettings(model: vm.subagentDefinitions, native: NativeSubagentSettings(pi: vm.pi, settings: vm.settings))
-        case .projects: ProjectsSettings(vm: vm, model: vm.projects)
-        case .pi: PiSettings(pi: vm.pi, yourPi: vm.yourPi) { vm.settingsSection = .extensions }
-        case .piSignIn: PiSignInSettings(yourPi: vm.yourPi, auth: vm.piAuth)
-        case .extensions: ExtensionsSettings(settings: vm.settings)
-        case .piSlashCommands: SlashCommandsSettings(model: vm.slashCommands, settings: vm.settings)
-        case .apps: AppsSettings(vm: vm, model: vm.apps)
-        case .hooks: HooksSettings(model: vm.hooks)
-        case .worktrees: WorktreeSettings()
+        case .keyboard: KeyboardSettings(vm: vm)
+        case .models: ModelsSettings(pi: vm.pi, yourPi: vm.yourPi, auth: vm.piAuth, settings: vm.settings) { vm.settingsSection = .fromYourPi }
+        case .fromYourPi: FromYourPiSettings(model: vm.yourPi) { vm.settingsSection = .tools }
+        case .agents: AgentSettings(pi: vm.pi, settings: vm.settings, profiles: vm.subagentDefinitions.definitions.map(\.name)) { vm.settingsSection = .subagents }
+        case .subagents: SubagentsSettings(model: vm.subagentDefinitions, settings: vm.settings)
         case .instructions: InstructionsSettings(model: vm.instructions)
         case .skills: SkillsSettings(vm: vm, model: vm.skills)
-        case .mcp: MCPSettings(vm: vm, store: vm.mcp, initiallyExpanded: vm.mcpOpenServer)
+        case .tools: ToolsSettings(vm: vm, store: vm.mcp, settings: vm.settings) { vm.settingsSection = .piSlashCommands }
+        case .piSlashCommands: SlashCommandsSettings(model: vm.slashCommands, settings: vm.settings)
+        case .hooks: HooksSettings(model: vm.hooks)
+        case .projects: ProjectsSettings(vm: vm, model: vm.projects)
+        case .worktrees: WorktreeSettings()
+        case .apps: AppsSettings(vm: vm, model: vm.apps)
         case .fleet:
             FleetSettings(model: vm.fleet, serviceKeepsRunning: vm.backgroundServiceStatus?.keepsAgentsRunning,
                           serve: FleetServe(isOn: Binding(get: { vm.remoteListenerEnabled }, set: { vm.setRemoteListenerEnabled($0) }),
@@ -222,50 +236,39 @@ struct SettingsView: View {
                               threadCap: Binding(get: { vm.settings.fleetThreadCap }, set: { vm.settings.fleetThreadCap = $0 }),
                               batteryCountsHalf: Binding(get: { vm.settings.fleetBatteryCountsHalf }, set: { vm.settings.fleetBatteryCountsHalf = $0 })))
                 .task { await vm.refreshRemoteListener() }
-        case .keyboard: KeyboardSettings(vm: vm)
         case .advanced: AdvancedSettings(vm: vm)
         case .experiments:
-            ExperimentsSettings(model: vm.suggestions, instructions: vm.instructions, settings: vm.settings) { vm.settingsSection = .instructions }
+            ExperimentsSettings(model: vm.suggestions, instructions: vm.instructions, settings: vm.settings,
+                                page: Binding(get: { vm.experimentsPage }, set: { vm.experimentsPage = $0 })) { vm.settingsSection = .instructions }
         }
     }
 
     private var detail: some View {
         Group {
-            if vm.settingsSection == .projects {
+            if vm.settingsSection == .projects && vm.projects.selected != nil {
                 page
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if vm.settingsSection.isWide || (vm.settingsSection == .subagents && vm.subagentDefinitions.editing) {
-                // A wide page fills the area and scrolls inside itself (its editor, its side column).
-                Group { page }
-                    .shTransition(.content)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .contentShape(Rectangle())
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("SettingsPageContent")
-                    .padding(.top, AppLayout.settingsWideTop)
-                    .padding(.horizontal, AppLayout.settingsWideSides)
-                    .padding(.bottom, AppLayout.settingsWideBottom)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
                 ScrollView(.vertical) {
                     Group { page }
                         .shTransition(.content)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxWidth: AppLayout.settingsColumnWidth, alignment: .leading)
                         .contentShape(Rectangle())
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("SettingsPageContent")
                         .padding(.top, AppLayout.settingsTop)
-                        .padding(.bottom, AppLayout.settingsBottom)
-                        .padding(.horizontal, AppLayout.settingsWideSides)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        // A page picked in the nav cross-fades in place; search switches pages at once.
+                        .padding(.bottom, SH.Space.xxxl)
+                        .padding(.horizontal, SH.Space.xxxl)
+                        // The one column, centered; a page picked in the nav cross-fades in place and
+                        // search switches pages at once.
+                        .frame(maxWidth: .infinity)
                         .shAnimation(.content, value: vm.settingsSection)
                 }
                 .scrollContentBackground(.hidden)
                 .shTransition(.content)
             }
         }
-        .shAnimation(.content, value: vm.settingsSection.isWide || vm.subagentDefinitions.editing)
+        .shAnimation(.content, value: vm.settingsSection == .projects && vm.projects.selected != nil)
         .background(Color.sh.bgWindow)
         .overlay(alignment: .top) {
             // The window has no title bar; the strip above the content still drags it.
@@ -275,159 +278,205 @@ struct SettingsView: View {
 }
 
 /// A row found by the search, listed under its page: jumps to the page.
-private struct SettingsSearchHit: View {
-    let title: String
-    let section: String
+private struct SettingsSearchHitRow: View {
+    let hit: SettingsSearchHit
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text(title)
+            Text(hit.item)
                 .font(.sh(.caption))
-                .foregroundStyle(Color.sh.textSecondary)
+                .foregroundStyle(Color.sh.textTertiary)
                 .lineLimit(1)
-                .padding(.leading, SHSettingsNavMetrics.rowPadding + SHSettingsNavMetrics.iconSize + SHSettingsNavMetrics.iconGap)
+                .padding(.leading, SHSettingsNavMetrics.rowPadding + SH.Space.m)
                 .frame(maxWidth: .infinity, minHeight: SH.Height.controlS, alignment: .leading)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.shRow())
-        .accessibilityLabel("\(title), in \(section)")
+        .buttonStyle(.shRow(radius: SH.Radius.m))
+        .accessibilityLabel("\(hit.item), in \(hit.section.title)")
     }
 }
 
+/// A row the search found: its page and its title, which together name it.
+struct SettingsSearchHit: Identifiable, Hashable {
+    let section: SettingsSection
+    let item: String
+    /// A row found by its own name (an MCP server), not a titled row: a server named like a toggle keeps its own hit.
+    var isServer = false
+    var id: String { "\(section.rawValue)/\(isServer ? "server/" : "")\(item)" }
+}
+
 enum SettingsSection: String, CaseIterable, Identifiable {
-    // The nav's order, as every Settings board draws it.
-    case appearance, terminal, agents, subagents, worktrees, projects, piSignIn, pi, instructions, skills, extensions, piSlashCommands, apps, hooks, mcp, fleet, keyboard, advanced, experiments
+    // The nav's order, then the pages under another.
+    case general, appearance, keyboard
+    case models, agents, instructions, skills, tools, hooks
+    case projects, worktrees, apps, fleet
+    case advanced, experiments
+    case subagents, piSlashCommands, fromYourPi
 
     var id: String { rawValue }
 
+    /// The nav's groups: a label for each run of pages, or none.
+    static let groups: [(title: String?, sections: [SettingsSection])] = [
+        (nil, [.general, .appearance, .keyboard]),
+        ("Agents", [.models, .agents, .instructions, .skills, .tools, .hooks]),
+        ("Work", [.projects, .worktrees, .apps, .fleet]),
+        (nil, [.advanced, .experiments]),
+    ]
+
+    /// The page a sub-page opens from; nil for a page in the nav.
+    var parent: SettingsSection? {
+        switch self {
+        case .subagents: .agents
+        case .piSlashCommands: .tools
+        case .fromYourPi: .models
+        default: nil
+        }
+    }
+
+    /// The nav row this page highlights.
+    var navSelection: SettingsSection { parent ?? self }
+
     var title: String {
         switch self {
+        case .general: return "General"
         case .appearance: return "Appearance"
-        case .terminal: return "Terminal"
+        case .keyboard: return "Keyboard"
+        case .models: return "Models"
         case .agents: return "Agents"
-        case .subagents: return "Subagents"
-        case .projects: return "Spaces"
-        case .worktrees: return "Worktrees"
-        case .pi: return "Pi"
-        case .piSignIn: return "Sign-in"
-        case .extensions: return "Extensions"
-        case .piSlashCommands: return "Slash commands"
-        case .apps: return "Apps"
-        case .hooks: return "Hooks"
         case .instructions: return "Instructions"
         case .skills: return "Skills"
-        case .mcp: return "MCP servers"
+        case .tools: return "Tools"
+        case .hooks: return "Hooks"
+        case .projects: return "Spaces"
+        case .worktrees: return "Git"
+        case .apps: return "Apps"
         case .fleet: return "Fleet"
-        case .keyboard: return "Keyboard"
         case .advanced: return "Advanced"
         case .experiments: return "Experiments"
+        case .subagents: return "Subagents"
+        case .piSlashCommands: return "Slash commands"
+        case .fromYourPi: return "Your pi"
         }
     }
 
     /// Row titles on the page, as the search lists them under the section.
     var items: [String] {
         switch self {
-        case .appearance: ["Theme", "Mode", "Organize by", "Keep idle threads", "Sidebar rows", "Density", "Text size",
-                           "Sidebar width"]
-        case .terminal: ["Font family", "Font size", "Shell"]
-        case .agents: ["Default model", "Default thinking level", "Speed for new threads", "Text generation model", "Image reading model",
-                       "When a turn ends, send the queue", "Threads can start threads", "Where they work", "Compact at",
-                       "Trim old tool output from the model's context", "Defer rarely used tools", "Codemode"]
-        case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically", "Deleting a worktree agent", "Close threads when their pull request merges"]
-        case .subagents: ["Filter subagents", "New subagent", "Restore defaults", "Show in Finder",
-                          "Native subagents", "Subagent display", "Concurrency", "Model", "Thinking", "Context"]
-        case .projects: ["Filter spaces", "All hosts", "Add space", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
-        case .pi: ["Shepherd's pi", "Source", "Last brought over", "Re-import all", "Logins", "Custom providers", "Default model",
-                   "Instructions", "Skills", "Prompts", "Themes", "Imported extensions"]
-        case .extensions: ["Terminals and agent tools", "Diff review tool", "MCP servers", "Browser tools", "Design references"]
-        case .piSignIn: ["Re-import from pi", "Subscriptions", "Anthropic", "OpenAI Codex", "GitHub Copilot", "xAI", "Kimi", "Radius",
-                         "API keys", "Add an API key", "Custom providers"]
-        case .piSlashCommands: ["Search commands", "Extensions", "Prompt templates", "Skills", "Disabled commands"]
+        case .general: ["Keep agents running", "Turn finished", "Questions and failures", "Open files in", "By file type", "Channel", "Check automatically", "Version"]
+        case .appearance: ["Mode", "Theme", "Sidebar rows", "Density", "Text size", "Sidebar width", "Organize by", "Keep idle threads",
+                           "Font", "Size", "Shell"]
+        case .models: ["Re-import from pi", "Subscriptions", "Anthropic", "OpenAI Codex", "GitHub Copilot", "xAI", "Kimi", "Radius",
+                       "API keys", "Add an API key", "Custom providers",
+                       "Model", "Thinking", "Speed", "Titles and commit messages", "Describe images for",
+                       "Shepherd's pi", "Models", "Your pi"]
+        case .agents: ["Send queued messages", "Threads can start threads", "Where they work", "Compact at",
+                       "Trim old tool output", "Load rarely used tools on demand", "Codemode",
+                       "Native subagents", "Show subagent runs", "Run at most", "Model", "Thinking", "Context", "Profiles"]
+        case .worktrees: ["Branch from", "Fetch first", "Draft commit messages", "Close the thread when its PR merges", "Worktree"]
+        case .subagents: ["New profile", "Restore defaults", "Where they live"]
+        case .projects: ["Add space", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
+        case .fromYourPi: ["Source", "Last brought over", "Re-import all", "Logins", "Custom providers", "Default model",
+                           "Instructions", "Skills", "Prompts", "Themes", "Imported extensions"]
+        case .tools: ["Add server", "Import…", "In every prompt", "Also use a repo’s .mcp.json",
+                      "Terminals and agent tools", "Diff review", "MCP servers", "Browser", "Design references",
+                      "Commands in the / menu"]
+        case .piSlashCommands: ["Off", "Extensions", "Prompt templates", "Skills"]
         case .apps: ["Add app", "On this Mac", "Run", "Quick action"]
-        case .hooks: ["Add hook", "Sources", "Read hooks from Claude Code", "Read hooks from Codex"]
+        case .hooks: ["Add hook", "Yours", "Claude Code", "Codex"]
         case .instructions: ["AGENTS.md", "APPEND_SYSTEM.md", "History"]
-        case .skills: ["Installed skills", "Browse skills.sh", "Add from repo",
-                       "Skills in the / menu", "Update automatically"]
-        case .mcp: ["Servers", "Add server", "Import…", "How the agent uses them",
-                    "Also use a repo’s .mcp.json", "Where they live"]
-        case .fleet: ["Macs", "Add a Mac", "Join a fleet", "Remove", "Devices", "Add a device", "Revoke", "Listener"]
+        case .skills: ["Installed", "Browse skills.sh", "Add from repo", "Show in the / menu", "Update automatically"]
+        case .fleet: ["Auto", "Threads can send work to other Macs", "At most per thread", "On battery", "Uncommitted changes",
+                      "Ignored files", "Macs", "Add a Mac", "Join a fleet", "Phones and tablets", "Add a device", "Revoke", "Listener"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
-        case .advanced: ["Open files in", "Workspace state", "Extension socket", "Update channel", "Check for updates", "Share diagnostics", "Skipped confirmations", "Reset settings"]
-        case .experiments: ["Goals", "Projects", "Suggested instructions", "Learn from", "Can suggest for", "Waiting for you",
-                            "Added from suggestions", "Design tool", "Computer use", "Accessibility", "Screen Recording"]
+        case .advanced: ["Share diagnostics", "Workspace state", "Extension socket", "Confirmations you skipped", "All settings"]
+        case .experiments: ["Suggested instructions", "Waiting", "Learn from", "Can suggest for", "Where lines go",
+                            "Design tool", "Goals", "Projects", "Computer use", "Allowed apps"]
         }
     }
 
     /// Words people search for that aren't row titles ("dark" → Appearance).
     private var keywords: [String: [String]] {
         switch self {
+        case .general: ["Turn finished": ["banner", "notification", "alert", "notify", "finished"],
+                        "Keep agents running": ["quit", "login items", "background"],
+                        "Open files in": ["editor", "xcode", "zed", "vs code", "textedit", "links"],
+                        "Channel": ["beta", "nightly", "sparkle", "update channel"],
+                        "Check automatically": ["updates", "sparkle"], "Version": ["check for updates", "agent"]]
         case .appearance: ["Mode": ["dark", "light", "color", "shepherd design", "theme"], "Text size": ["font", "zoom", "scale"], "Sidebar rows": ["row height", "comfortable"], "Density": ["compact", "spacing"],
                            "Organize by": ["spaces", "activity", "folders", "sidebar style", "tree"],
-                           "Keep idle threads": ["archive", "idle"]]
-        case .terminal: ["Font family": ["ghostty", "monospace"], "Shell": ["zsh", "bash", "fish"]]
-        case .agents: ["Default model": ["claude", "gpt", "provider"], "Text generation model": ["name", "title", "rename", "haiku", "naming", "session naming", "generate"], "Image reading model": ["vision", "images", "screenshots", "pictures", "describe", "multimodal"], "Default thinking level": ["reasoning", "effort"],
-                       "Speed for new threads": ["fast", "fast mode", "priority", "service tier", "codex", "openai", "standard"],
-                       "When a turn ends, send the queue": ["queue", "follow-up", "one per turn", "all at once"],
+                           "Keep idle threads": ["archive", "idle"],
+                           "Font": ["ghostty", "monospace", "terminal", "font family"], "Size": ["terminal", "font size"],
+                           "Shell": ["zsh", "bash", "fish", "terminal"]]
+        case .models: ["Model": ["claude", "gpt", "provider", "default model"], "Titles and commit messages": ["name", "title", "rename", "haiku", "naming", "session naming", "generate", "text generation"],
+                       "Describe images for": ["vision", "images", "screenshots", "pictures", "describe", "multimodal", "image reading"], "Thinking": ["reasoning", "effort", "default thinking level"],
+                       "Speed": ["fast", "fast mode", "priority", "service tier", "codex", "openai", "standard", "speed for new threads"],
+                       "Subscriptions": ["login", "log in", "sign in", "oauth", "subscription", "auth.json", "claude", "chatgpt", "copilot",
+                                         "sign out", "expired"],
+                       "API keys": ["api key", "key", "environment", "variable", "auth.json", "sign out"],
+                       "Add an API key": ["groq", "mistral", "openrouter", "deepseek"],
+                       "Custom providers": ["models.json", "ollama", "gateway"],
+                       "Re-import from pi": ["import", "copy", "your pi"],
+                       "Shepherd's pi": ["version", "engine", "home", "folder", "pi"],
+                       "Your pi": ["~/.pi/agent", "terminal pi", "from pi", "import"]]
+        case .agents: ["Send queued messages": ["queue", "follow-up", "one per turn", "all at once"],
                        "Threads can start threads": ["sub-threads", "subthreads", "agent_spawn", "spawn", "nested", "depth"],
                        "Where they work": ["sub-threads", "worktree", "checkout", "branch", "agent_spawn"],
                        "Compact at": ["compaction", "compacting", "context window", "percent", "full", "tokens", "auto-compact"],
-                       "Trim old tool output from the model's context": ["tool results", "clear", "clipping", "context", "tokens", "compaction",
-                                                                     "screenshots", "cache"],
-                       "Defer rarely used tools": ["tool search", "tool_search", "deferred", "tokens"],
-                       "Codemode": ["javascript", "script", "batch", "tools", "space"]]
-        case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"],
-                       "Close threads when their pull request merges": ["merged", "auto-close", "delete branch"]]
-        case .subagents: ["New subagent": ["children", "helpers", "profiles", "agents", "Markdown"], "Restore defaults": ["scout", "reviewer", "planner", "worker"],
-                          "Native subagents": ["children", "workflows"], "Concurrency": ["parallel", "limit"]]
-        case .projects: ["Filter spaces": ["folders", "directory", "space settings"], "Instructions": ["AGENTS.md", "APPEND_SYSTEM.md"], "Pi settings": [".shepherd", "settings.json"]]
-        case .pi: ["Shepherd's pi": ["version", "engine", "home", "folder"],
-                   "Source": ["~/.pi/agent", "terminal pi", "your pi", "from pi"], "Re-import all": ["import", "re-import", "copy"],
-                   "Logins": ["re-import", "auth.json", "sign-ins"],
-                   "Custom providers": ["models.json", "re-import"], "Default model": ["re-import", "provider"],
-                   "Instructions": ["AGENTS.md", "CLAUDE.md", "SYSTEM.md", "APPEND_SYSTEM.md", "context", "re-import"],
-                   "Skills": ["SKILL.md", "re-import"], "Prompts": ["prompt templates", "re-import"], "Themes": ["re-import"],
-                   "Imported extensions": ["packages", "npm", "full access", "switch on", "didn't load"]]
-        case .extensions: ["Terminals and agent tools": ["panes", "notifications", "automations"],
-                           "Diff review tool": ["review_diff"], "MCP servers": ["tool search"], "Browser tools": ["screenshots"],
-                           "Design references": ["design_get"]]
-        case .piSignIn: ["Subscriptions": ["login", "log in", "sign in", "oauth", "subscription", "auth.json", "claude", "chatgpt", "copilot",
-                                           "sign out", "expired"],
-                         "API keys": ["api key", "key", "environment", "variable", "auth.json", "sign out"],
-                         "Add an API key": ["groq", "mistral", "openrouter", "deepseek"],
-                         "Custom providers": ["models.json", "ollama", "gateway"],
-                         "Re-import from pi": ["import", "copy", "your pi"]]
-        case .piSlashCommands: ["Search commands": ["slash", "/ menu", "command", "composer", "hide", "turn off", "switch"],
+                       "Trim old tool output": ["tool results", "clear", "clipping", "context", "tokens", "compaction",
+                                                "screenshots", "cache"],
+                       "Load rarely used tools on demand": ["tool search", "tool_search", "deferred", "defer", "tokens"],
+                       "Codemode": ["javascript", "script", "batch", "tools", "space"],
+                       "Native subagents": ["children", "workflows"], "Run at most": ["parallel", "limit", "concurrency"],
+                       "Profiles": ["children", "helpers", "agents", "scout", "reviewer", "planner", "worker"]]
+        case .worktrees: ["Branch from": ["git", "origin", "base branch"], "Fetch first": ["fetch", "remote"],
+                          "Draft commit messages": ["pr description", "commit"],
+                          "Close the thread when its PR merges": ["merged", "auto-close", "delete branch", "github", "pull request"],
+                          "Worktree": ["deleting", "keep", "remove", "ask", "delete"]]
+        case .subagents: ["New profile": ["children", "helpers", "profiles", "agents", "Markdown", "subagent"], "Restore defaults": ["scout", "reviewer", "planner", "worker"]]
+        case .projects: ["Add space": ["folders", "directory", "space settings"], "Instructions": ["AGENTS.md", "APPEND_SYSTEM.md"], "Pi settings": [".shepherd", "settings.json"]]
+        case .fromYourPi: ["Source": ["~/.pi/agent", "terminal pi", "your pi", "from pi"], "Re-import all": ["import", "re-import", "copy"],
+                           "Logins": ["re-import", "auth.json", "sign-ins"],
+                           "Custom providers": ["models.json", "re-import"], "Default model": ["re-import", "provider"],
+                           "Instructions": ["AGENTS.md", "CLAUDE.md", "SYSTEM.md", "APPEND_SYSTEM.md", "context", "re-import"],
+                           "Skills": ["SKILL.md", "re-import"], "Prompts": ["prompt templates", "re-import"], "Themes": ["re-import"],
+                           "Imported extensions": ["packages", "npm", "full access", "switch on", "didn't load"]]
+        case .tools: ["Add server": ["remote", "local", "url", "command", "stdio", "http", "sse", "mcp", "servers", "connectors"],
+                      "Import…": ["claude desktop", "cursor", "vs code", "paste json", "mcpServers"],
+                      "In every prompt": ["tokens", "prompt", "budget", "search", "direct", "tool search", "exposure", "oauth", "sign in", "login"],
+                      "Also use a repo’s .mcp.json": ["project", "repository", ".mcp.json"],
+                      "Terminals and agent tools": ["panes", "notifications", "automations"],
+                      "Diff review": ["review_diff"], "MCP servers": ["tool search"], "Browser": ["screenshots"],
+                      "Design references": ["design_get"],
+                      "Commands in the / menu": ["slash", "/ menu", "command", "composer"]]
+        case .piSlashCommands: ["Off": ["slash", "/ menu", "command", "composer", "hide", "hidden", "turn off", "turned off", "switch", "disabled"],
                                 "Extensions": ["registerCommand", "pi extensions"],
                                 "Prompt templates": ["prompts", "templates", "argument-hint"],
-                                "Skills": ["skill:", "SKILL.md"],
-                                "Disabled commands": ["off", "hidden", "disabled", "turned off", "switched off"]]
+                                "Skills": ["skill:", "SKILL.md"]]
         case .apps: ["Add app": ["dev server", "storybook", "simulator", "command", "apps.json", "package.json", "script"],
                      "Run": ["stop", "running", "start", "localhost", "port"]]
         case .hooks: ["Add hook": ["PreToolUse", "PostToolUse", "Stop", "SessionStart", "UserPromptSubmit", "matcher", "command", "hooks.json"],
-                      "Read hooks from Claude Code": ["claude", "settings.json", ".claude"], "Read hooks from Codex": ["codex", "config.toml", ".codex"]]
+                      "Claude Code": ["claude", "settings.json", ".claude", "read hooks"], "Codex": ["codex", "config.toml", ".codex", "read hooks"]]
         case .instructions: ["AGENTS.md": ["system prompt", "how you work", "context"],
                              "APPEND_SYSTEM.md": ["system prompt", "override"], "History": ["restore", "undo"]]
-        case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills", "from your pi", "copied", ".pi", ".shepherd"],
+        case .skills: ["Installed": ["SKILL.md", ".agents", "agent skills", "from your pi", "copied", ".pi", ".shepherd"],
                        "Browse skills.sh": ["directory", "search", "install"],
-                       "Add from repo": ["github", "git", "folder"], "Skills in the / menu": ["slash", "command", "composer"],
+                       "Add from repo": ["github", "git", "folder"], "Show in the / menu": ["slash", "command", "composer"],
                        "Update automatically": ["update", "upgrade"]]
-        case .mcp: ["Servers": ["mcp", "model context protocol", "tools", "connectors", "mcp.json"],
-                    "Add server": ["remote", "local", "url", "command", "stdio", "http", "sse"],
-                    "Import…": ["claude desktop", "cursor", "vs code", "paste json", "mcpServers"],
-                    "How the agent uses them": ["tokens", "prompt", "budget", "search", "direct", "tool search", "exposure", "oauth", "sign in", "login"],
-                    "Also use a repo’s .mcp.json": ["project", "repository", ".mcp.json"]]
         case .fleet: ["Macs": ["pair", "code", "bonjour", "peers", "machines", "lan"], "Add a Mac": ["pair", "code", "6 digit"],
                       "Join a fleet": ["code", "address", "pair"],
-                      "Devices": ["iphone", "ipad", "phone", "tablet", "client", "token", "remote"], "Add a device": ["qr", "code", "pair", "scan"],
-                      "Listener": ["port", "serve", "remote"]]
+                      "Phones and tablets": ["iphone", "ipad", "phone", "tablet", "client", "token", "remote", "devices"],
+                      "Add a device": ["qr", "code", "pair", "scan"], "Listener": ["port", "serve", "remote"],
+                      "Ignored files": [".env", "node_modules", "build caches", "exclude"]]
         case .keyboard: ["Shortcuts": ["hotkey", "keybinding", "chord", "steer", "queue"]]
-        case .advanced: ["Open files in": ["editor", "xcode", "zed", "vs code", "textedit", "links"], "Update channel": ["beta", "nightly", "sparkle"], "Workspace state": ["state.json"], "Skipped confirmations": ["don't ask again", "confirm", "dialog"], "Share diagnostics": ["telemetry", "privacy", "errors", "crash", "performance", "memory"]]
+        case .advanced: ["Workspace state": ["state.json"], "Confirmations you skipped": ["don't ask again", "confirm", "dialog", "skipped"],
+                         "All settings": ["reset", "defaults"],
+                         "Share diagnostics": ["telemetry", "privacy", "errors", "crash", "performance", "memory"]]
         case .experiments: ["Projects": ["coordinate", "project work", "new project"],
-                            "Fleet": ["macs", "pair", "peers", "machines", "bonjour"],
                             "Suggested instructions": ["lessons", "learned"], "Learn from": ["threads", "automations"],
                             "Design tool": ["designs", "boards", "mockups"],
-                            "Computer use": ["apps", "click", "type", "control", "desktop", "permissions"]]
+                            "Computer use": ["apps", "click", "type", "control", "desktop", "permissions"],
+                            "Allowed apps": ["accessibility", "screen recording", "permissions"]]
         }
     }
 
@@ -443,54 +492,15 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         } + rows.filter { $0.localizedCaseInsensitiveContains(query) }
     }
 
-    var artwork: SHGlyph.Settings {
-        switch self {
-        case .appearance: .appearance
-        case .terminal: .terminal
-        case .agents: .agents
-        case .subagents: .subagents
-        case .projects: .projects
-        case .worktrees: .worktrees
-        case .piSignIn: .lock
-        case .pi: .pi
-        case .extensions: .extensions
-        case .piSlashCommands: .slashCommands
-        case .apps: .apps
-        case .hooks: .hooks
-        case .instructions: .instructions
-        case .skills: .skills
-        case .mcp: .mcp
-        case .fleet: .remoteConnection
-        case .keyboard: .keyboard
-        case .advanced: .advanced
-        case .experiments: .experiments
+    /// Every hit for `query`, page by page in nav order; a hit is named by its page and title.
+    /// `rows` are pages' own rows found by name (Tools' MCP servers).
+    static func hits(for query: String, rows: [SettingsSection: [String]] = [:]) -> [SettingsSearchHit] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return allCases.flatMap { section in
+            section.matches(for: query).map { SettingsSearchHit(section: section, item: $0) }
+                + (needle.isEmpty ? [] : (rows[section] ?? []).filter { $0.localizedCaseInsensitiveContains(needle) }
+                    .map { SettingsSearchHit(section: section, item: $0, isServer: true) })
         }
     }
 
-    var symbol: String {
-        switch self {
-        case .appearance: return "circle.lefthalf.filled"
-        case .terminal: return "terminal"
-        case .agents: return "person.2"
-        case .subagents: return "arrow.turn.down.right"
-        case .projects: return "folder"
-        case .worktrees: return "arrow.branch"
-        case .pi: return "pi"
-        case .piSignIn: return "lock"
-        case .extensions: return "puzzlepiece.extension"
-        case .piSlashCommands: return "chevron.left.forwardslash.chevron.right"
-        case .apps: return "square.grid.2x2"
-        case .hooks: return SHGlyph.hook.symbolName
-        case .instructions: return SHGlyph.document.symbolName
-        case .skills: return "graduationcap"
-        case .mcp: return "server.rack"
-        case .fleet: return SHGlyph.remoteConnection.symbolName
-        case .keyboard: return "keyboard"
-        case .advanced: return "gearshape"
-        case .experiments: return "flask"
-        }
-    }
-
-    /// A wide page fills the detail area instead of the 720pt column.
-    var isWide: Bool { self == .instructions || self == .skills || self == .mcp || self == .experiments }
 }

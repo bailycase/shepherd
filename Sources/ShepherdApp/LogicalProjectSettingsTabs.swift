@@ -175,7 +175,11 @@ struct LogicalProjectMemoryTab: View {
         let M = SHProjectSettingsMetrics.self
         VStack(alignment: .leading, spacing: SH.Space.xl) {
             VStack(alignment: .leading, spacing: 0) {
-                SHProjectSettingsLabel("Project instructions")
+                HStack(alignment: .bottom, spacing: SH.Space.s) {
+                    SHProjectSettingsLabel("Project instructions")
+                    Spacer(minLength: 0)
+                    SettingsOpenIn(text: $draft, name: "instructions.md")
+                }
                 TextEditor(text: $draft)
                     .shText(size: SHTextStyle.ui.size, lineHeight: SHProjectSettingsMetrics.fieldLineHeight)
                     .foregroundStyle(Color.sh.textPrimary)

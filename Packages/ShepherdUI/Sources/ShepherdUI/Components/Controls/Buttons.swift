@@ -62,7 +62,7 @@ private struct SHStyledButton: View {
         let sh = Color.sh
         let settings = scale == .settings
         let M = SHSettingsControlMetrics.self
-        // A Settings page draws every size as its boards' one button: 32pt at radius 7, Geist 13.
+        // A Settings page draws every size as its one button: 26pt at radius `s`, `caption`.
         let standard: (CGFloat, CGFloat, CGFloat) = switch size {
         case .s: (SH.Height.controlS, SH.Space.m, 12)
         case .m: (SH.Height.controlM, 10, 12.5)
@@ -115,15 +115,15 @@ private struct SHStyledButton: View {
         case .strong:
             return AnyShapeStyle(enabled && configuration.isPressed ? sh.textSecondary : sh.textPrimary)
         case .secondary:
-            // The Settings boards' buttons rest on the page's own fill.
-            return AnyShapeStyle(active ? sh.bgSelected : scale == .settings ? sh.bgWindow : sh.bgRaised)
+            // The Settings buttons are unfilled.
+            return AnyShapeStyle(active ? sh.bgSelected : scale == .settings ? Color.clear : sh.bgRaised)
         case .raised:
             return AnyShapeStyle(active ? sh.bgSelected : sh.bgRaised)
         case .ghost:
             return AnyShapeStyle(enabled && configuration.isPressed ? sh.bgSelected : hovering && enabled ? sh.bgHover : Color.clear)
         case .danger:
             return AnyShapeStyle(enabled && configuration.isPressed ? sh.bgSelected : hovering && enabled ? sh.failedTint
-                : scale == .settings ? sh.bgWindow : sh.bgRaised)
+                : scale == .settings ? Color.clear : sh.bgRaised)
         }
     }
 }

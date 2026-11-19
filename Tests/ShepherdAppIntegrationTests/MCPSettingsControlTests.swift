@@ -149,18 +149,20 @@ struct MCPSettingsControlTests {
         try await Task.sleep(for: .milliseconds(300))
 
         // Tool exposure: Direct and back to Search, each reaching the user's file.
-        let search = try labelStarting("Search, ", in: window), direct = try labelStarting("Direct, ", in: window)
-        #expect(window.element(search)?.isSelected == true && window.element(direct)?.isSelected == false)
-        try window.press(direct)
+        func selected(_ label: String) -> Bool? {
+            window.controls().first { $0.label == label && $0.role == ControlRole.radioButton }?.isSelected
+        }
+        #expect(selected("Search") == true && selected("Direct") == false)
+        try window.press("Direct", role: ControlRole.radioButton)
         try await eventuallyOnMain("Direct to reach the file") { (try? fileSettings(store, "linear").exposure) == .direct }
         #expect(store.details["linear"]?.direct == true)
-        #expect(window.element(try labelStarting("Direct, ", in: window))?.isSelected == true)
-        try window.press(try labelStarting("Search, ", in: window))
+        #expect(selected("Direct") == true)
+        try window.press("Search", role: ControlRole.radioButton)
         try await eventuallyOnMain("Search to reach the file") { (try? fileSettings(store, "linear").exposure) == .proxy }
         #expect(try Self.fileSettings(store, "linear").tools == nil, "no tools are chosen by it")
         #expect(cli.calls.map { $0.first } == ["list"], "choosing an exposure asks pi nothing: it takes effect at the next launch")
         // Each choice is as big as a pointer needs, whatever its label's size.
-        let options = window.controls().filter { ($0.label ?? "").hasPrefix("Search, ") || ($0.label ?? "").hasPrefix("Direct, ") }
+        let options = window.controls().filter { $0.role == ControlRole.radioButton && ($0.label == "Search" || $0.label == "Direct") }
         #expect(options.count == 2)
         #expect(ControlPress.undersized(options, minimum: .desktop).isEmpty, "\(ControlPress.undersized(options, minimum: .desktop))")
 
@@ -182,7 +184,9 @@ struct MCPSettingsControlTests {
         try await eventuallyOnMain("Sign out to run pi's logout and ask again") { cli.calls.contains(["logout", "linear"]) && cli.lists >= 3 }
         await store.settle()
         #expect(cli.lists == 3, "Sign out asks pi once more, after its logout")
-        try window.press("Sign in", nth: 0)
+        vm.mcpOpenServer = "sentry"
+        try await Task.sleep(for: .milliseconds(300))
+        try window.press("Sign in")
         try await eventuallyOnMain("the sign-in to start") { store.signIn?.server == "sentry" }
         try await eventuallyOnMain("pi's login to run") { cli.calls.contains(["login", "sentry", "--timeout", "300"]) }
         // A sign-in that succeeds asks pi again, and closing the sheet before it does would cancel that: so let it finish and
@@ -192,29 +196,29 @@ struct MCPSettingsControlTests {
         store.closeSignIn()
         #expect(cli.lists == 4, "the sign-in asked pi once more")
 
-        // The row's switch, off and on, which asks pi again only when it comes on.
+        // A server's On switch, off and on, which asks pi again only when it comes on.
         let before = cli.lists
-        try window.press("sentry", role: ControlRole.checkBox)
+        try window.press("On", role: ControlRole.checkBox)
         try await eventuallyOnMain("the switch to reach the file") { (try? fileSettings(store, "sentry").enabled) == false }
         #expect(store.rows.first { $0.name == "sentry" }?.status == .off)
         #expect(cli.lists == before)
-        try window.press("sentry", role: ControlRole.checkBox)
+        try window.press("On", role: ControlRole.checkBox)
         try await eventuallyOnMain("the switch to come back") { (try? fileSettings(store, "sentry").enabled) == true }
         try await eventuallyOnMain("pi to be asked") { cli.lists >= before + 1 }
         await store.settle()
         #expect(cli.lists == before + 1, "switching a server on asks pi once")
 
-        // The rail's switches.
+        // The list page's switch.
+        vm.mcpOpenServer = nil
+        try await Task.sleep(for: .milliseconds(200))
         let repo = settings.mcpProjectConfig
         try window.press("Also use a repo’s .mcp.json", role: ControlRole.checkBox)
         try await eventuallyOnMain("the setting to follow") { settings.mcpProjectConfig == !repo }
         try window.press("Also use a repo’s .mcp.json", role: ControlRole.checkBox)
         try await eventuallyOnMain("the setting to go back") { settings.mcpProjectConfig == repo }
 
-        // Toolbar: Add server opens its sheet (a window of its own), and a filter narrows the list.
+        // Add server opens its sheet (a window of its own).
         try window.press("Add server")
-        try window.press("Needs you 2", role: ControlRole.radioButton)
-        try await eventuallyOnMain("the filter to narrow the rows") { store.rows(filter: .needsYou, query: "").count == 2 }
     }
 
     @MainActor

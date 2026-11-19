@@ -6,7 +6,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Settings ▸ Notifications (NotifSettings): what to send, to which device, and which hosts
+/// Settings ▸ General (MobileSettingsGeneral): what to send, to which device, and which hosts
 /// send at all. The choices live on the phone and go to every host it registered with, which
 /// applies them before sending (`RemotePushPreferences`).
 struct NotificationsScreen: View {
@@ -97,7 +97,7 @@ struct NotificationsScreen: View {
                 await push.refreshPermission()
             }
         }
-        .navigationTitle("Notifications")
+        .navigationTitle("General")
         .navigationBarTitleDisplayMode(.inline)
     }
 

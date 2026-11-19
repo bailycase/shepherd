@@ -190,7 +190,10 @@ struct HookEditSheet: View {
 
     private var header: some View {
         HStack(spacing: SH.Space.l) {
-            Text(editor.title).shText(.title).foregroundStyle(Color.sh.textPrimary).accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(editor.title).shText(.title).foregroundStyle(Color.sh.textPrimary).accessibilityAddTraits(.isHeader)
+                Text(editor.event.effect).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+            }
             Spacer(minLength: 0)
             SHSegmentedPicker("Edit as", selection: $editor.pane, options: [(.form, "Form"), (.json, "JSON")], size: .s)
                 .fixedSize()
@@ -237,7 +240,7 @@ struct HookEditSheet: View {
     @ViewBuilder private var matcherField: some View {
         if let hint = editor.event.matcherHint {
             VStack(alignment: .leading, spacing: SH.Space.s) {
-                Text("Matcher").font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+                SettingsSheetLabel(title: "Matcher")
                 TextField("Matcher", text: $editor.matcher, prompt: Text(hint).foregroundStyle(Color.sh.textTertiary))
                     .textFieldStyle(.sh(mono: true, error: !editor.matcherValid))
                     .disabled(editor.readOnly)
@@ -259,7 +262,7 @@ struct HookEditSheet: View {
             }
         } else {
             VStack(alignment: .leading, spacing: SH.Space.s) {
-                Text("Matcher").font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+                SettingsSheetLabel(title: "Matcher")
                 HookHelp("\(editor.event.rawValue) takes no matcher: its hooks run every time.")
             }
         }
@@ -267,7 +270,7 @@ struct HookEditSheet: View {
 
     private var runs: some View {
         VStack(alignment: .leading, spacing: SH.Space.s) {
-            Text("Runs").font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+            SettingsSheetLabel(title: "Runs")
             ForEach($editor.handlers) { $handler in
                 HookHandlerCard(handler: $handler, removable: editor.handlers.count > 1 && !editor.readOnly) {
                     editor.remove(handler.id)
@@ -284,7 +287,7 @@ struct HookEditSheet: View {
     private var test: some View {
         VStack(alignment: .leading, spacing: SH.Space.s) {
             HStack {
-                Text("Test").font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+                SettingsSheetLabel(title: "Test")
                 Spacer(minLength: 0)
                 Button { editor.test(with: model) } label: {
                     Label(editor.testing ? "Running…" : "Run with a sample event", systemImage: "play.fill")
@@ -305,7 +308,8 @@ struct HookEditSheet: View {
     // MARK: JSON
 
     private var jsonPane: some View {
-        VStack(alignment: .leading, spacing: SH.Space.m) {
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            SettingsSheetLabel(title: "JSON", openIn: $editor.jsonText, file: "hook.json")
             HookHelp("This hook’s entry in \(editor.targetLabel.replacingOccurrences(of: " · ", with: "/")). The same shape works in .claude/settings.json and .codex/hooks.json.")
             TextEditor(text: $editor.jsonText)
                 .font(.sh(.code))
@@ -365,13 +369,16 @@ struct HookField<Control: View>: View {
     let help: String?
     @ViewBuilder var control: Control
 
-    init(_ label: String, help: String? = nil, @ViewBuilder control: () -> Control) {
-        self.label = label; self.help = help; self.control = control()
+    var openIn: Binding<String>?
+    var file = "draft.txt"
+
+    init(_ label: String, help: String? = nil, openIn: Binding<String>? = nil, file: String = "draft.txt", @ViewBuilder control: () -> Control) {
+        self.label = label; self.help = help; self.openIn = openIn; self.file = file; self.control = control()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: SH.Space.s) {
-            Text(label).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+            SettingsSheetLabel(title: label, openIn: openIn, file: file)
             control
             if let help { HookHelp(help) }
         }
@@ -439,11 +446,11 @@ struct HookHandlerCard: View {
                     HookSubField("Server") { TextField("Server", text: $handler.server).textFieldStyle(.sh(mono: true)) }
                     HookSubField("Tool") { TextField("Tool", text: $handler.tool).textFieldStyle(.sh(mono: true)) }
                 }
-                HookSubField("Input (JSON, ${field.path} placeholders)") {
+                HookSubField("Input (JSON, ${field.path} placeholders)", openIn: $handler.input, file: "hook-input.json") {
                     TextField("Input", text: $handler.input, axis: .vertical).textFieldStyle(.sh(mono: true)).lineLimit(2...6)
                 }
             } else if handler.type == "command" {
-                HookSubField("Command") {
+                HookSubField("Command", openIn: $handler.command, file: "hook-command.sh") {
                     TextField("Command", text: $handler.command, axis: .vertical)
                         .textFieldStyle(.sh(mono: true)).lineLimit(2...6)
                 }
@@ -472,11 +479,15 @@ struct HookHandlerCard: View {
 struct HookSubField<Control: View>: View {
     let label: String
     @ViewBuilder var control: Control
-    init(_ label: String, @ViewBuilder control: () -> Control) { self.label = label; self.control = control() }
+    var openIn: Binding<String>?
+    var file = "draft.txt"
+    init(_ label: String, openIn: Binding<String>? = nil, file: String = "draft.txt", @ViewBuilder control: () -> Control) {
+        self.label = label; self.openIn = openIn; self.file = file; self.control = control()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: SH.Space.s) {
-            Text(label).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+            SettingsSheetLabel(title: label, openIn: openIn, file: file)
             control
         }
         .frame(maxWidth: .infinity, alignment: .leading)

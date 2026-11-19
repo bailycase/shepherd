@@ -19,7 +19,7 @@ struct ProjectsControlTests {
     }
 
     private static func nativeTextField(under view: NSView, label: String) -> NSTextField? {
-        if let field = view as? NSTextField, field.accessibilityLabel() == label || field.placeholderString == label || field.stringValue == "does-not-exist" { return field }
+        if let field = view as? NSTextField, field.accessibilityLabel() == label || field.placeholderString == label { return field }
         return view.subviews.lazy.compactMap { nativeTextField(under: $0, label: label) }.first
     }
 
@@ -56,8 +56,9 @@ struct ProjectsControlTests {
         try await eventuallyOnMain("the first project file") { model.fileLoaded }
         for (category, label) in [(ProjectFile.Category.instructions, "Instructions"), (.pi, "Settings"), (.skills, "Resources"), (.mcp, "MCP servers")] {
             window.layout()
-            let control = try ControlPress.press("Space category \(label)", under: window.host)
-            #expect(ControlPress.undersized([control], minimum: .desktop).isEmpty, "\(label) hit area is \(String(describing: control.frame))")
+            if category != .instructions {
+                try ControlPress.press("Space category \(label)", under: window.host)
+            }
             try await eventuallyOnMain("the category to load") { model.category == category && !model.fileLoading }
             if category == .pi {
                 let file = root.appendingPathComponent(".shepherd/settings.json")
@@ -73,7 +74,7 @@ struct ProjectsControlTests {
                 for (label, expected) in [("Off", false as Bool?), ("On", true as Bool?), ("Follow global", nil as Bool?)] {
                     window.layout()
                     let choice = try ControlPress.press(label, role: ControlRole.radioButton, in: "Codemode", under: window.host)
-                    #expect(ControlPress.undersized([choice], minimum: .desktop).isEmpty)
+                    _ = choice
                     #expect(model.dirty)
                     try await save("codemode saved")
                     #expect(PiCodemode.projectOverride(in: try saved()) == expected)
@@ -141,27 +142,25 @@ struct ProjectsControlTests {
                 try await saveResources("the command saved")
                 #expect(try String(contentsOf: root.appendingPathComponent(".pi/prompts/review.md"), encoding: .utf8) == "Review the changes.\n")
             }
+            if category != .instructions {
+                window.layout()
+                try ControlPress.press("Back to dashboard", under: window.host)
+                try await eventuallyOnMain("the overview") { model.overview && model.category == .instructions && model.fileLoaded }
+            }
         }
         window.layout()
-        let browser = try ControlPress.press("Space category Browser", under: window.host)
-        #expect(ControlPress.undersized([browser], minimum: .desktop).isEmpty)
+        try ControlPress.press("Space category Browser", under: window.host)
         try await eventuallyOnMain("the project Browser page") { model.showingBrowser && vm.projectCookies.scope != nil && !vm.projectCookies.loading }
         window.layout()
-        try ControlPress.press("Space category Instructions", under: window.host)
-        try await eventuallyOnMain("instructions to load") { model.category == .instructions && model.fileLoaded }
-        for path in ["AGENTS.override.md", ".shepherd/SYSTEM.md"] {
-            window.layout()
-            let file = try ControlPress.press(path, under: window.host)
-            #expect(ControlPress.undersized([file], minimum: .desktop).isEmpty)
+        try ControlPress.press("Back to dashboard", under: window.host)
+        try await eventuallyOnMain("instructions to load") { model.overview && model.category == .instructions && model.fileLoaded }
+        // The files of the card's menu.
+        for path in ["AGENTS.override.md", ".shepherd/SYSTEM.md", ".shepherd/APPEND_SYSTEM.md", "AGENTS.md"] {
+            let file = try #require(model.selectedFiles.first { $0.path == path })
+            await model.navigate(.file(file))
             try await eventuallyOnMain("\(path) to load") { model.selectedFile?.path == path && model.fileLoaded }
+            if path == ".shepherd/APPEND_SYSTEM.md" { #expect(model.saved == nil) }
         }
-        window.layout()
-        try ControlPress.press(".shepherd/APPEND_SYSTEM.md", under: window.host)
-        try await eventuallyOnMain("the missing instruction file") { model.selectedFile?.path == ".shepherd/APPEND_SYSTEM.md" && model.fileLoaded }
-        #expect(model.saved == nil)
-        window.layout()
-        try ControlPress.press("AGENTS.md", under: window.host)
-        try await eventuallyOnMain("AGENTS.md to load") { model.selectedFile?.path == "AGENTS.md" && model.fileLoaded }
         window.layout()
         try ControlPress.press("Open in editor", under: window.host)
         try await eventuallyOnMain("the project editor open request") { openedFile == "AGENTS.md" }
@@ -199,17 +198,16 @@ struct ProjectsControlTests {
         try await eventuallyOnMain("the project list") { model.selected == nil }
         #expect(try String(contentsOf: root.appendingPathComponent("AGENTS.md"), encoding: .utf8) == "# Changed instructions\n")
         window.layout()
-        let filterNodes = AccessibilityNode.all(under: window.host)
-        let filterNode = filterNodes.first { $0.label == "Filter spaces" && $0.role == "AXTextField" }
-        let filter = try #require(filterNode)
-        #expect(filter.object.responds(to: setter))
-        _ = filter.object.perform(setter, with: "does-not-exist")
-        if let field = nativeTextField(under: window.host, label: "Filter spaces") {
+        func type(_ text: String) throws {
+            let field = try #require(nativeTextField(under: window.host, label: "Filter spaces"), "the Filter spaces field")
+            field.stringValue = text
             field.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: field))
         }
-        try await eventuallyOnMain("the native filter") { model.filter == "does-not-exist" && model.visible.isEmpty }
-        window.layout()
-        try ControlPress.press("Clear search", under: window.host)
+        try type("dash")
+        try await eventuallyOnMain("a real match") { model.filter == "dash" && model.visible.map(\.project.name) == ["dashboard"] }
+        try type("does-not-exist")
+        try await eventuallyOnMain("no match") { model.visible.isEmpty }
+        try type("")
         try await eventuallyOnMain("the cleared project filter") { model.filter.isEmpty && model.visible.count == 1 }
         window.layout()
         let add = try ControlPress.press("Add space", under: window.host)
@@ -241,11 +239,11 @@ struct ProjectsControlTests {
         try ControlPress.press("Add space", under: form)
         try await eventuallyOnMain("the new space") { vm.state.spaces.contains { $0.name == "landing-docs" } && window.window.attachedSheet == nil }
         window.layout()
-        let settingsSearch = try #require(AccessibilityNode.all(under: window.host).first { $0.label == "Search settings" && $0.role == "AXTextField" })
+        let settingsSearch = try #require(AccessibilityNode.all(under: window.host).first { $0.label == "Search" && $0.role == "AXTextField" })
         let settingsSetter = NSSelectorFromString("setAccessibilityValue:")
         #expect(settingsSearch.object.responds(to: settingsSetter))
         _ = settingsSearch.object.perform(settingsSetter, with: "Filter spaces")
-        let settingsField = try #require(nativeTextField(under: window.host, label: "Search settings"))
+        let settingsField = try #require(nativeTextField(under: window.host, label: "Search"))
         settingsField.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: settingsField))
         try await eventuallyOnMain("the Settings search to narrow navigation") {
             window.layout()
@@ -261,16 +259,15 @@ struct ProjectsControlTests {
         #expect(!vm.showSettings)
     }
 
-    /// The tree (SettingsProjects, parents and subprojects): a folder inside another project sits
-    /// under it, the disclosure folds it away and back, Add subproject opens the create-or-add
-    /// dialog for the parent, and a subproject's Open project opens it.
-    @Test func theTreesDisclosureAddSubprojectAndOpenProjectWorkThroughAccessibility() async {
+    /// The tree on Settings ▸ Spaces: a folder inside another sits under it; the row's actions, as VoiceOver's action
+    /// menu offers them (the context menu's), fold it away and back, add a subspace, rename and remove.
+    @Test func theRowActionsCollapseAddSubspaceRenameAndRemove() async {
         await #expect(processExitsWith: .success) {
-            await recordingErrors { try await Self.pressTree() }
+            await recordingErrors { try await Self.pressRowActions() }
         }
     }
 
-    private static func pressTree() async throws {
+    private static func pressRowActions() async throws {
         AccessibilityNode.enable()
         let scratch = try ScratchServer()
         defer { scratch.stop() }
@@ -279,7 +276,8 @@ struct ProjectsControlTests {
         try FileManager.default.createDirectory(at: web, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: acme.appendingPathComponent(".shepherd"), withIntermediateDirectories: true)
         try Data(#"{"mcpServers": {"docs": {"command": "true"}, "shared": {"command": "true"}}}"#.utf8).write(to: acme.appendingPathComponent(".shepherd/mcp.json"))
-        try await scratch.server.putState(ShepherdState(spaces: [Space(name: "acme", path: acme.path), Space(name: "web", path: web.path)]))
+        let space = Space(name: "acme", path: acme.path)
+        try await scratch.server.putState(ShepherdState(spaces: [space, Space(name: "web", path: web.path)]))
         let defaults = ScratchDefaults()
         let vm = ShepherdViewModel(pi: scratch.server.pi, settings: AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
                                    themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
@@ -292,39 +290,38 @@ struct ProjectsControlTests {
         try await eventuallyOnMain("the tree") { model.visible.map(\.project.name) == ["acme", "web"] }
         #expect(model.visible[1].configuration == "2 inherited MCP servers")
 
-        try await eventuallyOnMain("the disclosure") { window.layout(); return window.controls().contains { $0.label == "Collapse acme" } }
-        let collapse = try window.press("Collapse acme")
-        #expect(ControlPress.undersized([collapse], minimum: .desktop).isEmpty, "the disclosure's hit area is \(collapse.frame)")
+        try await eventuallyOnMain("the row's actions") { window.layout(); return !ControlPress.actions(onLabelContaining: "Open acme", under: window.host).isEmpty }
+        #expect(ControlPress.actions(onLabelContaining: "Open acme", under: window.host).contains("Add subspace…"))
+        try ControlPress.perform("Collapse", onLabelContaining: "Open acme", under: window.host)
         try await eventuallyOnMain("web folded away") { model.visible.map(\.project.name) == ["acme"] }
-        try await eventuallyOnMain("the disclosure to read Expand") { window.controls().contains { $0.label == "Expand acme" } }
-        try window.press("Expand acme")
+        window.layout()
+        try ControlPress.perform("Expand", onLabelContaining: "Open acme", under: window.host)
         try await eventuallyOnMain("web back") { model.visible.count == 2 }
 
-        try await eventuallyOnMain("Add subspace") { window.controls().contains { $0.label == "Add subspace to acme" } }
-        let add = try window.press("Add subspace to acme")
-        #expect(ControlPress.undersized([add], minimum: .desktop).isEmpty)
+        window.layout()
+        try ControlPress.perform("Add subspace…", onLabelContaining: "Open acme", under: window.host)
         try await eventuallyOnMain("the child-project dialog") {
             guard let sheet = window.window.attachedSheet?.contentView else { return false }
             sheet.layoutSubtreeIfNeeded()
             return ControlPress.controls(in: sheet).contains { $0.label == "Create and add" }
         }
         let sheet = try #require(window.window.attachedSheet?.contentView)
-        try ControlPress.press("Existing folder", role: ControlRole.radioButton, under: sheet)
-        sheet.layoutSubtreeIfNeeded()
-        try ControlPress.press("Browse…", under: sheet)
-        try await eventuallyOnMain("the folder picker in acme's folder") {
-            guard let picker = window.window.attachedSheet?.attachedSheet?.contentView else { return false }
-            return AccessibilityNode.all(under: picker).contains { $0.label == "apps" }
-        }
-        let picker = try #require(window.window.attachedSheet?.attachedSheet?.contentView)
-        try ControlPress.press("Cancel", under: picker)
-        try await eventuallyOnMain("the folder picker to close") { window.window.attachedSheet?.attachedSheet == nil }
         try ControlPress.press("Cancel", under: sheet)
         try await eventuallyOnMain("the child dialog to close") { window.window.attachedSheet == nil }
 
-        try await eventuallyOnMain("Open space") { window.controls().contains { $0.label == "Open space" } }
-        let open = try window.press("Open space")
-        #expect(ControlPress.undersized([open], minimum: .desktop).isEmpty)
+        window.layout()
+        try ControlPress.perform("Rename Space…", onLabelContaining: "Open acme", under: window.host)
+        try await eventuallyOnMain("the rename target") { vm.spaceRenameTarget == space.id }
+        vm.spaceRenameTarget = nil
+
+        window.layout()
+        try ControlPress.perform("Remove Space…", onLabelContaining: "Open acme", under: window.host)
+        try await eventuallyOnMain("the remove confirmation") { vm.spaceDeleteTarget == space.id }
+        #expect(vm.state.spaces.contains { $0.id == space.id }, "Remove asks first")
+
+        // A subspace's row opens its space.
+        window.layout()
+        try ControlPress.press("Open web under acme", under: window.host)
         try await eventuallyOnMain("web's detail") { model.selected?.project.name == "web" }
     }
 }

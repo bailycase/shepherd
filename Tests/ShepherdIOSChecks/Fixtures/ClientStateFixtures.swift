@@ -255,7 +255,7 @@ enum ClientStateChecks {
         a.composerPresentation.state(for: ref).choosingModel = true
         a.composerPresentation.state(for: ref).showingContext = true
         a.commitPopover = ref
-        check(b.settingsSelection.page == .appearance, "Settings page belongs to its window")
+        check(b.settingsSelection.page == .general, "Settings page belongs to its window")
         check(!b.composerPresentation.state(for: ref).choosingModel && !b.composerPresentation.state(for: ref).showingContext,
               "composer sheets open in one window only")
         b.commitPopover = nil
@@ -381,6 +381,9 @@ enum ClientStateChecks {
         let old = #"{"pad":false,"tab":{"settings":{}},"homePath":[],"settingsPath":[],"padPath":[]}"#
         let decoded = try? JSONDecoder().decode(MobileNavigator.Restoration.self, from: Data(old.utf8))
         check(decoded?.tab == .settings && decoded?.designsPath == [], "a window saved with two tabs restores")
+        let removed = #"{"pad":false,"tab":{"settings":{}},"homePath":[],"settingsPath":[{"settings":{"_0":{"defaults":{}}}},{"settings":{"_0":{"fleet":{}}}}],"padPath":[]}"#
+        let kept = try? JSONDecoder().decode(MobileNavigator.Restoration.self, from: Data(removed.utf8))
+        check(kept?.settingsPath == [.settings(.fleet)], "a saved screen a later version removed is dropped, the rest restore")
         let restored = MobileNavigator()
         restored.restore(MobileNavigator.Restoration(pad: false, tab: .home, homePath: [.home(.more), .thread(a)], settingsPath: [],
                                                      padSelection: nil, padPath: []), hosts: [a.host])

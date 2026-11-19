@@ -51,7 +51,6 @@ enum DesignRuleAllowlist {
         .init(.rawGlyphName, "App/iOS/Review/DiffScreen.swift", 1, resolved),
         .init(.rawGlyphName, "App/iOS/Search/AgentActionSheets.swift", 1, resolved),
         .init(.rawGlyphName, "App/iOS/Settings/InstructionsScreens.swift", 1, document),
-        .init(.rawGlyphName, "App/iOS/Settings/SettingsRoute.swift", 1, document),
         .init(.rawGlyphName, "App/iOS/Settings/SkillsScreens.swift", 1, document),
         .init(.rawGlyphName, "App/iOS/Composer/ComposerControls.swift", 1, "The iOS composer draws its own Fast bolt, which SHFastBolt and SHGlyph.fastBolt exist to prevent. Move it to SHGlyph.fastBolt, with an iOS build to check it."),
         .init(.rawGlyphName, "App/iOS/Home/AutomationRow.swift", 1, bolt),
@@ -62,7 +61,6 @@ enum DesignRuleAllowlist {
         .init(.rawGlyphName, "Sources/ShepherdApp/SettingsExperiments.swift", 1, bolt),
         .init(.rawGlyphName, "Sources/ShepherdApp/SidebarModel.swift", 7, bolt),
         .init(.rawGlyphName, "App/iOS/Settings/HostSettingsScreens.swift", 1, chevrons),
-        .init(.rawGlyphName, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Controls/Pickers.swift", 1, chevrons),
         .init(.rawGlyphName, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/TouchDiff.swift", 1, chevrons),
         // Symbols that follow state where no animation reaches them. Each file says why; a disclosure
         // chevron that does animate is an SHTurningChevron, and any other pair that animates fades.
@@ -101,8 +99,6 @@ enum DesignRuleAllowlist {
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/Pages/AutomationsPage.swift", 1, unanimated("Pause and Resume; nothing in the page animates it")),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/RemoteDirectoryPicker.swift", 1, kind),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/SettingsExperiments.swift", 1, kind),
-        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/SettingsProjects.swift", 1, unanimated("a project's open state; the tree flips it with no animation")),
-        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/SettingsSkills.swift", 2, kind),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/SkillsSheets.swift", 1, unanimated("the typed source; the sheet animates the skill detail, not the field")),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/TerminalPanelViews.swift", 1, unanimated("the terminal panel's maximized state, which lands at once")),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/Thread/HookRows.swift", 1, "Follows a hook test's outcome; the file's one animation is the row's disclosure, which does not change it."),
@@ -161,7 +157,6 @@ enum DesignRuleAllowlist {
         .init(.rawFontSize, "Sources/ShepherdApp/DiffReviewView.swift", 1, font),
         .init(.rawFontSize, "Sources/ShepherdApp/NewThreadPage.swift", 7, font),
         .init(.rawFontSize, "Sources/ShepherdApp/Pages/AutomationsPage.swift", 1, font),
-        .init(.rawFontSize, "Sources/ShepherdApp/SettingsComponents.swift", 1, font),
         .init(.rawFontSize, "Sources/ShepherdApp/Thread/SubagentInspector.swift", 9, font),
     ]
 }

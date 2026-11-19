@@ -91,20 +91,21 @@ What follows from them:
 
 ## Settings
 
-The macOS Settings board set (`docs/design/boards/Settings*.png`, `SignIn*.png`; page "macOS -
-Settings", revision 1083) is the source of truth for every Settings page.
+The Settings board set (`docs/design/boards/Settings*.png`, `MobileSettings*.png`,
+`iPadSettingsInstructions.png`; pages "macOS - Settings" and "Components - Settings", revision 3069)
+is the source of truth for every Settings page, on the Mac and on iPhone and iPad.
 
-- **Navigation** is one flat list on `bgBase`, in the boards' order: Appearance, Terminal,
-  Agents, Subagents, Worktrees, Spaces, Sign-in, Pi, Instructions, Skills, Extensions, Slash
-  commands, Apps, Hooks, MCP servers, Remote, Keyboard, Advanced, Experiments. No nested rows. Sign-in
-  carries a lantern dot while a sign-in needs the user. The footer reads
-  "Shepherd x.y.z · agent x.y.z", and "· pi x.y.z" on Pi.
-- **Pages** fill the width with 40pt side gutters. Each page has a Geist 22/600 title, one
-  explanation line, then groups 28pt apart. A group has a caps label, a flat card (radius 10,
-  1px `lineSubtle`), and an optional footnote.
+- **Navigation** is a 220pt list on `bgBase` with no icons, in groups: General, Appearance,
+  Keyboard · Agents: Models, Agents, Instructions, Skills, Tools, Hooks · Work: Spaces, Git, Apps,
+  Fleet · Advanced, Experiments. Esc leaves a sub-page for its parent, else leaves Settings.
+- **Pages** are one centered 620pt column: a 15/600 title, then groups. A group has a
+  sentence-case caption label (optional links at its right), a card on `bgRaised` (radius `l`,
+  1px `lineSubtle`) and an optional footnote. Rows are 44pt with a one-line hint.
+- A sub-page (a profile, a skill, a server, a space, an editor) shows "‹ Parent" above its title.
 - Every row is wired: a row exists only if changing it changes the app, and a change applies at
-  once with no Save, except Instructions and Spaces, which edit files with an explicit Save.
-- Sliders show the bare number the board draws ("100", "232", "12.5"). VoiceOver reads the unit.
+  once with no Save, except editors, which keep an explicit Save.
+- On the Mac every multi-line text input has Open in ▾ at its top right: it opens the draft in an
+  app for its type (`ExternalDraft`), and saves there come back into the draft. iOS has none.
 
 ## Shepherd Design
 

@@ -92,6 +92,8 @@ final class ProjectsModel {
     var selected: ProjectsRow?
     private(set) var files: [ProjectFile] = []
     var category: ProjectFile.Category = .instructions
+    /// The space's overview page (Instructions and the drill rows); false while a drill-in is open.
+    var overview = true
     var showingBrowser = false
     /// The space's Hooks tab (HooksSpace board): a view of Settings › Hooks, not a space file.
     var showingHooks = false
@@ -223,7 +225,7 @@ final class ProjectsModel {
     var fileError: String?
     var notice: String?
     /// `reload`: Settings' Reload latest after a conflict, discarding the draft once the file reads again.
-    enum Pending: Equatable { case close, file(ProjectFile), category(ProjectFile.Category), browser, hooks, reload }
+    enum Pending: Equatable { case close, overview, file(ProjectFile), category(ProjectFile.Category), browser, hooks, reload }
     var pending: Pending?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var loadGeneration = 0
@@ -329,6 +331,7 @@ final class ProjectsModel {
         guard row.unavailable == nil else { error = row.unavailable; return }
         generation += 1
         let token = generation
+        overview = true
         showingBrowser = false; showingHooks = false; showingSettingsJSON = false; resources.reset()
         selected = row; fileError = nil; notice = nil; fileLoading = true
         category = .instructions; files = []; selectedFile = nil; fileLoaded = false
@@ -343,6 +346,10 @@ final class ProjectsModel {
             if let file = preferredFile { await read(file) } else { fileLoading = false }
         } catch { if token == generation { fileError = String(describing: error); fileLoading = false } }
     }
+
+    /// One step up from the open space: its overview, or the Spaces list from the overview. Esc and the back button both
+    /// come here, so the unsaved-changes guard in `navigate` applies to both.
+    func stepBack() async { await navigate(overview ? .close : .overview) }
 
     func navigate(_ action: Pending) async {
         guard !saving, !resources.saving else { return }
@@ -379,16 +386,19 @@ final class ProjectsModel {
         if category == .skills { resources.reset() }
         switch action { case .reload, .file: break; default: showingSettingsJSON = false }
         switch action {
+        case .overview:
+            overview = true; showingBrowser = false; showingHooks = false; self.category = .instructions; selectedFile = nil; fileLoaded = false; fileError = nil; notice = nil
+            if let file = preferredFile { await read(file) }
         case .close:
-            showingBrowser = false; showingHooks = false; generation += 1; selected = nil; selectedFile = nil; files = []; fileLoaded = false; fileError = nil
+            overview = true; showingBrowser = false; showingHooks = false; generation += 1; selected = nil; selectedFile = nil; files = []; fileLoaded = false; fileError = nil
         case .file(let file): showingBrowser = false; showingHooks = false; await read(file)
         case .category(let category):
-            showingBrowser = false; showingHooks = false; self.category = category; selectedFile = nil; fileLoaded = false; fileError = nil; notice = nil
+            overview = category == .instructions; showingBrowser = false; showingHooks = false; self.category = category; selectedFile = nil; fileLoaded = false; fileError = nil; notice = nil
             if category == .skills { await loadResources() } else if let file = preferredFile { await read(file) }
         case .browser:
-            showingBrowser = true; showingHooks = false; draft = saved ?? ""
+            overview = false; showingBrowser = true; showingHooks = false; draft = saved ?? ""
         case .hooks:
-            showingBrowser = false; showingHooks = true; draft = saved ?? ""
+            overview = false; showingBrowser = false; showingHooks = true; draft = saved ?? ""
         case .reload:
             if let selectedFile { await read(selectedFile) }
         }

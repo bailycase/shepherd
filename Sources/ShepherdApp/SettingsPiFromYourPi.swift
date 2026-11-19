@@ -3,7 +3,7 @@ import ShepherdUI
 import ShepherdSessions
 import ShepherdRemote
 
-/// Settings ▸ Pi ▸ From pi (SettingsPiFromPi, SettingsPiExtensions): a section of the Pi page, under its own heading. Where Shepherd's copy came from, each item
+/// Settings ▸ Models ▸ Your pi (SettingsPiFromPi, SettingsPiExtensions): a sub-page of Models. Where Shepherd's copy came from, each item
 /// with how it stands and Re-import, the files copied, and the user's extensions with their switches.
 struct FromYourPiSettings: View {
     let model: YourPiModel
@@ -11,185 +11,73 @@ struct FromYourPiSettings: View {
 
     var body: some View {
         let survey = model.survey ?? YourPiSurvey()
-        VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
-            SettingsHeader(title: "From pi",
-                           explanation: "What Shepherd brought over from the pi in your terminal. Shepherd keeps its own copy, so nothing here changes your pi.",
-                           titleSize: AppLayout.settingsSectionTitleSize)
+        SettingsPage(title: "Your pi") {
             if let folder = survey.folder {
-                source(survey, folder: folder)
-                broughtOver(survey)
-                copied(survey)
-                extensions(survey, folder: folder)
+                SettingsGroup(title: "") {
+                    SettingsRow(title: "Source", subtitle: survey.problems.first ?? "Shepherd never changes your pi") {
+                        SettingsValue(text: (folder as NSString).abbreviatingWithTildeInPath, mono: true).help(folder)
+                    }
+                    SettingsRow(title: "Copy everything again", subtitle: Self.lastCopied(survey.copiedAt)) {
+                        Button("Re-import all") { Task { await model.reimportAll() } }
+                            .buttonStyle(.sh(.secondary, size: .s))
+                            .disabled(!model.busy.isEmpty)
+                    }
+                }
+                SettingsGroup(title: "Brought over") {
+                    let logins = survey.logins.filter { $0.yours != nil }
+                    reimportRow("Logins", hint: logins.isEmpty ? "None in your pi" : "\(logins.count) sign-in\(logins.count == 1 ? "" : "s")",
+                                item: .logins, enabled: !logins.isEmpty)
+                    reimportRow("Custom providers", hint: survey.customProviders.isEmpty ? "None in your pi" : "models.json",
+                                item: .customProviders, enabled: !survey.customProviders.isEmpty)
+                    reimportRow("Default model", hint: survey.defaultModel.map { NativeModelChoices.shortName($0) } ?? "None set in your pi",
+                                item: .defaultModel, enabled: survey.defaultModel != nil)
+                    reimportRow("Instructions", hint: YourPiText.instructionsName(survey), item: .files(.instructions))
+                    reimportRow("Skills", hint: Self.countText(survey.copies(.skills).count, "skill"), item: .files(.skills))
+                    reimportRow("Prompts", hint: Self.countText(survey.copies(.prompts).count, "template"), item: .files(.prompts))
+                    reimportRow("Themes", hint: Self.countText(survey.copies(.themes).count, "theme"), item: .files(.themes))
+                }
+                SettingsGroup(title: "Imported extensions", footnote: "Imported extensions run with your account’s access.") {
+                    ForEach(survey.extensions) { item in
+                        SettingsRow(title: item.copy.name, subtitle: item.failure ?? [YourPiText.extensionPath(item), item.summary]
+                                        .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "),
+                                    problem: nil) {
+                            SettingsSwitch(label: item.copy.name, isOn: Binding(
+                                get: { item.on }, set: { on in Task { await model.setExtension(item.copy.destination, on: on) } }))
+                        }
+                    }
+                    SettingsRow(title: "Copy again", subtitle: survey.extensions.isEmpty ? "Your pi has no extensions Shepherd copied."
+                                    : Self.countText(survey.extensions.count, "extension"),
+                                problem: model.problems[YourPiModel.rowID(.files(.extensions))]) {
+                        Button("Copy") { Task { await model.reimport(.files(.extensions)) } }
+                            .buttonStyle(.sh(.secondary, size: .s))
+                            .disabled(model.busy.contains(YourPiModel.rowID(.files(.extensions))))
+                    }
+                }
             } else {
-                SettingsGroup(title: "Your pi") {
-                    SettingsRow(title: "No pi found", subtitle: "Shepherd found no pi of yours to copy. Sign in on Sign-in.") { EmptyView() }
+                SettingsGroup(title: "") {
+                    SettingsRow(title: "No pi found", subtitle: "Shepherd found no pi of yours to copy. Sign in on Models.") { EmptyView() }
                 }
             }
         }
-        .padding(.top, SH.Space.l)
         .task { await model.refresh() }
     }
 
-    // MARK: Source
-
-    private func source(_ survey: YourPiSurvey, folder: String) -> some View {
-        let url = URL(fileURLWithPath: folder, isDirectory: true)
-        return SHGroupCard(fill: Color.sh.bgWindow, radius: SHCardRowMetrics.settingsCardRadius) {
-            SettingsActionRow {
-                VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                    HStack(spacing: SH.Space.m) {
-                        Text("Source").font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
-                        Text((folder as NSString).abbreviatingWithTildeInPath).font(.shMono(SHPiSignInMetrics.proseMonoSize)).foregroundStyle(Color.sh.textPrimary)
-                            .help(folder)
-                    }
-                    Text("The pi in your terminal, found through your login shell.").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
-                    if let problem = survey.problems.first { SHInlineProblem(problem) }
-                }
-            } actions: {
-                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                    .buttonStyle(.sh(.secondary, size: .s))
-                    .accessibilityLabel("Show your pi in Finder")
-            }
-            SettingsActionRow {
-                VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                    Text("Last brought over").font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
-                    Text(Self.lastBroughtOver(survey.copiedAt)).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
-                }
-            } actions: {
-                Button("Re-import all") { Task { await model.reimportAll() } }
-                    .buttonStyle(.sh(.secondary, size: .s))
-                    .disabled(!model.busy.isEmpty)
-            }
-        }
-        .shControlScale(.settings)
-    }
-
-    // MARK: Brought over
-
-    private func broughtOver(_ survey: YourPiSurvey) -> some View {
-        let logins = survey.logins.filter { $0.yours != nil }
-        return SettingsGroup(title: "Brought over", footnote: "Copies. Re-import replaces Shepherd’s copy with your pi’s; your pi is never written to.") {
-            if !logins.isEmpty {
-                SHCardLabel("Logins")
-                ForEach(logins) { login in
-                    reimportRow(PiSignInCatalog.name(login.provider), badge: PiSignInCatalog.badge(login.provider),
-                                detail: Self.loginDetail(login, survey: survey), item: .login(login.provider),
-                                freshness: survey.freshness["login:\(login.provider)"],
-                                why: survey.freshness["login:\(login.provider)"] == .newerInYourPi
-                                    ? survey.yourSignInsChanged.map { "Your pi’s sign-in changed on \(Self.day($0))." } : nil)
-                }
-            }
-            SHCardLabel("Settings")
-            reimportRow("Custom providers", detail: survey.customProviders.isEmpty ? [.init("None in your pi.")]
-                            : [.init("models.json", mono: true), .init("· " + survey.customProviders.joined(separator: ", "))],
-                        item: .customProviders, freshness: survey.freshness["customProviders"], enabled: !survey.customProviders.isEmpty)
-            reimportRow("Default model", detail: Self.defaultModelDetail(survey), item: .defaultModel,
-                        freshness: survey.freshness["defaultModel"],
-                        why: survey.defaultModel.flatMap { theirs in
-                            theirs != survey.shepherdDefaultModel ? "Your pi now uses \(NativeModelChoices.shortName(theirs))." : nil
-                        },
-                        enabled: survey.defaultModel != nil)
-        }
-    }
-
-    private func reimportRow(_ title: String, badge: String? = nil, detail: [SHReimportRow.Detail], item: YourPiImport.Item,
-                             freshness: PiFreshness?, why: String? = nil, enabled: Bool = true) -> some View {
+    private func reimportRow(_ title: String, hint: String, item: YourPiImport.Item, enabled: Bool = true) -> some View {
         let row = YourPiModel.rowID(item)
-        return SHReimportRow(title, badge: badge, detail: detail, why: why,
-                             freshness: model.busy.contains(row) ? .reimporting : model.reimported.contains(row) ? .reimported
-                                : freshness.map(Self.freshness),
-                             problem: model.problems[row], reimport: enabled ? { Task { await model.reimport(item) } } : nil)
-    }
-
-    // MARK: Copied
-
-    private func copied(_ survey: YourPiSurvey) -> some View {
-        SettingsGroup(title: "Copied", footnote: "Copied into Shepherd’s pi. Edits in your pi reach Shepherd only when you Re-import.") {
-            copiedRow("Instructions", detail: YourPiText.instructions(survey), kind: .instructions) {
-                // Settings ▸ Instructions edits Shepherd's own files, not this copy (departures).
-                Button("Show in Finder") { reveal(survey.copies(.instructions).first, fallback: "AGENTS.md") }
-                    .buttonStyle(.sh(.secondary, size: .s))
-            }
-            copiedRow("Skills", detail: YourPiText.skills(survey.copies(.skills)), kind: .skills) {
-                Button("Show in Finder") { reveal(survey.copies(.skills).first, fallback: "skills") }.buttonStyle(.sh(.secondary, size: .s))
-            }
-            copiedRow("Prompts", detail: nil, chips: survey.copies(.prompts).map { "/" + $0.name }, kind: .prompts) {
-                Button("Show in Finder") { reveal(survey.copies(.prompts).first, fallback: "prompts") }.buttonStyle(.sh(.secondary, size: .s))
-            }
-            if !survey.copies(.themes).isEmpty {
-                copiedRow("Themes", detail: nil, chips: survey.copies(.themes).map(\.name), kind: .themes) {
-                    Button("Show in Finder") { reveal(survey.copies(.themes).first, fallback: "themes") }.buttonStyle(.sh(.secondary, size: .s))
-                }
-            }
-        }
-    }
-
-    private func copiedRow<Action: View>(_ title: String, detail: String?, chips: [String] = [], kind: YourPiResourceKind,
-                                         @ViewBuilder action: () -> Action) -> some View {
-        let row = YourPiModel.rowID(.files(kind))
-        return SettingsActionRow {
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(title).font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
-                if let detail {
-                    SHMarkupText(detail, size: SHTextStyle.ui.size, codeSize: 11.5, lineHeight: 1.45).foregroundStyle(Color.sh.textSecondary)
-                }
-                if !chips.isEmpty {
-                    HStack(spacing: SH.Space.xs) {
-                        ForEach(chips.prefix(6), id: \.self) { SHTag($0, mono: true) }
-                        if chips.count > 6 { SHTag("+\(chips.count - 6)") }
-                    }
-                } else if detail == nil {
-                    Text("None copied.").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
-                }
-                if let problem = model.problems[row] { SHInlineProblem(problem) }
-            }
-        } actions: {
-            action()
-            Button("Re-import") { Task { await model.reimport(.files(kind)) } }
-                .buttonStyle(.sh(.ghost, size: .s))
-                .disabled(model.busy.contains(row))
+        return SettingsRow(title: title, subtitle: hint, problem: model.problems[row]) {
+            Button(model.reimported.contains(row) ? "Done" : "Re-import") { Task { await model.reimport(item) } }
+                .buttonStyle(.sh(.secondary, size: .s))
+                .disabled(!enabled || model.busy.contains(row))
                 .accessibilityLabel("Re-import \(title.lowercased()) from your pi")
         }
-        .shControlScale(.standard)
     }
 
-    private func reveal(_ copy: YourPiCopy?, fallback: String) {
-        let url = copy.map { model.pi.home.appendingPathComponent($0.destination) } ?? model.pi.home.appendingPathComponent(fallback)
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+    static func lastCopied(_ date: Date?) -> String {
+        date.map { "Last copied \(day($0))" } ?? "Not copied yet"
     }
 
-    // MARK: Extensions
-
-    private func extensions(_ survey: YourPiSurvey, folder: String) -> some View {
-        VStack(alignment: .leading, spacing: SH.Space.m) {
-            SettingsGroup(title: "Imported extensions",
-                          trailing: "\(survey.extensions.count) in \((folder as NSString).abbreviatingWithTildeInPath)/extensions") {
-            ForEach(survey.extensions) { item in
-                SHExtensionRow(item.copy.name, path: YourPiText.extensionPath(item), summary: item.summary,
-                               state: item.failure.map { .failed($0, lines: item.failureLines) } ?? (item.on ? .on : .off),
-                               isOn: Binding(get: { item.on }, set: { on in Task { await model.setExtension(item.copy.destination, on: on) } })) {
-                    Task { await model.setExtension(item.copy.destination, on: true) }
-                }
-            }
-            SettingsRow(title: "Copy again",
-                        subtitle: survey.extensions.isEmpty ? "Your pi has no extensions Shepherd copied."
-                            : "Copies your extensions again, keeping each one's switch.",
-                        problem: model.problems[YourPiModel.rowID(.files(.extensions))]) {
-                Button("Re-import") { Task { await model.reimport(.files(.extensions)) } }
-                    .buttonStyle(.sh(.secondary, size: .s))
-                    .disabled(model.busy.contains(YourPiModel.rowID(.files(.extensions))))
-            }
-            }
-            // The board's footnote ends in a link to the Extensions page.
-            HStack(spacing: 0) {
-                SettingsNote(text: "Code, so each one came over switched off. Shepherd's bundled extensions are on ")
-                Button("Extensions", action: openExtensions)
-                    .buttonStyle(.shLink(font: .shSans(AppLayout.settingsFootnoteSize)))
-                    .underline()
-                SettingsNote(text: ".")
-            }
-            .padding(.horizontal, SH.Space.xs)
-        }
+    static func countText(_ count: Int, _ noun: String) -> String {
+        count == 0 ? "None copied" : "\(count) \(noun)\(count == 1 ? "" : "s")"
     }
 
     // MARK: Words

@@ -87,7 +87,7 @@ struct PiSignInFlowTests {
         // Sign in to Anthropic from the agent's card: the page opens there and the sheet starts;
         // a code pasted instead of the browser's callback finishes it.
         vm.openSignIn("anthropic", origin: .agentCard)
-        #expect(vm.showSettings && vm.settingsSection == .piSignIn)
+        #expect(vm.showSettings && vm.settingsSection == .models)
         let session = try #require(auth.session)
         try await eventuallyOnMain("the browser step") { session.phase == .browser }
         session.pasteInstead()
@@ -179,7 +179,7 @@ struct PiSignInFlowTests {
         let vm = try await app.start(with: ShepherdState(), piAuth: auth)
 
         vm.openSlashLogin(try #require(SlashLogin.parse("/logout kimi")))
-        #expect(vm.showSettings && vm.settingsSection == .piSignIn && auth.focus == "kimi-coding" && auth.session == nil)
+        #expect(vm.showSettings && vm.settingsSection == .models && auth.focus == "kimi-coding" && auth.session == nil)
 
         vm.showSettings = false
         vm.openSlashLogin(try #require(SlashLogin.parse("/login nosuchprovider")))

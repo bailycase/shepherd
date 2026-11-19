@@ -18,70 +18,66 @@ struct HooksSettings: View {
     }
 
     private var page: some View {
-        SettingsPage(title: "Hooks", explanation: Self.explanation) {
-            Button { model.add(spaceRoot: model.spaceFilter) } label: { Label("Add hook", systemImage: "plus") }
-                .buttonStyle(.sh(.secondary, size: .m))
-                .disabled(model.snapshot == nil)
-        } content: {
-            VStack(alignment: .leading, spacing: SH.Space.xl) {
-                tabs
-                if let problem = model.problem {
-                    SHInlineProblem(problem)
+        SettingsPage(title: "Hooks") {
+            if let problem = model.problem {
+                SettingsGroup(title: "") { SettingsRow(title: "", problem: problem) { EmptyView() } }
+            }
+            if model.snapshot == nil {
+                if model.problem == nil {
+                    SettingsGroup(title: "") { SettingsRow(title: "Reading hooks files…") { EmptyView() } }
                 }
-                if model.snapshot == nil {
-                    if model.problem == nil {
-                        Text("Reading hooks files…").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
+            } else {
+                SettingsGroup(title: "Yours", links: [SettingsLink("Add hook") { model.add(spaceRoot: model.spaceFilter) }]) {
+                    if let root = model.spaceFilter {
+                        SettingsRow(title: "This Mac’s hooks and \((root as NSString).lastPathComponent)’s") {
+                            Button("Show every space") { model.spaceFilter = nil }.buttonStyle(.sh(.secondary, size: .s))
+                        }
                     }
-                } else if model.tab == .hooks {
-                    hooksTab
-                } else {
-                    HookSourcesView(model: model)
+                    if model.groups.isEmpty {
+                        SettingsRow(title: "No hooks yet", subtitle: "Add one, or ask an agent to propose one") { EmptyView() }
+                    }
+                    ForEach(model.groups) { group in
+                        ForEach(group.rows) { row in
+                            SettingsRow(title: row.command, subtitle: "\(group.label) · \(row.matcherIsAny ? "any tool" : row.matcher)",
+                                        dot: row.on ? .on : .off, mono: true) {
+                                HStack(spacing: SH.Space.m) {
+                                    SettingsValue(text: row.source)
+                                    Toggle(row.on ? "Turn off \(row.command)" : "Turn on \(row.command)",
+                                           isOn: Binding(get: { row.on }, set: { model.setOn(row, $0) }))
+                                        .labelsHidden().toggleStyle(.shSwitch)
+                                        .disabled(row.locked)
+                                        .help(row.lockHelp ?? "")
+                                }
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture { if let entry = model.entry(slot: row.id) { model.edit(entry) } }
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityAction(named: "Edit hook") { if let entry = model.entry(slot: row.id) { model.edit(entry) } }
+                        }
+                    }
+                }
+                SettingsGroup(title: "Also read from", footnote: "Hooks from every file run together; a space’s hooks add to yours.") {
+                    SettingsRow(title: "Claude Code", subtitle: "~/.claude/settings.json and each space’s .claude/") {
+                        SettingsSwitch(label: "Read hooks from Claude Code", isOn: Binding(get: { model.readers.claude }, set: { model.setReader(.claude, $0) }))
+                    }
+                    SettingsRow(title: "Codex", subtitle: "~/.codex/hooks.json and each space’s .codex/") {
+                        SettingsSwitch(label: "Read hooks from Codex", isOn: Binding(get: { model.readers.codex }, set: { model.setReader(.codex, $0) }))
+                    }
+                    ForEach(model.sections) { section in
+                        ForEach(section.files) { file in
+                            SettingsRow(title: file.shownPath, subtitle: [file.format, file.count, file.state].joined(separator: " · "),
+                                        dot: file.tone == .ok ? .on : file.tone == .failed ? .bad : .off, mono: true) {
+                                if let action = file.action {
+                                    Button(HookFileRowView.title(action)) { model.act(action, on: file, root: section.root) }
+                                        .buttonStyle(.sh(.secondary, size: .s))
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
         .hookSheets(model)
-    }
-
-    private var tabs: some View {
-        HStack(spacing: SH.Space.xs) {
-            HookTabButton(title: "Hooks", count: nil, selected: model.tab == .hooks) { model.tab = .hooks }
-            HookTabButton(title: "Sources", count: model.fileCount == 1 ? "1 file" : "\(model.fileCount) files", selected: model.tab == .sources) { model.tab = .sources }
-            Spacer(minLength: 0)
-        }
-        .padding(.bottom, SH.Space.m)
-        .overlay(alignment: .bottom) { SHHairline() }
-    }
-
-    @ViewBuilder private var hooksTab: some View {
-        if let root = model.spaceFilter {
-            HStack(spacing: SH.Space.m) {
-                Text("This Mac’s hooks and \((root as NSString).lastPathComponent)’s").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
-                Button("Show every space") { model.spaceFilter = nil }.buttonStyle(.shLink)
-            }
-        }
-        if model.groups.isEmpty {
-            HookEmptyState(text: "No hooks yet. Add one, or ask an agent to propose one; Shepherd also reads the hooks in Claude Code’s and Codex’s files.") {
-                model.add(spaceRoot: model.spaceFilter)
-            }
-        } else {
-            HStack(alignment: .top, spacing: SH.Space.xxl) {
-                VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                    ForEach(model.rail) { item in
-                        HookRailRow(item: item, selected: model.filter == item.event) { model.filter = item.event }
-                    }
-                    if model.emptyEvents > 0 {
-                        HookHelp("\(model.emptyEvents) more \(model.emptyEvents == 1 ? "event has" : "events have") no hooks. Add hook lists all \(HookEvent.allCases.count).")
-                            .padding(.horizontal, SH.Space.m).padding(.top, SH.Space.m)
-                    }
-                }
-                .frame(width: AppLayout.hooksRailWidth)
-                LazyVStack(alignment: .leading, spacing: SH.Space.l) {
-                    ForEach(model.groups) { group in
-                        HookGroupView(group: group, sourceWidth: AppLayout.hooksSourceWidth, model: model)
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -182,7 +178,7 @@ struct HookGroupView: View {
                 Text(group.event).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
             }
             .padding(.horizontal, SH.Space.xs)
-            SHGroupCard(fill: Color.sh.bgWindow, radius: SHCardRowMetrics.settingsCardRadius) {
+            SHGroupCard(radius: SHCardRowMetrics.settingsCardRadius) {
                 ForEach(group.rows) { row in
                     HookRow(row: row, sourceWidth: sourceWidth) {
                         if let entry = model.entry(slot: row.id) { model.edit(entry) }
@@ -249,7 +245,7 @@ struct HookSourcesView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SH.Space.xl) {
-            SHGroupCard(fill: Color.sh.bgWindow, radius: SHCardRowMetrics.settingsCardRadius) {
+            SHGroupCard(radius: SHCardRowMetrics.settingsCardRadius) {
                 HookReaderRow(title: "Read hooks from Claude Code", paths: "~/.claude/settings.json and each space’s .claude/settings.json",
                               isOn: Binding(get: { model.readers.claude }, set: { model.setReader(.claude, $0) }))
                 HookReaderRow(title: "Read hooks from Codex", paths: "~/.codex/hooks.json, ~/.codex/config.toml and each space’s .codex/",
@@ -262,7 +258,7 @@ struct HookSourcesView: View {
                         Text(section.note).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.middle)
                     }
                     .padding(.horizontal, SH.Space.xs)
-                    SHGroupCard(fill: Color.sh.bgWindow, radius: SHCardRowMetrics.settingsCardRadius) {
+                    SHGroupCard(radius: SHCardRowMetrics.settingsCardRadius) {
                         if section.files.isEmpty {
                             Text("No hooks files on this Mac yet.").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
                                 .frame(maxWidth: .infinity, minHeight: AppLayout.hooksFileRowHeight, alignment: .leading)
@@ -275,7 +271,7 @@ struct HookSourcesView: View {
                 }
             }
             Text("Hooks from every file run together: a space’s hooks add to yours, they never replace them. Pi extensions that handle tool calls run as extensions, not hooks; switch those in Extensions.")
-                .shText(size: AppLayout.settingsFootnoteSize, lineHeight: AppLayout.settingsFootnoteLineHeight)
+                .shText(size: SHTextStyle.caption.size, lineHeight: AppLayout.settingsFootnoteLineHeight)
                 .foregroundStyle(Color.sh.textTertiary).fixedSize(horizontal: false, vertical: true)
         }
     }

@@ -25,26 +25,29 @@ public struct SHKeycap: View {
 
     public var body: some View {
         let sh = Color.sh
-        // The Settings boards' caps: 22pt at radius 5, mono 11.5 in `textPrimary`, 4pt apart.
+        // The Settings caps: mono `caption` in `textSecondary`, 2/6pt padding, radius `xs`, 4pt apart.
         let settings = scale == .settings
         let M = SHSettingsControlMetrics.self
-        let side: CGFloat = settings ? M.keycapHeight : 18
+        let side: CGFloat = settings ? 0 : 18
         let radius = settings ? M.keycapRadius : SH.Radius.xs
         HStack(spacing: settings ? M.keycapSpacing : 3) {
             ForEach(Array(keys.enumerated()), id: \.offset) { _, key in
                 Text(key)
                     .font(.shMono(settings ? M.keycapTextSize : 10.5))
-                    .foregroundStyle(settings ? sh.textPrimary : sh.textSecondary)
+                    .foregroundStyle(sh.textSecondary)
                     .padding(.horizontal, settings ? M.keycapPadding : SH.Space.xs)
+                    .padding(.vertical, settings ? M.keycapVerticalPadding : 0)
                     .frame(minWidth: side, minHeight: side)
                     .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: radius))
                     .shBorder(sh.lineStrong, radius: radius)
                     // The board's heavier bottom edge (1.5px against 1px): a cap, not a box. A
                     // second hairline just above the border's, since a device pixel does not split.
                     .overlay(alignment: .bottom) {
-                        SHHairline(color: sh.lineStrong)
-                            .padding(.horizontal, radius)
-                            .padding(.bottom, SH.hairline(displayScale))
+                        if !settings {
+                            SHHairline(color: sh.lineStrong)
+                                .padding(.horizontal, radius)
+                                .padding(.bottom, SH.hairline(displayScale))
+                        }
                     }
             }
         }

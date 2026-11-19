@@ -26,9 +26,14 @@ struct KeyboardSettings: View {
     ]
 
     var body: some View {
-        SettingsPage(title: "Keyboard", explanation: "Click a shortcut to record a new one. Shortcuts must include ⌘, except ⇧⇥ for cycling thinking levels.") {
+        SettingsPage(title: "Keyboard") {
             ForEach(Self.groups, id: \.title) { group in
-                SettingsGroup(title: group.title) {
+                SettingsGroup(title: group.title,
+                              links: group.title == "Agents" ? [SettingsLink("Reset all") {
+                                  keys.resetAll()
+                                  vm.rebuildSurfaces()
+                                  clearError()
+                              }] : []) {
                     ForEach(group.actions, id: \.self) { action in
                         shortcutRow(action, title: action.sentenceTitle)
                     }
@@ -36,25 +41,13 @@ struct KeyboardSettings: View {
                 if group.title == "Thread" { whileWorking }
             }
 
-            SettingsGroup(title: "Fixed", footnote: "Changes apply immediately, everywhere a shortcut is shown.") {
-                SettingsRow(title: "Select agent 1–9", subtitle: "The first nine in Recents; hold ⌘ to see the numbers.") { SHKeycap(keys: ["⌘", "1–9"]) }
+            SettingsGroup(title: "Fixed", footnote: "Click a shortcut to record a new one. Changes apply everywhere at once.") {
+                SettingsRow(title: "Select agent 1–9") { SHKeycap(keys: ["⌘", "1–9"]) }
                 ForEach(SidePaneTab.allCases, id: \.self) { tab in
                     SettingsRow(title: "Side pane: \(tab.title)") { SHKeycap(tab.shortcutDisplay) }
                 }
                 SettingsRow(title: "Settings") { SHKeycap("⌘,") }
                 SettingsRow(title: "Confirm / cancel in sheets") { SHKeycap(keys: ["⏎", "esc"]) }
-            }
-
-            // Under the last group, trailing: disabled while nothing is changed.
-            HStack {
-                Spacer(minLength: 0)
-                Button("Reset all shortcuts") {
-                    keys.resetAll()
-                    vm.rebuildSurfaces()
-                    clearError()
-                }
-                .buttonStyle(.sh(.secondary, size: .s))
-                .disabled(keys.overrides.isEmpty)
             }
         }
         // A rejected chord's reason discloses under its row.
@@ -151,7 +144,7 @@ private struct ShortcutRecorder: View {
                         .font(.sh(.caption))
                         .foregroundStyle(Color.sh.running)
                         .padding(.horizontal, SH.Space.m)
-                        .frame(minHeight: SHSettingsControlMetrics.keycapHeight)
+                        .frame(minHeight: SH.Height.controlS)
                         .background(Color.sh.runningTint, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
                         .shBorder(Color.sh.running, radius: SH.Radius.xs)
                 } else {

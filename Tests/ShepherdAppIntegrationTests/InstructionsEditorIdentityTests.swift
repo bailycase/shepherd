@@ -6,11 +6,19 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-@Suite("Instruction editor identity", .mainActorExclusive)
+@Suite("Instruction editor identity", .mainActorExclusive, .integrationTimeLimit)
 @MainActor
 struct InstructionsEditorIdentityTests {
+    /// Runs in its own process: pressing Edit needs the accessibility tree, which SwiftUI draws only for an attached assistive client.
     @Test
-    func switchingEqualDocumentsDoesNotCarryUndoIntoTheNewDocument() async throws {
+    func switchingEqualDocumentsDoesNotCarryUndoIntoTheNewDocument() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.switchingDocuments() }
+        }
+    }
+
+    static func switchingDocuments() async throws {
+        AccessibilityNode.enable()
         let directory = try makeScratchDirectory("instruction-undo")
         defer { try? FileManager.default.removeItem(at: directory) }
         let model = InstructionsModel(store: InstructionsStore(directory: directory),
@@ -19,6 +27,10 @@ struct InstructionsEditorIdentityTests {
         let window = OffscreenWindow(size: CGSize(width: 1100, height: 800))
         defer { window.close() }
         window.show(InstructionsSettings(model: model))
+        window.layout()
+        try ControlPress.press("Edit AGENTS.md", under: window.host)
+        try await eventuallyOnMain("the editor to open") { model.editing }
+        window.layout()
         func editor(_ view: NSView) -> NSTextView? {
             if let text = view as? NSTextView, text.isEditable { return text }
             return view.subviews.lazy.compactMap(editor).first

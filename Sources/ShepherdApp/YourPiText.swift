@@ -19,6 +19,11 @@ enum YourPiText {
     }
 
     /// Settings ▸ Pi ▸ Copied's skills row.
+    /// "AGENTS.md", or "None copied".
+    static func instructionsName(_ survey: YourPiSurvey) -> String {
+        survey.copies(.instructions).first(where: { YourPiFiles.contextFileNames.contains($0.name) })?.name ?? "None copied"
+    }
+
     static func skills(_ copies: [YourPiCopy]) -> String {
         copies.isEmpty ? "None copied." : "\(count(copies.count, "skill")), listed with the rest in Skills."
     }

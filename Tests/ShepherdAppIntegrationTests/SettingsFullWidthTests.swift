@@ -7,7 +7,7 @@ import Testing
 @MainActor
 @Suite("Settings full width", .mainActorExclusive)
 struct SettingsFullWidthTests {
-    @Test func everyPageFillsTheAvailableWidthAfterNavigationAndResize() async {
+    @Test func everyPageSitsInTheCenteredColumnAfterNavigationAndResize() async {
         await #expect(processExitsWith: .success) {
             await recordingErrors { try await Self.checkPages() }
         }
@@ -30,12 +30,16 @@ struct SettingsFullWidthTests {
             }
         }
         for section in SettingsSection.allCases {
-            for title in ["Sign-in", "Extensions", "Slash commands"] {
+            for title in ["Models", "Tools", "Hooks"] {
                 #expect(window.controls().contains { $0.label == title && $0.role == ControlRole.button },
                         "\(title) stays in the navigation while \(vm.settingsSection.title) is selected")
             }
-            let nav = try ControlPress.press(section.title, under: window.host)
-            #expect(nav.isEnabled && nav.frame.width >= 24 && nav.frame.height >= 24)
+            if section.parent == nil {
+                let nav = try ControlPress.press(section.title, under: window.host)
+                #expect(nav.isEnabled && nav.frame.width >= 24 && nav.frame.height >= 24)
+            } else {
+                vm.settingsSection = section
+            }
             try await eventuallyOnMain("\(section.title) Settings content") {
                 window.layout()
                 return vm.settingsSection == section && content() != nil
@@ -47,11 +51,14 @@ struct SettingsFullWidthTests {
                 }
                 let page = try #require(content(), "\(section.title) content has an accessibility container")
                 let frame = window.host.convert(window.window.convertFromScreen(page.frame), from: nil)
-                #expect(abs(frame.minX - 272) <= 1, "\(section.title) begins 40pt after the 232pt navigation: \(frame)")
-                #expect(abs(frame.width - (width - 312)) <= 1,
-                        "\(section.title) fills the remaining width minus two 40pt gutters: \(frame)")
+                #expect(abs(frame.width - 620) <= 1, "\(section.title) is one 620pt column: \(frame)")
+                #expect(abs(frame.midX - (220 + (width - 220) / 2)) <= 1, "\(section.title) is centered in the detail: \(frame)")
             }
         }
+        // Esc: up from a sub-page, then out of Settings.
+        vm.settingsSection = .fromYourPi
+        try ControlPress.press("Back to Shepherd", under: window.host)
+        #expect(vm.showSettings && vm.settingsSection == .models)
         try ControlPress.press("Back to Shepherd", under: window.host)
         #expect(!vm.showSettings)
     }

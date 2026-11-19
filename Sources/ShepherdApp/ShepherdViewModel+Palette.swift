@@ -368,7 +368,8 @@ extension ShepherdViewModel {
             case "openFleet": openDestination(.fleet)
             case "openDesignSystems": openDesignSystems()
             case "openExtensions":
-                settingsSection = .extensions
+                mcpOpenServer = nil
+                settingsSection = .tools
                 showSettings = true
             case "reviewDiff": openUserReview()
             case "reviewPR": openUserPRReview()
