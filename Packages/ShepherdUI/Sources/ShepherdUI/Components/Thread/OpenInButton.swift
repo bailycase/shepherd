@@ -61,11 +61,21 @@ extension EnvironmentValues {
 }
 
 /// The split button: "Open in Zed" opens the file, the chevron lists the apps.
-struct SHOpenInButton: View {
+public struct SHOpenInButton: View {
+    /// A file row's 22pt chip, or the 26pt one beside a Settings text input.
+    public enum Size { case row, settings }
+
     let url: URL
     let actions: SHOpenIn
+    let size: Size
 
-    var body: some View {
+    public init(url: URL, actions: SHOpenIn, size: Size = .row) {
+        self.url = url; self.actions = actions; self.size = size
+    }
+
+    private var height: CGFloat { size == .settings ? SHSettingsControlMetrics.controlHeight : SHOpenInMetrics.height }
+
+    public var body: some View {
         let sh = Color.sh
         let target = actions.target(url)
         HStack(spacing: 0) {
@@ -110,7 +120,7 @@ struct SHOpenInButton: View {
             .fixedSize(horizontal: true, vertical: false)
             .accessibilityLabel("Choose an app for \(url.lastPathComponent)")
         }
-        .frame(height: SHOpenInMetrics.height)
+        .frame(height: height)
         .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.s))
         .shBorder(sh.lineStrong, radius: SH.Radius.s)
         .fixedSize()

@@ -18,17 +18,11 @@ struct ProjectsSettings: View {
                                       openHooks: {
                                           vm.hooks.spaceFilter = nil
                                           vm.settingsSection = .hooks
-                                      })
+                                      },
+                                      rename: project.project.projectID != nil ? { vm.spaceRenameTarget = project.project.projectID } : nil,
+                                      remove: project.project.projectID != nil ? { vm.requestSpaceDelete(project.project.projectID) } : nil)
             } else {
-                ScrollView(.vertical) {
-                    index
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityElement(children: .contain)
-                        .accessibilityIdentifier("SettingsPageContent")
-                        .padding(.horizontal, AppLayout.settingsWideSides)
-                        .padding(.top, AppLayout.settingsTop)
-                        .padding(.bottom, AppLayout.settingsBottom)
-                }.scrollBounceBehavior(.basedOnSize)
+                list
             }
         }
         .shControlScale(.settings)
@@ -41,220 +35,59 @@ struct ProjectsSettings: View {
         }
     }
 
-    private var index: some View {
-        VStack(alignment: .leading, spacing: AppLayout.projectsSpacing) {
-            HStack(alignment: .center, spacing: SH.Space.xl) {
-                SettingsHeader(title: "Spaces", explanation: "Organize spaces without moving folders. Settings still follow folder ancestry.",
-                               titleSize: AppLayout.projectsTitleSize, explanationSize: AppLayout.projectsExplanationSize)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                add
-            }
-            HStack(spacing: SH.Space.xl) { filter; Spacer(minLength: 0); count }
-            if let error = model.error { SettingsNote(text: error) }
-            table
-            Text("Space grouping changes only Shepherd. Instructions and settings follow folders on disk.")
-                .shText(size: AppLayout.projectsHostSize, lineHeight: AppLayout.projectsFooterLineHeight)
-                .foregroundStyle(Color.sh.textSecondary)
-                .frame(maxWidth: AppLayout.projectsTextWidth, alignment: .leading)
+    /// What a row offers besides opening: in its context menu and, the same, to VoiceOver.
+    @ViewBuilder private func rowActions(_ row: ProjectsRow) -> some View {
+        if row.children > 0 {
+            Button(model.collapsed.contains(row.id) ? "Expand" : "Collapse") { model.collapsed.formSymmetricDifference([row.id]) }
+        }
+        if !row.isSubproject && row.unavailable == nil {
+            Button("Add subspace…") { addingChild = vm.childProjectModel(path: row.project.directory, name: row.project.name) }
+        }
+        if row.project.projectID != nil {
+            Button("Rename Space…") { vm.spaceRenameTarget = row.project.projectID }
+            Button("Remove Space…", role: .destructive) { vm.requestSpaceDelete(row.project.projectID) }
         }
     }
 
-    private var filter: some View {
-        SHSearchField("Filter spaces", text: $model.filter)
-            .frame(width: AppLayout.projectsFilterWidth)
-    }
-
-    private var count: some View {
-        Text(model.countText)
-            .font(.shSans(AppLayout.projectsHostSize))
-            .foregroundStyle(Color.sh.textSecondary)
-            .fixedSize()
-    }
-
-    private var add: some View {
-        Button("Add space", systemImage: "plus") { adding = model.addHost.map { vm.addSpaceModel(host: $0) } }
-            .buttonStyle(.sh(.primary))
-            .disabled(model.addHost == nil || model.addHost?.unavailable != nil)
-    }
-
-    private var table: some View {
-        VStack(spacing: 0) {
-            ProjectColumns {
-                Text("SPACE"); Text("CONFIGURATION"); Color.clear
-            }
-            .font(.shMono(AppLayout.projectsHeaderSize))
-            .foregroundStyle(Color.sh.textTertiary)
-            .frame(height: AppLayout.projectsHeaderHeight)
-            .background(Color.sh.bgSunken)
-            SHHairline()
-            LazyVStack(spacing: 0) {
+    /// The spaces, children indented under their parents; a row opens the space.
+    private var list: some View {
+        SettingsPage(title: "Spaces") {
+            SettingsGroup(title: "", footnote: model.error ?? "Grouping changes only Shepherd. Instructions and settings follow folders on disk.",
+                          links: model.addHost == nil || model.addHost?.unavailable != nil ? [] : [
+                              SettingsLink("Add space") { adding = model.addHost.map { vm.addSpaceModel(host: $0) } },
+                          ], lazy: true) {
+                if model.visible.isEmpty {
+                    SettingsRow(title: model.loading ? "Loading spaces…" : model.rows.isEmpty ? "No spaces yet" : "No spaces match",
+                                subtitle: model.rows.isEmpty && !model.loading ? "Add a folder to get started" : nil) { EmptyView() }
+                }
                 ForEach(model.visible) { row in
-                    VStack(spacing: 0) {
-                        ProjectTreeRow(row: row, expanded: !model.collapsed.contains(row.id),
-                                       open: { Task { await model.open(row) } },
-                                       toggle: { model.collapsed.formSymmetricDifference([row.id]) },
-                                       addSubproject: {
-                                           addingChild = vm.childProjectModel(path: row.project.directory, name: row.project.name)
-                                       }, remove: row.project.projectID != nil
-                                           ? { vm.requestSpaceDelete(row.project.projectID) } : nil,
-                                       rename: row.project.projectID != nil
-                                           ? { vm.spaceRenameTarget = row.project.projectID } : nil)
-                        if row.id != model.visible.last?.id { SHHairline() }
+                    SpaceListRow(row: row, collapsed: model.collapsed.contains(row.id), open: { Task { await model.open(row) } }) {
+                        rowActions(row)
                     }
+                    .equatable()
                 }
             }
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Spaces and subspaces")
-            if model.visible.isEmpty {
-                Text(model.loading ? "Loading spaces…" : model.rows.isEmpty ? "No spaces yet. Add a folder to get started." : "No spaces match your filter.")
-                    .font(.sh(.body)).foregroundStyle(Color.sh.textTertiary)
-                    .padding(SH.Space.xxl)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            .accessibilityIdentifier("ProjectsTable")
         }
-        .background(Color.sh.bgWindow)
-        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.l))
-        .shBorder(Color.sh.lineSubtle, radius: SH.Radius.l)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("ProjectsTable")
     }
 }
 
-/// The board's columns: the project takes what is left (never under 200pt, where the
-/// configuration gives way first); configuration 230, the action 152; 16pt apart and 16pt
-/// in. The action grows with the text size, the same on every row, so the columns stay aligned.
-private struct ProjectColumns<Content: View>: View {
-    @ViewBuilder var content: Content
-    var body: some View {
-        let scale = ThemeStore.shared.textScale
-        HStack(spacing: SH.Space.xl) {
-            Group(subviews: content) { columns in
-                ForEach(columns.indices, id: \.self) { index in
-                    switch index {
-                    case 0:
-                        columns[index].frame(minWidth: AppLayout.projectsNameMinWidth, maxWidth: .infinity, alignment: .leading)
-                    case 1:
-                        columns[index].frame(minWidth: AppLayout.projectsSummaryMinWidth, idealWidth: AppLayout.projectsSummaryWidth,
-                                             maxWidth: AppLayout.projectsSummaryWidth, alignment: .leading)
-                            .layoutPriority(1)
-                    default:
-                        columns[index].frame(width: AppLayout.projectsActionWidth * scale, alignment: .leading)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, SH.Space.xl)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-/// One project in the tree (SettingsProjects, parents and subprojects): a parent's disclosure, the
-/// folder, the name with a parent's "2 subprojects", the path; its configuration, a
-/// subproject's with "From <parent>" under it; and Add subproject on a top-level row, Open project
-/// on a subproject. The row opens the project.
-private struct ProjectTreeRow: View {
+/// One space in the list. Compares by what it draws, so a change redraws its own row and no other.
+private struct SpaceListRow<Actions: View>: View, Equatable {
     let row: ProjectsRow
-    let expanded: Bool
+    let collapsed: Bool
     let open: () -> Void
-    let toggle: () -> Void
-    let addSubproject: () -> Void
-    var remove: (() -> Void)? = nil
-    var rename: (() -> Void)? = nil
+    @ViewBuilder let actions: Actions
+
+    nonisolated static func == (a: SpaceListRow, b: SpaceListRow) -> Bool { a.row == b.row && a.collapsed == b.collapsed }
 
     var body: some View {
         let _ = SHRenderProbe.tick("settings.project.row")
-        ProjectColumns {
-            HStack(spacing: SH.Space.m) {
-                if row.children > 0 {
-                    Button(action: toggle) {
-                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                            .font(.shSans(AppLayout.projectsChevronSize))
-                            .foregroundStyle(Color.sh.textSecondary)
-                            .frame(width: AppLayout.projectsToggleWidth, height: AppLayout.projectsToggleHeight)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.shRow())
-                    .accessibilityLabel("\(expanded ? "Collapse" : "Expand") \(row.project.name)")
-                } else {
-                    Color.clear.frame(width: AppLayout.projectsToggleWidth, height: 1)
-                }
-                Button(action: open) { identity }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(row.isSubproject ? "Open \(row.project.name) under \(row.parentName!)" : "Open \(row.project.name)")
-                    .accessibilityHint(row.unavailable ?? row.project.displayPath)
-                    .accessibilityActions {
-                        if let rename { Button("Rename Space…", action: rename) }
-                        if let remove { Button("Remove Space…", role: .destructive, action: remove) }
-                    }
-            }
-            .padding(.leading, CGFloat(row.ancestorIDs.count) * SH.Space.xxl)
-            configuration
-            action
-        }
-        .padding(.vertical, SH.Space.l)
-        .frame(minHeight: AppLayout.projectsRowHeight)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: open)
-        .help(row.unavailable ?? "\(row.project.directory)\n\(row.configuration)")
-        .contextMenu {
-            if let rename { Button("Rename Space…", action: rename) }
-            if let remove { Button("Remove Space…", role: .destructive, action: remove) }
-        }
-    }
-
-    private var identity: some View {
-        HStack(spacing: SH.Space.m) {
-            Image(systemName: "folder")
-                .font(.shSans(AppLayout.projectsFolderSize))
-                .foregroundStyle(Color.sh.textSecondary)
-                .frame(width: AppLayout.projectsFolderFrame, height: AppLayout.projectsFolderFrame)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: SH.Space.xs) {
-                HStack(spacing: SH.Space.m) {
-                    Text(row.project.name).font(.shSans(AppLayout.projectsNameSize, .medium)).foregroundStyle(Color.sh.textPrimary)
-                    if row.children > 0 {
-                        Text(row.children == 1 ? "1 subspace" : "\(row.children) subspaces")
-                            .font(.shSans(AppLayout.projectsPathSize))
-                            .foregroundStyle(Color.sh.textSecondary)
-                            .padding(.horizontal, SH.Space.s)
-                            .padding(.vertical, SH.Space.xxs)
-                            .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
-                            .fixedSize()
-                    }
-                }
-                Text(row.project.displayPath).font(.shMono(AppLayout.projectsPathSize)).foregroundStyle(Color.sh.textTertiary)
-                    .truncationMode(.middle)
-            }
-            .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-    }
-
-    private var configuration: some View {
-        let label: String
-        if row.unavailable == nil { label = row.configuration }
-        else if row.host.unavailable == nil { label = "directory unavailable" }
-        else { label = "host unavailable" }
-        return VStack(alignment: .leading, spacing: SH.Space.xs) {
-            Text(label).font(.shSans(AppLayout.projectsHostSize))
-                .foregroundStyle(row.unavailable != nil ? Color.sh.textTertiary : Color.sh.textSecondary)
-            if let parent = row.project.inheritedFromName ?? row.parentName, !row.project.inheritedMCP.isEmpty, row.unavailable == nil {
-                Text("From \(parent)").font(.shMono(AppLayout.projectsPathSize)).foregroundStyle(Color.sh.textTertiary)
-            }
-        }
-        .lineLimit(1)
-    }
-
-    @ViewBuilder private var action: some View {
-        if row.isSubproject {
-            Button("Open space", action: open)
-                .buttonStyle(.sh(.ghost, size: .s))
-        } else {
-            Button("Add subspace", systemImage: "plus", action: addSubproject)
-                .buttonStyle(.sh(.ghost, size: .s))
-                .disabled(row.unavailable != nil)
-                .accessibilityLabel("Add subspace to \(row.project.name)")
-        }
+        SettingsDrillRow(title: row.project.name, subtitle: row.unavailable ?? row.project.displayPath,
+                         value: row.host.name, indented: !row.ancestorIDs.isEmpty,
+                         accessibilityName: row.isSubproject ? "Open \(row.project.name) under \(row.parentName ?? "")" : "Open \(row.project.name)",
+                         action: open)
+            .contextMenu { actions }
+            .accessibilityActions { actions }
     }
 }

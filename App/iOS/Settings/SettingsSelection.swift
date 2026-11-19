@@ -6,5 +6,5 @@ import Observation
 final class SettingsSelection {
     /// Hooks or Sources beside the iPad's list (iPadHooks).
     var hooksSources = false
-    var page: SettingsPage = .appearance
+    var page: SettingsPage = .general
 }

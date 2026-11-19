@@ -220,51 +220,30 @@ enum SHChecklistMetrics {
     static let glyph: CGFloat = 14
 }
 
-/// A row of Settings' navigation (every Settings board): 32pt, scaled by density, radius `s`; a
-/// 15pt icon in `textSecondary` (`textPrimary` when selected), then the page name in Geist 13,
-/// on `bgSelected` at medium weight when selected, `bgHover` while hovered.
+/// A row of Settings' navigation: 28pt, scaled by density, radius `m`, the page name in `ui` size
+/// `textSecondary`, no icon; `bgSelected` at medium weight and `textPrimary` when selected,
+/// `bgHover` while hovered.
 public struct SHSettingsNavRow: View {
     let title: String
-    let systemImage: String
     let selected: Bool
     /// A 6pt `lantern` dot trailing while the page wants attention (Sign-in).
     let attention: Bool
     let action: () -> Void
 
-    private let artwork: SHGlyph.Settings?
-
-    public init(_ title: String, systemImage: String, selected: Bool, attention: Bool = false, action: @escaping () -> Void) {
+    public init(_ title: String, selected: Bool, attention: Bool = false, action: @escaping () -> Void) {
         self.title = title
-        self.systemImage = systemImage
         self.selected = selected
         self.attention = attention
         self.action = action
-        self.artwork = nil
-    }
-
-    public init(_ title: String, glyph: SHGlyph.Settings, selected: Bool, attention: Bool = false, action: @escaping () -> Void) {
-        self.title = title
-        self.systemImage = ""
-        self.selected = selected
-        self.attention = attention
-        self.action = action
-        self.artwork = glyph
     }
 
     public var body: some View {
         let sh = Color.sh
         Button(action: action) {
-            HStack(spacing: SHSettingsNavMetrics.iconGap) {
-                // Scales with the text size, like the name beside it.
-                Group {
-                    if let artwork { artwork.image }
-                    else { Image(systemName: systemImage).font(.shSans(SHSettingsNavMetrics.glyphSize)).symbolRenderingMode(.monochrome) }
-                }.foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
-                    .frame(width: SHSettingsNavMetrics.iconSize).accessibilityHidden(true)
+            HStack(spacing: SH.Space.m) {
                 Text(title)
                     .font(.shSans(SHSettingsNavMetrics.textSize, selected ? .medium : .regular))
-                    .offset(y: artwork != nil ? SHSettingsNavMetrics.textBaseline * ThemeStore.shared.textScale : 0)
-                    .foregroundStyle(sh.textPrimary)
+                    .foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if attention {
@@ -276,32 +255,30 @@ public struct SHSettingsNavRow: View {
             .frame(minHeight: SH.Height.scaled(SHSettingsNavMetrics.rowHeight))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.shRow(selected: selected, selectedFill: Color.sh.settingsNavSelected, focusColor: artwork != nil ? .sh.running : nil))
-        .accessibilityLabel(title)
+        .buttonStyle(.shRow(selected: selected, radius: SH.Radius.m, selectedFill: Color.sh.settingsNavSelected, focusColor: .sh.running))
         .accessibilityLabel(attention ? "\(title), needs you" : title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 }
 
-/// Settings' navigation rows (every Settings board).
+/// Settings' navigation.
 public enum SHSettingsNavMetrics {
     /// Before density.
-    public static let rowHeight: CGFloat = 32
-    public static let iconSize: CGFloat = 15
-    /// The symbol's point size: its outline fills the 15pt box as the boards' 1.4pt-stroke icons do.
+    public static let rowHeight: CGFloat = 28
+    /// 8pt in from the row's sides.
+    public static let rowPadding: CGFloat = SH.Space.m
+    /// The nav's own sides: 8pt.
+    public static let sidePadding: CGFloat = SH.Space.m
+    /// The point size Settings' bundled symbols are drawn at.
     public static let glyphSize: CGFloat = 13
-    /// 10pt in from the row's sides, and from the icon to the name.
-    public static let rowPadding: CGFloat = 10
-    public static let iconGap: CGFloat = 10
-    /// The nav's own sides: 10pt.
-    public static let sidePadding: CGFloat = 10
-    /// The page names, and the Back row's words.
-    public static let textSize: CGFloat = 13
-    /// A page under another: 28pt, 35pt in (past the icon), Geist 12.5.
+    /// The page names (`ui`).
+    public static let textSize: CGFloat = SHTextStyle.ui.size
+    /// Small Settings text in sheets and tables: Geist 12.5.
     public static let subTextSize: CGFloat = 12.5
     public static let attentionDot: CGFloat = 6
     /// CSS points, not device pixels, in the supplied Settings boards.
     public static let borderWidth: CGFloat = 1
-    public static let searchHeight: CGFloat = 34
-    public static let textBaseline: CGFloat = 1.5
+    public static let searchHeight: CGFloat = 28
+    /// The nav's width, with its right edge.
+    public static let width: CGFloat = 220
 }

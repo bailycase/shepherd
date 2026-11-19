@@ -6,57 +6,70 @@ import ShepherdUI
 import ShepherdProtocol
 
 /// Settings ▸ MCP servers (SettingsMCP, MCPStates): the servers every agent on this Mac can use,
-/// kept in ~/.config/mcp/mcp.json. A wide page: the servers (a filter, All / Connected / Needs
-/// you; a row opens in place, one at a time) beside a 280pt rail (how the agent uses them, what
-/// they cost in every prompt, the options, and the hosts). Add server and Import… open sheets.
-struct MCPSettings: View {
+/// kept in ~/.config/mcp/mcp.json, in Settings ▸ Tools: the servers (a filter, All / Connected /
+/// Needs you; a row opens in place, one at a time), then the rail (how the agent uses them, what
+/// they cost in every prompt, the options, and the hosts), then whatever else Tools holds
+/// (`extras`). Add server and Import… open sheets.
+struct MCPSettings<Extras: View>: View {
     var vm: ShepherdViewModel
     var store: MCPStore
     /// A row open when the page appears (a search hit, a preview).
     var initiallyExpanded: String?
-    @State private var filter: MCPStore.Filter = .all
-    @State private var query = ""
-    @State private var expanded: String?
+    var title = "MCP servers"
+    @ViewBuilder var extras: Extras
+    @Bindable private var projectSettings = AppSettings.shared
+    private var projectConfig: Binding<Bool> { $projectSettings.mcpProjectConfig }
+    private var expanded: String? {
+        get { vm.mcpOpenServer }
+        nonmutating set { vm.mcpOpenServer = newValue }
+    }
     @State private var sheet: MCPSheet?
     @State private var removing: String?
     @State private var importing: [MCPServerEntry]?
     @State private var toast: SHToast?
 
     var body: some View {
-        let rows = store.rows(filter: filter, query: query)
-        VStack(alignment: .leading, spacing: AppLayout.mcpBlockSpacing) {
-            header
-            HStack(alignment: .top, spacing: AppLayout.mcpColumnSpacing) {
-                VStack(alignment: .leading, spacing: SH.Space.l) {
-                    toolbar
-                    if let invalid = store.invalidMessage {
-                        HStack(spacing: SH.Space.m) {
-                            SHInlineProblem("\(invalid). Fix it to edit servers here.")
-                            Button("Open mcp.json") { NSWorkspace.shared.open(store.dependencies.file.url) }.buttonStyle(.shLink)
+        let rows = store.rows(filter: .all, query: "")
+        Group {
+            if let name = expanded, let row = store.rows(filter: .all, query: "").first(where: { $0.id == name }) {
+                SettingsPage(title: row.name) { serverPage(row) }
+            } else {
+                SettingsPage(title: title) {
+                    SettingsGroup(title: "MCP servers", links: [
+                        SettingsLink("Import…", menu: [
+                            SettingsLink("From a JSON file…") { importFile() },
+                            SettingsLink("Paste JSON…") { sheet = .paste },
+                        ]),
+                        SettingsLink("Add server", enabled: store.isEditable) { sheet = .add(.remote) },
+                    ], lazy: true) {
+                        if let invalid = store.invalidMessage {
+                            SettingsRow(title: "mcp.json can’t be read", problem: "\(invalid). Fix it to edit servers here.") {
+                                Button("Open mcp.json") { NSWorkspace.shared.open(store.dependencies.file.url) }
+                                    .buttonStyle(.sh(.secondary, size: .s))
+                            }
+                        } else if let problem = store.problem {
+                            SettingsRow(title: "", problem: problem) {
+                                Button("Dismiss") { store.problem = nil }.buttonStyle(.sh(.secondary, size: .s))
+                            }
                         }
-                        .shTransition(.disclosure)
-                    } else if let problem = store.problem {
-                        HStack(spacing: SH.Space.m) {
-                            SHInlineProblem(problem)
-                            Button("Dismiss") { store.problem = nil }.buttonStyle(.shLink)
+                        if rows.isEmpty {
+                            SettingsRow(title: emptyMessage) { EmptyView() }
                         }
-                        .shTransition(.disclosure)
+                        ForEach(rows) { row in
+                            MCPListRow(row: row, hint: hint(row), dot: dot(row), actions: rowActions(row.name)).equatable()
+                        }
                     }
-                    ScrollView(.vertical) {
-                        MCPServerList(rows: rows, details: store.details, editable: store.isEditable,
-                                      expanded: expanded, empty: emptyMessage,
-                                      rowActions: rowActions, detailActions: detailActions)
+                    SettingsGroup(title: "How the agent uses them", trailing: store.configPath) {
+                        SettingsRow(title: "In every prompt", subtitle: store.budget.note) {
+                            SettingsValue(text: store.budget.tokens)
+                        }
+                        SettingsRow(title: "Also use a repo’s .mcp.json", subtitle: "Off: only these servers, in every repo") {
+                            SettingsSwitch(label: "Also use a repo’s .mcp.json", isOn: projectConfig)
+                        }
                     }
-                    .scrollIndicators(.hidden)
+                    extras
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                ScrollView(.vertical) {
-                    MCPRail(store: store).frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .scrollIndicators(.hidden)
-                .frame(width: AppLayout.mcpRailWidth)
             }
-            .frame(maxHeight: .infinity, alignment: .top)
         }
         .shAnimation(.disclosure, value: expanded)
         .shAnimation(.list, value: rows.map(\.id))
@@ -109,51 +122,99 @@ struct MCPSettings: View {
         .shToast(item: $toast)
     }
 
-    private var header: some View {
-        HStack(alignment: .bottom, spacing: SH.Space.xl) {
-            SettingsHeader(title: "MCP servers",
-                           explanation: "Tools from other services the agent can call: your issue tracker, error tracker, database, "
-                               + "browser. Global: every thread and automation gets the same servers.")
-                .frame(maxWidth: AppLayout.mcpExplanationWidth, alignment: .leading)
-            Spacer(minLength: SH.Space.l)
-            HStack(spacing: SH.Space.m) {
-                Menu {
-                    Button("From a JSON file…") { importFile() }
-                    Button("Paste JSON…") { sheet = .paste }
-                } label: {
-                    Label("Import…", systemImage: "square.and.arrow.down")
-                }
-                .menuStyle(.button)
-                .menuIndicator(.hidden)
-                .buttonStyle(.sh(.secondary))
-                .fixedSize()
-                .disabled(!store.isEditable)
-                MCPAddServerButton(editable: store.isEditable) { sheet = .add(.remote) }
-            }
-            .fixedSize()
+    private func dot(_ row: MCPServerRowModel) -> SHRowDot {
+        guard row.enabled else { return .off }
+        switch row.status {
+        case .connected: return .on
+        case .needsYou, .starting: return .warn
+        case .error: return .bad
+        case .idle, .off: return .off
         }
     }
 
-    private var toolbar: some View {
-        HStack(spacing: SH.Space.m + SH.Space.xxs) {
-            SHSearchField("Filter servers", text: $query)
-                .frame(width: AppLayout.mcpFilterWidth)
-            SHSegmentedPicker("Show", selection: $filter, options: [
-                (.all, "All \(store.count(.all))"),
-                (.connected, "Connected \(store.count(.connected))"),
-                (.needsYou, "Needs you \(store.count(.needsYou))"),
-            ])
-            Spacer(minLength: 0)
+    /// "23 tools · remote", or what it is doing.
+    private func hint(_ row: MCPServerRowModel) -> String {
+        if let note = row.note {
+            switch note {
+            case .starting(let text), .error(let text): return text
+            }
+        }
+        var parts: [String] = []
+        if let tools = row.tools { parts.append("\(tools) tools") }
+        parts.append(row.kind == .remote ? "remote" : "local process")
+        return parts.joined(separator: " · ")
+    }
+
+    /// A server's page: on, kind, sign-in, tool exposure, its config, and Remove.
+    @ViewBuilder private func serverPage(_ row: MCPServerRowModel) -> some View {
+        let detail = store.details[row.name]
+        let actions = detailActions(row.name)
+        let rowActions = rowActions(row.name)
+        SettingsGroup(title: "") {
+            SettingsRow(title: "On") {
+                SettingsSwitch(label: "On", isOn: Binding(get: { row.enabled }, set: { rowActions.toggle($0) }))
+            }
+            SettingsRow(title: "Kind") {
+                SettingsValue(text: (row.kind == .remote ? "Remote · " : "Local · ") + row.endpoint, mono: true)
+            }
+            if let detail {
+                signInRow(detail, actions: actions)
+                if let direct = detail.direct {
+                    SettingsRow(title: "Tools", subtitle: direct ? detail.directCost : detail.searchCost) {
+                        HStack(spacing: SH.Space.s) {
+                            SHSegmentedPicker("Tools", selection: Binding(get: { direct }, set: { actions.setDirect?($0) }),
+                                              options: [(false, "Search"), (true, "Direct")])
+                            if let choose = actions.chooseTools {
+                                Button("Choose…", action: choose).buttonStyle(.sh(.secondary, size: .s)).accessibilityLabel("Choose which tools…")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        SettingsGroup(title: "Config") {
+            SettingsRow(title: "\(row.name).json", subtitle: detail?.message, mono: true) {
+                HStack(spacing: SH.Space.s) {
+                    if let reconnect = actions.reconnect {
+                        Button("Reconnect", action: reconnect).buttonStyle(.sh(.secondary, size: .s))
+                    }
+                    Button("Copy JSON", action: actions.copyJSON).buttonStyle(.sh(.secondary, size: .s))
+                    Button("Edit", action: actions.edit).buttonStyle(.sh(.secondary, size: .s)).accessibilityLabel("Edit…")
+                }
+            }
+        }
+        SettingsGroup(title: "") {
+            SettingsRow(title: "Remove server") {
+                Button("Remove…", action: actions.remove).buttonStyle(.sh(.danger, size: .s)).accessibilityLabel("Remove")
+            }
+        }
+    }
+
+    @ViewBuilder private func signInRow(_ detail: MCPServerDetailModel, actions: MCPServerDetail.Actions) -> some View {
+        switch detail.signIn {
+        case .signedIn(let account, _, let note, let title):
+            SettingsRow(title: "Sign-in", subtitle: [title, account, note].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "), dot: .on) {
+                Button("Sign out", action: actions.signOut).buttonStyle(.sh(.secondary, size: .s))
+            }
+        case .needsSignIn(let title, let note, let again):
+            SettingsRow(title: "Sign-in", subtitle: [title, note].filter { !$0.isEmpty }.joined(separator: " · "), dot: .warn) {
+                Button(again ? "Sign in again" : "Sign in", action: actions.signIn).buttonStyle(.sh(.primary, size: .s))
+            }
+        case .header(let name, let variable):
+            SettingsRow(title: "Sign-in", subtitle: name) { SettingsValue(text: "$" + variable, mono: true) }
+        case .secrets(let names, let missing):
+            SettingsRow(title: "Sign-in", subtitle: missing.isEmpty ? nil : "Missing: " + missing.joined(separator: ", ")) {
+                SettingsValue(text: names.joined(separator: ", "), mono: true)
+            }
+        case .unverified(let text):
+            SettingsRow(title: "Sign-in", subtitle: text) { EmptyView() }
+        case .none:
+            EmptyView()
         }
     }
 
     private var emptyMessage: String {
-        if !query.trimmingCharacters(in: .whitespaces).isEmpty { return "No server matches “\(query)”." }
-        switch filter {
-        case .connected: return "No server is connected right now."
-        case .needsYou: return "Nothing needs you."
-        case .all: return "No MCP servers yet. Add one, or import them from Claude Desktop, Cursor or VS Code."
-        }
+        "No MCP servers yet. Add one, or import them from Claude Desktop, Cursor or VS Code."
     }
 
     private func importFile() {
@@ -207,6 +268,28 @@ struct MCPSettings: View {
     }
 }
 
+/// A server's row: its dot, name, one hint line, then its state or Sign in, and a chevron. Compares by what it draws.
+private struct MCPListRow: View, Equatable {
+    let row: MCPServerRowModel
+    let hint: String
+    let dot: SHRowDot
+    let actions: MCPServerRow.Actions
+
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.row == b.row && a.hint == b.hint && a.dot == b.dot }
+
+    var body: some View {
+        let _ = SHRenderProbe.tick("mcp.row")
+        let needsSignIn: Bool = switch row.signIn { case .signIn, .expired, .moreAccess: true; default: false }
+        SettingsDrillRow(title: row.name, subtitle: hint, dot: dot, mono: true, action: actions.open) {
+            if needsSignIn {
+                Button("Sign in", action: actions.signIn).buttonStyle(.sh(.secondary, size: .s))
+            } else {
+                SettingsValue(text: row.enabled ? row.status.label : "Off")
+            }
+        }
+    }
+}
+
 /// The sheets Settings ▸ MCP servers opens.
 enum MCPSheet: Identifiable, Hashable {
     case add(AddMCPServerSheet.Kind)
@@ -232,6 +315,12 @@ private struct MCPName: Identifiable {
 private struct MCPImportBatch: Identifiable {
     let entries: [MCPServerEntry]
     var id: String { entries.map(\.name).joined(separator: ",") }
+}
+
+extension MCPSettings where Extras == EmptyView {
+    init(vm: ShepherdViewModel, store: MCPStore, initiallyExpanded: String? = nil) {
+        self.init(vm: vm, store: store, initiallyExpanded: initiallyExpanded, extras: { EmptyView() })
+    }
 }
 
 struct MCPAddServerButton: View {

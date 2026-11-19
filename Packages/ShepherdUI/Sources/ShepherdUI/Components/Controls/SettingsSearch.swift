@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The native search fields drawn by the Settings boards: 34pt navigation and 32pt filters.
+/// The native search fields drawn by the Settings boards: the 28pt sunken navigation field (no border) and 32pt filters.
 public struct SHSettingsSearchField: View {
     public enum Placement { case navigation, sites, subagents }
     let placeholder: String
@@ -17,10 +17,12 @@ public struct SHSettingsSearchField: View {
 
     public var body: some View {
         let glyph: SHGlyph.Settings = placement == .sites ? .browserSearch : .search
+        let navigation = placement == .navigation
+        let radius = navigation ? SH.Radius.m : SHSettingsControlMetrics.radius
         HStack(spacing: SH.Space.m) {
             glyph.image.foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
             TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(placement == .navigation ? Color.sh.textTertiary : Color.sh.textSecondary))
-                .textFieldStyle(.plain).font(.shSans(SHSettingsNavMetrics.textSize))
+                .textFieldStyle(.plain).font(.sh(.caption))
                 .foregroundStyle(Color.sh.textPrimary).tint(Color.sh.lantern)
                 .focused($focused).accessibilityLabel(placeholder)
             if text.isEmpty, placement == .navigation {
@@ -34,9 +36,9 @@ public struct SHSettingsSearchField: View {
             }
         }.padding(.horizontal, SHSettingsControlMetrics.fieldPadding + SHSettingsNavMetrics.borderWidth)
             .frame(height: placement == .navigation ? SHSettingsNavMetrics.searchHeight : SH.Height.controlL)
-            .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SHSettingsControlMetrics.radius))
-            .shBorder(Color.sh.lineStrong, radius: SHSettingsControlMetrics.radius, width: SHSettingsNavMetrics.borderWidth)
-            .shFocusRing(focused, radius: SHSettingsControlMetrics.radius, color: Color.sh.running)
+            .background(navigation ? Color.sh.bgSunken : Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: radius))
+            .shBorder(navigation ? .clear : Color.sh.lineStrong, radius: radius, width: SHSettingsNavMetrics.borderWidth)
+            .shFocusRing(focused, radius: radius, color: Color.sh.running)
             .shEnabledOpacity(enabled)
     }
 }

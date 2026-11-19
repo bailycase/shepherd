@@ -23,12 +23,13 @@ extension FixtureCatalog {
             FixtureScreen(name: "addhost-none", routes: [.settings(.fleet), .settings(.host(nil))], tab: .settings,
                           setup: { FixtureData.pairing(found: [], code: "") }),
             // Each host's own settings (hostSettings.v1).
-            FixtureScreen(name: "settings-defaults", routes: [.settings(.defaults)], tab: .settings),
+            FixtureScreen(name: "settings-models", routes: [.settings(.models)], tab: .settings),
+            FixtureScreen(name: "settings-agents", routes: [.settings(.agents)], tab: .settings),
             FixtureScreen(name: "settings-worktrees", routes: [.settings(.worktrees)], tab: .settings),
             // Its lower half: Deleting, with Close threads when their pull request merges.
             FixtureScreen(name: "settings-worktrees-lower", routes: [.settings(.worktrees)], tab: .settings,
                           prepare: { _ in await TriggerFlowCheck.scrollDown(holding: nil) }),
-            FixtureScreen(name: "settings-pi", routes: [.settings(.piExtensions)], tab: .settings),
+            FixtureScreen(name: "settings-tools", routes: [.settings(.tools)], tab: .settings),
             // Root instructions, the fleet's (instructions.v1): one copy, no host to pick.
             FixtureScreen(name: "settings-instructions", routes: [.settings(.instructions)], tab: .settings),
             FixtureScreen(name: "settings-instructions-edit", routes: [.settings(.instructions), .settings(.instructionsFile(.agents))],

@@ -406,7 +406,12 @@ final class ShepherdViewModel {
     /// newest push (`onLocalAgentNotify`, banners); a view reads `state`.
     var latestState: ShepherdState { adoption.latest(state) }
     /// The server Settings ▸ MCP servers opens with its row open (a search hit named it).
-    @ObservationIgnored var mcpOpenServer: String?
+    /// The MCP server whose detail Tools has open (a search hit, a row).
+    var mcpOpenServer: String?
+    /// The Experiments drill-in open (`waiting`, `apps`), nil for the list.
+    var experimentsPage: ExperimentsPage?
+    /// The skill whose detail Skills has open.
+    var skillsOpenSkill: String?
     /// Where the open space-directory browser creates its space: this Mac
     /// or a host. Sheet in RootView; every "new space" entry point (⌘⇧N,
     /// ⌘K, sidebar +) routes here — the system open panel is gone.
@@ -525,7 +530,7 @@ final class ShepherdViewModel {
     var showSettings = false
     /// Last Settings category visited. View-model state survives closing the
     /// overlay but naturally resets when Shepherd restarts.
-    var settingsSection: SettingsSection = .appearance
+    var settingsSection: SettingsSection = .general
     @ObservationIgnored var madeProjects: ProjectsModel?
     @ObservationIgnored var madeLogicalProjects: LogicalProjectsModel?
     /// The Project whose page or settings the main column shows (ProjectLead boards). Ephemeral.
@@ -1396,4 +1401,9 @@ final class ShepherdViewModel {
         if remoteListenerFailure != failure { remoteListenerFailure = failure }
     }
 
+}
+
+/// An Experiments drill-in.
+enum ExperimentsPage: String {
+    case waiting, apps
 }

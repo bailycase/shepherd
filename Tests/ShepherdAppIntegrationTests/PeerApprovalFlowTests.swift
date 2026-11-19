@@ -76,7 +76,7 @@ struct PeerApprovalFlowTests {
         let labels = window.controls().compactMap(\.label)
         #expect(labels.contains("Terminals and agent tools") && labels.contains("Diff review tool"))
         #expect(!labels.contains("Agent-to-agent messages") && !labels.contains("Allow interactive threads"))
-        #expect(!SettingsSection.extensions.items.contains("Agent-to-agent messages"))
+        #expect(!SettingsSection.tools.items.contains("Agent-to-agent messages"))
         let switches: [(String, ReferenceWritableKeyPath<AppSettings, Bool>)] = [
             ("Terminals and agent tools", \.piPanesExtension),
             ("Diff review tool", \.piReviewExtension),

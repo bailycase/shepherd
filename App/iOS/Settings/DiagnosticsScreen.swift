@@ -1,7 +1,7 @@
 import SwiftUI
 import ShepherdUI
 
-/// Settings ▸ Diagnostics: this device's switch for Sentry reports (`MobileDiagnostics`). On by
+/// Settings ▸ Advanced: this device's switch for Sentry reports (`MobileDiagnostics`). On by
 /// default; off stops at once, on again waits for the next launch.
 struct DiagnosticsScreen: View {
     @AppStorage(MobileDiagnostics.shareKey) private var share = true
@@ -45,7 +45,7 @@ struct DiagnosticsScreen: View {
             .frame(maxWidth: .infinity)
         }
         .background(Color.sh.bgWindow)
-        .navigationTitle("Diagnostics")
+        .navigationTitle("Advanced")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

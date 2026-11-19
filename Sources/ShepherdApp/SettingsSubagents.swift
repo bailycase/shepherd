@@ -4,8 +4,8 @@ import ShepherdSessions
 
 struct SubagentsSettings: View {
     @Bindable var model: SubagentDefinitionsModel
-    /// The native subagent switches and defaults under the list; nil in a test of the list alone.
-    var native: NativeSubagentSettings? = nil
+    /// The native subagent defaults the editor shows its context against.
+    var settings: AppSettings = .shared
     @State private var dontAskAgain = false
     static let explanation = "A subagent is a Markdown file: a name, a description, and the instructions it runs with. An agent starts one by name and gets the result back. Shepherd ships a few to start with. Edit them, delete them, or add your own. They are read from one folder, and nowhere else."
 
@@ -28,77 +28,45 @@ struct SubagentsSettings: View {
     }
 
     private var index: some View {
-        VStack(alignment: .leading, spacing: AppLayout.subagentSettingsGap) {
-            SettingsHeader(title: "Subagents", explanation: Self.explanation)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: AppLayout.subagentToolbarGap) { filter; Spacer(minLength: 0); actions }
-                VStack(alignment: .leading, spacing: SH.Space.m) { filter; HStack { Spacer(minLength: 0); actions } }
-            }
-            if let problem = model.problem {
-                VStack(alignment: .leading, spacing: SH.Space.m) {
-                    SHInlineProblem(problem)
-                    Button("Reload") { Task { await model.refresh() } }.buttonStyle(.sh(.secondary, size: .s)).disabled(model.busy)
+        SettingsPage(title: "Profiles") {
+            let ready = !model.busy && model.loaded && model.problem == nil
+            SettingsGroup(title: "Profiles", links: ready ? [
+                SettingsLink("New profile") { model.create() },
+                SettingsLink("Restore defaults") { model.askRestore() },
+            ] : []) {
+                if let problem = model.problem {
+                    SettingsRow(title: "", problem: problem) {
+                        Button("Reload") { Task { await model.refresh() } }.buttonStyle(.sh(.secondary, size: .s)).disabled(model.busy)
+                    }
+                }
+                if model.visible.isEmpty {
+                    SettingsRow(title: model.problem != nil ? "Could not read subagent definitions"
+                                : !model.loaded ? "Loading subagents…" : "No subagents") { EmptyView() }
+                }
+                ForEach(model.visible) { definition in
+                    SettingsDrillRow(title: definition.name, subtitle: definition.diagnostic ?? definition.description,
+                                     value: definition.diagnostic != nil ? definition.file : definition.capability, mono: true) {
+                        Task { await model.open(definition) }
+                    }
                 }
             }
-            VStack(alignment: .leading, spacing: SH.Space.m) {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: AppLayout.subagentToolbarGap) { sectionHeading; Spacer(minLength: 0); folder }
-                    VStack(alignment: .leading, spacing: SH.Space.m) { sectionHeading; folder }
-                }.padding(.horizontal, SH.Space.xs)
-                LazyVStack(spacing: 0) {
-                    ForEach(model.visible) { definition in
-                        SubagentDefinitionRow(definition: definition) { Task { await model.open(definition) } }
+            .disabled(model.busy)
+            SettingsGroup(title: "") {
+                SettingsRow(title: "Where they live", subtitle: "One Markdown file each") {
+                    HStack(spacing: SH.Space.m) {
+                        SettingsValue(text: "Shepherd/pi/agents", mono: true).help(model.directory.path)
+                        Button("Reveal") { model.revealFolder() }
+                            .buttonStyle(.sh(.secondary, size: .s))
+                            .disabled(model.busy || !model.loaded)
                     }
-                    if model.visible.isEmpty {
-                        Text(model.problem != nil ? "Could not read subagent definitions." : !model.loaded ? "Loading subagents…" : model.definitions.isEmpty ? "No subagents" : "No matching subagents")
-                            .font(.sh(.body)).foregroundStyle(Color.sh.textSecondary)
-                            .padding(SH.Space.xxl).frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }.padding(SH.Space.xs)
-                    .background(Color.sh.bgWindow, in: RoundedRectangle(cornerRadius: SHCardRowMetrics.settingsCardRadius))
-                    .shBorder(Color.sh.projectDivider, radius: SHCardRowMetrics.settingsCardRadius, width: SHSettingsNavMetrics.borderWidth)
-                    .disabled(model.busy)
+                }
             }
-            if let native { native.padding(.top, AppLayout.settingsGroupSpacing - AppLayout.subagentSettingsGap) }
-        }
-    }
-    private var filter: some View {
-        SHSettingsSearchField("Filter subagents", text: $model.filter, placement: .subagents)
-            .frame(width: AppLayout.subagentFilterWidth)
-    }
-    private var actions: some View {
-        HStack(spacing: AppLayout.subagentToolbarGap) {
-            Button("Restore defaults") { model.askRestore() }.buttonStyle(SubagentSettingsActionStyle()).disabled(model.busy || !model.loaded || model.problem != nil)
-            Button { model.create() } label: {
-                HStack(spacing: SH.Space.m) { SHGlyph.Settings.subagentPlus.image.accessibilityHidden(true); Text("New subagent") }
-            }.buttonStyle(SubagentSettingsActionStyle(primary: true)).disabled(model.busy || !model.loaded || model.problem != nil)
-                .accessibilityLabel("New subagent")
-        }
-    }
-    private var sectionHeading: some View {
-        HStack(spacing: AppLayout.subagentToolbarGap) {
-            Text("SUBAGENTS").font(.shSans(AppLayout.subagentSectionSize, .semibold))
-                .tracking(AppLayout.subagentSectionSize * AppLayout.subagentSectionTracking).foregroundStyle(Color.sh.textSecondary)
-            Text(model.problem != nil && model.definitions.isEmpty ? "Unavailable" : !model.loaded ? "…" : model.definitions.count.formatted()).font(.shMono(AppLayout.subagentMetaSize)).foregroundStyle(Color.sh.settingsMuted)
-        }
-    }
-    private var folder: some View {
-        HStack(spacing: AppLayout.subagentToolbarGap) {
-            Text("Shepherd/pi/agents").font(.shMono(AppLayout.subagentMetaSize)).foregroundStyle(Color.sh.settingsMuted).help(model.directory.path)
-            Button("Show in Finder") { model.revealFolder() }
-                .font(.shSans(AppLayout.subagentFinderSize)).foregroundStyle(Color.sh.textSecondary)
-                .padding(.horizontal, SH.Space.m).frame(height: AppLayout.subagentFinderVisualHeight)
-                .background(Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
-                .shBorder(Color.sh.lineStrong, radius: SH.Radius.s, width: SHSettingsNavMetrics.borderWidth)
-                .frame(minHeight: SH.Height.controlS)
-                .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
-                .buttonStyle(.shRow(focusColor: .sh.running)).disabled(model.busy || !model.loaded)
         }
     }
 
     /// SubagentEdit.dc.html: the file as a form, beside its instructions.
     private var editor: some View {
-        SubagentEditForm(model: model, inheritedContext: native?.settings.childContext ?? "fresh")
+        SubagentEditForm(model: model, inheritedContext: settings.childContext)
     }
 
     private struct Confirmation: Identifiable {

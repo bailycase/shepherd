@@ -31,20 +31,23 @@ public struct SHSegmentedPicker<Value: Hashable>: View {
         // the page's own fill. `s` keeps the Controls board's anatomy everywhere.
         let settings = scale == .settings && size == .m
         let M = SHSettingsControlMetrics.self
-        let pillRadius = settings ? M.segmentRadius : SH.Radius.xs
+        let pillRadius = settings ? 0 : SH.Radius.xs
         let trackRadius = settings ? M.segmentTrackRadius : SH.Radius.s
-        HStack(spacing: SH.Space.xxs) {
-            ForEach(options, id: \.value) { option in
+        HStack(spacing: settings ? 0 : SH.Space.xxs) {
+            ForEach(Array(options.enumerated()), id: \.element.value) { index, option in
                 let selected = option.value == selection
                 Button { selection = option.value } label: {
                     Text(option.title)
-                        .font(.shSans(12, selected ? .semibold : .medium))
+                        .font(settings ? .shSans(SHTextStyle.caption.size) : .shSans(12, selected ? .semibold : .medium))
                         .foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
                         .lineLimit(1)
                         .padding(.horizontal, settings ? M.segmentPadding : size == .s ? SH.Space.m : 10)
                         .frame(height: settings ? M.segmentHeight : size == .s ? 20 : SH.Height.controlS)
                         .matchedGeometryEffect(id: option.value, in: pill)
                         .contentShape(Rectangle())
+                        .overlay(alignment: .leading) {
+                            if settings && index > 0 { SHHairline(.vertical, color: sh.lineStrong) }
+                        }
                         .shFocusRing(radius: pillRadius)
                 }
                 .buttonStyle(.plain)
@@ -57,8 +60,7 @@ public struct SHSegmentedPicker<Value: Hashable>: View {
             if options.contains(where: { $0.value == selection }) {
                 Group {
                     if settings {
-                        RoundedRectangle(cornerRadius: pillRadius).fill(sh.bgWindow)
-                            .shadow(color: sh.knobShadow, radius: 1, y: 1)
+                        Rectangle().fill(sh.bgSelected)
                     } else {
                         RoundedRectangle(cornerRadius: pillRadius).fill(sh.bgSelected)
                             .shBorder(sh.lineStrong, radius: pillRadius)
@@ -70,9 +72,10 @@ public struct SHSegmentedPicker<Value: Hashable>: View {
                 .id(reduceMotion ? AnyHashable(selection) : AnyHashable(Self.pillID))
             }
         }
-        .padding(settings ? M.segmentTrackPadding : SH.Space.xxs)
-        .background(settings ? sh.lineSubtle : sh.bgSunken, in: RoundedRectangle(cornerRadius: trackRadius))
-        .shBorder(settings ? .clear : sh.lineSubtle, radius: trackRadius)
+        .padding(settings ? 0 : SH.Space.xxs)
+        .background(settings ? Color.clear : sh.bgSunken, in: RoundedRectangle(cornerRadius: trackRadius))
+        .clipShape(RoundedRectangle(cornerRadius: settings ? trackRadius : 0))
+        .shBorder(settings ? sh.lineStrong : sh.lineSubtle, radius: trackRadius)
         .fixedSize()
         // Disabled while what it switches loads (the review's Local | PR): the segments and the
         // pill dim and come back as a fade, like every other control.
@@ -196,20 +199,19 @@ public struct SHPopupLabel: View {
     public var body: some View {
         let sh = Color.sh
         if scale == .settings {
-            // The Settings boards' popup: 32pt at radius 7, the value in Geist 13 and up-down
-            // chevrons, sized to its value.
+            // The Settings popup: 26pt at radius `s`, the value in `caption` and a small ▾.
             let M = SHSettingsControlMetrics.self
             HStack(spacing: M.popupGap) {
                 Text(title)
-                    .font(mono ? .shMono(12.5) : .shSans(M.textSize))
+                    .font(mono ? .shMono(M.textSize) : .shSans(M.textSize))
                     .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(sh.textTertiary)
+                Image(systemName: "chevron.down").font(.system(size: SHSettingsControlMetrics.popupChevronSize, weight: .semibold)).foregroundStyle(sh.textTertiary)
             }
             .padding(.leading, M.popupLeading)
             .padding(.trailing, M.popupTrailing)
             .frame(height: M.controlHeight)
-            .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: M.radius))
+            .background(sh.bgWindow, in: RoundedRectangle(cornerRadius: M.radius))
             .shBorder(sh.lineStrong, radius: M.radius)
             .contentShape(Rectangle())
         } else {
@@ -266,7 +268,7 @@ public struct SHValueSlider: View {
     }
 
     public var body: some View {
-        HStack(spacing: SH.Space.l) {
+        HStack(spacing: scale == .settings ? SHSettingsControlMetrics.sliderValueGap : SH.Space.l) {
             SHSliderTrack(value: $value, range: range, step: step, editingChanged: editingChanged)
                 .accessibilityRepresentation {
                     Slider(value: $value, in: range, step: step) { Text(label) }
@@ -276,7 +278,7 @@ public struct SHValueSlider: View {
                         }
                 }
             Text(format(value))
-                .font(scale == .settings ? .shMono(12) : .sh(.mono))
+                .font(scale == .settings ? .sh(.caption) : .sh(.mono))
                 .foregroundStyle(.sh.textSecondary)
                 .shContentTransition(.numeric())
                 .frame(minWidth: SHSliderMetrics.valueMinWidth, alignment: .trailing)
@@ -338,14 +340,13 @@ private struct SHSliderTrack: View {
             let x = CGFloat(fraction) * usable
             let filled = settings ? x : x + knob / 2
             ZStack(alignment: .leading) {
-                Capsule().fill(settings ? sh.lineSubtle : sh.lineStrong).frame(height: track)
+                Capsule().fill(sh.lineStrong).frame(height: track)
                 Capsule().fill(sh.lantern).frame(width: filled, height: track)
                 // A hairline ring outside the knob, as the board's 1px spread shadow draws.
                 Circle()
-                    .fill(sh.knobOn)
-                    .padding(settings ? SH.hairline(displayScale) : 0)
+                    .fill(settings ? sh.textPrimary : sh.knobOn)
                     .background { Circle().fill(sh.lineStrong).padding(settings ? 0 : -SH.hairline(displayScale)) }
-                    .shadow(color: sh.knobShadow, radius: 1.5, y: 1)
+                    .shadow(color: settings ? .clear : sh.knobShadow, radius: 1.5, y: 1)
                     .frame(width: knob, height: knob)
                     .offset(x: settings ? x - knob / 2 : x)
             }

@@ -3,8 +3,9 @@ import SwiftUI
 /// A section label ("THIS MAC  19"): micro mono caps in tertiary, with an optional trailing
 /// count or accessory.
 public struct SHSectionHeader<Trailing: View>: View {
-    /// `settings` is the Settings boards' Geist label (`shSettingsLabel()`).
-    public enum Style: Sendable { case standard, settings }
+    /// `settings` is a Settings group's label (caption 600, `textSecondary`, sentence case);
+    /// `settingsNav` is the label over a run of the Settings nav (caption, `textTertiary`).
+    public enum Style: Sendable { case standard, settings, settingsNav }
 
     let title: String
     let style: Style
@@ -20,7 +21,9 @@ public struct SHSectionHeader<Trailing: View>: View {
         HStack(spacing: SH.Space.s) {
             Group {
                 if style == .settings {
-                    Text(title).shSettingsLabel()
+                    Text(title).font(.sh(.caption, weight: .semibold)).foregroundStyle(Color.sh.textSecondary)
+                } else if style == .settingsNav {
+                    Text(title).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 } else {
                     Text(title).shSectionLabel()
                 }
@@ -29,8 +32,37 @@ public struct SHSectionHeader<Trailing: View>: View {
             Spacer(minLength: SH.Space.xs)
             trailing()
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: Trailing.self == Text?.self ? .combine : .contain)
         .accessibilityAddTraits(.isHeader)
+    }
+}
+
+extension SHSectionHeader where Trailing == SHSectionLink {
+    /// A header with a plain link at its right (a Settings group's "Reset", "Manage…").
+    public init(_ title: String, style: Style = .settings, link: String, action: @escaping () -> Void) {
+        self.init(title, style: style) { SHSectionLink(title: link, action: action) }
+    }
+}
+
+/// The trailing link of a section header: caption in `running`, a plain button.
+public struct SHSectionLink: View {
+    let title: String
+    let action: () -> Void
+
+    public init(title: String, action: @escaping () -> Void) {
+        self.title = title
+        self.action = action
+    }
+
+    public var body: some View {
+        // A 24pt target around a caption-high word: the extra height overhangs the header's line.
+        Button(action: action) {
+            Text(title).font(.sh(.caption)).foregroundStyle(Color.sh.running)
+                .frame(minHeight: SH.Height.controlS).contentShape(Rectangle())
+        }
+            .buttonStyle(.plain)
+            .padding(.vertical, -SH.Space.xs)
+            .shFocusRing(radius: SH.Radius.xs, color: .sh.running)
     }
 }
 
@@ -43,29 +75,39 @@ extension SHSectionHeader where Trailing == Text? {
 }
 
 /// A grouped card (settings groups, lists of rows): `.shCard()` with a 1px `lineSubtle` rule
-/// between its children. Pass rows; the rules are inserted. `fill` replaces the raised fill
-/// (Settings' cards are flat on `bgWindow`, drawn by their line alone).
+/// between its children. Pass rows; the rules are inserted. `fill` replaces the raised fill.
 public struct SHGroupCard<Content: View>: View {
     let fill: Color?
     let radius: CGFloat
+    let lazy: Bool
     @ViewBuilder let content: () -> Content
 
-    public init(fill: Color? = nil, radius: CGFloat = SH.Radius.m, @ViewBuilder content: @escaping () -> Content) {
+    /// `lazy` builds only the rows near the screen (a list that can run to hundreds of rows).
+    public init(fill: Color? = nil, radius: CGFloat = SH.Radius.m, lazy: Bool = false, @ViewBuilder content: @escaping () -> Content) {
         self.fill = fill
         self.radius = radius
+        self.lazy = lazy
         self.content = content
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            Group(subviews: content()) { subviews in
-                ForEach(subviews) { subview in
-                    if subview.id != subviews.first?.id { SHHairline() }
-                    subview
-                }
+        Group {
+            if lazy {
+                LazyVStack(spacing: 0) { rows }
+            } else {
+                VStack(spacing: 0) { rows }
             }
         }
         .shCard(radius: radius, fill: fill)
+    }
+
+    private var rows: some View {
+        Group(subviews: content()) { subviews in
+            ForEach(subviews) { subview in
+                if subview.id != subviews.first?.id { SHHairline() }
+                subview
+            }
+        }
     }
 }
 
@@ -74,10 +116,16 @@ public enum SHCardRowStyle: Sendable {
     /// The compact card row of sheets and the phone's forms: `ui` over `caption`, 16pt before the
     /// control.
     case standard
-    /// The Settings boards' row: a 13.5/500 title over a 12.5/1.45 description with inline markup
-    /// (`SHMarkupText`), 2pt apart, 24pt before the control, and a problem led by an `xmark`; its
-    /// content at least 52pt, 10pt inside the row's top and bottom (so 72pt at the least).
+    /// The Settings row: a `ui` title in `textPrimary` over a one-line `caption` hint in
+    /// `textTertiary` (inline markup, `SHMarkupText`), 12pt before the control, and a problem led
+    /// by an `xmark`; at least 44pt, 6pt inside the top and bottom, 12pt at the sides.
     case settings
+}
+
+/// The 8pt status dot leading a Settings row: filled `done` when on, `lantern` when it wants you,
+/// `failed` when broken, a hollow ring when off.
+public enum SHRowDot: Sendable {
+    case on, warn, bad, off
 }
 
 /// A card row (settings): title, optional description and inline problem (in `failed`), and a
@@ -90,10 +138,17 @@ public struct SHCardRow<Control: View>: View {
     let problem: String?
     let problemHelp: String?
     let style: SHCardRowStyle
+    let dot: SHRowDot?
+    let monoTitle: Bool
+    let indented: Bool
     @ViewBuilder let control: () -> Control
 
     public init(_ title: String, description: String? = nil, problem: String? = nil, problemHelp: String? = nil,
-                style: SHCardRowStyle = .standard, @ViewBuilder control: @escaping () -> Control) {
+                style: SHCardRowStyle = .standard, dot: SHRowDot? = nil, monoTitle: Bool = false, indented: Bool = false,
+                @ViewBuilder control: @escaping () -> Control) {
+        self.dot = dot
+        self.monoTitle = monoTitle
+        self.indented = indented
         self.title = title
         self.description = description
         self.problem = problem
@@ -105,22 +160,24 @@ public struct SHCardRow<Control: View>: View {
     public var body: some View {
         let sh = Color.sh
         let settings = style == .settings
-        HStack(alignment: .center, spacing: settings ? SH.Space.xxl : SH.Space.xl) {
-            VStack(alignment: .leading, spacing: settings ? SH.Space.xxs : 3) {
+        HStack(alignment: .center, spacing: settings ? SH.Space.l : SH.Space.xl) {
+            if let dot { SHRowDotView(dot) }
+            VStack(alignment: .leading, spacing: settings ? 0 : 3) {
                 Text(title)
-                    .font(settings ? .sh(.body, weight: .medium) : .sh(.ui))
+                    .font(monoTitle ? .sh(.mono) : settings ? .sh(.ui, weight: .regular) : .sh(.ui))
                     .foregroundStyle(sh.textPrimary)
                 if let description {
                     Group {
                         if settings {
-                            SHMarkupText(description, size: SHTextStyle.ui.size,
+                            SHMarkupText(description, size: SHTextStyle.caption.size,
                                            lineHeight: SHCardRowMetrics.settingsDescriptionLineHeight)
+                                .lineLimit(1).truncationMode(.tail)
                         } else {
                             Text(description).shText(.caption)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .foregroundStyle(sh.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(settings ? sh.textTertiary : sh.textSecondary)
                 }
                 if let problem {
                     Group {
@@ -140,11 +197,32 @@ public struct SHCardRow<Control: View>: View {
             control()
         }
         .modifier(SHCardRowFrame(settings: settings))
+        .padding(.leading, indented ? SH.Space.xxl : 0)
+    }
+}
+
+/// The dot itself.
+struct SHRowDotView: View {
+    let dot: SHRowDot
+    init(_ dot: SHRowDot) { self.dot = dot }
+
+    var body: some View {
+        let sh = Color.sh
+        Group {
+            switch dot {
+            case .on: Circle().fill(sh.done)
+            case .warn: Circle().fill(sh.lantern)
+            case .bad: Circle().fill(sh.failed)
+            case .off: Circle().strokeBorder(sh.textTertiary, lineWidth: 1)
+            }
+        }
+        .frame(width: SHCardRowMetrics.dotSize, height: SHCardRowMetrics.dotSize)
+        .accessibilityHidden(true)
     }
 }
 
 /// A card row's padding and least height: the compact row is at least 52pt with 12pt above and
-/// below; a Settings row's content is at least 52pt, 10pt in from the top and the bottom.
+/// below; a Settings row is at least 44pt, 6pt in from the top and the bottom.
 public struct SHCardRowFrame: ViewModifier {
     let settings: Bool
 
@@ -153,8 +231,8 @@ public struct SHCardRowFrame: ViewModifier {
     public func body(content: Content) -> some View {
         if settings {
             content
-                .frame(minHeight: SH.Height.scaled(SHCardRowMetrics.minHeight))
-                .padding(.horizontal, SH.Space.xl)
+                .frame(minHeight: SH.Height.scaled(SHCardRowMetrics.settingsMinHeight))
+                .padding(.horizontal, SH.Space.l)
                 .padding(.vertical, SHCardRowMetrics.settingsVerticalPadding)
         } else {
             content
@@ -198,13 +276,17 @@ public struct SHInlineProblem: View {
 public enum SHCardRowMetrics {
     /// Before density.
     public static let minHeight: CGFloat = 52
-    /// A Settings row's top and bottom padding, outside its 52pt content.
-    public static let settingsVerticalPadding: CGFloat = 10
-    /// The Settings boards' cards: radius 10.
-    public static let settingsCardRadius: CGFloat = 10
-    /// A settings description (and its problem) is 12.5 on 1.45 lines.
+    /// A Settings row's least height, before density.
+    public static let settingsMinHeight: CGFloat = 44
+    /// A Settings row's top and bottom padding.
+    public static let settingsVerticalPadding: CGFloat = SH.Space.s
+    /// The Settings cards: radius `l`.
+    public static let settingsCardRadius: CGFloat = SH.Radius.l
+    /// A settings description (and its problem) sits on 1.45 lines.
     public static let settingsDescriptionLineHeight: CGFloat = 1.45
     public static let problemGlyphSize: CGFloat = 12
+    /// A Settings row's status dot.
+    public static let dotSize: CGFloat = 8
 }
 
 /// A tooltip only when there is something to say.

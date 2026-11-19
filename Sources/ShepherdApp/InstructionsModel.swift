@@ -33,6 +33,8 @@ final class InstructionsModel {
     // MARK: Page
 
     var file: InstructionFile = .agents
+    /// The editor drill-in is open on `file` (the list is showing otherwise).
+    var editing = false
     /// The editor's text for a file while it differs from what is saved.
     private(set) var drafts: [InstructionFile: String] = [:]
     private(set) var busy = false

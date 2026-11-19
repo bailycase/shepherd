@@ -12,19 +12,17 @@ enum SettingsRoute: Hashable, Codable {
     /// A host's form; nil adds one (Add a Mac). A paired host's form is no longer reachable: Fleet lists it.
     case host(UUID?)
     case appearance
-    /// What a host's new threads start with: the model, thinking, and how the queue goes.
-    case defaults
-    /// How a host creates worktrees and handles them when the work is done.
+    /// Sign-in, and what a host's new threads, text generation and image reading use.
+    case models
+    /// The queue, context, the threads a thread starts, and subagents; Profiles opens `subagents`.
+    case agents
+    /// How a host creates worktrees and handles them when the work is done (Git).
     case worktrees
-    /// The pi extensions a host loads, and its daily updates.
-    case piExtensions
-    /// A host's MCP servers and their last known status, read-only.
-    case mcp
-    /// The fleet's subagent profiles, read-only; one profile's Markdown.
+    /// A host's MCP servers and its extensions, slash commands and daily updates.
+    case tools
+    /// The fleet's subagent profiles; one profile's Markdown. Opened from Agents.
     case subagents
     case subagent(String)
-    /// A host's providers and whether each is signed in, read-only.
-    case signIn
     /// A host's spaces by folder, read-only; one space's configuration files and approval.
     case spaces
     case space(String)
@@ -45,8 +43,10 @@ enum SettingsRoute: Hashable, Codable {
     /// The files that host reads hooks from, and the Claude Code and Codex readers.
     case hookSources
     case experiments
+    /// General: what to send, to which device, and from which hosts. Named for what it was; the
+    /// thread menu's link to background alerts opens it.
     case notifications
-    /// Whether this device sends crash and performance reports to Sentry.
+    /// Advanced: whether this device sends crash and performance reports to Sentry.
     case diagnostics
     /// A suggested line waiting on a host: edit it, choose its file, add it or dismiss it.
     case suggestion(UUID)
@@ -61,13 +61,12 @@ struct SettingsDestination: View {
         case .fleet: FleetScreen()
         case .host(let id): HostEditorScreen(hostID: id)
         case .appearance: AppearanceScreen()
-        case .defaults: DefaultsScreen()
+        case .models: ModelsScreen()
+        case .agents: AgentsScreen()
         case .worktrees: WorktreesScreen()
-        case .piExtensions: PiExtensionsScreen()
-        case .mcp: MCPServersScreen()
+        case .tools: ToolsScreen()
         case .subagents: SubagentProfilesScreen()
         case .subagent(let file): SubagentProfileScreen(file: file)
-        case .signIn: ProvidersScreen()
         case .spaces: SpacesScreen()
         case .space(let directory): SpaceScreen(directory: directory)
         case .instructions: InstructionsScreen()
@@ -86,79 +85,55 @@ struct SettingsDestination: View {
     }
 }
 
-/// A page of Settings: pushed from the list on iPhone, shown beside it on iPad
-/// (iPadSettingsInstructions). The iPad's list names two of them as the Mac does ("Agents",
-/// "Pi"); the phone's rows say what they hold ("Defaults", "Extensions").
+/// A page of Settings, named and grouped as the Mac's: pushed from the list on iPhone, shown
+/// beside it on iPad (iPadSettingsInstructions). General, Appearance | Agents: Models, Agents,
+/// Instructions, Skills, Tools, Hooks | Work: Spaces, Git, Fleet | Advanced, Experiments.
+/// The Mac's Keyboard and Apps have no phone page.
 enum SettingsPage: String, CaseIterable, Hashable, Codable {
-    case appearance, defaults, worktrees, pi, mcp, subagents, signIn, instructions, skills, hooks, fleet, spaces, notifications, experiments, diagnostics
+    case general, appearance, models, agents, instructions, skills, tools, hooks, spaces, git, fleet, advanced, experiments
+
+    /// The list's groups, in order: a nil title is a group with no label.
+    static let groups: [(title: String?, pages: [SettingsPage])] = [
+        (nil, [.general, .appearance]),
+        ("Agents", [.models, .agents, .instructions, .skills, .tools, .hooks]),
+        ("Work", [.spaces, .git, .fleet]),
+        (nil, [.advanced, .experiments]),
+    ]
 
     var title: String {
         switch self {
+        case .general: "General"
         case .appearance: "Appearance"
-        case .defaults: "Defaults"
-        case .worktrees: "Worktrees"
-        case .pi: "Extensions"
-        case .mcp: "MCP"
-        case .subagents: "Subagents"
-        case .signIn: "Sign-in"
+        case .models: "Models"
+        case .agents: "Agents"
         case .instructions: "Instructions"
         case .skills: "Skills"
+        case .tools: "Tools"
         case .hooks: "Hooks"
-        case .fleet: "Fleet"
         case .spaces: "Spaces"
-        case .notifications: "Notifications"
+        case .git: "Git"
+        case .fleet: "Fleet"
+        case .advanced: "Advanced"
         case .experiments: "Experiments"
-        case .diagnostics: "Diagnostics"
-        }
-    }
-
-    /// Its name in the iPad's list.
-    var listTitle: String {
-        switch self {
-        case .defaults: "Agents"
-        case .pi: "Pi"
-        default: title
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .appearance: "circle.lefthalf.filled"
-        case .defaults: "sparkles"
-        case .worktrees: "arrow.branch"
-        case .pi: "puzzlepiece.extension"
-        case .mcp: "server.rack"
-        case .subagents: "person.2"
-        case .signIn: "person.badge.key"
-        case .spaces: "folder"
-        case .instructions: "doc.text"
-        case .skills: "graduationcap"
-        case .hooks: SHGlyph.hook.symbolName
-        case .fleet: "macbook.and.iphone"
-        case .notifications: "bell"
-        case .experiments: "flask"
-        case .diagnostics: "stethoscope"
         }
     }
 
     /// Its screen on its own, as the phone pushes it.
     var route: SettingsRoute {
         switch self {
+        case .general: .notifications
         case .appearance: .appearance
-        case .defaults: .defaults
-        case .worktrees: .worktrees
-        case .pi: .piExtensions
-        case .mcp: .mcp
-        case .subagents: .subagents
-        case .signIn: .signIn
-        case .spaces: .spaces
+        case .models: .models
+        case .agents: .agents
         case .instructions: .instructions
         case .skills: .skills
+        case .tools: .tools
         case .hooks: .hooks
+        case .spaces: .spaces
+        case .git: .worktrees
         case .fleet: .fleet
-        case .notifications: .notifications
+        case .advanced: .diagnostics
         case .experiments: .experiments
-        case .diagnostics: .diagnostics
         }
     }
 }

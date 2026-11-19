@@ -10,33 +10,58 @@ import ShepherdRemote
 struct InstructionsSettings: View {
     @Bindable var model: InstructionsModel
 
-    static let explanation = "The agent’s root files, read at the start of every session Shepherd starts: `AGENTS.md` for how "
-        + "you work, `APPEND_SYSTEM.md` for rules that override everything else. Repos can still add their own AGENTS.md."
+    /// What each file is for, as its row's hint says.
+    static func purpose(_ file: InstructionFile) -> String {
+        file == .agents ? "how you work" : "overrides everything else"
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppLayout.settingsWideBlockSpacing) {
-            SettingsHeader(title: "Instructions", explanation: Self.explanation)
-                .frame(maxWidth: AppLayout.settingsWideHeaderWidth, alignment: .leading)
-            HStack(alignment: .top, spacing: AppLayout.instructionsColumnSpacing) {
-                InstructionsMainColumn(model: model)
-                InstructionsSideColumn(file: model.file)
-                    .frame(width: AppLayout.instructionsSideWidth)
-            }
-            .frame(maxHeight: .infinity, alignment: .top)
+        Group {
+            if model.editing { editor } else { list }
         }
         .task { await model.refresh() }
+    }
+
+    private var list: some View {
+        SettingsPage(title: "Instructions") {
+            SettingsGroup(title: "Every agent reads", footnote: "Synced to every Mac in your fleet. A repo can add its own AGENTS.md.") {
+                ForEach(InstructionFile.allCases, id: \.self) { file in
+                    SettingsRow(title: file.fileName, subtitle: "\(Self.size(model.text(file))) · \(Self.purpose(file))", mono: true) {
+                        HStack(spacing: SH.Space.s) {
+                            SettingsOpenIn(text: Binding(get: { model.text(file) }, set: { model.setText($0, file: file) }), name: file.fileName)
+                            Button("Edit") {
+                                model.file = file
+                                model.editing = true
+                            }
+                            .buttonStyle(.sh(.secondary, size: .s))
+                            .accessibilityLabel("Edit \(file.fileName)")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var editor: some View {
+        SettingsPage(title: model.file.fileName) {
+            InstructionsMainColumn(model: model)
+        }
+    }
+
+    static func size(_ text: String) -> String {
+        let bytes = text.utf8.count
+        return bytes == 1 ? "1 byte" : "\(bytes) bytes"
     }
 }
 
 // MARK: Files
 
 /// The file tabs and the open file's editor.
-private struct InstructionsMainColumn: View {
+struct InstructionsMainColumn: View {
     @Bindable var model: InstructionsModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: SH.Space.l) {
-            InstructionsFileTabs(model: model)
             if let copy = model.adoptable(model.file) {
                 // What came over from your pi is read by every agent already; this file is empty, so say where it is and offer it here.
                 SHNoteCard(glyph: "square.and.arrow.down", link: "Use it here", action: { model.adoptImported(model.file) }) {
@@ -54,7 +79,7 @@ private struct InstructionsMainColumn: View {
                 SHInlineProblem(problem).shTransition(.disclosure)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
 
@@ -102,7 +127,7 @@ private struct InstructionsFileTabs: View {
     }
 }
 
-/// The open file in a card: a header (its path, "● edited", History, Revert and Save), then the editor.
+/// The open file in the Settings editor card: its name, "● edited", History, Revert and Save, then the editor.
 private struct InstructionsEditorCard: View {
     @Bindable var model: InstructionsModel
     @State private var showsHistory = false
@@ -111,51 +136,20 @@ private struct InstructionsEditorCard: View {
     private var edited: Bool { model.isEdited(file) }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            SHHairline()
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .frame(maxWidth: .infinity, minHeight: AppLayout.instructionsEditorMinHeight, maxHeight: .infinity)
-        .shCard(fill: Color.sh.bgWindow, line: Color.sh.lineStrong)
-        .shAnimation(.hover, value: edited)
-    }
-
-    private var header: some View {
-        let sh = Color.sh
-        return HStack(spacing: SH.Space.m + SH.Space.xxs) {
-            let path = model.path(of: file) ?? "This Mac"
-            Text(path)
-                .font(.shMono(AppLayout.instructionsPathSize))
-                .foregroundStyle(sh.textSecondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(path)
-            if edited { editedMark }
-            Spacer(minLength: SH.Space.m)
+        SettingsEditorCard(name: file.fileName, edited: edited,
+                           openIn: Binding(get: { model.text(file) }, set: { model.setText($0, file: file) })) {
             history
             revertAndSave
+        } content: {
+            content
         }
-        .padding(.vertical, SH.Space.m)
-        .padding(.horizontal, SH.Space.l)
-        .frame(minHeight: SH.Height.controlS + 2 * SH.Space.m)
-        .background(sh.bgSunken)
-    }
-
-    private var editedMark: some View {
-        Text("● edited")
-            .font(.shSans(AppLayout.instructionsEditedSize))
-            .foregroundStyle(Color.sh.lanternText)
-            .lineLimit(1)
-            .fixedSize()
-            .shTransition(.disclosure)
+        .help(model.path(of: file) ?? "")
     }
 
     /// The open file's saves, each one restorable (a save another Mac made is there too).
     private var history: some View {
         Button("History") { showsHistory.toggle() }
-            .buttonStyle(.sh(.ghost, size: .s))
+            .buttonStyle(.sh(.secondary, size: .s))
             .popover(isPresented: $showsHistory, arrowEdge: .bottom) {
                 ScrollView(.vertical) {
                     InstructionsHistoryList(model: model, now: Date())
@@ -173,17 +167,9 @@ private struct InstructionsEditorCard: View {
     /// Revert and the primary Save; both wait for an edit.
     @ViewBuilder private var revertAndSave: some View {
         Button("Revert") { model.revert() }
-            .buttonStyle(.sh(.ghost, size: .s))
+            .buttonStyle(.sh(.secondary, size: .s))
             .disabled(!edited || model.busy)
-        Button { Task { await model.save() } } label: {
-            HStack(spacing: SH.Space.s) {
-                Text("Save")
-                Text("⌘S")
-                    .font(.shMono(AppLayout.instructionsShortcutSize))
-                    .opacity(AppLayout.instructionsShortcutOpacity)
-                    .accessibilityHidden(true)
-            }
-        }
+        Button { Task { await model.save() } } label: { Text("Save") }
         .buttonStyle(.sh(.primary, size: .s))
         .keyboardShortcut("s", modifiers: .command)
         .disabled(!model.canSave)

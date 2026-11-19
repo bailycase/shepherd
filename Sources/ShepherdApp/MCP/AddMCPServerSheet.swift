@@ -436,7 +436,7 @@ struct AddMCPServerSheet: View {
     // MARK: Paste JSON
 
     @ViewBuilder private var pasteJSON: some View {
-        field("JSON", note: pasteNote) {
+        field("JSON", note: pasteNote, openIn: $json, file: "mcp.json") {
             TextEditor(text: $json)
                 .font(.shMono(AppLayout.mcpSheetTextSize))
                 .scrollContentBackground(.hidden)
@@ -561,9 +561,9 @@ struct AddMCPServerSheet: View {
         .shBorder(sh.lineStrong, radius: AppLayout.mcpSheetFieldRadius)
     }
 
-    private func field<Content: View>(_ label: String, note: String? = nil, @ViewBuilder content: () -> Content) -> some View {
+    private func field<Content: View>(_ label: String, note: String? = nil, openIn: Binding<String>? = nil, file: String = "draft.txt", @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: SH.Space.s) {
-            Text(label).font(.shSans(AppLayout.mcpSheetTextSize, .medium)).foregroundStyle(Color.sh.textSecondary)
+            SettingsSheetLabel(title: label, openIn: openIn, file: file)
             content()
             if let note {
                 Text(note).font(.shSans(AppLayout.mcpNoteSize)).foregroundStyle(Color.sh.textTertiary)
@@ -864,14 +864,17 @@ struct MCPPasteImportSheet: View {
                             if case .success(let entries) = parsed { done(entries) }
                         },
                     ]) {
-            TextEditor(text: $json)
-                .font(.shMono(AppLayout.mcpSheetTextSize))
-                .scrollContentBackground(.hidden)
-                .padding(SH.Space.m)
-                .frame(height: AppLayout.mcpSheetJSONHeight)
-                .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.mcpSheetFieldRadius))
-                .shBorder(Color.sh.lineStrong, radius: AppLayout.mcpSheetFieldRadius)
-                .accessibilityLabel("JSON")
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
+                SettingsSheetLabel(title: "JSON", openIn: $json, file: "mcp.json")
+                TextEditor(text: $json)
+                    .font(.shMono(AppLayout.mcpSheetTextSize))
+                    .scrollContentBackground(.hidden)
+                    .padding(SH.Space.m)
+                    .frame(height: AppLayout.mcpSheetJSONHeight)
+                    .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.mcpSheetFieldRadius))
+                    .shBorder(Color.sh.lineStrong, radius: AppLayout.mcpSheetFieldRadius)
+                    .accessibilityLabel("JSON")
+            }
         }
     }
 }

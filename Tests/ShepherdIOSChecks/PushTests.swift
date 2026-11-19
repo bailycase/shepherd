@@ -105,7 +105,7 @@ struct PushTests {
         do { try await manager.forget(host: hostID) {}; assertionFailure("forget must fail") } catch {}
         assert(manager.isEnabled(host: hostID) && memory.read(host: hostID) != nil)
 
-        // Settings ▸ Notifications outlives the app, and a phone that never chose sends everything.
+        // Settings ▸ General outlives the app, and a phone that never chose sends everything.
         assert(manager.preferences == RemotePushPreferences())
         let chosen = RemotePushPreferences(topics: [.questions], awayOnly: false)
         await manager.setPreferences(chosen, hosts: [])

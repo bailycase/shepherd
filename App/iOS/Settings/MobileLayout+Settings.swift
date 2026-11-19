@@ -12,6 +12,9 @@ extension MobileLayout {
     static let settingsListInset: CGFloat = SH.Space.m + SH.Space.xxs
     /// Between the list's rows.
     static let settingsListRowSpacing: CGFloat = SH.Space.xxs
+    /// A list item (iPadSettingsInstructions: 40pt), and the gap above a group label or group.
+    static let settingsListItemHeight: CGFloat = 40
+    static let settingsListGroupGap: CGFloat = SH.Space.xl
     /// A list row's selection.
     static let settingsListRowRadius: CGFloat = 10
     /// Above a page shown beside the list, under the bar.
@@ -25,9 +28,6 @@ extension MobileLayout {
     static let settingsNoteLineHeight: CGFloat = 1.45
     /// A menu's value before it truncates.
     static let settingsMenuMaxWidth: CGFloat = 200
-    /// About's icon: the crook on its tile.
-    static let settingsAboutTile: CGFloat = 24
-    static let settingsAboutCrook: CGFloat = 14
 
     // MARK: Instructions
 

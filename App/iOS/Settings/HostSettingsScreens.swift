@@ -4,23 +4,21 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-// A host's own settings on iPhone and iPad (home track): Settings ▸ Defaults, Worktrees and
-// Extensions, the Mac's Settings ▸ Agents, Worktrees and Pi as the host keeps them
-// (`hostSettings.v1`). A change shows at once and goes to the host; one it refuses springs back
+// A host's own settings on iPhone and iPad (home track): the sections of Settings ▸ Models, Agents,
+// Tools and Git, as the Mac groups them, as the host keeps them (`hostSettings.v1`). A change shows at once and goes to the host; one it refuses springs back
 // with its reason. With several hosts, the page says which one it changes.
 
-/// Settings ▸ Defaults: what a host's new threads start with.
-struct DefaultsScreen: View {
-    @Environment(MobileHosts.self) private var hosts
+/// Settings ▸ Models, after Sign-in: what a host's new threads start with, and the models for its
+/// small jobs.
+struct ModelDefaultsSections: View {
+    let store: SettingsStore
     @State private var models: [String] = []
     @State private var imageModels: [String] = []
 
     var body: some View {
-        let store = SettingsStore.of(hosts)
-        HostSettingsPage(store: store, page: .defaults,
-                         explanation: "What new threads on a host start with. Threads already running keep their own.") { settings, host in
+        HostSettingsBody(store: store, explanation: nil) { settings, host in
             let agentDefaults = host.serves(RemoteProtocol.hostSettingsAgentDefaultsCapability)
-            SettingsSection("New threads") {
+            SettingsSection("Defaults for new threads") {
                 SHListCard {
                     SettingsControlRow("Model", note: "“Use the agent’s default” passes no model, so the agent picks.") {
                         Menu {
@@ -46,40 +44,95 @@ struct DefaultsScreen: View {
                     }
                 }
             }
-            if host.serves(RemoteProtocol.hostSettingsTextGenerationModelCapability) {
-                SettingsSection("Text generation") {
+            if host.serves(RemoteProtocol.hostSettingsTextGenerationModelCapability) || host.serves(RemoteProtocol.hostSettingsVisionModelCapability) {
+                SettingsSection("Small jobs") {
                     SHListCard {
-                        SettingsControlRow("Text generation model", note: "The model the host uses to generate short text itself: a thread's title from its first prompt, and commit messages drafted from a diff. Your renames are never overwritten. Automatic prefers a low-cost model the host is signed in to.") {
-                            Menu {
-                                Button("Automatic") { store.hostSettings.post(.textGenerationModel(nil), on: host) }
-                                Divider()
-                                ForEach(Self.options(models, current: settings.textGenerationModel), id: \.self) { model in
-                                    Button(model) { store.hostSettings.post(.textGenerationModel(model), on: host) }
+                        if host.serves(RemoteProtocol.hostSettingsTextGenerationModelCapability) {
+                            SettingsControlRow("Text generation model", note: "The model the host uses to generate short text itself: a thread's title from its first prompt, and commit messages drafted from a diff. Your renames are never overwritten. Automatic prefers a low-cost model the host is signed in to.") {
+                                Menu {
+                                    Button("Automatic") { store.hostSettings.post(.textGenerationModel(nil), on: host) }
+                                    Divider()
+                                    ForEach(Self.options(models, current: settings.textGenerationModel), id: \.self) { model in
+                                        Button(model) { store.hostSettings.post(.textGenerationModel(model), on: host) }
+                                    }
+                                } label: {
+                                    SettingsMenuLabel(settings.textGenerationModel ?? "Automatic", mono: settings.textGenerationModel != nil)
                                 }
-                            } label: {
-                                SettingsMenuLabel(settings.textGenerationModel ?? "Automatic", mono: settings.textGenerationModel != nil)
+                                .accessibilityLabel("Text generation model")
                             }
-                            .accessibilityLabel("Text generation model")
+                        }
+                        if host.serves(RemoteProtocol.hostSettingsVisionModelCapability) {
+                            SettingsControlRow("Image reading model", note: "When a thread's model can't view images, this model describes each image for it: the pictures you attach, screenshots and board renders. Automatic uses the cheapest model the host is signed in to that takes images.") {
+                                Menu {
+                                    Button("Automatic") { store.hostSettings.post(.visionModel(nil), on: host) }
+                                    Divider()
+                                    ForEach(Self.options(imageModels, current: settings.visionModel), id: \.self) { model in
+                                        Button(model) { store.hostSettings.post(.visionModel(model), on: host) }
+                                    }
+                                } label: {
+                                    SettingsMenuLabel(settings.visionModel ?? "Automatic", mono: settings.visionModel != nil)
+                                }
+                                .accessibilityLabel("Image reading model")
+                            }
                         }
                     }
                 }
             }
-            if host.serves(RemoteProtocol.hostSettingsVisionModelCapability) {
-                SettingsSection("Image reading") {
+            Color.clear.frame(height: 0)
+                .task(id: host.id) {
+                    let listing = await ModelCatalog.listing(of: store.mobileHost(host.id))
+                    models = listing?.models ?? []
+                    imageModels = listing?.imageCapableModels ?? []
+                }
+        }
+    }
+
+    private static func options(_ models: [String], current: String?) -> [String] { ModelCatalog.options(models, current: current) }
+}
+
+/// The host's model catalog, asked once per connection.
+enum ModelCatalog {
+    static func listing(of host: MobileHost?) async -> ModelListing? {
+        guard let host else { return nil }
+        return await ComposerStates.shared.listing(for: host)
+    }
+
+    /// The catalog, with the current model kept even when the catalog lacks it.
+    static func options(_ models: [String], current: String?) -> [String] {
+        guard let current, !current.isEmpty, !models.contains(current) else { return models }
+        return [current] + models
+    }
+}
+
+/// Settings ▸ Agents: the queue, the threads a thread starts, context, and subagents (Profiles opens
+/// its own page).
+struct AgentSettingsSections: View {
+    let store: SettingsStore
+    @State private var models: [String] = []
+
+    var body: some View {
+        HostSettingsBody(store: store, explanation: nil) { settings, host in
+            let agentDefaults = host.serves(RemoteProtocol.hostSettingsAgentDefaultsCapability)
+            SettingsSection("Queue") {
+                SHListCard {
+                    SettingsControlRow("When a turn ends, send the queue", note: "All at once arrives as one turn, in order.") {
+                        SettingsPicker("Send the queue", selection: settings.queueDelivery, options: [.oneAtATime, .all],
+                                       title: HostSettingsPresentation.title) { store.hostSettings.post(.queueDelivery($0), on: host) }
+                    }
+                }
+            }
+            if host.serves(RemoteProtocol.hostSettingsSubThreadsCapability) {
+                SettingsSection("Threads a thread starts") {
                     SHListCard {
-                        SettingsControlRow("Image reading model", note: "When a thread's model can't view images, this model describes each image for it: the pictures you attach, screenshots and board renders. Automatic uses the cheapest model the host is signed in to that takes images.") {
-                            Menu {
-                                Button("Automatic") { store.hostSettings.post(.visionModel(nil), on: host) }
-                                Divider()
-                                ForEach(Self.options(imageModels, current: settings.visionModel), id: \.self) { model in
-                                    Button(model) { store.hostSettings.post(.visionModel(model), on: host) }
-                                }
-                            } label: {
-                                SettingsMenuLabel(settings.visionModel ?? "Automatic", mono: settings.visionModel != nil)
-                            }
-                            .accessibilityLabel("Image reading model")
+                        SettingsSwitchRow("Threads can start threads",
+                                          note: "A thread may start another for separate work without being asked. Off, it starts one only when you ask. Three deep at most.",
+                                          isOn: settings.threadsStartThreads) { store.hostSettings.post(.threadsStartThreads($0), on: host) }
+                        SettingsControlRow("Where they work", note: "When the thread starting one doesn't say.") {
+                            SettingsPicker("Where they work", selection: settings.subThreadPlace, options: SpawnPlace.allCases,
+                                           title: { $0 == .checkout ? "Same checkout" : "New worktree" }) { store.hostSettings.post(.subThreadPlace($0), on: host) }
                         }
                     }
+                    SettingsFootnote("New threads follow a change; running ones at their next launch.")
                 }
             }
             if agentDefaults {
@@ -98,66 +151,31 @@ struct DefaultsScreen: View {
                     SettingsFootnote("New threads follow a change; running ones at their next launch.")
                 }
             }
-            if host.serves(RemoteProtocol.hostSettingsSubThreadsCapability) {
-                SettingsSection("Threads a thread starts") {
-                    SHListCard {
-                        SettingsSwitchRow("Threads can start threads",
-                                          note: "A thread may start another for separate work without being asked. Off, it starts one only when you ask. Three deep at most.",
-                                          isOn: settings.threadsStartThreads) { store.hostSettings.post(.threadsStartThreads($0), on: host) }
-                        SettingsControlRow("Where they work", note: "When the thread starting one doesn't say.") {
-                            SettingsPicker("Where they work", selection: settings.subThreadPlace, options: SpawnPlace.allCases,
-                                           title: { $0 == .checkout ? "Same checkout" : "New worktree" }) { store.hostSettings.post(.subThreadPlace($0), on: host) }
-                        }
-                    }
-                    SettingsFootnote("New threads follow a change; running ones at their next launch.")
-                }
-            }
-            SettingsSection("While the agent is working") {
-                SHListCard {
-                    SettingsControlRow("When a turn ends, send the queue", note: "All at once arrives as one turn, in order.") {
-                        SettingsPicker("Send the queue", selection: settings.queueDelivery, options: [.oneAtATime, .all],
-                                       title: HostSettingsPresentation.title) { store.hostSettings.post(.queueDelivery($0), on: host) }
-                    }
-                }
-            }
-            .task(id: host.id) {
-                let listing = await Self.listing(of: store.mobileHost(host.id))
-                models = listing?.models ?? []
-                imageModels = listing?.imageCapableModels ?? []
-            }
             if host.serves(RemoteProtocol.hostSettingsV2Capability) {
-                SubagentDefaultsSection(defaults: settings.subagentDefaults, models: models) {
+                SubagentDefaultsSection(store: store, host: host, defaults: settings.subagentDefaults, models: models) {
                     store.hostSettings.post(.subagentDefaults($0), on: host)
                 }
             }
+            Color.clear.frame(height: 0)
+                .task(id: host.id) {
+                    models = await ModelCatalog.listing(of: store.mobileHost(host.id))?.models ?? []
+                }
         }
     }
 
     /// The Mac's Settings ▸ Agents ▸ Context switches, which the host lists with its bundled
-    /// extensions; shown here, under Compact at, rather than on the Extensions page.
+    /// extensions; shown here, under Compact at, rather than with Tools' built-in ones.
     static let contextSwitches: Set<String> = ["context", "deferTools", "codemode"]
-
-    /// The host's model catalog, asked once per connection.
-    private static func listing(of host: MobileHost?) async -> ModelListing? {
-        guard let host else { return nil }
-        return await ComposerStates.shared.listing(for: host)
-    }
-
-    /// The catalog, with the current model kept even when the catalog lacks it.
-    private static func options(_ models: [String], current: String?) -> [String] {
-        guard let current, !current.isEmpty, !models.contains(current) else { return models }
-        return [current] + models
-    }
 }
 
-/// Settings ▸ Worktrees: how a host creates worktrees, and what happens when a thread's work is done.
+/// Settings ▸ Git: how a host creates worktrees, and what happens when a thread's work is done.
 struct WorktreesScreen: View {
     @Environment(MobileHosts.self) private var hosts
 
     var body: some View {
         let store = SettingsStore.of(hosts)
-        HostSettingsPage(store: store, page: .worktrees,
-                         explanation: "How a host creates worktrees, and what happens when a thread's work is done.") { settings, host in
+        SettingsPageScaffold("Git", store: store) {
+            HostSettingsBody(store: store, explanation: "How a host creates worktrees, and what happens when a thread's work is done.") { settings, host in
             let post: (HostSettingChange) -> Void = { store.hostSettings.post($0, on: host) }
             SettingsSection("New worktrees") {
                 SHListCard {
@@ -197,24 +215,23 @@ struct WorktreesScreen: View {
                     }
                 }
             }
+            }
         }
     }
 }
 
-/// Settings ▸ Extensions (the Mac's Settings ▸ Pi): the extensions Shepherd bundles into pi on a
-/// host and the ones its pi loads itself. The engine updates with Shepherd.
-struct PiExtensionsScreen: View {
-    @Environment(MobileHosts.self) private var hosts
+/// Settings ▸ Tools, after MCP: the extensions Shepherd bundles into pi on a host, its slash
+/// commands, and the ones its pi loads itself. The engine updates with Shepherd.
+struct ExtensionSections: View {
+    let store: SettingsStore
 
     var body: some View {
-        let store = SettingsStore.of(hosts)
-        HostSettingsPage(store: store, page: .pi,
-                         explanation: "What the agent loads on a host: the extensions Shepherd bundles and the ones installed there.") { settings, host in
+        HostSettingsBody(store: store, explanation: nil) { settings, host in
             let post: (HostSettingChange) -> Void = { store.hostSettings.post($0, on: host) }
-            SettingsSection("Bundled with Shepherd") {
+            SettingsSection("Built in") {
                 SHListCard {
-                    // The Context switches live on Defaults where the host serves them there.
-                    ForEach(settings.bundledExtensions.filter { !host.serves(RemoteProtocol.hostSettingsAgentDefaultsCapability) || !DefaultsScreen.contextSwitches.contains($0.id) }) { bundled in
+                    // The Context switches live on Agents where the host serves them there.
+                    ForEach(settings.bundledExtensions.filter { !host.serves(RemoteProtocol.hostSettingsAgentDefaultsCapability) || !AgentSettingsSections.contextSwitches.contains($0.id) }) { bundled in
                         SettingsSwitchRow(bundled.name, note: HostSettingsPresentation.note(forBundled: bundled.id), isOn: bundled.on) {
                             post(.bundledExtension(id: bundled.id, on: $0))
                         }
@@ -223,7 +240,7 @@ struct PiExtensionsScreen: View {
                 SettingsFootnote("New threads follow a change; running ones keep theirs until they restart. Status and session tracking are always on.")
             }
             if host.serves(RemoteProtocol.hostSettingsV2Capability) {
-                SettingsSection("Agents") {
+                SettingsSection("How the agent uses them") {
                     SHListCard {
                         SettingsSwitchRow("Skills in the / menu", note: "List every skill as /skill:name in the composer’s slash menu.",
                                           isOn: settings.skillsInSlashMenu) { post(.skillsInSlashMenu($0)) }
@@ -260,8 +277,10 @@ struct PiExtensionsScreen: View {
     }
 }
 
-/// Settings ▸ Subagents ▸ Defaults on a host: what a subagent starts with unless its profile says.
+/// Settings ▸ Agents ▸ Subagents on a host: what a subagent starts with unless its profile says.
 private struct SubagentDefaultsSection: View {
+    let store: SettingsStore
+    let host: SettingsHost
     let defaults: HostSettings.SubagentDefaults
     let models: [String]
     let change: (HostSettings.SubagentDefaults) -> Void
@@ -291,6 +310,7 @@ private struct SubagentDefaultsSection: View {
                     SettingsPicker("Subagent context", selection: defaults.context, options: HostSettings.SubagentDefaults.Context.allCases,
                                    title: { $0 == .fork ? "Fork" : "Fresh" }) { set(\.context, $0) }
                 }
+                SubagentProfilesRow(store: store, host: host)
             }
             SettingsFootnote("A profile's own settings win. New subagents follow a change.")
         }
@@ -329,46 +349,25 @@ private struct SlashCommandsSection: View {
 
 // MARK: The page
 
-/// A host settings page: its explanation, which host it changes when there are several, then the
-/// host's settings once read, or why they can't be shown.
-private struct HostSettingsPage<Content: View>: View {
+/// A Settings page of stacked sections: pulling it reads every host again, the bar names it (inline,
+/// as the boards draw it), and beside the iPad's list it starts a step lower. Host pages put their
+/// bodies in it, so one page can hold sections of several host models (Models, Tools).
+struct SettingsPageScaffold<Content: View>: View {
+    let title: String
     let store: SettingsStore
-    let page: SettingsPage
-    let explanation: String
-    @ViewBuilder let content: (HostSettings, SettingsHost) -> Content
+    @ViewBuilder let content: () -> Content
     @Environment(\.settingsColumn) private var inColumn
 
+    init(_ title: String, store: SettingsStore, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.store = store
+        self.content = content
+    }
+
     var body: some View {
-        let host = store.settingsHost
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                Text(explanation)
-                    .shText(.caption)
-                    .foregroundStyle(Color.sh.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, SH.Space.xs)
-                if let problem = store.hostSettings.problem {
-                    SHBanner(.failed, title: problem) {
-                        Button("OK") { store.hostSettings.dismissProblem() }.buttonStyle(.sh(.secondary))
-                    }
-                }
-                if let host {
-                    switch store.hostSettings.state(of: host) {
-                    case .loaded(let settings):
-                        content(settings, host)
-                    case .loading:
-                        ProgressView().progressViewStyle(SHSpinnerStyle())
-                            .frame(maxWidth: .infinity)
-                    case .offline:
-                        SettingsFootnote("\(host.name) is offline. Its settings show here once it's back.")
-                    case .unsupported:
-                        SettingsFootnote("\(host.name)'s Shepherd is too old to share its settings. Update it to change them here.")
-                    case .failed(let reason):
-                        SettingsFootnote(reason, tone: .failed)
-                    }
-                } else {
-                    SettingsFootnote("Add a host in Settings ▸ Fleet to change its settings here.")
-                }
+                content()
             }
             .padding(.horizontal, MobileLayout.gutter)
             .padding(.top, inColumn ? MobileLayout.settingsColumnTop : 0)
@@ -378,10 +377,53 @@ private struct HostSettingsPage<Content: View>: View {
         }
         .refreshable { await store.refresh() }
         .background(Color.sh.bgWindow)
-        .shAnimation(.content, value: host.map { store.hostSettings.state(of: $0) })
-        .navigationTitle(inColumn ? page.listTitle : page.title)
-        .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
         .task { if !inColumn { await store.watch() } }
+    }
+}
+
+/// A host's settings as sections: an explanation, which host they change when there are several,
+/// then the host's settings once read, or why they can't be shown.
+struct HostSettingsBody<Content: View>: View {
+    let store: SettingsStore
+    let explanation: String?
+    @ViewBuilder let content: (HostSettings, SettingsHost) -> Content
+
+    var body: some View {
+        let host = store.settingsHost
+        VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
+            if let explanation {
+                Text(explanation)
+                    .shText(.caption)
+                    .foregroundStyle(Color.sh.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, SH.Space.xs)
+            }
+            if let problem = store.hostSettings.problem {
+                SHBanner(.failed, title: problem) {
+                    Button("OK") { store.hostSettings.dismissProblem() }.buttonStyle(.sh(.secondary))
+                }
+            }
+            if let host {
+                switch store.hostSettings.state(of: host) {
+                case .loaded(let settings):
+                    content(settings, host)
+                case .loading:
+                    ProgressView().progressViewStyle(SHSpinnerStyle())
+                        .frame(maxWidth: .infinity)
+                case .offline:
+                    SettingsFootnote("\(host.name) is offline. Its settings show here once it's back.")
+                case .unsupported:
+                    SettingsFootnote("\(host.name)'s Shepherd is too old to share its settings. Update it to change them here.")
+                case .failed(let reason):
+                    SettingsFootnote(reason, tone: .failed)
+                }
+            } else {
+                SettingsFootnote("Add a host in Settings ▸ Fleet to change its settings here.")
+            }
+        }
+        .shAnimation(.content, value: host.map { store.hostSettings.state(of: $0) })
     }
 }
 
