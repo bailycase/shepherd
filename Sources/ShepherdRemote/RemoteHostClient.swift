@@ -1246,6 +1246,7 @@ public final class RemoteHostClient: @unchecked Sendable {
             case .fleetCheckIgnore: "set aside what Check finds"
             case .fleetAutoDispatch, .fleetBatteryCountsHalf: "change how Fleet picks a Mac"
             case .designToolEnabled: "toggle the Design tool experiment"
+            case .computerUseEnabled: "toggle the Computer use experiment"
             case .subagentDefaults, .worktreeDeleteAction, .skillsInSlashMenu, .mcpProjectConfig, .slashCommand, .closeOnMerge: "change this setting"
             default: "change this default"
             }

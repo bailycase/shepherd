@@ -357,7 +357,7 @@ enum RemoteSamples {
         defaultServiceTier: .fast, textGenerationModel: "anthropic/claude-haiku", visionModel: "google/gemini-flash", compactAtPercent: 80,
         queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true, projectsEnabled: true,
         worktreeBase: .head, fetchBeforeCreating: false, mergePRAutomatically: true, mergeMethod: .rebase, closeOnMerge: true,
-        backgroundService: true, designToolEnabled: true,
+        backgroundService: true, designToolEnabled: true, computerUseEnabled: true,
         subagentDefaults: HostSettings.SubagentDefaults(concurrency: 6, model: "openai/gpt-5-mini", thinking: .low, context: .fork),
         worktreeDeleteAction: .removeWorktree, skillsInSlashMenu: false, mcpProjectConfig: true,
         slashCommands: [NativeCommand(name: "review", description: "Review a diff", source: "extension")], hiddenSlashCommands: ["review"],
@@ -393,6 +393,7 @@ enum RemoteSamples {
         .deleteLocalBranch(false), .mergePRAutomatically(false), .mergeMethod(.squash),
         .bundledExtension(id: "review", on: true), .updatePiDaily(false), .updateExtensionsDaily(true),
         .designToolEnabled(true),
+        .computerUseEnabled(true),
         .subagentDefaults(HostSettings.SubagentDefaults(concurrency: 2, model: nil, thinking: nil, context: .fresh)),
         .worktreeDeleteAction(.keepWorktree), .skillsInSlashMenu(false), .mcpProjectConfig(true), .slashCommand(name: "review", on: false),
         .closeOnMerge(true), .closeOnMerge(false),
@@ -1153,7 +1154,7 @@ struct RemoteReplyTests {
     @Test func hostSettingsFromAnOlderHostDecodeWithDefaults() throws {
         var object = try Wire.object(RemoteReply.hostSettings(id: 1, settings: S.hostSettings))
         var settings = try #require(object["settings"] as? [String: Any])
-        for key in ["designToolEnabled", "subagentDefaults", "worktreeDeleteAction",
+        for key in ["designToolEnabled", "computerUseEnabled", "subagentDefaults", "worktreeDeleteAction",
                     "skillsInSlashMenu", "mcpProjectConfig", "slashCommands", "hiddenSlashCommands", "closeOnMerge", "backgroundService"] {
             settings[key] = nil
         }
@@ -1163,6 +1164,7 @@ struct RemoteReplyTests {
             Issue.record("expected settings"); return
         }
         #expect(!decoded.designToolEnabled)
+        #expect(!decoded.computerUseEnabled, "an older host has no Computer use")
         #expect(decoded.subagentDefaults == HostSettings.SubagentDefaults())
         #expect(decoded.worktreeDeleteAction == .ask && decoded.skillsInSlashMenu && !decoded.mcpProjectConfig)
         #expect(decoded.slashCommands.isEmpty && decoded.hiddenSlashCommands.isEmpty)
@@ -1522,6 +1524,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.createAgentServiceTierCapability,
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             RemoteProtocol.designToolExperimentCapability,
+            RemoteProtocol.computerUseExperimentCapability,
             RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostSettingsCloseOnMergeCapability, RemoteProtocol.hostSettingsBackgroundServiceCapability,
             RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.appsV2Capability, RemoteProtocol.agentRestartCapability, RemoteProtocol.completionSeenCapability,
             RemoteProtocol.pushMuteCapability,
@@ -1586,6 +1589,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.hostSettingsBackgroundServiceCapability == "hostSettings.backgroundService.v1")
         #expect(RemoteProtocol.hostConfigCapability == "hostConfig.v1")
         #expect(RemoteProtocol.designToolExperimentCapability == "experiments.designTool.v1")
+        #expect(RemoteProtocol.computerUseExperimentCapability == "experiments.computerUse.v1")
         #expect(!RemoteProtocol.designCapabilities.contains(RemoteProtocol.designToolExperimentCapability))
         #expect(RemoteProtocol.filesCapability == "files.v1")
         #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.filesCapability))

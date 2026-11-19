@@ -125,6 +125,7 @@ final class AppSettings {
         static let goalsEnabled = "shepherd.experiments.goals"
         static let projectsEnabled = "shepherd.experiments.projects"
         static let designToolEnabled = "shepherd.experiments.designTool"
+        static let computerUseEnabled = "shepherd.experiments.computerUse"
         static let fleetWeights = "shepherd.fleet.weights"
         static let fleetThreadsCanSend = "shepherd.fleet.threadsCanSend"
         static let fleetThreadCap = "shepherd.fleet.threadCap"
@@ -147,7 +148,7 @@ final class AppSettings {
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeGeneratePRDescription, worktreeDeleteAction, worktreeCloseOnMerge, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
             mcpProjectConfig,
-            goalsEnabled, projectsEnabled, designToolEnabled, fleetWeights, fleetThreadsCanSend, fleetThreadCap, fleetAutoDispatch, fleetBatteryCountsHalf, fleetUncommitted, fleetSnapshotExcludes, fleetCheckIgnores, implementOpensThread,
+            goalsEnabled, projectsEnabled, designToolEnabled, computerUseEnabled, fleetWeights, fleetThreadsCanSend, fleetThreadCap, fleetAutoDispatch, fleetBatteryCountsHalf, fleetUncommitted, fleetSnapshotExcludes, fleetCheckIgnores, implementOpensThread,
             filesWordWrap, filesMarkdownPreview,
         ]
 
@@ -643,6 +644,12 @@ final class AppSettings {
         }
     }
 
+    /// Settings ▸ Experiments ▸ Computer use: new threads get the tools that see and work this
+    /// Mac's apps. Off by default; running threads follow at their next start.
+    var computerUseEnabled: Bool {
+        didSet { store.set(computerUseEnabled, forKey: Key.computerUseEnabled) }
+    }
+
     /// Implement in a thread's "Open the thread after sending" (RefSentStay): off stays on the
     /// canvas with a toast; the sheet remembers the last choice.
     var implementOpensThread: Bool {
@@ -745,6 +752,7 @@ final class AppSettings {
         skippedConfirmations = (store.dictionary(forKey: Key.skippedConfirmations) as? [String: String] ?? [:])
             .filter { known.contains($0.key) }
         designToolEnabled = store.bool(forKey: Key.designToolEnabled)
+        computerUseEnabled = store.bool(forKey: Key.computerUseEnabled)
         implementOpensThread = store.object(forKey: Key.implementOpensThread) as? Bool ?? true
     }
 
@@ -847,6 +855,7 @@ final class AppSettings {
         worktreeDeleteAction = .ask
         skippedConfirmations = [:]
         designToolEnabled = false
+        computerUseEnabled = false
         implementOpensThread = true
         // Then clear the store, so an unset preference reads as "never
         // configured" and follows a future change of default.
@@ -977,7 +986,7 @@ final class AppSettings {
         take(\.childConcurrency), take(\.childModel), take(\.childThinking), take(\.childContext), take(\.shellPath),
         take(\.editor), take(\.editorsByType), take(\.filesWordWrap), take(\.filesMarkdownPreview), take(\.worktreeBaseMode),
         take(\.worktreeFetchBeforeCreate), take(\.worktreeGeneratePRDescription), take(\.worktreeCloseOnMerge),
-        take(\.worktreeDeleteAction), take(\.skippedConfirmations), take(\.designToolEnabled),
+        take(\.worktreeDeleteAction), take(\.skippedConfirmations), take(\.designToolEnabled), take(\.computerUseEnabled),
         take(\.implementOpensThread), take(\.remoteListenerEnabled),
     ]
 }

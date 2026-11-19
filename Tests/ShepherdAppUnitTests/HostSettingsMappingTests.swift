@@ -124,7 +124,7 @@ struct HostSettingsMappingTests {
         .generatePRDescriptions(false),
         .bundledExtension(id: "review", on: false), .bundledExtension(id: "nativeSubagents", on: false), .bundledExtension(id: "context", on: false),
         .bundledExtension(id: "designReferences", on: false),
-        .designToolEnabled(true),
+        .designToolEnabled(true), .computerUseEnabled(true), .computerUseEnabled(false),
         .subagentDefaults(HostSettings.SubagentDefaults(concurrency: 9, model: "openai/gpt-5-mini", thinking: .high, context: .fork)),
         .worktreeDeleteAction(.removeWorktree), .skillsInSlashMenu(false), .mcpProjectConfig(true), .slashCommand(name: "review", on: false),
         .closeOnMerge(true), .closeOnMerge(false),
@@ -143,6 +143,8 @@ struct HostSettingsMappingTests {
         let app = AppSettings(store: Fixture.defaults())
         HostSettingsMapping.apply(.designToolEnabled(true), to: app)
         #expect(app.designToolEnabled)
+        HostSettingsMapping.apply(.computerUseEnabled(true), to: app)
+        #expect(app.computerUseEnabled && app.agentLaunch.computerUse)
         HostSettingsMapping.apply(.subagentDefaults(HostSettings.SubagentDefaults(concurrency: 40, model: " openai/gpt-5 ", thinking: .low, context: .fork)), to: app)
         #expect(app.childConcurrency == 16 && app.childModel == "openai/gpt-5" && app.childThinking == "low" && app.childContext == "fork")
         HostSettingsMapping.apply(.subagentDefaults(HostSettings.SubagentDefaults()), to: app)

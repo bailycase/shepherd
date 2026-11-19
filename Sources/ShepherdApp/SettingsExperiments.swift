@@ -1,10 +1,13 @@
 import SwiftUI
+import AppKit
+import ApplicationServices
+import CoreGraphics
 import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
 /// Settings ▸ Experiments (SettingsExperiments): features still being tried, each off until the
-/// user turns it on. Suggested instructions, the Design tool, conversation Goals and Projects each
+/// user turns it on. Suggested instructions, the Design tool, conversation Goals, Projects and Computer use each
 /// keep their own switch. A wide page: the experiment and what waits for the user, beside a
 /// 320pt side column (how it works, what was added, and a note about experiments).
 struct ExperimentsSettings: View {
@@ -29,6 +32,7 @@ struct ExperimentsSettings: View {
                             DesignToolCard(settings: settings)
                             GoalExperimentCard(settings: settings)
                             ProjectsExperimentCard(settings: settings)
+                            ComputerUseExperimentCard(settings: settings)
                             if model.settings.enabled || !model.snapshot.waiting.isEmpty {
                                 WaitingSuggestions(model: model, instructions: instructions, now: context.date)
                                     .shTransition(.disclosure)
@@ -155,6 +159,106 @@ private struct ProjectsExperimentCard: View {
         .padding(.vertical, SH.Space.l + SH.Space.xxs)
         .padding(.horizontal, SH.Space.xl)
         .shCard(fill: sh.bgWindow, line: sh.lineStrong)
+    }
+}
+
+/// What macOS has allowed Shepherd to do in other apps. Read when the card appears and when the
+/// app becomes active, since the user grants these in System Settings.
+@MainActor @Observable
+final class ComputerUsePermissions {
+    private(set) var accessibility = false
+    private(set) var screenRecording = false
+
+    func refresh() {
+        accessibility = AXIsProcessTrusted()
+        screenRecording = CGPreflightScreenCaptureAccess()
+    }
+
+    func requestAccessibility() {
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
+        open("Privacy_Accessibility")
+    }
+
+    func requestScreenRecording() {
+        _ = CGRequestScreenCaptureAccess()
+        open("Privacy_ScreenCapture")
+    }
+
+    private func open(_ pane: String) {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") else { return }
+        NSWorkspace.shared.open(url)
+    }
+}
+
+/// Computer use's card: its tile, name, description and switch, and while it is on, the two macOS
+/// permissions its tools need, each with Allowed or an Allow… button.
+private struct ComputerUseExperimentCard: View {
+    @Bindable var settings: AppSettings
+    @State private var permissions = ComputerUsePermissions()
+
+    var body: some View {
+        let sh = Color.sh
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: SH.Space.l + SH.Space.xxs) {
+                RoundedRectangle(cornerRadius: SH.Radius.m)
+                    .fill(sh.lanternTint)
+                    .frame(width: AppLayout.experimentTileSize, height: AppLayout.experimentTileSize)
+                    .overlay {
+                        Image(systemName: "cursorarrow.rays")
+                            .font(.shSans(AppLayout.experimentGlyphSize))
+                            .foregroundStyle(sh.lanternText)
+                    }
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                    Text("Computer use")
+                        .font(.shSans(AppLayout.experimentNameSize, .semibold))
+                        .foregroundStyle(sh.textPrimary)
+                    Text("New threads can use the apps on this Mac: read windows, click, type and choose menus, in the background "
+                         + "without taking your mouse or keyboard. Threads already running get it when they restart.")
+                        .shText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
+                        .foregroundStyle(sh.textSecondary)
+                        .frame(maxWidth: AppLayout.experimentDescriptionWidth, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: SH.Space.xxl)
+                SettingsSwitch(label: "Computer use", isOn: $settings.computerUseEnabled)
+            }
+            .padding(.vertical, SH.Space.l + SH.Space.xxs)
+            .padding(.horizontal, SH.Space.xl)
+
+            if settings.computerUseEnabled {
+                VStack(spacing: 0) {
+                    ExperimentOptionRow(title: "Accessibility", note: "Lets Shepherd click and type in other apps.") {
+                        permission(allowed: permissions.accessibility, name: "Accessibility", request: permissions.requestAccessibility)
+                    }
+                    ExperimentOptionRow(title: "Screen Recording", note: "Lets Shepherd see the windows it works in.") {
+                        permission(allowed: permissions.screenRecording, name: "Screen Recording", request: permissions.requestScreenRecording)
+                    }
+                }
+                .background(sh.bgBase)
+                .shTransition(.disclosure)
+            }
+        }
+        .shCard(fill: sh.bgWindow, line: sh.lineStrong)
+        .onAppear { permissions.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            permissions.refresh()
+        }
+        .shAnimation(.disclosure, value: settings.computerUseEnabled)
+    }
+
+    @ViewBuilder
+    private func permission(allowed: Bool, name: String, request: @escaping () -> Void) -> some View {
+        if allowed {
+            Text("Allowed")
+                .font(.shSans(AppLayout.suggestionNameSize))
+                .foregroundStyle(Color.sh.textSecondary)
+        } else {
+            Button("Allow…", action: request)
+                .buttonStyle(.sh(.secondary, size: .s))
+                .accessibilityLabel("Allow \(name)")
+        }
     }
 }
 
