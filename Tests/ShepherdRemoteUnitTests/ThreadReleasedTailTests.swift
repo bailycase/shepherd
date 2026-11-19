@@ -99,23 +99,33 @@ struct ThreadReleasedTailTests {
         #expect(store.rows.count == store.messages.count + 2 && !store.running)
     }
 
-    /// A thread that holds no question (a page that starts inside one long reply, or a thread an automation opened) has no turn to cut at.
-    @Test func aThreadWithNoQuestionWithinItsCapIsLeftAsItIs() async {
+    /// A thread that holds no question (a page that starts inside one long reply, or a thread an automation opened) holds one agent turn
+    /// (`nativeTurns` merges what is not a question), the last answer, which the rule keeps whatever it holds, as it keeps a question's.
+    @Test func aThreadWithNoQuestionIsLeftAsItIs() async {
         let (store, _) = await hidden((0..<20).map { F.assistant("Note \($0)", id: "a\($0)") })
         let rows = store.rows
-        store.releaseToTail(rows: 2, maxBytes: .max)
+        store.releaseToTail(rows: 2, maxBytes: 1)
         #expect(store.keepsOnlyTail && store.rows == rows && store.messages.count == 20, "nothing to cut at")
+
+        let (page, _) = await hidden((0..<NativeThreadStore.releasedTailMessages).map { F.assistant(String(repeating: "word ", count: 400) + "\($0)", id: "a\($0)") })
+        page.releaseToTail(rows: 2, maxBytes: 1)
+        #expect(page.keepsOnlyTail && page.holdsHistory && page.messages.count == NativeThreadStore.releasedTailMessages, "one page is never cut or released")
     }
 
-    /// Nothing to cut at and more than the cap: a tail never holds more than its cap but for the last question and its answer, and
-    /// a thread with no question has none, so it goes whole instead of sitting in the tail tier with everything it held.
-    @Test func aThreadWithNoQuestionOverItsCapGoesWhole() async {
-        let (store, _) = await hidden((0..<20).map { F.assistant(String(repeating: "word ", count: 400) + "\($0)", id: "a\($0)") })
+    /// Only what older pages added above the host's newest page (the first pull lands over it) is cut from a thread with no question, and
+    /// only when it is over the cap.
+    @Test func aThreadWithNoQuestionThatPagedOlderHistoryInKeepsItsNewestPageOverTheCap() async {
+        let notes = (0..<120).map { F.assistant(String(repeating: "word ", count: 400) + "\($0)", id: "a\($0)") }
+        let (store, _) = await hidden(notes)
         let whole = store.retainedHistoryBytes
-        store.draft = "keep me"
-        store.releaseToTail(rows: 2, maxBytes: whole / 4)
-        #expect(!store.holdsHistory && !store.keepsOnlyTail && store.rows.isEmpty && store.messages.isEmpty, "\(store.retainedHistoryBytes) of \(whole / 4)")
-        #expect(store.retainedHistoryBytes == 0 && store.draft == "keep me")
+        store.releaseToTail(rows: 2, maxBytes: whole / 2)
+        #expect(store.keepsOnlyTail && store.messages == Array(notes.suffix(NativeThreadStore.releasedTailMessages)), "the host's newest page")
+        #expect(store.olderCursor == "a70" && store.snapshot?.olderCursor == "a70", "older history pages in from where it starts")
+        #expect(store.retainedHistoryBytes <= whole / 2, "\(store.retainedHistoryBytes) of \(whole / 2)")
+
+        let (within, _) = await hidden(notes)
+        within.releaseToTail(rows: 2, maxBytes: .max)
+        #expect(within.keepsOnlyTail && within.messages == notes, "within the cap it holds all it held")
     }
 
     /// The last question and its answer stay whatever they hold, even when the thread is nothing but them.

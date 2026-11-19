@@ -1695,15 +1695,10 @@ public final class NativeThreadStore {
     /// (`catchUp`): what arrived meanwhile lands over the end of the tail without moving the reader, and rows keep their identities. What
     /// it was doing when it left (`settledRunning`) is not shown as live. Its hidden view lets its rows go down to the last screen
     /// (`releaseTranscript`), as a release of the views alone does. Nothing happens while the thread is on screen or owns unsettled or
-    /// recoverable user work (`canReleaseHistory`), and `release` lets the tail go too. A thread that holds no question has no turn to
-    /// cut at and none the rule keeps whatever it holds: over `maxBytes` it goes whole.
+    /// recoverable user work (`canReleaseHistory`), and `release` lets the tail go too.
     public func releaseToTail(rows: Int, maxBytes: Int) {
         guard canReleaseHistory else { return }
         images.releaseHeld()
-        if lastHeldQuestion == nil, retainedHistoryBytes > maxBytes {
-            release()
-            return
-        }
         settleTask?.cancel()
         settleTask = nil
         if settledRunning { settledRunning = false }
@@ -1728,8 +1723,10 @@ public final class NativeThreadStore {
     /// question, and no further back than `maxBytes` reaches by a cost estimate of what a message holds once derived (the cache and the
     /// rows built from it take about as much as the text counted in `retainedHistoryBytes`).
     private func tailStart(rows: Int, maxBytes: Int) -> Int {
-        guard let lastQuestion = lastHeldQuestion else { return 0 }
         let pageStart = max(0, messages.count - Self.releasedTailMessages)
+        // No question: one agent turn (`nativeTurns`), the last answer, which the rule keeps whatever it holds. Only what older pages added
+        // above the host's newest one (which the first pull lands over) is cut, and only past the cap.
+        guard let lastQuestion = lastHeldQuestion else { return retainedHistoryBytes > maxBytes ? pageStart : 0 }
         var first = min(max(0, turns.count - rows), lastQuestion)
         while first > 0, projection.start(for: turns[first].id) > pageStart { first -= 1 }
         while first > 0, !turns[first].isUser { first -= 1 }
