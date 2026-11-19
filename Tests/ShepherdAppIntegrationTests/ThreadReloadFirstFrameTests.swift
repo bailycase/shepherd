@@ -176,38 +176,81 @@ struct ThreadReloadFirstFrameTests {
         #expect(distances.allSatisfy { abs($0) < 2 }, "the end of the thread stayed where it was: \(distances)")
     }
 
-    /// The pull that was to catch a thread that kept only its tail up fails (the host cannot serve it, or pi is not up): nothing is going
+    /// The pull that was to catch a thread that kept only its tail up fails (the host cannot serve it), or pi is held off: nothing is going
     /// to move its tail or add rows above it, so its lazy stack does not wait for it for as long as `AppLayout.restoreParseRetries`
     /// looks, three seconds in which the reader cannot scroll above the tail.
     @Test(arguments: [false, true])
-    func aHeavyThreadWhosePullDoesNotLandBringsItsStackWithoutWaitingTheWholeBound(piIsStarting: Bool) async throws {
-        let messages = ThreadEagerTailTests.messages(turns: 40, cycles: ThreadEagerTailTests.cycles)
-        let thread = FakeThread(ThreadFixture.snapshot(messages), deckHosting: true)
-        try await thread.waitUntilReady()
-        await thread.store.waitForProse()
-        ListPerf.settle(thread.window)
-        let tail = try #require(thread.store.drawnEagerRows)
-        #expect(tail < ThreadView.eagerRows / 2, "its tail is bound by cost: \(tail) rows")
+    func aHeavyThreadWhosePullIsNotComingBringsItsStackWithoutWaitingTheWholeBound(piHeldOff: Bool) async throws {
+        let (thread, tail) = try await openHeavyOffTheDeck()
         defer { thread.close() }
-        try await leaveTheDeck(thread)
         let store = thread.store
-        #expect(store.keepsOnlyTail && store.rows.count > tail)
 
         let requests = thread.snapshotRequests
-        thread.failing = !piIsStarting
-        thread.starting = piIsStarting
+        thread.failing = !piHeldOff
+        thread.starting = piHeldOff
+        store.offline = piHeldOff
         thread.visibility.active = true
         thread.visibility.motionPaused = false
         ListPerf.settle(thread.window)
         let first = ThreadRowMemory.built(in: store)
         #expect(first > 0 && first <= tail, "the first frame drew the eager tail alone: \(first) rows of \(tail)")
-        try await eventuallyOnMain("the pull to have failed") { thread.snapshotRequests > requests && !store.ready }
+        try await eventuallyOnMain("the pull to have ended") { thread.snapshotRequests > requests && !store.ready && store.catchUpFailed }
         let bound = AppLayout.restoreRetry * AppLayout.restoreParseRetries
-        try await eventuallyOnMain("the lazy stack to come before the bound the pull is waited for", timeout: bound - .milliseconds(1_000)) {
+        try await eventuallyOnMain("the lazy stack to come before the bound the pull is waited for", timeout: bound - AppLayout.restoreRetry * 5) {
             ListPerf.settle(thread.window)
             return ThreadRowMemory.built(in: store) > tail
         }
         #expect(store.catchUp == nil, "the thread was never caught up")
         #expect(try abs(distanceFromTail(thread)) < 2, "the end of the thread stayed where it was")
+    }
+
+    /// A pi that is starting will answer, usually within seconds, and what its snapshot brings changes the tail: the lazy stack waits for it
+    /// as it waits for a pull that is held, and comes once it has landed.
+    @Test func aHeavyThreadWhosePiIsStartingKeepsItsStackOutUntilItsSnapshotLands() async throws {
+        let (thread, tail) = try await openHeavyOffTheDeck()
+        defer { thread.close() }
+        let store = thread.store
+
+        let requests = thread.snapshotRequests
+        thread.starting = true
+        thread.visibility.active = true
+        thread.visibility.motionPaused = false
+        ListPerf.settle(thread.window)
+        let first = ThreadRowMemory.built(in: store)
+        #expect(first > 0 && first <= tail, "the first frame drew the eager tail alone: \(first) rows of \(tail)")
+        try await eventuallyOnMain("pi to have answered that it is starting") { thread.snapshotRequests > requests && store.starting }
+        var held = [first]
+        try await watch("the starting pi to be watched for three looks of the restore", polls: Self.polls(looks: 3)) {
+            ListPerf.settle(thread.window)
+            held.append(ThreadRowMemory.built(in: store))
+        }
+        #expect(store.catchUp == nil && !store.catchUpFailed && held.allSatisfy { $0 <= tail }, "the stack stayed out while pi started: \(held), tail \(tail)")
+
+        thread.starting = false
+        try await eventuallyOnMain("the pull to land") { store.catchUp != nil }
+        try await eventuallyOnMain("the lazy stack to come", timeout: .seconds(30)) {
+            ListPerf.settle(thread.window)
+            return ThreadRowMemory.built(in: store) > tail
+        }
+        #expect(try abs(distanceFromTail(thread)) < 2, "the end of the thread stayed where it was")
+    }
+
+    /// A thread of heavy rows that kept only its tail and is off the deck: the thread, and the rows its eager tail draws.
+    private func openHeavyOffTheDeck() async throws -> (FakeThread, tail: Int) {
+        let messages = ThreadEagerTailTests.messages(turns: 40, cycles: ThreadEagerTailTests.cycles)
+        let thread = FakeThread(ThreadFixture.snapshot(messages), deckHosting: true)
+        do {
+            try await thread.waitUntilReady()
+            await thread.store.waitForProse()
+            ListPerf.settle(thread.window)
+            let tail = try #require(thread.store.drawnEagerRows)
+            #expect(tail < ThreadView.eagerRows / 2, "its tail is bound by cost: \(tail) rows")
+            try await leaveTheDeck(thread)
+            #expect(thread.store.keepsOnlyTail && thread.store.rows.count > tail)
+            return (thread, tail)
+        } catch {
+            thread.close()
+            throw error
+        }
     }
 }

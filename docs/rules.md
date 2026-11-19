@@ -240,7 +240,7 @@ nothing above it, as rows that arrive do. The rest
 comes back after that frame (`ThreadRestore`): first the lazy stack, whatever the person types (it
 builds nothing at the tail, and without it a reader could not scroll to older rows; it waits only
 for a hand on the scroll view or a flick's momentum, and, for a thread that kept only its tail, for the pull that catches it
-up (not one that failed, or while pi is not up) and for the scroll view to have reported nothing for `AppLayout.restoreQuiet`
+up (not one that failed, or pi held off or not started in time) and for the scroll view to have reported nothing for `AppLayout.restoreQuiet`
 and rest on its end (a stack that joins sooner is laid out where the viewport was and builds the heavy rows it finds there),
 each at most `AppLayout.restoreParseRetries` looks; a reader who scrolled away before it came
 goes back to the tail then), then the rows above the last screen, newest first, a step of rows at

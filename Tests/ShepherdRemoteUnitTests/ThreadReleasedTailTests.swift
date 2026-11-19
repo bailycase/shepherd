@@ -148,8 +148,9 @@ struct ThreadReleasedTailTests {
     }
 
     /// The first lazy stack of a thread that kept only its tail waits for the pull that catches it up (`ThreadRestore.waitsForPull`),
-    /// and has no reason to wait for one that is not coming.
-    @Test func aPullThatFailsOrFindsPiNotUpIsMarkedAsOneThatDoesNotCatchTheThreadUp() async {
+    /// and has no reason to wait for one that is not coming: it failed, pi is held off or did not start in time. A pi that is starting
+    /// will answer, usually within seconds, so that is not a pull missed.
+    @Test func aPullThatIsNotComingIsMarkedAsOneThatDoesNotCatchTheThreadUp() async {
         let (store, host) = await hidden(session(turns: 5))
         store.releaseToTail(rows: 30, maxBytes: .max)
         #expect(store.catchUp == nil && !store.catchUpFailed, "nothing has been asked yet")
@@ -163,19 +164,36 @@ struct ThreadReleasedTailTests {
 
         host.starting = true
         var task = await start(store, host)
-        #expect(store.starting && store.catchUp == nil && store.catchUpFailed)
+        #expect(store.starting && store.catchUp == nil && !store.catchUpFailed, "pi is starting: its snapshot is on its way")
         host.starting = false
         await store.refresh()
         #expect(store.catchUp != nil && !store.catchUpFailed && !store.starting, "the pull that lands catches it up")
         task.cancel()
 
         store.suspend()
+        store.offline = true
+        host.starting = true
+        task = await start(store, host)
+        #expect(store.catchUpFailed && !store.starting, "pi is held off: nothing is coming")
+        store.suspend()
+        #expect(!store.catchUpFailed && store.catchUp == nil)
+        store.offline = false
+        task.cancel()
+        store.stop()
+    }
+
+    @Test func aPiThatDoesNotStartInTimeIsAPullThatDoesNotCatchTheThreadUp() async {
+        let host = FakeHost(F.snapshot(messages: session(turns: 5)))
+        let store = manualStore(startingLimit: .zero)
+        var task = await start(store, host)
+        task.cancel()
+        store.suspend()
+        store.releaseToTail(rows: 30, maxBytes: .max)
+
         host.starting = true
         task = await start(store, host)
         defer { task.cancel(); store.stop() }
-        #expect(store.catchUpFailed)
-        store.suspend()
-        #expect(!store.catchUpFailed && store.catchUp == nil)
+        #expect(store.loadError != nil && store.catchUp == nil && store.catchUpFailed, "past the limit pi is not starting, it is in trouble")
     }
 
     @Test func aThreadOnScreenKeepsEverything() async {

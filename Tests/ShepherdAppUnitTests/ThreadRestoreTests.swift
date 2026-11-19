@@ -116,7 +116,7 @@ struct ThreadRestoreTests {
     }
 
     /// The lazy stack of a thread that kept only its tail waits for its pull for the looks the parse is waited for, and not at all for
-    /// one that has landed or is not coming (it failed, or pi is not up), and a thread that holds its history waits for none.
+    /// one that has landed or is not coming (it failed, or pi is held off or did not start in time), and a thread that holds its history waits for none.
     @Test func theFirstStackWaitsForThePullOnlyWhileItIsOnItsWay() {
         let long = store(turns: 24)
         let rows = long.rows, eager = 12
@@ -128,7 +128,7 @@ struct ThreadRestoreTests {
         #expect(tail.waitsForPull(landed: false, failed: false, retries: AppLayout.restoreParseRetries - 1))
         #expect(!tail.waitsForPull(landed: false, failed: false, retries: AppLayout.restoreParseRetries), "not for ever")
         #expect(!tail.waitsForPull(landed: true, failed: false, retries: 0), "it landed")
-        #expect(!tail.waitsForPull(landed: false, failed: true, retries: 0), "it failed, or pi is not up: nothing is on its way")
+        #expect(!tail.waitsForPull(landed: false, failed: true, retries: 0), "it failed, or pi is held off: nothing is on its way")
 
         let holding = ThreadRestore()
         _ = holding.plan(active: false, hiddenKept: 0, rows: rows, eagerRows: eager, owed: owed)
