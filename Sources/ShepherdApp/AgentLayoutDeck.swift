@@ -217,6 +217,14 @@ final class DeckHost<Root: View>: NSHostingView<Root>, DeckCatchUpHost {
         windowResizing = false
     }
 
+    /// A host that leaves the window mid-drag, or is never told the drag ended, holds nothing back from then on.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        windowResizing = false
+    }
+
+    func liveResizeEnded() { windowResizing = false }
+
     /// Whether the window is being resized by hand and this layout is out of sight, so it need not follow: SwiftUI marks every hosting
     /// view of the window's graphs for an update on each frame of the drag (`NSHostingView` watches its geometry in the window), and a
     /// hidden layout's pass was most of what a frame cost with a few of them mounted. The pass it owes comes once the drag ends
@@ -246,6 +254,8 @@ final class DeckHost<Root: View>: NSHostingView<Root>, DeckCatchUpHost {
 @MainActor
 protocol DeckCatchUpHost: NSView {
     var owesPass: Bool { get set }
+    /// The drag is over for this host, whether or not AppKit told it so itself.
+    func liveResizeEnded()
 }
 
 /// The passes hidden layouts held back through a live resize, taken once it ends: one layout per turn of the main run loop, so no
@@ -254,6 +264,7 @@ protocol DeckCatchUpHost: NSView {
 @MainActor
 enum DeckCatchUp {
     static func run(_ hosts: [any DeckCatchUpHost], resizing: @escaping @MainActor () -> Bool) {
+        for host in hosts { host.liveResizeEnded() }
         let owing = hosts.filter { $0.isHidden && $0.owesPass }
         guard !owing.isEmpty else { return }
         step(owing[...], resizing: resizing)
