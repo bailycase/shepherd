@@ -265,6 +265,30 @@ struct BrowserPortForwarderTests {
         #expect(page.ports.isEmpty)
     }
 
+    @MainActor @Test func closingATabWhileResumeWaitsDoesNotReclaimItsPort() async throws {
+        let queue = DispatchQueue(label: "test.browser.tab-forward")
+        let (forwarder, page, port) = try await pageWithALateClose(queue: queue)
+        var queueHeld = true
+        defer {
+            if queueHeld { queue.resume() }
+            page.close()
+        }
+        let second = UUID()
+        page.openTab(second)
+        let other = Int(try unusedLoopbackPort())
+        #expect(page.forward(try #require(URL(string: "http://localhost:\(other)/")), tab: second) == nil)
+        let late = Task { await page.finishResume() }
+        try await eventuallyOnMain("the retry to wait for the close") { forwarder.closeWaiterCount(of: port) == 1 }
+        page.closeTab(page.firstTab)
+        queue.resume()
+        queueHeld = false
+        #expect(await late.value.isEmpty)
+        #expect(page.ports == [other])
+        #expect(forwarder.ports(of: owner) == [other])
+        page.closeTab(second)
+        #expect(forwarder.ports(of: owner).isEmpty)
+    }
+
     /// A plain TCP connection to the loopback at `port`, for a page's socket; -1 if it can't connect.
     private func connectLoopback(_ port: Int) -> Int32 {
         let fd = socket(AF_INET, SOCK_STREAM, 0)

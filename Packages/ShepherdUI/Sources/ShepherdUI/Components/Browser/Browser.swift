@@ -634,18 +634,54 @@ public struct SHConsoleBar: View {
     let network: Int
     let warnings: Int
     let open: Bool
+    let touch: Bool
     let toggle: () -> Void
 
-    public init(network: Int, warnings: Int, open: Bool, toggle: @escaping () -> Void) {
+    public init(network: Int, warnings: Int, open: Bool, touch: Bool = false, toggle: @escaping () -> Void) {
         self.network = network
         self.warnings = warnings
         self.open = open
+        self.touch = touch
         self.toggle = toggle
     }
 
     public var body: some View {
+        Group {
+            if touch { touchBar } else { desktopBar }
+        }
+        .background(Color.sh.bgBase)
+        .overlay(alignment: .top) { SHHairline(color: Color.sh.lineStrong) }
+    }
+
+    private var touchBar: some View {
         let sh = Color.sh
-        HStack(spacing: SHBrowserMetrics.consoleGap) {
+        return Button(action: toggle) {
+            HStack(spacing: SH.Space.l) {
+                ZStack {
+                    Image(systemName: "chevron.down").opacity(open ? 1 : 0)
+                    Image(systemName: "chevron.up").opacity(open ? 0 : 1)
+                }
+                Text("Console")
+                Label("\(network)", systemImage: "globe").font(.sh(.mono))
+                if warnings > 0 {
+                    Label("\(warnings)", systemImage: "exclamationmark.triangle")
+                        .font(.sh(.mono)).foregroundStyle(sh.lanternText)
+                }
+            }
+            .font(.sh(.caption))
+            .foregroundStyle(sh.textSecondary)
+            .padding(.horizontal, SH.Space.l)
+            .frame(maxWidth: .infinity, minHeight: SH.Height.touch, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(open ? "Hide console" : "Show console")
+        .accessibilityValue("\(network) network resources, \(warnings) warnings")
+    }
+
+    private var desktopBar: some View {
+        let sh = Color.sh
+        return HStack(spacing: SHBrowserMetrics.consoleGap) {
             Text("Console").font(.shSans(12, .semibold)).foregroundStyle(sh.textPrimary)
             HStack(spacing: SH.Space.xs) {
                 Text("Network").font(.shSans(12)).foregroundStyle(sh.textSecondary)
@@ -667,8 +703,6 @@ public struct SHConsoleBar: View {
         .padding(.leading, 14)
         .padding(.trailing, SH.Space.m)
         .frame(height: SHBrowserMetrics.consoleBarHeight)
-        .background(sh.bgBase)
-        .overlay(alignment: .top) { SHHairline(color: sh.lineStrong) }
         .accessibilityElement(children: .contain)
     }
 }

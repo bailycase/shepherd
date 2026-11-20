@@ -17,12 +17,17 @@ import ShepherdUI
 // with the Mac's picker (`BrowserScripts`), in Shepherd's own content world, and adds it to their
 // message (iPadPaneBrowser).
 
-/// One thread's page: its web view, the ports it holds, the host's dev servers, and why nothing
-/// loaded. Made by `MobileBrowsers`, which lets its ports go while the host is disconnected.
+/// One tab's web view, dev servers and loading state. Its thread owns the forwarded ports.
 @MainActor
 @Observable
 final class BrowserPage {
     let ref: AgentRef
+    let id: UUID
+    let source: SHBrowserTabSource
+    private let autoOpenRunning: Bool
+    private(set) var title = ""
+    let console = MobileBrowserConsole()
+    var consoleOpen = false
     /// The page open now (WebKit's, once it navigates); nil before anything was opened.
     private(set) var url: URL?
     private(set) var isLoading = false
@@ -43,13 +48,14 @@ final class BrowserPage {
     private(set) var pickedRect: CGRect?
 
     @ObservationIgnored weak var host: MobileHost?
-    @ObservationIgnored let ports: BrowserPagePorts
+    @ObservationIgnored private weak var tabs: MobileBrowserTabs?
+    @ObservationIgnored private let ports: BrowserPagePorts
+    @ObservationIgnored private var closed = false
+    @ObservationIgnored var allowsPopupTabs = false
     @ObservationIgnored private(set) var webView: WKWebView?
     @ObservationIgnored private var delegate: Delegate?
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     @ObservationIgnored private var waitTask: Task<Void, Never>?
-    /// Takes the ports again whose old sockets were still closing at `resume`; cancelled by `suspend`/`close`.
-    @ObservationIgnored private var resumeTask: Task<Void, Never>?
 
     /// Shepherd's world in the page: the page can't see or call the picker that runs there.
     static let world = WKContentWorld.world(name: "shepherd-browser")
@@ -59,12 +65,22 @@ final class BrowserPage {
     /// The schemes a page may take its main frame to: web pages, blank and blob documents.
     static let pageSchemes: Set<String> = ["http", "https", "about", "blob"]
 
-    init(ref: AgentRef, host: MobileHost, forwarder: BrowserPortForwarder) {
-        self.ref = ref
-        self.host = host
-        ports = BrowserPagePorts(forwarder: forwarder,
-                                 owner: BrowserPortForwarder.Owner(id: "\(ref.host.uuidString)/\(ref.agent.rawValue)", hostName: host.name),
-                                 agent: ref.agent, slot: host.tunnelSlot)
+    init(id: UUID, source: SHBrowserTabSource, tabs: MobileBrowserTabs, autoOpenRunning: Bool = false) {
+        self.id = id
+        self.source = source
+        self.tabs = tabs
+        self.ref = tabs.ref
+        self.host = tabs.host
+        self.ports = tabs.ports
+        self.autoOpenRunning = autoOpenRunning
+    }
+
+    var tabItem: SHBrowserTabItem {
+        let shown = BrowserAddress.display(url ?? waitingFor)
+        let host = shown?.host ?? ""
+        return SHBrowserTabItem(id: id, title: title.isEmpty ? shown?.host ?? "New tab" : title,
+                                address: host + (shown?.path ?? ""), letter: SHBrowserTabTint.initial(host: host),
+                                tint: SHBrowserTabTint.forHost(host), source: source)
     }
 
     var hostName: String { host?.name ?? "the host" }
@@ -75,40 +91,18 @@ final class BrowserPage {
     /// "this iPhone", "this iPad": where the forwarded ports listen, for a refusal's words.
     static var here: String { "this \(UIDevice.current.model)" }
 
-    // MARK: The connection
-
-    /// The host is connected: the ports the page held are taken again. One whose old socket is still
-    /// closing is taken once the close lands, without blocking the caller.
-    func resume() {
-        guard host?.supports(RemoteProtocol.browserTunnelCapability) == true else { return }
-        resumeTask?.cancel()
-        resumeTask = nil
-        if let first = ports.resume().first { notice = first.message(hostName: hostName, here: Self.here) }
-        guard !ports.pending.isEmpty else { return }
-        resumeTask = Task { [weak self] in
-            guard let self else { return }
-            let refused = await self.ports.finishResume()
-            guard !Task.isCancelled else { return }
-            if let first = refused.first { self.notice = first.message(hostName: self.hostName, here: Self.here) }
-        }
-    }
-
-    /// The host went away (or the app is leaving the foreground): nothing listens until it is back.
-    func suspend() {
-        stopWaiting()
-        resumeTask?.cancel()
-        resumeTask = nil
-        ports.suspend()
-    }
-
-    /// The page is gone: its ports, its web view and its wait go with it.
+    /// A closed tab must never claim ports again, including through a late callback or Start reply.
     func close() {
+        closed = true
         stopWaiting()
-        resumeTask?.cancel()
-        resumeTask = nil
-        ports.close()
+        ports.closeTab(id)
         observations.removeAll()
-        webView?.configuration.userContentController.removeAllScriptMessageHandlers()
+        if let content = webView?.configuration.userContentController {
+            content.removeScriptMessageHandler(forName: BrowserScripts.pickerHandler, contentWorld: Self.world)
+            content.removeScriptMessageHandler(forName: BrowserScripts.consoleHandler, contentWorld: .page)
+        }
+        webView?.navigationDelegate = nil
+        webView?.uiDelegate = nil
         webView?.stopLoading()
         webView?.removeFromSuperview()
         webView = nil
@@ -120,16 +114,20 @@ final class BrowserPage {
     /// Opens `url`, making the web view the first time. False, with the reason in `notice`, when a
     /// port of the host can't be forwarded for it: nothing loads then.
     @discardableResult
-    func open(_ url: URL) -> Bool {
+    func open(_ url: URL) -> Bool { open(URLRequest(url: url)) }
+
+    @discardableResult
+    private func open(_ request: URLRequest) -> Bool {
+        guard !closed, let url = request.url else { return false }
         stopWaiting()
-        if let refusal = ports.forward(url) {
+        if let refusal = ports.forward(url, tab: id) {
             notice = refusal.message(hostName: hostName, here: Self.here)
             return false
         }
         notice = nil
         let view = webView ?? makeWebView()
         if self.url != url { self.url = url }
-        view.load(URLRequest(url: url))
+        view.load(request)
         return true
     }
 
@@ -190,6 +188,8 @@ final class BrowserPage {
     fileprivate func picker(_ body: Any) {
         guard let body = body as? [String: Any] else { return }
         switch body["kind"] as? String {
+        case "network":
+            if let count = (body["count"] as? NSNumber)?.intValue, count >= 0 { console.network = count }
         case "pick":
             guard let pick = BrowserScripts.pick(body, page: url?.absoluteString ?? "") else { return }
             if selecting { selecting = false }
@@ -212,18 +212,18 @@ final class BrowserPage {
     /// Reads the host's dev servers once a connection is up, then opens the first whose port
     /// answers when nothing is open yet.
     func loadDevServers() async {
-        guard isServed, let client = host?.connectedClient else { return }
+        guard !closed, isServed, let client = host?.connectedClient else { return }
         if devServers == nil {
-            guard let found = try? await client.devServers(agentID: ref.agent) else { return }
+            guard let found = try? await client.devServers(agentID: ref.agent), !closed, !Task.isCancelled else { return }
             devServers = found
         }
-        guard url == nil, waitingFor == nil, !lookedForRunning, let hub = host?.tunnelSlot.hub else { return }
+        guard autoOpenRunning, url == nil, waitingFor == nil, !lookedForRunning, let hub = host?.tunnelSlot.hub else { return }
         lookedForRunning = true
         var tried: Set<Int> = []
         for server in devServers ?? [] {
             guard let serverURL = server.url, let port = server.port, tried.insert(port).inserted else { continue }
             if await hub.probe(agentID: ref.agent, port: port) == .reachable {
-                if url == nil, waitingFor == nil { open(serverURL) }
+                if !closed, url == nil, waitingFor == nil { open(serverURL) }
                 return
             }
         }
@@ -232,6 +232,7 @@ final class BrowserPage {
     /// Start on the host: runs the script in a new terminal of the thread's layout there, and opens
     /// its page once the port answers (when the port is known).
     func start(_ server: DevServer) async {
+        guard !closed else { return }
         guard isServed, let client = host?.connectedClient else {
             notice = "\(hostName) is not connected. Reconnect and try again."
             return
@@ -248,13 +249,14 @@ final class BrowserPage {
 
     /// Opens `url` once its port answers on the host, tried every half second for 90 seconds.
     func wait(for url: URL) {
+        guard !closed else { return }
         guard let port = BrowserTunnelTarget.port(of: url) else {
             open(url)
             return
         }
         waitTask?.cancel()
         // The port is forwarded first, so it answers by the way the page will go.
-        if let refusal = ports.forward(url) {
+        if let refusal = ports.forward(url, tab: id) {
             notice = refusal.message(hostName: hostName, here: Self.here)
             return
         }
@@ -285,25 +287,33 @@ final class BrowserPage {
 
     // MARK: The web view
 
-    private func makeWebView() -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        // Nothing of the page is kept on the device or shared with another thread's page.
-        configuration.websiteDataStore = .nonPersistent()
+    fileprivate func makeWebView(popup: WKWebViewConfiguration? = nil) -> WKWebView {
+        let configuration = popup ?? WKWebViewConfiguration()
+        if popup == nil { configuration.websiteDataStore = tabs?.websiteDataStore ?? .nonPersistent() }
         configuration.allowsInlineMediaPlayback = true
+        // WebKit's popup configuration can share its opener's controller. Keep handlers tab-local.
+        let content = WKUserContentController()
+        configuration.userContentController = content
         let delegate = Delegate(page: self)
-        let content = configuration.userContentController
         // The page's world answers the picker's source question (a React dev build's JSX location); the picker runs in ours.
         content.addUserScript(WKUserScript(source: BrowserScripts.pageShim, injectionTime: .atDocumentStart, forMainFrameOnly: true,
                                            in: .page))
         content.addUserScript(WKUserScript(source: BrowserScripts.picker, injectionTime: .atDocumentEnd, forMainFrameOnly: true,
                                            in: Self.world))
         content.add(WeakHandler(delegate), contentWorld: Self.world, name: BrowserScripts.pickerHandler)
+        content.add(WeakHandler(delegate), contentWorld: .page, name: BrowserScripts.consoleHandler)
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.allowsBackForwardNavigationGestures = true
         view.navigationDelegate = delegate
         view.uiDelegate = delegate
         self.delegate = delegate
         observations = [
+            view.observe(\.title, options: [.new]) { [weak self] view, _ in
+                MainActor.assumeIsolated {
+                    let title = String((view.title ?? "").prefix(200)).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if self?.title != title { self?.title = title }
+                }
+            },
             view.observe(\.url, options: [.new]) { [weak self] view, _ in
                 MainActor.assumeIsolated { if let url = view.url, self?.url != url { self?.url = url } }
             },
@@ -324,14 +334,18 @@ final class BrowserPage {
     /// Where the page may go on its own: a link, a redirect, a script, an iframe. A port of the host
     /// is forwarded before it goes (refused past the page's eight, or one another program holds).
     fileprivate func decide(_ action: WKNavigationAction) -> WKNavigationActionPolicy {
+        guard !closed else { return .cancel }
         guard let url = action.request.url else { return .allow }
         if action.shouldPerformDownload { return .cancel }
         let isMain = action.targetFrame?.isMainFrame ?? true
         if isMain, !Self.pageSchemes.contains(url.scheme?.lowercased() ?? "") { return .cancel }
-        if let refusal = ports.forward(url) {
+        // WebKit calls the UI delegate for this request; the destination tab will claim the port.
+        if action.targetFrame == nil { return .allow }
+        if let refusal = ports.forward(url, tab: id) {
             notice = refusal.message(hostName: hostName, here: Self.here)
             return .cancel
         }
+        if isMain, self.url == nil { self.url = url }
         return .allow
     }
 
@@ -347,6 +361,18 @@ final class BrowserPage {
             : "\(shown) didn’t load: \(hostName) is not connected."
     }
 
+    fileprivate func popup(_ action: WKNavigationAction, configuration: WKWebViewConfiguration) -> WKWebView? {
+        guard !closed, action.targetFrame == nil, !action.shouldPerformDownload,
+              let url = action.request.url, Self.pageSchemes.contains(url.scheme?.lowercased() ?? ""),
+              let tabs, tabs.selectedPage === self else { return nil }
+        if allowsPopupTabs, let page = tabs.add(source: .link) {
+            tabs.notice = .popup
+            return page.makeWebView(popup: configuration)
+        }
+        open(action.request)
+        return nil
+    }
+
     @MainActor
     private final class Delegate: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         weak var page: BrowserPage?
@@ -359,15 +385,20 @@ final class BrowserPage {
         }
 
         func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            page?.console.clear()
             page?.notice = nil
             // A new document: nothing is picked or being picked in it.
             if page?.selecting == true || page?.picked != nil { page?.setSelecting(false) }
         }
 
-        /// Only the main frame's picker, in Shepherd's world, posts here.
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.frameInfo.isMainFrame else { return }
-            page?.picker(message.body)
+            // Page-world input is untrusted display text. Only the isolated world can pick elements.
+            if message.name == BrowserScripts.consoleHandler, message.world == .page {
+                page?.console.append(message.body)
+            } else if message.name == BrowserScripts.pickerHandler, message.world == BrowserPage.world {
+                page?.picker(message.body)
+            }
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -382,27 +413,169 @@ final class BrowserPage {
             webView.reload()
         }
 
-        /// A link that opens a new window opens in this page instead: a thread has one page here.
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                      for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-            if navigationAction.targetFrame == nil { webView.load(navigationAction.request) }
-            return nil
+            page?.popup(navigationAction, configuration: configuration)
+        }
+
+        func webViewDidClose(_ webView: WKWebView) {
+            guard let page, page.source == .link else { return }
+            page.tabs?.close(page.id)
         }
     }
 }
 
+/// The thread keeps these tabs across side-pane switches and folds, until its browser is evicted.
+@MainActor @Observable
+final class MobileBrowserTabs {
+    enum Notice { case popup, cap }
+
+    let ref: AgentRef
+    weak var host: MobileHost?
+    let ports: BrowserPagePorts
+    // Preserve the existing isolation between threads, while sharing sign-ins within this one.
+    @ObservationIgnored lazy var websiteDataStore = WKWebsiteDataStore.nonPersistent()
+    private(set) var selection: BrowserTabSelection {
+        didSet { if selection.selected != oldValue.selected, notice == .popup { notice = nil } }
+    }
+    private var pages: [UUID: BrowserPage] = [:]
+    var notice: Notice?
+    #if DEBUG
+    var fixtureListOpen = false
+    #endif
+    @ObservationIgnored private var resumeTask: Task<Void, Never>?
+
+    init(ref: AgentRef, host: MobileHost, forwarder: BrowserPortForwarder) {
+        self.ref = ref
+        self.host = host
+        let ports = BrowserPagePorts(forwarder: forwarder,
+                                     owner: .init(id: "\(ref.host.uuidString)/\(ref.agent.rawValue)", hostName: host.name),
+                                     agent: ref.agent, slot: host.tunnelSlot)
+        self.ports = ports
+        selection = BrowserTabSelection(first: ports.firstTab)
+        pages[ports.firstTab] = BrowserPage(id: ports.firstTab, source: .user, tabs: self, autoOpenRunning: true)
+    }
+
+    var selectedPage: BrowserPage? { pages[selection.selected] }
+    var items: [SHBrowserTabItem] { selection.ids.compactMap { pages[$0]?.tabItem } }
+
+    @discardableResult
+    func add(source: SHBrowserTabSource = .user) -> BrowserPage? {
+        guard selectedPage != nil else { return nil }
+        let id = UUID()
+        guard selection.add(id) else { notice = .cap; return nil }
+        return makePage(id, source: source)
+    }
+
+    func select(_ id: UUID) { selection.select(id) }
+
+    func close(_ id: UUID) {
+        guard let page = pages.removeValue(forKey: id) else { return }
+        page.close()
+        selection.close(id, replacement: UUID())
+        if selectedPage == nil { _ = makePage(selection.selected, source: .user) }
+        if notice == .cap { notice = nil }
+    }
+
+    func closeOthers() {
+        for id in selection.ids where id != selection.selected { pages.removeValue(forKey: id)?.close() }
+        selection.closeOthers()
+        notice = nil
+    }
+
+    private func makePage(_ id: UUID, source: SHBrowserTabSource) -> BrowserPage {
+        ports.openTab(id)
+        let page = BrowserPage(id: id, source: source, tabs: self)
+        pages[id] = page
+        return page
+    }
+
+    func resume() {
+        guard host?.supports(RemoteProtocol.browserTunnelCapability) == true else { return }
+        resumeTask?.cancel()
+        report(ports.resume())
+        guard !ports.pending.isEmpty else { return }
+        resumeTask = Task { [weak self] in
+            guard let self else { return }
+            let refused = await ports.finishResume()
+            if !Task.isCancelled { report(refused) }
+        }
+    }
+
+    func suspend() {
+        for page in pages.values { page.stopWaiting() }
+        resumeTask?.cancel()
+        ports.suspend()
+    }
+
+    func closeAll() {
+        resumeTask?.cancel()
+        ports.close()
+        for page in pages.values { page.close() }
+        pages.removeAll()
+    }
+
+    private func report(_ refused: [BrowserPortForwarder.Refusal]) {
+        for page in pages.values {
+            guard let url = page.url,
+                  let failure = refused.first(where: { $0.port == BrowserTunnelTarget.port(of: url) }) else { continue }
+            page.notice = failure.message(hostName: page.hostName, here: BrowserPage.here)
+        }
+    }
+}
+
+/// Web content can forge its own log lines. Keep the payload bounded and render it only as text.
+@MainActor @Observable
+final class MobileBrowserConsole {
+    private static let maxLines = 500
+    private static let maxTextLength = 2000
+    private(set) var lines: [SHConsoleLine] = []
+    private(set) var warnings = 0
+    var network = 0
+    @ObservationIgnored private var nextID = 0
+
+    func append(_ body: Any) {
+        guard let batch = (body as? [String: Any])?["lines"] as? [Any] else { return }
+        let clock = Calendar.current.dateComponents([.hour, .minute, .second], from: Date())
+        let time = String(format: "%02d:%02d:%02d", clock.hour ?? 0, clock.minute ?? 0, clock.second ?? 0)
+        var newLines: [SHConsoleLine] = []
+        var newWarnings = 0
+        for entry in batch.suffix(Self.maxLines) {
+            guard let line = entry as? [String: Any], let text = line["text"] as? String else { continue }
+            let level = line["level"] as? String
+            let warning = level == "warning" || level == "error"
+            nextID += 1
+            if warning { newWarnings += 1 }
+            newLines.append(SHConsoleLine(id: nextID, time: time, text: String(text.prefix(Self.maxTextLength)),
+                                          level: warning ? .warning : .log))
+        }
+        guard !newLines.isEmpty else { return }
+        lines = Array((lines + newLines).suffix(Self.maxLines))
+        if newWarnings > 0 { warnings += newWarnings }
+    }
+
+    func clear() {
+        lines.removeAll()
+        warnings = 0
+        network = 0
+    }
+}
+
 /// The page's web view, wherever the page is shown (the side pane, or pushed full screen): one web
-/// view a thread, moved into whichever container is in a window, so it never reloads.
+/// view per tab, moved into whichever container is in a window, so it never reloads.
 struct BrowserWebView: UIViewRepresentable {
     let page: BrowserPage
+    let allowsPopupTabs: Bool
 
     func makeUIView(context: Context) -> Container {
         let container = Container()
+        page.allowsPopupTabs = allowsPopupTabs
         container.webView = page.webView
         return container
     }
 
     func updateUIView(_ container: Container, context: Context) {
+        page.allowsPopupTabs = allowsPopupTabs
         container.webView = page.webView
     }
 
