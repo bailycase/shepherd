@@ -57,7 +57,7 @@ extension PreviewTests {
             SHSidebar(topBar: SHSidebarTopBar(search: {}, hide: {})) {
                 ForgeSidebarPanel(vm: vm)
             } footer: {
-                SHSidebarFooter(name: "Baily", detail: "This Mac · build-01", settingsShortcut: "⌘,") {}
+                SHSidebarFooter(name: "Alex", detail: "This Mac · build-01", settingsShortcut: "⌘,") {}
             }
             .frame(width: sidebarWidth)
             SHHairline(.vertical)
