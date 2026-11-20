@@ -22,6 +22,7 @@ REFERENCE_DOCS = ["build-and-run", "environment", "testing", "remote-protocol", 
                   "releases", "gotchas", "pi-engine", "context-budget"]
 
 VALIDATION_PLAN = "docs/plans/validation-tools.md"
+PARITY_PLAN = "docs/plans/platform-parity.md"
 
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
@@ -110,6 +111,7 @@ class LinkTests(unittest.TestCase):
         files += [ROOT / "docs" / f"{n}.md" for n in REFERENCE_DOCS]
         files.append(ROOT / "docs" / "design" / "boards" / "README.md")
         files.append(ROOT / VALIDATION_PLAN)
+        files.append(ROOT / PARITY_PLAN)
         problems = []
         for f in files:
             problems += broken_links(f)
@@ -117,11 +119,11 @@ class LinkTests(unittest.TestCase):
 
     def test_docs_holds_only_the_kept_docs(self):
         docs = ROOT / "docs"
-        allowed_nested = {docs / "design" / "boards" / "README.md", ROOT / VALIDATION_PLAN}
+        allowed_nested = {docs / "design" / "boards" / "README.md", ROOT / VALIDATION_PLAN, ROOT / PARITY_PLAN}
         extra = sorted(str(p.relative_to(docs)) for p in docs.rglob("*.md")
                        if p.parent == docs and p.stem not in REFERENCE_DOCS
                        or p.parent != docs and p not in allowed_nested)
-        self.assertEqual(extra, [], "docs/ is only for kept reference docs, saved boards, and the validation plan")
+        self.assertEqual(extra, [], "docs/ is only for kept reference docs, saved boards, and the plans")
 
 
 if __name__ == "__main__":
