@@ -935,6 +935,23 @@
     },
     {
       "fields": {
+        "connection.after": "state",
+        "files.events": [],
+        "process.started": false,
+        "reply.code": "unsupported",
+        "reply.id": 12,
+        "reply.message": "The host does not take this request.",
+        "reply.type": "error",
+        "request.id": 12,
+        "request.request.change._0.fleetThreadCap._0": 4,
+        "request.type": "hostSettings",
+        "state.json.changed": [],
+        "stateFetch.changed": []
+      },
+      "step": "hostSettings/change-capability-not-offered"
+    },
+    {
+      "fields": {
         "files.events": [],
         "process.started": false,
         "reply.fleetEnabled": true,

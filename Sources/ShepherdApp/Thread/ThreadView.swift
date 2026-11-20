@@ -467,8 +467,10 @@ struct ThreadView: View {
             // The window's own height again, whatever the drag widened it to.
             if eagerCover != liveResizeGate.cover, liveResizeGate.cover > 0 { eagerCover = liveResizeGate.cover }
             guard active else { return }
-            let live = liveEagerCount(userOrigins)
-            if live < restingCount(userOrigins, rows: listedRows(userOrigins)) { eagerReturning = live }
+            // Always a write, even when the tail has nothing to grow back to: the history stays out while this gate says the drag has not
+            // ended (`parksHistory`), a reference nothing observes, so only a change of state draws the thread once it is cleared.
+            // `returnEagerTail` ends it at once for a tail that is at its size.
+            eagerReturning = liveEagerCount(userOrigins)
         }
         .task(id: eagerReturning != nil) {
             if eagerReturning != nil { await returnEagerTail() }

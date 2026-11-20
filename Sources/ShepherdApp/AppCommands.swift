@@ -1,5 +1,6 @@
 import SwiftUI
 import ShepherdCore
+import ShepherdRemote
 import ShepherdUI
 
 /// What the menu bar shows, as narrow cached values. Each menu reads only its own fields, and a
@@ -21,6 +22,8 @@ final class MenuState {
         var rightPaneOpen = false
         var hasMachineAgents = false
         var hasNextNeedingYou = false
+        /// Threads Stop All Working Threads would stop.
+        var workingThreadCount = 0
         var reviewQueueCount = 0
         /// The focused pane is a terminal (or review) ⌘W can close.
         var canCloseTerminal = false
@@ -51,6 +54,10 @@ final class MenuState {
     private(set) var rightPaneOpen = false
     private(set) var hasMachineAgents = false
     private(set) var hasNextNeedingYou = false
+    private(set) var workingThreadCount = 0
+    /// The Agent menu's Stop All Working Threads item.
+    var stopAllTitle: String { StopAllWorking.menuTitle(count: workingThreadCount) }
+    var canStopAll: Bool { workingThreadCount > 0 }
     private(set) var reviewQueueCount = 0
     private(set) var canCloseTerminal = false
     private(set) var selectedLocalAgent: AgentID?
@@ -71,6 +78,7 @@ final class MenuState {
         if rightPaneOpen != snapshot.rightPaneOpen { rightPaneOpen = snapshot.rightPaneOpen }
         if hasMachineAgents != snapshot.hasMachineAgents { hasMachineAgents = snapshot.hasMachineAgents }
         if hasNextNeedingYou != snapshot.hasNextNeedingYou { hasNextNeedingYou = snapshot.hasNextNeedingYou }
+        if workingThreadCount != snapshot.workingThreadCount { workingThreadCount = snapshot.workingThreadCount }
         if reviewQueueCount != snapshot.reviewQueueCount { reviewQueueCount = snapshot.reviewQueueCount }
         if canCloseTerminal != snapshot.canCloseTerminal { canCloseTerminal = snapshot.canCloseTerminal }
         if selectedLocalAgent != snapshot.selectedLocalAgent { selectedLocalAgent = snapshot.selectedLocalAgent }
@@ -98,6 +106,7 @@ extension MenuState.Snapshot {
             rightPaneOpen: vm.isRightPaneOpen,
             hasMachineAgents: !vm.sidebarWalkRows.isEmpty,
             hasNextNeedingYou: queues.nextNeedingYou(after: vm.selectedSidebarRow) != nil,
+            workingThreadCount: vm.workingThreads.count,
             reviewQueueCount: queues.review.count,
             canCloseTerminal: vm.canCloseTerminal,
             selectedLocalAgent: local?.id,
@@ -355,6 +364,8 @@ struct AgentCommands: Commands {
                 Button("Stop") { later { vm?.stopVisibleAgent() } }
                     .keyboardShortcut(keys.shortcut(.stopAgent))
                     .disabled(!menu.hasVisibleThread)
+                Button(menu.stopAllTitle) { later { vm?.requestStopAll() } }
+                    .disabled(!menu.canStopAll)
                 Button("Choose Model…") { later { vm?.sendThreadCommand(.modelPicker) } }
                     .keyboardShortcut(keys.shortcut(.modelPicker))
                     .disabled(!menu.hasVisibleThread)

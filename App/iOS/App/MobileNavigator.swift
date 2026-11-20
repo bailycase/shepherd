@@ -20,6 +20,9 @@ final class MobileNavigator {
     /// Set by the root from the horizontal size class.
     var layout: Layout = .phone
 
+    /// What this window's Stop all working threads asks and has done (`StopAllWorkingMenu`).
+    let stopAll = StopAllWorkingModel()
+
     // iPhone
     var tab: Tab = .home {
         didSet { if layout == .phone, tab != oldValue { queuedReview = nil } }

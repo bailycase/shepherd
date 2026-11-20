@@ -213,7 +213,7 @@ enum FixtureData {
 /// Every screen, by track. A track edits only its own file's list.
 @MainActor enum FixtureCatalog {
     static var all: [FixtureScreen] {
-        home + thread + context + newThread + subagents + review + changes + commit + search + settings + hooks + automations + automationFlow + windows + terminal + clientState + duo + fleetScreens
+        home + thread + context + newThread + subagents + review + changes + commit + search + settings + hooks + apps + automations + automationFlow + windows + terminal + clientState + duo + fleetScreens
             + designs + designPad + designPadMarkup + designPages + browser + files + ProjectFixtures.screens + hostConfig + freshness + forge + tailFrames + tail + tailFollowUps + newTurn + historyRead + composerField + subThreads + supervision + startProblems + composerImages + spaceMCPSignIn
     }
 

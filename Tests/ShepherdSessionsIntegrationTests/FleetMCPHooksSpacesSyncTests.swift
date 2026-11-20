@@ -153,10 +153,11 @@ struct FleetMCPHooksSpacesSyncTests {
         try b.server.hooks.settingsStore.setOn(there.hash, false)
         try await eventually("MacBook Pro's hook to be off") { a.hooks().first?.on == false }
 
-        // Removing it removes it there, and the off switch with it.
+        // The deletion syncs, but each Mac keeps its off hash for readers still holding the hook.
         try writer.delete(try #require(a.hooks().first))
-        // The writer takes the hook out of the file first and forgets its off switch in a second write.
-        try await eventually("Mac mini to lose the hook and its off switch") { b.hooks().isEmpty && (try? b.server.hooks.settingsStore.read())?.off.isEmpty == true }
+        try await eventually("Mac mini to lose the hook") { b.hooks().isEmpty }
+        #expect(try a.server.hooks.settingsStore.read().off == [hash])
+        #expect(try b.server.hooks.settingsStore.read().off == [there.hash])
     }
 
     @Test func theSourcesSwitchesSyncAndHooksOfOtherToolsDoNot() async throws {
