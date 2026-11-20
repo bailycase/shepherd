@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
@@ -16,6 +17,9 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings-app", hosts: AppsFixtureData.hosts(), routes: [.settings(.apps), app("space-acme-web/Web app")], tab: .settings),
             FixtureScreen(name: "settings-app-exited", hosts: AppsFixtureData.hosts(), routes: [.settings(.apps), app("space-acme-web/Storybook")], tab: .settings),
             FixtureScreen(name: "settings-app-idle", hosts: AppsFixtureData.hosts(), routes: [.settings(.apps), app("space-acme-web/iOS app")], tab: .settings),
+            // A run whose app was taken out of its file: its Stop is off, and says why.
+            FixtureScreen(name: "settings-app-removed", hosts: AppsFixtureData.hosts(), routes: [.settings(.apps), app("space-acme-api/Legacy worker")], tab: .settings,
+                          prepare: { _ in await AppsFixtureData.removed() }),
             // A Mac too old for apps.v2, and one that is offline, beside one that serves them.
             FixtureScreen(name: "settings-apps-hosts", hosts: AppsFixtureData.hosts(withOthers: true), routes: [.settings(.apps)], tab: .settings),
             FixtureScreen(name: "settings-apps-hosts-lower", hosts: AppsFixtureData.hosts(withOthers: true), routes: [.settings(.apps)], tab: .settings,
@@ -42,7 +46,7 @@ enum AppsFixtureData {
     ]
     static let webApps = [
         AppDefinition(name: "Web app", command: "pnpm dev", folder: "apps/web", opens: .browser, address: "http://localhost:3000", quickAction: true),
-        AppDefinition(name: "Storybook", command: "pnpm storybook", opens: .browser, address: "http://localhost:6006", quickAction: true),
+        AppDefinition(name: "Storybook", command: "pnpm storybook --ci", opens: .browser, address: "http://localhost:6006", quickAction: true),
         AppDefinition(name: "iOS app", command: "xcodebuild -scheme Acme && xcrun simctl launch booted com.acme.app", opens: .window, quickAction: true),
     ]
     static let apiApps = [
@@ -60,6 +64,9 @@ enum AppsFixtureData {
                              run: RemoteAppRun(status: .exited(code: 1), command: "pnpm storybook", directory: "~/code/acme-web", revision: 6)),
             RemoteAppProcess(spaceID: api.id, name: "API",
                              run: RemoteAppRun(status: .failed("Its folder doesn’t exist."), command: "go run ./cmd/api", directory: "~/code/acme-api")),
+            // Running, but taken out of its file since: the host can't stop it.
+            RemoteAppProcess(spaceID: api.id, name: "Legacy worker",
+                             run: RemoteAppRun(status: .running, command: "go run ./cmd/legacy", directory: "~/code/acme-api", revision: 2)),
         ]
     }
 
@@ -67,6 +74,7 @@ enum AppsFixtureData {
         "acme-web/Web app": ["$ pnpm dev", "", "> acme-web@0.4.0 dev", "> next dev", "", "  ▲ Next.js 15.1", "  - Local: http://localhost:3000", "",
                              " ✓ Ready in 1.2s", " GET /refunds 200 in 84ms", " GET /api/refunds 200 in 31ms"],
         "acme-web/Storybook": ["$ pnpm storybook", "storybook v8.4", "Error: Port 6006 is already in use", "    at listen (server.js:41:11)", "pnpm: exited with code 1"],
+        "acme-api/Legacy worker": ["$ go run ./cmd/legacy", "listening on :9090"],
         "mac/Postgres": ["LOG:  database system is ready to accept connections"],
     ]
 
@@ -128,6 +136,14 @@ enum AppsFixtureData {
         default: []
         }
         return theirs.map { ($0, false) } + own.map { ($0, true) }
+    }
+
+    /// The Stop of a run whose app was removed is off: the host would refuse it, so none is sent.
+    @MainActor static func removed() async {
+        SidebarAutomationsCheck.enableAccessibility()
+        await FixtureCheck.wait("the Legacy worker's button", seconds: 12) { TriggerFlowCheck.element("Stop Legacy worker", prefix: false) != nil }
+        let off = TriggerFlowCheck.element("Stop Legacy worker", prefix: false)?.accessibilityTraits.contains(.notEnabled) == true
+        FixtureCheck.report("FIXTURE CHECK \(off ? "ok" : "FAILED"): Stop is off for a run whose app was removed")
     }
 
     /// Run, Stop and Restart pressed through the accessibility tree as VoiceOver presses them: what the host

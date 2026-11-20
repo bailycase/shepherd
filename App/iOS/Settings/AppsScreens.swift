@@ -19,7 +19,7 @@ struct AppsScreen: View {
         let store = SettingsStore.of(hosts)
         let apps = store.apps
         ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
+            LazyVStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 Text("Things you run while you work, such as a dev server or Storybook, and what each is doing on its Mac. Add and edit them in Settings ▸ Apps on the Mac.")
                     .shText(.caption)
                     .foregroundStyle(Color.sh.textSecondary)
@@ -75,15 +75,16 @@ private struct AppsHostSections: View {
             ForEach(page.groups) { group in
                 VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
                     SHListHeader(group.title) { if named && group.id != "mac" { SHHostBadge(host.name) } }
-                    SHListCard {
-                        if group.rows.isEmpty {
+                    if group.rows.isEmpty {
+                        SHListCard {
                             Text("No apps yet")
                                 .font(.sh(.ui))
                                 .foregroundStyle(Color.sh.textTertiary)
                                 .padding(.horizontal, SH.Space.l)
                                 .frame(maxWidth: .infinity, minHeight: SHListMetrics.rowHeight, alignment: .leading)
                         }
-                        ForEach(group.rows) { row in
+                    } else {
+                        SHLazyListCard(group.rows) { row in
                             AppRow(row: row, busy: apps.isBusy(row, on: host)) { open(row) } act: {
                                 Task { await apps.perform(row, on: host) }
                             }
@@ -114,6 +115,8 @@ private struct AppRow: View {
                     }
                     Text(row.subtitle).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
                     if let status = row.status, let tone = row.tone { AppStatus(status, tone: tone) }
+                    if let command = row.restartCommand { AppNote("Restart runs \(command)", mono: true) }
+                    if let blocked = row.actionBlocked { AppNote(blocked) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, SH.Space.m)
@@ -138,8 +141,9 @@ private struct AppActionButton: View {
     var body: some View {
         Button(row.actionTitle, action: act)
             .buttonStyle(.sh(.secondary, size: .m))
-            .disabled(busy || row.stopping || (row.action == .run && !row.defined))
+            .disabled(busy || row.stopping || row.actionBlocked != nil)
             .accessibilityLabel("\(row.actionTitle) \(row.name)")
+            .accessibilityHint(row.actionBlocked ?? "")
     }
 }
 
@@ -159,6 +163,25 @@ private struct AppStatus: View {
             Text(words).font(.sh(.caption)).foregroundStyle(state.textColor).lineLimit(1)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// A line under an app's state: what its button will run, or why it does nothing.
+private struct AppNote: View {
+    let text: String
+    let mono: Bool
+
+    init(_ text: String, mono: Bool = false) {
+        self.text = text
+        self.mono = mono
+    }
+
+    var body: some View {
+        Text(text)
+            .font(mono ? .sh(.mono) : .sh(.caption))
+            .foregroundStyle(Color.sh.textTertiary)
+            .lineLimit(mono ? 1 : 2)
+            .truncationMode(.middle)
     }
 }
 
@@ -262,6 +285,7 @@ struct AppScreen: View {
                 Spacer(minLength: SH.Space.m)
                 AppActionButton(row: row, busy: apps.isBusy(row, on: host)) { Task { await apps.perform(row, on: host) } }
             }
+            if let blocked = row.actionBlocked { SettingsFootnote(blocked) }
             if let problem = apps.problems[host.id] { SettingsFootnote(problem, tone: .failed) }
         }
         .padding(.horizontal, MobileLayout.gutter)
@@ -275,6 +299,7 @@ struct AppScreen: View {
         SHListCard {
             AppFact("Opens", row.place)
             AppFact("Command", row.command.isEmpty ? "None" : row.command, mono: !row.command.isEmpty)
+            if let command = row.restartCommand { AppFact("Restart runs", command, mono: true) }
             if let directory = row.run?.directory { AppFact("Folder", directory, mono: true) }
             AppFact("Quick action", row.quickAction ? "On" : "Off")
             AppFact("Agents can start it", row.agents ? "On" : "Off")

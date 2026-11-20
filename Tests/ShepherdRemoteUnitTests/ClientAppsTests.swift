@@ -111,12 +111,46 @@ struct ClientAppsTests {
         #expect(row.status == words)
     }
 
-    @Test func aRunWhoseAppWasRemovedStillShowsAndCanBeStoppedButNotRun() {
+    @Test func aRunWhoseAppWasRemovedStillShowsButCantBeStoppedOrRunBecauseTheHostRefusesBoth() {
         let gone = RemoteAppProcess(spaceID: Self.web, name: "Old", run: RemoteAppRun(status: .running, command: "make old"))
         let page = AppsPresentation.page(host: "studio-mac", own: [], spaces: [SpaceApps(space: Self.web, name: "acme-web", apps: [])], runs: [gone])
         let row = page.row("acme-web/Old")
         #expect(row?.defined == false && row?.actionTitle == "Stop" && row?.subtitle == "Terminal · make old")
+        #expect(row?.actionBlocked == "Removed from its file, so it can't be stopped from here.")
         #expect(page.groups[0].rows.isEmpty, "the host's own group is shown empty")
+        let ended = AppsPresentation.page(host: "studio-mac", own: [], spaces: [SpaceApps(space: Self.web, name: "acme-web", apps: [])],
+                                          runs: [RemoteAppProcess(spaceID: Self.web, name: "Old", run: RemoteAppRun(status: .exited(code: 1), command: "make old"))])
+        #expect(ended.row("acme-web/Old")?.actionTitle == "Restart" && ended.row("acme-web/Old")?.actionBlocked == nil, "the host restarts from the run, not the file")
+    }
+
+    @Test func stoppingARunWhoseAppWasRemovedSendsNothing() async throws {
+        let gone = RemoteAppProcess(spaceID: Self.web, name: "Old", run: RemoteAppRun(status: .running, command: "make old"))
+        let fake = Self.fake(runs: [gone])
+        let model = ClientApps()
+        let host = Self.host(fake)
+        await model.load(host, spaces: Self.spaces)
+        let row = try #require(model.state(of: host).page?.row("acme-web/Old"))
+        #expect(row.actionBlocked != nil)
+        let before = fake.requests.count
+        await model.perform(row, on: host)
+        #expect(fake.requests.count == before, "no stop request goes out")
+        #expect(model.problems[host.id] == nil)
+    }
+
+    @Test func restartShowsTheCommandItRunsWhenTheDefinitionChangedSinceTheRun() throws {
+        let edited = AppDefinition(name: "Storybook", command: "pnpm storybook --ci")
+        func row(_ run: RemoteAppRun) throws -> AppRowValue {
+            let page = AppsPresentation.page(host: "studio-mac", own: [], spaces: [SpaceApps(space: Self.web, name: "acme-web", apps: [edited])],
+                                             runs: [RemoteAppProcess(spaceID: Self.web, name: "Storybook", run: run)])
+            return try #require(page.row("acme-web/Storybook"))
+        }
+        let ended = try row(RemoteAppRun(status: .exited(code: 1), command: "pnpm storybook"))
+        #expect(ended.actionTitle == "Restart")
+        #expect(ended.subtitle == "Terminal · pnpm storybook --ci", "the definition is the new one")
+        #expect(ended.restartCommand == "pnpm storybook", "Restart runs the previous run's")
+        #expect(try row(RemoteAppRun(status: .exited(code: 1), command: "pnpm storybook --ci")).restartCommand == nil, "unchanged says nothing more")
+        #expect(try row(RemoteAppRun(status: .running, command: "pnpm storybook")).restartCommand == nil, "only an ended run restarts")
+        #expect(try row(RemoteAppRun(status: .exited(code: 1))).restartCommand == nil, "no command recorded")
     }
 
     @Test func runStopAndRestartGoToTheHostWithTheSpaceOrNoneForTheHostsOwn() async throws {

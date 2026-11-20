@@ -44,6 +44,22 @@ public struct AppRowValue: Equatable, Identifiable, Sendable {
         case .restart: "Restart"
         }
     }
+    /// Why its button does nothing: the host acts on an app only while its file still has it, so a run whose
+    /// app was removed can be neither stopped nor run from here. Restart reads the run, so it stays.
+    public var actionBlocked: String? {
+        guard !defined else { return nil }
+        switch action {
+        case .stop: return "Removed from its file, so it can't be stopped from here."
+        case .run: return "Removed from its file, so it can't be run from here."
+        case .restart: return nil
+        }
+    }
+    /// What Restart will run when that isn't the definition's command: the host restarts with the command
+    /// the last run started with, so an app edited since still restarts as it was.
+    public var restartCommand: String? {
+        guard action == .restart, let ran = run?.command, !ran.isEmpty, ran != command else { return nil }
+        return ran
+    }
     /// "Running · :3000", "Exited (code 1)", or why it couldn't start; nil before it first runs.
     public var status: String? { run.map(AppsPresentation.words) }
     /// The dot's tone; nil before it first runs.
@@ -257,7 +273,7 @@ public final class ClientApps {
 
     /// Runs, stops or restarts one app, then reads the runs. A refusal is the page's problem, under the app's name.
     public func perform(_ row: AppRowValue, on host: SettingsHost) async {
-        guard let client = host.client as? AppsClient, host.serves(RemoteProtocol.appsV2Capability) else { return }
+        guard let client = host.client as? AppsClient, host.serves(RemoteProtocol.appsV2Capability), row.actionBlocked == nil else { return }
         let key = host.id.uuidString + "/" + row.id
         guard busy.insert(key).inserted else { return }
         defer { busy.remove(key) }
