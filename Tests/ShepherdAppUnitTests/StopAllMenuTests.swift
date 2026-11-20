@@ -1,11 +1,12 @@
 import Testing
 @testable import ShepherdApp
 
-/// The Agent menu's Stop All Working Threads item reads its title and enablement from `MenuState`.
-@Suite("Stop all menu item")
+/// Checks the menu state (title and enablement) behind the Agent menu's Stop All Working Threads item.
+/// It does not check that the menu registers the item.
+@Suite("Stop all menu state")
 @MainActor
 struct StopAllMenuTests {
-    @Test func theItemShowsTheCountAndIsDisabledWhenNothingIsWorking() {
+    @Test func menuStateHasTheCountAndIsDisabledWhenNothingIsWorking() {
         let menu = MenuState()
         #expect(menu.stopAllTitle == "Stop All Working Threads…" && !menu.canStopAll)
         menu.apply(MenuState.Snapshot(workingThreadCount: 3))
