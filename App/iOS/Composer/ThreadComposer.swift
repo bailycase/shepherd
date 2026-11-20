@@ -355,7 +355,7 @@ struct ThreadComposer: View {
             SHComposerActionButton(.send, enabled: enabled) { Self.send(NativeSendChoice.wait.delivery, store: store, state: state) }
                 .background {
                     Button("Steer now · ⌘↩") { Self.send(NativeSendChoice.now.delivery, store: store, state: state) }
-                        .keyboardShortcut(.return, modifiers: .command)
+                        .keyboardShortcut(MobileShortcut.alternateSend.shortcut)
                         .disabled(!enabled)
                         .hidden()
                         .accessibilityHidden(true)
