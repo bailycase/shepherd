@@ -79,6 +79,26 @@ public enum ComposerImageInput {
         return plan
     }
 
+    /// The attachment slots a batch may still fill, shared by the callbacks that load it. Only an item
+    /// confirmed to be an image takes a slot: a PDF offered by URL, found out only once its file is
+    /// looked at, must not use up the slot of an image after it.
+    public final class Slots: @unchecked Sendable {
+        private let lock = NSLock()
+        private var remaining: Int
+
+        public init(room: Int) { remaining = room }
+
+        /// Takes a slot for `item` when it is an image and one is left.
+        public func claim(_ item: Item) -> Bool {
+            guard imageType(of: item) != nil else { return false }
+            lock.lock()
+            defer { lock.unlock() }
+            guard remaining > 0 else { return false }
+            remaining -= 1
+            return true
+        }
+    }
+
     /// The name an accepted item gets: the one it suggests, else "Image" with the type's extension.
     public static func name(_ suggested: String?, type: String, number: Int, of count: Int) -> String {
         if let suggested, !suggested.isEmpty { return suggested }

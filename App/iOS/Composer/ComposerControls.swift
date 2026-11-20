@@ -44,20 +44,27 @@ struct AttachButton: View {
             state.pendingImports += 1
             Task {
                 defer { state.pendingImports -= 1 }
+                state.attachmentError = nil
+                let pixels = MobileLayout.attachmentThumbnailPixels
+                var errors: [String] = []
                 var failures = 0
-                var loaded: [(data: Data, name: String)] = []
+                // One original at a time: each is resized off the main thread and released before the next loads.
                 for (index, item) in picked.enumerated() {
+                    guard state.room > 0 else {
+                        errors.append(NativeImagePreparation.Failure.full.description)
+                        break
+                    }
                     guard let data = try? await item.loadTransferable(type: Data.self) else {
                         failures += 1
                         continue
                     }
                     let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "png"
-                    loaded.append((data, picked.count == 1 ? "Photo.\(ext)" : "Photo \(index + 1).\(ext)"))
+                    let name = picked.count == 1 ? "Photo.\(ext)" : "Photo \(index + 1).\(ext)"
+                    let prepared = await Task.detached(priority: .userInitiated) { ComposerState.prepare(data, name: name, thumbnailPixels: pixels) }.value
+                    if let error = state.append(prepared) { errors.append(error) }
                 }
-                await state.attach(loaded)
-                if failures > 0 {
-                    state.attachmentError = "\(failures) image(s) couldn't be loaded. Select them again to retry."
-                }
+                if failures > 0 { errors.append("\(failures) image(s) couldn't be loaded. Select them again to retry.") }
+                if !errors.isEmpty { state.attachmentError = errors.joined(separator: " ") }
             }
         }
     }

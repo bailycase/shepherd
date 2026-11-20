@@ -65,6 +65,15 @@ struct ComposerImageInputTests {
         #expect(ComposerImageInput.plan([.init(fileName: "Makefile")], room: 4).accepted.isEmpty)
     }
 
+    /// With one slot left, a PDF offered by URL is found not to be an image only after it loads; it must not
+    /// have used the slot of the JPEG dropped after it.
+    @Test func aNonImageDoesNotTakeTheLastSlot() {
+        let slots = ComposerImageInput.Slots(room: 1)
+        #expect(!slots.claim(Self.item([.pdf], "report.pdf")))
+        #expect(slots.claim(Self.item([.jpeg], "photo.jpg")))
+        #expect(!slots.claim(Self.item([.png], "extra.png")))
+    }
+
     /// A drop can offer only the file's URL; the file's own type decides.
     @Test func aFileOfferedOnlyByURLIsTypedByTheFile() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("composer-\(UUID().uuidString)")

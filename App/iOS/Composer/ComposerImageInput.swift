@@ -15,6 +15,8 @@ extension ComposerState {
         var item: ComposerImageInput.Item
         /// Nil when the item was never loaded (not an image, or past the room) or could not be read.
         var prepared: Prepared?
+        /// An image the message had no room for, so it was left unread: not a failure.
+        var full = false
     }
 
     /// Dropped or pasted items. Every load starts here, before this returns: a drop's providers can
@@ -23,7 +25,7 @@ extension ComposerState {
     func attach(providers: [NSItemProvider]) {
         pendingImports += 1
         let pixels = MobileLayout.attachmentThumbnailPixels
-        var budget = room
+        let slots = ComposerImageInput.Slots(room: room)
         var outcomes: [AsyncStream<Outcome>] = []
         for (index, provider) in providers.enumerated() {
             let types = provider.registeredTypeIdentifiers
@@ -32,14 +34,19 @@ extension ComposerState {
             outcomes.append(stream)
             let imageType = ComposerImageInput.imageType(of: item)
             let byURL = imageType == nil && types.contains(UTType.fileURL.identifier)
-            guard imageType != nil || byURL, budget > 0 else {
-                // Not an image, or one the message has no room for: planned (and refused) without a load.
-                out.yield(Outcome(item: imageType == nil && !byURL ? item : .init(typeIdentifiers: [UTType.image.identifier], name: item.name)))
+            guard imageType != nil || byURL else {
+                // Not an image: planned (and refused) without a load.
+                out.yield(Outcome(item: item))
                 out.finish()
                 continue
             }
-            budget -= 1
             if let imageType {
+                guard slots.claim(item) else {
+                    // An image the message has no room for: refused without a load.
+                    out.yield(Outcome(item: item, full: true))
+                    out.finish()
+                    continue
+                }
                 let name = ComposerImageInput.name(item.name, type: imageType, number: index + 1, of: providers.count)
                 provider.loadFileRepresentation(forTypeIdentifier: imageType) { url, _ in
                     out.yield(Outcome(item: item, prepared: url.flatMap { Self.prepare(file: $0, name: name, pixels: pixels) }))
@@ -56,8 +63,14 @@ extension ComposerState {
                     let resolved = ComposerImageInput.Item(fileURL: url)
                     let scoped = url.startAccessingSecurityScopedResource()
                     defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                    let prepared = ComposerImageInput.imageType(of: resolved) == nil ? nil
-                        : Self.prepare(file: url, name: resolved.name ?? url.lastPathComponent, pixels: pixels)
+                    // Only a file that is an image takes a slot, so a PDF before it leaves the slot for the next.
+                    let isImage = ComposerImageInput.imageType(of: resolved) != nil
+                    guard !isImage || slots.claim(resolved) else {
+                        out.yield(Outcome(item: resolved, full: true))
+                        out.finish()
+                        return
+                    }
+                    let prepared = isImage ? Self.prepare(file: url, name: resolved.name ?? url.lastPathComponent, pixels: pixels) : nil
                     out.yield(Outcome(item: resolved, prepared: prepared))
                     out.finish()
                 }
@@ -65,17 +78,18 @@ extension ComposerState {
         }
         Task {
             var items: [ComposerImageInput.Item] = []
-            var prepared: [Prepared?] = []
+            var results: [Outcome] = []
             for stream in outcomes {
                 let outcome = await stream.first { _ in true }
-                items.append(outcome?.item ?? .init(typeIdentifiers: []))
-                prepared.append(outcome?.prepared)
+                results.append(outcome ?? Outcome(item: .init(typeIdentifiers: [])))
+                items.append(results[results.count - 1].item)
             }
             let plan = ComposerImageInput.plan(items, room: room)
             var errors: [String] = []
             var failures = 0
-            for accepted in plan.accepted {
-                if let image = prepared[accepted.index] {
+            // The slots were taken as the images were found, so what was prepared is what fits.
+            for outcome in results where ComposerImageInput.imageType(of: outcome.item) != nil && !outcome.full {
+                if let image = outcome.prepared {
                     if let error = append(image) { errors.append(error) }
                 } else {
                     failures += 1
