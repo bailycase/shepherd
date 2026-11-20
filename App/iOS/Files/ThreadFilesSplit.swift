@@ -302,7 +302,7 @@ struct ThreadFileEditor: View {
                         .disabled(!edit.isDirty)
                     Button { Task { await model.save() } } label: { SHButtonTitle("Save", chord: "⌘S") }
                         .buttonStyle(.sh(.secondary, size: .s))
-                        .keyboardShortcut("s", modifiers: .command)
+                        .keyboardShortcut(MobileShortcut.saveFile.shortcut)
                         .disabled(!edit.isDirty || edit.conflict != nil || model.saving)
                         .accessibilityLabel("Save")
                 }
