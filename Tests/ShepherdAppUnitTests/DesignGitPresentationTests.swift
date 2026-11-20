@@ -11,7 +11,7 @@ import ShepherdUI
 @Suite("Design Git presentation")
 struct DesignGitPresentationTests {
     private static let ours = DesignGitStatus.Commit(hash: "8f31c2a", subject: "Show absolute counts in the checkout funnel",
-                                                    author: "Baily", files: ["project/A.dc.html", "project/canvas.json"])
+                                                    author: "Alex", files: ["project/A.dc.html", "project/canvas.json"])
     private static let theirs = DesignGitStatus.Commit(hash: "c71d9e4", subject: "Clarify phone step labels", author: "Sam",
                                                       files: ["project/A-phone.dc.html"])
 

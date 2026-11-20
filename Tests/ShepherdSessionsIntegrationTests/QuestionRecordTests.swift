@@ -85,7 +85,7 @@ struct QuestionRecordTests {
         #expect(row.entryID == "q:\(dialog.id)")
         #expect(row.blocks.isEmpty, "older clients have nothing to draw")
         let record = try #require(row.question)
-        #expect(record == NativeQuestionRecord(kind: .select, question: "How should I handle Horizon's uncommitted edits?",
+        #expect(record == NativeQuestionRecord(kind: .select, question: "How should I handle Orbit's uncommitted edits?",
                                                answer: option, outcome: .answered, askedAt: record.askedAt))
         let answeredAt = try #require(row.timestamp)
         #expect(record.askedAt > 0 && record.askedAt <= answeredAt)
@@ -185,7 +185,7 @@ struct QuestionRecordTests {
         let s = try #require(try await client.nativeThread(agentID: pi.agent.id, request: .snapshot()).snapshotValue)
         let row = try #require(s.messages.first { $0.question != nil })
         #expect(row == local.messages.first { $0.question != nil })
-        #expect(row.question?.answer == "Leave Horizon alone")
+        #expect(row.question?.answer == "Leave Orbit alone")
     }
 
     /// pi's session keeps no UI dialogs; the host keeps its records per pi session beside the

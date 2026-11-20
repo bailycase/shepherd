@@ -28,7 +28,7 @@ import SwiftUI
 #Preview("Question record") {
     SHPreviewBoth {
         VStack(alignment: .leading, spacing: SH.Space.xl) {
-            SHQuestionRecord(question: "How should I handle Horizon’s uncommitted edits?",
+            SHQuestionRecord(question: "How should I handle Orbit’s uncommitted edits?",
                              title: "Compare, keep what’s unique, then go through GitHub", answered: true,
                              timestamp: "2:51 PM · answered", revealed: true)
             SHQuestionRecord(question: "Name for the release branch?", text: "release/2026-09", answered: true,

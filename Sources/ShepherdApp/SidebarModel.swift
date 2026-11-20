@@ -86,7 +86,7 @@ struct SidebarListRow: Identifiable, Equatable {
     var offline = false
     /// The title, the worktree's branch and its pull request.
     var help: String
-    /// "Fix the login, worktree, running, on horizon"; ", pinned" follows a pinned thread's.
+    /// "Fix the login, worktree, running, on orbit"; ", pinned" follows a pinned thread's.
     var accessibilityLabel: String
     /// A worktree agent: its menu offers Delete Worktree Agent.
     let worktree: Bool

@@ -18,20 +18,20 @@ struct AgentBranchPresentationTests {
         // pi switched the worktree's branch: the checkout wins.
         (agent(worktree: "pi/old", checkout: AgentCheckout(branch: "pi/new", changedFiles: 0)), nil,
          AgentBranchLabel(kind: .worktree, branch: "pi/new")),
-        (agent(checkout: AgentCheckout(branch: "chore/remove-homarr", changedFiles: 11)), "horizon",
-         AgentBranchLabel(kind: .checkout, branch: "chore/remove-homarr", changedFiles: 11, host: "horizon")),
+        (agent(checkout: AgentCheckout(branch: "chore/remove-homarr", changedFiles: 11)), "orbit",
+         AgentBranchLabel(kind: .checkout, branch: "chore/remove-homarr", changedFiles: 11, host: "orbit")),
     ] as [(Agent, String?, AgentBranchLabel)])
     func theChipNamesWhereTheAgentWorks(agent: Agent, host: String?, expected: AgentBranchLabel) {
         #expect(AgentBranchLabel(agent: agent, host: host) == expected)
     }
 
     @Test func anAgentOutsideARepositoryHasNoChip() {
-        #expect(AgentBranchLabel(agent: Self.agent(), host: "horizon") == nil)
+        #expect(AgentBranchLabel(agent: Self.agent(), host: "orbit") == nil)
     }
 
     @Test(arguments: [
         (AgentBranchLabel(kind: .worktree, branch: "pi/x", changedFiles: 1), "~/code/x", "Worktree · pi/x · 1 file changed\n~/code/x"),
-        (AgentBranchLabel(kind: .checkout, branch: "main", changedFiles: 0, host: "horizon"), nil, "Your checkout · main · no changes · on horizon"),
+        (AgentBranchLabel(kind: .checkout, branch: "main", changedFiles: 0, host: "orbit"), nil, "Your checkout · main · no changes · on orbit"),
     ] as [(AgentBranchLabel, String?, String)])
     func itsTooltipSaysTheBranchAndTheDirectory(label: AgentBranchLabel, directory: String?, help: String) {
         #expect(label.help(directory: directory) == help)
