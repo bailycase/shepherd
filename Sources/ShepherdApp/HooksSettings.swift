@@ -19,7 +19,7 @@ struct HooksSettings: View {
 
     private var page: some View {
         SettingsPage(title: "Hooks") {
-            if let problem = model.problem {
+            if let problem = model.snapshot?.settingsProblem ?? model.problem {
                 SettingsGroup(title: "") { SettingsRow(title: "", problem: problem) { EmptyView() } }
             }
             if model.snapshot == nil {
