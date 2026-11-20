@@ -1317,6 +1317,7 @@ extension FleetDispatch.Inbound {
         startedWorking = try c.decode(Bool.self, forKey: .startedWorking)
         unsent = try c.decode(Bool.self, forKey: .unsent)
         worktree = try c.decodeIfPresent(String.self, forKey: .worktree)
+        cleanupCandidates = try c.decodeIfPresent([String].self, forKey: .cleanupCandidates)
         acceptedAt = try c.decode(Double.self, forKey: .acceptedAt)
         cloneDirectory = try c.decodeIfPresent(String.self, forKey: .cloneDirectory)
         handoff = try c.decodeIfPresent(FleetMoveHandoff.self, forKey: .handoff)
