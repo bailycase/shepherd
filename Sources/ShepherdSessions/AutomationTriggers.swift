@@ -89,7 +89,7 @@ public actor AutomationTriggers {
         }
     }
 
-    struct Damaged: Error, CustomStringConvertible {
+    struct Damaged: Error, CustomStringConvertible, Equatable {
         let description: String
     }
 
@@ -140,7 +140,9 @@ public actor AutomationTriggers {
     private var calendar: Calendar
     private var host: Host?
     private var file = File()
-    /// Blocks writes and starts until a tick can replace the cached cursors with a clean disk copy.
+    /// The last accepted state, without any uncommitted tick changes. Nil if the startup read failed.
+    private var lastGoodFile: File?
+    /// Blocks writes and starts until a tick can recover the file.
     private var damage: Damaged?
     /// Notes to post once the tick's state is saved.
     private var outbox: [(String, String)] = []
@@ -156,9 +158,13 @@ public actor AutomationTriggers {
         self.clock = clock
         self.calendar = calendar
         switch PersistedFile<File>.load(from: url) {
-        case .loaded(let file): self.file = file
-        case .missing: break
-        case .damaged(_, let error): damage = Self.reportDamage(at: url, error: error)
+        case .loaded(let file):
+            self.file = file
+            lastGoodFile = file
+        case .missing:
+            lastGoodFile = file
+        case .damaged(let original, let error):
+            damage = Self.readDamage(at: url, original: original, error: error)
         }
     }
 
@@ -188,8 +194,8 @@ public actor AutomationTriggers {
 
     public func status(of automation: Automation) -> AutomationTriggerStatus {
         if let damage {
-            return AutomationTriggerStatus(state: .paused, reason: damage.description, allPaused: true,
-                                           timeZone: calendar.timeZone.identifier, storageDamaged: true)
+            return AutomationTriggerStatus(state: automation.enabled ? .paused : .off, reason: damage.description,
+                                           allPaused: true, timeZone: calendar.timeZone.identifier, storageDamaged: true)
         }
         let record = file.records[automation.id.rawValue] ?? Record()
         let now = clock()
@@ -317,15 +323,41 @@ public actor AutomationTriggers {
 
     private func runTick() async {
         guard let host else { return }
-        if damage != nil {
-            // Missing is not a repair: the file may still hold pauses and pending events.
-            guard case .loaded(let restored) = PersistedFile<File>.load(from: url) else { return }
-            file = restored
+        if let previousDamage = damage {
+            var reset = false
+            switch PersistedFile<File>.load(from: url) {
+            case .loaded(let restored):
+                file = restored
+            case .missing:
+                if let lastGoodFile {
+                    do {
+                        try write(lastGoodFile)
+                    } catch {
+                        ShepherdLog.error("Couldn't restore automation trigger state at \(url.path): \(error)")
+                        damage = Damaged(description: "Couldn't restore the trigger state file: \(url.path)")
+                        if damage != previousDamage { host.changed() }
+                        return
+                    }
+                    file = lastGoodFile
+                } else {
+                    file = File()
+                    reset = true
+                }
+            case .damaged(let original, let error):
+                damage = Self.readDamage(at: url, original: original, error: error)
+                if damage != previousDamage { host.changed() }
+                return
+            }
+            lastGoodFile = file
             reads = [:]
             origins = [:]
+            outbox = []
             damage = nil
             ShepherdLog.info("Automation trigger state recovered: \(url.path)")
             host.changed()
+            if reset {
+                await host.notify("Automation triggers file was reset; Pause all is off.", "Shepherd is using default trigger settings.")
+            }
         } else if (try? checkStorage()) == nil {
             return
         }
@@ -609,24 +641,29 @@ public actor AutomationTriggers {
         return [trigger, automation.authorGate.rawValue, automation.cwd, automation.enabled ? "on" : "off"].joined(separator: "|")
     }
 
-    private static func reportDamage(at url: URL, error: any Error) -> Damaged {
-        let message = "Couldn't read \(url.path): \(error). Automatic runs are paused. "
-            + "Triggers recover on their own once Shepherd can read the file again. "
-            + "If the problem persists, restore the file from a backup or repair its JSON or permissions on the host Mac."
-        ShepherdLog.error(message)
-        return Damaged(description: message)
+    private static func readDamage(at url: URL, original: Data?, error: any Error) -> Damaged {
+        ShepherdLog.error("Couldn't read automation trigger state at \(url.path): \(error)")
+        let reason: String
+        if original != nil {
+            reason = "Invalid trigger state JSON"
+        } else if (error as? CocoaError)?.code == .fileReadNoPermission {
+            reason = "Permission denied reading the trigger state file"
+        } else {
+            reason = "Couldn't read the trigger state file"
+        }
+        return Damaged(description: "\(reason): \(url.path)")
     }
 
     private static func notifyDamage(to host: Host) async {
-        await host.notify("Automation triggers paused", "Shepherd couldn't read the trigger state file. Triggers recover once it can read the file again.")
+        await host.notify("Automation triggers paused", "Shepherd couldn't read the trigger state file. It will retry automatically.")
     }
 
     /// The actor owns the in-memory records. Check the disk before writing or firing in case
     /// the file became unreadable while the host was running or a tick was suspended.
     private func checkStorage() throws {
         if let damage { throw damage }
-        if case .damaged(_, let error) = PersistedFile<File>.load(from: url) {
-            let problem = Self.reportDamage(at: url, error: error)
+        if case .damaged(let original, let error) = PersistedFile<File>.load(from: url) {
+            let problem = Self.readDamage(at: url, original: original, error: error)
             damage = problem
             outbox = []
             if let host {
@@ -639,14 +676,19 @@ public actor AutomationTriggers {
 
     /// Call only after checking storage, with no suspension between the check and this write.
     private func save() {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .sortedKeys
+        lastGoodFile = file
         do {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try encoder.encode(file).write(to: url, options: .atomic)
+            try write(file)
         } catch {
             ShepherdLog.warning("automation triggers not saved: \(error)")
         }
+    }
+
+    private func write(_ file: File) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try encoder.encode(file).write(to: url, options: .atomic)
     }
 }
 

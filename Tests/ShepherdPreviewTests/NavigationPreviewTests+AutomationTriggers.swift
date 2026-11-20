@@ -243,7 +243,8 @@ extension PreviewTests {
         let status = await AutomationTriggers(url: url).status(of: automation)
         let model = AutomationsPageModel.make(hosts: [host], runs: [:], selection: key, filter: "", triggers: [key: status],
                                               allPaused: status.allPaused)
-        #expect(model.detail?.banner?.message?.contains("recover on their own") == true)
+        #expect(status.state == .off)
+        #expect(model.detail?.banner?.message == "Invalid trigger state JSON: \(url.path)")
         #expect(model.allPaused)
         #expect(model.detail?.banner?.canResume == false)
         try await Preview.render("page-automations-damaged-trigger-storage", size: Self.triggerPageSize) {
