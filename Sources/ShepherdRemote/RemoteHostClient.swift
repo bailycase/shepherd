@@ -621,6 +621,20 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    /// Renames, hides, reorders or removes one of the host's spaces (`spaceLifecycle`; a paired device or this Mac's own app).
+    /// A host that does not offer it is `update_required`, before anything is sent.
+    public func spaceLifecycle(_ action: RemoteSpaceLifecycle, spaceID: SpaceID) async throws {
+        guard supports(.spaceLifecycle) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to manage its spaces from here.")
+        }
+        let reply = try await request { id in .spaceLifecycle(id: id, spaceID: spaceID, action: action) }
+        switch reply {
+        case .ok: return
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected spaceLifecycle reply")
+        }
+    }
+
     /// Registers, edits or adds a child to one of the background host's spaces (`projectRequest`;
     /// this Mac's own app only). Returns the space.
     public func projectRequest(_ request: RemoteProjectRequest) async throws -> SpaceID {

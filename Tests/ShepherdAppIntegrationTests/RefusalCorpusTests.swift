@@ -243,6 +243,9 @@ private final class Corpus {
     let app: AppHarness
     let port: UInt16
     let space: Space
+    /// The reserved space a Project's coordinator lives in, and one id no host has.
+    let reservedSpace: Space
+    let unknownSpace = SpaceID()
     let thread: AgentFixture
     let coordinator: AgentFixture
     let automation: Automation
@@ -265,6 +268,7 @@ private final class Corpus {
         thread = Fixture.agent(seed["thread"]!, in: space)
         // A Project's coordinator lives in the Space the host keeps for Projects, out of every client's list.
         let reserved = Space(name: seed["projectsSpace"]!, path: app.dir.path, hidden: true, holdsProjects: true)
+        reservedSpace = reserved
         var owner = Fixture.agent(seed["coordinator"]!, in: reserved)
         owner.agent.coordinatorFor = ProjectID()
         coordinator = owner
@@ -516,6 +520,8 @@ private final class Corpus {
         try await otherAgents()
         try await fleetPeerAnswers()
         try await extensionSocket()
+        // Last, so the ids it names are numbered after every earlier step's.
+        try await spaceLifecycle()
     }
 
     private func recordSeed() async throws {
@@ -641,6 +647,23 @@ private final class Corpus {
                         request: .setRunPullRequest(agentID: thread.agent.id, url: "https://github.com/acme/web/pull/1"))
         }
         try await designRequests(from: client, root: root)
+    }
+
+    /// A device may rename, hide, reorder and remove the spaces its host shows it. A space it is not shown is refused as unknown, and
+    /// the refusal changes nothing: the host's state and `state.json` are as they were, and no file is written.
+    private func spaceLifecycle() async throws {
+        let client = try await connect(capabilities: Self.current)
+        try await refuse("space-lifecycle/unknown-space", on: client) { .spaceLifecycle(id: $0, spaceID: unknownSpace, action: .remove) }
+        try await refuse("space-lifecycle/reserved-space", on: client) { .spaceLifecycle(id: $0, spaceID: reservedSpace.id, action: .remove) }
+        try await refuse("space-lifecycle/reserved-space-rename", on: client) {
+            .spaceLifecycle(id: $0, spaceID: reservedSpace.id, action: .rename(name: "taken over"))
+        }
+        try await refuse("space-lifecycle/move-before-reserved", on: client) {
+            .spaceLifecycle(id: $0, spaceID: space.id, action: .move(before: reservedSpace.id))
+        }
+        try await refuse("space-lifecycle/move-before-unknown", on: client) {
+            .spaceLifecycle(id: $0, spaceID: space.id, action: .move(before: unknownSpace))
+        }
     }
 
     /// The Design tool is off until a client turns it on in the host's settings, as an iPhone does; then its import and catalog requests reach
