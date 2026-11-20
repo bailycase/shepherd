@@ -290,10 +290,10 @@
     what they allow, and an older phone's registration without them gets everything. Hosts without this capability cannot register destinations.
   - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Models, Agents, Tools and Git set,
     the pi packages its pi loads, and its Shepherd and pi versions; one change per request
-    (`HostSettingChange`), applied as the Mac's own Settings would. `hostSettings.agentDefaults.v1`
-    adds the speed for new threads and Compact at (missing from an older host: Standard, pi's
-    default); `HostSettingChange.capability` names what a change needs, and an older host refuses
-    the change as unknown. `hostSettings.textGenerationModel.v1` takes the text generation
+    (`HostSettingChange`), applied as the Mac's own Settings would. The host refuses `unsupported`
+    unless it offers `hostSettings.v1` and any capability named by the change to that connection.
+    `hostSettings.agentDefaults.v1` adds the speed for new threads and Compact at (missing from an
+    older host: Standard, pi's default). `hostSettings.textGenerationModel.v1` takes the text generation
     model's change, which replaced the session naming model's: a host still applies an older
     client's `namingModel` change to the same setting, and no client offers the picker to a host
     without the capability. `hostSettings.visionModel.v1` likewise takes the image reading
@@ -407,7 +407,8 @@
     change
   - `hooks` (`hooks.v1`): Settings › Hooks on the host (fetch, a hook's off switch by hash, a
     reader, Save, Delete, Test), answered with the host's `HookCatalogSnapshot` (its sources with
-    state, entries, off switches, readers and home) or a test's `HookTestResult`. Save and Delete
+    state, entries, off switches, readers, home and, when the host can't read its
+    `settings.json`, a `settingsProblem` with every hook off) or a test's `HookTestResult`. Save and Delete
     name a hook by slot and the hash the client read; a hook changed since is refused
     (`hook_changed`). Save writes only one of the catalog's JSON files (`not_a_hooks_file`), Test
     runs only in the home folder or one of its spaces (`no_such_space`), bounded by the hook's

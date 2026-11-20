@@ -236,44 +236,93 @@ export function hookFiles(root) {
   return files;
 }
 
-// Re-read a file only when its mtime or size changes, so the app's edits apply to the next event.
-const fileCache = new Map();
-function readCached(file, parse) {
-  let stat;
-  try { stat = fs.statSync(file); } catch { fileCache.delete(file); return undefined; }
-  const key = `${stat.mtimeMs}:${stat.size}`;
-  const hit = fileCache.get(file);
-  if (hit?.key === key) return hit.value;
-  let value;
-  try { value = parse(fs.readFileSync(file)); } catch { value = undefined; }
-  fileCache.set(file, { key, value });
-  return value;
+function readHookFile(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file.path, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) return { ...file, identity: "unreadable" };
+    if (stat.size > FILE_LIMIT) return { ...file, identity: "too large" };
+    const buffer = Buffer.allocUnsafe(FILE_LIMIT + 1);
+    let size = 0;
+    while (size < buffer.length) {
+      const count = fs.readSync(fd, buffer, size, buffer.length - size);
+      if (!count) break;
+      size += count;
+    }
+    if (size > FILE_LIMIT) return { ...file, identity: "too large" };
+    const bytes = buffer.subarray(0, size);
+    return { ...file, bytes, identity: crypto.createHash("sha256").update(bytes).digest("hex") };
+  } catch (error) {
+    return { ...file, identity: error?.code === "ENOENT" ? "missing" : "unreadable" };
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch {} }
+  }
 }
 
-/** `<hooksDir>/settings.json`: the hashes switched off and the readers; missing or invalid reads as all on. */
+/**
+ * `<hooksDir>/settings.json`: the hashes switched off and the readers. Missing reads as all on.
+ * A file that can't be read or isn't in the shape the app writes (`HookSettings`, bare or as
+ * `{version: 1, value}`) is damaged: `damaged` is set and nothing runs, because the file holds the
+ * switches the person turned off.
+ */
 export function readSettings(hooksDir) {
-  const raw = readCached(path.join(hooksDir, "settings.json"), (bytes) => JSON.parse(bytes.toString("utf8")));
-  const valid = raw && typeof raw === "object" && !Array.isArray(raw);
-  return {
-    off: valid && Array.isArray(raw.off) ? raw.off : [],
-    readers: valid && raw.readers && typeof raw.readers === "object" ? raw.readers : {},
-  };
+  const file = path.join(hooksDir, "settings.json");
+  const damaged = (reason) => ({ off: [], readers: {}, damaged: `${file}: ${reason}` });
+  let raw;
+  try {
+    // Fatal: a plain UTF-8 read swaps invalid bytes for U+FFFD, so a damaged hash could parse as a different string.
+    raw = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(fs.readFileSync(file)));
+  } catch (error) {
+    // A dangling symlink is not a missing file.
+    if (error?.code === "ENOENT") {
+      try { fs.lstatSync(file); } catch (statError) {
+        if (statError?.code === "ENOENT") return { off: [], readers: {} };
+      }
+    }
+    return damaged(String(error?.message ?? error));
+  }
+  const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+  // A `value` key marks the envelope; extra keys are tolerated, never read as a bare file (a missing `off` would mean all on).
+  if (isObject(raw) && Object.hasOwn(raw, "value")) {
+    if (raw.version !== 1) return damaged("unsupported version");
+    raw = raw.value;
+  }
+  if (!isObject(raw)) return damaged("not a JSON object");
+  // Only an absent field defaults. An explicit null is damage: `"off": null` read as [] would switch every disabled hook back on.
+  const has = (key) => Object.hasOwn(raw, key);
+  const { version, off, readers } = raw;
+  if (has("version") && !Number.isInteger(version)) return damaged("version isn't an integer");
+  if (has("off") && !(Array.isArray(off) && off.every((h) => typeof h === "string"))) return damaged("off isn't a list of strings");
+  if (has("readers") && !(isObject(readers) && ["claude", "codex"].every((k) => !Object.hasOwn(readers, k) || typeof readers[k] === "boolean"))) {
+    return damaged("readers isn't an object of booleans");
+  }
+  return { off: has("off") ? off : [], readers: has("readers") ? readers : {} };
 }
 
 /** Every hook that would run for `root`: files found, readers on, not switched off. */
 export function runnableHooks(root, hooksDir) {
-  const settings = readSettings(hooksDir);
-  const off = new Set(settings.off);
-  const out = [];
-  for (const file of hookFiles(root)) {
-    if (file.reader && settings.readers[file.reader] === false) continue;
-    const parsed = readCached(file.path, (bytes) => parseHookBytes(file.path, bytes));
-    if (!parsed || parsed.error) continue;
-    for (const entry of entriesOf(file.path, parsed.hooks, file.scope)) {
-      if (!off.has(entry.hash)) out.push(entry);
+  // Writers publish new off hashes first and keep old ones even after an edit or delete.
+  // Check file paths and bytes on both sides of the settings read, never mtime or size alone.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const files = hookFiles(root).map(readHookFile);
+    const settings = readSettings(hooksDir);
+    if (settings.damaged) return [];
+    const verified = hookFiles(root).map(readHookFile);
+    if (files.length !== verified.length || files.some(({ path, identity }, i) => path !== verified[i].path || identity !== verified[i].identity)) continue;
+    const off = new Set(settings.off);
+    const out = [];
+    for (const file of files) {
+      if (!file.bytes || (file.reader && settings.readers[file.reader] === false)) continue;
+      const parsed = parseHookBytes(file.path, file.bytes);
+      if (parsed.error) continue;
+      for (const entry of entriesOf(file.path, parsed.hooks, file.scope)) {
+        if (!off.has(entry.hash)) out.push(entry);
+      }
     }
+    return out;
   }
-  return out;
+  return []; // Files wouldn't settle. Try again on the next event.
 }
 
 function writeAtomic(file, text) {
@@ -759,6 +808,13 @@ export default function shepherdHooks(pi) {
     const command = String(params?.command ?? "").trim();
     if (!EVENTS.includes(event) || !command) return reply("hook_propose needs a known event and a command.", true);
     if (!ctx.hasUI) return reply("No one can approve a hook here.", true);
+    // Damaged settings.json: the switches the person turned off can't be read, so nothing runs and nothing is added.
+    const refuseWhileDamaged = () => {
+      const damaged = readSettings(hooksDir).damaged;
+      return damaged ? reply(`Hook settings are damaged, so no hook was tested or added. ${damaged}. Restore the file from a backup or fix its JSON.`, true) : undefined;
+    };
+    const refused = refuseWhileDamaged();
+    if (refused) return refused;
     const matcher = typeof params.matcher === "string" ? params.matcher.trim() : "";
     const statusMessage = typeof params.statusMessage === "string" && params.statusMessage.trim() ? params.statusMessage.trim() : undefined;
     const timeout = Number.isFinite(params.timeout) && params.timeout > 0 ? Math.min(Math.round(params.timeout), MAX_TIMEOUT_S) : undefined;
@@ -778,6 +834,9 @@ export default function shepherdHooks(pi) {
       if (verdict.block) {
         test = { ok: false, blocked: true, summary: `blocked by a PreToolUse hook: ${clip(verdict.reason)}`, exit: null, ms: 0 };
       } else {
+        // The pre-hooks and permission above took time: the file may have been damaged since the first check.
+        const refusedLaunch = refuseWhileDamaged();
+        if (refusedLaunch) return refusedLaunch;
         const result = await runCommand(command, { cwd: projectRoot, event, input, timeoutMs: Math.min(timeout ?? 60, 60) * 1000 });
         const ok = !result.timedOut && (result.exit === 0 || result.exit === 2);
         const said = (result.exit === 2 ? result.stderr : result.stdout || result.stderr).trim().split("\n")[0];
@@ -800,6 +859,9 @@ export default function shepherdHooks(pi) {
       return reply("The person added an edited version of the hook in Settings; it may differ from your proposal (event, matcher or command).");
     }
     if (choice !== "Add to this space" && choice !== "Add to this Mac") return reply(`The person didn't add the hook (test: ${test.summary}).`);
+    // The file may have been damaged while the person decided.
+    const refusedNow = refuseWhileDamaged();
+    if (refusedNow) return refusedNow;
     const file = choice === "Add to this space" ? scopes.space : scopes.mac;
     let added;
     try {
@@ -808,7 +870,9 @@ export default function shepherdHooks(pi) {
       return reply(`Couldn't add the hook to ${file}: ${error?.message ?? error}`, true);
     }
     post([message("added", event, { handler, hash: added.hash, file }, { content: `Hook added: ${hookName(handler)} (${event}) in ${file}`, detail: matcher || undefined, meta: clip(command, 80) })]);
-    return reply(`Added to ${file}; it runs on ${event}${matcher ? ` for ${matcher}` : ""} from now on.`);
+    // A hook the person once turned off keeps its off record, so the same bytes added again stay off. Say so.
+    const off = readSettings(hooksDir).off.includes(added.hash);
+    return reply(`Added to ${file} for ${event}${matcher ? ` (matcher: ${matcher})` : ""}.${off ? " It is switched off: the person turned this exact hook off earlier, so it won't run until they turn it on in Settings > Hooks." : ""}`);
   }
 
   /** Appends one group to the file (other content kept, written whole and atomically); returns its hash. */
@@ -821,6 +885,7 @@ export default function shepherdHooks(pi) {
     if (!doc.hooks || typeof doc.hooks !== "object" || Array.isArray(doc.hooks)) doc.hooks = {};
     if (!Array.isArray(doc.hooks[event])) doc.hooks[event] = [];
     doc.hooks[event].push({ ...(matcher ? { matcher } : {}), hooks: [handler] });
+    // Proposals only add new hooks. If this hash was disabled before, leave its off hash alone.
     writeAtomic(file, JSON.stringify(doc, null, 2) + "\n");
     return { hash: hookHash(file, event, matcher, handler) };
   }

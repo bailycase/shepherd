@@ -32,6 +32,7 @@ enum SettingsSearch {
                   "Instructions", "Extensions", "MCP servers"],
         .git: ["Base branch", "Fetch before creating", "Draft commit messages",
                "Deleting a worktree agent", "Close threads when their pull request merges", "Worktree"],
+        .apps: ["Run", "Stop", "Restart", "Output", "Command", "Folder", "Quick action", "Agents can start it"],
         .fleet: ["Macs", "Add a Mac", "Phones and tablets", "Add a device",
                  "Threads can send work to other Macs", "Recent work", "Room"],
         .advanced: ["Share diagnostics"],

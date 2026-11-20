@@ -10,13 +10,14 @@ struct ProjectComposer: View {
     var task: ProjectTaskID?
     @Environment(MobileProjects.self) private var projects
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @FocusState private var focused: Bool
+    @State private var focused = false
     @State private var sending = false
+    @State private var dropTargeted = false
 
     private var target: MobileProjectThread { projects.thread(ref, task: task) }
     private var state: ComposerState { target.composer }
     private var canSend: Bool {
-        (target.store.hasDraft || !state.attachments.isEmpty) && projects.canRun(ref) && !sending
+        (target.store.hasDraft || !state.attachments.isEmpty) && projects.canRun(ref) && !sending && state.pendingImports == 0
             && (task == nil || (target.store.supports("send")
                 && (state.attachments.isEmpty || target.store.supports("sendImages"))))
     }
@@ -58,18 +59,17 @@ struct ProjectComposer: View {
         .padding(.top, SH.Space.m)
         .padding(.bottom, MobileLayout.composerBottom)
         .background(Color.sh.bgWindow)
+        .modifier(ComposerImageDrop(state: state, enabled: canAttach, targeted: $dropTargeted))
         .accessibilityIdentifier("project-composer")
     }
 
     private var field: some View {
         @Bindable var store = target.store
         let paused = projects.model.project(ref).map { $0.paused && $0.pausedByPerson } == true
-        return TextField(task != nil ? "Steer this thread…" : paused ? "Paused. Your message waits until you resume…" : "Message the project owner…",
-                         text: $store.draft, axis: .vertical)
-            .font(.sh(.body)).foregroundStyle(Color.sh.textPrimary)
-            .lineLimit(1...SHComposerMetrics.fieldMaxLines)
-            .focused($focused)
-            .accessibilityLabel("Message to project")
+        let placeholder = task != nil ? "Steer this thread…" : paused ? "Paused. Your message waits until you resume…" : "Message the project owner…"
+        let paste: (([NSItemProvider]) -> Void)? = canAttach ? { providers in state.attach(providers: providers) } : nil
+        return ComposerTextView(text: $store.draft, placeholder: placeholder, focused: $focused,
+                                label: "Message to project", pasteImages: paste)
     }
 
     private var attachments: some View {

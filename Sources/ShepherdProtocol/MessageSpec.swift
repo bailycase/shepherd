@@ -110,7 +110,7 @@ public struct MessageSpec: Hashable, Sendable {
         .logicalProjectRuntime: MessageSpec(.authenticated),
         .instructions: MessageSpec(.authenticated),
         .suggestions: MessageSpec(.authenticated),
-        .hostSettings: MessageSpec(.authenticated),
+        .hostSettings: MessageSpec(.authenticated, requires: .offered(.hostSettings, "The host does not take this request.")),
         .hostInventory: MessageSpec(.authenticated),
         .hostUpdate: MessageSpec(.authenticated),
         .skills: MessageSpec(.authenticated),

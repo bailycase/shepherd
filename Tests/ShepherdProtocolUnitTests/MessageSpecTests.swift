@@ -26,6 +26,15 @@ struct MessageSpecTests {
         #expect(seen == Set(RemoteRequest.Kind.allCases))
     }
 
+    @Test func transcriptSnapshotUsesTheAuthenticatedNativeThreadRow() throws {
+        let request = RemoteRequest.nativeThread(id: 1, agentID: .init(rawValue: "agent"), request: .transcriptSnapshot())
+        #expect(request.kind == .nativeThread)
+        let spec = try #require(MessageSpec.spec(for: request.kind))
+        #expect(spec.access == .authenticated)
+        // The route checks the host's transcript offer only for this payload, not for all nativeThread requests.
+        #expect(spec.requires == nil)
+    }
+
     @Test func authorizationClassOfTheRefusalFamilies() {
         func access(_ kind: RemoteRequest.Kind) -> MessageSpec.Access? { MessageSpec.spec(for: kind)?.access }
         for kind in [RemoteRequest.Kind.fleetIdentify, .fleetPair, .fleetPairDevice] { #expect(access(kind) == .beforeHello) }
@@ -40,8 +49,6 @@ struct MessageSpecTests {
         for kind in Set(RemoteRequest.Kind.allCases).subtracting(special) { #expect(access(kind) == .authenticated) }
     }
 
-    /// The host's own capability refusals today: push, thread subscribe, fleet digest, and logical projects.
-    /// Host settings are not here: the host does not check `HostSettingChange.capability`.
     @Test func capabilityRequirementsOfTheRefusalFamilies() {
         func requirement(_ kind: RemoteRequest.Kind) -> MessageSpec.Requirement? { MessageSpec.spec(for: kind)?.requires }
         #expect(requirement(.pushRegistration)?.capability.rawValue == "push.notifications.v1")
@@ -53,6 +60,7 @@ struct MessageSpecTests {
         }
         #expect(requirement(.logicalProjects)?.capability.rawValue == "logicalProjects.v1")
         #expect(requirement(.logicalProjects)?.negotiated == false)
-        #expect(requirement(.hostSettings) == nil)
+        #expect(requirement(.hostSettings)?.capability == .hostSettings)
+        #expect(requirement(.hostSettings)?.negotiated == false)
     }
 }
