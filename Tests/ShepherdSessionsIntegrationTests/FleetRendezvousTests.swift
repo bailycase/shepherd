@@ -250,6 +250,45 @@ struct FleetRendezvousTests {
         try await eventually("a's presence record to go") { cloud.record(.presence(of: aID)) == nil }
     }
 
+    @Test func removingTheLastPeerBeforeTheListenerOpensClearsOldPresence() async throws {
+        let directory = try makeScratchDirectory("fleet")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let hostID = try FleetIdentity.loadOrCreate(in: directory).hostID
+        let peerID = UUID()
+        try FleetPeers(peers: [FleetPeerRecord(hostID: peerID, name: "Mac mini", pairedAt: 0)]).save(to: directory)
+        let cloud = FakeCloud()
+        let key = FleetRendezvousKey.presence(of: hostID)
+        let route = FleetRoute(host: "127.0.0.1", port: 7434, kind: .lan, learned: false)
+        // The previous host left its presence record behind. This one has not opened a listener yet.
+        cloud.plant(FleetRendezvousRecord(key: key, hostID: hostID, routes: [route], updatedAt: 0))
+        let rendezvous = FleetRendezvous(store: cloud)
+        let queue = DispatchQueue(label: "fleet.presence.test")
+        let fleet = try FleetService(queue: queue, directory: directory, name: "MacBook Pro", build: nil,
+                                     advertises: false, rendezvous: rendezvous)
+        queue.sync {
+            fleet.routes = { _ in [route] }
+            fleet.start()
+        }
+        defer { queue.sync { fleet.stop() } }
+
+        let caller = FleetCaller(connection: 0, isLocal: true, authenticated: true)
+        let reply = await withCheckedContinuation { continuation in
+            queue.async {
+                fleet.serve(.fleetAction(id: 1, action: .remove(hostID: peerID)), from: caller) {
+                    continuation.resume(returning: $0)
+                }
+            }
+        }
+        guard case .fleetResult(_, let result) = reply else {
+            Issue.record("Expected a successful removal")
+            return
+        }
+        #expect(result.snapshot.peers.isEmpty)
+        queue.sync { fleet.listenerChanged(route.port) }
+        await rendezvous.settle()
+        #expect(cloud.record(key) == nil)
+    }
+
     // MARK: No iCloud
 
     @Test(arguments: [FleetRendezvousError.noAccount, .unavailable])
