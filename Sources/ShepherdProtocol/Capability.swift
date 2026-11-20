@@ -100,6 +100,7 @@ public struct Capability: RawRepresentable, Hashable, Sendable {
     public static let nativeStartupDialogs = Capability("native.startup-dialogs.v1")
     public static let nativeThread = Capability("native.thread.v1")
     public static let nativeThreadPreview = Capability("native.preview.v1")
+    public static let nativeThreadTranscript = Capability("native.transcript.v1")
     public static let nativeThreadRevisions = Capability("native.revisions.v1")
     public static let nativeThreadStarting = Capability("native.thread.starting.v1")
     public static let nativeThreadV2 = Capability("native.thread.v2")

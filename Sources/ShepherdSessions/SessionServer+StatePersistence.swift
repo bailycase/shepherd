@@ -96,9 +96,11 @@ extension SessionServer {
                                    didCommit: @escaping (ShepherdState) -> Void) async throws {
         for _ in 0..<Self.maximumStateWriteAttempts {
             try Task.checkCancellation()
-            let preparation = try await enqueue { () -> (ShepherdState, ShepherdState, UInt64, URL)? in
+            let preparation = try await enqueue { () -> (ShepherdState, ShepherdState, UInt64, URL, Bool)? in
                 if cancelled() { throw CancellationError() }
                 try self.requireStarted()
+                do { try self.store.requireWritable() }
+                catch { throw SessionServerError.persistFailed(String(describing: error)) }
                 guard self.logicalProjectEpoch == epoch else { throw SessionServerError.persistFailed("Workspace restarted while saving.") }
                 guard !self.projectFolderOperation else { throw ProjectFileError("project_busy", "A project folder operation is in progress. Retry after it completes.") }
                 let before = self.store.state
@@ -108,16 +110,16 @@ extension SessionServer {
                 guard candidate != before else { return nil }
                 let version = self.store.version
                 self.stateWritePrepared?()
-                return (before, candidate, version, self.store.url)
+                return (before, candidate, version, self.store.url, !self.store.historyPrepared)
             }
-            guard let (before, candidate, version, url) = preparation else { return }
+            guard let (before, candidate, version, url, prepareHistory) = preparation else { return }
             let staged: StateStore.LogicalProjectsStage
             do {
                 staged = try await withCheckedThrowingContinuation { continuation in
                     logicalProjectFiles.async {
                         let phase = Self.storageSignposter.beginInterval("State staging", id: Self.storageSignposter.makeSignpostID())
                         defer { Self.storageSignposter.endInterval("State staging", phase) }
-                        do { continuation.resume(returning: try StateStore.stageUpdate(candidate, before: before, at: url)) }
+                        do { continuation.resume(returning: try StateStore.stageUpdate(candidate, before: before, at: url, prepareHistory: prepareHistory)) }
                         catch { continuation.resume(throwing: error) }
                     }
                 }

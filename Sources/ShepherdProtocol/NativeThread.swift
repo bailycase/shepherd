@@ -3,6 +3,8 @@ import CryptoKit
 
 public enum NativeThreadRequest: Codable, Hashable, Sendable {
     case snapshot(expectedSessionID: String? = nil, beforeEntryID: String? = nil, afterRevision: UInt64? = nil)
+    /// One text-only snapshot page of the saved branch, including messages before compaction.
+    case transcriptSnapshot(expectedSessionID: String? = nil, beforeEntryID: String? = nil)
     /// `images` is v2 (RPC agents, `sendImages` in `supportedActions`); absent on the wire when nil.
     /// `designContext` is what the sender's design screen showed (`DesignViewRecord`), gated by
     /// `designContext` in `supportedActions` and, remotely, `design.context.v1`; absent when nil.

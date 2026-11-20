@@ -314,6 +314,32 @@ struct NativeTranscriptPlaceTests {
         #expect(place.position(tail: "live") == "another-older-turn")
     }
 
+    @Test("a send from history releases the anchor and drops the turn SwiftUI reports while the pin lands")
+    func sentFromHistoryReleasesTheAnchor() {
+        var place = Self.played([.detach, .swiftUI("older", tail: "live")], mountsAtTail: false)
+        #expect(place.position(tail: "live") == "older")
+
+        place.sent(turnPresent: false)
+        #expect(place.follows)
+        #expect(place.turn == nil)
+        #expect(place.position(tail: "live") == nil)
+        place.note("older", tail: "live")
+        #expect(place.position(tail: "live") == nil)
+    }
+
+    @Test("a send from a reader already following keeps the bottom marker and the reports after it")
+    func sentWhileFollowingKeepsTheMarker() {
+        var place = Self.played([.swiftUI(Self.marker, tail: "live")], mountsAtTail: false)
+        #expect(place.follows && place.turn == Self.marker)
+
+        place.sent(turnPresent: false)
+        #expect(place.follows)
+        #expect(place.turn == Self.marker)
+        #expect(place.position(tail: "live") == Self.marker)
+        place.note("reply", tail: "live")
+        #expect(place.turn == "reply")
+    }
+
     @Test("what the transcript draws of the follower: following, and output it has not seen")
     func mirrorsTheFollower() {
         var place = NativeTranscriptPlace(mountsAtTail: true)

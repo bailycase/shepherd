@@ -263,7 +263,7 @@ final class FixtureHost: @unchecked Sendable {
         switch request {
         case .nativeThread(let id, _, let command):
             switch command {
-            case .snapshot, .subagentTranscript: return nil
+            case .snapshot, .transcriptSnapshot, .subagentTranscript: return nil
             default:
                 mutation("nativeThread." + Self.kind(command))
                 return [.nativeThread(id: id, result: .failure(code: "fixture", message: refused))]

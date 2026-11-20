@@ -135,18 +135,100 @@ struct HookCatalogTests {
         try f.write(path, Self.preToolUse.replacingOccurrences(of: "./check.sh", with: "./other.sh"))
         #expect(f.catalog.load().entries.first?.runs == true)
         try store.setOn(entry.hash, true)
-        #expect(store.read().off.isEmpty)
+        #expect(try store.read().off.isEmpty)
     }
 
-    @Test func aMissingOrInvalidSettingsFileReadsAsEverythingOn() throws {
+    @Test(.timeLimit(.minutes(1))) func aMissingSettingsFileReadsAsEverythingOnAndBothShapesLoad() throws {
         let f = try Fixture(); defer { f.remove() }
-        #expect(f.catalog.settingsStore.url.lastPathComponent == "settings.json")
-        #expect(f.catalog.settingsStore.read() == HookSettings())
-        try f.write(f.catalog.settingsStore.url.path, "not json")
-        #expect(f.catalog.settingsStore.read() == HookSettings())
-        try f.write(f.catalog.settingsStore.url.path, #"{"version":1,"off":["h"],"readers":{"codex":false}}"#)
-        let settings = f.catalog.settingsStore.read()
-        #expect(settings.off == ["h"] && settings.readers == HookSettings.Readers(claude: true, codex: false))
+        let store = f.catalog.settingsStore
+        #expect(store.url.lastPathComponent == "settings.json")
+        #expect(try store.read() == HookSettings())
+        let legacy = #"{"version":1,"off":["h"],"readers":{"codex":false}}"#
+        try f.write(store.url.path, legacy)
+        let expected = HookSettings(off: ["h"], readers: .init(claude: true, codex: false))
+        #expect(try store.read() == expected)
+        try f.write(store.url.path, #"{"version":1,"value":\#(legacy)}"#)
+        #expect(try store.read() == expected)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func writingKeepsTheLegacyShape() throws {
+        let f = try Fixture(); defer { f.remove() }
+        let store = f.catalog.settingsStore
+        try store.setOn("h", false)
+        try store.setReader(.codex, false)
+        let written = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: store.url)) as? NSDictionary)
+        let legacy: NSDictionary = ["version": 1, "off": ["h"], "readers": ["claude": true, "codex": false]]
+        #expect(written == legacy)
+    }
+
+    static let damagedFiles: [(name: String, bytes: Data?)] = [
+        ("truncated", Data(#"{"version":1,"off":["h"],"rea"#.utf8)),
+        ("empty", Data()),
+        ("not an object", Data("[]".utf8)),
+        ("off has the wrong type", Data(#"{"version":1,"off":"h"}"#.utf8)),
+        ("off holds a number", Data(#"{"version":1,"off":[1]}"#.utf8)),
+        ("a reader has the wrong type", Data(#"{"version":1,"off":["h"],"readers":{"claude":"no"}}"#.utf8)),
+        ("off is null", Data(#"{"version":1,"off":null}"#.utf8)),
+        ("version is null", Data(#"{"version":null,"off":["h"]}"#.utf8)),
+        ("readers is null", Data(#"{"version":1,"off":["h"],"readers":null}"#.utf8)),
+        ("a reader switch is null", Data(#"{"version":1,"off":["h"],"readers":{"claude":null,"codex":false}}"#.utf8)),
+        ("unsupported envelope version", Data(#"{"version":2,"value":{}}"#.utf8)),
+        ("unreadable", nil),
+    ]
+
+    /// A hook the person turned off must stay off when the switches can't be read.
+    @Test(.timeLimit(.minutes(1)), arguments: damagedFiles)
+    func aDamagedSettingsFileFailsClosedAndIsNeverReplaced(name: String, bytes: Data?) throws {
+        let f = try Fixture(); defer { f.remove() }
+        let store = f.catalog.settingsStore
+        try f.write(f.home + "/.shepherd/hooks.json", Self.preToolUse)
+        let hash = try #require(f.catalog.load().entries.first).hash
+        try FileManager.default.createDirectory(at: store.url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let bytes {
+            try bytes.write(to: store.url)
+        } else {
+            try FileManager.default.createDirectory(at: store.url, withIntermediateDirectories: false) // a directory can't be read as a file
+        }
+        defer { if bytes == nil { try? FileManager.default.removeItem(at: store.url) } }
+
+        // Visible: the full path, the cause, and what to do.
+        #expect(throws: HookSettingsStore.Damaged.self) { try store.read() }
+        let snapshot = f.catalog.load()
+        let problem = try #require(snapshot.settingsProblem)
+        #expect(problem.contains(store.url.path) && problem.contains("Restore the file from a backup or fix its JSON"))
+        #expect(problem.contains("off") && !problem.localizedCaseInsensitiveContains("delete"))
+        // Fail closed: the hook is listed but off, and nothing counts as running.
+        #expect(snapshot.entries.map(\.hash) == [hash] && snapshot.entries.allSatisfy { !$0.on && !$0.runs })
+        #expect(snapshot.summary(forSpaceRoot: nil) == HookSummary(running: 0))
+        // No reset-then-overwrite: every writer refuses and the file is as it was.
+        let hooksFile = f.home + "/.shepherd/hooks.json"
+        let before = try Data(contentsOf: URL(fileURLWithPath: hooksFile))
+        #expect(throws: HookSettingsStore.Damaged.self) { try store.setOn(hash, true) }
+        #expect(throws: HookSettingsStore.Damaged.self) { try store.setReader(.claude, false) }
+        #expect(throws: HookSettingsStore.Damaged.self) { try store.change { $0.off.append("x") } }
+        let writer = HookFileWriter(settings: store)
+        let entry = try #require(snapshot.entries.first)
+        #expect(throws: HookSettingsStore.Damaged.self) { try writer.add(HookDraft(event: "Stop", handler: .command("true")), to: hooksFile) }
+        #expect(throws: HookSettingsStore.Damaged.self) { try writer.delete(entry) }
+        #expect(try Data(contentsOf: URL(fileURLWithPath: hooksFile)) == before, "the hooks file is untouched")
+        if let bytes { #expect(try Data(contentsOf: store.url) == bytes, "settings.json keeps the original bytes") }
+        // Remote clients see the same problem, in the catalog they fetch.
+        let decoded = try JSONDecoder().decode(HookCatalogSnapshot.self, from: JSONEncoder().encode(snapshot))
+        #expect(decoded.settingsProblem == problem)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func repairingTheFileBringsTheSwitchesBack() throws {
+        let f = try Fixture(); defer { f.remove() }
+        let store = f.catalog.settingsStore
+        try f.write(f.home + "/.shepherd/hooks.json", Self.preToolUse)
+        let hash = try #require(f.catalog.load().entries.first).hash
+        try f.write(store.url.path, #"{"version":1,"off":["#)
+        #expect(f.catalog.load().settingsProblem != nil)
+        try f.write(store.url.path, #"{"version":1,"off":["\#(hash)"]}"#)
+        let snapshot = f.catalog.load()
+        #expect(snapshot.settingsProblem == nil && snapshot.entries.first?.on == false)
+        try store.setOn(hash, true)
+        #expect(f.catalog.load().entries.first?.runs == true)
     }
 
     @Test func readersOffSkipClaudeAndCodexFiles() throws {
@@ -298,7 +380,7 @@ struct HookFileWriterTests {
         try f.catalog.settingsStore.setOn(entries[1].hash, false)
         let stale = entries[1]
         let updated = try writer.update(stale, to: HookDraft(event: "PreToolUse", matcher: "Edit|Write", handler: .command("./no-env.sh", timeout: 20)))
-        #expect(f.catalog.settingsStore.read().off == [updated])
+        #expect(try f.catalog.settingsStore.read().off == [updated])
         entries = f.catalog.load().entries
         #expect(entries[1].handler.timeout == 20 && !entries[1].on)
 
@@ -311,7 +393,24 @@ struct HookFileWriterTests {
         for entry in entries.reversed() { try writer.delete(entry) }
         text = try String(contentsOfFile: path, encoding: .utf8)
         #expect(text == "{\n  \"model\": \"opus\",\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(ls)\"\n    ]\n  },\n  \"hooks\": {},\n  \"zeta\": true\n}\n")
-        #expect(f.catalog.settingsStore.read().off.isEmpty)
+        #expect(try f.catalog.settingsStore.read().off.isEmpty)
+    }
+
+    /// The new hash must be off before the file publishes it: when the publish fails, it is already off.
+    @Test func editingADisabledHookRecordsTheNewOffSwitchBeforePublishing() throws {
+        let f = try HookCatalogTests.Fixture(); defer { f.remove() }
+        let path = f.home + "/.shepherd/hooks.json"
+        try f.write(path, HookCatalogTests.preToolUse)
+        let writer = HookFileWriter(settings: f.catalog.settingsStore)
+        let old = try #require(f.catalog.load().entries.first)
+        try f.catalog.settingsStore.setOn(old.hash, false)
+        let folder = (path as NSString).deletingLastPathComponent
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder) // the publish can't write
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder) }
+        let draft = HookDraft(event: "PreToolUse", matcher: "Bash", handler: .command("./other.sh"))
+        let newHash = HookCanonical.hash(file: path, event: draft.event, matcher: draft.matcher, canonical: draft.handler.raw.canonical)
+        #expect(throws: (any Error).self) { try writer.update(old, to: draft) }
+        #expect(try f.catalog.settingsStore.read().off.contains(newHash), "off before it was ever published")
     }
 
     @Test func aNewFileAndItsFoldersAreCreatedAndTomlIsRefused() throws {

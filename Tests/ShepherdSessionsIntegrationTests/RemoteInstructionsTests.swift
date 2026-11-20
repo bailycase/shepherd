@@ -56,6 +56,30 @@ struct RemoteInstructionsTests {
         #expect(heard.current == 0)
     }
 
+    @Test func aClientSeesDamagedHistoryWithoutLosingCurrentText() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        let store = host.server.instructions
+        try store.save(.agents, content: "- Tests first.\n")
+        let url = store.directory.appendingPathComponent("history.json")
+        try Data(#"{"version":1,"revisions":["#.utf8).write(to: url, options: .atomic)
+        let client = try await host.typed()
+        defer { client.disconnect() }
+
+        let snapshot = try await client.instructions()
+        #expect(snapshot.agents == "- Tests first.\n")
+        let problem = try #require(snapshot.historyProblem)
+        #expect(problem.contains(url.path))
+        #expect(problem.contains("valid JSON"))
+        do {
+            _ = try await client.instructions(.save(file: .agents, content: "New text", origin: "iPhone", sync: false))
+            Issue.record("The host let a client save despite damaged history")
+        } catch RemoteHostClientError.rejected(let code, let message) {
+            #expect(code == "write_failed")
+            #expect(message == problem)
+        }
+    }
+
     @Test func restoringAVersionTheHostNoLongerHasIsRefused() async throws {
         let host = try RemoteHost()
         defer { host.stop() }

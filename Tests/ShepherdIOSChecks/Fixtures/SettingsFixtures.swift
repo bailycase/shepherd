@@ -47,6 +47,23 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings-experiments-off", routes: [.settings(.experiments)], tab: .settings),
             FixtureScreen(name: "settings-suggestion", hosts: FixtureData.suggestingHosts(),
                           routes: [.settings(.experiments), .settings(.suggestion(FixtureData.joinKeys))], tab: .settings),
+            // Settings search (S5): "model" matches the Models page and its model rows.
+            // Duo uses the compact list; iPad shows the results beside Models, with one row selected.
+            FixtureScreen(name: "settings-search", routes: [.settings(.root)], tab: .settings,
+                          prepare: { app in
+                              await HomeFeed.of(app.hosts).refresh()
+                              let selection = app.navigator.settingsSelection
+                              selection.searchQuery = "model"
+                              selection.select(.models, row: "Image reading model")
+                          },
+                          verify: { app in
+                              let hits = SettingsSearch.hits(for: "model", showsHooks: true)
+                              let selection = app.navigator.settingsSelection
+                              let selected = hits.flatMap { page, rows in rows.filter { selection.isSelected(page, row: $0) } }
+                              FixtureCheck.report(selected == ["Image reading model"]
+                                  ? "FIXTURE CHECK ok: settings search selects one matching Models row"
+                                  : "FIXTURE CHECK FAILED: settings search selected \(selected)")
+                          }),
             // The iPad's list beside a page (iPadSettingsInstructions).
             FixtureScreen(name: "settings-pad-instructions", routes: [.settings(.root)], tab: .settings, prepare: { app in
                 app.navigator.settingsSelection.page = .instructions

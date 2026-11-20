@@ -120,18 +120,42 @@ public struct SHComposer<Top: View, Field: View, Controls: View>: View {
         .clipShape(shape)
         // The line and the ring fade with focus; keyed on focus alone, so they never lag the
         // card as it grows.
-        .overlay {
-            Color.clear
-                .shBorder(isFocused ? sh.textTertiary : sh.lineStrong, radius: SH.Radius.m)
-                .shAnimation(.hover, value: isFocused)
-                .allowsHitTesting(false)
-        }
-        .background {
-            RoundedRectangle(cornerRadius: SH.Radius.m + SHComposerMetrics.focusRing)
-                .inset(by: -SHComposerMetrics.focusRing).fill(sh.bgSelected)
-                .opacity(isFocused ? 1 : 0)
-                .shAnimation(.hover, value: isFocused)
-        }
+        .modifier(SHComposerFocus(isFocused: isFocused))
+    }
+}
+
+/// The card's line and ring. On the Mac they are layers that Core Animation fades (a SwiftUI
+/// animation would lay the visible layout out again on every frame it lasts); elsewhere shapes
+/// that take the hover motion.
+private struct SHComposerFocus: ViewModifier {
+    let isFocused: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        #if canImport(AppKit)
+        content
+            .overlay { SHComposerFocusLayer(part: .line, focused: isFocused, colorScheme: colorScheme).allowsHitTesting(false) }
+            .background {
+                SHComposerFocusLayer(part: .ring, focused: isFocused, colorScheme: colorScheme)
+                    .padding(-SHComposerMetrics.focusRing)
+                    .allowsHitTesting(false)
+            }
+        #else
+        let sh = Color.sh
+        content
+            .overlay {
+                Color.clear
+                    .shBorder(isFocused ? sh.textTertiary : sh.lineStrong, radius: SH.Radius.m)
+                    .shAnimation(.hover, value: isFocused)
+                    .allowsHitTesting(false)
+            }
+            .background {
+                RoundedRectangle(cornerRadius: SH.Radius.m + SHComposerMetrics.focusRing)
+                    .inset(by: -SHComposerMetrics.focusRing).fill(sh.bgSelected)
+                    .opacity(isFocused ? 1 : 0)
+                    .shAnimation(.hover, value: isFocused)
+            }
+        #endif
     }
 }
 

@@ -104,11 +104,14 @@
   - `native.preview.v1`, listed by a client: a `snapshot` for an agent whose pi is not running
     is answered from pi's saved session file (`NativeThreadSnapshot.preview == true`, no
     `supportedActions`, a `generation` no request can name) without starting pi; a client that
-    reads many threads at once (a Home screen) then starts no pi per idle agent. Any other
-    request (send, abort, images…) starts pi as before, whose own snapshot replaces the preview.
-    A client that does not list it has every request start pi. For an agent whose pi stopped, the
-    preview carries `startProblem` and the client wakes nothing; a client that does not list the
-    capability gets the problem alone.
+    reads many threads at once (a Home screen) then starts no pi per idle agent. Requests like
+    send, abort and images start pi as before, whose own snapshot replaces the preview.
+    A client that does not list it can wake pi with an ordinary snapshot. For an agent whose pi
+    stopped, the preview carries `startProblem` and the client wakes nothing; a client that does
+    not list the capability gets the problem alone.
+  - `native.transcript.v1`: `transcriptSnapshot` pages through the saved branch's user and
+    assistant text, including turns before compaction. It never starts pi. Follow `olderCursor`
+    with the first page's `piSessionID`, and discard the copy if the session or file generation changes.
   - `native.revisions.v1`: `nativeThreadSubscribe` replaces a connection's watch set (at most
     64 visible ordinary agents; empty unsubscribes). `nativeThreadChanged(agentID:)` is a
     coalesced invalidation, at most one per watched agent per 250 ms batch, never a snapshot
@@ -265,8 +268,9 @@
     (labels, assignees, reviewers) and `postReview` (a review with line comments). A client
     sends none of them to a host without it
   - `instructions` (`instructions.v1`): Settings ▸ Instructions' files on the host (fetch, save,
-    restore a saved version), answered with the files and their history. The Mac's page syncs
-    them to every host, or edits one host at a time
+    restore a saved version), answered with the files and their history. When the history file
+    needs repair, the host still returns the current text, with an optional `historyProblem`
+    instead of history entries, and refuses saves and restores with `write_failed`.
   - `suggestions` (`suggestions.v1`): Settings ▸ Experiments ▸ Suggested instructions on the host
     (fetch, configure, add as edited and retargeted, add all, dismiss, undo), answered with the
     experiment's settings and its lines
@@ -403,7 +407,8 @@
     change
   - `hooks` (`hooks.v1`): Settings › Hooks on the host (fetch, a hook's off switch by hash, a
     reader, Save, Delete, Test), answered with the host's `HookCatalogSnapshot` (its sources with
-    state, entries, off switches, readers and home) or a test's `HookTestResult`. Save and Delete
+    state, entries, off switches, readers, home and, when the host can't read its
+    `settings.json`, a `settingsProblem` with every hook off) or a test's `HookTestResult`. Save and Delete
     name a hook by slot and the hash the client read; a hook changed since is refused
     (`hook_changed`). Save writes only one of the catalog's JSON files (`not_a_hooks_file`), Test
     runs only in the home folder or one of its spaces (`no_such_space`), bounded by the hook's

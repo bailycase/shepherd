@@ -6,9 +6,17 @@ import Testing
 @testable import ShepherdSessions
 
 extension StateStoreTests {
+    // Keep the reference golden frozen. StateRecoveryTests, YourPiImportEdgeTests and HookCatalogTests
+    // exercise the new policies for these damaged inputs instead of asserting the old rewrites.
+    private static let damagedRows: Set<String> = [
+        "instruction-history-bad-element", "instruction-history-damaged",
+        "workspace-invalid-split", "workspace-dangling-tab", "workspace-unreadable-agent", "workspace-truncated",
+        "pi-import-bad-element", "pi-import-damaged", "hook-settings-bad-element", "hook-settings-damaged",
+    ]
+
     @Test func historicalFilesLoadAndRewriteAsRecorded() async throws {
         try await ValidationGolden.check("c-state.json", from: #filePath,
-                                         completion: "persisted file shapes matched the golden") { golden in
+                                         completion: "persisted file shapes matched the golden", excluding: Self.damagedRows) { golden in
             try await Self.observeFiles(seed: golden.seed, observe: golden.observe)
         }
     }
@@ -19,6 +27,7 @@ extension StateStoreTests {
         let now = Date(timeIntervalSince1970: try #require(seed["writeTime"] as? Double))
         for file in files {
             let step = try #require(file["case"] as? String)
+            guard !damagedRows.contains(step) else { continue }
             let path = try #require(file["file"] as? String)
             let dir = try makeScratchDirectory()
             defer { try? FileManager.default.removeItem(at: dir) }
@@ -54,7 +63,8 @@ extension StateStoreTests {
         switch path {
         case "state.json":
             let store = StateStore(url: url)
-            let backups = try StateStoreTests().quarantined(in: root)
+            let backups = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+                .filter { $0.lastPathComponent.hasPrefix("state.json.") }
             loaded = try json(store.state)
             if step == "workspace-lenient-values" {
                 // The encoder omits the standard tier, so record its decoded value separately.
@@ -122,7 +132,7 @@ extension StateStoreTests {
             _ = try await store.removeThreadNote(design, noteID: writerID)
         case "hooks/settings.json":
             let store = HookSettingsStore(support: root)
-            let settings = store.read()
+            let settings = try store.read()
             loaded = try json(settings)
             try store.setReader(.claude, !settings.readers.claude)
             try store.setReader(.claude, settings.readers.claude)
@@ -147,12 +157,12 @@ extension StateStoreTests {
             let engine = PiEngine(command: [], packageDirectory: nil, version: nil, node: .executable("/usr/bin/false"))
             let home = PiHome(directory: url.deletingLastPathComponent(), engine: engine, userHome: root.path)
             let store = YourPiImport(home: home, yourPi: nil, userHome: root.path)
-            let state = store.state()
+            let state = try #require(store.state())
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            loaded = try JSONSerialization.jsonObject(with: encoder.encode(state), options: [.fragmentsAllowed])
-            if let state { try store.save(state) }
-            else { try store.updateState { $0 = YourPiImportState(copiedAt: now, from: nil, copied: false) } }
+            loaded = try JSONSerialization.jsonObject(with: encoder.encode(state))
+            try store.updateState { $0.copied.toggle() }
+            try store.updateState { $0 = state }
         default:
             throw CocoaError(.fileReadUnsupportedScheme)
         }

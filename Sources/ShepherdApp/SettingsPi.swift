@@ -14,8 +14,8 @@ struct ModelsSettings: View {
     /// Opens Settings ▸ Your pi.
     var openYourPi: () -> Void = {}
 
-    /// "Imported Nov 2" once something was copied; "No pi found" without one.
     private var yourPiHint: String {
+        if yourPi.survey?.stateProblem != nil { return "Import history unavailable" }
         guard let survey = yourPi.survey, survey.folder != nil else { return "No pi of yours found" }
         return survey.copiedAt.map { "Imported \(FromYourPiSettings.day($0))" } ?? "Not imported yet"
     }

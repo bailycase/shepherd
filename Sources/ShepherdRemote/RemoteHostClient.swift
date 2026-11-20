@@ -427,6 +427,9 @@ public final class RemoteHostClient: @unchecked Sendable {
                 guard fetchesState else { return ShepherdState() }
                 let stateReply = try await request(timeout: handshake, connectionGeneration: attempt) { id in .stateFetch(id: id) }
                 guard case .state(_, let state) = stateReply else {
+                    if case .error(_, let code, let message) = stateReply {
+                        throw RemoteHostClientError.rejected(code: code, message: message)
+                    }
                     throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected state reply")
                 }
                 try queue.sync {
@@ -787,6 +790,8 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// Why a host with `capabilities` cannot take `request` (it predates it), or nil.
     static func missingCapability(_ request: NativeThreadRequest, capabilities: Set<String>) -> String? {
         switch request {
+        case .transcriptSnapshot:
+            capabilities.contains(RemoteProtocol.nativeThreadTranscriptCapability) ? nil : "Update Shepherd on the host to copy the transcript."
         case .setModel, .setThinking:
             capabilities.contains(RemoteProtocol.nativeThreadV2Capability) ? nil : "Update Shepherd on the host to change the model or thinking level."
         case .queue(_, _, _, .subagent):
@@ -881,8 +886,10 @@ public final class RemoteHostClient: @unchecked Sendable {
                 .nativeThread(id: $0, agentID: agentID, request: command)
             }
         } catch RemoteHostClientError.timeout {
+            if case .transcriptSnapshot = command { throw RemoteHostClientError.timeout }
             throw RemoteHostClientError.outcomeUnknown(message: "Native request timed out. Refresh before acting; do not automatically retry.")
         } catch RemoteHostClientError.disconnected {
+            if case .transcriptSnapshot = command { throw RemoteHostClientError.disconnected }
             throw RemoteHostClientError.outcomeUnknown(message: "Connection lost. Refresh before acting; do not automatically retry.")
         }
         let legacy = !supports(.nativeThreadStarting)
@@ -959,7 +966,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// `cancellable`). Everything with an operation id is a mutation whose outcome must be heard.
     static func isRead(_ request: NativeThreadRequest) -> Bool {
         switch request {
-        case .snapshot, .subagentTranscript, .image: true
+        case .snapshot, .transcriptSnapshot, .subagentTranscript, .image: true
         default: false
         }
     }
