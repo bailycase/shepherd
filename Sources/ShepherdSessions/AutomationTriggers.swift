@@ -140,7 +140,7 @@ public actor AutomationTriggers {
     private var calendar: Calendar
     private var host: Host?
     private var file = File()
-    /// Sticky until the host restarts so its cached cursors cannot overwrite a repaired file.
+    /// Blocks writes and starts until a tick can replace the cached cursors with a clean disk copy.
     private var damage: Damaged?
     /// Notes to post once the tick's state is saved.
     private var outbox: [(String, String)] = []
@@ -162,8 +162,10 @@ public actor AutomationTriggers {
         }
     }
 
-    public func install(_ host: Host) {
+    public func install(_ host: Host) async {
+        let initialDamage = self.host == nil && damage != nil
         self.host = host
+        if initialDamage { await Self.notifyDamage(to: host) }
     }
 
     /// Starts ticking (the app, once its workspace is adopted). Tests call `tick()` instead.
@@ -186,7 +188,7 @@ public actor AutomationTriggers {
 
     public func status(of automation: Automation) -> AutomationTriggerStatus {
         if let damage {
-            return AutomationTriggerStatus(state: .paused, reason: damage.description,
+            return AutomationTriggerStatus(state: .paused, reason: damage.description, allPaused: true,
                                            timeZone: calendar.timeZone.identifier, storageDamaged: true)
         }
         let record = file.records[automation.id.rawValue] ?? Record()
@@ -225,7 +227,7 @@ public actor AutomationTriggers {
         projectExecution = enabled
     }
 
-    public var allPaused: Bool { file.allPaused }
+    public var allPaused: Bool { damage != nil || file.allPaused }
 
     public func setAllPaused(_ paused: Bool) throws {
         try checkStorage()
@@ -314,7 +316,19 @@ public actor AutomationTriggers {
     private var currentTick: Task<Void, Never>?
 
     private func runTick() async {
-        guard let host, (try? checkStorage()) != nil else { return }
+        guard let host else { return }
+        if damage != nil {
+            // Missing is not a repair: the file may still hold pauses and pending events.
+            guard case .loaded(let restored) = PersistedFile<File>.load(from: url) else { return }
+            file = restored
+            reads = [:]
+            origins = [:]
+            damage = nil
+            ShepherdLog.info("Automation trigger state recovered: \(url.path)")
+            host.changed()
+        } else if (try? checkStorage()) == nil {
+            return
+        }
         let before = file
         let automations = await host.automations()
         guard damage == nil else { return }
@@ -597,9 +611,14 @@ public actor AutomationTriggers {
 
     private static func reportDamage(at url: URL, error: any Error) -> Damaged {
         let message = "Couldn't read \(url.path): \(error). Automatic runs are paused. "
-            + "On the host Mac, restore the file from a backup or repair its JSON or permissions, then restart the Shepherd host."
+            + "Triggers recover on their own once Shepherd can read the file again. "
+            + "If the problem persists, restore the file from a backup or repair its JSON or permissions on the host Mac."
         ShepherdLog.error(message)
         return Damaged(description: message)
+    }
+
+    private static func notifyDamage(to host: Host) async {
+        await host.notify("Automation triggers paused", "Shepherd couldn't read the trigger state file. Triggers recover once it can read the file again.")
     }
 
     /// The actor owns the in-memory records. Check the disk before writing or firing in case
@@ -610,7 +629,10 @@ public actor AutomationTriggers {
             let problem = Self.reportDamage(at: url, error: error)
             damage = problem
             outbox = []
-            host?.changed()
+            if let host {
+                host.changed()
+                Task { await Self.notifyDamage(to: host) }
+            }
             throw problem
         }
     }

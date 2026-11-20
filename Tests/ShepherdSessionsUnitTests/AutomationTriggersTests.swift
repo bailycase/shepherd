@@ -100,16 +100,60 @@ struct AutomationTriggersTests {
         await engine.tick()
 
         let status = await engine.status(of: automation)
-        #expect(status.state == .paused)
+        #expect(status.state == .paused && status.allPaused && status.storageDamaged == true)
         #expect(status.reason?.contains(url.path) == true)
-        #expect(status.reason?.contains("backup") == true)
+        #expect(status.reason?.contains("recover on their own") == true)
         #expect(world.with { $0.reads == 0 && $0.started.isEmpty })
+        #expect(world.with { $0.notes == ["Automation triggers paused"] })
         if input == "unreadable" {
             #expect(try FileManager.default.destinationOfSymbolicLink(atPath: url.path) == target.path)
             #expect(!FileManager.default.fileExists(atPath: target.path))
         } else {
             #expect(try Data(contentsOf: url) == Data(input.utf8))
         }
+    }
+
+    @Test(arguments: [false, true])
+    func nextTickUsesRepairedDiskStateAndStartsDueWork(readFailure: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("automation-triggers.json")
+        let world = World()
+        world.now = ISO8601DateFormatter().date(from: "2026-10-30T08:00:00Z")!
+        let automation = Automation(id: AutomationID(rawValue: "brief"), name: "Brief", prompt: "brief me", cwd: "/tmp",
+                                    trigger: .schedule(AutomationSchedule(rrule: "FREQ=HOURLY;BYMINUTE=0")))
+        world.automations = [automation]
+        let engine = await Self.engine(world, url: url)
+        await engine.tick()
+        let healthy = try Data(contentsOf: url)
+        // The restored copy is active, unlike the engine's last cached state.
+        try await engine.setAllPaused(true)
+        if readFailure {
+            try FileManager.default.removeItem(at: url)
+            try FileManager.default.createSymbolicLink(at: url, withDestinationURL: root.appendingPathComponent("not-readable"))
+        } else {
+            try Data("{".utf8).write(to: url)
+        }
+        world.advance(3600)
+        await engine.tick()
+        #expect(await engine.status(of: automation).storageDamaged == true)
+        await #expect(throws: AutomationTriggers.Damaged.self) { try await engine.setAllPaused(false) }
+
+        #expect(world.with { $0.started.isEmpty })
+        try FileManager.default.removeItem(at: url)
+        if !readFailure {
+            await engine.tick()
+            #expect(await engine.status(of: automation).storageDamaged == true)
+            #expect(!FileManager.default.fileExists(atPath: url.path))
+            #expect(world.with { $0.started.isEmpty })
+        }
+
+        try healthy.write(to: url)
+        await engine.tick()
+        let recovered = await engine.status(of: automation)
+        #expect(recovered.state == .active && !recovered.allPaused && recovered.storageDamaged != true)
+        #expect(world.with { $0.started.map { $0.map(\.title) } } == [["Scheduled run"]])
     }
 
     @Test(arguments: [false, true])

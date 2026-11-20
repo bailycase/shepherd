@@ -236,11 +236,15 @@ extension PreviewTests {
         let key = AutomationKey(host: PageHost.localID, automation: automation.id)
         let host = AutomationHost(id: PageHost.localID, name: PageHost.localName, connected: true, manageable: true,
                                   state: ShepherdState(automations: [automation]), triggers: true)
-        let reason = "Couldn't read /Users/acme/Library/Application Support/Shepherd/automation-triggers.json: Invalid JSON. "
-            + "Automatic runs are paused. On the host Mac, restore the file from a backup or repair its JSON or permissions, then restart the Shepherd host."
-        let status = AutomationTriggerStatus(state: .paused, reason: reason, storageDamaged: true)
-        let model = AutomationsPageModel.make(hosts: [host], runs: [:], selection: key, filter: "", triggers: [key: status])
-        #expect(model.detail?.banner?.message == reason)
+        let root = try makeScratchDirectory("acme")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("automation-triggers.json")
+        try Data("{".utf8).write(to: url)
+        let status = await AutomationTriggers(url: url).status(of: automation)
+        let model = AutomationsPageModel.make(hosts: [host], runs: [:], selection: key, filter: "", triggers: [key: status],
+                                              allPaused: status.allPaused)
+        #expect(model.detail?.banner?.message?.contains("recover on their own") == true)
+        #expect(model.allPaused)
         #expect(model.detail?.banner?.canResume == false)
         try await Preview.render("page-automations-damaged-trigger-storage", size: Self.triggerPageSize) {
             AutomationsPage(model: model, actions: Self.noAutomationActions)
