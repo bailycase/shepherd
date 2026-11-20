@@ -104,7 +104,7 @@ struct RemoteBrowserTests {
         #expect(session.remote?.chip(for: URL(string: "http://127.0.0.1:3000")) == "build-01")
         #expect(session.remote?.chip(for: URL(string: "about:blank")) == "build-01")
         #expect(session.remote?.chip(for: nil) == "build-01")
-        #expect(session.remote?.forward(try #require(URL(string: "https://example.com/"))) == nil, "nothing to forward for the web")
+        #expect(session.remote?.forward(try #require(URL(string: "https://example.com/")), tab: session.tabID) == nil, "nothing to forward for the web")
         #expect(s.vm.browsers.ports.ports(of: try #require(session.remote).owner).isEmpty)
     }
 
@@ -291,8 +291,8 @@ struct RemoteBrowserTests {
         defer { s.stop() }
         let a = s.session(refs[0]), b = s.session(refs[1])
         let portA = try unusedPort(), portB = try unusedPort()
-        #expect(a.remote?.forward(try url(portA, "/hello")) == nil)
-        #expect(b.remote?.forward(try url(portB, "/hello")) == nil)
+        #expect(a.remote?.forward(try url(portA, "/hello"), tab: a.tabID) == nil)
+        #expect(b.remote?.forward(try url(portB, "/hello"), tab: b.tabID) == nil)
         a.prepareWebView()
         b.prepareWebView()
         let ownerA = try #require(a.remote).owner, ownerB = try #require(b.remote).owner
@@ -326,6 +326,121 @@ struct RemoteBrowserTests {
         session.load(try url(port, "/hello"))
         #expect(session.notice == nil)
         try await eventuallyAsync("the page") { (try? await Self.bodyText(session)) == "hello from the host" }
+    }
+
+    // MARK: A closed tab's ports
+
+    /// A plain TCP connection to this Mac's loopback at `port`; -1 when it is refused.
+    private func connectLoopback(_ port: UInt16) -> Int32 {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return -1 }
+        var timeout = timeval(tv_sec: 5, tv_usec: 0)
+        _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr = in_addr(s_addr: UInt32(0x7f00_0001).bigEndian)
+        let status = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        if status != 0 { close(fd); return -1 }
+        return fd
+    }
+
+    /// Whether `fd`'s peer closed it: a read that ends (0 bytes, or a reset) and does not time out.
+    private func peerClosed(_ fd: Int32) async -> Bool {
+        await Task.detached {
+            var byte: UInt8 = 0
+            while true {
+                let n = read(fd, &byte, 1)
+                if n < 0, errno == EINTR { continue }
+                return n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+            }
+        }.value
+    }
+
+    /// The tab forwards `viewerPort`.
+    private func hold(_ page: BrowserSession, _ viewerPort: UInt16) throws {
+        #expect(page.remote?.forward(try url(viewerPort, "/"), tab: page.tabID) == nil)
+    }
+
+    /// A live bridge through `port`: an unfinished request keeps it open, and its tunnel is up once the hub counts it.
+    private func bridge(_ port: UInt16, in s: Setup) async throws -> Int32 {
+        let fd = connectLoopback(port)
+        #expect(fd >= 0)
+        _ = "GET /hello HTTP/1.1\r\n".withCString { write(fd, $0, strlen($0)) }
+        try await eventuallyAsync("the connection to be bridged") { s.connection.hubSlot.hub?.openCount == 1 }
+        return fd
+    }
+
+    @Test func closingATabRefusesNewConnectionsToItsPortAndEndsItsBridge() async throws {
+        let (s, _) = try await setup()
+        defer { s.stop() }
+        let dev = try DevServerFixture()
+        defer { dev.stop() }
+        let root = s.session()
+        let tab = try #require(root.tabs.newTab())
+        let port = try map(root, to: dev.port)
+        try hold(tab, port)
+        let fd = try await bridge(port, in: s)
+        defer { close(fd) }
+
+        root.tabs.close(tab.tabID)
+
+        #expect(await peerClosed(fd), "the closed tab's live bridge ends")
+        #expect(connectLoopback(port) < 0, "nothing listens for a closed tab")
+        #expect(s.vm.browsers.ports.ports(of: try #require(root.remote).owner).isEmpty)
+    }
+
+    @Test func aPortTwoTabsHoldStaysUpUntilTheSecondCloses() async throws {
+        let (s, _) = try await setup()
+        defer { s.stop() }
+        let dev = try DevServerFixture()
+        defer { dev.stop() }
+        let root = s.session()
+        let a = try #require(root.tabs.newTab()), b = try #require(root.tabs.newTab())
+        let port = try map(root, to: dev.port)
+        try hold(a, port)
+        try hold(b, port)
+        let fd = try await bridge(port, in: s)
+        defer { close(fd) }
+        let owner = try #require(root.remote).owner
+
+        root.tabs.close(a.tabID)
+        #expect(s.vm.browsers.ports.ports(of: owner) == [Int(port)], "the other tab still holds it")
+        let again = connectLoopback(port)
+        #expect(again >= 0)
+        close(again)
+
+        root.tabs.close(b.tabID)
+        #expect(await peerClosed(fd))
+        #expect(connectLoopback(port) < 0)
+        #expect(s.vm.browsers.ports.ports(of: owner).isEmpty)
+    }
+
+    @Test func closeOthersAndCloseAllReleaseTheClosedTabsPorts() async throws {
+        let (s, _) = try await setup()
+        defer { s.stop() }
+        let dev = try DevServerFixture()
+        defer { dev.stop() }
+        let root = s.session()
+        let keep = try #require(root.tabs.newTab()), other = try #require(root.tabs.newTab())
+        let kept = try map(root, to: dev.port), dropped = try map(root, to: dev.port)
+        try hold(keep, kept)
+        try hold(other, dropped)
+        let fd = try await bridge(dropped, in: s)
+        defer { close(fd) }
+        let owner = try #require(root.remote).owner
+        root.tabs.select(keep.tabID)
+
+        root.tabs.closeOthers()
+        #expect(await peerClosed(fd))
+        #expect(s.vm.browsers.ports.ports(of: owner) == [Int(kept)])
+
+        root.tabs.closeAll()
+        #expect(s.vm.browsers.ports.ports(of: owner).isEmpty)
+        #expect(connectLoopback(kept) < 0)
     }
 
     private static func bodyText(_ session: BrowserSession) async throws -> String {
