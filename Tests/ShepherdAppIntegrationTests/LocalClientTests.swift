@@ -44,7 +44,7 @@ struct LocalClientTests {
         let old = try ScratchServer(dir: dir)
         defer { old.stop(keepFiles: true) }
         old.server.hostBuild = "724"
-        let space = Fixture.space("acme-web")
+        let space = Fixture.space("acme-web", path: dir.path)
         var state = Fixture.state(spaces: [space], agents: [Fixture.agent("Fix the checkout", in: space, status: .working)])
         try await old.server.putState(state)
         let finished = Locked(false)

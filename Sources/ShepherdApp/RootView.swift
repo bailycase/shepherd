@@ -76,7 +76,6 @@ struct RootView: View {
                     NightlyMovedNotice(download: { updater.downloadShepherdNightly() },
                                        dismiss: { updater.dismissNightlyMovedNotice() })
                 }
-                if let handoff = vm.remoteHosts.hostHandoff { HostHandoffNotice(handoff: handoff) }
                 WorkspaceView(vm: vm)
             }
             // A page (New thread, Automations, Hosts) covers the whole column, toolbar included;
@@ -85,6 +84,9 @@ struct RootView: View {
                 DestinationLayer(vm: vm, chrome: PageHeaderChrome(
                     leadingInset: docked || isFullScreen ? 0 : AppLayout.trafficLightInset,
                     showSidebar: docked ? nil : { vm.toggleSidebar() }))
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if let handoff = vm.remoteHosts.hostHandoff { HostHandoffNotice(handoff: handoff) }
             }
             // A deletion's toast, over the bottom of the column (DesignDeleted).
             .overlay { DesignToastLayer(vm: vm) }
