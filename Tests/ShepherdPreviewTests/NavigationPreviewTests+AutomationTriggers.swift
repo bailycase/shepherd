@@ -230,6 +230,23 @@ extension PreviewTests {
         }
     }
 
+    @Test func automationsPageDamagedTriggerStorage() async throws {
+        let automation = Automation(name: "Check the build", prompt: "Check build status.", cwd: "/tmp/acme",
+                                    enabled: false, trigger: .schedule(AutomationSchedule(rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0")))
+        let key = AutomationKey(host: PageHost.localID, automation: automation.id)
+        let host = AutomationHost(id: PageHost.localID, name: PageHost.localName, connected: true, manageable: true,
+                                  state: ShepherdState(automations: [automation]), triggers: true)
+        let reason = "Couldn't read /Users/acme/Library/Application Support/Shepherd/automation-triggers.json: Invalid JSON. "
+            + "Automatic runs are paused. On the host Mac, restore the file from a backup or repair its JSON or permissions, then restart the Shepherd host."
+        let status = AutomationTriggerStatus(state: .paused, reason: reason, storageDamaged: true)
+        let model = AutomationsPageModel.make(hosts: [host], runs: [:], selection: key, filter: "", triggers: [key: status])
+        #expect(model.detail?.banner?.message == reason)
+        #expect(model.detail?.banner?.canResume == false)
+        try await Preview.render("page-automations-damaged-trigger-storage", size: Self.triggerPageSize) {
+            AutomationsPage(model: model, actions: Self.noAutomationActions)
+        }
+    }
+
     /// A new every-30-minutes schedule pinned to Fast: the editor says the interval counts from
     /// the save, and shows the Speed pin.
     @Test(arguments: [0, 20]) func automationEditorIntervalAndSpeed(maxPerDay: Int) async throws {

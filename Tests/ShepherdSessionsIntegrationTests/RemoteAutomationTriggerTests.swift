@@ -42,6 +42,39 @@ struct RemoteAutomationTriggerTests {
         }
     }
 
+    @Test func damagedTriggerStateRefusesRemoteControlsAndExplainsWhy() async throws {
+        let remote = try RemoteHost()
+        defer { remote.stop() }
+        let automation = Automation(name: "brief", prompt: "brief me", cwd: remote.host.dir.path, enabled: false,
+                                    trigger: .schedule(AutomationSchedule(rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0")))
+        try await remote.host.seed(ShepherdState(automations: [automation]))
+        let url = remote.host.stateURL.deletingLastPathComponent().appendingPathComponent("automation-triggers.json")
+        let damaged = Data("{".utf8)
+        try damaged.write(to: url)
+        let client = try await remote.typed()
+        defer { client.disconnect() }
+
+        let requests: [RemoteAutomationRequest] = [.pause, .resume, .setAllPaused(paused: false),
+                                                    .dismissEvent(eventID: "old"), .runEvent(eventID: "old")]
+        for request in requests {
+            do {
+                _ = try await client.automation(automation.id, request: request)
+                Issue.record("Accepted \(request) with damaged storage")
+            } catch {
+                #expect(String(describing: error).contains(url.path))
+            }
+        }
+
+        guard case .status(let status) = try await client.automation(automation.id, request: .status) else {
+            Issue.record("Expected a trigger status")
+            return
+        }
+        #expect(status.storageDamaged == true)
+        #expect(status.state == .paused)
+        #expect(status.reason?.contains("restore the file from a backup") == true)
+        #expect(try Data(contentsOf: url) == damaged)
+    }
+
     /// A draft's settings are validated by the host before anything is saved, and a draft
     /// without settings (an older client) keeps the trigger.
     @Test func draftSettings() async throws {

@@ -229,6 +229,7 @@ public struct AutomationTriggerDetail: Equatable, Sendable {
     public var today: String?
     public var pending: [AutomationPendingRow]
     public var allPaused: Bool
+    public var storageDamaged: Bool
     /// The facts under the trigger.
     public var runsOn: String
     public var workspace: String?
@@ -257,7 +258,7 @@ public struct AutomationTriggerDetail: Equatable, Sendable {
                 AutomationPendingRow(id: event.id, summary: event.summary, url: event.url.flatMap(URL.init(string:)),
                                      when: AutomationsModel.stamp(Date(timeIntervalSince1970: event.occurredAt), timeZone: timeZone, locale: locale))
             },
-            allPaused: status?.allPaused ?? false,
+            allPaused: status?.allPaused ?? false, storageDamaged: status?.storageDamaged == true,
             runsOn: row.runsOn,
             workspace: settings.destination == .newThread || settings.destination == nil
                 ? AutomationTriggerText.workspace(settings.workspace ?? .worktree) : nil,
