@@ -610,7 +610,7 @@ struct ChangesTurnTests {
         defer { host.stop() }
         let pi = try await PiAgent.launch(on: host)
         let seeded = try await pi.ready()
-        #expect(seeded.turnChanges?.isEmpty == true)
+        #expect(seeded.turnChanges == nil)
         let changes = host.server.changes
         let damaged = try await changes.overview(agentID: pi.agent.id)
         #expect(damaged.turnHistoryProblem != nil)
