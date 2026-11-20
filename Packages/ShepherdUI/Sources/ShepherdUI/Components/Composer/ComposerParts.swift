@@ -123,14 +123,32 @@ public struct SHComposer<Top: View, Field: View, Controls: View>: View {
         .overlay {
             Color.clear
                 .shBorder(isFocused ? sh.textTertiary : sh.lineStrong, radius: SH.Radius.m)
-                .shAnimation(.hover, value: isFocused)
+                .modifier(SHComposerFocusMotion(focused: isFocused))
                 .allowsHitTesting(false)
         }
         .background {
             RoundedRectangle(cornerRadius: SH.Radius.m + SHComposerMetrics.focusRing)
                 .inset(by: -SHComposerMetrics.focusRing).fill(sh.bgSelected)
                 .opacity(isFocused ? 1 : 0)
-                .shAnimation(.hover, value: isFocused)
+                .modifier(SHComposerFocusMotion(focused: isFocused))
+        }
+    }
+}
+
+/// How the card's line and ring follow focus: the hover motion, a spring, as `shAnimation` has
+/// it. A focus taken as a layout comes on screen (`Transaction.shFocusFades`) fades in over the
+/// same duration with no spring instead, since a spring's tail would lay the layout out again on
+/// every frame after the switch. A change that disables animations (a hidden layout's) lands at once.
+private struct SHComposerFocusMotion: ViewModifier {
+    let focused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.transaction(value: focused) { transaction in
+            guard !transaction.disablesAnimations else { return }
+            transaction.animation = transaction.shFocusFades
+                ? SH.Motion.hover.fade(reduceMotion: reduceMotion)
+                : SH.Motion.hover.animation(reduceMotion: reduceMotion)
         }
     }
 }

@@ -95,6 +95,14 @@ extension SH {
             }
         }
 
+        /// A fade that is over at the motion's duration: an ease-out with no spring, so nothing keeps
+        /// settling after it (a spring's tail lays the view out again on every frame for a third of
+        /// a second). For a change that should come in briefly where a spring's tail would cost
+        /// too much (`Transaction.shFocusFades`); nil under Reduce Motion, where it lands at once.
+        public func fade(reduceMotion: Bool) -> Animation? {
+            reduceMotion ? nil : .easeOut(duration: duration)
+        }
+
         /// What stands in for movement under Reduce Motion: a short, eased cross-fade.
         public static let crossFade = Animation.easeInOut(duration: Motion.hover.duration)
 
@@ -295,6 +303,14 @@ public func withSHAnimation<Result>(_ motion: SH.Motion, _ body: () throws -> Re
                                     completion: @escaping () -> Void) rethrows -> Result {
     try withAnimation(motion.animation(reduceMotion: SH.Motion.systemReduceMotion), completionCriteria: .removed, body,
                       completion: completion)
+}
+
+extension Transaction {
+    /// Set on a change of focus made as a layout comes on screen: where the focus ring takes the
+    /// hover motion's spring for any other change of focus, it fades over the same duration on
+    /// `SH.Motion.fade` instead (`SHComposer`). A transaction that also disables animations (a
+    /// hidden layout's) wins: nothing fades there.
+    @Entry public var shFocusFades: Bool = false
 }
 
 extension SH.Motion {
