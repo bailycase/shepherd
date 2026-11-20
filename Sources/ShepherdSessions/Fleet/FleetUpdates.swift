@@ -121,6 +121,9 @@ final class FleetUpdates: @unchecked Sendable {
         var restarts = 0
         var failures = 0
         var wentAwayAt: Date?
+        /// What the Mac last said it was doing, and since when: a Mac that began to install and says the same for `relaunchPatience` is stuck.
+        var phase: HostUpdateStatus.Phase?
+        var phaseSince = Date.distantFuture
     }
 
     private func onQueue<T: Sendable>(_ body: @escaping @Sendable () -> T) async -> T {
@@ -134,6 +137,10 @@ final class FleetUpdates: @unchecked Sendable {
         while !Task.isCancelled {
             if clock().timeIntervalSince(began) > maxAge {
                 return await end(job, .failed, "Gave up after \(Int(maxAge / 3600)) hours. Start it again to try once more.")
+            }
+            if progress.leaving, clock().timeIntervalSince(progress.phaseSince) > relaunchPatience {
+                let who = await onQueue { self.name?(hostID) ?? "That Mac" }
+                return await end(job, .failed, "\(who) didn't finish updating. Open Shepherd there and try again.")
             }
             let reached = await onQueue { self.reach?(hostID) ?? .notInFleet }
             switch reached {
@@ -181,6 +188,7 @@ final class FleetUpdates: @unchecked Sendable {
     private func advance(_ job: Job, _ first: HostUpdateStatus, _ progress: inout Progress, send: @escaping @Sendable (RemoteHostUpdateRequest) async throws -> HostUpdateStatus) async throws -> Bool {
         var status = first
         let hostID = job.status.hostID
+        if status.phase != progress.phase { (progress.phase, progress.phaseSince) = (status.phase, clock()) }
         let build = status.build
         if job.status.fromBuild == nil, !build.isEmpty { await mutate(job) { $0.fromBuild = build } }
         let from = job.status.fromBuild
@@ -198,8 +206,10 @@ final class FleetUpdates: @unchecked Sendable {
         let who = await onQueue { self.name?(hostID) ?? "That Mac" }
         switch status.phase {
         case .unsupported:
-            if progress.leaving {
-                // The host is up before its app is: the app comes back with it, or after a look at the build above.
+            if progress.leaving || progress.installAsked {
+                // The host is up before its app is (or while it quits to install, once the host sent the install it held for idle
+                // threads): the app comes back with it, or after a look at the build above.
+                progress.leaving = true
                 await set(job, .relaunching)
                 return false
             }
@@ -244,6 +254,10 @@ final class FleetUpdates: @unchecked Sendable {
             } else if let error = status.error {
                 // The Mac can't install now (a question waits for an answer, a Project runs) and said why.
                 await end(job, .failed, error)
+                return true
+            } else if progress.installRequests >= 3 {
+                // It took the install each time and the offer is still there: nothing started.
+                await end(job, .failed, "\(who) didn't start installing the update. Try again.")
                 return true
             } else {
                 await set(job, .checking)

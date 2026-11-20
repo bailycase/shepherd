@@ -1208,7 +1208,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .status, .check, .cancel: installs = false
         }
         let reply: RemoteReply
-        do { reply = try await self.request { .hostUpdate(id: $0, request: request) } }
+        do { reply = try await self.request(timeout: RemoteHostUpdateRequest.askerTimeout) { .hostUpdate(id: $0, request: request) } }
         catch RemoteHostClientError.timeout {
             if installs {
                 throw RemoteHostClientError.outcomeUnknown(message: "Update outcome unknown. Reconnect and refresh status; do not retry installation automatically.")

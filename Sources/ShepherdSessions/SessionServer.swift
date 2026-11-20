@@ -564,7 +564,7 @@ public final class SessionServer: @unchecked Sendable {
                 reply(status)
             }
         }
-        queue.asyncAfter(deadline: .now() + 10) { finish(nil) }
+        queue.asyncAfter(deadline: .now() + RemoteHostUpdateRequest.hostReplyDeadline) { finish(nil) }
         let toUpdater = forwarded
         hopToMain { [weak self] in
             guard let self else { return }

@@ -16,6 +16,14 @@ public enum RemoteHostUpdateRequest: Codable, Hashable, Sendable {
     case cancel
 }
 
+extension RemoteHostUpdateRequest {
+    /// How long the host that serves a request waits for its updater, which may have to open the app first, before it answers that it didn't.
+    public static let hostReplyDeadline: TimeInterval = 10
+    /// How long the asker waits: longer than the host does, so the host's own answer comes first. A request on a link to another Mac that
+    /// times out takes the whole link down with it.
+    public static let askerTimeout: TimeInterval = hostReplyDeadline + 5
+}
+
 /// What this Mac's app, whose Sparkle installs an update, asks its background host, which owns
 /// the agents an update restarts (`RemoteRequest.hostUpdateGate`, local clients only). Each is
 /// answered `ok` (yes, or no reason for `blockReason`) or an error whose message is the reason.
