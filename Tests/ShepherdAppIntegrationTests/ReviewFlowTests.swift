@@ -32,18 +32,18 @@ struct ReviewFlowTests {
 
     private static func checkingCommitSheet() async throws {
         AccessibilityNode.enable()
-        let directory = ProcessInfo.processInfo.environment["SHEPHERD_VALIDATION_DIR"].map { URL(fileURLWithPath: $0) }
+        let directory = ValidationEvidence.directory
         var failure: (any Error)?
         for dark in [false, true] {
             do {
                 try await checkingCommitSheet(dark: dark, directory: directory)
             } catch {
                 failure = failure ?? error
-                print("\(dark ? "dark" : "light"): \(error)")
+                Issue.record("\(dark ? "dark" : "light"): \(error)")
             }
         }
         if let failure { throw failure }
-        try Evidence.record(in: directory, step: "complete", appearance: nil, status: "passed",
+        try ValidationEvidence.record(in: directory, step: "complete", status: "passed",
                             expected: "light and dark scenarios finished", actual: "light and dark scenarios finished")
     }
 
@@ -128,23 +128,12 @@ struct ReviewFlowTests {
                 let image = directory.flatMap { directory in
                     capture.flatMap { Self.screenshot(of: $0(), in: directory, name: "\(step)-actual-\(appearance).png") }
                 }
-                try Self.record(in: directory, step: step, appearance: appearance, status: "failed",
-                                expected: expected, actual: String(describing: error), evidence: image.map { [$0] } ?? [])
+                try? ValidationEvidence.record(in: directory, step: step, appearance: appearance, status: "failed",
+                                               expected: expected, actual: String(describing: error), evidence: image.map { [$0] } ?? [])
                 throw error
             }
-            try Self.record(in: directory, step: step, appearance: appearance, status: "passed", expected: expected, actual: actual)
-        }
-
-        static func record(in directory: URL?, step: String, appearance: String?, status: String,
-                           expected: String, actual: String, evidence: [String] = []) throws {
-            guard let directory else { return }
-            let steps = directory.appendingPathComponent("steps", isDirectory: true)
-            try FileManager.default.createDirectory(at: steps, withIntermediateDirectories: true)
-            var record: [String: Any] = ["step": step, "status": status, "expected": expected, "actual": actual, "evidence": evidence]
-            if let appearance { record["appearance"] = appearance }
-            let name = appearance.map { "\(step)-\($0)" } ?? step
-            try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]).write(
-                to: steps.appendingPathComponent("\(name).json"), options: .atomic)
+            try ValidationEvidence.record(in: directory, step: step, appearance: appearance, status: "passed",
+                                          expected: expected, actual: actual)
         }
 
         private static func screenshot(of view: NSView, in directory: URL, name: String) -> String? {
