@@ -82,6 +82,8 @@ final class FleetHooksSource: FleetUnitSource {
     private let catalog: () -> HookCatalog
     private let written: () -> Void
     private var present: [String] = []
+    /// What `isReady` validated, which `read` then uses: a reload in between could see a settings file that isn't.
+    private var validated: HookCatalogSnapshot?
 
     static let kind = "hook:"
     static let readers = FleetUnit.setting("hooks.readers")
@@ -106,6 +108,7 @@ final class FleetHooksSource: FleetUnitSource {
     var isReady: Bool {
         let path = sharedPath
         let snapshot = catalog().load()
+        validated = nil
         let problem = snapshot.settingsProblem
         if (problem == nil) != wasReady {
             wasReady = problem == nil
@@ -118,7 +121,9 @@ final class FleetHooksSource: FleetUnitSource {
         if problem != nil { return false }
         guard let source = snapshot.sources.first(where: { $0.path == path }) else { return false }
         switch source.state {
-        case .loaded, .notFound: return true
+        case .loaded, .notFound:
+            validated = snapshot
+            return true
         case .readerOff, .unreadable: return false
         }
     }
@@ -134,7 +139,7 @@ final class FleetHooksSource: FleetUnitSource {
     }
 
     func read() -> [String: Data] {
-        let snapshot = catalog().load()
+        let snapshot = validated ?? catalog().load()
         var values: [String: Data] = [:]
         for entry in ownEntries(snapshot) {
             let id = Self.id(event: entry.event, matcher: entry.matcher, handler: entry.handler.raw)
@@ -155,6 +160,7 @@ final class FleetHooksSource: FleetUnitSource {
 
     func write(_ unit: String, _ value: Data?, origin: String) throws {
         let catalog = catalog()
+        validated = nil
         if unit == Self.readers {
             guard let value, let json = try? HookJSON.parse(String(decoding: value, as: UTF8.self)),
                   let claude = json["claude"]?.boolValue, let codex = json["codex"]?.boolValue else { return }
@@ -176,8 +182,8 @@ final class FleetHooksSource: FleetUnitSource {
                 if let existing {
                     if existing.on != on { try catalog.settingsStore.setOn(existing.hash, on) }
                 } else {
-                    let hash = try writer.add(HookDraft(event: event, matcher: json["matcher"]?.stringValue ?? "", handler: HookHandler(raw: handler)), to: sharedPath)
-                    if !on { try catalog.settingsStore.setOn(hash, false) }
+                    // A disabled hook is recorded off before its file publishes it.
+                    try writer.add(HookDraft(event: event, matcher: json["matcher"]?.stringValue ?? "", handler: HookHandler(raw: handler)), to: sharedPath, on: on)
                 }
             } else if let existing {
                 try writer.delete(existing)

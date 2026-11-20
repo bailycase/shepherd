@@ -271,7 +271,8 @@ export function readSettings(hooksDir) {
     return damaged(String(error?.message ?? error));
   }
   const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
-  if (isObject(raw) && Object.keys(raw).length === 2 && "version" in raw && "value" in raw) {
+  // A `value` key marks the envelope; extra keys are tolerated, never read as a bare file (a missing `off` would mean all on).
+  if (isObject(raw) && Object.hasOwn(raw, "value")) {
     if (raw.version !== 1) return damaged("unsupported version");
     raw = raw.value;
   }
@@ -289,14 +290,20 @@ export function readSettings(hooksDir) {
 
 /** Every hook that would run for `root`: files found, readers on, not switched off. */
 export function runnableHooks(root, hooksDir) {
+  // Hook files first, settings second: the app records a new hook's off hash before it publishes the file,
+  // so any hook seen here is covered by the settings read after it. The other order can pair a stale off-list with a new file.
+  const files = [];
+  for (const file of hookFiles(root)) {
+    const parsed = readCached(file.path, (bytes) => parseHookBytes(file.path, bytes));
+    if (!parsed || parsed.error) continue;
+    files.push({ file, parsed });
+  }
   const settings = readSettings(hooksDir);
   if (settings.damaged) return [];
   const off = new Set(settings.off);
   const out = [];
-  for (const file of hookFiles(root)) {
+  for (const { file, parsed } of files) {
     if (file.reader && settings.readers[file.reader] === false) continue;
-    const parsed = readCached(file.path, (bytes) => parseHookBytes(file.path, bytes));
-    if (!parsed || parsed.error) continue;
     for (const entry of entriesOf(file.path, parsed.hooks, file.scope)) {
       if (!off.has(entry.hash)) out.push(entry);
     }
@@ -813,6 +820,9 @@ export default function shepherdHooks(pi) {
       if (verdict.block) {
         test = { ok: false, blocked: true, summary: `blocked by a PreToolUse hook: ${clip(verdict.reason)}`, exit: null, ms: 0 };
       } else {
+        // The pre-hooks and permission above took time: the file may have been damaged since the first check.
+        const refusedLaunch = refuseWhileDamaged();
+        if (refusedLaunch) return refusedLaunch;
         const result = await runCommand(command, { cwd: projectRoot, event, input, timeoutMs: Math.min(timeout ?? 60, 60) * 1000 });
         const ok = !result.timedOut && (result.exit === 0 || result.exit === 2);
         const said = (result.exit === 2 ? result.stderr : result.stdout || result.stderr).trim().split("\n")[0];
