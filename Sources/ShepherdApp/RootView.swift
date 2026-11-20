@@ -76,6 +76,7 @@ struct RootView: View {
                     NightlyMovedNotice(download: { updater.downloadShepherdNightly() },
                                        dismiss: { updater.dismissNightlyMovedNotice() })
                 }
+                if let handoff = vm.remoteHosts.hostHandoff { HostHandoffNotice(handoff: handoff) }
                 WorkspaceView(vm: vm)
             }
             // A page (New thread, Automations, Hosts) covers the whole column, toolbar included;
@@ -225,6 +226,28 @@ struct RootView: View {
     /// A sidebar width within its range that leaves the main column its minimum.
     private func fittedSidebarWidth(_ width: Double) -> Double {
         AppSettings.clampSidebarWidth(min(width, Double(windowWidth - AppLayout.dividerWidth - AppLayout.mainColumnMinWidth)))
+    }
+}
+
+struct HostHandoffNotice: View {
+    let handoff: RemoteHostStore.HostHandoff
+
+    var body: some View {
+        Group {
+            switch handoff {
+            case .waiting:
+                SHBanner(.running, title: "Background service update pending",
+                         message: "The service will restart when agents settle, or after two hours.")
+            case .restarting:
+                SHBanner(.running, title: "Restarting the background service",
+                         message: "Waiting for the updated service to connect.")
+            case .failed:
+                SHBanner(.failed, title: "The updated background service did not connect",
+                         message: "Quit and reopen Shepherd to try again.")
+            }
+        }
+        .padding(.horizontal, SH.Space.l)
+        .padding(.vertical, SH.Space.s)
     }
 }
 

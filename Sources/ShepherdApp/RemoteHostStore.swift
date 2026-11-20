@@ -351,8 +351,14 @@ final class RemoteHostStore {
     @ObservationIgnored var onHostConnected: ((UUID) -> Void)?
     /// A Mac of the fleet refused this app's token (`Connection.tokenRefused`): `FleetConnections` gets the app a new one.
     @ObservationIgnored var onFleetTokenRefused: (() -> Void)?
-    /// This app's build, compared with the background host's (`BackgroundHostClient.asksToDrain`).
+    /// This app's build, compared with the background host's after each handshake.
     @ObservationIgnored var appBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+    enum HostHandoff { case waiting, restarting, failed }
+    private(set) var hostHandoff: HostHandoff?
+    /// Only set when this launch may manage the background service, never for Dev or a supervised child.
+    @ObservationIgnored var restartBackgroundService: (() async -> Bool)?
+    @ObservationIgnored var hostHandoffWait = HostDrain.cap + .seconds(15)
+    @ObservationIgnored private var hostHandoffTask: Task<Void, Never>?
     @ObservationIgnored var onProjectExecutorConnected: ((ProjectHostReference) -> Void)?
     @ObservationIgnored var onProjectExecutionChanged: ((ProjectHostReference, ProjectExecutionKey) -> Void)?
     /// A design a host serves changed (one on screen here): its files' revision, its comments',
@@ -522,6 +528,7 @@ final class RemoteHostStore {
     func removeHost(id: UUID) {
         guard let index = allConnections.firstIndex(where: { $0.id == id }) else { return }
         let connection = allConnections.remove(at: index)
+        if connection.isLocalHost { clearHostHandoff() }
         connection.reconnectTask?.cancel()
         connection.stopChildRefresh()
         connection.client?.disconnect()
@@ -610,10 +617,7 @@ final class RemoteHostStore {
                 connection.designs.connect(client, available: client.supports(.designs))
                 connection.startChildRefresh(client: client, every: childRefreshInterval)
                 connection.reconnectDelay = .seconds(1)
-                if connection.isLocalHost, BackgroundHostClient.asksToDrain(appBuild: self.appBuild, hostBuild: client.hostBuild,
-                                                                          capabilities: client.capabilities) {
-                    Task { do { try await client.drain() } catch { NSLog("Shepherd: background host didn't drain: \(error)") } }
-                }
+                if connection.isLocalHost { self.checkHostHandoff(client) }
                 self.onHostConnected?(connection.id)
                 self.onProjectExecutorConnected?(.remote(hostID: connection.config.id, bindingID: connection.config.bindingID))
             } catch {
@@ -630,6 +634,38 @@ final class RemoteHostStore {
                 if failure.retries { self.scheduleReconnect(connection) }
                 if connection.config.fleetManaged, connection.tokenRefused { self.onFleetTokenRefused?() }
             }
+        }
+    }
+
+    private func clearHostHandoff() {
+        hostHandoffTask?.cancel()
+        hostHandoffTask = nil
+        if hostHandoff != nil { hostHandoff = nil }
+    }
+
+    private func checkHostHandoff(_ client: RemoteHostClient) {
+        guard BackgroundHostClient.needsUpdate(appBuild: appBuild, hostBuild: client.hostBuild) else {
+            if client.hostBuild.flatMap(Int.init) != nil { clearHostHandoff() }
+            return
+        }
+        if client.capabilities.contains(RemoteProtocol.hostDrainCapability) {
+            Task { do { try await client.drain() } catch { NSLog("Shepherd: background host didn't drain: \(error)") } }
+        }
+        guard hostHandoff == nil else { return }
+        hostHandoff = .waiting
+        hostHandoffTask = Task { [weak self, wait = hostHandoffWait] in
+            // Give the host its whole drain window plus time to shut down and reconnect. Ack isn't exit.
+            do { try await Task.sleep(for: wait) } catch { return }
+            guard let self else { return }
+            if let old = try? thisMacHost(), BackgroundHostClient.needsUpdate(appBuild: appBuild, hostBuild: old.hostBuild),
+               let restart = restartBackgroundService {
+                hostHandoff = .restarting
+                if await restart() {
+                    // Launchd accepting the restart isn't success either. Only the new handshake clears the notice.
+                    do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                }
+            }
+            if !Task.isCancelled { hostHandoff = .failed }
         }
     }
 

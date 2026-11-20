@@ -96,7 +96,9 @@ public struct ShepherdMacApp: App {
                     environment: ProcessInfo.processInfo.environment, adHoc: BackgroundService.isAdHoc()))
                 BackgroundHostClient.serviceStatus = status
                 // Every launch is a client: of launchd's host when the service runs one, else of the app's own child.
-                let supervisor = HostSupervisor(.app(preferOwner: { status != nil && service.status() == .enabled }))
+                let supervisor = HostSupervisor(.app(
+                    preferOwner: { status != nil && service.status() == .enabled },
+                    refreshOwner: { service.refreshRegistration() }))
                 HostSupervisor.shared = supervisor
                 try supervisor.start()
             },
@@ -107,6 +109,9 @@ public struct ShepherdMacApp: App {
                 // App-side diagnostics only; the host's server metrics aren't reported to the app (#561 Q5).
                 ShepherdDiagnostics.shared.start(settings: .shared)
                 let vm = ShepherdViewModel(welcomesYourPi: true, browserData: .persistent)
+                if service != nil, let supervisor = HostSupervisor.shared {
+                    vm.remoteHosts.restartBackgroundService = { await Task.detached { supervisor.refreshOwner() }.value }
+                }
                 vm.connectLocalHost(socket: BackgroundHostClient.socketPath())
                 vm.backgroundService = service
                 vm.backgroundServiceStatus = status

@@ -1,8 +1,5 @@
 import Foundation
-import ShepherdCore
 import ShepherdProtocol
-import ShepherdRemote
-import ShepherdSessions
 
 /// The app as its host's client: launchd's background host or the app's own child
 /// (`HostSupervisor`) owns the workspace, and the app shows its threads and terminals through
@@ -22,12 +19,9 @@ enum BackgroundHostClient {
         ShepherdPaths.supportDirectory(environment: environment).appendingPathComponent("host.sock").path
     }
 
-    /// Whether the app asks its host to drain: the host is an older build that takes `drain`.
-    /// An older host without it drains once it sees the new bundle on disk; one whose build
-    /// can't be compared is left alone.
-    static func asksToDrain(appBuild: String?, hostBuild: String?, capabilities: Set<String>) -> Bool {
-        guard capabilities.contains(RemoteProtocol.hostDrainCapability),
-              let app = appBuild.flatMap(Int.init), let host = hostBuild.flatMap(Int.init) else { return false }
+    /// A known older host needs a handoff, even if it doesn't take `drain` on the wire.
+    static func needsUpdate(appBuild: String?, hostBuild: String?) -> Bool {
+        guard let app = appBuild.flatMap(Int.init), let host = hostBuild.flatMap(Int.init) else { return false }
         return app > host
     }
 }
