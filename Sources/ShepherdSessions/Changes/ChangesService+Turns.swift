@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 // Last turn (ChangesLastTurn) and the "Edited N files" card: when pi starts a run the host
 // snapshots the agent's working tree, when the run settles it snapshots it again, and the

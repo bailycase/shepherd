@@ -101,10 +101,10 @@ extension ChangesService {
     // MARK: Overview
 
     func overviewNow(agentID: AgentID?, context: AgentContext) throws -> ChangesOverview {
-        var history: [TurnRecord] = []
+        var turns: [TurnRecord] = []
         var turnHistoryProblem: String?
         if let agentID {
-            do { history = try turnStore.history(agentID).records }
+            do { turns = try turnStore.history(agentID).records }
             catch { turnHistoryProblem = (error as? ChangesError)?.message ?? String(describing: error) }
         }
         let repository: Repository
@@ -129,7 +129,7 @@ extension ChangesService {
         let working = try snapshot(repository).tree
         let index = try? indexTree(repository)
         let base = defaultBase(repository, agentBase: context.worktreeBase)
-        let lastTurn = TurnStore.published(history).last
+        let lastTurn = TurnStore.published(turns).last
 
         func entry(_ scope: ChangesScope, _ old: String?, _ new: String?, unavailable: String? = nil) -> ChangesOverview.Entry {
             guard let old, let new, unavailable == nil else { return .init(scope: scope, unavailable: unavailable ?? "Not available.") }
@@ -146,7 +146,7 @@ extension ChangesService {
         }
 
         var entries: [ChangesOverview.Entry] = []
-        if let record = history.last {
+        if let record = turns.last {
             let usable = record.startTree.map { exists($0, in: repository) } ?? false
             entries.append(entry(.lastTurn, usable ? record.startTree : nil, record.endTree ?? working,
                                  unavailable: usable ? nil : (record.turn.reason ?? "The turn’s starting point is gone.")))
