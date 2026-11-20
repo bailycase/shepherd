@@ -354,6 +354,7 @@ test("a host refusal comes back as the tool's text with its code and message, ne
     fleetDispatchStatus: ["unknown_dispatch", "No dispatch with that id."],
     fleetDispatchMessage: ["send_off", "Threads can't send work."],
     fleetDispatchCancel: ["fleet_scope", "This thread can't use Fleet."],
+    fleetDispatchClose: ["fleet_scope", "This thread can't use Fleet."],
     fleetListHosts: ["repo_missing", "No Mac has this repo."],
   };
   const h = await harness({ onFrame: (frame, write) => {
@@ -366,6 +367,7 @@ test("a host refusal comes back as the tool's text with its code and message, ne
       ["fleet_dispatch", { task: "t" }, "fleetDispatch"], ["fleet_read", { dispatch: "x" }, "fleetDispatchStatus"],
       ["fleet_wait", { dispatch: "x" }, "fleetDispatchStatus"], ["fleet_send", { dispatch: "x", text: "hi" }, "fleetDispatchMessage"],
       ["fleet_cancel", { dispatch: "x" }, "fleetDispatchCancel"], ["fleet_hosts", {}, "fleetListHosts"],
+      ["fleet_close", { dispatch: "x" }, "fleetDispatchClose"],
     ];
     for (const [name, params, type] of calls) {
       const [code, message] = refusals[type];

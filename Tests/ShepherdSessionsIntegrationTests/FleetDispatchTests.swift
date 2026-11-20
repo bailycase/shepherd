@@ -353,10 +353,16 @@ struct FleetDispatchTests {
     @Test func theDispatchResultExcludesUpstreamCommitsAfterAFastForward() async throws {
         let (a, b, origin) = try await Self.pair()
         defer { a.stop(); b.stop() }
-        // Nightly is the sender's integration branch, but origin's default is main.
-        try git(["switch", "-qc", "nightly"], in: a.folder)
-        try git(["push", "-qu", "origin", "nightly"], in: a.folder)
-        let parent = try await a.parent()
+        // Configure nightly without checking it out: the sender's current branch and origin's default are main.
+        try git(["push", "-q", "origin", "HEAD:nightly"], in: a.folder)
+        var space = a.space
+        space.worktreeBase = "origin/nightly"
+        try await a.server.updateSpace(space)
+        // Reach the scratch checkout through a tilde path without creating anything in the real home.
+        space.path = "~" + String(repeating: "/..", count: (NSHomeDirectory() as NSString).pathComponents.count - 1) + a.folder.path
+        let (agent, tab) = Fixture.agent(in: space)
+        try await a.server.addAgent(agent, withTab: tab)
+        let parent = Parent(agent: agent, extension: try ExtensionClient(path: a.host.socketPath), mac: a)
         try parent.hello()
         let info = try parent.info(try await parent.dispatch(host: "Mac mini"))
         try await eventuallyOnMain("the receiver to start") { b.taken().first?.state == .running }
@@ -366,6 +372,7 @@ struct FleetDispatchTests {
         try b.report(thread.id, .working)
         try await eventuallyOnMain("the receiver to report working") { b.taken().first?.activity == "working" }
 
+        try git(["switch", "-q", "nightly"], in: a.folder)
         try "upstream\n".write(to: a.folder.appendingPathComponent("UPSTREAM.md"), atomically: true, encoding: .utf8)
         try git(["add", "UPSTREAM.md"], in: a.folder)
         try git(["commit", "-qm", "Advance nightly"], in: a.folder)
@@ -421,6 +428,31 @@ struct FleetDispatchTests {
         let read = try await parent.status(info)
         #expect(b.taken().first?.state == .failed)
         #expect(read.state == "failed" && read.failure == "turn_failed" && read.detail == "529 overloaded")
+        #expect(read.resultText == nil && read.activity != "working")
+    }
+
+    @Test func anUnexpectedPiExitMarksTheDispatchFailedOnBothMacs() async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch("flaky-hold", host: "Mac mini"))
+        try await eventuallyOnMain("the receiver to start") { b.taken().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        try await Self.wait("pi to run the held turn") {
+            await b.server.enqueueValue { @Sendable in b.server.rpcThread(forAgent: thread.id)?.running == true }
+        }
+        let signalled = await b.server.enqueueValue { @Sendable in
+            guard let pid = b.server.rpcThread(forAgent: thread.id)?.session.processIdentifier, pid > 0 else { return false }
+            return kill(pid, SIGKILL) == 0
+        }
+        try #require(signalled)
+        try await eventuallyOnMain("the pi exit failure to reach the sender") { a.sent().first?.state == .failed }
+        #expect(b.taken().first?.state == .failed)
+        #expect(b.dispatched.first?.id == thread.id, "the receiving Mac keeps the thread for retry")
+        let read = try await parent.status(info)
+        #expect(read.state == "failed" && read.failure == "turn_failed")
+        #expect(read.detail?.contains("stopped unexpectedly") == true)
         #expect(read.resultText == nil && read.activity != "working")
     }
 
@@ -543,15 +575,20 @@ struct FleetDispatchTests {
         try await eventuallyOnMain("the stub to launch a background child") { childPID() != nil }
         let pid = try #require(childPID())
         #expect(kill(pid, 0) == 0)
+        try await b.local.openTerminal(agentID: thread.id, cwd: worktree.path, command: "/bin/sleep 60")
+        let tab = try #require(b.server.state.tabs.first { $0.id == thread.tabID })
+        let terminal = try #require(tab.layout.leaves.first { $0.agentID == nil }?.sessionID)
+        #expect(await b.server.sessionInfo(sessionID: terminal)?.isAlive == true)
         let cancelled = try await parent.cancel(info)
         #expect(cancelled.state == "cancelled")
         try await eventuallyOnMain("the receiver to cancel") { b.taken().first?.state == .cancelled }
         try await eventuallyOnMain("the cancelled dispatch's background child to exit", timeout: .seconds(5)) { kill(pid, 0) != 0 }
+        #expect(await b.server.sessionInfo(sessionID: terminal)?.isAlive == true, "cancel does not stop the person's shell")
         #expect(b.dispatched.first?.id == thread.id)
         #expect(try Self.head(worktree) == origin.sha)
     }
 
-    @Test func aSettledDispatchClosesItsThreadAndBuildOutputButKeepsTheCheckout() async throws {
+    @Test(arguments: [false, true]) func aSettledDispatchClosesItsThreadAndBuildOutputButKeepsTheCheckout(losesRecord: Bool) async throws {
         let (a, b, origin) = try await Self.pair(originExtra: [".gitignore": "*.log\n.build/\nDerivedData/\n"])
         defer { a.stop(); b.stop() }
         let parent = try await a.parent()
@@ -582,16 +619,33 @@ struct FleetDispatchTests {
         #expect(a.sent().first?.failureDetail?.contains("ENOSPC") == true)
         let cancelled = try await parent.cancel(info)
         #expect(cancelled.state == "failed" && !b.dispatched.isEmpty, "cancel does not close a settled thread")
-        let closed = try parent.info(try await close())
-        let report = try #require(closed.closeReport)
-        #expect(report.contains("Thread removed") && report.contains("process groups stopped") && report.contains("bytes freed"))
-        #expect(report.contains("Kept the checkout, branches, and saved conversation"))
+        if losesRecord {
+            await b.server.enqueueValue { @Sendable in
+                guard let engine = b.server.fleet?.dispatch else { return }
+                let close = engine.host.closeThread
+                engine.host.closeThread = { [weak server = b.server] agent, id in
+                    let stopped = try await close(agent, id)
+                    if let server {
+                        await server.enqueueValue { @Sendable in _ = server.fleet?.dispatch.inbound.removeValue(forKey: id) }
+                    }
+                    return stopped
+                }
+            }
+        }
+        let reply = try await close()
+        if losesRecord {
+            guard case .error(_, "unknown_dispatch", _) = reply else { Issue.record("Expected a missing dispatch refusal, got \(reply)"); return }
+        } else {
+            let report = try #require(try parent.info(reply).closeReport)
+            #expect(report.contains("Thread removed") && report.contains("process groups stopped") && report.contains("bytes freed"))
+            #expect(report.contains("Kept the checkout, branches, and saved conversation"))
+            #expect(try parent.info(try await close()).closeReport == report, "a repeated close returns the same receipt")
+        }
         try await eventuallyOnMain("the background process to exit") { kill(pid, 0) != 0 }
         #expect(b.dispatched.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: build.path) && FileManager.default.fileExists(atPath: derived.path))
         #expect(FileManager.default.fileExists(atPath: pidFile.path))
         #expect(try Self.head(worktree) == origin.sha)
-        #expect(try parent.info(try await close()).closeReport == report, "a repeated close returns the same receipt")
     }
 
     // MARK: Idempotency

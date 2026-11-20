@@ -1706,7 +1706,8 @@ public final class SessionServer: @unchecked Sendable {
                     } ?? continuation.resume(returning: .failure(RemoteCreateAgentError("host is shutting down")))
                 }
             },
-            stopThread: { [weak self] agentID in self?.stopFleetThread(agentID) },
+            stopThread: { [weak self] agentID in self?.rpcThread(forAgent: agentID)?.stop { _ in } },
+            terminateThread: { [weak self] agentID in self?.terminateFleetThread(agentID) },
             closeThread: { [weak self] agent, dispatch in
                 guard let self else { throw FleetDispatchRefusal(code: "unreachable", message: "The receiving host is shutting down.") }
                 let sessions = try await self.deleteAgent(agent, closingDispatch: dispatch)
@@ -9555,14 +9556,12 @@ public final class SessionServer: @unchecked Sendable {
         return true
     }
 
-    /// A cancelled dispatch is no longer runnable. Stop its session groups and any owned
-    /// descendants before returning to the receiver, but keep its layout and checkout for Close.
-    private func stopFleetThread(_ id: AgentID) {
-        guard let agent = store.state.agents.first(where: { $0.id == id && $0.dispatchedFrom != nil && $0.movedTo == nil }),
-              let tab = store.state.tabs.first(where: { $0.id == agent.tabID }) else { return }
+    /// Cancel stops pi and its owned descendants, not a person's terminals in the same tab.
+    private func terminateFleetThread(_ id: AgentID) {
+        guard store.state.agents.contains(where: { $0.id == id && $0.dispatchedFrom != nil && $0.movedTo == nil }) else { return }
         fleet?.dispatch.cancelDispatches(ownedBy: id)
-        for sessionID in Set(tab.layout.leaves.compactMap(\.sessionID)) {
-            guard let session = sessions[sessionID], session.isAlive else { continue }
+        if let thread = rpcThread(forAgent: id), let session = sessions[thread.session.id], session.isAlive {
+            let sessionID = thread.session.id
             startRecords[sessionID]?.requestStop()
             clearAgentRecovery(sessionID: sessionID)
             session.thread?.pushRunArmed = false

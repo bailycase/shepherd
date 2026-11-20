@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { closeSync, writeSync } from "node:fs";
+import { closeSync, realpathSync, writeSync } from "node:fs";
 import { constants } from "node:os";
 import { fileURLToPath } from "node:url";
 
@@ -39,6 +39,7 @@ export function managedBash() {
         ]);
         signal?.throwIfAborted();
         if (timedOut) throw new Error(`timeout:${timeout}`);
+        if (exitCode === null) throw new Error("Bash supervisor exited without reporting a status");
         return { exitCode };
       } finally {
         clearTimeout(timer); signal?.removeEventListener("abort", abort);
@@ -58,15 +59,24 @@ function complete(group, stream, read) {
   });
 }
 
-if (process.argv[1] === executable && process.argv[2] === "--supervise") {
+function isSupervisor() {
+  if (process.argv[2] !== "--supervise" || !process.argv[1]) return false;
+  try { return realpathSync(process.argv[1]) === realpathSync(executable); }
+  catch { return false; }
+}
+
+if (isSupervisor()) {
   const ownGroup = String(process.pid);
   const stop = () => process.kill(-process.pid, "SIGKILL");
   process.stdin.on("end", stop).on("error", stop).resume();
   process.on("SIGTERM", stop);
   const command = spawn("/bin/bash", ["-c", 'eval "$1"', "shepherd-bash", process.argv[3]], { stdio: ["ignore", 3, 4] });
+  let finished = false;
   command.once("error", () => finish(127));
   command.once("exit", (code, signal) => finish(code ?? 128 + (constants.signals[signal] ?? 0)));
   function finish(code) {
+    if (finished) return;
+    finished = true;
     writeSync(5, `${code}\n`);
     // Keep stdio open. libuv uses those descriptors when it spawns the group probe.
     for (const fd of [3, 4, 5]) closeSync(fd);

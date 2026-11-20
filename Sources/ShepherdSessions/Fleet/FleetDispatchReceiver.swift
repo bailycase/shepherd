@@ -262,7 +262,7 @@ extension FleetDispatch {
         var settledAgent: AgentID?
         guard var entry = inbound[id], entry.record.state == .preparing else {
             // Cancelled while it was being made: the thread that came out of it is stopped.
-            if case .success(let agent) = outcome { host.stopThread(agent) }
+            if case .success(let agent) = outcome { host.terminateThread(agent) }
             return
         }
         switch outcome {
@@ -344,7 +344,7 @@ extension FleetDispatch {
             dropSnapshot(id)
             // A clone that is running ends and takes its folder with it (`cloneEnded`).
             clones[id]?.cancel()
-            if let agent = entry.record.remoteAgentID { host.stopThread(agent) }
+            if let agent = entry.record.remoteAgentID { host.terminateThread(agent) }
             save()
             reply(.success(entry.record))
             pushPending()
@@ -420,7 +420,9 @@ extension FleetDispatch {
                 switch result {
                 case .failure(let refusal): reply(.failure(refusal))
                 case .success(let report):
-                    guard var current = self.inbound[id] else { return }
+                    guard var current = self.inbound[id] else {
+                        return reply(.failure(.init(code: FleetDispatchProtocol.Code.unknownDispatch, message: "That Mac has no such dispatch.")))
+                    }
                     current.record.closeReport = report
                     current.record.remoteAgentID = nil
                     self.inbound[id] = current

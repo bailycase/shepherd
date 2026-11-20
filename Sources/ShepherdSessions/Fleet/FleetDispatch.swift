@@ -65,6 +65,7 @@ struct FleetDispatchHost: @unchecked Sendable {
     }
     /// Stops a thread's turn, as Stop does (server queue).
     var stopThread: @Sendable (AgentID) -> Void = { _ in }
+    var terminateThread: @Sendable (AgentID) -> Void = { _ in }
     var closeThread: @Sendable (AgentID, UUID) async throws -> Bool = { _, _ in false }
     /// Sends a message into a thread's queue; false when it can't take one.
     var messageThread: @Sendable (AgentID, String, NativeThreadDelivery) async -> Bool = { _, _, _ in false }
@@ -532,14 +533,14 @@ final class FleetDispatch: @unchecked Sendable {
         }
         if let refusal = Self.depthProblem(for: agentID, in: state) { return reply(.failure(refusal)) }
         let depth = agent.threadDepth
-        let cwd = state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd ?? space.path
+        let cwd = ((state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd ?? space.path) as NSString).expandingTildeInPath
         placing.insert(id)
         waiters[id, default: []].append(reply)
         let (spaceID, folder, known) = (space.id, space.path, space.repoKey)
         // The snapshot will need the commit's tree: it starts being listed the moment the commit is known, while the dispatch is placed.
         let prefetching = indexService != nil && (host.settings()?.fleetUncommitted ?? .sendThem) == .sendThem
         Task.detached { [weak self] in
-            let pinned = FleetDispatchGit.pin(cwd: (cwd as NSString).expandingTildeInPath, prefetchingTree: prefetching)
+            let pinned = FleetDispatchGit.pin(cwd: cwd, prefetchingTree: prefetching)
             let comparison = FleetDispatchGit.comparisonBranch(cwd: cwd, configured: [agent.worktreeBase, space.worktreeBase])
             let origin = FleetDispatchGit.origin(cwd: (folder as NSString).expandingTildeInPath)
             // A repository with no origin is named by its first commit: another Mac can't clone it, so it is sent the repository itself.
