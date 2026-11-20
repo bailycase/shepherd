@@ -250,19 +250,47 @@ function readCached(file, parse) {
   return value;
 }
 
-/** `<hooksDir>/settings.json`: the hashes switched off and the readers; missing or invalid reads as all on. */
+/**
+ * `<hooksDir>/settings.json`: the hashes switched off and the readers. Missing reads as all on.
+ * A file that can't be read or isn't in the shape the app writes (`HookSettings`, bare or as
+ * `{version: 1, value}`) is damaged: `damaged` is set and nothing runs, because the file holds the
+ * switches the person turned off.
+ */
 export function readSettings(hooksDir) {
-  const raw = readCached(path.join(hooksDir, "settings.json"), (bytes) => JSON.parse(bytes.toString("utf8")));
-  const valid = raw && typeof raw === "object" && !Array.isArray(raw);
-  return {
-    off: valid && Array.isArray(raw.off) ? raw.off : [],
-    readers: valid && raw.readers && typeof raw.readers === "object" ? raw.readers : {},
-  };
+  const file = path.join(hooksDir, "settings.json");
+  const damaged = (reason) => ({ off: [], readers: {}, damaged: `${file}: ${reason}` });
+  let raw;
+  try {
+    // Fatal: a plain UTF-8 read swaps invalid bytes for U+FFFD, so a damaged hash could parse as a different string.
+    raw = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(fs.readFileSync(file)));
+  } catch (error) {
+    // A dangling symlink is not a missing file.
+    if (error?.code === "ENOENT") {
+      try { fs.lstatSync(file); } catch { return { off: [], readers: {} }; }
+    }
+    return damaged(String(error?.message ?? error));
+  }
+  const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+  if (isObject(raw) && Object.keys(raw).length === 2 && "version" in raw && "value" in raw) {
+    if (raw.version !== 1) return damaged("unsupported version");
+    raw = raw.value;
+  }
+  if (!isObject(raw)) return damaged("not a JSON object");
+  // Only an absent field defaults. An explicit null is damage: `"off": null` read as [] would switch every disabled hook back on.
+  const has = (key) => Object.hasOwn(raw, key);
+  const { version, off, readers } = raw;
+  if (has("version") && !Number.isInteger(version)) return damaged("version isn't an integer");
+  if (has("off") && !(Array.isArray(off) && off.every((h) => typeof h === "string"))) return damaged("off isn't a list of strings");
+  if (has("readers") && !(isObject(readers) && ["claude", "codex"].every((k) => !Object.hasOwn(readers, k) || typeof readers[k] === "boolean"))) {
+    return damaged("readers isn't an object of booleans");
+  }
+  return { off: has("off") ? off : [], readers: has("readers") ? readers : {} };
 }
 
 /** Every hook that would run for `root`: files found, readers on, not switched off. */
 export function runnableHooks(root, hooksDir) {
   const settings = readSettings(hooksDir);
+  if (settings.damaged) return [];
   const off = new Set(settings.off);
   const out = [];
   for (const file of hookFiles(root)) {
@@ -759,6 +787,13 @@ export default function shepherdHooks(pi) {
     const command = String(params?.command ?? "").trim();
     if (!EVENTS.includes(event) || !command) return reply("hook_propose needs a known event and a command.", true);
     if (!ctx.hasUI) return reply("No one can approve a hook here.", true);
+    // Damaged settings.json: the switches the person turned off can't be read, so nothing runs and nothing is added.
+    const refuseWhileDamaged = () => {
+      const damaged = readSettings(hooksDir).damaged;
+      return damaged ? reply(`Hook settings are damaged, so no hook was tested or added. ${damaged}. Restore the file from a backup or fix its JSON.`, true) : undefined;
+    };
+    const refused = refuseWhileDamaged();
+    if (refused) return refused;
     const matcher = typeof params.matcher === "string" ? params.matcher.trim() : "";
     const statusMessage = typeof params.statusMessage === "string" && params.statusMessage.trim() ? params.statusMessage.trim() : undefined;
     const timeout = Number.isFinite(params.timeout) && params.timeout > 0 ? Math.min(Math.round(params.timeout), MAX_TIMEOUT_S) : undefined;
@@ -800,6 +835,9 @@ export default function shepherdHooks(pi) {
       return reply("The person added an edited version of the hook in Settings; it may differ from your proposal (event, matcher or command).");
     }
     if (choice !== "Add to this space" && choice !== "Add to this Mac") return reply(`The person didn't add the hook (test: ${test.summary}).`);
+    // The file may have been damaged while the person decided.
+    const refusedNow = refuseWhileDamaged();
+    if (refusedNow) return refusedNow;
     const file = choice === "Add to this space" ? scopes.space : scopes.mac;
     let added;
     try {

@@ -191,6 +191,50 @@ test("every configured hook runs unless switched off; settings apply on the next
   assert.deepEqual(ran(), ["claude", "space"]);
 });
 
+test("a damaged settings.json fails closed: no hook runs, and it is not rewritten", async () => {
+  const { project, hooksDir, macFile } = fixture();
+  const marker = path.join(project, "ran.txt");
+  writeJSON(macFile, { hooks: { PreToolUse: [{ matcher: "Edit", hooks: [{ type: "command", command: "echo mac >> ran.txt" }] }] } });
+  const pi = load(hooksDir);
+  const ctx = context(project);
+  const file = path.join(hooksDir, "settings.json");
+  const damaged = [
+    '{"version":1,"off":["abc"],', // truncated
+    "", // empty
+    '[]', '"off"', // wrong type
+    '{"version":1,"off":"abc"}', '{"version":1,"off":[1]}', '{"version":1,"readers":{"claude":"no"}}', '{"version":"1"}',
+    '{"version":2,"value":{}}',
+    // An explicit null is damage, never the default: `"off": null` read as [] would re-enable every disabled hook.
+    '{"version":1,"off":null}', '{"version":null,"off":["abc"]}', '{"version":1,"off":["abc"],"readers":null}',
+    '{"version":1,"off":["abc"],"readers":{"claude":null,"codex":false}}', '{"version":1,"value":null}',
+  ];
+  for (const text of damaged) {
+    fs.writeFileSync(file, text);
+    assert.ok(hooks.readSettings(hooksDir).damaged, `damaged: ${text}`);
+    await pi.emit("tool_call", editCall(), ctx);
+    assert.equal(fs.existsSync(marker), false, `no hook runs for ${text}`);
+    assert.equal(fs.readFileSync(file, "utf8"), text, "left as it was");
+  }
+  // Unreadable (a directory) and a dangling symlink are damage too, not a missing file.
+  fs.rmSync(file);
+  fs.mkdirSync(file);
+  assert.ok(hooks.readSettings(hooksDir).damaged);
+  fs.rmdirSync(file);
+  fs.symlinkSync(path.join(hooksDir, "nowhere"), file);
+  assert.ok(hooks.readSettings(hooksDir).damaged);
+  await pi.emit("tool_call", editCall(), ctx);
+  assert.equal(fs.existsSync(marker), false);
+  // Both shapes of a good file read, and a missing one reads as everything on.
+  fs.rmSync(file);
+  assert.equal(hooks.readSettings(hooksDir).damaged, undefined);
+  fs.writeFileSync(file, '{"version":1,"value":{"version":1,"off":["x"],"readers":{"codex":false}}}');
+  assert.deepEqual(hooks.readSettings(hooksDir), { off: ["x"], readers: { codex: false } });
+  fs.writeFileSync(file, '{"version":1,"off":["y"],"readers":{"claude":true,"codex":false}}');
+  assert.deepEqual(hooks.readSettings(hooksDir), { off: ["y"], readers: { claude: true, codex: false } });
+  await pi.emit("tool_call", editCall(), ctx);
+  assert.deepEqual(fs.readFileSync(marker, "utf8").trim().split("\n"), ["mac"], "a readable file runs the hook again");
+});
+
 test("the home folder is never a space", async () => {
   const { hooksDir } = fixture();
   const home = process.env.HOME;
@@ -378,6 +422,44 @@ test("UserPromptSubmit exit 2 blocks the message; silent runs collapse to one ra
   await pi.emit("agent_start", {}, ctx);
   await pi.emit("tool_result", result, ctx);
   assert.equal(pi.sent.length, before + 2, "the next run gets its own row");
+});
+
+test("invalid UTF-8 in settings.json is damage, not a replacement character that changes a hash", async () => {
+  const { project, hooksDir, macFile } = fixture();
+  const marker = path.join(project, "ran.txt");
+  writeJSON(macFile, { hooks: { PreToolUse: [{ matcher: "Edit", hooks: [{ type: "command", command: "echo mac >> ran.txt" }] }] } });
+  const file = path.join(hooksDir, "settings.json");
+  fs.writeFileSync(file, Buffer.concat([Buffer.from('{"version":1,"off":["ab'), Buffer.from([0xff]), Buffer.from('cd"]}')]));
+  assert.ok(hooks.readSettings(hooksDir).damaged, "a lossy read would parse this as a different string");
+  await load(hooksDir).emit("tool_call", editCall(), context(project));
+  assert.equal(fs.existsSync(marker), false, "fails closed");
+});
+
+test("hook_propose refuses while settings.json is damaged: no test run, and no write after approval", async () => {
+  const { project, hooksDir } = fixture();
+  const spaceFile = path.join(project, ".shepherd/hooks.json");
+  const settingsFile = path.join(hooksDir, "settings.json");
+  const ran = path.join(project, "tested.txt");
+  const tool = load(hooksDir).tools.get("hook_propose");
+  const params = { name: "Mark", event: "Stop", command: `echo x >> ${JSON.stringify(ran)}`, scope: "space" };
+
+  fs.writeFileSync(settingsFile, '{"version":1,"off":null}');
+  const ctx = context(project, async () => "Add to this space");
+  const before = await tool.execute("p0", params, undefined, undefined, ctx);
+  assert.equal(before.isError, true);
+  assert.ok(before.content[0].text.includes(settingsFile), "names the damaged file");
+  assert.equal(ctx.prompts.length, 0, "never asks");
+  assert.equal(fs.existsSync(ran), false, "the sample command never ran");
+  assert.equal(fs.existsSync(spaceFile), false);
+
+  // Damaged while the person decided: refused after approval, before writing.
+  fs.rmSync(settingsFile);
+  const late = context(project, async () => { fs.writeFileSync(settingsFile, '{"off":null}'); return "Add to this space"; });
+  const after = await tool.execute("p1", params, undefined, undefined, late);
+  assert.equal(after.isError, true);
+  assert.ok(after.content[0].text.includes(settingsFile));
+  assert.equal(late.prompts.length, 1);
+  assert.equal(fs.existsSync(spaceFile), false, "nothing written");
 });
 
 test("hook_propose tests the command, asks with the proposal marker, then writes the file", async () => {

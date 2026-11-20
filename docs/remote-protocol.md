@@ -407,7 +407,8 @@
     change
   - `hooks` (`hooks.v1`): Settings › Hooks on the host (fetch, a hook's off switch by hash, a
     reader, Save, Delete, Test), answered with the host's `HookCatalogSnapshot` (its sources with
-    state, entries, off switches, readers and home) or a test's `HookTestResult`. Save and Delete
+    state, entries, off switches, readers, home and, when the host can't read its
+    `settings.json`, a `settingsProblem` with every hook off) or a test's `HookTestResult`. Save and Delete
     name a hook by slot and the hash the client read; a hook changed since is refused
     (`hook_changed`). Save writes only one of the catalog's JSON files (`not_a_hooks_file`), Test
     runs only in the home folder or one of its spaces (`no_such_space`), bounded by the hook's
