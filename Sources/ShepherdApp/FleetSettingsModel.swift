@@ -193,8 +193,8 @@ final class FleetSettingsModel {
         do {
             guard let client = try host() else { return }
             apply(try await client.fleetRead())
-            findsByCode = client.capabilities.contains(RemoteProtocol.fleetRendezvousCapability)
-            findsByLink = client.capabilities.contains(RemoteProtocol.fleetPairLinkCapability)
+            findsByCode = client.supports(.fleetRendezvous)
+            findsByLink = client.supports(.fleetPairLink)
             problem = nil
         } catch {
             if !loaded { problem = Self.words(error) }
@@ -409,7 +409,7 @@ final class FleetSettingsModel {
     func updateMac(_ hostID: UUID, _ command: FleetUpdateCommand) async -> String? {
         do {
             guard let client = try host() else { return Self.words(RemoteHostClientError.disconnected) }
-            guard client.capabilities.contains(RemoteProtocol.fleetUpdateViewCapability) else {
+            guard client.supports(.fleetUpdateView) else {
                 return "This Mac's background service can't update Shepherd on a Mac yet. Quit and open Shepherd again."
             }
             apply(try await client.fleetAction(.update(hostID: hostID, command)))
