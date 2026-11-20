@@ -168,6 +168,18 @@ struct ClientAppsTests {
         #expect(model.state(of: host).page?.row("acme-web/Storybook")?.restartCommand == "pnpm storybook")
     }
 
+    @Test func anAppEditedOnTheMacThatNeverRanShowsItsNewCommandOnTheOpenPage() async throws {
+        let fake = Self.fake(runs: [])
+        let model = ClientApps()
+        let host = Self.host(fake)
+        await model.load(host, spaces: Self.spaces)
+        #expect(model.state(of: host).page?.row("acme-web/Storybook")?.subtitle == "Terminal · pnpm storybook")
+
+        fake.spaces = [Self.web: [Self.webApp, AppDefinition(name: "Storybook", command: "pnpm storybook --ci")], Self.api: []]
+        await model.poll(host)
+        #expect(model.state(of: host).page?.row("acme-web/Storybook")?.subtitle == "Terminal · pnpm storybook --ci")
+    }
+
     @Test func aSpaceThatCantBeReadAgainWhilePollingKeepsItsDefinitions() async throws {
         let live = RemoteAppProcess(spaceID: Self.web, name: "Storybook", run: RemoteAppRun(status: .running, command: "pnpm storybook"))
         let fake = Self.fake(runs: [live])
