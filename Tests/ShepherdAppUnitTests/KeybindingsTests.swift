@@ -13,6 +13,7 @@ struct KeybindingsTests {
         (ShortcutAction.newAgent, "⌘N"), (.newSpace, "⇧⌘N"),
         (.renameAgent, "⌘R"), (.deleteAgent, "⇧⌘W"), (.commandPalette, "⌘K"),
         (.nextAgent, "⌘↓"), (.previousAgent, "⌘↑"),
+        (.nextNeedingYou, "⇧⌘↓"), (.reviewNext, "⌥⇧⌘R"),
         (.newTerminal, "⌘D"), (.closeTerminal, "⌘W"),
         (.nextTerminal, "⇧⌘]"), (.previousTerminal, "⇧⌘["),
         (.toggleTerminal, "⌘J"), (.maximizeTerminal, "⇧⌘↩"),
@@ -37,6 +38,14 @@ struct KeybindingsTests {
                 #expect(other.defaultChord != action.defaultChord, "\(action) and \(other)")
             }
         }
+    }
+
+    @Test(arguments: [ShortcutAction.nextNeedingYou, .reviewNext])
+    func supervisionDefaultDoesNotCollideWithAnyOtherAction(_ action: ShortcutAction) {
+        let keys = KeybindingsStore(store: Fixture.defaults())
+        #expect(keys.validate(action.defaultChord, for: action) == nil)
+        #expect(action.reachesPastTerminals)
+        #expect(ShortcutAction.allCases.filter { $0.defaultChord == action.defaultChord } == [action])
     }
 
     /// The canvas's ⌘↩ (Implement in a thread…) and the composer's (send the other way) never

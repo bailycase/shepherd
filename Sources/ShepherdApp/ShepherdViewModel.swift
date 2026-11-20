@@ -49,7 +49,9 @@ final class ShepherdViewModel {
     /// The page the main column shows in place of a thread (New thread, Automations, Hosts);
     /// nil while a thread shows. Picking a row clears it. Ephemeral, like all selection state.
     var destination: MainDestination?
-    /// The sidebar's More is open, showing Hosts and Extensions. Ephemeral.
+    /// The active Changes review opened from the queue in this window.
+    @ObservationIgnored var queuedReview: SidebarRowID?
+    @ObservationIgnored var supervisionCache: (blocked: [SupervisionQueues<SidebarRowID>.Entry], done: [SupervisionQueues<SidebarRowID>.Entry], queues: SupervisionQueues<SidebarRowID>)?
     /// Activity groups, cached on their source, pins and seen completion generations.
     @ObservationIgnored var sidebarListsCache: (source: SidebarSource, pins: SidebarPins, seen: [SidebarRowID: Int], lists: SidebarLists)?
     @ObservationIgnored var sidebarProjectsCache: (key: SidebarProjectsKey, rows: [SidebarLogicalProject])?

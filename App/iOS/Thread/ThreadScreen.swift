@@ -142,6 +142,7 @@ struct ThreadScreen: View {
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if agent != nil {
+                        NextNeedingYouButton()
                         if arranged {
                             // What sits above the composer in the laptop pose (DuoLaptop's capsule).
                             ThreadArrangedPicker(showsTerminal: navigator.sidePane.arrangedTerminal) {

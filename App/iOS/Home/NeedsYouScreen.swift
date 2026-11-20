@@ -29,6 +29,7 @@ struct NeedsYouScreen: View {
         .navigationTitle("Needs you")
         .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .large)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { NextNeedingYouButton() }
             // iPadInbox: "Needs you" with "5 waiting" beside it, leading the bar.
             if sizeClass == .regular {
                 ToolbarItem(placement: .topBarLeading) {

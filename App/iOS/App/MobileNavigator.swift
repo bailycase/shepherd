@@ -91,6 +91,8 @@ final class MobileNavigator {
     let settingsSelection = SettingsSelection()
     let composerPresentation = ComposerPresentations()
     var commitPopover: AgentRef?
+    /// Review advancement is local to the window that opened the queue.
+    @ObservationIgnored var queuedReview: AgentRef?
 
     /// A route shown modally over everything.
     var presented: PresentedRoute?
@@ -115,6 +117,7 @@ final class MobileNavigator {
     /// tab's own root; on iPad a thread becomes the detail and anything else is pushed over it,
     /// a thread's runs or review over that thread.
     func open(_ route: MobileRoute) {
+        if let queuedReview, route.thread != queuedReview { self.queuedReview = nil }
         MobileDiagnostics.record(.open, route: route)
         switch layout {
         case .phone:
@@ -188,6 +191,7 @@ final class MobileNavigator {
         recentPadThreads.removeAll { $0.host == host }
         composerPresentation.forget(host: host)
         if commitPopover?.host == host { commitPopover = nil }
+        if queuedReview?.host == host { queuedReview = nil }
         for tab in Tab.allCases { self[path: tab].removeAll { $0.host == host } }
         padPath.removeAll { $0.host == host }
         if padSelection?.host == host {

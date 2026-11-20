@@ -81,6 +81,25 @@ final class HomeFeed {
         track()
     }
 
+    /// Navigation reads the same exclusive groups as the sidebar, independent of collapsed sections.
+    var supervisionQueues: SupervisionQueues<FleetRef> {
+        let sidebar = SidebarThreads.of(hosts)
+        let model = self.model
+        let state = sidebar.state
+        if let cached = supervisionCache, cached.model == model, cached.state == state { return cached.queues }
+        let groups = sidebar.groups(model)
+        let connected = Set(model.hosts.filter(\.phase.isConnected).map(\.id))
+        let queues = SupervisionQueues<FleetRef>(
+            blocked: groups.needsYou.compactMap { connected.contains($0.ref.host) ? .init($0.ref, since: $0.since) : nil },
+            unseenDone: groups.done.map {
+                .init($0.ref, since: $0.completedAt ?? $0.lastMoved, changedFiles: $0.checkoutChangedFiles)
+            })
+        supervisionCache = (model, state, queues)
+        return queues
+    }
+
+    @ObservationIgnored private var supervisionCache: (model: FleetModel, state: FleetSidebarState, queues: SupervisionQueues<FleetRef>)?
+
     // MARK: Inputs
 
     /// Reads the hosts under observation tracking, derives when they changed, and tracks again.
