@@ -1195,6 +1195,8 @@ final class RPCThreadState {
                 return
             }
             completion(snapshot(beforeEntryID: beforeEntryID))
+        case .transcriptSnapshot:
+            completion(.failure(code: "invalid", message: "A transcript copy requires the host's saved session."))
         case .image(let expectedSessionID, let imageID, let offset):
             guard expectedSessionID == piSessionID else {
                 completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
@@ -1488,7 +1490,7 @@ final class RPCThreadState {
         case .retry(_, _, _, let entryID, let checkpoint):
             retryTurn(entryID: entryID, checkpoint: checkpoint, operationID: operationID, binding: recoveryBinding,
                       authorized: recoveryAuthorization, completion: completion)
-        case .snapshot, .subagentTranscript, .image:
+        case .snapshot, .transcriptSnapshot, .subagentTranscript, .image:
             completion(.failure(code: "invalid", message: "Not an action."))
         }
     }
