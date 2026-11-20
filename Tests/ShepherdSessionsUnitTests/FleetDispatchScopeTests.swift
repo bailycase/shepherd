@@ -58,6 +58,20 @@ struct FleetDispatchScopeTests {
         }
     }
 
+    @Test func legacyInboundDispatchKeepsItsRecordWithoutMoveMetadata() throws {
+        let json = """
+        {"record":{"id":"F94561E6-7623-4BB2-8FB2-217B427A948C","parentHostID":"69EBE0BF-797D-4DE2-9E90-A4287C84186D",
+                   "kind":"agentDispatch","state":"running","title":"Check receipts","repoKey":"github.com/acme/web"},
+         "expectsResult":true,"startedWorking":true,"unsent":false,"worktree":"/tmp/acme-web","acceptedAt":1200}
+        """
+        let entry = try JSONDecoder().decode(FleetDispatch.Inbound.self, from: Data(json.utf8))
+        #expect(entry.record.title == "Check receipts")
+        #expect(entry.record.state == .running)
+        #expect(entry.expectsResult && entry.startedWorking && !entry.unsent)
+        #expect(entry.worktree == "/tmp/acme-web" && entry.acceptedAt == 1200)
+        #expect(!entry.madeRef)
+    }
+
     @Test func aToolCallKeyStandsForOneStableIdPerThread() {
         let (one, two) = (AgentID(), AgentID())
         #expect(FleetDispatch.identifier(key: "toolu_01", agent: one) == FleetDispatch.identifier(key: "toolu_01", agent: one))

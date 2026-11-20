@@ -130,7 +130,7 @@ public struct SHCompareRow: View {
             switch lead {
             case .compare(let head, let base):
                 Text(head).font(.sh(.mono)).foregroundStyle(sh.textSecondary).lineLimit(1).truncationMode(.middle)
-                Image(systemName: "arrow.right").font(.system(size: 10, weight: .medium)).foregroundStyle(sh.textTertiary)
+                Image(systemName: "arrow.right").font(.sh(.micro)).foregroundStyle(sh.textTertiary)
                     .accessibilityLabel("against")
                 if let pickBase {
                     Button(action: pickBase) {

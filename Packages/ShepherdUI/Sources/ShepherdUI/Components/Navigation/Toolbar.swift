@@ -11,16 +11,19 @@ public enum SHToolbarMetrics {
     public static let paneTrailingPadding: CGFloat = 6
 }
 
-/// The thread toolbar (`SHThreadToolbar`; Main, Review, QuestionAsk boards): 44pt, the space and
-/// the title as a breadcrumb ("Shepherd / Investigate…"), an accessory beside them (the branch
-/// chip), and the trailing controls (the side-pane button and the options menu). No status sits
-/// beside the title: the thread and the sidebar already say what an agent is doing. A sidebar
-/// button leads while the sidebar is not docked; `leadingInset` clears the window controls. The
-/// space gives way first when the toolbar narrows, then the chip's branch and the title truncate.
+/// The thread toolbar (`SHThreadToolbar`; Main, Review, QuestionAsk, FleetRemote boards): 44pt, the
+/// space, the thread that started this one (a link, when it is a sub-thread) and the title as a
+/// breadcrumb ("Shepherd / Speed up checkout CI / Split slow UI tests"), an accessory beside them,
+/// and the trailing controls (the side-pane button and the options menu). No status sits beside
+/// the title: the thread and the sidebar already say what an agent is doing. A sidebar button
+/// leads while the sidebar is not docked; `leadingInset` clears the window controls. The space
+/// gives way first when the toolbar narrows, then the parent, then the title truncates.
 public struct SHThreadToolbar<Accessory: View, Trailing: View>: View {
     let title: String
     let project: String?
     let titleHelp: String?
+    let parent: String?
+    let openParent: (() -> Void)?
     let leadingInset: CGFloat
     let sidebar: (() -> Void)?
     let sidebarLabel: String
@@ -28,12 +31,15 @@ public struct SHThreadToolbar<Accessory: View, Trailing: View>: View {
     @ViewBuilder let trailing: () -> Trailing
 
     public init(_ title: String, project: String? = nil, titleHelp: String? = nil,
+                parent: String? = nil, openParent: (() -> Void)? = nil,
                 leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil, sidebarLabel: String = "Show sidebar",
                 @ViewBuilder accessory: @escaping () -> Accessory,
                 @ViewBuilder trailing: @escaping () -> Trailing) {
         self.title = title
         self.project = project
         self.titleHelp = titleHelp
+        self.parent = parent
+        self.openParent = openParent
         self.leadingInset = leadingInset
         self.sidebar = sidebar
         self.sidebarLabel = sidebarLabel
@@ -52,8 +58,9 @@ public struct SHThreadToolbar<Accessory: View, Trailing: View>: View {
             }
             // The space gives way first: it shows only while everything fits at full length.
             ViewThatFits(in: .horizontal) {
-                breadcrumb(showsProject: project != nil)
-                breadcrumb(showsProject: false)
+                breadcrumb(showsProject: project != nil, showsParent: parent != nil)
+                breadcrumb(showsProject: false, showsParent: parent != nil)
+                breadcrumb(showsProject: false, showsParent: false)
             }
             Spacer(minLength: SH.Space.l)
             HStack(spacing: SH.Space.xs) {
@@ -70,13 +77,30 @@ public struct SHThreadToolbar<Accessory: View, Trailing: View>: View {
         .overlay(alignment: .bottom) { SHHairline() }
     }
 
-    private func breadcrumb(showsProject: Bool) -> some View {
+    private func breadcrumb(showsProject: Bool, showsParent: Bool) -> some View {
         HStack(spacing: SH.Space.m) {
             if showsProject, let project {
                 Text(project)
                     .foregroundStyle(.sh.textSecondary)
                     .lineLimit(1)
                     .accessibilityHidden(true)
+                Text("/")
+                    .foregroundStyle(.sh.textTertiary)
+                    .accessibilityHidden(true)
+            }
+            if showsParent, let parent {
+                Group {
+                    if let openParent {
+                        Button(action: openParent) { Text(parent).foregroundStyle(.sh.running) }
+                            .buttonStyle(.plain)
+                            .shHelp("Open \(parent)")
+                            .accessibilityLabel("Started by \(parent)")
+                    } else {
+                        Text(parent).foregroundStyle(.sh.textSecondary)
+                            .accessibilityLabel("Started by \(parent)")
+                    }
+                }
+                .lineLimit(1)
                 Text("/")
                     .foregroundStyle(.sh.textTertiary)
                     .accessibilityHidden(true)

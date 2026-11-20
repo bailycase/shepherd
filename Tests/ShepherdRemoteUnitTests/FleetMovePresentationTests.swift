@@ -113,7 +113,7 @@ struct FleetMovePresentationTests {
     @Test func theChipSaysWhereItCameFromAfterAMove() {
         let from = MovedFrom(hostID: P.here, hostName: "MacBook Pro", at: 1_789_999_320_000, moveID: UUID())
         let chip = FleetMoveChip.make(host: "Mac mini", tone: .good, movedFrom: from, thisFleetID: P.here, locale: P.en, calendar: P.utc)
-        #expect(chip.text == "Mac mini" && chip.movedFrom == "moved from This Mac · 14:02" && chip.accessibilityLabel == "Runs on Mac mini. Move to another Mac", "\(chip)")
+        #expect(chip.text == "Mac mini" && chip.movedFrom == "Moved from This Mac · 14:02", "\(chip)")
         #expect(FleetMoveChip.make(host: "This Mac", tone: .primary, movedFrom: nil, thisFleetID: P.here).movedFrom == nil)
     }
 

@@ -68,7 +68,7 @@ struct LogicalProjectPane: View {
         HStack(spacing: SHLeadMetrics.paneTabGap) {
             ForEach(LogicalProjectPaneTab.allCases) { tab in
                 if tab == vm.logicalProjectPaneTab {
-                    SHLeadToolbarButton(tab.rawValue, symbol: Self.symbol(tab), selected: true, badge: tab == .threads ? presentation.needsYou : 0) {}
+                    SHLeadToolbarButton(tab.rawValue, symbol: Self.symbol(tab), selected: true, badge: tab == .threads ? presentation.needsYou : 0, action: nil)
                 } else {
                     Button { vm.logicalProjectPaneTab = tab } label: { Image(systemName: Self.symbol(tab)) }
                         .buttonStyle(.shIcon(size: SHLeadMetrics.paneHeaderButton))
