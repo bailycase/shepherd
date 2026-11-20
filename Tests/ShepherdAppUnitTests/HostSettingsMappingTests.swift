@@ -4,6 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
+import ShepherdTestKit
 @testable import ShepherdApp
 
 /// What a remote client sees of this Mac's settings, and a client's change applied as the Mac's
@@ -136,6 +137,51 @@ struct HostSettingsMappingTests {
         expected.apply(change)
         HostSettingsMapping.apply(change, to: app)
         #expect(HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil) == expected)
+    }
+
+    /// Every case a client can send changes the field it names, as the reply reads back, except the legacy ones that are
+    /// inert on purpose. The exhaustive switch stops the build on a case with no row here: add a sample change for it.
+    @Test func everyChangeMovesItsFieldExceptTheInertLegacyCases() {
+        func inert(_ change: HostSettingChange) -> Bool {
+            switch change {
+            case .goalCrossProviderEvaluation, .commitRemainingWork, .deleteLocalBranch, .mergePRAutomatically, .mergeMethod,
+                 .updatePiDaily, .updateExtensionsDaily: true
+            case .defaultModel, .defaultThinking, .defaultServiceTier, .textGenerationModel, .visionModel, .namingModel, .compactAtPercent,
+                 .queueDelivery, .goalsEnabled, .projectsEnabled, .worktreeBase, .fetchBeforeCreating, .generatePRDescriptions, .closeOnMerge,
+                 .bundledExtension, .fleetWeight, .fleetThreadsCanSend, .fleetThreadCap, .fleetUncommitted, .fleetSnapshotExcludes,
+                 .fleetCheckIgnore, .fleetAutoDispatch, .fleetBatteryCountsHalf, .designToolEnabled, .threadsStartThreads, .subThreadPlace,
+                 .computerUseEnabled, .subagentDefaults, .worktreeDeleteAction, .skillsInSlashMenu, .mcpProjectConfig, .slashCommand: false
+            }
+        }
+        let host = UUID()
+        let samples: [HostSettingChange] = [
+            .defaultModel("acme/model-a"), .defaultThinking(.high), .defaultServiceTier(.fast), .textGenerationModel("acme/text"),
+            .visionModel("acme/vision"), .namingModel("acme/naming"), .compactAtPercent(80), .queueDelivery(.oneAtATime),
+            .goalCrossProviderEvaluation(true), .goalsEnabled(true), .projectsEnabled(true), .worktreeBase(.head),
+            .fetchBeforeCreating(false), .commitRemainingWork(false), .generatePRDescriptions(false), .deleteLocalBranch(false),
+            .mergePRAutomatically(true), .mergeMethod(.merge), .closeOnMerge(true), .bundledExtension(id: "review", on: false),
+            .updatePiDaily(true), .updateExtensionsDaily(true), .fleetWeight(hostID: host, weight: .prefer), .fleetThreadsCanSend(true),
+            .fleetThreadCap(5), .fleetUncommitted(.leaveBehind), .fleetSnapshotExcludes(spaceID: "acme-web", excludes: FleetSnapshotExcludes(excluded: ["dist"])),
+            .fleetCheckIgnore(hostID: host, ids: ["check-a"]), .fleetAutoDispatch(true), .fleetBatteryCountsHalf(false),
+            .designToolEnabled(true), .threadsStartThreads(true), .subThreadPlace(.worktree), .computerUseEnabled(true),
+            .subagentDefaults(.init(concurrency: 8, model: "acme/child", thinking: .high, context: .fork)),
+            .worktreeDeleteAction(.keepWorktree), .skillsInSlashMenu(false), .mcpProjectConfig(true), .slashCommand(name: "fix-tests", on: false),
+        ]
+        for change in samples {
+            let app = AppSettings(store: Fixture.defaults())
+            let before = HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil)
+            #expect(HostSettingsMapping.apply(change, to: app) == nil)
+            let moved = HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil) != before
+            #expect(moved == !inert(change), "\(change) \(inert(change) ? "moved a field though it is inert" : "moved no field")")
+        }
+    }
+
+    /// The stored Agents defaults are the ones `AppSettings` starts with, so a host with no old keys stores the defaults.
+    @Test func theStoredAgentsDefaultsAreTheSettingsOwn() throws {
+        let app = AppSettings(store: Fixture.defaults())
+        let store = HostSettingsStore(file: try makeScratchDirectory("hps").appendingPathComponent("host-preferences.json"))
+        app.adoptHostPreferences(store)
+        #expect(store.preferences == StoredHostPreferences())
     }
 
     /// The Mac's own switches a client now reaches: Experiments, Subagent defaults, Worktrees,

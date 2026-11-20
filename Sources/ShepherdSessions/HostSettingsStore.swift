@@ -1,0 +1,86 @@
+import Foundation
+import ShepherdCore
+import ShepherdProtocol
+import ShepherdRemote
+
+/// The preferences the host owns, as the host keeps them (`HostSettingsStore`). Not the wire reply:
+/// `HostSettings` is built per request from these and live facts (listener, versions, extensions).
+///
+/// Each field is declared once, with its default as the property's initial value. A file that lacks a
+/// field (an older release's, or a group not moved here yet) reads that field as its default
+/// (`decode`). Groups move here one at a time; only `agents` has so far.
+public struct StoredHostPreferences: Codable, Equatable, Sendable {
+    public static let currentVersion = 1
+
+    public var version = currentVersion
+    public var agents = Agents()
+
+    public init() {}
+
+    /// Settings ▸ Agents: the `shepherd.agent.*` keys of the preferences domain. The host keeps them in
+    /// its file and, for the previous release to read, in those keys.
+    public struct Agents: Codable, Equatable, Sendable {
+        /// Empty means "whatever pi picks".
+        public var defaultModel = ""
+        public var defaultThinking = ThinkingLevel.medium
+        public var defaultServiceTier = ServiceTier.standard
+        public var textGenerationModel = ""
+        public var visionModel = ""
+        public var queueDelivery = NativeQueueMode.all
+        public var trimToolOutput = true
+        public var notifyOnTurnFinished = true
+        public var deferTools = true
+        public var threadsStartThreads = false
+        public var subThreadPlace = SpawnPlace.checkout
+        public var codemode = true
+        /// nil is pi's own default.
+        public var compactAtPercent: Int?
+
+        public init() {}
+    }
+
+    /// Reads a file written by any release: what it lacks, at any depth, is this type's default.
+    public static func decode(_ data: Data) throws -> StoredHostPreferences {
+        let defaults = try JSONSerialization.jsonObject(with: JSONEncoder().encode(StoredHostPreferences()))
+        let stored = try JSONSerialization.jsonObject(with: data)
+        return try JSONDecoder().decode(StoredHostPreferences.self, from: JSONSerialization.data(withJSONObject: overlay(stored, on: defaults)))
+    }
+
+    private static func overlay(_ top: Any, on base: Any) -> Any {
+        guard let top = top as? [String: Any], let base = base as? [String: Any] else { return top }
+        return base.merging(top) { overlay($1, on: $0) }
+    }
+}
+
+/// The host's preferences in one file (`host-preferences.json` beside `state.json`). Every change
+/// reaches the file here; the caller also writes the old UserDefaults key the previous release reads
+/// (`AppSettings`), and while that release can still run, those keys win at the host's start: the file
+/// is rebuilt from them (`AppSettings.adoptHostPreferences`), so a change the old release made in
+/// between is not lost. A file that cannot be read starts from defaults and is written over, for the same reason.
+public final class HostSettingsStore: @unchecked Sendable {
+    private let file: URL
+    private let lock = NSLock()
+    private var stored: StoredHostPreferences
+
+    public init(file: URL) {
+        self.file = file
+        stored = (try? Data(contentsOf: file)).flatMap { try? StoredHostPreferences.decode($0) } ?? StoredHostPreferences()
+    }
+
+    public var preferences: StoredHostPreferences { lock.withLock { stored } }
+
+    /// Changes the preferences and writes the file, when something changed.
+    public func update(_ change: (inout StoredHostPreferences) -> Void) {
+        lock.withLock {
+            var next = stored
+            change(&next)
+            next.version = StoredHostPreferences.currentVersion
+            guard next != stored || !FileManager.default.fileExists(atPath: file.path) else { return }
+            stored = next
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            do { try encoder.encode(next).write(to: file, options: .atomic) }
+            catch { ShepherdLog.warning("Host preferences could not be saved: \(error)") }
+        }
+    }
+}

@@ -277,6 +277,7 @@ extension ShepherdHost {
     /// listener opens off the main actor, so `listener` hears the start's outcome a moment after this returns.
     @MainActor static func serveSettings(_ settings: AppSettings, on server: SessionServer,
                                          listener: ((UInt16?, Error?) -> Void)? = nil) {
+        settings.adoptHostPreferences(HostSettingsStore(file: server.supportDirectory.appendingPathComponent("host-preferences.json")))
         settings.followOtherProcesses()
         server.setProjectsEnabled(settings.projectsEnabled)
         settings.onProjectsChange = { [weak server] in server?.setProjectsEnabled($0) }
