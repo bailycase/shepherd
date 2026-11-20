@@ -47,6 +47,7 @@ struct HomeScreen: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { SearchHooks.open(navigator: navigator) } label: { Label("Search", systemImage: "magnifyingglass") }
             }
+            ToolbarItem(placement: .topBarTrailing) { StopAllWorkingMenu() }
         }
     }
 }
