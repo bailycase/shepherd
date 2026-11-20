@@ -5,6 +5,7 @@ import ShepherdProtocol
 import ShepherdSessions
 import ShepherdUI
 import ShepherdTestKit
+import ShepherdTestSupport
 @testable import ShepherdApp
 
 /// pi's `mcp` subcommands, scripted: records what Settings ran and with which environment, and answers
@@ -30,7 +31,9 @@ final class FakeMCPCLI: MCPCLI, @unchecked Sendable {
         let answer = reply(arguments)
         for line in answer.lines { onLine?(line) }
         if blocksLogin, arguments.first == "login" {
-            while !Task.isCancelled { try? await Task.sleep(for: .milliseconds(5)) }
+            // Simulated pi waiting for a browser: models the scenario, not a test wait.
+            // One long bound, so cancellation (not the clock) ends it, with status 143 as pi exits.
+            try? await Task.sleep(for: .seconds(30))
             return MCPCLIResult(status: 143, stdout: answer.result.stdout, stderr: "")
         }
         return answer.result
@@ -358,7 +361,7 @@ struct MCPStoreTests {
         let harness = try MCPFixtures.harness(cli: cli)
         harness.store.beginSignIn("notion")
         let flow = try #require(harness.store.signIn)
-        while !flow.succeeded { try await Task.sleep(for: .milliseconds(5)) }
+        try await eventuallyOnMain("the sign-in to succeed") { flow.succeeded }
         #expect(cli.calls.first?.arguments == ["login", "notion", "--timeout", "300"])
         #expect(flow.model.phase == .done)
         #expect(flow.model.steps.map(\.state) == [.done, .done, .done])
@@ -377,7 +380,7 @@ struct MCPStoreTests {
         let harness = try MCPFixtures.harness(cli: cli)
         harness.store.beginSignIn("notion")
         let flow = try #require(harness.store.signIn)
-        while flow.model.phase == .waiting { try await Task.sleep(for: .milliseconds(5)) }
+        try await eventuallyOnMain("the sign-in to fail") { flow.model.phase == .failed }
         #expect(flow.model.phase == .failed)
         #expect(flow.model.steps.map(\.state) == [.done, .done, .failed])
         #expect(flow.model.steps.last?.title == "Signing in didn’t finish")
@@ -393,10 +396,12 @@ struct MCPStoreTests {
         let harness = try MCPFixtures.harness(cli: cli)
         harness.store.beginSignIn("notion")
         let flow = try #require(harness.store.signIn)
-        while flow.authorizationURL == nil { try await Task.sleep(for: .milliseconds(5)) }
+        try await eventuallyOnMain("pi to print its address") { flow.authorizationURL != nil }
         harness.store.closeSignIn()
         harness.store.closeSignIn()
         #expect(harness.store.signIn == nil)
+        // Bounded wait, kept: nothing observable follows a cancelled login, so give cancellation
+        // a moment to settle before asserting it never read as signed in.
         try await Task.sleep(for: .milliseconds(50))
         #expect(!flow.succeeded, "a cancelled login never reads as signed in")
     }
@@ -406,7 +411,7 @@ struct MCPStoreTests {
         cli.reply = { _ in ([], FakeMCPCLI.list([(name: "linear", state: "needs-auth", tools: [], error: nil)])) }
         let harness = try MCPFixtures.harness(cli: cli)
         harness.store.signOut("linear")
-        while cli.calls.count < 2 { try await Task.sleep(for: .milliseconds(5)) }
+        try await eventuallyOnMain("sign-out to run logout, then list again") { cli.calls.count >= 2 }
         await harness.store.settle()
         #expect(cli.calls.map(\.arguments).prefix(2) == [["logout", "linear"], ["list", "--json"]])
         #expect(try row(harness.store, "linear").signIn == .signIn)
@@ -450,7 +455,9 @@ struct MCPStoreTests {
         harness.store.remove("postgres")
         #expect(harness.store.entry("postgres") == nil)
         #expect(secrets.accounts(withPrefix: "") == ["secret/grafana/T"])
-        while !harness.cli.calls.contains(where: { $0.arguments == ["logout", "postgres"] }) { try await Task.sleep(for: .milliseconds(5)) }
+        try await eventuallyOnMain("pi's logout to run for the removed server") {
+            harness.cli.calls.contains { $0.arguments == ["logout", "postgres"] }
+        }
     }
 
     @Test func settingsEditsReachTheFile() throws {
