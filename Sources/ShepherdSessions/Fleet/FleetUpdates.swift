@@ -184,9 +184,12 @@ final class FleetUpdates: @unchecked Sendable {
                 } catch RemoteHostClientError.rejected(let code, let message) where code == "unsupported" {
                     return await end(job, .failed, message)
                 } catch {
-                    // The link dropped, or the Mac was busy or slow: look again. A Mac that went away after it was asked to install is relaunching.
+                    // The link dropped, or the Mac was busy or slow: look again. A Mac that went away after it was asked to install is relaunching,
+                    // unless the install is still held for its threads: no installer has it, so that is a Mac to look at again, not one that left.
+                    // This host may have slept during the request, so its clock is read first, or the time asleep counts against the Mac.
+                    progress.look(at: clock())
                     progress.failures += 1
-                    if Self.droppedLink(error), progress.installAsked {
+                    if Self.droppedLink(error), progress.installAsked, !progress.waitingForThreads {
                         progress.leaving = true
                         progress.wentAwayAt = progress.wentAwayAt ?? clock()
                         await set(job, .relaunching)
@@ -226,14 +229,15 @@ final class FleetUpdates: @unchecked Sendable {
         switch status.phase {
         case .unsupported:
             let message = status.error == SessionServer.hostUpdateWindowClosed ? "Open Shepherd on \(who) to update it." : (status.error ?? "\(who) can't update itself.")
-            if progress.waitingForThreads, !progress.leaving, (status.busyThreads ?? 0) > 0 {
-                // Its threads still work, so no install was handed over: the app that held the offer was closed. Let the wait go.
+            if progress.waitingForThreads, !status.installHandedOff {
+                // The host sent no install to the updater (it holds it for threads that work, or its wait is gone): the app that held the offer
+                // was closed, not installing. Let the wait go.
                 _ = try? await send(.cancel)
                 await end(job, .needsApp, message)
                 return true
             }
             if progress.leaving || progress.installAsked {
-                // The host is up before its app is (or while it quits to install, once the host sent the install it held for idle
+                // The host is up before its app is (or while it quits to install, once it sent the install it was given or held for idle
                 // threads): the app comes back with it, or after a look at the build above.
                 progress.leaving = true
                 await set(job, .relaunching)
@@ -269,6 +273,8 @@ final class FleetUpdates: @unchecked Sendable {
                 // Asked, or asked again: a Mac that lost what it held (its host restarted) still has the offer.
                 progress.installRequests += 1
                 progress.installAsked = true
+                // Asked to wait: until a status says the install is under way, the host may or may not have the offer held, so the link dropping is not a relaunch.
+                if when == .idle { progress.waitingForThreads = true }
                 status = try await send(when == .idle ? .installWhenIdle(offerID: offer, authorized: true) : .install(offerID: offer, authorized: true))
                 // The same offer, still open to install: the Mac may not have begun yet. Look again at the next poll, not at once.
                 if status.phase == .available, status.canInstall, status.offerID == offer { return false }

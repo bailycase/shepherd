@@ -6,14 +6,14 @@ import ShepherdProtocol
 struct FleetUpdateWireTests {
     @Test func aStatusKeepsWhatTheHostCountedAndAnOldOneDecodesWithoutIt() throws {
         let waiting = HostUpdateStatus(version: "0.9.0", build: "671", channel: "nightly", phase: .available, offerID: UUID(), offeredVersion: "0.9.1",
-                                       busyThreads: 2, waitingForIdle: true)
+                                       busyThreads: 2, waitingForIdle: true, installHandedOff: true)
         #expect(try JSONDecoder().decode(HostUpdateStatus.self, from: JSONEncoder().encode(waiting)) == waiting)
         // What a Mac from before waiting sent, and what it leaves out when nothing waits.
         let old = #"{"version":"0.9.0","build":"671","channel":"nightly","phase":"available","canInstall":true}"#
         let decoded = try JSONDecoder().decode(HostUpdateStatus.self, from: Data(old.utf8))
-        #expect(decoded.busyThreads == nil && !decoded.waitingForIdle && decoded.canInstall)
+        #expect(decoded.busyThreads == nil && !decoded.waitingForIdle && !decoded.installHandedOff && decoded.canInstall)
         let idle = String(decoding: try JSONEncoder().encode(HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .idle)), as: UTF8.self)
-        #expect(!idle.contains("waitingForIdle") && !idle.contains("busyThreads"))
+        #expect(!idle.contains("waitingForIdle") && !idle.contains("busyThreads") && !idle.contains("installHandedOff"))
     }
 
     @Test func aJobRoundTripsAndAnOlderOneDecodesWithDefaults() throws {
