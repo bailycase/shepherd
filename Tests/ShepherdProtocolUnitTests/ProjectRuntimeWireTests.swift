@@ -8,6 +8,38 @@ struct ProjectRuntimeWireTests {
     static let task = ProjectTaskID(rawValue: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
     static let space = SpaceID(rawValue: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
     static let operation = UUID(uuidString: "cccccccc-cccc-4ccc-8ccc-cccccccccccc")!
+    private static let id = Wire.projectKey.projectID
+    private static let worker = AgentID(rawValue: "worker")
+    private static let transport: [ProjectRuntimeTransport] = [.hosts, .action(projectID: id, expectedRevision: 2, request: .read),
+        .conversation(projectID: id, request: .snapshot()), .worker(projectID: id, taskID: task, request: .snapshot()),
+        .answer(projectID: id, expectedRevision: 2, taskID: task,
+            request: .answer(expectedSessionID: "s", generation: "g", operationID: operation, dialogID: "q", answer: .confirm(value: true)))]
+    private static let ownerRequests = transport.map { RemoteRequest.logicalProjectRuntime(id: 1, request: $0) }
+    private static let answer = ProjectRuntimeRequest.answer(operationID: operation, taskID: task,
+        questionEventID: operation, humanReplyID: operation, answer: .confirm(value: false))
+    private static let answerRequest = RemoteRequest.logicalProjectRuntime(id: 9, request: .action(projectID: id, expectedRevision: 2, request: answer))
+    private static let imageRequest = RemoteRequest.logicalProjectRuntime(id: 7, request: .action(projectID: id, expectedRevision: 1,
+            request: .message(operationID: operation, text: "", images: [.init(mimeType: "image/png", data: Data([1, 2, 3]))])))
+    static let wireRequests = ownerRequests + [answerRequest, imageRequest]
+
+    private static let ownerWithResult: Project = {
+        var project = Wire.project(named: "Owner")
+        let source = ProjectEventSource(kind: .settled, taskID: task, operationID: operation, workerAgentID: worker, sessionID: "session", generation: "generation")
+        let identity = ProjectResultIdentity(ownerID: project.ownerID, projectID: project.id, eventID: operation, source: source, host: .local, deliveryID: operation, observedProjectRevision: 7)
+        project.resultPage = .init(identity: identity, availability: .complete, totalBytes: 4, sha256: "digest", data: Data("done".utf8), stopReason: "stop")
+        return project
+    }()
+    private static let ownerWithFailure: Project = {
+        var project = Wire.project(named: "Project")
+        var message = ProjectMessage(id: operation, text: "hello", phase: .failed)
+        message.failureDetail = "The agent refused it: No API key found for test-provider."
+        project.messages = [message]
+        return project
+    }()
+    private static let resultReply = RemoteReply.logicalProjectRuntime(id: 7, result: .project(ownerWithResult))
+    private static let failureReply = RemoteReply.logicalProjectRuntime(id: 1, result: .project(ownerWithFailure))
+    static let wireReplies = [resultReply, failureReply]
+
     @Test(arguments: [ProjectRuntimeRequest.conversation, .read,
                       .worker(taskID: task), .inspect(taskID: task), .inspect(taskID: task, operationID: operation),
                       .history(), .history(taskID: task, beforeSequence: 42, includeBodies: true),
@@ -36,11 +68,7 @@ struct ProjectRuntimeWireTests {
         let message = try NDJSON.decode(ExtensionMessage.self, from: Data(frame.utf8))
         #expect(message.speaksFor == agent && message.replyID == 1)
         #expect(try Wire.roundTrip(message) == message)
-        let requests: [ProjectRuntimeTransport] = [.hosts, .action(projectID: id, expectedRevision: 2, request: .read),
-            .conversation(projectID: id, request: .snapshot()), .worker(projectID: id, taskID: Self.task, request: .snapshot()),
-            .answer(projectID: id, expectedRevision: 2, taskID: Self.task,
-                request: .answer(expectedSessionID: "s", generation: "g", operationID: Self.operation, dialogID: "q", answer: .confirm(value: true)))]
-        for request in requests { #expect(try Wire.roundTrip(RemoteRequest.logicalProjectRuntime(id: 1, request: request)) == .logicalProjectRuntime(id: 1, request: request)) }
+        for request in Self.ownerRequests { #expect(try Wire.roundTrip(request) == request) }
         let result = ProjectRuntimeResult.hosts([.init(reference: .remote(hostID: Self.operation, bindingID: UUID()), name: "demo-mac")])
         #expect(try Wire.roundTrip(result) == result)
         var project = Project(name: "Project")
@@ -52,14 +80,11 @@ struct ProjectRuntimeWireTests {
     @Test func oldInspectShapeAndNewResultDescriptorRoundTrip() throws {
         let old = Data("{\"inspect\":{\"taskID\":\"\(Self.task)\"}}".utf8)
         #expect(try JSONDecoder().decode(ProjectRuntimeRequest.self, from: old) == .inspect(taskID: Self.task))
-        var project = Project(name: "Owner")
-        let source = ProjectEventSource(kind: .settled, taskID: Self.task, operationID: Self.operation, workerAgentID: AgentID(), sessionID: "session", generation: "generation")
-        let identity = ProjectResultIdentity(ownerID: project.ownerID, projectID: project.id, eventID: Self.operation, source: source, host: .local, deliveryID: Self.operation, observedProjectRevision: 7)
-        project.resultPage = .init(identity: identity, availability: .complete, totalBytes: 4, sha256: "digest", data: Data("done".utf8), stopReason: "stop")
-        #expect(try Wire.roundTrip(RemoteReply.logicalProjectRuntime(id: 7, result: .project(project))) == .logicalProjectRuntime(id: 7, result: .project(project)))
-        let extensionFrame = ExtensionMessage.projectRuntime(id: 8, agentID: source.workerAgentID, projectID: project.id, expectedRevision: 7, request: .result(taskID: Self.task, operationID: Self.operation, offset: 0, sha256: nil))
+        let project = Self.ownerWithResult
+        #expect(try Wire.roundTrip(Self.resultReply) == Self.resultReply)
+        let extensionFrame = ExtensionMessage.projectRuntime(id: 8, agentID: Self.worker, projectID: project.id, expectedRevision: 7, request: .result(taskID: Self.task, operationID: Self.operation, offset: 0, sha256: nil))
         let decoded = try Wire.roundTrip(extensionFrame)
-        #expect(extensionFrame.replyID == 8 && extensionFrame.speaksFor == source.workerAgentID && decoded == extensionFrame)
+        #expect(extensionFrame.replyID == 8 && extensionFrame.speaksFor == Self.worker && decoded == extensionFrame)
     }
 
     @Test func olderMessageWireAndStoredMessageDefaultImagesToNil() throws {
@@ -73,28 +98,19 @@ struct ProjectRuntimeWireTests {
         human.answerReceipts = [.init(taskID: Self.task, questionEventID: Self.operation,
             nativeAnswer: .init(operationID: Self.operation, sessionID: "s", generation: "g", dialogID: "q", request: Data([1]))) ]
         #expect(try Wire.roundTrip(human) == human)
-        let answer = ProjectRuntimeRequest.answer(operationID: Self.operation, taskID: Self.task,
-            questionEventID: Self.operation, humanReplyID: Self.operation, answer: .confirm(value: false))
-        let frame = ExtensionMessage.projectRuntime(id: 8, agentID: AgentID(), projectID: ProjectID(), expectedRevision: 2, request: answer)
+        let frame = ExtensionMessage.projectRuntime(id: 8, agentID: AgentID(), projectID: ProjectID(), expectedRevision: 2, request: Self.answer)
         #expect(try Wire.roundTrip(frame) == frame && frame.replyID == 8 && frame.speaksFor != nil)
-        let remote = RemoteRequest.logicalProjectRuntime(id: 9, request: .action(projectID: ProjectID(), expectedRevision: 2, request: answer))
-        #expect(try Wire.roundTrip(remote) == remote)
+        #expect(try Wire.roundTrip(Self.answerRequest) == Self.answerRequest)
         let ref = ProjectInputImage(id: Self.operation, mimeType: "image/png", name: "tiny.png", byteCount: 68)
         let message = ProjectMessage(id: Self.operation, text: "", images: [ref])
         #expect(try Wire.roundTrip(message) == message)
-        let request = RemoteRequest.logicalProjectRuntime(id: 7, request: .action(projectID: ProjectID(), expectedRevision: 1,
-            request: .message(operationID: Self.operation, text: "", images: [.init(mimeType: "image/png", data: Data([1, 2, 3]))])))
-        #expect(try Wire.roundTrip(request) == request)
+        #expect(try Wire.roundTrip(Self.imageRequest) == Self.imageRequest)
     }
 
     @Test func failedMessageDetailSurvivesStateAndOwnerReplyRoundTrips() throws {
-        var project = Project(name: "Project")
-        var message = ProjectMessage(id: Self.operation, text: "hello", phase: .failed)
-        message.failureDetail = "The agent refused it: No API key found for test-provider."
-        project.messages = [message]
-        #expect(try Wire.roundTrip(ShepherdState(projects: [project])).projects.first?.messages == [message])
-        let reply = RemoteReply.logicalProjectRuntime(id: 1, result: .project(project))
-        #expect(try Wire.roundTrip(reply) == reply)
+        let project = Self.ownerWithFailure
+        #expect(try Wire.roundTrip(ShepherdState(projects: [project])).projects.first?.messages == project.messages)
+        #expect(try Wire.roundTrip(Self.failureReply) == Self.failureReply)
     }
 
     @Test func chatAnswerReceiptsAreBoundedAndLegacyQuestionEventsHaveNoGenerationProof() throws {

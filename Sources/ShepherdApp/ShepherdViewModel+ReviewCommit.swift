@@ -34,6 +34,9 @@ extension ShepherdViewModel {
         guard let store = reviewCommitStores[session.id], store.outcome != .running else { return }
         let succeeded = if case .succeeded = store.outcome { true } else { false }
         reviewCommitStores.removeValue(forKey: session.id)
-        if succeeded { reloadReview(session, reference: session.reference) }
+        if succeeded {
+            reloadReview(session, reference: session.reference)
+            advanceQueuedReview(for: owner(of: session))
+        }
     }
 }

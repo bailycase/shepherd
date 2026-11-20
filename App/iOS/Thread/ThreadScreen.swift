@@ -139,8 +139,15 @@ struct ThreadScreen: View {
                         title.frame(maxWidth: titleMaxWidth, alignment: .leading)
                     }
                 }
+                // Keep Next clear of the status bar in the wide iPad toolbar.
+                if agent != nil, sizeClass == .regular, !inlineTitle {
+                    ToolbarItem(placement: .topBarLeading) { NextNeedingYouButton() }
+                }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if agent != nil {
+                        if sizeClass != .regular || inlineTitle {
+                            NextNeedingYouButton(compact: sizeClass != .regular)
+                        }
                         if arranged {
                             // What sits above the composer in the laptop pose (DuoLaptop's capsule).
                             ThreadArrangedPicker(showsTerminal: navigator.sidePane.arrangedTerminal) {
@@ -218,7 +225,7 @@ struct ThreadScreen: View {
         if agent == nil { return "This agent is no longer on \(host.name)." }
         if !supported { return "Update Shepherd on \(host.name) to open threads here." }
         if let error = store.loadError { return error }
-        if let problem = store.startProblem { return "\(problem.title) \(problem.advice(host: host.name))" }
+        // A stopped pi's problem is the composer's banner (`StartProblemBanner`), with Retry where the host takes it.
         if let notice = store.clipNotice { return notice.text }
         return nil
     }

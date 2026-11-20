@@ -16,18 +16,20 @@ struct RemoteListenerTests {
         defer { r.stop() }
         let client = try await r.raw(authenticated: false)
         try client.send(.hello(id: 7, token: r.token, clientName: "test", protocolVersion: RemoteProtocol.version))
-        // Designs (and Pencil markup and Delete with them) only while the host's Design tool is
-        // on, and it starts off.
-        // Fleet is offered only by a host whose fleet has started (`SessionServer.startFleet`); a bare server has none.
-        // Nor an updater, so the host updates no Mac of its fleet (`fleet.update.v1`).
-        // A bare server also has no owner Project launcher/controller installed, and Files goes
-        // only to a client that lists it (this one lists nothing).
-        let offered = RemoteProtocol.capabilities.filter {
-            !RemoteProtocol.designCapabilities.contains($0) && $0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetLinkCapability && $0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetCheckCapability && $0 != RemoteProtocol.fleetDevicesCapability && $0 != RemoteProtocol.fleetSyncCapability && $0 != RemoteProtocol.fleetSnapshotCapability && $0 != RemoteProtocol.fleetDispatchCapability && $0 != RemoteProtocol.fleetMoveCapability && $0 != RemoteProtocol.fleetRendezvousCapability && $0 != RemoteProtocol.fleetPairLinkCapability && $0 != RemoteProtocol.hostUpdateCapability && $0 != RemoteProtocol.fleetUpdateCapability && $0 != RemoteProtocol.fleetUpdateViewCapability && $0 != RemoteProtocol.filesCapability && $0 != RemoteProtocol.logicalProjectRuntimeCapability && $0 != RemoteProtocol.projectWorkerCapability && $0 != RemoteProtocol.projectMessageImagesCapability && $0 != RemoteProtocol.projectExecutionCapability && $0 != RemoteProtocol.projectPlacementCapability && $0 != RemoteProtocol.projectPublicationsCapability && $0 != RemoteProtocol.projectResultCapability
-        }
-        // This host's fleet runs (a test's client is one of its devices), so it says who it is.
+        // The Design tool starts off. The test token authenticates a device, not a Fleet member.
+        let unavailable = RemoteProtocol.designCapabilities.union(RemoteProtocol.fleetMemberCapabilities).union([
+            // No updater, no Files opt-in, and no Project launcher or controller.
+            RemoteProtocol.hostUpdateCapability, RemoteProtocol.fleetUpdateViewCapability,
+            RemoteProtocol.filesCapability,
+            RemoteProtocol.logicalProjectRuntimeCapability, RemoteProtocol.projectWorkerCapability,
+            RemoteProtocol.projectMessageImagesCapability, RemoteProtocol.projectExecutionCapability,
+            RemoteProtocol.projectPlacementCapability, RemoteProtocol.projectPublicationsCapability,
+            RemoteProtocol.projectResultCapability,
+        ])
+        let offered = RemoteProtocol.capabilities.filter { !unavailable.contains($0) }
         guard case .helloOk(7, RemoteProtocol.version, let capabilities, _, let hostID) = try await client.next() else { Issue.record("expected helloOk"); return }
-        #expect(capabilities == offered && hostID != nil)
+        #expect(capabilities.sorted() == offered.sorted())
+        #expect(hostID != nil)
     }
 
     @Test(arguments: ["127.0.0.1", "localhost"])
@@ -387,16 +389,21 @@ struct RemoteListenerTests {
         let late = SessionServer.ListenerClose()
         server.queue.sync { server.remoteListenerClosing = late }
 
+        // The stop is under way once its waiter is registered; only then does the deadline start to matter.
         server.remoteListenerExitDeadline = .milliseconds(200)
-        #expect(!server.awaitRemoteListenerClosed(within: server.remoteListenerExitDeadline), "the exit deadline passes without a close")
-        let returned = Locked(false)
-        let stopping = Task.detached { server.stopRemoteListener(); returned.withValue { $0 = true } }
-        try await Task.sleep(for: .seconds(1))
-        #expect(!returned.current, "the stop returned before the port closed")
+        let closed = Locked(false)
+        let returnedAfterClose = Locked<Bool?>(nil)
+        let stopping = Task.detached { server.stopRemoteListener(); returnedAfterClose.withValue { $0 = closed.current } }
+        try await eventually("the stop to wait for the close") { server.queue.sync { late.waiters.count } == 1 }
 
-        server.queue.sync { server.remoteListenerClosing = nil; late.markClosed() }
+        // This waiter registers after the stop's and gives up later than any deadline the stop could have started, so
+        // by the time it does, a stop that honoured the deadline has already returned.
+        #expect(!server.awaitRemoteListenerClosed(within: .milliseconds(400)), "the exit deadline passes without a close")
+        #expect(returnedAfterClose.current == nil, "the stop returned before the port closed")
+
+        server.queue.sync { server.remoteListenerClosing = nil; closed.withValue { $0 = true }; late.markClosed() }
         await stopping.value
-        #expect(returned.current)
+        #expect(returnedAfterClose.current == true, "the stop returned only after the port closed")
     }
 
     /// A non-blocking connect to the listener on the loopback address.

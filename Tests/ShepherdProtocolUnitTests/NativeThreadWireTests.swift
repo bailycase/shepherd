@@ -467,9 +467,10 @@ struct NativeThreadWireTests {
         #expect(NativeThreadCode.unavailable == "native_unavailable")
     }
 
+    static let startingRefusal = RemoteReply.error(id: 4, code: NativeThreadCode.starting, message: "pi is starting.")
+
     @Test func aStartingRefusalTravelsAsARemoteError() throws {
-        let reply = RemoteReply.error(id: 4, code: NativeThreadCode.starting, message: "pi is starting.")
-        #expect(try Wire.roundTrip(reply) == reply)
+        #expect(try Wire.roundTrip(Self.startingRefusal) == Self.startingRefusal)
     }
 
     @Test func aV1SnapshotDecodesWithEveryV2FieldAbsent() throws {
