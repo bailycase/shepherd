@@ -973,7 +973,9 @@ struct FleetUpdateTests {
         defer { a.stop() }
         let id = try await b.hostID()
         let pi = try await Self.busy(b)
-        b.server.queue.sync { b.server.installAnswerPatience = 0.05 }
+        // The host's patience is not waited out: the test runs its timeout handler once the install was sent.
+        let timeouts = Locked<[@Sendable () -> Void]>([])
+        b.server.queue.sync { b.server.installAnswerTimer = { fire in timeouts.withValue { $0.append(fire) } } }
         Self.quicken(a)
         try await Self.start(a, id, .idle)
         try await Self.waitForStage(.checking, on: a, of: id)
@@ -986,6 +988,8 @@ struct FleetUpdateTests {
         updater.quitApp()
         // A retry would be looked at with no delay at all once the host stops waiting, so the drain below runs after it would have.
         b.server.queue.sync { b.server.idleInstallInterval = 0 }
+        try await FleetDispatchTests.wait("the host to start its patience") { timeouts.current.count == 1 }
+        b.server.queue.sync { timeouts.current[0]() }
         try await FleetDispatchTests.wait("the host to stop waiting for an answer") { b.server.queue.sync { !b.server.isWaitingForIdleInstall } }
         for _ in 0..<3 {
             b.server.queue.sync {}

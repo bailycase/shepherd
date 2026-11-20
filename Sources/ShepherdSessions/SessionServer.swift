@@ -518,9 +518,36 @@ public final class SessionServer: @unchecked Sendable {
         guard let marker = try? Data(contentsOf: installHandoffMarker) else { return false }
         return marker == Self.installUnknownMarker ? nil : true
     }
-    /// Records `value` in the marker. False when it couldn't be written: an install is never dispatched then, or a restart would read "no".
+    /// The install attempt that owns the marker: the direct request (its generation) or the held install's send that wrote "unknown". Memory only:
+    /// attempts don't outlive the host, so a restarted host's marker has no owner and no late answer can change it. Server queue.
+    private var installMarkerOwner: UUID?
+    enum InstallMarkerChange {
+        /// An install is about to be sent: the marker is unknown, and `attempt` owns it from here, whoever owned it before.
+        case begin(attempt: UUID)
+        /// The updater answered `attempt`'s install. Ignored unless `attempt` still owns the marker.
+        case settle(attempt: UUID, handedOff: Bool)
+        /// A request that isn't an install: no install is owed an answer, so no attempt owns the marker.
+        case clear
+    }
+    /// The one place the marker is written, cleared or resolved. False when it wasn't written: an install is never dispatched then, or a restart
+    /// would read "no"; or the change came from an attempt that no longer owns the marker. Server queue.
     @discardableResult
-    private func setInstallHandedOff(_ value: Bool?) -> Bool {
+    private func changeInstallMarker(_ change: InstallMarkerChange) -> Bool {
+        switch change {
+        case .begin(let attempt):
+            guard writeInstallMarker(nil) else { return false }
+            installMarkerOwner = attempt
+            return true
+        case .settle(let attempt, let handedOff):
+            guard installMarkerOwner == attempt else { return false }
+            installMarkerOwner = nil
+            return writeInstallMarker(handedOff)
+        case .clear:
+            installMarkerOwner = nil
+            return writeInstallMarker(false)
+        }
+    }
+    private func writeInstallMarker(_ value: Bool?) -> Bool {
         switch value {
         case true?: return FileManager.default.createFile(atPath: installHandoffMarker.path, contents: nil)
         case nil: return FileManager.default.createFile(atPath: installHandoffMarker.path, contents: Self.installUnknownMarker)
@@ -546,7 +573,9 @@ public final class SessionServer: @unchecked Sendable {
     /// How often the host looks at its threads while an install waits for them, and the longest it waits.
     var idleInstallInterval: TimeInterval = 2
     /// How long a held install that was sent waits for the updater's answer before the host stops waiting (it is never sent again).
-    var installAnswerPatience: TimeInterval = 15
+    static let installAnswerPatience: TimeInterval = 15
+    /// Tests: takes the handler that runs when that patience ends, so a test calls it (on the server queue) instead of waiting.
+    var installAnswerTimer: ((_ timeout: @escaping @Sendable () -> Void) -> Void)?
     static let idleInstallLimit: TimeInterval = 12 * 3600
 
     /// Serves `request` through the updater (`onRemoteHostUpdate`) for `requester`: a client of this host, a Mac that called over its link
@@ -574,25 +603,29 @@ public final class SessionServer: @unchecked Sendable {
         if case .installWhenIdle(let offerID, let consent) = request, consent {
             if busyThreadCount == 0 { forwarded = .install(offerID: offerID, authorized: true) } else { waits = offerID }
         }
-        // The marker is written before the updater is called: unknown until its answer. No marker, no install.
+        // The marker is written before the updater is called: unknown until its answer, and owned by this attempt. No marker, no install.
+        let generation = UUID()
         if case .install = forwarded {
             // Nothing was written, so there is nothing of this attempt to clean up: a path already standing there stays.
-            guard setInstallHandedOff(nil) else { return ("failed", Self.installMarkerUnwritable) }
-        } else if request != .status { setInstallHandedOff(false) }
+            guard changeInstallMarker(.begin(attempt: generation)) else { return ("failed", Self.installMarkerUnwritable) }
+        } else if request != .status { changeInstallMarker(.clear) }
         if request != .status { heldInstallFailure = nil }
-        switch request {
+        // An install that goes now (asked for, or a wait with nothing to wait for) ends the wait that came before it.
+        switch forwarded {
         case .install, .cancel, .check: idleInstall = nil
         case .installWhenIdle, .status: break
         }
-        let generation = UUID()
         hostUpdateRequests[requester] = generation
         let finish: (HostUpdateStatus?) -> Void = { [weak self] status in
             guard let self else { return }
             self.queue.async {
                 guard self.hostUpdateRequests[requester] == generation else { return }
                 self.hostUpdateRequests[requester] = nil
-                // The updater's answer settles the marker written before the install was sent, even for a requester that left. No answer leaves it unknown.
-                if case .install = forwarded, let status { self.setInstallHandedOff(status.phase == .downloading || status.phase == .installing) }
+                // The updater's answer settles the marker written before the install was sent, even for a requester that left, if this attempt
+                // still owns it. No answer leaves it unknown.
+                if case .install = forwarded, let status {
+                    self.changeInstallMarker(.settle(attempt: generation, handedOff: status.phase == .downloading || status.phase == .installing))
+                }
                 guard alive() else { return }
                 guard var status else { return reply(nil) }
                 // The updater says it holds the offer: from here the host waits for the threads.
@@ -616,7 +649,7 @@ public final class SessionServer: @unchecked Sendable {
             self.queue.async {
                 guard alive(), self.hostUpdateRequests[requester] == generation else {
                     // Nothing was sent to the updater for a requester that left.
-                    if case .install = toUpdater, self.hostUpdateRequests[requester] == generation { self.setInstallHandedOff(false) }
+                    if case .install = toUpdater { self.changeInstallMarker(.settle(attempt: generation, handedOff: false)) }
                     return
                 }
                 let authorized: () async -> Bool = { [weak self] in
@@ -645,7 +678,8 @@ public final class SessionServer: @unchecked Sendable {
             guard self.busyThreadCount == 0 else { return next() }
             // Idle: the held offer is installed, as an install asked for now would be. An answer that is still an offer (the host
             // refused to reserve: a question waits, a Project runs) leaves it held and the wait goes on; one that never comes is looked at again.
-            guard self.setInstallHandedOff(nil) else {
+            let sent = UUID()
+            guard self.changeInstallMarker(.begin(attempt: sent)) else {
                 // Nothing was sent: the updater lets go of the offer, and the next look says why.
                 self.heldInstallFailure = Self.installMarkerUnwritable
                 self.idleInstall = nil
@@ -656,21 +690,22 @@ public final class SessionServer: @unchecked Sendable {
                 handler(.install(offerID: offerID, authorized: true), { true }) { status in
                     self.queue.async {
                         guard answered.first() else { return }
-                        // A superseded attempt's late answer settles nothing: the marker now belongs to whichever install came after it
-                        // (an "unsupported" from the older one would clear the newer one's unknown marker).
+                        // A superseded send's late answer settles nothing: the marker belongs to whichever install came after it.
+                        self.changeInstallMarker(.settle(attempt: sent, handedOff: status.phase == .downloading || status.phase == .installing))
                         guard let wait = self.idleInstall, wait.offerID == offerID, wait.attempt == attempt else { return }
-                        self.setInstallHandedOff(status.phase == .downloading || status.phase == .installing)
                         if status.phase == .available { next() } else { self.idleInstall = nil }
                     }
                 }
             }
-            self.queue.asyncAfter(deadline: .now() + self.installAnswerPatience) {
+            let timeout: @Sendable () -> Void = {
                 guard answered.first() else { return }
                 // Sent and never answered: the app may have taken it and quit, so the marker stays unknown and the install is not sent again
                 // (a second one to an app that is gone would answer "unsupported" and clear it). The wait is over.
                 guard let wait = self.idleInstall, wait.offerID == offerID, wait.attempt == attempt else { return }
                 self.idleInstall = nil
             }
+            if let timer = self.installAnswerTimer { timer(timeout) }
+            else { self.queue.asyncAfter(deadline: .now() + Self.installAnswerPatience, execute: timeout) }
         }
     }
 
