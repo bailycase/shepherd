@@ -15,7 +15,7 @@ import Testing
 struct RemoteAutomationsTests {
     @Test func aClientSwitchesRunsStopsAndDeletesAHostsAutomation() async throws {
         try StubPi.installAsEngine()
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(), remote = try await RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         // Off, so the host does not start a run when its app launches.
@@ -85,7 +85,7 @@ struct RemoteAutomationsTests {
     @Test(arguments: [0.0, 0.2])
     func runningASettledAutomationAgainReplacesItsRun(startupDelay: Double) async throws {
         try StubPi.installAsEngine()
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(), remote = try await RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let startup = try JSONSerialization.data(withJSONObject: ["delay": startupDelay])
         try startup.write(to: remote.host.dir.appendingPathComponent("stub-pi-startup.json"))
@@ -148,7 +148,7 @@ struct RemoteAutomationsTests {
 
     /// A host that refuses a change says why in the failed-action dialog.
     @Test func aRefusedChangeSaysWhy() async throws {
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(), remote = try await RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let vm = try await local.start()
         try await remote.host.start(with: ShepherdState())

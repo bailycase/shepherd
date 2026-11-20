@@ -13,7 +13,7 @@ struct ProjectTaskOutcomeTests {
     typealias Rig = ProjectRuntimeTests.Rig
 
     @Test func outcomesBindToTheExactStoppedOperationAppendOnlyAndNeverChangeExecution() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Investigate", prompt: "hello"))
         try await eventually("first turn stopped") { rig.host.server.state.projects[0].tasks.first?.phase == .settled }
@@ -65,7 +65,7 @@ struct ProjectTaskOutcomeTests {
     }
 
     @Test func liveWorkHasNoOutcome() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Slow", prompt: "slow"))
         try await eventually("running") { rig.host.server.state.projects[0].tasks.first?.phase == .running }
@@ -81,7 +81,7 @@ struct ProjectTaskOutcomeTests {
     /// newest `hotPerTask`; every earlier fact is archived before it leaves, pages back after retirement and a reload, and replaying
     /// every original request (hot or archived) adds nothing, revives nothing and dispatches nothing.
     @Test func factsBeyondTheHotBoundArchivePageBackAndReplayAcrossRetirementAndReload() async throws {
-        let rig = try Rig()
+        let rig = try await Rig()
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Long-lived", prompt: "hello"))
         try await eventually("first stop") { rig.host.server.state.projects[0].tasks.first?.phase == .settled }
@@ -145,7 +145,7 @@ struct ProjectTaskOutcomeTests {
         #expect(!rig.host.server.state.projects[0].tasks.contains { $0.id == taskID }, "the task left the working set")
         let prompts = worker.stdin("prompt").count
         rig.host.server.onProjectRuntimeLaunch = nil; rig.host.stop(keepFiles: true)
-        let reloaded = try Rig(dir: rig.host.dir); defer { reloaded.stop() }
+        let reloaded = try await Rig(dir: rig.host.dir); defer { reloaded.stop() }
         #expect(try await page(reloaded.host.server).map(\.outcome.id) == ids.reversed(), "durable across retirement and reload")
         let before = reloaded.host.server.state.projects[0]
         for request in requests {
@@ -181,7 +181,7 @@ struct ProjectTaskOutcomeTests {
 
     /// A worker may page only its own task's facts; an unrelated worker and a revoked Projects generation cannot.
     @Test func outcomePagesFollowTheCallersProjectScope() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         for title in ["Mine", "Theirs"] { _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: title, prompt: "hello")) }
         try await eventually("both stopped") { rig.host.server.state.projects[0].tasks.count == 2 && rig.host.server.state.projects[0].tasks.allSatisfy { $0.phase == .settled } }
@@ -208,7 +208,7 @@ struct ProjectTaskOutcomeTests {
 
     /// The coordinator's tool path attributes the claim to the coordinator, and survives an owner restart unchanged.
     @Test func aCoordinatorOutcomeIsAttributedAndSurvivesRestart() async throws {
-        let rig = try Rig()
+        let rig = try await Rig()
         rig.host.useRealPeerCheck()
         let project = try await rig.create()
         let assign = ["assign": ["operationID": UUID().uuidString, "spaceID": "$linked", "title": "Coordinated", "prompt": "hello"]]
@@ -228,14 +228,14 @@ struct ProjectTaskOutcomeTests {
         #expect(outcome.kind == .uploaded && outcome.recordedBy == coordinator && outcome.evidence == "build 329 VALID")
         #expect(rig.host.server.state.projects[0].tasks.first?.phase == .settled)
         rig.host.server.onProjectRuntimeLaunch = nil; rig.host.stop(keepFiles: true)
-        let restarted = try Rig(dir: rig.host.dir); defer { restarted.stop() }
+        let restarted = try await Rig(dir: rig.host.dir); defer { restarted.stop() }
         #expect(restarted.host.server.state.projects[0].tasks.first?.outcomes == [outcome])
         #expect(await restarted.host.server.listSessions().isEmpty, "restart resumes no work")
     }
 
     /// The remote brief carries the owner's instructions and only the newest facts that fit; the stored memory stays whole.
     @Test func aRemoteAssignmentBriefIsBoundedAndLabelsOwnerInstructions() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         var context = try await rig.create()
         context.settings.instructions = "Run swift test before pushing."
         context.memory = (0..<40).map { .init(text: "fact \($0) " + String(repeating: "m", count: 390), source: "Task t · worker w", createdAt: Double($0)) }
@@ -310,7 +310,7 @@ struct ProjectOutcomeCommitTests {
     /// Four hot facts, then a fifth refused by validation (merged without evidence). Nothing about it is readable, it is not
     /// retained-operation proof, and the same identity is admitted later for a valid payload (a definite refusal never burns it).
     @Test func aRefusedFifthFactIsNeitherHistoryNorProofAndItsIdentityStaysAdmissible() async throws {
-        let rig = try Rig()
+        let rig = try await Rig()
         let (project, task) = try await stopped(rig)
         var accepted: [UUID] = []
         for _ in 0..<4 {
@@ -333,7 +333,7 @@ struct ProjectOutcomeCommitTests {
         #expect(facts.first?.outcome.kind == .uploaded && facts.first?.outcome.evidence == "build 7", "never the refused merged claim")
         // Accepted replay after reload stays a receipt; a changed payload is a conflict; no duplicate.
         rig.host.server.onProjectRuntimeLaunch = nil; rig.host.stop(keepFiles: true)
-        let reloaded = try Rig(dir: rig.host.dir); defer { reloaded.stop() }
+        let reloaded = try await Rig(dir: rig.host.dir); defer { reloaded.stop() }
         let replay = try await reloaded.host.server.projectRuntime(project.id, expectedRevision: 1, request: valid)
         #expect(replay.operationReceipt?.operationID == refused)
         await #expect(throws: LogicalProjectsError.self) {
@@ -380,7 +380,7 @@ struct ProjectOutcomeCommitTests {
     /// A state write that cannot even reserve its staged file (an unwritable owner directory; before any history I/O) refuses with
     /// that error, leaves no durable fact and does not burn the identity. The after-SQL/before-rename boundary is the abandoned stage.
     @Test func aStateWriteFailureLeavesNoFactAndKeepsItsIdentity() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let (project, task) = try await stopped(rig)
         for _ in 0..<4 { _ = try await rig.perform(project.id, .recordOutcome(operationID: UUID(), taskID: task.id, taskOperationID: task.operationID, kind: .accepted)) }
         let failed = UUID()
@@ -405,7 +405,7 @@ struct ProjectOutcomeRouteTests {
 
     @Test(arguments: ["remove", "restore", "unrelated", "noop", "disableRestore", "projectUnlinkRestore", "replaceBinding"], ["initial", "final", "tool", "delivery", "socket"])
     func anOutcomeReadHonorsItsCapturedRouteAtBothBoundaries(change: String, boundary: String) async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let p = try await rig.create()
         // Private fake route only: never contacted, no mapping inferred.
         let route = ProjectHostReference.remote(hostID: UUID(), bindingID: UUID())
@@ -501,7 +501,7 @@ struct ProjectOutcomeRouteTests {
 
     /// Local owner facts stay readable as authorized; wrong owner/task/run/caller are refused.
     @Test func localFactsStayReadableAndWrongScopesAreRefused() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Local", prompt: "hello"))
         try await eventually("stopped") { rig.host.server.state.projects[0].tasks.first?.phase == .settled }

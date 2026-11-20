@@ -238,7 +238,7 @@ struct BrowserTunnelHostTests {
     }
 
     @Test func aHostWithoutTheCapabilityCarriesNoTunnelAndSaysSo() async throws {
-        let remote = try RemoteHost()
+        let remote = try await RemoteHost()
         defer { remote.stop() }
         remote.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.browserTunnelCapability }
         let space = Fixture.space()

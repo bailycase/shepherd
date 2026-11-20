@@ -9,7 +9,7 @@ import ShepherdTestSupport
 @Suite("Disabled Project executor contracts", .serialized, .integrationTimeLimit)
 struct ProjectDisabledExecutionTests {
     @Test func cancellationAndPauseProofSurviveColdHistoryAndRestartWhileDisabled() async throws {
-        let remote = try RemoteHost(); defer { remote.stop() }
+        let remote = try await RemoteHost(); defer { remote.stop() }
         remote.server.onProjectExecutionLaunch = { _, _ in Issue.record("Disabled cancellation must never launch") }
         let client = try await remote.typed(); defer { client.disconnect() }
         let key = ProjectExecutionKey(ownerID: UUID(), projectID: ProjectID(), operationID: UUID())
@@ -43,7 +43,7 @@ struct ProjectDisabledExecutionTests {
     }
 
     @Test func disabledAdmissionAndContentRemainUnsupportedButStatusIsExactlyScoped() async throws {
-        let remote = try RemoteHost(); defer { remote.stop() }
+        let remote = try await RemoteHost(); defer { remote.stop() }
         remote.server.onProjectExecutionLaunch = { _, _ in Issue.record("Disabled executor must never launch") }
         let client = try await remote.typed(); defer { client.disconnect() }
         let key = ProjectExecutionKey(ownerID: UUID(), projectID: ProjectID(), operationID: UUID())
@@ -66,7 +66,7 @@ struct ProjectDisabledExecutionTests {
     }
 
     @Test func disabledCancellationCanCrossExperimentTransitionsButContentCannot() async throws {
-        let remote = try RemoteHost(); defer { remote.stop() }
+        let remote = try await RemoteHost(); defer { remote.stop() }
         let key = ProjectExecutionKey(ownerID: UUID(), projectID: ProjectID(), operationID: UUID())
         let gate = DispatchSemaphore(value: 0), entered = Locked(false), scheduled = Locked(false)
         defer { gate.signal() }

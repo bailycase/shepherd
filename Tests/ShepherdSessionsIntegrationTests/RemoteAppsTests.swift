@@ -16,7 +16,7 @@ struct RemoteAppsTests {
     }
 
     @Test func aClientListsRunsAndStopsASpacesApps() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let dir = host.host.dir
         let home = dir.appendingPathComponent("home").path
@@ -69,7 +69,7 @@ struct RemoteAppsTests {
     /// output, restarts it after it ends, and follows every run through `appsChanged` pushes (one
     /// on connect, then one per change) with no polling.
     @Test func thisMacsAppRunsItsAppsOnTheHostAndFollowsTheirRuns() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let dir = host.host.dir
         let home = dir.appendingPathComponent("home").path

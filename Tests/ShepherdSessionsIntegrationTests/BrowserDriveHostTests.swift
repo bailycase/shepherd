@@ -52,7 +52,7 @@ struct BrowserDriveHostTests {
     }
 
     private func setup() async throws -> Setup {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         let space = Fixture.space()
         let a = Fixture.agent(in: space, name: "Fix the checkout")
         let b = Fixture.agent(in: space, name: "Other thread")
@@ -513,7 +513,7 @@ struct BrowserDriveHostTests {
     // MARK: Handing the page back
 
     @Test func theUsersNextMessageFromAnyClientHandsTheOwnerItsPageBack() async throws {
-        let h = try RemoteHost()
+        let h = try await RemoteHost()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h.host)
         let ready = try await pi.ready()
@@ -538,7 +538,7 @@ struct BrowserDriveHostTests {
     }
 
     @Test func aPeersMessageDoesNotHandTheOwnerItsPageBack() async throws {
-        let h = try RemoteHost()
+        let h = try await RemoteHost()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h.host)
         _ = try await pi.ready()

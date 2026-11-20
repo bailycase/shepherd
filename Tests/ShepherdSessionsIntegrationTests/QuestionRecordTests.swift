@@ -173,7 +173,7 @@ struct QuestionRecordTests {
     }
 
     @Test func aRemoteClientSeesTheRecord() async throws {
-        let remote = try RemoteHost()
+        let remote = try await RemoteHost()
         defer { remote.stop() }
         let pi = try await PiAgent.launch(on: remote.host)
         let asking = try await ask(pi)

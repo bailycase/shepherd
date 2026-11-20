@@ -11,7 +11,7 @@ import ShepherdTestSupport
 @Suite("Remote host settings", .integrationTimeLimit)
 struct RemoteHostSettingsTests {
     @Test func aClientReadsAndChangesTheSettingsTheHostsGUIKeeps() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let kept = Locked(HostSettings(shepherdVersion: "0.4.2", piVersion: "0.87.1", defaultModel: "anthropic/claude-opus",
                                        bundledExtensions: [HostSettings.BundledExtension(id: "review", name: "Diff review tool", on: true)]))
@@ -46,7 +46,7 @@ struct RemoteHostSettingsTests {
 
     /// Close threads when their pull request merges, switched from a client through the listener.
     @Test func aClientSwitchesCloseOnMerge() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let kept = Locked(HostSettings())
         host.server.onRemoteHostSettings = { request, completion in
@@ -62,7 +62,7 @@ struct RemoteHostSettingsTests {
     }
 
     @Test func aHostsGUIThatCantApplyAChangeSaysWhy() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         host.server.onRemoteHostSettings = { _, completion in completion(.failure(RemoteCreateAgentError("Host is shutting down"))) }
         let raw = try await host.raw()
@@ -75,7 +75,7 @@ struct RemoteHostSettingsTests {
     }
 
     @Test func aHostWithoutAGUIHasNoSettingsToShare() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let raw = try await host.raw()
 

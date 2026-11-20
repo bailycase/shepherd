@@ -176,7 +176,7 @@ struct ServiceTierTests {
     /// host advertises the capability, the snapshot carries the tier, and the change lands on the
     /// host (its state, its file, what every client sees).
     @Test @MainActor func aRemoteClientSetsTheTierOverTCP() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let (pi, _, _) = try await Self.agent(on: r.host)
         _ = try await pi.ready()

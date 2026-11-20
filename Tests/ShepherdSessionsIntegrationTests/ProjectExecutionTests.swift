@@ -19,8 +19,8 @@ struct ProjectExecutionTests {
         let heldPreparation = Locked<(() -> Void)?>(nil)
         let heldSettlement = Locked<(() -> Void)?>(nil)
         var host: ScratchServer { remote.host }
-        init(hold: Bool = false, holdPreparation: Bool = false, holdSettlement: Bool = false, holdCompletion: Bool = false) throws {
-            remote = try RemoteHost()
+        init(hold: Bool = false, holdPreparation: Bool = false, holdSettlement: Bool = false, holdCompletion: Bool = false) async throws {
+            remote = try await RemoteHost()
             owner = try ScratchServer()
             remote.server.setProjectsEnabled(true)
             owner.server.setProjectsEnabled(true)
@@ -102,7 +102,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func pausedNativeQuestionSurvivesItsOldDeadlineAndExplicitResumeHasANewBound() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         try await rig.host.server.enqueue { rig.host.server.executionDuration = 2 }
         let assignment = try await rig.assignment("ask")
         _ = try await rig.host.server.projectExecution(.execute(assignment))
@@ -117,7 +117,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func cancellingAQueuedPreparationWithdrawsItsRestoredBatchWithoutPausingManualWork() async throws {
-        let rig = try Rig(holdCompletion: true); defer { rig.stop() }
+        let rig = try await Rig(holdCompletion: true); defer { rig.stop() }
         let assignment = try await rig.assignment("tools:0 cancelled queued operation")
         let pi = try await rig.queueBehindManual(assignment, precedingManual: false)
         try await rig.host.server.enqueue {
@@ -150,7 +150,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func managedExecutionKeepsItsOwnIdentityBetweenManualMessagesInAllAtOnceMode() async throws {
-        let rig = try Rig(holdCompletion: true); defer { rig.stop() }
+        let rig = try await Rig(holdCompletion: true); defer { rig.stop() }
         let assignment = try await rig.assignment("tools:0 isolated assignment")
         let pi = try await rig.queueBehindManual(assignment, precedingManual: true)
         pi.finishTool(1)
@@ -164,7 +164,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func manualWorkBeforeLaunchCompletionDefinitivelyFailsTheFreshReservation() async throws {
-        let rig = try Rig(holdCompletion: true); defer { rig.stop() }
+        let rig = try await Rig(holdCompletion: true); defer { rig.stop() }
         let assignment = try await rig.assignment()
         _ = try await rig.host.server.projectExecution(.execute(assignment))
         let pi = try await rig.pi(assignment)
@@ -181,7 +181,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func deadlineStillInterruptsIdentifiedWorkWhenCancellationCannotPersist() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         rig.host.server.executionDuration = 2
         let assignment = try await rig.assignment("tools:1 deadline write failure")
         // Existing files remain writable when the directory refuses creation/atomic replacement.
@@ -207,7 +207,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func sequentialOperationsReuseOneNativeWorkerAndOldRetriesNeverReplay() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let first = try await rig.assignment()
         let client = try await rig.remote.typed(); defer { client.disconnect() }
         _ = try await client.projectExecution(.execute(first))
@@ -234,7 +234,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func aCleanEndedWorkerRestoresOnlyItsProvenHistoryAndNeverAnEmptyReplacement() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let first = try await rig.assignment()
         _ = try await rig.host.server.projectExecution(.execute(first))
         let pi = try await rig.pi(first)
@@ -260,7 +260,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func manualBusyWorkerBlocksFollowupAndOldCancellationCannotAbortTheNextActivation() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let first = try await rig.assignment()
         let client = try await rig.remote.typed(); defer { client.disconnect() }
         _ = try await client.projectExecution(.execute(first))
@@ -289,7 +289,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func manualWorkWinningTheOffQueueAdmissionRaceIsNeverQueuedBehindOrInterrupted() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let first = try await rig.assignment()
         _ = try await rig.host.server.projectExecution(.execute(first))
         let pi = try await rig.pi(first)
@@ -312,7 +312,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func disconnectedBusyOrRestartedUnknownWorkersCannotBeAdoptedByFollowups() async throws {
-        let rig = try Rig(); defer { rig.owner.stop() }
+        let rig = try await Rig(); defer { rig.owner.stop() }
         let first = try await rig.assignment("tools:1")
         let client = try await rig.remote.typed()
         _ = try await client.projectExecution(.execute(first))
@@ -333,7 +333,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func duplicateAndLostReplyCreateOnceWhileChangedPayloadIsRefused() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let assignment = try await rig.assignment()
         let raw = try RawRemote(port: rig.remote.port)
         _ = try await raw.hello(token: rig.remote.token, capabilities: [RemoteProtocol.projectExecutionCapability])
@@ -355,7 +355,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func cancelBeforeExecuteAndDuringHeldLaunchPersistWithoutCreatingWorker() async throws {
-        let rig = try Rig(hold: true); defer { rig.stop() }
+        let rig = try await Rig(hold: true); defer { rig.stop() }
         let cancelled = try await rig.assignment()
         let client = try await rig.remote.typed(); defer { client.disconnect() }
         #expect(try await client.projectExecution(.cancel(key: cancelled.key)).receipt.phase == .cancelled)
@@ -373,7 +373,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func disconnectRetainsQuestionThenActualResultAndManualFollowupStillWorks() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let assignment = try await rig.assignment("question")
         let client = try await rig.remote.typed()
         _ = try await client.projectExecution(.execute(assignment))
@@ -402,7 +402,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func deadlineInterruptsAndRestartNeverReplaysInFlightReceipt() async throws {
-        let rig = try Rig(); defer { rig.owner.stop() }
+        let rig = try await Rig(); defer { rig.owner.stop() }
         rig.host.server.executionDuration = 2
         let assignment = try await rig.assignment("tools:1")
         _ = try await rig.host.server.projectExecution(.execute(assignment))
@@ -427,7 +427,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func queuedAcceptanceIsNotSentAndStatusIdleDoesNotProveSettlement() async throws {
-        let rig = try Rig(holdSettlement: true); defer { rig.stop() }
+        let rig = try await Rig(holdSettlement: true); defer { rig.stop() }
         let assignment = try await rig.assignment("tools:0 hold-start")
         _ = try await rig.host.server.projectExecution(.execute(assignment))
         let pi = try await rig.pi(assignment)
@@ -445,7 +445,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func cancelDuringPromptPreparationDoesNotSendAndLeavesManualWorkerUsable() async throws {
-        let rig = try Rig(holdPreparation: true); defer { rig.stop() }
+        let rig = try await Rig(holdPreparation: true); defer { rig.stop() }
         let assignment = try await rig.assignment()
         _ = try await rig.host.server.projectExecution(.execute(assignment))
         let pi = try await rig.pi(assignment)
@@ -465,7 +465,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func aManualSteerTakingOverTheTurnIsNotInterruptedByLaterProjectCancellation() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let assignment = try await rig.assignment("tools:1")
         _ = try await rig.host.server.projectExecution(.execute(assignment))
         let pi = try await rig.pi(assignment)
@@ -482,7 +482,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func stagedReceiptPreservesConcurrentWorkspaceEditsAndLaunchFailuresAreDurable() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let assignment = try await rig.assignment()
         rig.host.server.onProjectExecutionLaunch = { _, done in done(.failure(WireError("definite launch failure"))) }
         let gate = DispatchSemaphore(value: 0), entered = Locked(false)
@@ -504,7 +504,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func deletingWorkerMetadataKeepsProvenReceiptsAndNeverReplaysAnUnknownWorker() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let settled = try await rig.assignment()
         _ = try await rig.host.server.projectExecution(.execute(settled))
         try await eventually("settlement before deletion") { rig.receipt(settled)?.phase == .settled }
@@ -522,7 +522,7 @@ struct ProjectExecutionTests {
     }
 
     @Test func stoppingDuringReceiptStagingNeverCommitsOrLaunchesAfterRestart() async throws {
-        let rig = try Rig(hold: true); defer { rig.stop() }
+        let rig = try await Rig(hold: true); defer { rig.stop() }
         let assignment = try await rig.assignment()
         let gate = DispatchSemaphore(value: 0), entered = Locked(false)
         rig.host.server.logicalProjectFiles.async { entered.withValue { $0 = true }; gate.wait() }
@@ -539,10 +539,10 @@ struct ProjectExecutionTests {
     }
 
     @Test func invalidInputAndCapacityRefuseBeforeAgentCreationAndCapabilityRequiresAdapter() async throws {
-        let remote = try RemoteHost(); defer { remote.stop() }
+        let remote = try await RemoteHost(); defer { remote.stop() }
         let plain = try await remote.typed(); defer { plain.disconnect() }
         #expect(!plain.capabilities.contains(RemoteProtocol.projectExecutionCapability))
-        let rig = try Rig(hold: true); defer { rig.stop() }
+        let rig = try await Rig(hold: true); defer { rig.stop() }
         rig.host.server.executionCapacity = 1
         let assignment = try await rig.assignment()
         for prompt in [" \n", String(repeating: "x", count: 16_385)] {

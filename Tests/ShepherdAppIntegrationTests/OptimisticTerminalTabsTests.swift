@@ -400,7 +400,7 @@ struct OptimisticTerminalTabsTests {
     }
 
     private func paired(auxiliary: Int) async throws -> Paired {
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(), remote = try await RemoteHostHarness()
         let space = Fixture.space(path: remote.host.dir.path)
         let agent = Fixture.agent(in: space, auxiliary: auxiliary)
         let vm = try await local.start()

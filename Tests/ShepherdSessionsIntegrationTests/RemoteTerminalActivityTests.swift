@@ -33,7 +33,7 @@ struct RemoteTerminalActivityTests {
     }
 
     @Test func theHostListsAnAgentsTerminalsWithWhatRunsInEach() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let seeded = try await seedAgent(r)
         let client = try await r.typed()
@@ -56,7 +56,7 @@ struct RemoteTerminalActivityTests {
     }
 
     @Test func outputAdvancesATerminalsSequence() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let seeded = try await seedAgent(r)
         let before = await r.server.terminalActivity(agentID: seeded.agent)
@@ -72,7 +72,7 @@ struct RemoteTerminalActivityTests {
     /// sequence (the attach watermark) but is not news, so no tab gets a dot for a resize. A
     /// command printing afterwards is news.
     @Test func aResizeRedrawIsNotNewsButACommandsOutputIs() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         // Redraws on SIGWINCH as zsh's prompt does; prints ticks once `go` exists, as a command would.
         let seeded = try await seedAgent(r, idleScript: "trap 'echo REDRAW' WINCH; echo IDLE_READY; "
@@ -94,7 +94,7 @@ struct RemoteTerminalActivityTests {
     }
 
     @Test func anUnknownAgentIsRefused() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let client = try await r.typed()
         defer { client.disconnect() }

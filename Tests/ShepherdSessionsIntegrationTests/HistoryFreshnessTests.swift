@@ -32,7 +32,7 @@ struct HistoryFreshnessTests {
         var endpoint: (port: UInt16, token: String)?
         if reconnect {
             let tokenURL = h.dir.appendingPathComponent("viewer-token")
-            let port = try h.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+            let port = try await h.server.startRemoteListener(port: 0, tokenURL: tokenURL)
             let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             endpoint = (port, token)
             _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "review-viewer")

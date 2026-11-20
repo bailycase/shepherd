@@ -14,7 +14,7 @@ import ShepherdTestSupport
 struct RemoteHooksTests {
     /// A host whose catalog reads a scratch home, with one This Mac hook and a space (a git folder).
     static func host() async throws -> (RemoteHost, home: String, space: String) {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         let home = host.host.dir.appendingPathComponent("home").path
         let space = host.host.dir.appendingPathComponent("payments").path
         try FileManager.default.createDirectory(atPath: home + "/.shepherd", withIntermediateDirectories: true)

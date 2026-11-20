@@ -32,7 +32,7 @@ struct StatePushQueueTests {
         let socket = scratch.dir.appendingPathComponent("h.sock").path
         let tokenURL = scratch.dir.appendingPathComponent("remote-token")
         try scratch.server.startLocalListener(path: socket, tokenURL: tokenURL)
-        let port = try scratch.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let port = try await scratch.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let client = RemoteHostClient(localSocket: socket)
         _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "Shepherd",

@@ -11,7 +11,7 @@ import ShepherdTestSupport
 @Suite("Remote worktree record", .integrationTimeLimit)
 struct RemoteWorktreeRecordTests {
     @Test func theHostRecordsAWorktreeThreadsBranchAndBase() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let space = Space(name: "demo", path: r.host.dir.path)
         let thread = LeafPane(cwd: space.path)

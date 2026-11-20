@@ -116,7 +116,7 @@ struct ProjectHistoryReviewTests {
     }
 
     @Test func archivedWorkerRouteIsAuthorizedWithoutReactivatingTasks() async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.host.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.host.stop() }
         let project = try await rig.create()
         let spaceID = try #require(rig.host.server.state.spaces.first?.id)
         _ = try await rig.perform(project.id, .message(operationID: UUID(), text: "coordinator"))
@@ -159,7 +159,7 @@ struct ProjectHistoryReviewTests {
     }
 
     @Test(arguments: [false, true]) func executorBlockedResultReadCannotOutliveProjectsPermission(reenable: Bool) async throws {
-        let host = try RemoteHost(); defer { host.stop() }
+        let host = try await RemoteHost(); defer { host.stop() }
         let key = ProjectExecutionKey(ownerID: UUID(), projectID: ProjectID(), operationID: UUID())
         var receipt = ProjectExecutionReceipt(key: key, phase: .settled); receipt.sessionID = "s"; receipt.generation = "g"; receipt.matchedUserEntryID = "u"
         let space = Space(name: "Executor", path: host.host.dir.path), spaceID = space.id
@@ -191,7 +191,7 @@ struct ProjectHistoryReviewTests {
 
     @Test(arguments: ["disable", "reenable", "owner", "caller", "host", "owner-restore", "caller-restore", "host-restore", "pause"])
     func ownerBlockedReadRevalidatesGrantButPauseIsNotRevocation(change: String) async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.host.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.host.stop() }
         let project = try await rig.create(), id = ProjectTaskID(), operation = UUID(), worker = AgentID()
         let spaceID = try #require(rig.host.server.state.spaces.first?.id)
         _ = try await rig.perform(project.id, .message(operationID: UUID(), text: "coordinator"))
@@ -248,7 +248,7 @@ struct ProjectHistoryReviewTests {
     }
 
     @Test func repeatedScopesRetireHotTombstonesAndRejectStaleChildrenAfterRestart() async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let p = try await rig.create(), spaceID = try #require(rig.host.server.state.spaces.first?.id)
         _ = try await rig.perform(p.id, .message(operationID: UUID(), text: "coordinator"))
         var operation = UUID(), taskID = ProjectTaskID(), worker = AgentID(), oldScope: ProjectChildScope?
@@ -272,7 +272,7 @@ struct ProjectHistoryReviewTests {
         try client.send(.childScope(id: 17, agentID: worker, sessionID: stale.sessionID, userTimestamp: nil))
         guard case .error(17, "project_scope", _) = try client.readReply() else { Issue.record("Retired Project activation admitted a child scope"); return }
         rig.host.stop(keepFiles: true)
-        let restarted = try ProjectRuntimeTests.Rig(dir: rig.host.dir); defer { restarted.stop() }
+        let restarted = try await ProjectRuntimeTests.Rig(dir: rig.host.dir); defer { restarted.stop() }
         #expect(restarted.host.server.state.isProjectWorker(worker))
         #expect(try await restarted.host.server.enqueue { !restarted.host.server.canResumeProjectChildScope(stale) && restarted.host.server.projectChildClosed.isEmpty })
     }

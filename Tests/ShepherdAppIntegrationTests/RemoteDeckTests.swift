@@ -58,7 +58,7 @@ struct RemoteDeckTests {
         /// apps first, so the host offers designs and references.
         init(agents count: Int = 2, auxiliary: Int = 0, designTool: Bool = false,
              seed: (inout ShepherdState, Space) -> Void = { _, _ in }) async throws {
-            let local = try AppHarness(), remote = try RemoteHostHarness()
+            let local = try AppHarness(), remote = try await RemoteHostHarness()
             self.local = local
             self.remote = remote
             if designTool {

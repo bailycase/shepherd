@@ -9,7 +9,7 @@ import Testing
 struct ProjectExecutorContextTests {
     @Test(arguments: ["current", "unrelated", "restore"])
     func theOriginalExecutorContextSurvivesOnlyItsOwnUnchangedRoute(_ change: String) async throws {
-        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectExecutionTests.Rig(); defer { rig.stop() }
         var assignment = try await rig.assignment("ask")
         assignment.memory = "Private whole owner fact [source: owner receipt]"
         assignment.memoryFacts = [.init(text: "Private whole owner fact", source: "owner receipt", createdAt: 1)]

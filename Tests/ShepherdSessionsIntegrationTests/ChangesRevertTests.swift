@@ -103,7 +103,7 @@ struct ChangesRevertTests {
     @Test func revertTravelsTheRemoteProtocol() async throws {
         let repo = try ChangesRepo(files: ["a.txt": "one\n"])
         try repo.write("a.txt", "one\ntwo\n")
-        let remote = try RemoteHost()
+        let remote = try await RemoteHost()
         defer { remote.stop() }
         let space = Fixture.space("repo", path: repo.path)
         let worker = Fixture.agent(in: space)
@@ -130,7 +130,7 @@ struct ChangesRevertTests {
     @Test func creationBranchesListASpacesBranchesWithoutAnAgent() async throws {
         let repo = try ChangesRepo(files: ["a.txt": "one\n"])
         _ = try repo.git("branch", "feat/ledger-v2")
-        let remote = try RemoteHost()
+        let remote = try await RemoteHost()
         defer { remote.stop() }
         let space = Fixture.space("repo", path: repo.path)
         try await remote.host.seed(ShepherdState(spaces: [space]))

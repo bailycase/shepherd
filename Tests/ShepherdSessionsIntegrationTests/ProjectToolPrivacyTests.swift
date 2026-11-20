@@ -11,7 +11,7 @@ struct ProjectToolPrivacyTests {
     typealias Rig = ProjectRuntimeTests.Rig
 
     @Test func memorySourceLabelsAreRedactedBeforeTheyReachModelFacingData() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create()
         let sent = try await rig.perform(project.id, .message(operationID: UUID(), text: "hello"))
         let coordinator = try #require(sent.coordinatorAgentID)
@@ -32,7 +32,7 @@ struct ProjectToolPrivacyTests {
     }
 
     @Test func forgettingMemoryRemovesItFromFreshToolResultsWithoutChangingRetryPayloads() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create()
         let sent = try await rig.perform(project.id, .message(operationID: UUID(), text: "hello"))
         let coordinator = try #require(sent.coordinatorAgentID)

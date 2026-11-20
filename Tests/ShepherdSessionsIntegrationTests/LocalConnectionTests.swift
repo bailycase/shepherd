@@ -17,12 +17,12 @@ struct LocalConnectionTests {
         let token: String
         let port: UInt16
 
-        init() throws {
+        init() async throws {
             scratch = try ScratchServer.fresh()
             path = scratch.dir.appendingPathComponent("h.sock").path
             let tokenURL = scratch.dir.appendingPathComponent("remote-token")
             try scratch.server.startLocalListener(path: path, tokenURL: tokenURL)
-            port = try scratch.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+            port = try await scratch.server.startRemoteListener(port: 0, tokenURL: tokenURL)
             token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
@@ -51,7 +51,7 @@ struct LocalConnectionTests {
     // MARK: Request timeouts
 
     @Test func aSlowHostFailsOneRequestAndKeepsTheLocalConnection() async throws {
-        let host = try Host()
+        let host = try await Host()
         defer { host.scratch.stop() }
         let (client, drops) = try await host.client(local: true)
         defer { client.disconnect() }
@@ -69,7 +69,7 @@ struct LocalConnectionTests {
     }
 
     @Test func aPairedHostThatDoesNotAnswerInTimeIsDropped() async throws {
-        let host = try Host()
+        let host = try await Host()
         defer { host.scratch.stop() }
         let (client, drops) = try await host.client(local: false)
         defer { client.disconnect() }
@@ -83,7 +83,7 @@ struct LocalConnectionTests {
     // MARK: Client write queue
 
     @Test func aFullWriteQueueRefusesARequestAndKeepsTheLocalConnection() async throws {
-        let host = try Host()
+        let host = try await Host()
         defer { host.scratch.stop() }
         let (client, drops) = try await host.client(local: true)
         defer { client.disconnect() }
@@ -120,7 +120,7 @@ struct LocalConnectionTests {
     // MARK: Large state
 
     @Test func aWorkspaceOverTheRemoteFrameCapReachesTheLocalAppAndKeepsEveryLink() async throws {
-        let host = try Host()
+        let host = try await Host()
         defer { host.scratch.stop() }
         let (local, localDrops) = try await host.client(local: true)
         defer { local.disconnect() }
@@ -152,7 +152,7 @@ struct LocalConnectionTests {
     // MARK: Slow reader
 
     @Test func aLocalAppThatStopsReadingHoldsItsTerminalInsteadOfDropping() async throws {
-        let host = try Host()
+        let host = try await Host()
         defer { host.scratch.stop() }
         // About 16 MB of output, far past every queue between the PTY and the app.
         let shell = try await host.scratch.shell("yes acme-output | head -c 16000000; echo; echo FLOOD_DONE; cat")
@@ -189,7 +189,7 @@ struct LocalConnectionTests {
     }
 
     @Test func aPairedClientThatStopsReadingIsDroppedAsBefore() async throws {
-        let host = try Host()
+        let host = try await Host()
         defer { host.scratch.stop() }
         // No end: loopback TCP buffers grow to megabytes, and the host must still give up on it.
         let shell = try await host.scratch.shell("yes acme-output")

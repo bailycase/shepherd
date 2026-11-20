@@ -17,7 +17,7 @@ struct ProjectExperimentTests {
     }
 
     @Test func freshHostRefusesProjectsButOrdinarySpacesAndThreadsStillWork() async throws {
-        let rig = try ProjectRuntimeTests.Rig(projectsEnabled: false); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(projectsEnabled: false); defer { rig.stop() }
         let server = rig.host.server, id = ProjectID()
         await disabled { try await server.logicalProjects(.create(projectID: id, name: "Hidden", goal: "")) }
         await disabled { try await server.projectRuntime(id, expectedRevision: 1, request: .resume) }
@@ -43,7 +43,7 @@ struct ProjectExperimentTests {
     }
 
     @Test func connectedViewersCannotBypassTheDefaultOffHost() async throws {
-        let remote = try RemoteHost(); defer { remote.stop() }
+        let remote = try await RemoteHost(); defer { remote.stop() }
         remote.server.onProjectRuntimeLaunch = { _, _ in Issue.record("Disabled owner launched") }
         remote.server.onProjectRuntimeRequest = { _, _ in Issue.record("Disabled owner served runtime") }
         remote.server.onProjectExecutionLaunch = { _, _ in Issue.record("Disabled executor launched") }
@@ -73,7 +73,7 @@ struct ProjectExperimentTests {
     }
 
     @Test func disablingLiveOwnerStopsWorkRetainsDataAndEnablingDoesNotResume() async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .message(operationID: UUID(), text: "hang"))
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Question", prompt: "ask"))
@@ -108,7 +108,7 @@ struct ProjectExperimentTests {
 
     @Test(arguments: [false, true])
     func disablingOwnerCancelsThePreparedWorkerInputUntilExplicitResume(reenableBeforeRelease: Bool) async throws {
-        let rig = try ProjectRuntimeTests.Rig(holdWorkerPreparation: true); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(holdWorkerPreparation: true); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Prepared worker", prompt: "tools:0"))
         try await eventually("worker preparation held") { rig.heldWorkerPreparation.current != nil }
@@ -144,7 +144,7 @@ struct ProjectExperimentTests {
     }
 
     @Test func disablingExecutorRevokesHeldLaunchAndStillServesCancellationProof() async throws {
-        let rig = try ProjectExecutionTests.Rig(hold: true); defer { rig.stop() }
+        let rig = try await ProjectExecutionTests.Rig(hold: true); defer { rig.stop() }
         let assignment = try await rig.assignment("hang")
         _ = try await rig.host.server.projectExecution(.execute(assignment))
         try await eventually("held executor launch") { rig.heldLaunch.current != nil }
@@ -160,7 +160,7 @@ struct ProjectExperimentTests {
     }
 
     @Test func offOnWhileExecutorAdmissionStagesLeavesACancellationTombstone() async throws {
-        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectExecutionTests.Rig(); defer { rig.stop() }
         let assignment = try await rig.assignment()
         let gate = DispatchSemaphore(value: 0), entered = Locked(false)
         defer { gate.signal() }
@@ -181,7 +181,7 @@ struct ProjectExperimentTests {
     }
 
     @Test func disabledExecutorRetainsWaitingQuestionAndRefusesAnswerUntilExplicitResume() async throws {
-        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectExecutionTests.Rig(); defer { rig.stop() }
         let assignment = try await rig.assignment("ask")
         _ = try await rig.host.server.projectExecution(.execute(assignment))
         try await eventually("executor waiting") { rig.receipt(assignment)?.phase == .waiting }
@@ -199,7 +199,7 @@ struct ProjectExperimentTests {
     }
 
     @Test func disabledOwnerReconcilesDisconnectedExecutorWithoutReleasingItsReservation() async throws {
-        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectExecutionTests.Rig(); defer { rig.stop() }
         let owner = rig.owner.server, destination = ProjectHostReference.remote(hostID: UUID(), bindingID: UUID())
         let assignment = try await rig.assignment("ask")
         let space = try #require(rig.host.server.state.spaces.first { $0.id == assignment.executorSpaceID })
@@ -248,7 +248,7 @@ struct ProjectExperimentTests {
     }
 
     @Test func offOnDuringRuntimeAdmissionCannotCommitOrLaunchTheOldMessage() async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let project = try await rig.create()
         let gate = DispatchSemaphore(value: 0), entered = Locked(false)
         defer { gate.signal() }

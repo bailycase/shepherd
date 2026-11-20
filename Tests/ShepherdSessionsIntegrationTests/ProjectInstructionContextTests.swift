@@ -9,7 +9,7 @@ import Testing
 @Suite("Project instruction context", .integrationTimeLimit)
 struct ProjectInstructionContextTests {
     @Test func detailsCapabilityIsOptionalForProjectOnlyHosts() async throws {
-        let host = try RemoteHost(); defer { host.stop() }
+        let host = try await RemoteHost(); defer { host.stop() }
         host.server.advertisedCapabilities = [RemoteProtocol.projectsV2Capability]
         let client = try await host.typed()
         defer { client.disconnect() }

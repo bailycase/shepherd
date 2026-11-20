@@ -21,7 +21,7 @@ struct RemoteSkillsTests {
     /// A host's skills answer carries what its own pi loads from elsewhere, for the client's
     /// read-only groups; a change's answer does too, so they never drop off the page.
     @Test func aClientSeesTheSkillsTheHostsPiLoadsFromElsewhere() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let pi = PiSkills(agentDirectory: "~/.pi/agent", skills: [
             PiSkill(name: "review", summary: "Reviews a diff.", path: "~/.pi/agent/skills/review/SKILL.md", origin: .agentDirectory),
@@ -42,7 +42,7 @@ struct RemoteSkillsTests {
     }
 
     @Test func aClientInstallsTurnsOffAndRemovesTheHostsSkills() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let heard = Locked<[SkillsSnapshot]>([])
         host.server.onSkillsChanged = { snapshot in heard.withValue { $0.append(snapshot) } }
@@ -82,7 +82,7 @@ struct RemoteSkillsTests {
     }
 
     @Test func readingOrLookingUpTellsTheGUINothing() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let heard = Locked<Int>(0)
         host.server.onSkillsChanged = { _ in heard.withValue { $0 += 1 } }
@@ -100,7 +100,7 @@ struct RemoteSkillsTests {
     /// The host's daily update check finds a newer commit: this Mac's app is told, so its Skills
     /// page reads it again.
     @Test func anUpdateTheHostFindsReachesThisMacsApp() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let path = host.host.dir.appendingPathComponent("h.sock").path, tokenURL = host.host.dir.appendingPathComponent("local-token")
         try host.server.startLocalListener(path: path, tokenURL: tokenURL)
@@ -126,7 +126,7 @@ struct RemoteSkillsTests {
     }
 
     @Test func aSkillTheHostDoesntHaveIsRefused() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let raw = try await host.raw()
 

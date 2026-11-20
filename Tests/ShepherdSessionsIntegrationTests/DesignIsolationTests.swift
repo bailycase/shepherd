@@ -107,7 +107,7 @@ struct DesignIsolationTests {
 
     /// A remote client (another Mac, an iPhone) has no design screen: it is sent the threads only.
     @Test func aRemoteClientIsSentNoDesignOrDesignAgent() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let (thread, drawer, _) = try await workspace(r.host)
         let client = try await r.raw()
@@ -139,7 +139,7 @@ struct DesignIsolationTests {
     /// A client that reads designs gets them, with the agents that draw them, only while the
     /// host serves designs; the experiment turning off sends it the threads alone.
     @Test func aClientThatReadsDesignsIsSentThemOnlyWhileTheHostServesThem() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let (thread, drawer, design) = try await workspace(r.host)
         let client = try await r.raw(authenticated: false)

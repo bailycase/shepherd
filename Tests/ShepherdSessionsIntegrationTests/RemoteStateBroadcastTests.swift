@@ -26,7 +26,7 @@ struct RemoteStateBroadcastTests {
         let reporter: ExtensionClient
 
         init(agents count: Int) async throws {
-            remote = try RemoteHost()
+            remote = try await RemoteHost()
             let space = Fixture.space()
             let fixtures = (0..<count).map { Fixture.agent(in: space, name: "agent-\($0)") }
             try await remote.host.seed(Fixture.workspace(fixtures, space: space))
@@ -156,7 +156,7 @@ struct RemoteStateBroadcastTests {
 
     /// The reply to a request that changed the workspace follows the state that shows the change.
     @Test func aMutationsReplyFollowsItsState() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let folder = try makeScratchDirectory("project")
         defer { try? FileManager.default.removeItem(at: folder) }

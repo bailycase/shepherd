@@ -12,7 +12,7 @@ import ShepherdTestSupport
 @Suite("Remote instructions", .integrationTimeLimit)
 struct RemoteInstructionsTests {
     @Test func aClientReadsSavesAndRestoresTheHostsFiles() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let heard = Locked<[InstructionsSnapshot]>([])
         host.server.onInstructionsChanged = { snapshot in heard.withValue { $0.append(snapshot) } }
@@ -42,7 +42,7 @@ struct RemoteInstructionsTests {
     }
 
     @Test func aFetchChangesNothingAndTellsTheGUINothing() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let heard = Locked<Int>(0)
         host.server.onInstructionsChanged = { _ in heard.withValue { $0 += 1 } }
@@ -57,7 +57,7 @@ struct RemoteInstructionsTests {
     }
 
     @Test func restoringAVersionTheHostNoLongerHasIsRefused() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let raw = try await host.raw()
 

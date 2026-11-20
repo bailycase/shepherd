@@ -673,7 +673,7 @@ struct DesignReferenceIntegrationTests {
 
     /// A remote client's send with references is refused, never delivered without them.
     @Test func aRemoteClientsReferencesAreRefused() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let pi = try await PiAgent.launch(on: r.host)
         let designID = try await design(r.host)
@@ -692,7 +692,7 @@ struct DesignReferenceIntegrationTests {
     /// pins them for a remote client and takes a send naming them, resolving and fencing each
     /// itself; one naming any other Mac's design, or a design it lacks, is refused.
     @Test func aRemoteClientsReferencesToTheHostsOwnDesignGoThrough() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         drawing(r.host)
         r.server.setDesignsServed(true)
@@ -781,7 +781,7 @@ struct DesignReferenceIntegrationTests {
     }
 
     @Test func rawRemoteProjectTransportsCannotCaptureLocalDesigns() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         r.server.setProjectsEnabled(true)
         let pi = try await PiAgent.launch(on: r.host)
@@ -1352,7 +1352,7 @@ extension DesignReferenceIntegrationTests {
 
     /// A drawn board has no grant, so a restart keeps it with its thread; a host's client settles it.
     @Test func aDrawnBoardOutlivesARestartAndAClientSettlesIt() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         drawing(r.host)
         r.server.setDesignsServed(true)

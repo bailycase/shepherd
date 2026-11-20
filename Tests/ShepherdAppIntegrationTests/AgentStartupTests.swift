@@ -681,7 +681,7 @@ struct AgentStartupTests {
     /// A remote client watching a host's agent start sees the same quiet start, and its send
     /// waits for the host's pi.
     @Test func aRemoteAgentStartingOnItsHostIsStartingOnTheClient() async throws {
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(), remote = try await RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         try Self.holdPi(in: remote.host.dir)
         let space = Fixture.space(path: remote.host.dir.path)

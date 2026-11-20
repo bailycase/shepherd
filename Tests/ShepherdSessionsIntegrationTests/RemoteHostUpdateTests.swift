@@ -9,7 +9,7 @@ import ShepherdTestSupport
 @Suite("Remote host updates", .integrationTimeLimit)
 struct RemoteHostUpdateTests {
     @Test func headlessHostsDoNotAdvertiseOrAcceptUpdates() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let client = try await host.typed()
         defer { client.disconnect() }
@@ -24,7 +24,7 @@ struct RemoteHostUpdateTests {
     }
 
     @Test func requestsAreCorrelatedAndStatusSurvivesAClientReconnect() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let expected = HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .available,
                                         offerID: UUID(), offeredVersion: "3", canInstall: true)
@@ -38,7 +38,7 @@ struct RemoteHostUpdateTests {
     }
 
     @Test func unauthenticatedRequestsNeverReachTheUpdater() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let called = Locked(false)
         host.server.onRemoteHostUpdate = { _, _, _ in called.withValue { $0 = true } }
@@ -52,7 +52,7 @@ struct RemoteHostUpdateTests {
     }
 
     @Test func aHandlerThatNeverAnswersIsBoundedOnTheHost() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         host.server.onRemoteHostUpdate = { _, _, _ in }
         let raw = try await host.raw()
@@ -64,7 +64,7 @@ struct RemoteHostUpdateTests {
     }
 
     @Test func disconnectRevokesAuthorizationBeforeAnAsyncInstallCanBegin() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let authorization = Locked<(() async -> Bool)?>(nil)
         host.server.onRemoteHostUpdate = { _, authorized, _ in authorization.withValue { $0 = authorized } }
@@ -79,7 +79,7 @@ struct RemoteHostUpdateTests {
     }
 
     @Test func reservationFencesNewSessionsAndRejectsConcurrentInstallers() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         #expect(await host.server.reserveHostUpdate())
         #expect(!(await host.server.reserveHostUpdate()))
@@ -137,7 +137,7 @@ struct RemoteHostUpdateTests {
     }
 
     @Test func liveTerminalsRefuseAnUpdateWithoutKillingTheProcess() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let session = try await host.host.shell("cat")
         #expect(!(await host.server.reserveHostUpdate()))

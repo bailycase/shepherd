@@ -86,7 +86,7 @@ struct NewThreadAttachTests {
 
     @Test func aNewThreadOnAHostSendsItsImagesWithTheOpeningPrompt() async throws {
         try StubPi.installAsEngine()
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(), remote = try await RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space("remote", path: remote.host.dir.path)
         try await remote.host.start(with: ShepherdState(spaces: [space]))
@@ -113,7 +113,7 @@ struct NewThreadAttachTests {
     /// An older host would take the prompt and drop the images, so neither the page nor the
     /// client sends it: Send says why, and nothing reaches the host.
     @Test func anOlderHostIsRefusedImagesBeforeAnythingIsCreated() async throws {
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(), remote = try await RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         remote.host.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.createAgentImagesCapability }
         let space = Fixture.space("remote", path: remote.host.dir.path)

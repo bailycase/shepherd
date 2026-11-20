@@ -532,7 +532,7 @@ struct ChangesTurnTests {
     @Test func turnsAndUndoTravelTheRemoteProtocol() async throws {
         let repo = try ChangesRepo(files: ["a.txt": "one\n"])
         try "tool-*\n".write(to: repo.url.appendingPathComponent(".git/info/exclude"), atomically: true, encoding: .utf8)
-        let remote = try RemoteHost()
+        let remote = try await RemoteHost()
         defer { remote.stop() }
         let pi = try await PiAgent.launch(on: remote.host, cwd: repo.url)
         let idle = try await pi.ready()
@@ -936,7 +936,7 @@ struct ChangesTurnTests {
     @Test func aRemoteSaveDuringARunningTurnStaysOutOfThatTurn() async throws {
         let repo = try ChangesRepo(files: ["a.txt": "one\n", "README.md": "# Readme\n"])
         try "tool-*\n".write(to: repo.url.appendingPathComponent(".git/info/exclude"), atomically: true, encoding: .utf8)
-        let remote = try RemoteHost()
+        let remote = try await RemoteHost()
         defer { remote.stop() }
         let pi = try await PiAgent.launch(on: remote.host, cwd: repo.url)
         let idle = try await pi.ready()

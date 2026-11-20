@@ -286,7 +286,7 @@ struct ProjectHistoryTests {
     }
 
     @Test func explicitResumeRetriesFailedRetentionNotTheNativePrompt() async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID), operation = UUID()
         let assigned = try await rig.perform(project.id, .assign(operationID: operation, spaceID: space, title: "Retention failure", prompt: "tools:0 hold-settle"))
         let task = try #require(assigned.tasks.first)
@@ -321,7 +321,7 @@ struct ProjectHistoryTests {
     }
 
     @Test func nativeLocalSettlementHasExactOwnerReadAndOldOperationIsNotTheFollowUp() async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID), first = UUID()
         let assigned = try await rig.perform(project.id, .assign(operationID: first, spaceID: space, title: "Exact result", prompt: "tools:0"))
         let task = try #require(assigned.tasks.first)
@@ -370,7 +370,7 @@ struct ProjectHistoryTests {
     }
 
     @Test func remoteExactResultSurvivesBothRestartsAndRevokedBindingNeverFallsBack() async throws {
-        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectExecutionTests.Rig(); defer { rig.stop() }
         var assignment = try await rig.assignment("tools:0 long:14000")
         guard case .project(let project) = try await rig.owner.server.logicalProjects(.create(projectID: assignment.key.projectID, name: "Owner", goal: "")) else { throw WireError("owner") }
         assignment.key.ownerID = project.ownerID
@@ -440,7 +440,7 @@ struct ProjectHistoryTests {
         rig.owner.server.setProjectExecutionSpaces([binding: rig.host.server.state.spaces])
         client.disconnect(); rig.host.server.stop(); try rig.host.server.start()
         rig.owner.server.stop(); try rig.owner.server.start()
-        let port = try rig.host.server.startRemoteListener(port: 0, tokenURL: rig.host.dir.appendingPathComponent("remote-token"))
+        let port = try await rig.host.server.startRemoteListener(port: 0, tokenURL: rig.host.dir.appendingPathComponent("remote-token"))
         let reconnect = RemoteHostClient(); defer { reconnect.disconnect() }
         _ = try await reconnect.connect(host: "127.0.0.1", port: port, token: rig.remote.token, clientName: "result restart fixture")
         rig.owner.server.onProjectPlacement = { host, request, done in

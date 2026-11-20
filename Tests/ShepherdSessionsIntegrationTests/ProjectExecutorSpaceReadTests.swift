@@ -12,7 +12,7 @@ struct ProjectExecutorSpaceReadTests {
           ["add", "removeOther", "updateOther", "addRemoveOther", "noop", "rename", "sidebar", "reorder",
            "remove", "restore", "path", "pathRestore", "hidden", "hiddenRestore", "reservedRestore", "disable", "disableRestore", "restart"])
     func executorMutationPreservesOnlyUnaffectedGrants(boundary: String, change: String) async throws {
-        let remote = try RemoteHost(); defer { remote.stop() }
+        let remote = try await RemoteHost(); defer { remote.stop() }
         remote.server.onProjectExecutionLaunch = { _, done in Issue.record("Read must not launch work"); done(.failure(WireError("Read must not launch work"))) }
         remote.server.setProjectsEnabled(true)
         let space = Space(name: "Exact executor", path: remote.host.dir.path)
@@ -82,7 +82,7 @@ struct ProjectExecutorSpaceReadTests {
         if change == "restart" {
             await #expect(throws: Error.self) { try await raw.frames(until: { if case .projectExecution(70, _) = $0 { return true }; return false }) }
             let tokenURL = remote.host.dir.appendingPathComponent("remote-token")
-            let port = try remote.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+            let port = try await remote.server.startRemoteListener(port: 0, tokenURL: tokenURL)
             let fresh = RemoteHostClient(); defer { fresh.disconnect() }
             _ = try await fresh.connect(host: "127.0.0.1", port: port, token: try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), clientName: "result restart fixture")
             #expect(try await fresh.projectExecution(continuation).resultPage == expected)

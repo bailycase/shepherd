@@ -51,7 +51,7 @@ struct LocalHostRuntimeTests {
         /// A paired device, over the host's TCP listener.
         func pairedClient() async throws -> RemoteHostClient {
             let tokenURL = host.dir.appendingPathComponent("paired-token")
-            let port = try host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+            let port = try await host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
             let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             let client = RemoteHostClient()
             _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "Paired iPad")

@@ -15,7 +15,7 @@ import Testing
 struct RemoteHostConfigFlowTests {
     private static func connect(_ app: AppHarness) async throws -> RemoteHostClient {
         let tokenURL = app.dir.appendingPathComponent("remote-token")
-        let port = try app.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let port = try await app.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let client = RemoteHostClient()
         _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "settings")

@@ -23,7 +23,7 @@ struct ProjectPublicationTests {
     }
 
     @Test func workerPublishesRealBytesWithExactTaskProvenanceAndImmutableRetries() async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let source = try makeScratchDirectory()
         let (project, task) = try await worker(rig, cwd: source)
         let bytes = Data("artifact from the actual worker cwd".utf8)
@@ -69,7 +69,7 @@ struct ProjectPublicationTests {
     }
 
     @Test func ordinaryAndCoordinatorPeersCannotPublishAndPauseRevokesActiveWorker() async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let source = try makeScratchDirectory()
         let (project, task) = try await worker(rig, cwd: source)
         try Data("result".utf8).write(to: source.appendingPathComponent("report.txt"))
@@ -93,7 +93,7 @@ struct ProjectPublicationTests {
 
     @Test(arguments: ["pause", "manual", "delete", "restart", "replacement"], [false, true])
     func delayedPublicationCannotOutliveItsNativeAuthority(_ action: String, staged: Bool) async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let source = try makeScratchDirectory()
         let (project, task) = try await worker(rig, cwd: source)
         let pi = try #require(rig.agents.current[task.workerAgentID])
@@ -141,7 +141,7 @@ struct ProjectPublicationTests {
     }
 
     @Test func failedProjectPersistenceNeverAcknowledgesPublicationAndSameIDRecoversSnapshot() async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let source = try makeScratchDirectory()
         let (project, task) = try await worker(rig, cwd: source)
         let id = UUID(), url = rig.host.server.store.url, original = Data("original immutable bytes".utf8)
@@ -181,7 +181,7 @@ struct ProjectPublicationTests {
     }
 
     @Test func restartRecoversOnlyProvenCommittedBytesAndDoesNotResumeWork() async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let source = try makeScratchDirectory()
         let (project, task) = try await worker(rig, cwd: source)
         let authority = try await rig.host.server.enqueue { try rig.host.server.publicationAuthority(task.workerAgentID) }
@@ -242,7 +242,7 @@ struct ProjectPublicationTests {
 
     @Test(arguments: [false, true])
     func twoHostsPullRetainedOfflineBytesAfterSettlementWithoutAnotherTurn(restart: Bool) async throws {
-        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectExecutionTests.Rig(); defer { rig.stop() }
         let source = try makeScratchDirectory()
         var assignment = try await rig.assignment("tools:1")
         let space = Space(name: "Artifact sources", path: source.path)

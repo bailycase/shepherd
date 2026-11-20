@@ -11,7 +11,7 @@ import ShepherdTestSupport
 @Suite("Remote automation triggers", .integrationTimeLimit)
 struct RemoteAutomationTriggerTests {
     @Test func statusPauseResumeAndPauseAll() async throws {
-        let remote = try RemoteHost()
+        let remote = try await RemoteHost()
         defer { remote.stop() }
         let folder = try makeScratchDirectory("repo")
         let automation = Automation(name: "brief", prompt: "brief me", cwd: folder.path,
@@ -45,7 +45,7 @@ struct RemoteAutomationTriggerTests {
     /// A draft's settings are validated by the host before anything is saved, and a draft
     /// without settings (an older client) keeps the trigger.
     @Test func draftSettings() async throws {
-        let remote = try RemoteHost()
+        let remote = try await RemoteHost()
         defer { remote.stop() }
         let folder = try makeScratchDirectory("repo")
         let server = remote.server

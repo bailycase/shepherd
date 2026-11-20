@@ -37,7 +37,7 @@ struct ProjectMessageImagesTests {
 
     @Test(arguments: ["", "Describe this picture"])
     func firstMessageCarriesOriginalImageBytesAndRetriesNeverSendTwice(_ text: String) async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let p = try await rig.create(), operation = UUID()
         let sent = try await rig.perform(p.id, .message(operationID: operation, text: text, images: [Self.image]))
         let pi = try await coordinator(rig, p.id)
@@ -57,7 +57,7 @@ struct ProjectMessageImagesTests {
 
     /// A stopped Project has no Resume: the person's image-only message restarts it, and its bytes stay private blobs, never state.
     @Test func imageOnlySubmissionToAStoppedProjectRestartsItKeepsBytesPrivateAndSendsOnce() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let p = try await rig.create(), operation = UUID()
         _ = try await rig.perform(p.id, .pause)
         try await eventually("pause acknowledged") { rig.host.server.state.projects.first?.interruptPending == false }
@@ -76,7 +76,7 @@ struct ProjectMessageImagesTests {
     }
 
     @Test func pauseDuringNativePreparationKeepsTheOriginalImageQueuedUntilExplicitResume() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let p = try await rig.create()
         _ = try await rig.perform(p.id, .message(operationID: UUID(), text: "first"))
         let pi = try await coordinator(rig, p.id)
@@ -105,7 +105,7 @@ struct ProjectMessageImagesTests {
     }
 
     @Test func restartDuringBlobStorageCannotAcceptOrSendTheOldSubmission() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let p = try await rig.create()
         let gate = DispatchSemaphore(value: 0)
         rig.host.server.logicalProjectFiles.async { gate.wait() }
@@ -123,7 +123,7 @@ struct ProjectMessageImagesTests {
     }
 
     @Test func anAcceptedImageWithUnknownConsumptionIsNotReplayedAfterRestartOrResume() async throws {
-        let rig = try Rig()
+        let rig = try await Rig()
         let p = try await rig.create()
         _ = try await rig.perform(p.id, .message(operationID: UUID(), text: "tools:0 hold-start", images: [Self.image]))
         let pi = try await coordinator(rig, p.id)
@@ -131,7 +131,7 @@ struct ProjectMessageImagesTests {
         _ = try await pi.snapshot("accepted image awaiting user consumption") { $0.running }
         #expect(rig.host.server.state.projects.first?.messages.first?.phase == .delivering)
         rig.host.server.onProjectRuntimeLaunch = nil; rig.host.stop(keepFiles: true)
-        let restarted = try Rig(dir: rig.host.dir); defer { restarted.stop() }
+        let restarted = try await Rig(dir: rig.host.dir); defer { restarted.stop() }
         #expect(restarted.host.server.state.projects.first?.paused == false)
         #expect(restarted.host.server.state.projects.first?.messages.first?.phase == .unknown)
         #expect(await restarted.host.server.listSessions().isEmpty)
@@ -146,7 +146,7 @@ struct ProjectMessageImagesTests {
     }
 
     @Test func invalidImagesCannotWriteBlobsOrAcceptAMessage() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let p = try await rig.create()
         let invalid: [[NativeImage]] = [Array(repeating: Self.image, count: 5),
             [.init(mimeType: "text/plain", data: Self.png)],
@@ -161,7 +161,7 @@ struct ProjectMessageImagesTests {
     }
 
     @Test func concurrentDuplicateUploadsShareOneReceiptAndStorageBackpressureIsBounded() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let p = try await rig.create(), operation = UUID()
         _ = try await rig.perform(p.id, .pause)
         try await eventually("pause receipt settled") { rig.host.server.state.projects.first?.interruptPending == false }
@@ -186,7 +186,7 @@ struct ProjectMessageImagesTests {
     }
 
     @Test func failedReceiptWriteRetainsImmutableBlobForRetryAndNeverSendsTextOnly() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let p = try await rig.create(), operation = UUID()
         _ = try await rig.perform(p.id, .pause)
         // The stop's acknowledgement is a state write: let it land before the folder turns read-only, or nothing could clear it.
@@ -205,7 +205,7 @@ struct ProjectMessageImagesTests {
 
     @Test(arguments: ["missing", "symlink", "hardlink", "fifo"])
     func unavailableOrSubstitutedInputCannotFallBackToTextOnly(_ kind: String) async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let p = try await rig.create(), operation = UUID()
         _ = try await rig.perform(p.id, .pause)
         _ = try await rig.perform(p.id, .message(operationID: operation, text: "requires image", images: [Self.image]))
@@ -228,7 +228,7 @@ struct ProjectMessageImagesTests {
     }
 
     @Test func localNativeImageLimitsAllowFiveMiBWithoutPuttingBytesInProjectState() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let p = try await rig.create()
         _ = try await rig.perform(p.id, .pause)
         let images = [NativeImage(mimeType: "image/png", data: Data(count: NativeImage.maxBytes)),
@@ -248,7 +248,7 @@ struct ProjectMessageImagesTests {
     }
 
     @Test func anUntrustedInputDirectoryCannotCaptureUploads() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let p = try await rig.create()
         let outside = rig.host.dir.appendingPathComponent("outside")
         try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: false)
@@ -259,7 +259,7 @@ struct ProjectMessageImagesTests {
     }
 
     @Test func oversizedRemoteScreenshotsReachTheProjectWithoutDuplicateDelivery() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create()
         let server = rig.host.server
         server.onProjectRuntimeRequest = { [weak server] request, done in
@@ -268,7 +268,7 @@ struct ProjectMessageImagesTests {
         }
         defer { server.onProjectRuntimeRequest = nil }
         let tokenURL = rig.host.dir.appendingPathComponent("remote-token")
-        let port = try server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let port = try await server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let client = RemoteHostClient(); defer { client.disconnect() }
         _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "images")
@@ -286,8 +286,8 @@ struct ProjectMessageImagesTests {
     }
 
     @Test func remoteFramesAreBoundedBeforeSendingAndOnlyTheAuthenticatedOwnerReceivesBytes() async throws {
-        let owner = try Rig(); defer { owner.stop() }
-        let viewer = try Rig(); defer { viewer.stop() }
+        let owner = try await Rig(); defer { owner.stop() }
+        let viewer = try await Rig(); defer { viewer.stop() }
         let p = try await owner.create(), foreign = try await viewer.create()
         let calls = Locked(0), server = owner.host.server
         server.onProjectRuntimeRequest = { [weak server] request, done in
@@ -297,7 +297,7 @@ struct ProjectMessageImagesTests {
         }
         defer { server.onProjectRuntimeRequest = nil }
         let tokenURL = owner.host.dir.appendingPathComponent("remote-token")
-        let port = try server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let port = try await server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let client = RemoteHostClient(); defer { client.disconnect() }
         _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "viewer")

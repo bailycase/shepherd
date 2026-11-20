@@ -283,7 +283,7 @@ struct PaneControlTests {
     /// The host has no window here, so no view draws anything: a terminal another device opens (a
     /// remote open, the Browser's Start) still gets its shell and runs its command.
     @Test func aTerminalAnotherDeviceOpensStartsWithNoViewDrawingIt() async throws {
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(), remote = try await RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: local.dir.path)
         let agent = Fixture.agent(in: space)

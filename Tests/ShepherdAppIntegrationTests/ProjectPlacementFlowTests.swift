@@ -35,7 +35,7 @@ struct ProjectPlacementFlowTests {
             _ = try await executor.start(); _ = try await owner.start()
             try await owner.server.addSpace(spaceA); try await executor.server.addSpace(spaceB)
             let tokenURL = executor.dir.appendingPathComponent("placement-token")
-            let port = try executor.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+            let port = try await executor.server.startRemoteListener(port: 0, tokenURL: tokenURL)
             let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             owner.remoteHosts.addHost(name: "Executor", host: "127.0.0.1", port: port, token: token, fleetManaged: true)
             try await eventuallyOnMain("authenticated executor") { self.owner.remoteHosts.connections.first?.phase == .connected }
@@ -60,7 +60,7 @@ struct ProjectPlacementFlowTests {
         }
         func connectViewer() async throws -> RemoteHostClient {
             let tokenURL = owner.dir.appendingPathComponent("worker-viewer-token")
-            let port = try owner.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+            let port = try await owner.server.startRemoteListener(port: 0, tokenURL: tokenURL)
             let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             let viewer = RemoteHostClient()
             _ = try await viewer.connect(host: "127.0.0.1", port: port, token: token, clientName: "Worker viewer")
@@ -72,7 +72,7 @@ struct ProjectPlacementFlowTests {
     /// Run on another host (ProjectRunElsewhere): a local task's ⋯ menu opens the dialog over the owner's host list; Move links the
     /// executor's same-named Space and starts the same task there through the owner's placement, under the dialog's one operation.
     @Test func runOnAnotherHostStartsTheSameTaskOnTheChosenHost() async throws {
-        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let r = try await Rig(); defer { r.stop() }; try await r.start()
         // The executor's own copy of the owner's repo, by name: not linked yet.
         let twin = Space(name: r.spaceA.name, path: r.executor.dir.appendingPathComponent("twin").path)
         try FileManager.default.createDirectory(atPath: twin.path, withIntermediateDirectories: true)
@@ -104,7 +104,7 @@ struct ProjectPlacementFlowTests {
     }
 
     @Test func oneOwnerCountsLocalAndRemoteReservationsAndNeverFallsBackToAnEqualSpaceID() async throws {
-        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let r = try await Rig(); defer { r.stop() }; try await r.start()
         try await r.assign("slow", remote: false)
         try await r.assign("slow"); try await r.assign("slow"); try await r.assign("hello")
         try await eventuallyOnMain("three shared slots and queued fourth") {
@@ -140,7 +140,7 @@ struct ProjectPlacementFlowTests {
     @Test(arguments: [(false, false), (true, false), (false, true), (true, true)])
     func aHumanProjectChatReplyClosesTheOriginalNativeSelectExactlyOnce(configuration: (Bool, Bool)) async throws {
         let (remote, paused) = configuration
-        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let r = try await Rig(); defer { r.stop() }; try await r.start()
         r.owner.scratch.useRealPeerCheck()
         let coordinatorDir = r.owner.dir.appendingPathComponent("logical-projects/\(r.projectID)")
         let workerDir = remote ? r.executor.dir : r.owner.dir
@@ -221,7 +221,7 @@ struct ProjectPlacementFlowTests {
     }
 
     @Test func ownerPauseRetriesAReconnectedExecutorWhoseHelperStopWasNotAcknowledged() async throws {
-        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let r = try await Rig(); defer { r.stop() }; try await r.start()
         try await r.assign("ask")
         try await eventuallyOnMain("remote question receipt") { r.project.tasks.first?.phase == .waiting }
         let task = try #require(r.project.tasks.first), receipt = try #require(task.executionReceipt)
@@ -284,7 +284,7 @@ struct ProjectPlacementFlowTests {
     }
 
     @Test func pauseRetainsExecutorDialogAndEitherNativeOrProjectAnswerUsesItsOriginalFence() async throws {
-        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let r = try await Rig(); defer { r.stop() }; try await r.start()
         try await r.assign("ask")
         try await eventuallyOnMain("remote native question") { r.project.tasks.first?.phase == .waiting }
         try await r.perform(.pause)
@@ -312,7 +312,7 @@ struct ProjectPlacementFlowTests {
     }
 
     @Test func deletionCancelsOnlyManagedActivationAndLateCancelLeavesManualWorkAlone() async throws {
-        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let r = try await Rig(); defer { r.stop() }; try await r.start()
         try await r.assign("slow")
         try await eventuallyOnMain("managed worker consumed") { r.project.tasks.first?.executionReceipt?.phase == .sent }
         let task = try #require(r.project.tasks.first), assignment = try #require(task.executionAssignment)
@@ -366,7 +366,7 @@ struct ProjectPlacementFlowTests {
     }
 
     @Test func remoteDataRequiresExplicitLinkAndHostPermissionAndPinsOwnersLiveDefaultModel() async throws {
-        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let r = try await Rig(); defer { r.stop() }; try await r.start()
         _ = try await r.owner.server.logicalProjects(.settings(projectID: r.projectID, expectedRevision: r.project.revision, settings: .init()))
         await #expect(throws: (any Error).self) { try await r.assign("not allowed") }
         r.owner.settings.defaultModel = "anthropic/claude-sonnet-4-5"
@@ -392,7 +392,7 @@ struct ProjectPlacementFlowTests {
     }
 
     @Test func ownerRestartReconcilesOfflineResultsWithoutDispatchingTheFourthTask() async throws {
-        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let r = try await Rig(); defer { r.stop() }; try await r.start()
         for _ in 0..<3 { try await r.assign("slow") }
         try await r.assign("hello")
         try await eventuallyOnMain("three remote assignments consumed") { r.project.tasks.filter { $0.executionReceipt?.phase == .sent }.count == 3 }
@@ -419,9 +419,9 @@ struct ProjectPlacementFlowTests {
     }
 
     @Test func remoteViewerUsesOwnersIdentityAndLostExecuteReplyReconcilesTheSameReservation() async throws {
-        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let r = try await Rig(); defer { r.stop() }; try await r.start()
         let tokenURL = r.owner.dir.appendingPathComponent("viewer-token")
-        let port = try r.owner.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let port = try await r.owner.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let viewer = RemoteHostClient(); defer { viewer.disconnect() }
         _ = try await viewer.connect(host: "127.0.0.1", port: port, token: token, clientName: "Independent viewer")
@@ -452,7 +452,7 @@ struct ProjectPlacementFlowTests {
 
     @Test(arguments: [false, true])
     func viewerReadsAndSteersWorkersThroughTheirOwnerWithoutExecutorCredentials(remote: Bool) async throws {
-        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let r = try await Rig(); defer { r.stop() }; try await r.start()
         try await r.assign("hello", remote: remote)
         try await eventuallyOnMain("assigned task settled") { r.project.tasks.first?.phase == .settled }
         let task = try #require(r.project.tasks.first)
@@ -490,7 +490,7 @@ struct ProjectPlacementFlowTests {
 
     @Test(arguments: [false, true])
     func viewerAnswerInTheWorkerPaneWaitsForOwnerResume(delayExecutorResume: Bool) async throws {
-        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let r = try await Rig(); defer { r.stop() }; try await r.start()
         try await r.assign("ask")
         try await eventuallyOnMain("worker asks a question") { r.project.tasks.first?.phase == .waiting }
         try await r.perform(.pause)
@@ -541,7 +541,7 @@ struct ProjectPlacementFlowTests {
 
     @Test(arguments: [false, true])
     func aManualQuestionAfterManagedWorkSettlesCanBeAnsweredThroughItsOwner(remote: Bool) async throws {
-        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let r = try await Rig(); defer { r.stop() }; try await r.start()
         try await r.assign("hello", remote: remote)
         try await eventuallyOnMain("managed task settled") { r.project.tasks.first?.phase == .settled }
         let task = try #require(r.project.tasks.first)
@@ -575,7 +575,7 @@ struct ProjectPlacementFlowTests {
 
     @Test(arguments: [false, true])
     func aManualTakeoverQuestionIsAnsweredWithoutAttributingItToTheUnknownProjectActivation(remote: Bool) async throws {
-        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let r = try await Rig(); defer { r.stop() }; try await r.start()
         try await r.assign("tools:1", remote: remote)
         try await eventuallyOnMain("original managed turn is active") { r.project.tasks.first?.phase == .running }
         let task = try #require(r.project.tasks.first)
@@ -619,7 +619,7 @@ struct ProjectPlacementFlowTests {
     }
 
     @Test func changedBindingCannotAdoptInflightWorkAndDisconnectDoesNotFreeItsSlot() async throws {
-        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let r = try await Rig(); defer { r.stop() }; try await r.start()
         try await r.assign("slow")
         try await eventuallyOnMain("remote turn consumed") { r.project.tasks.first?.executionReceipt?.phase == .sent }
         let task = try #require(r.project.tasks.first)

@@ -39,7 +39,7 @@ struct RemoteProviderConfigFlowTests {
         defer { app.stop() }
         try await app.start(piAuth: auth)
         let tokenURL = app.dir.appendingPathComponent("remote-token")
-        let port = try app.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let port = try await app.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let client = RemoteHostClient()
         _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "phone")

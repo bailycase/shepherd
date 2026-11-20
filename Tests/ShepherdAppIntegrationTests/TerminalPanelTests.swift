@@ -220,7 +220,7 @@ struct TerminalPanelTests {
     /// A host's agent, from the client: ⌘J with no terminal asks the host for one (a tab, in the
     /// thread's folder), and the panel shows on it once the host has made it.
     @Test func showingTheTerminalOfARemoteThreadWithNoneAsksItsHostForOne() async throws {
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(), remote = try await RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: local.dir.path)
         let agent = Fixture.agent(in: space)
@@ -248,7 +248,7 @@ struct TerminalPanelTests {
     /// A client of an older host asks for its terminal the way it always did (a split of the
     /// thread): the host, current, makes a tab, and the client draws tabs only.
     @Test func anOlderStyleOpenRequestToACurrentHostMakesATab() async throws {
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(), remote = try await RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: local.dir.path)
         let agent = Fixture.agent(in: space, auxiliary: 1)

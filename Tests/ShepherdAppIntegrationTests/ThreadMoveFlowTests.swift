@@ -83,7 +83,7 @@ struct ThreadMoveFlowTests {
 
     @Test func aRemoteMoveRunsOnItsOwnerAndCannotDropIntoALocalSpace() async throws {
         let app = try AppHarness()
-        let host = try RemoteHostHarness()
+        let host = try await RemoteHostHarness()
         defer { app.stop(); host.stop() }
         let source = Space(name: "Host source", path: host.host.dir.path)
         let destination = Space(name: "Host child", path: source.path + "/child", parentID: source.id, parentIsExplicit: true)

@@ -13,7 +13,7 @@ import ShepherdTestSupport
 struct RemoteSpaceInheritanceTests {
     @Test func aRemoteSpaceGetsAParentAndNameAndOlderHostsRefuseBeforeSending() async throws {
         let pi = PiSetup(engine: PiSetup.app.engine, home: try makeScratchDirectory("rpp"))
-        let r = try RemoteHost(pi: pi)
+        let r = try await RemoteHost(pi: pi)
         defer { r.stop() }
         let fm = FileManager.default
         let acme = r.host.dir.appendingPathComponent("acme").resolvingSymlinksInPath()
@@ -45,7 +45,7 @@ struct RemoteSpaceInheritanceTests {
         let root = try #require(r.server.state.spaces.first { $0.id == added })
         #expect(root.parentID == nil && root.parentIsExplicit && root.name == "acme-landing-site")
 
-        let old = try RemoteHost()
+        let old = try await RemoteHost()
         defer { old.stop() }
         old.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.projectParentCapability && $0 != RemoteProtocol.projectInheritedResourcesCapability }
         let oldClient = try await old.typed()
@@ -64,7 +64,7 @@ struct RemoteSpaceInheritanceTests {
     /// parent's extensions load with `-e`, less those two.
     @Test func aChildSeesTurnsOffAndOverridesInheritedCommandsAndExtensions() async throws {
         let pi = PiSetup(engine: PiSetup.app.engine, home: try makeScratchDirectory("rpi"))
-        let r = try RemoteHost(pi: pi)
+        let r = try await RemoteHost(pi: pi)
         defer { r.stop() }
         let fm = FileManager.default
         let acme = r.host.dir.appendingPathComponent("acme").resolvingSymlinksInPath()

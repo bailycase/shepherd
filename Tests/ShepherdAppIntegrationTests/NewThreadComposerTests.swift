@@ -99,7 +99,7 @@ struct NewThreadComposerTests {
 
     @Test func aRemoteCreationUsesHostDefaultsAndSendsItsSpeedBeforeTheFirstTurn() async throws {
         try StubPi.installAsEngine()
-        let local = try AppHarness(), remote = try RemoteHostHarness(modelCatalog: { Self.models })
+        let local = try AppHarness(), remote = try await RemoteHostHarness(modelCatalog: { Self.models })
         defer { local.stop(); remote.stop() }
         remote.host.settings.defaultThinking = .max
         remote.host.settings.defaultServiceTier = .fast
@@ -123,7 +123,7 @@ struct NewThreadComposerTests {
     }
 
     @Test func anOlderHostHidesCreationSpeedAndRefusesAnExplicitOverride() async throws {
-        let local = try AppHarness(), remote = try RemoteHostHarness(modelCatalog: { Self.models })
+        let local = try AppHarness(), remote = try await RemoteHostHarness(modelCatalog: { Self.models })
         defer { local.stop(); remote.stop() }
         remote.host.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.createAgentServiceTierCapability }
         let space = Fixture.space("remote", path: remote.host.dir.path)

@@ -23,7 +23,7 @@ struct ProjectAutomationsTests {
     }
 
     @Test func scopedCRUDUsesOwnerRevisionsAndLegacyEditsNeverDetach() async throws {
-        let remote = try RemoteHost()
+        let remote = try await RemoteHost()
         remote.server.setProjectsEnabled(true)
         defer { remote.stop() }
         let a = try await remote.typed(), b = try await remote.typed()
@@ -194,7 +194,7 @@ struct ProjectAutomationsTests {
     }
 
     @Test func olderHostAndViewerCannotSilentlyLoseAssociation() async throws {
-        let remote = try RemoteHost()
+        let remote = try await RemoteHost()
         defer { remote.stop() }
         remote.server.advertisedCapabilities.removeAll { $0 == RemoteProtocol.logicalProjectAutomationsCapability }
         let client = try await remote.typed()

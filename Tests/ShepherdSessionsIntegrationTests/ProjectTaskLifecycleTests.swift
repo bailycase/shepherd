@@ -13,7 +13,7 @@ struct ProjectTaskLifecycleTests {
 
     @Test(arguments: ["hot", "retired", "reloaded"])
     func resolvedFollowUpsRefuseAcrossOwnerToolAndRemoteRoutesWithoutLosingHistory(storage: String) async throws {
-        let initial = try Rig(); defer { initial.stop() }
+        let initial = try await Rig(); defer { initial.stop() }
         let project = try await initial.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await initial.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Original assignment", prompt: "hello"))
         try await eventually("original turn settled, assignment unresolved") { initial.host.server.state.projects.first?.tasks.first?.phase == .settled }
@@ -60,7 +60,7 @@ struct ProjectTaskLifecycleTests {
         if storage == "reloaded" {
             let dir = initial.host.dir
             initial.host.server.onProjectRuntimeLaunch = nil; initial.host.stop(keepFiles: true)
-            rig = try Rig(dir: dir)
+            rig = try await Rig(dir: dir)
             #expect(await rig.host.server.listSessions().isEmpty)
         } else { rig = initial }
         defer { rig.stop() }
@@ -92,7 +92,7 @@ struct ProjectTaskLifecycleTests {
         server.onProjectRuntimeRequest = { _, done in done(.failure(WireError("Action must use owner admission, not the UI callback"))) }
         defer { server.onProjectRuntimeRequest = nil }
         let tokenURL = rig.host.dir.appendingPathComponent("remote-token")
-        let port = try server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let port = try await server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let remote = RemoteHostClient(); defer { remote.disconnect() }
         _ = try await remote.connect(host: "127.0.0.1", port: port, token: token, clientName: "lifecycle viewer")
@@ -132,7 +132,7 @@ struct ProjectTaskLifecycleTests {
     }
 
     @Test func aNewAssignmentGetsAFreshTaskWorkerAndNativeConversation() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "First", prompt: "original-only-context"))
         try await eventually("first settled") { rig.host.server.state.projects[0].tasks.first?.phase == .settled }
@@ -154,7 +154,7 @@ struct ProjectTaskLifecycleTests {
     }
 
     @Test func resolutionWinsAgainstAFollowUpWaitingOnAnOldRevision() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Resolve race", prompt: "hello"))
         try await eventually("settled before race") { rig.host.server.state.projects[0].tasks.first?.phase == .settled }
@@ -180,7 +180,7 @@ struct ProjectTaskLifecycleTests {
 
     @Test(arguments: [true, false])
     func legacyAcceptedResolvedFollowUpReplaysWithoutReopeningOrRedispatch(retainedPayloadProof: Bool) async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Legacy", prompt: "hello"))
         try await eventually("legacy initial turn settled") { rig.host.server.state.projects[0].tasks.first?.phase == .settled }

@@ -6,10 +6,10 @@ import ShepherdSessions
 /// `tokenURL` holds the token a test's clients present, as a device's own (`clientTokenForTests`), which is what a test client presents.
 public extension SessionServer {
     @discardableResult
-    func startRemoteListener(port: UInt16, tokenURL: URL) throws -> UInt16 {
+    func startRemoteListener(port: UInt16, tokenURL: URL) async throws -> UInt16 {
         try FileManager.default.createDirectory(at: tokenURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(clientTokenForTests().utf8).write(to: tokenURL, options: .atomic)
-        return try startRemoteListener(port: port)
+        return try await startRemoteListener(port: port)
     }
 
     /// The local socket asks for no token: the file is there for the tests that read it, and holds nothing the host looks at.

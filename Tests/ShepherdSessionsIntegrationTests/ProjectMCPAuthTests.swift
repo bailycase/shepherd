@@ -48,7 +48,7 @@ struct ProjectMCPAuthTests {
     }
 
     @Test func remoteCredentialStatusIsScopedAndOldHostsRefuseBeforeSending() async throws {
-        let host = try RemoteHost()
+        let host = try await RemoteHost()
         defer { host.stop() }
         let root = host.host.dir.appendingPathComponent("project")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -64,7 +64,7 @@ struct ProjectMCPAuthTests {
         await #expect(throws: RemoteHostClientError.self) {
             _ = try await client.projects(.mcp(directory: root.path, file: ".shepherd/auth.json", action: .credentials))
         }
-        let old = try RemoteHost()
+        let old = try await RemoteHost()
         defer { old.stop() }
         old.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.projectMCPCapability && $0 != RemoteProtocol.projectTrustCapability }
         let oldClient = try await old.typed()
@@ -103,7 +103,7 @@ struct ProjectMCPAuthTests {
         let project = directory.appendingPathComponent("project")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         try await host.server.putState(ShepherdState(spaces: [Space(name: "project", path: project.path)]))
-        let port = try host.server.startRemoteListener(port: 0, tokenURL: directory.appendingPathComponent("remote-token"))
+        let port = try await host.server.startRemoteListener(port: 0, tokenURL: directory.appendingPathComponent("remote-token"))
         let token = try String(contentsOf: directory.appendingPathComponent("remote-token"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let client = RemoteHostClient()
         _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "oauth-test")

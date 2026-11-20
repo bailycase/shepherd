@@ -94,7 +94,7 @@ struct LogicalProjectFilesTests {
     }
 
     @Test func TCPReadsTheForeignOwnersRootNotTheViewersAndOldHostsRefuseGracefully() async throws {
-        let remote = try RemoteHost(); defer { remote.stop() }
+        let remote = try await RemoteHost(); defer { remote.stop() }
         let viewer = try ScratchServer(); defer { viewer.stop() }
         let (id, root) = try await create(remote.host)
         let (_, viewerRoot) = try await create(viewer, id: id)

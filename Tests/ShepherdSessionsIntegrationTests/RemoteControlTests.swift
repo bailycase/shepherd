@@ -15,7 +15,7 @@ struct RemoteControlTests {
     /// A client from before terminals were tabs only asks to split beside a pane, in an axis: the
     /// wire still says so, and the host's handler gets the request as it came (it opens a tab).
     @Test func terminalRequestsRouteThroughTheHostHandler() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let (agentID, anchor, opened) = (AgentID(), PaneID(), PaneID())
         let seen = Locked<[PaneRequest]>([])
@@ -43,7 +43,7 @@ struct RemoteControlTests {
     /// An older client's divider drag: terminals have no splits, so the host answers it as it
     /// answers what it does not serve, never reaches its handler, and keeps the connection.
     @Test func anOlderClientsSplitResizeIsAnsweredUnsupportedAndNeverReachesTheHandler() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let seen = Locked<[PaneRequest]>([])
         r.server.onRemotePaneRequest = { request, respond in
@@ -68,7 +68,7 @@ struct RemoteControlTests {
     }
 
     @Test func terminalRequestsFailCleanlyWithoutAHandlerOrWithAWrongOutcome() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let client = try await r.raw()
         try client.send(.closePane(id: 3, agentID: AgentID(), paneID: PaneID()))
@@ -86,7 +86,7 @@ struct RemoteControlTests {
 
     /// A remote space is pure state: the space alone, with no layout, in one snapshot.
     @Test func addSpaceCreatesTheSpaceWithoutALayout() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let folder = try makeScratchDirectory("project")
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -101,7 +101,7 @@ struct RemoteControlTests {
 
     /// A project added from another Mac goes on top, as one added on this Mac does.
     @Test func aRemotelyAddedSpaceGoesFirst() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let existing = Fixture.space("existing")
         try await r.server.addSpace(existing)
@@ -115,7 +115,7 @@ struct RemoteControlTests {
     }
 
     @Test func addSpaceRejectsDuplicatesAndMissingDirectories() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let folder = try makeScratchDirectory("project")
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -131,7 +131,7 @@ struct RemoteControlTests {
     }
 
     @Test func listDirReturnsSortedSubdirectoriesIncludingHiddenOnes() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let folder = try makeScratchDirectory("browse")
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -153,7 +153,7 @@ struct RemoteControlTests {
     }
 
     @Test func heldDirectoryReadsKeepTheServerResponsiveAndStayReservedAfterTimeout() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let folder = try makeScratchDirectory("held-directory")
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -208,7 +208,7 @@ struct RemoteControlTests {
     }
 
     @Test func replacedDirectoryRequestsCancelWithoutPublishingTheirOldReply() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let folder = try makeScratchDirectory("replaced-directory")
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -242,7 +242,7 @@ struct RemoteControlTests {
     // MARK: - Agents
 
     @Test func createAgentHandsTheWholeRequestToTheHost() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let space = Fixture.space()
         try await r.host.seed(ShepherdState(spaces: [space]))
@@ -265,7 +265,7 @@ struct RemoteControlTests {
     }
 
     @Test func createAgentIsRejectedWithoutAHandlerOrForAnUnknownSpace() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let space = Fixture.space()
         try await r.host.seed(ShepherdState(spaces: [space]))
@@ -303,7 +303,7 @@ struct RemoteControlTests {
     }
 
     @Test func creationOptionsComeFromTheHost() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let space = Fixture.space()
         try await r.host.seed(ShepherdState(spaces: [space]))
@@ -325,7 +325,7 @@ struct RemoteControlTests {
     /// one it knows; a current client reads it as it is.
     @Test(arguments: [(ThinkingLevel.xhigh, false, ThinkingLevel.high), (.minimal, false, .low), (.xhigh, true, .xhigh), (.medium, false, .medium)])
     func creationOptionsCarryALevelTheClientDecodes(level: ThinkingLevel, current: Bool, expected: ThinkingLevel) async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let space = Fixture.space()
         try await r.host.seed(ShepherdState(spaces: [space]))
@@ -340,7 +340,7 @@ struct RemoteControlTests {
     }
 
     @Test func agentActionsRouteToTheHostAndNeedAKnownAgent() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let space = Fixture.space()
         let worker = Fixture.agent(in: space)
@@ -367,7 +367,7 @@ struct RemoteControlTests {
     /// Space actions are this Mac's own app's (the local socket): a paired client is refused and
     /// nothing changes.
     @Test func aPairedClientCannotChangeSpaces() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let space = Space(name: "acme-web", path: r.host.dir.path)
         try await r.server.addSpace(space)
@@ -381,7 +381,7 @@ struct RemoteControlTests {
     }
 
     @Test func agentQueriesRouteToTheHost() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let agentID = AgentID()
         let client = try await r.raw()
@@ -398,7 +398,7 @@ struct RemoteControlTests {
 
     /// A GUI answer that arrives after its connection closed must not reach whoever reuses the fd.
     @Test func aLateAnswerNeverReachesAReplacementConnection() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let space = Fixture.space()
         let worker = Fixture.agent(in: space)
@@ -419,7 +419,7 @@ struct RemoteControlTests {
     // MARK: - Uploads
 
     @Test func anUploadLandsAsAPrivateFileForTheSession() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let info = try await r.host.shell("cat")
         let source = r.host.dir.appendingPathComponent("source.bin")
@@ -438,7 +438,7 @@ struct RemoteControlTests {
     /// One upload per connection, owned by it: another connection cannot write into it, and a
     /// dropped connection takes its partial file with it.
     @Test func uploadsBelongToTheirConnection() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let info = try await r.host.shell("cat")
         let owner = try await r.raw()
@@ -459,7 +459,7 @@ struct RemoteControlTests {
     }
 
     @Test func uploadsNeedALiveSessionAndACompleteFile() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let info = try await r.host.shell("cat")
         let client = try await r.raw()
@@ -480,7 +480,7 @@ struct RemoteControlTests {
     // MARK: - Native thread over TCP
 
     @Test func theNativeThreadIsServedOverTCP() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let pi = try await PiAgent.launch(on: r.host)
         let local = try await pi.ready()
@@ -496,7 +496,7 @@ struct RemoteControlTests {
     }
 
     @Test func tcpNativeTextUsesTransportBoundsAndUnknownAgentsAreRefused() async throws {
-        let r = try RemoteHost()
+        let r = try await RemoteHost()
         defer { r.stop() }
         let pi = try await PiAgent.launch(on: r.host)
         let s = try await pi.ready()

@@ -10,7 +10,7 @@ struct ProjectRuntimeRevocationTests {
     typealias Rig = ProjectRuntimeTests.Rig
 
     @Test func pauseAheadOfReadyTransactionRevokesItsSendFenceWithoutPoisoningResume() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let p = try await rig.create()
         let worker = try await PiAgent.launch(on: rig.host)
         _ = try await worker.ready()
@@ -58,7 +58,7 @@ struct ProjectRuntimeRevocationTests {
     }
 
     @Test func coordinatorExitMakesAcceptedUnconsumedMessageUnknownAndTheNextMessageRelaunchesIt() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let p = try await rig.create(), operation = UUID()
         let sent = try await rig.perform(p.id, .message(operationID: operation, text: "tools:0 hold-start"))
         let coordinator = try #require(sent.coordinatorAgentID)

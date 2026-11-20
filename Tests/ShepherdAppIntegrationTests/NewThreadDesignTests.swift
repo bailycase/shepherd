@@ -269,7 +269,7 @@ struct NewThreadDesignTests {
 
     @Test func aProjectOnAnotherHostTakesNoDesignAndSaysSo() async throws {
         try StubPi.installAsEngine()
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+        let local = try AppHarness(), remote = try await RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         local.settings.designToolEnabled = true
         let hostSpace = Fixture.space("remote", path: remote.host.dir.path)

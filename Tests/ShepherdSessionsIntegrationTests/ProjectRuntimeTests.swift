@@ -65,7 +65,7 @@ struct ProjectRuntimeTests {
     }
 
     @Test func firstMessageCreatesOneHiddenCoordinatorAndOperationRetryNeverResends() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create()
         #expect(rig.host.server.state.agents.isEmpty)
         let operation = UUID()
@@ -94,7 +94,7 @@ struct ProjectRuntimeTests {
 
     @Test(arguments: [false, true])
     func coordinatorLaunchFailurePreservesQueuedDeliveryAndOnlyRetiresUncreatedAgents(persistAgent: Bool) async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let launcher = try #require(rig.host.server.onProjectRuntimeLaunch)
         let held = Locked<(ProjectRuntimeLaunch, @Sendable (Result<AgentID, Error>) -> Void)?>(nil)
         rig.host.server.onProjectRuntimeLaunch = { launch, done in held.withValue { $0 = (launch, done) } }
@@ -166,7 +166,7 @@ struct ProjectRuntimeTests {
     }
 
     @Test func delayedCoordinatorFailureFencesConcurrentMessagesAndTheNextMessageGetsFreshRunBounds() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let launcher = try #require(rig.host.server.onProjectRuntimeLaunch)
         let held = Locked<(ProjectRuntimeLaunch, @Sendable (Result<AgentID, Error>) -> Void)?>(nil)
         let launches = Locked(0)
@@ -220,7 +220,7 @@ struct ProjectRuntimeTests {
     }
 
     @Test func lateCoordinatorLaunchFailureRetainsEstablishedNativeHistory() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let launcher = try #require(rig.host.server.onProjectRuntimeLaunch)
         let held = Locked<(@Sendable (Result<AgentID, Error>) -> Void)?>(nil)
         rig.host.server.onProjectRuntimeLaunch = { launch, done in
@@ -254,7 +254,7 @@ struct ProjectRuntimeTests {
     }
 
     @Test func lateCoordinatorFailureInterruptsItsActiveTurnAndResumeWaitsForAcknowledgement() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let launcher = try #require(rig.host.server.onProjectRuntimeLaunch)
         let held = Locked<(ProjectRuntimeLaunch, @Sendable (Result<AgentID, Error>) -> Void)?>(nil)
         rig.host.server.onProjectRuntimeLaunch = { launch, done in
@@ -301,7 +301,7 @@ struct ProjectRuntimeTests {
     }
 
     @Test func projectMessagesWaitForTheCoordinatorsActualTurnToSettle() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create()
         let sent = try await rig.perform(project.id, .message(operationID: UUID(), text: "slow"))
         let id = try #require(sent.coordinatorAgentID)
@@ -317,7 +317,7 @@ struct ProjectRuntimeTests {
     }
 
     @Test func threeWorkersRunAndTheFourthWaitsForActualSettlement() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         for i in 0..<4 { _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Task \(i)", prompt: "slow")) }
         try await eventually("three native workers") { rig.agents.current.count == 3 && rig.agents.current.values.allSatisfy { $0.stdin("prompt").count == 1 } }
@@ -342,7 +342,7 @@ struct ProjectRuntimeTests {
     }
 
     @Test func thePersonsPauseHoldsMessagesAcrossARestartAndOnlyResumeDeliversThem() async throws {
-        let rig = try Rig()
+        let rig = try await Rig()
         let project = try await rig.create()
         let sent = try await rig.perform(project.id, .message(operationID: UUID(), text: "slow"))
         let coordinator = try #require(sent.coordinatorAgentID)
@@ -366,7 +366,7 @@ struct ProjectRuntimeTests {
         // A restart keeps it paused, with the message still waiting.
         rig.host.server.onProjectRuntimeLaunch = nil
         rig.host.stop(keepFiles: true)
-        let again = try Rig(dir: rig.host.dir); defer { again.stop() }
+        let again = try await Rig(dir: rig.host.dir); defer { again.stop() }
         let saved = try #require(again.host.server.state.projects.first)
         #expect(saved.paused && saved.pausedByPerson, "a paused Project stays paused across a restart")
         #expect(saved.messages.contains { $0.text == "after pause" && $0.phase == .queued })
@@ -382,7 +382,7 @@ struct ProjectRuntimeTests {
     }
 
     @Test func aStopTheRuntimeMadeEndsWithThePersonsNextMessage() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create()
         let sent = try await rig.perform(project.id, .message(operationID: UUID(), text: "first"))
         let coordinator = try #require(sent.coordinatorAgentID)
@@ -396,7 +396,7 @@ struct ProjectRuntimeTests {
     }
 
     @Test func restartSettlesInterruptedLocalWorkersWithoutPausingAndDeletionPreservesOrdinaryThreads() async throws {
-        let rig = try Rig()
+        let rig = try await Rig()
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Work", prompt: "hang"))
         try await eventually("worker prompt") { rig.agents.current.values.first?.stdin("prompt").count == 1 }
@@ -416,7 +416,7 @@ struct ProjectRuntimeTests {
     }
 
     @Test func followupsReuseTheWorkerAndQuestionsCanBeAnsweredOnlyOnceAcrossViews() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Question", prompt: "ask"))
         try await eventually("worker launched") { rig.agents.current.count == 1 }
@@ -456,7 +456,7 @@ struct ProjectRuntimeTests {
 
     /// Projects never pause on their own: thirteen assignments (past the old twelve-activation bound) all run, a few at a time.
     @Test func manyAssignmentsAllRunAndTheProjectNeverPausesItself() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         for i in 0..<13 { _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Task \(i)", prompt: "hello")) }
         try await eventually("all thirteen settled") { rig.host.server.state.projects.first?.tasks.filter { $0.phase == .settled }.count == 13 }
@@ -467,7 +467,7 @@ struct ProjectRuntimeTests {
     /// A coordinator's parallel `project_assign` calls in one turn read one revision; each adds its own task, so none is refused
     /// as stale and Threads at once runs them together (three start, the fourth queues).
     @Test func parallelAssignmentsFromOneRevisionAllLand() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         let revision = project.revision
         try await withThrowingTaskGroup(of: Void.self) { group in
@@ -484,7 +484,7 @@ struct ProjectRuntimeTests {
 
     /// The coordinator chooses a task's thinking level; a follow-up can change it, and the worker's pi is set to it before the prompt.
     @Test func aTasksThinkingLevelIsTheCoordinatorsChoice() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         await #expect(throws: LogicalProjectsError.self) {
             try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Bad", prompt: "hello", thinking: "extreme"))
@@ -514,7 +514,7 @@ struct ProjectRuntimeTests {
     }
 
     @Test func anExitedWorkerFailsItsAssignmentRatherThanHoldingTheQueueForever() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Exit", prompt: "die"))
         try await eventually("failed exited assignment") { rig.host.server.state.projects.first?.tasks.first?.phase == .failed }
@@ -523,7 +523,7 @@ struct ProjectRuntimeTests {
     }
 
     @Test func aFailedSettlementWriteStopsAdmissionsInsteadOfStartingQueuedWork() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         for i in 0..<4 { _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Task \(i)", prompt: "slow")) }
         try await eventually("three started workers") { rig.agents.current.count == 3 && rig.agents.current.values.allSatisfy { $0.stdin("prompt").count == 1 } }
@@ -540,7 +540,7 @@ struct ProjectRuntimeTests {
     }
 
     @Test func launchFailuresFreeSlotsWithoutRetryAndNeverPauseTheProject() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         rig.host.server.onProjectRuntimeLaunch = { _, done in done(.failure(WireError("launch refused"))) }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Fail", prompt: "hello"))

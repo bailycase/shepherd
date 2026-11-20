@@ -50,7 +50,7 @@ struct LogicalProjectsTests {
     }
 
     @Test func twoRemoteClientsUseTheOwnerStateAndRefuseEveryStaleMutationWithoutWrites() async throws {
-        let remote = try RemoteHost()
+        let remote = try await RemoteHost()
         remote.server.setProjectsEnabled(true)
         defer { remote.stop() }
         let a = try await remote.typed(), b = try await remote.typed()
@@ -83,7 +83,7 @@ struct LogicalProjectsTests {
     }
 
     @Test func settingsMemorySpaceLinksAndPauseAreRealRevisionCheckedRemoteMutations() async throws {
-        let remote = try RemoteHost()
+        let remote = try await RemoteHost()
         remote.server.setProjectsEnabled(true)
         defer { remote.stop() }
         let space = Space(name: "Repository", path: remote.host.dir.path)
@@ -417,7 +417,7 @@ struct LogicalProjectsTests {
     }
 
     @Test func capabilityRefusalWorksBeforeSendingAndAtTheListener() async throws {
-        let remote = try RemoteHost()
+        let remote = try await RemoteHost()
         defer { remote.stop() }
         remote.server.advertisedCapabilities.removeAll { $0 == RemoteProtocol.logicalProjectsCapability }
         let client = try await remote.typed()

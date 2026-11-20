@@ -35,7 +35,7 @@ struct FleetPairingTests {
             configure(server)
             let tokenURL = host.dir.appendingPathComponent("remote-token")
             let socket = host.dir.appendingPathComponent("h.sock").path
-            let port = try await RestartablePort.listen(port) { try server.startRemoteListener(port: $0, tokenURL: tokenURL) }
+            let port = try await RestartablePort.listen(port) { try await server.startRemoteListener(port: $0, tokenURL: tokenURL) }
             let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             try server.startLocalListener(path: socket, tokenURL: tokenURL)
             server.startFleetAndWait()

@@ -93,7 +93,7 @@ struct ThreadHostingTests {
         let mac = try await connect(path, token)
         defer { mac.disconnect() }
         let remoteTokenURL = h.dir.appendingPathComponent("remote-token")
-        let port = try h.server.startRemoteListener(port: 0, tokenURL: remoteTokenURL)
+        let port = try await h.server.startRemoteListener(port: 0, tokenURL: remoteTokenURL)
         let remoteToken = try String(contentsOf: remoteTokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let phone = RemoteHostClient()
         _ = try await phone.connect(host: "127.0.0.1", port: port, token: remoteToken, clientName: "iPhone")

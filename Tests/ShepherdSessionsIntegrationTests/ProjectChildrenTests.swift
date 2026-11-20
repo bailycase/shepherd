@@ -59,7 +59,7 @@ struct ProjectChildrenTests {
     }
 
     @Test func localWorkersCannotDelegateEvenAfterSettlementOrManualTakeover() async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Worker", prompt: "tools:1"))
         try await eventually("worker consumed") { rig.agents.current.values.first?.stdin("prompt").count == 1 }
@@ -75,7 +75,7 @@ struct ProjectChildrenTests {
     }
 
     @Test func executorMembershipRefusesDelegationOfflineAfterSettlementAndManualTakeover() async throws {
-        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectExecutionTests.Rig(); defer { rig.stop() }
         let assignment = try await rig.assignment("tools:1")
         let owner = try await rig.remote.typed()
         _ = try await owner.projectExecution(.execute(assignment))
@@ -92,7 +92,7 @@ struct ProjectChildrenTests {
     }
 
     @Test func executorManualTurnKeepsMembershipWithoutOldPayloadOrActivationAuthority() async throws {
-        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectExecutionTests.Rig(); defer { rig.stop() }
         var assignment = try await rig.assignment("tools:1")
         assignment.instructions = "private original instructions"; assignment.memory = "private original memory"
         _ = try await rig.host.server.projectExecution(.execute(assignment))
@@ -116,7 +116,7 @@ struct ProjectChildrenTests {
     }
 
     @Test func unrelatedThreadsKeepChildAdmissionAndPeerTools() async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
         _ = try await rig.create()
         let pi = try await PiAgent.launch(on: rig.host)
         let snapshot = try await pi.ready()
@@ -135,7 +135,7 @@ struct ProjectChildrenTests {
     }
 
     @Test func deletingALocalProjectReleasesServerMembershipWithoutAPermanentWorkerFlag() async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Worker", prompt: "hello"))
         try await eventually("worker settled") { rig.host.server.state.projects.first?.tasks.first?.phase == .settled }
@@ -158,7 +158,7 @@ struct ProjectChildrenTests {
     }
 
     @Test func localSettlementRetainsItsSlotAndPauseWaitsForTheMatchingControllerACK() async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Worker", prompt: "tools:1"))
         try await eventually("worker consumed") { rig.agents.current.values.first?.stdin("prompt").count == 1 }
@@ -197,7 +197,7 @@ struct ProjectChildrenTests {
 
     @Test(arguments: [false, true])
     func customContinuationsKeepAuthorityButManualTakeoverAndScopedStopReleaseOnlyTheOldTask(drainBeforeTakeover: Bool) async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Managed", prompt: "tools:1"))
         try await eventually("managed worker") { rig.agents.current.values.first?.stdin("prompt").count == 1 }
@@ -265,7 +265,7 @@ struct ProjectChildrenTests {
     }
 
     @Test func localPauseRetainsTheNativeQuestionWhileStoppingItsHelpers() async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Question", prompt: "ask"))
         try await eventually("local question") { rig.host.server.state.projects.first?.tasks.first?.phase == .waiting }
@@ -309,7 +309,7 @@ struct ProjectChildrenTests {
     }
 
     @Test func executorPauseKeepsTheQuestionButDisconnectNeverClaimsHelpersStopped() async throws {
-        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectExecutionTests.Rig(); defer { rig.stop() }
         let assignment = try await rig.assignment("ask")
         let owner = try await rig.remote.typed()
         _ = try await owner.projectExecution(.execute(assignment))
@@ -381,7 +381,7 @@ struct ProjectChildrenTests {
 
     @Test(arguments: [false, true])
     func resumeNeverRestoresAuthorityAfterNativeManualConsumptionOfAParkedQuestion(duringSave: Bool) async throws {
-        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectExecutionTests.Rig(); defer { rig.stop() }
         let assignment = try await rig.assignment("ask")
         _ = try await rig.host.server.projectExecution(.execute(assignment))
         let pi = try await rig.pi(assignment)
@@ -426,7 +426,7 @@ struct ProjectChildrenTests {
     }
 
     @Test func executorRootSettlementWaitsForHelpersAndFollowUpGetsANewScope() async throws {
-        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectExecutionTests.Rig(); defer { rig.stop() }
         let assignment = try await rig.assignment("tools:1")
         _ = try await rig.host.server.projectExecution(.execute(assignment))
         let pi = try await rig.pi(assignment)
@@ -457,7 +457,7 @@ struct ProjectChildrenTests {
     }
 
     @Test func executorManualTakeoverReleasesTheOldReservationOnlyAfterScopedHelperStop() async throws {
-        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectExecutionTests.Rig(); defer { rig.stop() }
         let assignment = try await rig.assignment("tools:1")
         _ = try await rig.host.server.projectExecution(.execute(assignment))
         let pi = try await rig.pi(assignment)
@@ -476,7 +476,7 @@ struct ProjectChildrenTests {
     }
 
     @Test func nativeStopDuringProjectWorkClosesHelpersBeforeAcknowledgingTheParentAbort() async throws {
-        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectExecutionTests.Rig(); defer { rig.stop() }
         let assignment = try await rig.assignment("tools:1")
         _ = try await rig.host.server.projectExecution(.execute(assignment))
         let pi = try await rig.pi(assignment)
@@ -491,7 +491,7 @@ struct ProjectChildrenTests {
     }
 
     @Test func disconnectedHelperControllerCannotDefeatTheExecutorDeadlineOrReleaseItsReservation() async throws {
-        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectExecutionTests.Rig(); defer { rig.stop() }
         try await rig.host.server.enqueue { rig.host.server.executionDuration = 2 }
         let assignment = try await rig.assignment("tools:1 deadline disconnected")
         _ = try await rig.host.server.projectExecution(.execute(assignment))
@@ -520,7 +520,7 @@ struct ProjectChildrenTests {
 
     @Test(arguments: [false, true])
     func localPauseTimeoutStopsOnlyItsOriginalRootAndNeverAcknowledgesHelperCleanup(manualTakeover: Bool) async throws {
-        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Unacknowledged helpers", prompt: "tools:1"))
         try await eventually("managed worker") { rig.agents.current.values.first?.stdin("prompt").count == 1 }
@@ -554,7 +554,7 @@ struct ProjectChildrenTests {
     }
 
     @Test func executionDeadlineUsesTheSameScopedStopAndWaitsForHelperExitEvidence() async throws {
-        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectExecutionTests.Rig(); defer { rig.stop() }
         try await rig.host.server.enqueue { rig.host.server.executionDuration = 2 }
         let assignment = try await rig.assignment("tools:1 deadline")
         _ = try await rig.host.server.projectExecution(.execute(assignment))
@@ -569,7 +569,7 @@ struct ProjectChildrenTests {
     }
 
     @Test func oldControllerCannotClaimScopedCancellationAndScopeLookupCannotChangeAgentOrSession() async throws {
-        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let rig = try await ProjectExecutionTests.Rig(); defer { rig.stop() }
         let assignment = try await rig.assignment("tools:1")
         _ = try await rig.host.server.projectExecution(.execute(assignment))
         let pi = try await rig.pi(assignment)

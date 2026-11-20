@@ -10,7 +10,7 @@ struct ProjectMessageFailureTests {
     typealias Rig = ProjectRuntimeTests.Rig
 
     @Test func inputHandledWithoutUserTurnDoesNotFenceLaterMessages() async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let p = try await rig.create(), uncertain = UUID()
         let sent = try await rig.perform(p.id, .message(operationID: uncertain, text: "/session-name info handled"))
         let id = try #require(sent.coordinatorAgentID)
@@ -33,7 +33,7 @@ struct ProjectMessageFailureTests {
 
     @Test(arguments: [false, true])
     func configurationTimeoutDoesNotFenceLaterMessages(thinking: Bool) async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let p = try await rig.create()
         let sent = try await rig.perform(p.id, .message(operationID: UUID(), text: "first"))
         let id = try #require(sent.coordinatorAgentID)
@@ -78,7 +78,7 @@ struct ProjectMessageFailureTests {
          "Invalid [redacted]; Bearer [redacted]; [redacted]�")
     ])
     func actualPromptRefusalIsPersistedSafelyAndExplicitResendHasNoStaleDetail(_ reason: String, _ safe: String) async throws {
-        let rig = try Rig(); defer { rig.stop() }
+        let rig = try await Rig(); defer { rig.stop() }
         let p = try await rig.create(), operation = UUID()
         let refusal = rig.host.dir.appendingPathComponent("logical-projects/\(p.id)/prompt-error")
         try Data(reason.utf8).write(to: refusal)
