@@ -13,7 +13,7 @@
   `Shepherd --host --supervised` child, which `HostSupervisor` restarts on a crash and stops at
   Quit. Shepherd and Shepherd Nightly register the service (`BackgroundService`); Dev, or any
   launch with `SHEPHERD_SUPPORT_DIR` set, never registers and always runs its own child.
-- **`SHEPHERD_MCP_CONFIG`** moves the MCP servers file (Settings ▸ MCP servers) away from
+- **`SHEPHERD_MCP_CONFIG`** moves the MCP servers file (Settings ▸ Tools) away from
   `~/.config/mcp/mcp.json`. Test isolation points it at a scratch file; setting it in the Dev
   scheme keeps Dev's servers apart from the everyday app's.
 - **`SHEPHERD_THEME=shepherd-design-dark|shepherd-design-light`** forces an appearance at launch (the
@@ -34,7 +34,7 @@
     which runs the engine's node directly, falls back the same way).
   - With the matching extension on: `SHEPHERD_EXT_PANES` with `SHEPHERD_SKILL_DIR` (the built-in skill on working in
     Shepherd, which the app writes to the support directory's `shepherd-skill/`), `SHEPHERD_EXT_BROWSER` (the installed
-    `shepherd-browser.ts`, for Settings ▸ Pi ▸ Browser tools; never in a design's agent),
+    `shepherd-browser.ts`, for Settings ▸ Tools ▸ Browser; never in a design's agent),
     `SHEPHERD_COMPUTER_USE` and `SHEPHERD_COMPUTER_USE_HOME` (the driver in the bundled `Contents/Helpers/ShepherdComputerUse.app` and
     `<support>/computer-use`, for Settings ▸ Experiments ▸ Computer use; threads only, never an automation, a design's
     agent or a coordinator),
@@ -42,17 +42,17 @@
     `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`. The retired `SHEPHERD_CHILD_SCOPE` is
     ignored; profiles load only from `<PI_CODING_AGENT_DIR>/agents`. `SHEPHERD_CHILD_MODEL`,
     `SHEPHERD_CHILD_THINKING`, `SHEPHERD_CHILD_CONTEXT` and `SHEPHERD_CHILD_CONCURRENCY` retain
-    their Settings ▸ Pi defaults; `SHEPHERD_EXT_GOAL=1` loads the
+    their Settings ▸ Agents ▸ Native subagents settings; `SHEPHERD_EXT_GOAL=1` loads the
     conversation-goal controller after the child controller, even while the experiment is off
     so it can switch live. `SHEPHERD_GOALS_ENABLED` is explicitly `0` by default, `1` only while
     Settings > Experiments > Goals is on. The host's internal configure command updates running
     controllers without restarting pi; off pauses/cancels goal work without aborting tools.
     There is no checker model; the worker finishes a goal itself. `SHEPHERD_HOOKS_DIR` (every agent but a project
     coordinator) is `<support>/hooks`, where the hooks runtime reads `settings.json`.
-    For Settings ▸ Pi ▸ MCP servers, pi's own MCP
+    For Settings ▸ Tools ▸ MCP servers, pi's own MCP
     (`-e builtin:mcp`, no variable) and `SHEPHERD_MCP_SECRET_<SERVER>_<NAME>`, one per Keychain
     secret the derived `mcp.json` refers to, with `SHEPHERD_MCP_SECRETS` naming them (the launcher keeps them from the model's shell and the servers that don't name them), and `SHEPHERD_EXT_MCP_PROJECT=1` (the installed
-    `shepherd-mcp-project.ts`) while Settings ▸ MCP servers ▸ Also use a repo's .mcp.json is on.
+    `shepherd-mcp-project.ts`) while Settings ▸ Tools ▸ Also use a repo's .mcp.json is on.
   - For Settings ▸ Agents ▸ Context: `SHEPHERD_EXT_CONTEXT` (the installed `shepherd-context.ts`) while Trim old tool
     output is on, and `SHEPHERD_DEFER_TOOLS=1` while Defer rarely used tools is on, for a thread's and an automation's
     agent and never a design's (docs/context-budget.md). The extensions register the browser, other-thread,
@@ -70,17 +70,17 @@
     Design tool experiment is on. Their design tools require an explicit design ID on each call.
     `SHEPHERD_DESIGN_REFS` (`on`, or `granted` for a thread that already holds a design
     reference) loads design_get and design_note in a thread that draws no design, while Settings ▸
-    Experiments ▸ Design tool and Settings ▸ Pi ▸ Design references are on.
+    Experiments ▸ Design tool and Settings ▸ Tools ▸ Design references are on.
 - **`SHEPHERD_TEXT_GENERATION_MODELS`** (`provider/id,provider/id`; an entry without a slash
   matches any provider) overrides the cheap models the namer tries before the agent's own, and
-  its first entry is the model a commit-message draft runs on. Settings ▸ Agents ▸ Text
-  generation model sets it on each agent launch and outranks it for drafts; from the user's
+  its first entry is the model a commit-message draft runs on. Settings ▸ Models ▸ Titles and
+  commit messages sets it on each agent launch and outranks it for drafts; from the user's
   shell it applies while that setting is Automatic.
 - **`SHEPHERD_EXT_VISION`** (the installed `shepherd-vision.ts`, every agent) turns on image
   describing for a model whose catalog input kinds lack images: each image in what the model
   is sent is swapped for a description, and the design and browser tools keep their picture
   for it instead of stripping it. **`SHEPHERD_VISION_MODELS`** (same shape as
-  `SHEPHERD_TEXT_GENERATION_MODELS`) is the describer Settings ▸ Agents ▸ Image reading model
+  `SHEPHERD_TEXT_GENERATION_MODELS`) is the describer Settings ▸ Models ▸ Describe images for
   picked; unset is Automatic, the cheapest signed-in model that takes images.
 - **`SHEPHERD_PI_ENGINE`** (Debug builds only: `swift test` and the Dev scheme) names one
   executable that takes pi's arguments, which the launcher then starts instead of the engine the
