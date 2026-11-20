@@ -3,15 +3,15 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-/// One remote thread's page and the host ports it forwards, for a viewer
+/// One remote thread's tabs and the host ports they forward, for a viewer
 /// that holds them only while it can use them: the iOS client lets every port go when its connection
 /// to the host drops (which the app's going to the background does) and takes them again when it is
 /// back, so nothing listens on the device's loopback while the app can't serve it. A page holds at
-/// most `limit` ports, so its links can't have the device hold a listener for each.
+/// most `limit` distinct ports across its tabs.
 ///
 /// Use it from one thread (the iOS client's main actor).
 public final class BrowserPagePorts {
-    /// Ports one page may hold at once, as many as a host's agent may have the Mac's page hold.
+    /// Distinct ports one thread may hold at once.
     public static let limit = 8
 
     public let forwarder: BrowserPortForwarder
@@ -19,8 +19,11 @@ public final class BrowserPagePorts {
     public let agent: AgentID
     /// The connection's hub, filled while the host is connected.
     public let slot: BrowserTunnelHubSlot
-    /// The ports the page named and got, in the order it named them; taken again on `resume`.
-    public private(set) var ports: [Int] = []
+    public let firstTab = UUID()
+    private var claims = BrowserTabPortClaims()
+    private var closed = false
+    /// The ports the tabs named and got, in the order they named them; taken again on `resume`.
+    public var ports: [Int] { claims.ports }
     /// The ports are held now (between `resume` and `suspend`).
     public private(set) var isActive = false
     /// The ports `resume()` took again whose claim found a socket bound, for `finishResume()`.
@@ -36,18 +39,30 @@ public final class BrowserPagePorts {
         self.owner = owner
         self.agent = agent
         self.slot = slot
+        claims.open(firstTab)
+    }
+
+    public func openTab(_ id: UUID) {
+        if !closed { claims.open(id) }
+    }
+
+    public func closeTab(_ id: UUID) {
+        let released = claims.close(id)
+        pending.removeAll { released.contains($0) }
+        if !released.isEmpty { forwarder.release(owner, ports: released) }
     }
 
     /// Forwards the port `url` names on the host, when it names one there (a `localhost`,
     /// `127.0.0.1` or `[::1]` URL; any other is on the web and needs none). Nil when it is forwarded
     /// or needs no forward; else why not, and the page must not load it: while suspended nothing
     /// listens, and the device's own program on that port would answer in the host's place.
-    public func forward(_ url: URL) -> BrowserPortForwarder.Refusal? {
+    public func forward(_ url: URL, tab: UUID? = nil) -> BrowserPortForwarder.Refusal? {
         guard let port = BrowserTunnelTarget.port(of: url) else { return nil }
-        guard isActive else { return .failed(port: port, errno: ENOTCONN) }
+        let id = tab ?? firstTab
+        guard isActive, claims.contains(id) else { return .failed(port: port, errno: ENOTCONN) }
         if !ports.contains(port), ports.count >= Self.limit { return .tooMany(port: port, limit: Self.limit) }
         if let refusal = forwarder.claim(port: port, hostPort: hostPorts[port], owner: owner, slot: slot, agent: agent) { return refusal }
-        if !ports.contains(port) { ports.append(port) }
+        claims.record(port, tab: id)
         return nil
     }
 
@@ -57,6 +72,8 @@ public final class BrowserPagePorts {
     /// it stays remembered, and `finishResume()` decides it once the close has landed.
     @discardableResult
     public func resume() -> [BrowserPortForwarder.Refusal] {
+        guard !closed else { return [] }
+        generation += 1
         isActive = true
         pending = []
         var refused: [BrowserPortForwarder.Refusal] = []
@@ -67,7 +84,7 @@ public final class BrowserPagePorts {
             case let refusal?: refused.append(refusal)
             }
         }
-        ports.removeAll { port in refused.contains { $0.port == port } }
+        for refusal in refused { claims.forget(refusal.port) }
         return refused
     }
 
@@ -80,10 +97,12 @@ public final class BrowserPagePorts {
         var refused: [BrowserPortForwarder.Refusal] = []
         for port in pending {
             await forwarder.waitForClose(of: port)
-            guard isActive, generation == mine, ports.contains(port) else { return [] }
+            guard isActive, generation == mine, !Task.isCancelled else { return [] }
+            // A tab can close while this retry waits. Keep going for the remaining tabs.
+            guard pending.contains(port) else { continue }
             if let refusal = forwarder.claim(port: port, hostPort: hostPorts[port], owner: owner, slot: slot, agent: agent) {
                 refused.append(refusal)
-                ports.removeAll { $0 == port }
+                claims.forget(port)
             }
         }
         pending = []
@@ -99,9 +118,39 @@ public final class BrowserPagePorts {
         forwarder.release(owner)
     }
 
-    /// The page is gone: nothing is held or remembered.
+    /// The thread's browser is gone: nothing is held or remembered.
     public func close() {
+        closed = true
         suspend()
-        ports.removeAll()
+        claims = BrowserTabPortClaims()
+    }
+}
+
+/// A listener is shared by a thread's tabs. Only the last tab that used a port can release it.
+struct BrowserTabPortClaims {
+    private var byTab: [UUID: Set<Int>] = [:]
+    private(set) var ports: [Int] = []
+
+    func contains(_ tab: UUID) -> Bool { byTab[tab] != nil }
+    mutating func open(_ tab: UUID) {
+        if !contains(tab) { byTab[tab] = [] }
+    }
+
+    mutating func record(_ port: Int, tab: UUID) {
+        guard contains(tab) else { return }
+        byTab[tab]?.insert(port)
+        if !ports.contains(port) { ports.append(port) }
+    }
+
+    mutating func forget(_ port: Int) {
+        for tab in byTab.keys { byTab[tab]?.remove(port) }
+        ports.removeAll { $0 == port }
+    }
+
+    mutating func close(_ tab: UUID) -> Set<Int> {
+        guard let mine = byTab.removeValue(forKey: tab) else { return [] }
+        let released = mine.filter { port in !byTab.values.contains { $0.contains(port) } }
+        ports.removeAll { released.contains($0) }
+        return released
     }
 }

@@ -670,7 +670,9 @@
     {
       "fields": {
         "connection.after": "state",
-        "files.events": [],
+        "files.events": [
+          "/host-preferences.json changed"
+        ],
         "process.started": false,
         "reply.id": 4,
         "reply.settings.bundledExtensions[0].id": "panes",
@@ -751,7 +753,9 @@
     {
       "fields": {
         "connection.after": "state",
-        "files.events": [],
+        "files.events": [
+          "/host-preferences.json changed"
+        ],
         "process.started": false,
         "reply.id": 6,
         "reply.settings.bundledExtensions[0].id": "panes",
@@ -2154,7 +2158,9 @@
     {
       "fields": {
         "connection.after": "state",
-        "files.events": [],
+        "files.events": [
+          "/host-preferences.json changed"
+        ],
         "process.started": false,
         "reply.id": 22,
         "reply.settings.bundledExtensions[0].id": "panes",
@@ -2313,7 +2319,9 @@
     {
       "fields": {
         "connection.after": "state",
-        "files.events": [],
+        "files.events": [
+          "/host-preferences.json changed"
+        ],
         "process.started": false,
         "reply.id": 24,
         "reply.settings.bundledExtensions[0].id": "panes",
