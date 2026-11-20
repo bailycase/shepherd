@@ -479,7 +479,8 @@ public final class NativeThreadStore {
     /// Sends waiting for pi to start: resumed with true once the thread is ready, false when it
     /// stops or fails first. Nothing has been dispatched for them yet.
     @ObservationIgnored private var startWaiters: [CheckedContinuation<Bool, Never>] = []
-    @ObservationIgnored private var settleTask: Task<Void, Never>?
+    @ObservationIgnored var settlePause: Pause = { try await Task.sleep(for: $0) }
+    @ObservationIgnored private(set) var settleTask: Task<Void, Never>?
     @ObservationIgnored private var epoch = UUID()
     @ObservationIgnored private var connection: AnyHashable?
     /// Which view's loop is running (`run(owner:)`), nil for a caller that names none.
@@ -1970,8 +1971,8 @@ public final class NativeThreadStore {
         } else if catchingUp {
             if settledRunning { settledRunning = false }
         } else if settledRunning {
-            settleTask = Task { [weak self] in
-                try? await Task.sleep(for: .milliseconds(400))
+            settleTask = Task { [weak self, settlePause] in
+                try? await settlePause(.milliseconds(400))
                 guard !Task.isCancelled, let self, self.snapshot?.running != true else { return }
                 self.settledRunning = false
                 self.derive()
