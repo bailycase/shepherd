@@ -55,6 +55,9 @@ final class MenuState {
     private(set) var hasMachineAgents = false
     private(set) var hasNextNeedingYou = false
     private(set) var workingThreadCount = 0
+    /// The Agent menu's Stop All Working Threads item.
+    var stopAllTitle: String { StopAllWorking.menuTitle(count: workingThreadCount) }
+    var canStopAll: Bool { workingThreadCount > 0 }
     private(set) var reviewQueueCount = 0
     private(set) var canCloseTerminal = false
     private(set) var selectedLocalAgent: AgentID?
@@ -361,8 +364,8 @@ struct AgentCommands: Commands {
                 Button("Stop") { later { vm?.stopVisibleAgent() } }
                     .keyboardShortcut(keys.shortcut(.stopAgent))
                     .disabled(!menu.hasVisibleThread)
-                Button(StopAllWorking.menuTitle(count: menu.workingThreadCount)) { later { vm?.requestStopAll() } }
-                    .disabled(menu.workingThreadCount == 0)
+                Button(menu.stopAllTitle) { later { vm?.requestStopAll() } }
+                    .disabled(!menu.canStopAll)
                 Button("Choose Model…") { later { vm?.sendThreadCommand(.modelPicker) } }
                     .keyboardShortcut(keys.shortcut(.modelPicker))
                     .disabled(!menu.hasVisibleThread)

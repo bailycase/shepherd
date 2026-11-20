@@ -69,6 +69,8 @@ struct StopAllWorkingTests {
         var refused: [String: String] = [:]
         var actions: [String: [String]] = [:]
         var asking: Set<String> = []
+        /// Threads whose question the host dropped for size, leaving only `clips.questions`.
+        var clippedQuestion: Set<String> = []
         var aborted: [(agent: String, session: String, generation: String)] = []
 
         init(running: [String: Bool]) { self.running = running }
@@ -82,7 +84,8 @@ struct StopAllWorkingTests {
                     piSessionID: "session-\(id)", generation: "g-\(id)", revision: 1, running: running,
                     supportedActions: actions[id] ?? ["send", "abort"], dialogsSupported: true,
                     dialogs: asking.contains(id) ? [NativeThreadDialog(id: "q-\(id)", kind: .confirm, title: "Proceed?")] : [],
-                    messages: [], provisional: [], clipped: false))
+                    messages: [], provisional: [], clipped: clippedQuestion.contains(id),
+                    clips: clippedQuestion.contains(id) ? NativeThreadClips(questions: 1) : nil))
             case .abort(let session, let generation, let operationID):
                 if let message = refused[id] { return .failure(code: "refused", message: message) }
                 aborted.append((id, session, generation))
@@ -122,6 +125,15 @@ struct StopAllWorkingTests {
         #expect(outcome.message == "thread a: waiting for you, not stopped")
         let only = await StopAllWorking.run([Self.target("a")]) { try host.answer($0, $1) }
         #expect(only.title == "Nothing was stopped")
+    }
+
+    @Test func aQuestionTheHostClippedOutOfTheSnapshotStillCountsAsWaiting() async {
+        let host = FakeHost(running: ["a": true, "b": true])
+        host.clippedQuestion = ["a"]
+        let outcome = await StopAllWorking.run([Self.target("a"), Self.target("b")]) { try host.answer($0, $1) }
+        #expect(host.aborted.map(\.agent) == ["b"], "no abort is sent to the thread with a clipped question")
+        #expect(outcome.stopped == 1 && outcome.waiting == ["thread a"] && outcome.failures.isEmpty)
+        #expect(outcome.message == "thread a: waiting for you, not stopped")
     }
 
     @Test func failuresNameTheThreadAndTheReasonAndDoNotStopTheRest() async {

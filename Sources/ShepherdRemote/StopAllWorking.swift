@@ -138,7 +138,8 @@ public enum StopAllWorking {
         if case .failure(_, let message) = result { return .failed(message) }
         guard case .snapshot(let snapshot) = result else { return .failed("The thread didn’t answer. Refresh it and try again.") }
         guard snapshot.running else { return .alreadyStopped }
-        guard snapshot.dialogs.isEmpty else { return .waiting }
+        // A host that clips for size may drop the dialogs and only count them in `clips.questions`.
+        guard snapshot.dialogs.isEmpty, (snapshot.clips?.questions ?? 0) == 0 else { return .waiting }
         guard snapshot.supportedActions.contains("abort") else { return .failed("It can’t be stopped right now.") }
         let operation = UUID()
         switch try await request(target, .abort(expectedSessionID: snapshot.piSessionID, generation: snapshot.generation, operationID: operation)) {

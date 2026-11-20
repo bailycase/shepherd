@@ -38,6 +38,9 @@ struct StopAllWorkingAppTests {
             return false
         }
         #expect(vm.workingThreads.map(\.agent) == [busy.agent.id, finished.agent.id])
+        let menu = MenuState()
+        menu.apply(MenuState.Snapshot(vm))
+        #expect(menu.stopAllTitle == "Stop All Working Threads (2)…" && menu.canStopAll, "the Agent menu's item counts them")
 
         vm.requestStopAll()
         let asked = try #require(vm.stopAllConfirm)
