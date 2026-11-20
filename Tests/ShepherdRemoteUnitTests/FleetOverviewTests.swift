@@ -123,3 +123,26 @@ struct FleetOverviewTests {
         #expect(model.recents.map(\.failed) == [failed])
     }
 }
+
+@Suite("Fleet spend today")
+struct FleetSpendTodayTests {
+    @Test func homeAddsEveryHostsThreadsForToday() {
+        let now = Date(timeIntervalSince1970: 1_778_500_000)
+        let day = SpendDay.key(now)
+        var one = FleetTests.agent("one", .working)
+        one.spend = AgentSpend(tokens: 5_000, cost: 2, day: day, today: [ModelSpend(model: "a/one", tokens: 1_000, cost: 0.5)])
+        var two = FleetTests.agent("two", .done)
+        two.spend = AgentSpend(tokens: 9, cost: nil, day: day, today: [ModelSpend(model: "a/one", tokens: 2_000, cost: nil)])
+        var stale = FleetTests.agent("stale", .idle)
+        stale.spend = AgentSpend(tokens: 9, cost: 9, day: "2001-01-01", today: [ModelSpend(model: "a/one", tokens: 7_000, cost: 7)])
+        let other = UUID()
+        let model = FleetModel(hosts: [
+            FleetTests.host(FleetTests.studio, "Studio", agents: [one, stale]),
+            FleetTests.host(other, "Mini", agents: [two, FleetTests.agent("none", .idle)]),
+        ], digests: [:], now: now)
+        #expect(model.spendToday.tokens == 3_000)
+        #expect(model.spendToday.cost == 0.5)
+        #expect(model.spendToday.models.map(\.model) == ["a/one"])
+        #expect(FleetModel(hosts: [], digests: [:], now: now).spendToday.isEmpty)
+    }
+}

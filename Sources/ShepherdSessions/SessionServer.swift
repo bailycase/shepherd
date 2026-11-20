@@ -7056,6 +7056,20 @@ public final class SessionServer: @unchecked Sendable {
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
     }
 
+    /// Server queue: pi reported a thread's session totals. Keeps the agent's spend (`AgentSpend`) and, when it moved, broadcasts it
+    /// like a status: live state, written along with the next change. The model is the one the thread runs, which the growth is for.
+    func recordSpend(agentID: AgentID, stats: NativeThreadStats, model: String?, now: Date = Date()) {
+        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }) else { return }
+        let agent = store.state.agents[index]
+        let next = AgentSpend.updated(agent.spend, tokens: stats.totalTokens, cost: stats.cost, model: model ?? agent.model,
+                                      day: SpendDay.key(now))
+        guard next != agent.spend else { return }
+        store.updateLive { $0.agents[index].spend = next }
+        let committedState = store.state
+        scheduleRemoteState()
+        hopToMain { [weak self] in self?.onStateChanged?(committedState) }
+    }
+
     /// Server queue: a done agent's last child settled. The sidebar showed it working while they
     /// ran, so their end is a completion of its own (`Agent.completedAt`), unseen on every device.
     private func noteChildrenSettled(_ agentID: AgentID) {
@@ -9659,6 +9673,10 @@ public final class SessionServer: @unchecked Sendable {
                         server?.onNotify?(agentID, goal.state == .met ? "Goal met" : "Goal needs you", goal.notificationLabel)
                     }
                 }
+            }
+            thread.onStatsChanged = { [weak serverWeak, weak thread] stats in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                server.recordSpend(agentID: agentID, stats: stats, model: thread?.model)
             }
             thread.onRecoveryChanged = { [weak serverWeak, weak thread] in
                 guard let server = serverWeak, let thread, server.isStarted else { return true }

@@ -424,6 +424,8 @@ public struct FleetModel: Equatable, Sendable {
     /// A triggered automation's run threads (`Agent.automationOrigin`, its automation still on the host), by the
     /// automation that started them: the sidebar folds each automation's under one row (`FleetSidebarState.groups`).
     public var runOrigins: [FleetRef: AutomationID] = [:]
+    /// What every host's threads spent today (`SpendRollup.today`), for Home's header.
+    public var spendToday = SpendRollup.empty
 
     public init() {}
 
@@ -450,8 +452,9 @@ public struct FleetModel: Equatable, Sendable {
         offlineCount == 0 ? nil : "\(offlineCount) host\(offlineCount == 1 ? "" : "s") offline"
     }
 
-    public init(hosts: [FleetHost], digests: [FleetRef: FleetDigest]) {
+    public init(hosts: [FleetHost], digests: [FleetRef: FleetDigest], now: Date = Date()) {
         tagsHosts = hosts.count > 1
+        spendToday = SpendRollup.today(hosts.flatMap { $0.state.agents.compactMap(\.spend) }, day: SpendDay.key(now))
         var recents: [(row: FleetThreadRow, order: Int, key: Double)] = []
         var order = 0
         for host in hosts {

@@ -131,6 +131,18 @@ struct SidebarActivityTests {
         #expect(lists.done.first?.accessory == .age(since: Date(timeIntervalSince1970: 1)))
     }
 
+    @Test func aThreadWithSpendSaysItOnItsSecondLineAndOneWithoutSaysNothing() {
+        var agent = Fixture.agent("acme-web", in: Fixture.space("workspace")).agent
+        func row() -> SidebarListRow { SidebarDerivation.localRow(agent, automation: nil, run: nil, needsYou: false, failed: false, since: nil) }
+        #expect(row().subtitle == nil)
+        agent.spend = AgentSpend(tokens: 3_100_000, cost: 4.2, day: "2026-05-11")
+        #expect(row().subtitle?.text == "est. $4.20 · 3.1M tok")
+        agent.spend = AgentSpend(tokens: 3_100_000, cost: nil, day: "2026-05-11")
+        #expect(row().subtitle?.text == "3.1M tok", "a provider with no cost shows tokens alone")
+        agent.spend = AgentSpend(tokens: 0, cost: nil, day: "2026-05-11")
+        #expect(row().subtitle == nil, "nothing spent is nothing to say")
+    }
+
     @Test(arguments: [
         ("running", nil, true), ("pending", nil, true), ("needsReply", nil, true),
         ("future-state", nil, true), ("running", true, false),

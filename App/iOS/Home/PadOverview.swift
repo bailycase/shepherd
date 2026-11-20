@@ -25,7 +25,8 @@ struct PadOverview: View {
                 .frame(maxHeight: .infinity)
             } else {
                 ScrollView {
-                    Group {
+                    VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
+                        SpendToday(spend: model.spendToday)
                         // Side by side when three columns fit; stacked in a narrow window or at large text.
                         if !typeSize.isAccessibilitySize, width >= MobileLayout.overviewColumnMinWidth * 3 + MobileLayout.blockSpacing * 2 + MobileLayout.gutter * 2 {
                             HStack(alignment: .top, spacing: MobileLayout.blockSpacing) {
