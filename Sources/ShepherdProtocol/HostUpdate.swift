@@ -58,12 +58,13 @@ public struct HostUpdateStatus: Codable, Hashable, Sendable {
     /// phase stays `available`, so an older client reads an offer it can't install yet.
     public var waitingForIdle: Bool
     /// The host sent the updater an install (asked for now, or held for idle threads) and the updater took it: an app that quits now is installing,
-    /// not closed by its person. Reset by the next request that isn't a status, and lost when the host restarts.
-    public var installHandedOff: Bool
+    /// not closed by its person. Reset by the next request that isn't a status, and lost when the host restarts. Nil from a host that
+    /// predates the field: unknown, which is not the same as "no".
+    public var installHandedOff: Bool?
 
     public init(version: String, build: String, channel: String, phase: Phase,
                 offerID: UUID? = nil, offeredVersion: String? = nil, error: String? = nil, canInstall: Bool = false,
-                busyThreads: Int? = nil, waitingForIdle: Bool = false, installHandedOff: Bool = false) {
+                busyThreads: Int? = nil, waitingForIdle: Bool = false, installHandedOff: Bool? = nil) {
         self.version = version; self.build = build; self.channel = channel; self.phase = phase
         self.offerID = offerID; self.offeredVersion = offeredVersion; self.error = error; self.canInstall = canInstall
         self.busyThreads = busyThreads; self.waitingForIdle = waitingForIdle; self.installHandedOff = installHandedOff
@@ -85,7 +86,7 @@ public struct HostUpdateStatus: Codable, Hashable, Sendable {
         canInstall = try c.decode(Bool.self, forKey: .canInstall)
         busyThreads = try c.decodeIfPresent(Int.self, forKey: .busyThreads)
         waitingForIdle = try c.decodeIfPresent(Bool.self, forKey: .waitingForIdle) ?? false
-        installHandedOff = try c.decodeIfPresent(Bool.self, forKey: .installHandedOff) ?? false
+        installHandedOff = try c.decodeIfPresent(Bool.self, forKey: .installHandedOff)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -100,6 +101,6 @@ public struct HostUpdateStatus: Codable, Hashable, Sendable {
         try c.encode(canInstall, forKey: .canInstall)
         try c.encodeIfPresent(busyThreads, forKey: .busyThreads)
         if waitingForIdle { try c.encode(true, forKey: .waitingForIdle) }
-        if installHandedOff { try c.encode(true, forKey: .installHandedOff) }
+        try c.encodeIfPresent(installHandedOff, forKey: .installHandedOff)
     }
 }

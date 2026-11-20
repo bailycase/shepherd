@@ -229,9 +229,11 @@ final class FleetUpdates: @unchecked Sendable {
         switch status.phase {
         case .unsupported:
             let message = status.error == SessionServer.hostUpdateWindowClosed ? "Open Shepherd on \(who) to update it." : (status.error ?? "\(who) can't update itself.")
-            if progress.waitingForThreads, !status.installHandedOff {
-                // The host sent no install to the updater (it holds it for threads that work, or its wait is gone): the app that held the offer
-                // was closed, not installing. Let the wait go.
+            // Seen handed over: the wait is over for good, so a host that restarts after this (and forgets) can't turn it into a closed app.
+            if status.installHandedOff == true { progress.waitingForThreads = false }
+            if progress.waitingForThreads, status.installHandedOff == false {
+                // The host says it sent no install to the updater (it holds it for threads that work, or its wait is gone): the app that held the
+                // offer was closed, not installing. Let the wait go. A host that says nothing (an older one) isn't asked: the build is looked at.
                 _ = try? await send(.cancel)
                 await end(job, .needsApp, message)
                 return true

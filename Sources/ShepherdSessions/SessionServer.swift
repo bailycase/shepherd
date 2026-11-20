@@ -512,6 +512,8 @@ public final class SessionServer: @unchecked Sendable {
     /// The updater took the last install this host sent it (it answered downloading or installing): from there the app quits and relaunches, which is
     /// no sign that a person closed it (`HostUpdateStatus.installHandedOff`). Memory only. Server queue.
     private var installHandedOff = false
+    /// Tests: answer as a host from before `installHandedOff` did, which says nothing of it.
+    var omitsInstallHandoff = false
     /// Server queue: an install waits for the threads to settle.
     var isWaitingForIdleInstall: Bool { idleInstall != nil }
     /// How often the host looks at its threads while an install waits for them, and the longest it waits.
@@ -566,7 +568,7 @@ public final class SessionServer: @unchecked Sendable {
                 if case .install = forwarded, status.phase == .downloading || status.phase == .installing { self.installHandedOff = true }
                 status.busyThreads = self.busyThreadCount
                 status.waitingForIdle = self.idleInstall != nil && status.phase == .available
-                status.installHandedOff = self.installHandedOff
+                status.installHandedOff = self.omitsInstallHandoff ? nil : self.installHandedOff
                 reply(status)
             }
         }

@@ -11,8 +11,9 @@ struct FleetUpdateWireTests {
         // What a Mac from before waiting sent, and what it leaves out when nothing waits.
         let old = #"{"version":"0.9.0","build":"671","channel":"nightly","phase":"available","canInstall":true}"#
         let decoded = try JSONDecoder().decode(HostUpdateStatus.self, from: Data(old.utf8))
-        #expect(decoded.busyThreads == nil && !decoded.waitingForIdle && !decoded.installHandedOff && decoded.canInstall)
+        #expect(decoded.busyThreads == nil && !decoded.waitingForIdle && decoded.installHandedOff == nil && decoded.canInstall)
         let idle = String(decoding: try JSONEncoder().encode(HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .idle)), as: UTF8.self)
+        #expect(try JSONDecoder().decode(HostUpdateStatus.self, from: JSONEncoder().encode(HostUpdateStatus(version: "1", build: "2", channel: "n", phase: .idle, installHandedOff: false))).installHandedOff == false)
         #expect(!idle.contains("waitingForIdle") && !idle.contains("busyThreads") && !idle.contains("installHandedOff"))
     }
 

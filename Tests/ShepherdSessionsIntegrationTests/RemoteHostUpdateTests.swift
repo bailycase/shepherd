@@ -26,9 +26,9 @@ struct RemoteHostUpdateTests {
     @Test func requestsAreCorrelatedAndStatusSurvivesAClientReconnect() async throws {
         let host = try RemoteHost()
         defer { host.stop() }
-        // The host adds how many threads work on it to every answer.
+        // The host adds how many threads work on it, and whether it handed over an install, to every answer.
         let expected = HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .available,
-                                        offerID: UUID(), offeredVersion: "3", canInstall: true, busyThreads: 0)
+                                        offerID: UUID(), offeredVersion: "3", canInstall: true, busyThreads: 0, installHandedOff: false)
         host.server.onRemoteHostUpdate = { _, _, completion in completion(expected) }
         let client = try await host.typed()
         #expect(try await client.hostUpdate(.check) == expected)
