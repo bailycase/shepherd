@@ -83,9 +83,7 @@ final class ThreadTailGuard {
     var rebuild: () -> Void = {}
     var scrollView: () -> NSScrollView? = { nil }
     private var check: Task<Void, Never>?
-    /// No check running or settling: what a fixed sleep after an event would wait for.
-    /// Tests wait on this with `eventually` instead of sleeping. A pending `rest` is not
-    /// idleness: `turnFinished`, `asked` and `readerMoved` cancel it before reconfiguring.
+    /// No check pending or settling. This does not count the delayed retry after attempts run out.
     var isIdle: Bool { check == nil && !settling }
     /// Out of attempts: waiting `rest` before one more.
     private var resting: Task<Void, Never>?

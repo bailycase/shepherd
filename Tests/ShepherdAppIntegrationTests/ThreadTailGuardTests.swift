@@ -334,8 +334,10 @@ struct ThreadTailGuardTests {
             // Negative assertion: nothing may land while the reader's hands are on the view.
             // No event proves an absence, so this keeps a bounded wait inside the hands window.
             try await Task.sleep(for: .milliseconds(300))
+        } else {
+            // The rig scheduled a check before it was hidden. Let that check run.
+            try await eventuallyOnMain("the hidden guard's pending check to finish") { rig.guardian.isIdle }
         }
-        // (hidden: an inactive guard schedules nothing, so the assertion below is already deterministic.)
         #expect(rig.landings == 0)
         #expect(!rig.guardian.repairing)
     }

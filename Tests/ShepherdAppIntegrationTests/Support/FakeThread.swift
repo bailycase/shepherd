@@ -157,21 +157,15 @@ final class FakeThread {
     /// layout stays mounted, its thread stops being active, and its motion pauses. Returns
     /// once the thread has settled: shown again, its first pull since has landed.
     func show(_ shown: Bool) async throws {
-        let requests = snapshotRequests
         visibility.active = shown
         visibility.motionPaused = !shown
         ListPerf.settle(window)
         if shown {
-            try await eventuallyOnMain("the thread's first pull since it was shown") { self.snapshotRequests > requests }
+            try await eventuallyOnMain("the thread to catch up after being shown") { self.store.catchUp != nil }
+        } else {
+            try await eventuallyOnMain("the hidden thread to stop polling") { !self.store.isLive }
         }
-        // Let the pull land and whatever it sets off run: quiet polls, not a fixed sleep.
-        var last = snapshotRequests, steady = 0
-        try await eventuallyOnMain("the shown thread to settle") {
-            ListPerf.settle(window)
-            steady = snapshotRequests == last ? steady + 1 : 0
-            last = snapshotRequests
-            return steady >= 5
-        }
+        ListPerf.settle(window)
     }
 
     /// The thread's scroll view.

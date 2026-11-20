@@ -2506,16 +2506,10 @@ private static func chipsAndLinks() async throws {
         try await eventuallyOnMain("the page mounts the reserved coordinator's thread") {
             window.layout(); return r.vm.logicalProjects.project(r.ref)?.coordinatorAgentID == reserved
         }
-        // The page's own loop pulls while the creation is held: wait for it to be polling,
-        // then hold error-free across its pulls instead of a fixed sleep.
         let store = r.vm.threadStores.store(for: reserved)
-        try await eventuallyOnMain("the page's thread to poll while the creation is held") { store.isLive }
-        var steady = 0
-        try await eventuallyOnMain("the held creation to stay error-free") {
-            window.layout()
-            steady = store.loadError == nil ? steady + 1 : 0
-            return steady >= 50
-        }
+        try await eventuallyOnMain("the page's thread to receive the starting response") { store.starting }
+        // Keep creation held across the original two-second window so later polls can expose a spurious error.
+        try await Task.sleep(for: .seconds(2))
         window.layout()
         #expect(store.loadError == nil, "no error while the creation is held: \(store.loadError ?? "-")")
         #expect(!window.elements().contains { $0.label?.contains("Lost connection") == true || $0.label?.contains("no longer exists") == true },

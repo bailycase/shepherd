@@ -92,8 +92,8 @@ struct ThreadCompletionMatrixTests {
             host.provisional = live
             host.bump()
             await deck.store.refresh()
-            // Streaming cadence between chunks, via the suite's frame pump (lays out each frame).
-            try await deck.pass(.milliseconds(40))
+            // Pace the streamed chunks without forcing a layout between them.
+            try await Task.sleep(for: .milliseconds(40))
         }
         if boundary == .hidden { deck.hide() }
         if boundary == .readerAbove || boundary == .scrolledReplyCollapses {
@@ -102,10 +102,13 @@ struct ThreadCompletionMatrixTests {
             if boundary == .scrolledReplyCollapses,
                let scroll = deck.scrollView, let document = scroll.documentView {
                 deck.tailGuard.readerMoved()
+                let beforeScroll = deck.tailGuard.readAt
                 scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, document.frame.height - 4000)))
                 scroll.reflectScrolledClipView(scroll.contentView)
-                try await eventuallyOnMain("the manual scroll to leave the tail") {
-                    (deck.reading?.distance ?? 0) > NativeScrollFollower.threshold
+                try await eventuallyOnMain("SwiftUI to report the manual scroll above the tail") {
+                    guard let distance = deck.reading?.distance else { return false }
+                    return deck.tailGuard.readAt > beforeScroll && deck.tailGuard.distance > NativeScrollFollower.threshold
+                        && abs(deck.tailGuard.distance - distance) <= NativeScrollFollower.repinSlack
                 }
             }
         }
@@ -131,8 +134,8 @@ struct ThreadCompletionMatrixTests {
             host.provisional = []
             host.bump()
             await deck.store.refresh()
-            // Let the emptied provisional flush through layout before capturing its geometry.
-            try await deck.pass(.milliseconds(80))
+            // Leave a gap with no provisional rows before the saved history arrives.
+            try await Task.sleep(for: .milliseconds(80))
         }
         capturePhase("before-replacement")
         host.provisional = []
@@ -146,35 +149,52 @@ struct ThreadCompletionMatrixTests {
         await deck.store.refresh()
         capturePhase("after-refresh")
         if boundary == .hidden { deck.show() }
-        // Bounded recovery interval: the guard gets its walk, then the thread must draw.
-        // Sustained quiet on the guard (not a fixed sleep), then one layout for the capture.
-        // No forced layout in between, so a stranded thread is still stranded here.
-        var quiet = 0
-        try await eventuallyOnMain("tail recovery to finish", timeout: .seconds(15), poll: .milliseconds(30)) {
-            quiet = deck.tailGuard.repairing ? 0 : quiet + 1
-            return quiet >= 8
-        }
-        deck.layout()
-        let image = try ThreadWindowCapture.image(deck.window.window)
-        capturePhase("final-image")
-        let scroll = try #require(deck.scrollView)
-        let viewport = scroll.convert(scroll.bounds, to: nil)
-        let scale = CGFloat(image.height) / deck.window.window.frame.height
-        let region = CGRect(x: (viewport.midX - min(viewport.width, 700) / 2) * scale,
-                            y: (deck.window.window.frame.height - viewport.maxY) * scale,
-                            width: min(viewport.width, 700) * scale,
-                            height: max(1, viewport.height - (deck.reading?.insetBottom ?? 0) - 24) * scale)
-        let pixels = try #require(image.cropping(to: region))
-        let bitmap = NSBitmapImageRep(cgImage: pixels)
-        let data = try #require(bitmap.bitmapData)
-        let reference = (Int(data[0]), Int(data[1]), Int(data[2]))
-        var ink = 0
-        for y in 0..<bitmap.pixelsHigh {
-            for x in 0..<bitmap.pixelsWide {
-                let i = y * bitmap.bytesPerRow + x * bitmap.samplesPerPixel
-                if abs(Int(data[i]) - reference.0) + abs(Int(data[i + 1]) - reference.1) + abs(Int(data[i + 2]) - reference.2) > 36 { ink += 1 }
+        // Wait for the view to see the replacement rows and stay idle before sampling the compositor.
+        // A momentary idle reading before SwiftUI updates does not mean recovery is over.
+        let completedRows = Set(deck.store.listRows.map(\.id))
+        func sample() throws -> (image: CGImage, viewport: CGRect, scale: CGFloat, region: CGRect, ink: Int) {
+            let image = try ThreadWindowCapture.image(deck.window.window)
+            let scroll = try #require(deck.scrollView)
+            let viewport = scroll.convert(scroll.bounds, to: nil)
+            let scale = CGFloat(image.height) / deck.window.window.frame.height
+            let region = CGRect(x: (viewport.midX - min(viewport.width, 700) / 2) * scale,
+                                y: (deck.window.window.frame.height - viewport.maxY) * scale,
+                                width: min(viewport.width, 700) * scale,
+                                height: max(1, viewport.height - (deck.reading?.insetBottom ?? 0) - 24) * scale)
+            let pixels = try #require(image.cropping(to: region))
+            let bitmap = NSBitmapImageRep(cgImage: pixels)
+            let data = try #require(bitmap.bitmapData)
+            let reference = (Int(data[0]), Int(data[1]), Int(data[2]))
+            var ink = 0
+            for y in 0..<bitmap.pixelsHigh {
+                for x in 0..<bitmap.pixelsWide {
+                    let i = y * bitmap.bytesPerRow + x * bitmap.samplesPerPixel
+                    if abs(Int(data[i]) - reference.0) + abs(Int(data[i + 1]) - reference.1) + abs(Int(data[i + 2]) - reference.2) > 36 { ink += 1 }
+                }
             }
+            return (image, viewport, scale, region, ink)
         }
+        var idleSince: ContinuousClock.Instant?
+        var lastSample: (image: CGImage, viewport: CGRect, scale: CGFloat, region: CGRect, ink: Int)?
+        var painted = false
+        do {
+            try await eventuallyOnMain("the completed transcript to paint", timeout: .seconds(15), poll: .milliseconds(100)) {
+                guard deck.tailGuard.rowIDs == completedRows, deck.tailGuard.isIdle else {
+                    idleSince = nil
+                    return false
+                }
+                let now = ContinuousClock.now
+                let since = idleSince ?? now
+                idleSince = since
+                guard now - since >= .milliseconds(250) else { return false }
+                let frame = try sample()
+                lastSample = frame
+                painted = frame.ink > 120
+                return painted
+            }
+        } catch is WaitTimeout { }
+        let (image, viewport, scale, region, ink) = try lastSample ?? sample()
+        capturePhase("final-image")
         let state = deck.reading
         let prefix = "\(boundary.rawValue)-\(native ? "anchored" : "scrolling")"
         let guardState = "rowsInView=\(deck.tailGuard.rowsInView), attempts=\(deck.tailGuard.attempts), repairing=\(deck.tailGuard.repairing), rowIDs=\(deck.tailGuard.rowIDs.count)"
@@ -192,7 +212,7 @@ struct ThreadCompletionMatrixTests {
             print("COLLAPSE EVIDENCE: \(path.path).{png,json,trace.txt}")
         }
 
-        guard !deck.store.rows.isEmpty, ink > 120 else {
+        guard !deck.store.rows.isEmpty, painted else {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("shepherd-completion-matrix")
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])).write(to: directory.appendingPathComponent(prefix + ".png"))

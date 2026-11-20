@@ -42,8 +42,8 @@ struct ThreadCompletionReproductionTests {
                 host.subagents = workers
                 host.bump()
                 await deck.store.refresh()
-                // Streaming cadence between chunks, via the suite's frame pump (lays out each frame).
-                try await deck.pass(.milliseconds(18))
+                // Pace the streamed chunks without forcing SwiftUI to lay out between them.
+                try await Task.sleep(for: .milliseconds(18))
             }
             for index in workers.indices {
                 workers[index].state = "complete"
@@ -59,8 +59,8 @@ struct ThreadCompletionReproductionTests {
                 host.provisional = live
                 host.bump()
                 await deck.store.refresh()
-                // Streaming cadence between chunks, via the suite's frame pump (lays out each frame).
-                try await deck.pass(.milliseconds(18))
+                // Give the worker completion its own streaming beat before the parent finishes.
+                try await Task.sleep(for: .milliseconds(18))
             }
             host.running = false
             host.provisional = []
@@ -216,13 +216,30 @@ struct ThreadCompletionReproductionTests {
         defer { deck.close() }
         deck.model.tray = true
         try await eventuallyOnMain("history loaded") { deck.store.ready && !deck.store.rows.isEmpty }
-        try await deck.expectTail("giant history to paint")
+        var lastImage: CGImage?
+        var text: [String] = []
+        func historyIsVisible() -> Bool {
+            text.contains { $0.contains("Paragraph") || $0.contains("value") || $0.contains("Key point") }
+        }
+        do {
+            // A ready store doesn't prove that the window has painted its history.
+            try await eventuallyOnMain("giant history to paint", poll: .milliseconds(100)) {
+                let id = CGWindowID(deck.window.window.windowNumber)
+                // WindowServer may not have registered the off-screen window on the first poll.
+                guard let windows = CGWindowListCopyWindowInfo(.optionIncludingWindow, id), CFArrayGetCount(windows) > 0 else {
+                    return false
+                }
+                let image = try ThreadWindowCapture.image(deck.window.window)
+                lastImage = image
+                text = try recognizedText(image)
+                return historyIsVisible()
+            }
+        } catch is WaitTimeout { }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("shepherd-completion-repro")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let image = try capture(deck, to: directory.appendingPathComponent("giant-\(Int(size.width)).png"))
-        let text = try recognizedText(image)
+        _ = try capture(deck, image: #require(lastImage), to: directory.appendingPathComponent("giant-\(Int(size.width)).png"))
         print("GIANT", Int(size.width), deck.store.rows.count, text.suffix(10))
-        #expect(text.contains { $0.contains("Paragraph") || $0.contains("value") || $0.contains("Key point") })
+        #expect(historyIsVisible())
     }
 
     private func capture(_ deck: Flow.Deck, image: CGImage? = nil, to path: URL, placement: Bool = false) throws -> CGImage {
