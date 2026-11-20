@@ -217,7 +217,9 @@ final class FleetHooksSource: FleetUnitSource {
                 }
                 if let incoming {
                     if let existing {
-                        if existing.on != incoming.on { try catalog.settingsStore.changeLocked { HookSettingsStore.switchHash(&$0, existing.hash, incoming.on) } }
+                        // A Fleet value can't tell a toggle from a content upsert, so only turning a hook off applies here:
+                        // an upsert never removes a hash from `off`. Enabling stays a local toggle on each Mac.
+                        if existing.on, !incoming.on { try catalog.settingsStore.changeLocked { HookSettingsStore.switchHash(&$0, existing.hash, false) } }
                     } else {
                         // A disabled hook is recorded off before its file publishes it. Bytes already off land off, even with on: true.
                         try writer.addLocked(incoming.draft, to: path, startsOff: !incoming.on)

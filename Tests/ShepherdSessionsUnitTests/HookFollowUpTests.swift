@@ -150,6 +150,15 @@ struct HookFollowUpTests {
         #expect(Set(try catalog.settingsStore.read().off) == [hash, edited])
     }
 
+    @Test func aFleetUpsertWithOnTrueLeavesAPresentDisabledHookOff() throws {
+        let f = try HookCatalogTests.Fixture(); defer { f.remove() }
+        let catalog = f.catalog
+        let hash = try HookFileWriter(settings: catalog.settingsStore).add(Self.draft, to: f.home + "/.shepherd/hooks.json", on: false)
+        try FleetHooksSource(catalog: { catalog }).write(FleetHooksSource.kind + Self.id, Self.value(on: true), origin: "B")
+        #expect(try catalog.settingsStore.read().off == [hash])
+        #expect(try #require(catalog.load().entries.first).on == false)
+    }
+
     // MARK: One lock for the lookup and the change
 
     @Test func aRemoteSwitchLooksTheHookUpUnderTheSettingsLock() throws {
