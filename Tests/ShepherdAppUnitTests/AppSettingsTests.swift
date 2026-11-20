@@ -481,6 +481,40 @@ struct AppSettingsTests {
         #expect(shells.contains("/opt/custom/shell"))
         #expect(Set(shells).count == shells.count)
     }
+
+    /// Every resettable setting crosses processes: `followed` holds each of `Key.resettable`
+    /// plus Serve this Mac's switch, so a setting added to `Key.all` must also be added there
+    /// or the background host misses it until it restarts.
+    @Test func everyResettableSettingIsFollowedAcrossProcesses() {
+        #expect(AppSettings.followed.count == AppSettings.Key.resettable.count + 1,
+                "followed covers every resettable setting and the remote listener switch")
+    }
+
+    /// What another process wrote to the shared domain, the host takes on its next read-back:
+    /// every Settings ▸ Fleet value (the host's dispatch and thread starts read them).
+    @Test func reloadTakesTheFleetSettingsAnotherProcessWrote() {
+        let store = Fixture.defaults()
+        let host = AppSettings(store: store)
+        let hostID = UUID()
+        let writer = AppSettings(store: store)
+        writer.setFleetWeight(.prefer, of: hostID)
+        writer.fleetThreadsCanSend = true
+        writer.fleetThreadCap = 7
+        writer.fleetAutoDispatch = false
+        writer.fleetBatteryCountsHalf = false
+        writer.fleetUncommitted = .leaveBehind
+        writer.setFleetExcludes(FleetSnapshotExcludes(excluded: ["dist"]), of: SpaceID(rawValue: "acme-web"))
+        writer.setFleetCheckIgnored(["spot-check"], on: hostID)
+
+        host.reload()
+
+        #expect(host.fleetWeight(of: hostID) == .prefer)
+        #expect(host.fleetThreadsCanSend && host.fleetThreadCap == 7)
+        #expect(host.fleetAutoDispatch == false && !host.fleetBatteryCountsHalf)
+        #expect(host.fleetUncommitted == .leaveBehind)
+        #expect(host.fleetExcludes(of: SpaceID(rawValue: "acme-web")) == FleetSnapshotExcludes(excluded: ["dist"]))
+        #expect(host.fleetCheckIgnored(on: hostID) == Set(["spot-check"]))
+    }
 }
 
 @Suite("Legacy terminal-era preferences")
