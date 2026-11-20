@@ -41,6 +41,32 @@ struct FleetConnectionsFlowTests {
         try await FleetSettingsFlowTests.waitFor("the connection to go") { await a.model.refresh(); return store.pairedConnections.isEmpty }
     }
 
+    /// The app's device is revoked while it holds a connection: the Mac refuses its token, and the app gets a new one and connects again
+    /// rather than staying failed with the Mac's threads missing from the sidebar.
+    @Test func aConnectionWhoseTokenIsRefusedGetsANewTokenAndConnectsAgain() async throws {
+        let a = try await FleetApp("MacBook Pro"), b = try await FleetApp("Mac mini")
+        defer { a.stop(); b.stop() }
+        let store = RemoteHostStore(defaults: ScratchDefaults())
+        defer { for connection in store.allConnections { store.removeHost(id: connection.id) } }
+        let connections = FleetConnections(hosts: store, fleet: a.model)
+        a.model.onSnapshot = { connections.snapshotChanged($0) }
+        await b.model.startJoin()
+        #expect(await a.model.pair(with: b.found, code: try #require(b.model.join?.code)))
+        try await FleetSettingsFlowTests.waitFor("the app to connect to the Mac mini") {
+            await a.model.refresh()
+            return store.pairedConnections.first?.phase == .connected
+        }
+        let connection = try #require(store.pairedConnections.first)
+        let revoked = connection.config.token
+        let device = try #require(a.model.snapshot.devices?.devices.first { $0.kind == .macApp })
+
+        await a.model.revokeDevice(device.deviceID)
+        try await FleetSettingsFlowTests.waitFor("the app to connect again on a new token") {
+            connection.phase == .connected && connection.config.token != revoked
+        }
+        #expect(store.pairedConnections.count == 1 && connection.config.ownToken)
+    }
+
     /// A Mac the app can't reach is retried on the token it has: the fleet gains one device for this app, not one per try or launch,
     /// and a new one only once that device is revoked.
     @Test func aMacTheAppCannotReachIsRetriedWithoutEnrollingTheAppAgain() async throws {
