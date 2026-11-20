@@ -4,7 +4,7 @@ import ShepherdCore
 extension StateStore {
     /// Reject only records with a known broken dependency. Other invalid references are left
     /// for validate() to refuse, rather than guessed at or rewritten.
-    static func recover(_ original: Data, rejectedAt url: URL) throws -> ShepherdState {
+    func recover(_ original: Data, archiveID: String) throws -> (ShepherdState, URL) {
         var document = try PersistedFile<ShepherdState>.jsonObject(in: original)
         func array(_ key: String) throws -> [Any] {
             guard let array = document[key] as? [Any] else { throw CocoaError(.fileReadCorruptFile) }
@@ -52,10 +52,10 @@ extension StateStore {
         rejected = rejected.filter { !$0.value.isEmpty }
         // No element decode failed: this is not a graph the lossy decoder can safely repair.
         guard !rejected.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
-        try JSONSerialization.data(withJSONObject: rejected, options: [.prettyPrinted, .sortedKeys])
-            .write(to: url, options: .withoutOverwriting)
+        let rejectedData = try JSONSerialization.data(withJSONObject: rejected, options: [.prettyPrinted, .sortedKeys])
+        let rejectedURL = try preserveCopy(rejectedData, kind: "rejected", id: archiveID)
         let candidate = try JSONDecoder().decode(ShepherdState.self, from: JSONSerialization.data(withJSONObject: document))
         try candidate.validate()
-        return candidate
+        return (candidate, rejectedURL)
     }
 }

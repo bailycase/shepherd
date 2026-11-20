@@ -172,15 +172,8 @@ final class StateStore: @unchecked Sendable {
             do {
                 guard !readOnly, let original else { throw cause }
                 let id = UUID().uuidString.lowercased()
-                let backup: URL
-                if let existing = recoveryCopy(matching: original) {
-                    backup = existing
-                } else {
-                    backup = url.appendingPathExtension("recovery-\(id)")
-                    try original.write(to: backup, options: .withoutOverwriting)
-                }
-                let rejected = url.appendingPathExtension("rejected-\(id)")
-                let candidate = try Self.recover(original, rejectedAt: rejected)
+                let backup = try preserveCopy(original, kind: "recovery", id: id)
+                let (candidate, rejected) = try recover(original, archiveID: id)
                 commit(candidate)
                 didRecover = true
                 ShepherdLog.warning("Recovered \(url.path); original at \(backup.path), rejected records at \(rejected.path)")
@@ -192,16 +185,20 @@ final class StateStore: @unchecked Sendable {
         }
     }
 
-    private func recoveryCopy(matching original: Data) -> URL? {
+    func preserveCopy(_ data: Data, kind: String, id: String) throws -> URL {
+        let prefix = "\(url.lastPathComponent).\(kind)-"
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
         let files = try? FileManager.default.contentsOfDirectory(at: url.deletingLastPathComponent(),
                                                                  includingPropertiesForKeys: Array(keys))
-        return files?.first { file in
-            guard file.lastPathComponent.hasPrefix("\(url.lastPathComponent).recovery-"),
+        if let existing = files?.first(where: { file in
+            guard file.lastPathComponent.hasPrefix(prefix),
                   let info = try? file.resourceValues(forKeys: keys),
-                  info.isRegularFile == true, info.isSymbolicLink == false, info.fileSize == original.count else { return false }
-            return (try? Data(contentsOf: file)) == original
-        }
+                  info.isRegularFile == true, info.isSymbolicLink == false, info.fileSize == data.count else { return false }
+            return (try? Data(contentsOf: file)) == data
+        }) { return existing }
+        let copy = url.appendingPathExtension("\(kind)-\(id)")
+        try data.write(to: copy, options: .withoutOverwriting)
+        return copy
     }
 
     private func persist(_ candidate: ShepherdState) throws {

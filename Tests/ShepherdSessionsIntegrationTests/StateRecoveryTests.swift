@@ -50,6 +50,8 @@ struct StateRecoveryTests {
         }
         #expect(try JSONSerialization.data(withJSONObject: rejectedJSON, options: [.sortedKeys]) ==
                 JSONSerialization.data(withJSONObject: expected, options: [.sortedKeys]))
+        #expect(StateStore(url: url).state == store.state)
+        #expect(Set(try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) == Set(files))
         try store.update { $0.spaces[0].name = "Renamed" }
         #expect(StateStore(url: url).state == store.state)
         #expect(try Data(contentsOf: copy) == original)
