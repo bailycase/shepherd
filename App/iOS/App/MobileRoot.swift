@@ -1,6 +1,7 @@
 import SwiftUI
 import ShepherdUI
 import ShepherdProtocol
+import ShepherdRemote
 
 /// A window's content: the phone shell or the iPad split view by width, the app's state and the
 /// window's own navigator in the environment, the chosen appearance, and hosts connected while
