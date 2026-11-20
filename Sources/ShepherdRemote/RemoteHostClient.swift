@@ -427,6 +427,9 @@ public final class RemoteHostClient: @unchecked Sendable {
                 guard fetchesState else { return ShepherdState() }
                 let stateReply = try await request(timeout: handshake, connectionGeneration: attempt) { id in .stateFetch(id: id) }
                 guard case .state(_, let state) = stateReply else {
+                    if case .error(_, let code, let message) = stateReply {
+                        throw RemoteHostClientError.rejected(code: code, message: message)
+                    }
                     throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected state reply")
                 }
                 try queue.sync {

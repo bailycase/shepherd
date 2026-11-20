@@ -21,6 +21,10 @@ extension SessionServer {
                 throw LogicalProjectsError("invalid_project", "Project ID must be a canonical lowercase UUID.")
             }
             if case .list = request { completion(.success(.projects(store.state.projects))); return }
+            switch request {
+            case .get, .files, .read: break
+            default: try store.requireWritable()
+            }
             let existing = store.state.projects.first { $0.id == request.projectID }
             if case .create(let id, let name, let goal, let spaceIDs) = request {
                 // Identity, not the mutable name, makes a retry idempotent (also after edits).

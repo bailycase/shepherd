@@ -2047,21 +2047,25 @@ public final class SessionServer: @unchecked Sendable {
         defer { lifecycleLock.unlock() }
         if queue.sync(execute: { isStarted }) { return }
         do {
-            try queue.sync {
+            let (repair, recovered) = try queue.sync {
                 try acquireOwnershipOnQueue()
                 try bindOnQueue()
                 store.load()
-                projects.migrateExistingProjectConfiguration(in: store.state)
-                projects.remember(store.state)
-                runLog.reload()
+                let repair = store.recoveryError != nil, recovered = store.didRecover
+                if !repair && !recovered {
+                    projects.migrateExistingProjectConfiguration(in: store.state)
+                    projects.remember(store.state)
+                }
+                if !repair { runLog.reload() }
+                return (repair, recovered)
             }
-            try finishStart()
+            if !repair { try finishStart(recovered: recovered) }
             queue.sync {
                 isStarted = true
                 acceptOnQueue()
-                recoverCommittedProjectPublications()
+                if !repair && !recovered { recoverCommittedProjectPublications() }
             }
-            if refreshesModelCatalog { pi.catalog.refreshDaily() }
+            if !repair && refreshesModelCatalog { pi.catalog.refreshDaily() }
         } catch {
             queue.sync {
                 stopOnQueue()
@@ -2071,16 +2075,17 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    private func finishStart() throws {
+    private func finishStart(recovered: Bool) throws {
         // Which designs lost their folders is read on the store's queue, not the server's.
         let missingDesigns = designs.missingDesigns(among: store.committed.designs.map(\.id))
-        // A design deleted in its undo window before a crash (state.json no longer lists it), and
-        // an import a crash left staged.
-        designs.removeLeftovers()
-        // A Git merge copy is never resumed after a restart.
-        DesignGit.dropLeftoverMergeCopies(in: designs.directory)
+        // Do not prune files on the strength of a partially recovered workspace.
+        if !recovered {
+            designs.removeLeftovers()
+            DesignGit.dropLeftoverMergeCopies(in: designs.directory)
+        }
         try queue.sync { try startOnQueue(missingDesigns: missingDesigns) }
         countDesignBoards()
+        guard !recovered else { return }
         // Copies of design references whose agent or grant is gone (a send the app quit during).
         var kept: [AgentID: Set<UUID>] = [:]
         for agent in store.committed.agents { kept[agent.id] = Set(agent.designGrants.compactMap(\.payload)) }
@@ -2096,7 +2101,7 @@ public final class SessionServer: @unchecked Sendable {
         lifecycleLock.lock()
         defer { lifecycleLock.unlock() }
         let owned = queue.sync { () -> Bool in
-            let owned = isStarted
+            let owned = isStarted && store.recoveryError == nil && !store.didRecover
             stopOnQueue()
             return owned
         }
@@ -2264,7 +2269,7 @@ public final class SessionServer: @unchecked Sendable {
             || !runAgents.isEmpty || staleDesigns || !store.state.projects.isEmpty || !store.state.projectExecutions.isEmpty
             || store.state.agents.contains(where: { $0.coordinatorFor != nil }) {
             do {
-                try store.update { state in
+                try store.reconcileStartup { state in
                     for id in stale {
                         if let i = state.agents.firstIndex(where: { $0.id == id }) {
                             state.agents[i].status = .idle
@@ -2355,6 +2360,7 @@ public final class SessionServer: @unchecked Sendable {
                 throw SessionServerError.persistFailed(String(describing: error))
             }
         }
+        guard !store.didRecover else { return }
         // Runs still open died with the previous launch, their agents with them.
         runLog.closeOpenRuns(keeping: Set(store.state.agents.filter { $0.automationOrigin != nil }.map(\.id)))
         do { try agentRecovery.prune(keeping: Set(store.state.agents.map(\.id))) }
@@ -3899,6 +3905,10 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .stateFetch(let id):
+            if store.recoveryError != nil {
+                send(.error(id: id, code: RemoteProtocol.workspaceRepairRequiredCode, message: "Workspace state.json on this Mac needs repair. Workspace writes are disabled."), to: client)
+                return
+            }
             let state = remoteState(store.state, for: client)
             send(.state(id: id, state: client.knowsLegacyThinkingOnly ? state.legacyThinkingLevels() : state), to: client)
         case .attach(let id, let sessionID, let cols, let rows, let viewportGeneration):
