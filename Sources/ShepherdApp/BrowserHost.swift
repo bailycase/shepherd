@@ -476,6 +476,8 @@ final class BrowserSession {
     /// `notice`, when it can't be: the page must not load then, or it would reach whatever else
     /// answers on this Mac's port.
     fileprivate func forwardPort(of url: URL) -> Bool {
+        // A closed page holds no port: a late Start or navigation must not claim one for it.
+        guard !tabClosed else { return false }
         // A host's agent may have this Mac forward only a handful of ports (each holds a listener).
         guard let remote, let refusal = remote.forward(url, limit: activeHostGuard == nil ? nil : BrowserHostGuard.maxForwardedPorts) else {
             forwardRefusal = nil

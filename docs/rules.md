@@ -291,7 +291,7 @@ the host as `branchUpdate` and `branchAbort`, each on the person's tap), Switch 
 copy), New branch from here (`switch -c`), Rename branch (`branch -m`, local only), and Fetch from
 origin (`fetch origin`, remote-tracking refs only); Change base rewrites only Shepherd's record. A
 new thread's worktree on an existing branch (`GitWorktree.addExisting`: `worktree add`, a remote
-branch with a tracking local copy) or a named new one. Close threads when their pull request merges (Settings ▸ Worktrees,
+branch with a tracking local copy) or a named new one. Close threads when their pull request merges (Settings ▸ Git,
 off by default; `ShepherdSessions/PullRequestLinks.swift`): once a thread's pull request is seen
 going from open to merged in this host's run, it deletes the thread, removes its worktree and local
 branch through Delete Worktree's path, and deletes the head branch on GitHub through the forge's
