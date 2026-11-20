@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 // Subagents track's screens: the tray above the composer (MobileSteer), the list (MobileSubagents), a
 // running run with its steer field (MobileSubagent), a run waiting on its parent (iPadSteer) and a

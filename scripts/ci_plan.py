@@ -33,7 +33,7 @@ NO_SWIFT = (
     "App/ShepherdLauncher.swift",
     "Tests/Extensions/*.mjs", "Tests/Extensions/fixtures/*", "Tests/Release/*",
     "scripts/release*.py", "scripts/sign-*.sh",
-    "scripts/context-budget.json", "scripts/test-browser-persistence.py",
+    "scripts/context-budget.json", "scripts/test-browser-persistence.py", "scripts/validate.py",
     "scripts/upload-sentry-symbols.py", "scripts/context_budget.py",
     # The Xcode project and its own resolved packages: the Mac app's build, which `swift test`
     # does not read. The root Package.resolved stays: it pins what `swift build` fetches.

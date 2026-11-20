@@ -313,7 +313,8 @@ struct ThreadInputTests {
         #expect(loads.current == 0)
         #expect(input.focusRequest == 0)
         #expect(input.attachments.isEmpty && store.attachedFiles.isEmpty)
-        input.available = true
+        let owner = UUID()
+        input.setAvailable(true, for: owner)
         input.focus()
         #expect(input.focusRequest == 1)
         input.attach([provider], store: store, localFiles: true)
@@ -321,9 +322,64 @@ struct ThreadInputTests {
             store.attachedFiles.map(\.path) == [file.path]
         }
         #expect(loads.current == 1)
-        input.available = false
+        input.setAvailable(false, for: owner)
         input.focus()
         #expect(input.focusRequest == 1)
+    }
+
+    @Test func anotherComposerDisappearingDoesNotDropAnAttachment() async throws {
+        let input = ThreadInput()
+        let store = NativeThreadStore()
+        let file = try makeScratchDirectory("shared-composer-input").appendingPathComponent("notes.txt")
+        try Data("notes".utf8).write(to: file)
+        let (files, reply) = AsyncStream<URL>.makeStream()
+        input.prepareImages = { _ in
+            for await file in files { return [(file, nil)] }
+            return []
+        }
+        var secondAppeared = false
+        var secondDisappeared = false
+        let first = OffscreenWindow(size: CGSize(width: 800, height: 400))
+        let second = OffscreenWindow(size: CGSize(width: 800, height: 400))
+        defer { reply.finish(); first.close(); second.close() }
+        let composer = Composer(store: store, input: input, active: true, isFocused: false,
+                                agentName: nil, hasTurns: false, gutter: 20, listModels: { .empty })
+        first.show(composer)
+        try await eventuallyOnMain("first composer to become available") { input.available }
+        second.show(composer.onAppear { secondAppeared = true }.onDisappear { secondDisappeared = true })
+        try await eventuallyOnMain("second composer to appear") { secondAppeared }
+        input.attach([NSItemProvider()], store: store, localFiles: true)
+        #expect(input.preparingImages == 1)
+        second.show(EmptyView())
+        try await eventuallyOnMain("second composer to disappear") { secondDisappeared }
+        reply.yield(file)
+        try await eventuallyOnMain("file provider to finish") { input.preparingImages == 0 }
+        #expect(input.available)
+        #expect(store.attachedFiles.map(\.path) == [file.path])
+    }
+
+    @Test func aDropWhileTheThreadStartsSurvivesItsFirstSession() async throws {
+        let input = ThreadInput()
+        let store = NativeThreadStore()
+        let file = try makeScratchDirectory("startup-composer-input").appendingPathComponent("notes.txt")
+        try Data("notes".utf8).write(to: file)
+        let (files, reply) = AsyncStream<URL>.makeStream()
+        defer { reply.finish() }
+        input.prepareImages = { _ in
+            for await file in files { return [(file, nil)] }
+            return []
+        }
+        input.setAvailable(true, for: UUID())
+        #expect(store.sessionKey == nil)
+        input.attach([NSItemProvider()], store: store, localFiles: true)
+        #expect(input.preparingImages == 1)
+        let snapshot = ComposerThread.snapshot(messages: 0, commands: [])
+        let polling = Task { await store.run(request: { _ in .snapshot(value: snapshot) }) }
+        defer { polling.cancel(); store.stop() }
+        try await eventuallyOnMain("first session to arrive") { store.sessionKey != nil }
+        reply.yield(file)
+        try await eventuallyOnMain("file provider to finish") { input.preparingImages == 0 }
+        #expect(store.attachedFiles.map(\.path) == [file.path])
     }
 
     @Test func aBackgroundFocusRequestReclaimsOnlyAnAvailableComposer() async throws {
@@ -339,7 +395,8 @@ struct ThreadInputTests {
             (window.window.firstResponder as? NSTextView)?.isFieldEditor == true
         }
         window.window.makeFirstResponder(nil)
-        input.available = false
+        window.show(EmptyView())
+        try await eventuallyOnMain("composer to release the input") { !input.available }
         let before = input.focusRequest
         input.focus()
         #expect(input.focusRequest == before)

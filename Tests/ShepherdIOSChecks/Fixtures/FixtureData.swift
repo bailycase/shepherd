@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 /// One screen the harness can render: `FIXTURE_SCREEN=<name>`. The hosts it serves, and where
 /// the app goes once they are connected. Each track lists its screens in its own file

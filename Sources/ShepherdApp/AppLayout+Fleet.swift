@@ -87,8 +87,6 @@ extension AppLayout {
     /// A sent thread as one line in the thread that sent it (FleetDispatch): 36pt tall, its arrow in a 14pt slot.
     static let fleetCompactRowHeight: CGFloat = 36
     static let fleetCompactRowGlyph: CGFloat = 14
-    /// The header's host pill is 24pt tall; its dot is the Fleet page's.
-    static let fleetHeaderPillHeight: CGFloat = 24
     /// A card's buttons are 26pt tall.
     static let fleetCardButtonHeight: CGFloat = 26
     /// The thread behind an offline banner fades to this.
@@ -97,10 +95,6 @@ extension AppLayout {
     static let fleetPlaceTrailingInset: CGFloat = 33
 
     // Moving a thread to another Mac (FleetMove).
-    /// The header chip's menu and its confirmation are 400pt wide; a Mac's room bar is 56 by 4pt.
-    static let fleetMoveMenuWidth: CGFloat = 400
-    static let fleetMoveBarWidth: CGFloat = 56
-    static let fleetMoveBarHeight: CGFloat = 4
     /// A step's mark column in the progress card.
     static let fleetMoveMarkWidth: CGFloat = 14
 }

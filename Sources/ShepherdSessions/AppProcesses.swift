@@ -3,7 +3,8 @@ import Foundation
 import ShepherdCore
 
 // The apps Shepherd runs (Settings › Apps, the thread header's Run, New thread's quick actions,
-// the agent's app tools): each a background process in its own process group, keyed by its
+// the agent's app tools): each a background process in its own session (no controlling
+// terminal) and process group, keyed by its
 // space and name, owned here (the host's server) and by nothing else (no thread, no terminal, not
 // the app, which drives them over `apps.v2`). Its output (stdout and stderr together) goes to a
 // bounded ring of lines. Nothing here outlives the host: its stop stops every app, and nothing
@@ -203,6 +204,8 @@ public final class AppProcesses: @unchecked Sendable {
 
     // MARK: Process
 
+    private struct SpawnError: Error { let code: Int32 }
+
     private func spawn(_ key: AppKey, command: String, directory: String, port: Int?) -> AppProcessSnapshot {
         guard !closed else { return fail(key, "Shepherd is quitting.", command: command, directory: directory) }
         var isDirectory: ObjCBool = false
@@ -220,32 +223,41 @@ public final class AppProcesses: @unchecked Sendable {
         var env = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
         defer { args.forEach { free($0) }; env.forEach { free($0) } }
 
-        var actions: posix_spawn_file_actions_t?
-        posix_spawn_file_actions_init(&actions)
-        defer { posix_spawn_file_actions_destroy(&actions) }
-        posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
-        posix_spawn_file_actions_adddup2(&actions, fds[1], STDOUT_FILENO)
-        posix_spawn_file_actions_adddup2(&actions, fds[1], STDERR_FILENO)
-        posix_spawn_file_actions_addchdir(&actions, directory)
-        // Its own process group, default signal dispositions and an empty mask (as BoundedCommand).
-        var attr: posix_spawnattr_t?
-        posix_spawnattr_init(&attr)
-        defer { posix_spawnattr_destroy(&attr) }
-        var defaults = sigset_t(), mask = sigset_t()
-        sigfillset(&defaults); sigemptyset(&mask)
-        posix_spawnattr_setsigdefault(&attr, &defaults)
-        posix_spawnattr_setsigmask(&attr, &mask)
-        posix_spawnattr_setpgroup(&attr, 0)
-        posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT))
+        func checked(_ code: Int32) throws(SpawnError) {
+            guard code == 0 else { throw SpawnError(code: code) }
+        }
+
         var pid: pid_t = 0
-        let code = args.withUnsafeMutableBufferPointer { args in
-            env.withUnsafeMutableBufferPointer { env in posix_spawn(&pid, argv[0], &actions, &attr, args.baseAddress, env.baseAddress) }
+        do {
+            var actions: posix_spawn_file_actions_t?
+            try checked(posix_spawn_file_actions_init(&actions))
+            defer { posix_spawn_file_actions_destroy(&actions) }
+            try checked(posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0))
+            try checked(posix_spawn_file_actions_adddup2(&actions, fds[1], STDOUT_FILENO))
+            try checked(posix_spawn_file_actions_adddup2(&actions, fds[1], STDERR_FILENO))
+            try checked(posix_spawn_file_actions_addchdir(&actions, directory))
+            // Its own session: no controlling terminal (an interactive login shell in a
+            // background process group would stop on it with SIGTTIN/SIGTTOU), default signal
+            // dispositions and an empty mask (as BoundedCommand). A new session's group id is
+            // still the child's pid, so stopping the group with kill(-pid) keeps working.
+            var attr: posix_spawnattr_t?
+            try checked(posix_spawnattr_init(&attr))
+            defer { posix_spawnattr_destroy(&attr) }
+            var defaults = sigset_t(), mask = sigset_t()
+            sigfillset(&defaults); sigemptyset(&mask)
+            try checked(posix_spawnattr_setsigdefault(&attr, &defaults))
+            try checked(posix_spawnattr_setsigmask(&attr, &mask))
+            let flags = Int16(POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT)
+            try checked(posix_spawnattr_setflags(&attr, flags))
+            let code = args.withUnsafeMutableBufferPointer { args in
+                env.withUnsafeMutableBufferPointer { env in posix_spawn(&pid, argv[0], &actions, &attr, args.baseAddress, env.baseAddress) }
+            }
+            try checked(code)
+        } catch {
+            for fd in fds { Darwin.close(fd) }
+            return fail(key, "Couldn’t start \(argv[0]) (\(String(cString: strerror(error.code)))).", command: command, directory: directory)
         }
         Darwin.close(fds[1])
-        guard code == 0 else {
-            Darwin.close(fds[0])
-            return fail(key, "Couldn’t start \(argv[0]) (\(String(cString: strerror(code)))).", command: command, directory: directory)
-        }
         failures[key] = nil
         let process = Process(pid: pid, directory: directory, command: command, port: port)
         processes[key] = process
