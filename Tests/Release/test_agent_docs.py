@@ -1,9 +1,9 @@
 """Guards that keep AGENTS.md and DESIGN.md short, and the docs they point at in one piece.
 
 AGENTS.md is loaded into every agent thread and DESIGN.md is read before every UI change, so
-both are a short sheet of rules and pointers. The few reference docs live in docs/; there are no
-per-feature or per-surface docs, since the code is the spec. These tests fail when either file
-regrows, or when a link or an anchor in the kept docs breaks.
+both are a short sheet of rules and pointers. The docs guard keeps the reference docs, saved
+design boards, and the temporary validation tools plan. These tests fail when either rules
+file gets too long, a kept link or anchor breaks, or another Markdown file appears in docs/.
 
 Run: python3 -m unittest discover -s Tests/Release -v
 """
