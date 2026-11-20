@@ -8,11 +8,7 @@ import ShepherdRemote
 @MainActor
 @Observable
 final class MobileNavigator {
-    /// The phone's tabs (DuoClosedHome board). Codable as their case names, so a window saved
-    /// with only Home and Settings restores as it was.
-    enum Tab: Hashable, Codable, CaseIterable {
-        case home, designs, projects, automations, settings
-    }
+    typealias Tab = MobileTab
 
     enum Layout: Equatable {
         /// Compact width: iPhone, or an iPad window as narrow as one.
@@ -188,8 +184,10 @@ final class MobileNavigator {
         recentPadThreads.removeAll { $0.host == host }
         composerPresentation.forget(host: host)
         if commitPopover?.host == host { commitPopover = nil }
-        for tab in Tab.allCases { self[path: tab].removeAll { $0.host == host } }
-        padPath.removeAll { $0.host == host }
+        for tab in Tab.allCases {
+            self[path: tab] = NavigationCarry.removing(host: host, from: self[path: tab])
+        }
+        padPath = NavigationCarry.removing(host: host, from: padPath)
         if padSelection?.host == host {
             padSelection = nil
             padColumns = .all
@@ -213,16 +211,9 @@ final class MobileNavigator {
     /// Unfolded (or restored wide) with the selected thread's Changes, Terminal, Subagents, Files
     /// or Browser pushed over it: those screens become the open pane's tab (DuoClosedThreadMenu).
     func takePaneScreens() {
-        // The thread under them: the last one pushed, else the selection.
-        let pushed = padPath.lastIndex { if case .thread = $0 { true } else { false } }
-        let thread: AgentRef? = if let pushed, case .thread(let ref) = padPath[pushed] { ref } else { padSelection }
-        guard let thread else { return }
-        let tabs = padPath.indices.map { index in
-            index > (pushed ?? -1) && padPath[index].thread == thread ? padPath[index].sidePaneTab : nil
-        }
-        guard let (keep, tab) = PadSplitLayout.unfold(tabs), let top = padPath.last else { return }
-        padPath = Array(padPath.prefix(keep))
-        showInPane(top, tab: tab)
+        guard let pane = NavigationCarry.takePaneScreens(selection: padSelection, path: padPath) else { return }
+        padPath = pane.path
+        showInPane(pane.route, tab: pane.tab)
     }
 
     /// Carry the active stack across size classes, not an old selection from the other layout.
@@ -230,93 +221,21 @@ final class MobileNavigator {
         guard layout != self.layout else { return }
         switch layout {
         case .pad:
-            let path = currentPhonePath
+            let carry = NavigationCarry.widen(tab: tab, path: currentPhonePath)
             padSelection = nil
-            if let root = tab.padRoot {
-                padPath = [root] + path
-            } else if case .thread(let ref)? = path.first {
-                padSelection = ref
-                padPath = Array(path.dropFirst())
-            } else {
-                padPath = path
-            }
+            if let selection = carry.selection { padSelection = selection }
+            padPath = carry.path
             takePaneScreens()
+            self.layout = layout
         case .phone:
-            // The last screen with a tab of its own picks the tab, and the stack from it on
-            // goes there (without the tab's root, which the tab shows itself); a thread and its
-            // screens with none go to Home.
-            let stack = (padSelection.map { [MobileRoute.thread($0)] } ?? []) + padPath
-            if let start = stack.lastIndex(where: { Tab.owner(of: $0) != nil }), let owner = Tab.owner(of: stack[start]) {
-                tab = owner
-                // Home keeps what lies under its screen (a thread chosen before Needs you).
-                self[path: owner] = owner == .home ? stack : Array(stack[start...].drop(while: \.isTabRoot))
-            } else {
-                tab = .home
-                homePath = stack
-            }
-        }
-        self.layout = layout
-        if layout == .phone {
-            // The palette is the iPad's; a compact window gets search, pushed like the phone's.
-            if case .search(.palette(let query))? = presented?.route {
+            let carry = NavigationCarry.narrow(selection: padSelection, path: padPath, presented: presented?.route)
+            tab = carry.tab
+            self[path: carry.tab] = carry.path
+            self.layout = layout
+            if let search = carry.search {
                 dismissPresented()
-                open(.search(.search(query: query)))
+                open(search)
             }
-        }
-    }
-}
-
-extension MobileNavigator.Tab {
-    /// The tab a route belongs to on iPhone; nil for a screen that opens over whatever tab
-    /// opened it (a thread and its screens, search, design systems).
-    static func owner(of route: MobileRoute) -> Self? {
-        switch route {
-        case .settings, .home(.more): .settings
-        case .home(.automations), .automations: .automations
-        case .home(.needsYou), .home(.recents), .home(.working), .home(.done): .home
-        case .designs(.systems), .designs(.system): nil
-        case .designs, .padDesign: .designs
-        case .projects: .projects
-        case .thread, .subagents, .review, .terminal, .sidePane, .browser, .search, .newThread, .forge: nil
-        }
-    }
-
-    /// Where `route` opens on iPhone when `current` is the selected tab: its own tab, else the
-    /// current one. Settings keeps only its own screens and design systems (More's, now
-    /// Settings'); a thread or search opened there goes to Home.
-    static func landing(of route: MobileRoute, from current: Self) -> Self {
-        if let owner = owner(of: route) { return owner }
-        if current == .settings, !route.isDesignSystems { return .home }
-        return current
-    }
-
-    /// What iPad pushes for this tab's root when a compact window widens; nil for Home, whose
-    /// root is the overview.
-    var padRoot: MobileRoute? {
-        switch self {
-        case .home: nil
-        case .designs: .padDesign(.list)
-        case .projects: .projects(.list)
-        case .automations: .home(.automations)
-        case .settings: .settings(.root)
-        }
-    }
-}
-
-extension MobileRoute {
-    /// A screen the phone shows as a tab's root rather than pushing it: opening it selects the
-    /// tab and returns to its root.
-    var isTabRoot: Bool {
-        switch self {
-        case .settings(.root), .home(.more), .home(.automations), .designs(.list), .padDesign(.list), .projects(.list): true
-        default: false
-        }
-    }
-
-    fileprivate var isDesignSystems: Bool {
-        switch self {
-        case .designs(.systems), .designs(.system): true
-        default: false
         }
     }
 }

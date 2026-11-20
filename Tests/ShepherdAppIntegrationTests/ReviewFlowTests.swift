@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ShepherdRemote
 import ShepherdCore
@@ -13,11 +14,149 @@ import Testing
 @MainActor
 struct ReviewFlowTests {
     /// A repo with `file.txt` modified and `new.txt` untracked.
-    private func dirtyRepo() throws -> URL {
+    private static func dirtyRepo() throws -> URL {
         let repo = try makeScratchRepo(files: ["file.txt": "before\n"])
         try "after\n".write(to: repo.appendingPathComponent("file.txt"), atomically: true, encoding: .utf8)
         try "fresh\n".write(to: repo.appendingPathComponent("new.txt"), atomically: true, encoding: .utf8)
         return repo
+    }
+
+    @Test func opensCommitSheetWithoutChangingGit() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario {
+                try await Self.checkingCommitSheet()
+            }
+        }
+        expectScenarioCompleted(result)
+    }
+
+    private static func checkingCommitSheet() async throws {
+        AccessibilityNode.enable()
+        let directory = ProcessInfo.processInfo.environment["SHEPHERD_VALIDATION_DIR"].map { URL(fileURLWithPath: $0) }
+        var failure: (any Error)?
+        for dark in [false, true] {
+            do {
+                try await checkingCommitSheet(dark: dark, directory: directory)
+            } catch {
+                failure = failure ?? error
+                print("\(dark ? "dark" : "light"): \(error)")
+            }
+        }
+        if let failure { throw failure }
+        try Evidence.record(in: directory, step: "complete", appearance: nil, status: "passed",
+                            expected: "light and dark scenarios finished", actual: "light and dark scenarios finished")
+    }
+
+    private static func checkingCommitSheet(dark: Bool, directory: URL?) async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let repo = try dirtyRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        func gitState() throws -> String {
+            "HEAD: \(try git(["rev-parse", "HEAD"], in: repo))\nIndex:\n\(try git(["ls-files", "--stage"], in: repo))"
+        }
+        let before = try gitState()
+        let space = Fixture.space(path: repo.path)
+        let agent = Fixture.agent(in: space)
+        app.settings.worktreeGeneratePRDescription = false
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        vm.selectAgent(agent.agent.id)
+        let window = OffscreenWindow(size: CGSize(width: AppLayout.paneMinWidth, height: 720), dark: dark, deckHosting: true)
+        defer { window.close() }
+        let evidence = Evidence(directory: directory, appearance: dark ? "dark" : "light")
+
+        try await evidence.check("load-changes", expected: "Changes lists file.txt and new.txt", capture: { window.host }) {
+            vm.openUserReview()
+            guard let session = vm.reviewSessions.values.first else { throw CheckFailure(actual: "no Changes session opened") }
+            window.show(ReviewPaneContent(session: session, actions: vm.reviewActions(for: session, remote: false), touchedPaths: []))
+            try await eventuallyOnMain("Changes to finish loading") { !session.isLoading }
+            if let error = session.loadError { throw CheckFailure(actual: error) }
+            let paths = session.files.map(\.displayPath)
+            let actual = paths.isEmpty ? "no files" : paths.joined(separator: ", ")
+            guard paths == ["file.txt", "new.txt"] else { throw CheckFailure(actual: actual) }
+            return actual
+        }
+        try await evidence.check("open-commit-sheet", expected: "enabled Commit… action in the Changes toolbar opens a sheet",
+                                 capture: { window.host }) {
+            do {
+                try window.press("Commit…")
+            } catch let error as ControlPressError where error.reason == .notFound {
+                throw CheckFailure(actual: "no Commit… action in the toolbar's accessibility tree\n\(error)")
+            }
+            try await eventuallyOnMain("the Commit sheet to attach") { window.window.attachedSheet?.contentView != nil }
+            return "pressed Commit… and the sheet opened"
+        }
+        let sheet = try #require(window.window.attachedSheet?.contentView)
+        try await evidence.check("commit-sheet-files", expected: "Commit sheet offers file.txt", capture: { sheet }) {
+            @MainActor func labels() -> [String] { AccessibilityNode.all(under: sheet).compactMap(\.label) }
+            do {
+                try await eventuallyOnMain("file.txt in the Commit sheet") {
+                    labels().contains { $0 == "file.txt" || $0.hasPrefix("file.txt, ") }
+                }
+            } catch {
+                throw CheckFailure(actual: "sheet accessibility labels: \(labels().joined(separator: "; "))")
+            }
+            return "file.txt is in the sheet's accessibility tree"
+        }
+        try await evidence.check("close-commit-sheet", expected: "Cancel dismisses the sheet without submitting", capture: { sheet }) {
+            try ControlPress.press("Cancel", under: sheet)
+            try await eventuallyOnMain("the Commit sheet to close") { window.window.attachedSheet == nil }
+            return "Cancel dismissed the sheet"
+        }
+        try await evidence.check("git-unchanged", expected: before) {
+            let after = try gitState()
+            guard after == before else { throw CheckFailure(actual: after) }
+            return after
+        }
+    }
+
+    private struct CheckFailure: Error, CustomStringConvertible {
+        let actual: String
+        var description: String { actual }
+    }
+
+    @MainActor private struct Evidence {
+        let directory: URL?
+        let appearance: String
+
+        func check(_ step: String, expected: String, capture: (() -> NSView)? = nil,
+                   _ body: () async throws -> String) async throws {
+            let actual: String
+            do {
+                actual = try await body()
+            } catch {
+                let image = directory.flatMap { directory in
+                    capture.flatMap { Self.screenshot(of: $0(), in: directory, name: "\(step)-actual-\(appearance).png") }
+                }
+                try Self.record(in: directory, step: step, appearance: appearance, status: "failed",
+                                expected: expected, actual: String(describing: error), evidence: image.map { [$0] } ?? [])
+                throw error
+            }
+            try Self.record(in: directory, step: step, appearance: appearance, status: "passed", expected: expected, actual: actual)
+        }
+
+        static func record(in directory: URL?, step: String, appearance: String?, status: String,
+                           expected: String, actual: String, evidence: [String] = []) throws {
+            guard let directory else { return }
+            let steps = directory.appendingPathComponent("steps", isDirectory: true)
+            try FileManager.default.createDirectory(at: steps, withIntermediateDirectories: true)
+            var record: [String: Any] = ["step": step, "status": status, "expected": expected, "actual": actual, "evidence": evidence]
+            if let appearance { record["appearance"] = appearance }
+            let name = appearance.map { "\(step)-\($0)" } ?? step
+            try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]).write(
+                to: steps.appendingPathComponent("\(name).json"), options: .atomic)
+        }
+
+        private static func screenshot(of view: NSView, in directory: URL, name: String) -> String? {
+            view.layoutSubtreeIfNeeded()
+            guard !view.bounds.isEmpty, let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            guard let png = bitmap.representation(using: .png, properties: [:]) else { return nil }
+            do {
+                try png.write(to: directory.appendingPathComponent(name), options: .atomic)
+                return "mac/\(name)"
+            } catch { return nil }
+        }
     }
 
     private func comment(on session: ReviewSession, _ text: String) throws -> ReviewComment {
@@ -33,7 +172,7 @@ struct ReviewFlowTests {
     @Test func anAgentsReviewRequestWaitsInItsChangesTabWithoutMovingTheUser() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let repo = try dirtyRepo()
+        let repo = try Self.dirtyRepo()
         defer { try? FileManager.default.removeItem(at: repo) }
         let space = Fixture.space(path: repo.path)
         let background = Fixture.agent("background", in: space, order: 0)
@@ -61,7 +200,7 @@ struct ReviewFlowTests {
     @Test func aRepeatedRequestReloadsTheOpenReviewInsteadOfOpeningAnother() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let repo = try dirtyRepo()
+        let repo = try Self.dirtyRepo()
         defer { try? FileManager.default.removeItem(at: repo) }
         let space = Fixture.space(path: repo.path)
         let agent = Fixture.agent(in: space)
@@ -90,7 +229,7 @@ struct ReviewFlowTests {
     @Test func anAgentsReviewFollowsTheRequestedRepositoryAndStartsOverWhenItChanges() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let own = try dirtyRepo()
+        let own = try Self.dirtyRepo()
         let other = try makeScratchRepo(files: ["other.txt": "before\n"])
         defer { for repo in [own, other] { try? FileManager.default.removeItem(at: repo) } }
         try "after\n".write(to: other.appendingPathComponent("other.txt"), atomically: true, encoding: .utf8)
@@ -126,7 +265,7 @@ struct ReviewFlowTests {
     @Test func theHostRefusesAChangesReadOfAFolderTheAgentNeverAskedFor() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let own = try dirtyRepo()
+        let own = try Self.dirtyRepo()
         let other = try makeScratchRepo(files: ["other.txt": "before\n"])
         defer { for repo in [own, other] { try? FileManager.default.removeItem(at: repo) } }
         let space = Fixture.space(path: own.path)
@@ -176,7 +315,7 @@ struct ReviewFlowTests {
     @Test func anAgentsRequestNeverTakesThePaneFromAnInspectedSubagent() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let repo = try dirtyRepo()
+        let repo = try Self.dirtyRepo()
         defer { try? FileManager.default.removeItem(at: repo) }
         let space = Fixture.space(path: repo.path)
         let agent = Fixture.agent(in: space)
@@ -280,7 +419,7 @@ struct ReviewFlowTests {
     @Test func sendingTheReviewMakesItTheAgentsNextPromptAndClearsItsComments() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let repo = try dirtyRepo()
+        let repo = try Self.dirtyRepo()
         defer { try? FileManager.default.removeItem(at: repo) }
         let log = app.dir.appendingPathComponent("pi.log")
         let space = Fixture.space(path: repo.path)
@@ -309,7 +448,7 @@ struct ReviewFlowTests {
     @Test func committingAsksTheAgentToCommitAndCarriesTheReview() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let repo = try dirtyRepo()
+        let repo = try Self.dirtyRepo()
         defer { try? FileManager.default.removeItem(at: repo) }
         let log = app.dir.appendingPathComponent("pi.log")
         let space = Fixture.space(path: repo.path)
@@ -336,7 +475,7 @@ struct ReviewFlowTests {
     @Test func submittingWhilePiIsNotRunningKeepsTheReviewAndItsComments() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let repo = try dirtyRepo()
+        let repo = try Self.dirtyRepo()
         defer { try? FileManager.default.removeItem(at: repo) }
         let space = Fixture.space(path: repo.path)
         let agent = Fixture.agent(in: space)
@@ -356,7 +495,7 @@ struct ReviewFlowTests {
     @Test func revertingFilesRestoresTrackedOnesRemovesNewOnesAndReloads() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let repo = try dirtyRepo()
+        let repo = try Self.dirtyRepo()
         defer { try? FileManager.default.removeItem(at: repo) }
         let space = Fixture.space(path: repo.path)
         let agent = Fixture.agent(in: space)
@@ -381,8 +520,8 @@ struct ReviewFlowTests {
     @Test func aConfirmedRevertActsOnTheRepositoryItsDiffCameFrom() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let own = try dirtyRepo()
-        let other = try dirtyRepo()
+        let own = try Self.dirtyRepo()
+        let other = try Self.dirtyRepo()
         defer { for repo in [own, other] { try? FileManager.default.removeItem(at: repo) } }
         let space = Fixture.space(path: own.path)
         let agent = Fixture.agent(in: space)
@@ -409,7 +548,7 @@ struct ReviewFlowTests {
     @Test func openingAReviewAtAPathReplacesTheInspectorAndFocusesTheFile() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let repo = try dirtyRepo()
+        let repo = try Self.dirtyRepo()
         defer { try? FileManager.default.removeItem(at: repo) }
         let space = Fixture.space(path: repo.path)
         let agent = Fixture.agent(in: space)

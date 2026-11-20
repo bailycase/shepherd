@@ -311,11 +311,13 @@ extension LoopbackServer {
     }
 
     /// Takes a connection and never reads it. Holds it open until the peer or the server closes
-    /// it, and counts the connections it holds open now in `open`.
-    public static func deaf(open: Locked<Int> = Locked(0), address: String? = nil) throws -> LoopbackServer {
+    /// it, and counts the connections it holds open now in `open`. An optional greeting lets
+    /// the peer know the connection is ready before it goes idle.
+    public static func deaf(open: Locked<Int> = Locked(0), address: String? = nil, greeting: Data? = nil) throws -> LoopbackServer {
         try LoopbackServer(address: address) { fd in
             open.withValue { $0 += 1 }
             defer { open.withValue { $0 -= 1 } }
+            if let greeting, !writeAll(fd, greeting) { return }
             var byte: UInt8 = 0
             // Block until the peer or the server closes the socket, reading nothing that arrived.
             var pfd = pollfd(fd: fd, events: Int16(POLLHUP), revents: 0)
