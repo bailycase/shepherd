@@ -1430,6 +1430,8 @@ public final class SessionServer: @unchecked Sendable {
     /// The host settings as the app last reported them: the fleet's policy (Threads can send work, the cap, the
     /// weights) is read from here. Server queue.
     private var fleetSettings: HostSettings?
+    /// Tests: the host settings the app last reported (`fleetHostSettingsChanged`), read synchronously.
+    var fleetSettingsForTests: HostSettings? { queue.sync { fleetSettings } }
     /// Places promised to dispatches that haven't started (`FleetPressureSample.reserved`), for any thread.
     private let fleetReserved = FleetCounter()
     /// The agents whose pi is running a shell command now (`FleetPressureSample.commandAgents`), for any thread.
