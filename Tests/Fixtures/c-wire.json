@@ -471,7 +471,12 @@
         "{\"body\":\"The run couldn't start: acme-web is missing.\",\"title\":\"Watch CI\",\"type\":\"automationNotify\"}\n"
       ],
       "automationResult": [
-        "{\"id\":22,\"result\":{\"runs\":{\"_0\":[{\"endedAt\":1700000100,\"id\":\"00000000-0000-0000-0000-00000000000A\",\"result\":\"finished\",\"settledAt\":1700000043,\"startedAt\":1700000000},{\"agentID\":\"agent\",\"id\":\"00000000-0000-0000-0000-00000000000A\",\"result\":\"needsYou\",\"startedAt\":1700000200},{\"endedAt\":1700000400,\"id\":\"00000000-0000-0000-0000-00000000000A\",\"result\":\"interrupted\",\"startedAt\":1700000300}]}},\"type\":\"automationResult\"}\n"
+        "{\"id\":22,\"result\":{\"runs\":{\"_0\":[{\"endedAt\":1700000100,\"id\":\"00000000-0000-0000-0000-00000000000A\",\"result\":\"finished\",\"settledAt\":1700000043,\"startedAt\":1700000000},{\"agentID\":\"agent\",\"id\":\"00000000-0000-0000-0000-00000000000A\",\"result\":\"needsYou\",\"startedAt\":1700000200},{\"endedAt\":1700000400,\"id\":\"00000000-0000-0000-0000-00000000000A\",\"result\":\"interrupted\",\"startedAt\":1700000300}]}},\"type\":\"automationResult\"}\n",
+        "{\"id\":1,\"result\":{\"ok\":{}},\"type\":\"automationResult\"}\n",
+        "{\"id\":1,\"result\":{\"runs\":{\"_0\":[]}},\"type\":\"automationResult\"}\n",
+        "{\"id\":1,\"result\":{\"runs\":{\"_0\":[{\"endedAt\":1700000100,\"id\":\"00000000-0000-0000-0000-00000000000A\",\"result\":\"finished\",\"settledAt\":1700000043,\"startedAt\":1700000000},{\"agentID\":\"agent\",\"id\":\"00000000-0000-0000-0000-00000000000A\",\"result\":\"needsYou\",\"startedAt\":1700000200},{\"endedAt\":1700000400,\"id\":\"00000000-0000-0000-0000-00000000000A\",\"result\":\"interrupted\",\"startedAt\":1700000300}]}},\"type\":\"automationResult\"}\n",
+        "{\"id\":1,\"result\":{\"runs\":{\"_0\":[{\"endedAt\":1,\"failure\":\"worktree failed\",\"id\":\"00000000-0000-0000-0000-00000000000A\",\"pullRequestURL\":\"p\",\"result\":\"failed\",\"startedAt\":1,\"trigger\":\"#1 T · issue opened\",\"triggerURL\":\"u\",\"unread\":true}]}},\"type\":\"automationResult\"}\n",
+        "{\"id\":1,\"result\":{\"status\":{\"_0\":{\"allPaused\":false,\"lastCheckedAt\":8,\"nextRunAt\":9,\"pending\":[{\"id\":\"acme/app#1:opened\",\"kind\":\"issueOpened\",\"number\":1,\"occurredAt\":3,\"repo\":\"acme/app\",\"title\":\"T\"}],\"reason\":\"offline\",\"retryAt\":10,\"runsToday\":2,\"state\":\"retrying\"}}},\"type\":\"automationResult\"}\n"
       ],
       "automationsChanged": [
         "{\"type\":\"automationsChanged\"}\n"
@@ -512,7 +517,8 @@
         "{\"type\":\"designSystemsChanged\"}\n"
       ],
       "dirListing": [
-        "{\"dirs\":[\"Developer\",\"Documents\"],\"id\":8,\"parent\":\"/Users\",\"path\":\"/Users/demo\",\"type\":\"dirListing\"}\n"
+        "{\"dirs\":[\"Developer\",\"Documents\"],\"id\":8,\"parent\":\"/Users\",\"path\":\"/Users/demo\",\"type\":\"dirListing\"}\n",
+        "{\"dirs\":[],\"id\":9,\"path\":\"/\",\"type\":\"dirListing\"}\n"
       ],
       "error": [
         "{\"code\":\"unauthorized\",\"id\":2,\"message\":\"bad token\",\"type\":\"error\"}\n"
@@ -586,13 +592,33 @@
         "{\"capabilities\":[\"fleet.v1\"],\"hostBuild\":\"2611071\",\"hostID\":\"00000000-0000-0000-0000-0000000000F1\",\"id\":3,\"protocolVersion\":1,\"type\":\"helloOk\"}\n"
       ],
       "hooks": [
-        "{\"id\":30,\"result\":{\"hooks\":{\"_0\":{\"entries\":[{\"canonical\":\"{\\\"alpha\\\":\\\"kept in file order\\\",\\\"command\\\":\\\"jq -r .tool_input.file_path\\\\n| xargs prettier\\\",\\\"timeout\\\":10,\\\"type\\\":\\\"command\\\",\\\"zeta\\\":[true,null]}\",\"editable\":true,\"event\":\"PreToolUse\",\"file\":\"/Users/sam/.shepherd/hooks.json\",\"format\":\"shepherd\",\"groupIndex\":0,\"handler\":{\"raw\":\"{\\n  \\\"type\\\": \\\"command\\\",\\n  \\\"command\\\": \\\"jq -r .tool_input.file_path\\\\n| xargs prettier\\\",\\n  \\\"timeout\\\": 10,\\n  \\\"zeta\\\": [\\n    true,\\n    null\\n  ],\\n  \\\"alpha\\\": \\\"kept in file order\\\"\\n}\\n\"},\"handlerIndex\":0,\"hash\":\"ab12\",\"matcher\":\"Edit|Write\",\"on\":false,\"scope\":{\"mac\":{}},\"slot\":\"/Users/sam/.shepherd/hooks.json#PreToolUse/0/0\"}],\"home\":\"/Users/sam\",\"settings\":{\"off\":[\"ab12\"],\"readers\":{\"claude\":true,\"codex\":false},\"version\":1},\"sources\":[{\"format\":\"shepherd\",\"isTOML\":false,\"path\":\"/Users/sam/.shepherd/hooks.json\",\"scope\":{\"mac\":{}},\"state\":{\"loaded\":{\"count\":1}}},{\"format\":\"codex\",\"isTOML\":true,\"path\":\"/Users/sam/.codex/config.toml\",\"scope\":{\"mac\":{}},\"state\":{\"readerOff\":{}}},{\"format\":\"claude\",\"isTOML\":false,\"path\":\"/Users/sam/code/web/.claude/settings.json\",\"scope\":{\"space\":{\"root\":\"/Users/sam/code/web\"}},\"state\":{\"unreadable\":{\"line\":14,\"message\":\"expected “,”\"}}},{\"format\":\"codex\",\"isTOML\":false,\"path\":\"/Users/sam/code/web/.codex/hooks.json\",\"scope\":{\"space\":{\"root\":\"/Users/sam/code/web\"}},\"state\":{\"unreadable\":{\"message\":\"the file isn't UTF-8 text\"}}},{\"format\":\"shepherd\",\"isTOML\":false,\"path\":\"/Users/sam/code/web/.shepherd/hooks.json\",\"scope\":{\"space\":{\"root\":\"/Users/sam/code/web\"}},\"state\":{\"notFound\":{}}}]}}},\"type\":\"hooks\"}\n"
+        "{\"id\":30,\"result\":{\"hooks\":{\"_0\":{\"entries\":[{\"canonical\":\"{\\\"alpha\\\":\\\"kept in file order\\\",\\\"command\\\":\\\"jq -r .tool_input.file_path\\\\n| xargs prettier\\\",\\\"timeout\\\":10,\\\"type\\\":\\\"command\\\",\\\"zeta\\\":[true,null]}\",\"editable\":true,\"event\":\"PreToolUse\",\"file\":\"/Users/sam/.shepherd/hooks.json\",\"format\":\"shepherd\",\"groupIndex\":0,\"handler\":{\"raw\":\"{\\n  \\\"type\\\": \\\"command\\\",\\n  \\\"command\\\": \\\"jq -r .tool_input.file_path\\\\n| xargs prettier\\\",\\n  \\\"timeout\\\": 10,\\n  \\\"zeta\\\": [\\n    true,\\n    null\\n  ],\\n  \\\"alpha\\\": \\\"kept in file order\\\"\\n}\\n\"},\"handlerIndex\":0,\"hash\":\"ab12\",\"matcher\":\"Edit|Write\",\"on\":false,\"scope\":{\"mac\":{}},\"slot\":\"/Users/sam/.shepherd/hooks.json#PreToolUse/0/0\"}],\"home\":\"/Users/sam\",\"settings\":{\"off\":[\"ab12\"],\"readers\":{\"claude\":true,\"codex\":false},\"version\":1},\"sources\":[{\"format\":\"shepherd\",\"isTOML\":false,\"path\":\"/Users/sam/.shepherd/hooks.json\",\"scope\":{\"mac\":{}},\"state\":{\"loaded\":{\"count\":1}}},{\"format\":\"codex\",\"isTOML\":true,\"path\":\"/Users/sam/.codex/config.toml\",\"scope\":{\"mac\":{}},\"state\":{\"readerOff\":{}}},{\"format\":\"claude\",\"isTOML\":false,\"path\":\"/Users/sam/code/web/.claude/settings.json\",\"scope\":{\"space\":{\"root\":\"/Users/sam/code/web\"}},\"state\":{\"unreadable\":{\"line\":14,\"message\":\"expected “,”\"}}},{\"format\":\"codex\",\"isTOML\":false,\"path\":\"/Users/sam/code/web/.codex/hooks.json\",\"scope\":{\"space\":{\"root\":\"/Users/sam/code/web\"}},\"state\":{\"unreadable\":{\"message\":\"the file isn't UTF-8 text\"}}},{\"format\":\"shepherd\",\"isTOML\":false,\"path\":\"/Users/sam/code/web/.shepherd/hooks.json\",\"scope\":{\"space\":{\"root\":\"/Users/sam/code/web\"}},\"state\":{\"notFound\":{}}}]}}},\"type\":\"hooks\"}\n",
+        "{\"id\":1,\"result\":{\"hooks\":{\"_0\":{\"entries\":[{\"canonical\":\"{\\\"alpha\\\":\\\"kept in file order\\\",\\\"command\\\":\\\"jq -r .tool_input.file_path\\\\n| xargs prettier\\\",\\\"timeout\\\":10,\\\"type\\\":\\\"command\\\",\\\"zeta\\\":[true,null]}\",\"editable\":true,\"event\":\"PreToolUse\",\"file\":\"/Users/sam/.shepherd/hooks.json\",\"format\":\"shepherd\",\"groupIndex\":0,\"handler\":{\"raw\":\"{\\n  \\\"type\\\": \\\"command\\\",\\n  \\\"command\\\": \\\"jq -r .tool_input.file_path\\\\n| xargs prettier\\\",\\n  \\\"timeout\\\": 10,\\n  \\\"zeta\\\": [\\n    true,\\n    null\\n  ],\\n  \\\"alpha\\\": \\\"kept in file order\\\"\\n}\\n\"},\"handlerIndex\":0,\"hash\":\"ab12\",\"matcher\":\"Edit|Write\",\"on\":false,\"scope\":{\"mac\":{}},\"slot\":\"/Users/sam/.shepherd/hooks.json#PreToolUse/0/0\"}],\"home\":\"/Users/sam\",\"settings\":{\"off\":[\"ab12\"],\"readers\":{\"claude\":true,\"codex\":false},\"version\":1},\"sources\":[{\"format\":\"shepherd\",\"isTOML\":false,\"path\":\"/Users/sam/.shepherd/hooks.json\",\"scope\":{\"mac\":{}},\"state\":{\"loaded\":{\"count\":1}}},{\"format\":\"codex\",\"isTOML\":true,\"path\":\"/Users/sam/.codex/config.toml\",\"scope\":{\"mac\":{}},\"state\":{\"readerOff\":{}}},{\"format\":\"claude\",\"isTOML\":false,\"path\":\"/Users/sam/code/web/.claude/settings.json\",\"scope\":{\"space\":{\"root\":\"/Users/sam/code/web\"}},\"state\":{\"unreadable\":{\"line\":14,\"message\":\"expected “,”\"}}},{\"format\":\"codex\",\"isTOML\":false,\"path\":\"/Users/sam/code/web/.codex/hooks.json\",\"scope\":{\"space\":{\"root\":\"/Users/sam/code/web\"}},\"state\":{\"unreadable\":{\"message\":\"the file isn't UTF-8 text\"}}},{\"format\":\"shepherd\",\"isTOML\":false,\"path\":\"/Users/sam/code/web/.shepherd/hooks.json\",\"scope\":{\"space\":{\"root\":\"/Users/sam/code/web\"}},\"state\":{\"notFound\":{}}}]}}},\"type\":\"hooks\"}\n",
+        "{\"id\":1,\"result\":{\"hooks\":{\"_0\":{\"entries\":[],\"home\":\"\",\"settings\":{\"off\":[],\"readers\":{\"claude\":true,\"codex\":true},\"version\":1},\"sources\":[]}}},\"type\":\"hooks\"}\n",
+        "{\"id\":1,\"result\":{\"tested\":{\"_0\":{\"exit\":2,\"milliseconds\":41,\"outcome\":{\"blocked\":{\"reason\":\"No edits to .env files.\"}},\"stderr\":\"No edits to .env files.\",\"stderrCut\":false,\"stdout\":\"\",\"stdoutCut\":false}}},\"type\":\"hooks\"}\n",
+        "{\"id\":1,\"result\":{\"tested\":{\"_0\":{\"milliseconds\":5000,\"outcome\":{\"timedOut\":{}},\"stderr\":\"\",\"stderrCut\":false,\"stdout\":\"\",\"stdoutCut\":false}}},\"type\":\"hooks\"}\n",
+        "{\"id\":1,\"result\":{\"tested\":{\"_0\":{\"exit\":0,\"milliseconds\":3,\"outcome\":{\"context\":{\"_0\":\"Run make lint\"}},\"stderr\":\"\",\"stderrCut\":false,\"stdout\":\"{}\",\"stdoutCut\":false}}},\"type\":\"hooks\"}\n",
+        "{\"id\":1,\"result\":{\"tested\":{\"_0\":{\"exit\":0,\"milliseconds\":9,\"outcome\":{\"allowed\":{}},\"stderr\":\"warn\\n\",\"stderrCut\":false,\"stdout\":\"lint ok\\n\",\"stdoutCut\":true}}},\"type\":\"hooks\"}\n"
       ],
       "hostConfig": [
-        "{\"id\":29,\"result\":{\"mcp\":{\"_0\":{\"checkedAt\":1700000000,\"configPath\":\"~/Library/Application Support/Shepherd/pi/mcp.json\",\"servers\":[{\"enabled\":true,\"endpoint\":\"https://api.githubcopilot.com/mcp/\",\"kind\":\"remote\",\"name\":\"github\",\"signIn\":\"Signed in\",\"status\":\"connected\",\"tools\":12},{\"enabled\":true,\"endpoint\":\"npx -y @modelcontextprotocol/server-postgres\",\"kind\":\"local\",\"name\":\"postgres\",\"note\":\"connection refused\",\"signIn\":\"DATABASE_URI\",\"status\":\"error\"},{\"enabled\":false,\"endpoint\":\"https://example.invalid/mcp\",\"kind\":\"remote\",\"name\":\"old\",\"status\":\"off\"}]}}},\"type\":\"hostConfig\"}\n"
+        "{\"id\":29,\"result\":{\"mcp\":{\"_0\":{\"checkedAt\":1700000000,\"configPath\":\"~/Library/Application Support/Shepherd/pi/mcp.json\",\"servers\":[{\"enabled\":true,\"endpoint\":\"https://api.githubcopilot.com/mcp/\",\"kind\":\"remote\",\"name\":\"github\",\"signIn\":\"Signed in\",\"status\":\"connected\",\"tools\":12},{\"enabled\":true,\"endpoint\":\"npx -y @modelcontextprotocol/server-postgres\",\"kind\":\"local\",\"name\":\"postgres\",\"note\":\"connection refused\",\"signIn\":\"DATABASE_URI\",\"status\":\"error\"},{\"enabled\":false,\"endpoint\":\"https://example.invalid/mcp\",\"kind\":\"remote\",\"name\":\"old\",\"status\":\"off\"}]}}},\"type\":\"hostConfig\"}\n",
+        "{\"id\":1,\"result\":{\"mcp\":{\"_0\":{\"checkedAt\":1700000000,\"configPath\":\"~/Library/Application Support/Shepherd/pi/mcp.json\",\"servers\":[{\"enabled\":true,\"endpoint\":\"https://api.githubcopilot.com/mcp/\",\"kind\":\"remote\",\"name\":\"github\",\"signIn\":\"Signed in\",\"status\":\"connected\",\"tools\":12},{\"enabled\":true,\"endpoint\":\"npx -y @modelcontextprotocol/server-postgres\",\"kind\":\"local\",\"name\":\"postgres\",\"note\":\"connection refused\",\"signIn\":\"DATABASE_URI\",\"status\":\"error\"},{\"enabled\":false,\"endpoint\":\"https://example.invalid/mcp\",\"kind\":\"remote\",\"name\":\"old\",\"status\":\"off\"}]}}},\"type\":\"hostConfig\"}\n",
+        "{\"id\":1,\"result\":{\"mcpEntry\":{\"json\":\"{\\\"mcpServers\\\":{\\\"github\\\":{\\\"url\\\":\\\"https://x\\\"}}}\"}},\"type\":\"hostConfig\"}\n",
+        "{\"id\":1,\"result\":{\"subagents\":{\"_0\":[{\"disabled\":false,\"file\":\"reviewer.md\",\"fingerprint\":\"ab12\",\"isDefault\":true,\"name\":\"reviewer\"}]}},\"type\":\"hostConfig\"}\n",
+        "{\"id\":1,\"result\":{\"subagent\":{\"_0\":{\"file\":\"reviewer.md\",\"fingerprint\":\"ab12\",\"text\":\"Review.\\n\"}}},\"type\":\"hostConfig\"}\n",
+        "{\"id\":1,\"result\":{\"providers\":{\"_0\":[{\"accounts\":0,\"auth\":\"apiKey\",\"badge\":\"API key\",\"id\":\"openai\",\"name\":\"OpenAI\"}]}},\"type\":\"hostConfig\"}\n",
+        "{\"id\":1,\"result\":{\"providers\":{\"_0\":[{\"accountList\":[{\"active\":true,\"id\":\"a1\",\"name\":\"work\"},{\"active\":false,\"id\":\"a2\",\"limitedUntil\":1700000000,\"name\":\"home\"}],\"accounts\":2,\"activeAccount\":\"work\",\"auth\":\"signedIn\",\"badge\":\"Subscription\",\"id\":\"anthropic\",\"name\":\"Anthropic\",\"rotate\":true}]}},\"type\":\"hostConfig\"}\n",
+        "{\"id\":1,\"result\":{\"signIn\":{\"_0\":{\"authorizationURL\":\"https://claude.ai/oauth\",\"id\":\"00000000-0000-0000-0000-00000000000A\",\"name\":\"Anthropic\",\"phase\":\"waiting\",\"wantsCode\":true}}},\"type\":\"hostConfig\"}\n",
+        "{\"id\":1,\"result\":{\"signIn\":{\"_0\":{\"authorizationURL\":\"https://github.com/login/device\",\"deviceCode\":\"AB-12\",\"id\":\"00000000-0000-0000-0000-00000000000A\",\"name\":\"GitHub Copilot\",\"phase\":\"waiting\",\"wantsCode\":false}}},\"type\":\"hostConfig\"}\n",
+        "{\"id\":1,\"result\":{\"signIn\":{\"_0\":{\"id\":\"00000000-0000-0000-0000-00000000000A\",\"message\":\"Cancelled.\",\"name\":\"linear\",\"phase\":\"failed\",\"wantsCode\":false}}},\"type\":\"hostConfig\"}\n"
       ],
       "hostInventory": [
-        "{\"id\":29,\"result\":{\"mcp\":{\"_0\":{\"checkedAt\":1700000000,\"configPath\":\"~/Library/Application Support/Shepherd/pi/mcp.json\",\"servers\":[{\"enabled\":true,\"endpoint\":\"https://api.githubcopilot.com/mcp/\",\"kind\":\"remote\",\"name\":\"github\",\"signIn\":\"Signed in\",\"status\":\"connected\",\"tools\":12},{\"enabled\":true,\"endpoint\":\"npx -y @modelcontextprotocol/server-postgres\",\"kind\":\"local\",\"name\":\"postgres\",\"note\":\"connection refused\",\"signIn\":\"DATABASE_URI\",\"status\":\"error\"},{\"enabled\":false,\"endpoint\":\"https://example.invalid/mcp\",\"kind\":\"remote\",\"name\":\"old\",\"status\":\"off\"}]}}},\"type\":\"hostInventory\"}\n"
+        "{\"id\":29,\"result\":{\"mcp\":{\"_0\":{\"checkedAt\":1700000000,\"configPath\":\"~/Library/Application Support/Shepherd/pi/mcp.json\",\"servers\":[{\"enabled\":true,\"endpoint\":\"https://api.githubcopilot.com/mcp/\",\"kind\":\"remote\",\"name\":\"github\",\"signIn\":\"Signed in\",\"status\":\"connected\",\"tools\":12},{\"enabled\":true,\"endpoint\":\"npx -y @modelcontextprotocol/server-postgres\",\"kind\":\"local\",\"name\":\"postgres\",\"note\":\"connection refused\",\"signIn\":\"DATABASE_URI\",\"status\":\"error\"},{\"enabled\":false,\"endpoint\":\"https://example.invalid/mcp\",\"kind\":\"remote\",\"name\":\"old\",\"status\":\"off\"}]}}},\"type\":\"hostInventory\"}\n",
+        "{\"id\":1,\"result\":{\"mcp\":{\"_0\":{\"checkedAt\":1700000000,\"configPath\":\"~/Library/Application Support/Shepherd/pi/mcp.json\",\"servers\":[{\"enabled\":true,\"endpoint\":\"https://api.githubcopilot.com/mcp/\",\"kind\":\"remote\",\"name\":\"github\",\"signIn\":\"Signed in\",\"status\":\"connected\",\"tools\":12},{\"enabled\":true,\"endpoint\":\"npx -y @modelcontextprotocol/server-postgres\",\"kind\":\"local\",\"name\":\"postgres\",\"note\":\"connection refused\",\"signIn\":\"DATABASE_URI\",\"status\":\"error\"},{\"enabled\":false,\"endpoint\":\"https://example.invalid/mcp\",\"kind\":\"remote\",\"name\":\"old\",\"status\":\"off\"}]}}},\"type\":\"hostInventory\"}\n",
+        "{\"id\":1,\"result\":{\"mcp\":{\"_0\":{\"configPath\":\"~/mcp.json\",\"problem\":\"mcp.json line 12 isn’t valid JSON\",\"servers\":[]}}},\"type\":\"hostInventory\"}\n",
+        "{\"id\":1,\"result\":{\"subagents\":{\"_0\":[{\"context\":\"fork\",\"description\":\"Reviews a diff.\",\"disabled\":false,\"file\":\"reviewer.md\",\"isDefault\":true,\"name\":\"reviewer\",\"tools\":[\"read\"]},{\"disabled\":true,\"error\":\"No front matter\",\"file\":\"team/broken.md\",\"isDefault\":false,\"name\":\"broken\"}]}},\"type\":\"hostInventory\"}\n",
+        "{\"id\":1,\"result\":{\"subagent\":{\"_0\":{\"file\":\"reviewer.md\",\"fingerprint\":\"ab12\",\"text\":\"---\\nname: reviewer\\n---\\nReview.\\n\"}}},\"type\":\"hostInventory\"}\n",
+        "{\"id\":1,\"result\":{\"providers\":{\"_0\":[{\"accounts\":2,\"activeAccount\":\"work\",\"auth\":\"expired\",\"badge\":\"Subscription\",\"detail\":\"Claude Pro or Max\",\"id\":\"anthropic\",\"name\":\"Anthropic\"},{\"accounts\":0,\"auth\":\"apiKey\",\"badge\":\"API key\",\"id\":\"openai\",\"name\":\"OpenAI\",\"problem\":\"Couldn’t sign out.\"},{\"accounts\":0,\"auth\":\"noKey\",\"badge\":\"Custom\",\"detail\":\"http://localhost:11434\",\"id\":\"local\",\"name\":\"local\"}]}},\"type\":\"hostInventory\"}\n"
       ],
       "hostSettings": [
         "{\"id\":28,\"settings\":{\"backgroundService\":true,\"bundledExtensions\":[{\"id\":\"panes\",\"name\":\"Panes and agent tools\",\"on\":true},{\"id\":\"review\",\"name\":\"Diff review tool\",\"on\":false}],\"closeOnMerge\":true,\"commitRemainingWork\":true,\"compactAtPercent\":80,\"computerUseEnabled\":true,\"defaultModel\":\"anthropic/claude-opus\",\"defaultServiceTier\":\"fast\",\"defaultThinking\":\"high\",\"deleteLocalBranch\":true,\"designToolEnabled\":true,\"fetchBeforeCreating\":false,\"fleetBatteryCountsHalf\":true,\"fleetCheckIgnores\":{},\"fleetSnapshotExcludes\":{},\"fleetThreadCap\":3,\"fleetThreadsCanSend\":false,\"fleetUncommitted\":\"sendThem\",\"fleetWeights\":{\"fleet.weight.00000000-0000-0000-0000-0000000000F1\":\"lessOften\"},\"generatePRDescriptions\":true,\"goalCrossProviderEvaluation\":true,\"goalsEnabled\":true,\"hiddenSlashCommands\":[\"review\"],\"installedExtensions\":[\"npm:@example/pi-tools@1.0.0\"],\"mcpProjectConfig\":true,\"mergeMethod\":\"rebase\",\"mergePRAutomatically\":true,\"piVersion\":\"0.87.1\",\"projectsEnabled\":true,\"queueDelivery\":\"oneAtATime\",\"shepherdVersion\":\"0.4.2\",\"skillsInSlashMenu\":false,\"slashCommands\":[{\"description\":\"Review a diff\",\"name\":\"review\",\"source\":\"extension\"}],\"subThreadPlace\":\"checkout\",\"subagentDefaults\":{\"concurrency\":6,\"context\":\"fork\",\"model\":\"openai/gpt-5-mini\",\"thinking\":\"low\"},\"textGenerationModel\":\"anthropic/claude-haiku\",\"threadsStartThreads\":false,\"updateExtensionsDaily\":false,\"updatePiDaily\":true,\"visionModel\":\"google/gemini-flash\",\"worktreeBase\":\"head\",\"worktreeDeleteAction\":\"removeWorktree\"},\"type\":\"hostSettings\"}\n"
@@ -612,7 +638,8 @@
       ],
       "models": [
         "{\"defaultModel\":\"anthropic/claude-4\",\"id\":10,\"models\":[\"anthropic/claude-4\",\"openai/gpt-5\"],\"type\":\"models\",\"withoutThinking\":[\"openai/gpt-5\"]}\n",
-        "{\"contexts\":{\"openai/gpt-5\":\"400K\"},\"id\":12,\"models\":[\"anthropic/claude-4\",\"openai/gpt-5\"],\"serviceTiers\":{\"openai/gpt-5\":[\"standard\",\"fast\"]},\"thinkingLevels\":{\"anthropic/claude-4\":[\"off\",\"minimal\",\"low\",\"medium\",\"high\",\"xhigh\",\"max\"]},\"type\":\"models\",\"withoutImages\":[\"openai/gpt-5\"],\"withoutThinking\":[]}\n"
+        "{\"contexts\":{\"openai/gpt-5\":\"400K\"},\"id\":12,\"models\":[\"anthropic/claude-4\",\"openai/gpt-5\"],\"serviceTiers\":{\"openai/gpt-5\":[\"standard\",\"fast\"]},\"thinkingLevels\":{\"anthropic/claude-4\":[\"off\",\"minimal\",\"low\",\"medium\",\"high\",\"xhigh\",\"max\"]},\"type\":\"models\",\"withoutImages\":[\"openai/gpt-5\"],\"withoutThinking\":[]}\n",
+        "{\"id\":11,\"models\":[],\"type\":\"models\"}\n"
       ],
       "nativeThread": [
         "{\"id\":80,\"result\":{\"accepted\":{\"operationID\":\"00000000-0000-0000-0000-00000000000A\"}},\"type\":\"nativeThread\"}\n"
@@ -643,7 +670,8 @@
         "{\"links\":[],\"notes\":[],\"type\":\"pullRequestLinks\"}\n"
       ],
       "sessionExited": [
-        "{\"exitCode\":0,\"sessionID\":\"session\",\"type\":\"sessionExited\"}\n"
+        "{\"exitCode\":0,\"sessionID\":\"session\",\"type\":\"sessionExited\"}\n",
+        "{\"sessionID\":\"session\",\"type\":\"sessionExited\"}\n"
       ],
       "settingsChanged": [
         "{\"page\":\"instructions\",\"type\":\"settingsChanged\"}\n",
@@ -651,7 +679,11 @@
         "{\"page\":\"fleetPressure\",\"type\":\"settingsChanged\"}\n"
       ],
       "skills": [
-        "{\"id\":30,\"result\":{\"skills\":{\"_0\":{\"autoUpdate\":true,\"checkedAt\":1700000500,\"directory\":\"~/.agents/skills\",\"pi\":{\"agentDirectory\":\"~/.pi/agent\",\"shadowedInstalled\":{\"pdf\":\"~/.pi/agent/skills/pdf/SKILL.md\"},\"skills\":[{\"invocation\":\"automatic\",\"name\":\"review\",\"origin\":\"agentDirectory\",\"path\":\"~/.pi/agent/skills/review/SKILL.md\",\"summary\":\"Reviews a diff.\"},{\"invocation\":\"slashOnly\",\"name\":\"lint\",\"origin\":\"settingsPath\",\"path\":\"~/code/skills/lint/SKILL.md\",\"summary\":\"Runs the linters.\"},{\"invocation\":\"automatic\",\"name\":\"review\",\"origin\":\"package\",\"package\":\"@acme/skills\",\"path\":\"~/.pi/agent/npm/node_modules/@acme/skills/review/SKILL.md\",\"shadowedBy\":\"~/.pi/agent/skills/review/SKILL.md\",\"summary\":\"Another review.\"}]},\"skills\":[{\"files\":[{\"fileCount\":1,\"isDirectory\":false,\"name\":\"SKILL.md\"},{\"fileCount\":8,\"isDirectory\":true,\"name\":\"scripts\"}],\"invocation\":\"automatic\",\"isOn\":true,\"name\":\"pdf\",\"source\":{\"commit\":\"3f2a91c0\",\"committedAt\":1700000000,\"path\":\"skills/pdf\",\"repo\":\"anthropics/skills\"},\"summary\":\"Read, fill, merge and split PDFs.\",\"update\":{\"commit\":\"8c04e1d0\",\"committedAt\":1700000900,\"filesChanged\":3},\"updatedAt\":1700000100},{\"files\":[],\"invocation\":\"slashOnly\",\"isOn\":false,\"name\":\"changelog\",\"summary\":\"Drafts a \\\"CHANGELOG\\\" entry.\",\"updatedAt\":1690000000},{\"copiedFrom\":\"/Users/me/.pi/agent/skills/triage\",\"files\":[],\"invocation\":\"automatic\",\"isOn\":true,\"name\":\"triage\",\"summary\":\"Sorts issues.\",\"updatedAt\":1695000000}]}}},\"type\":\"skills\"}\n"
+        "{\"id\":30,\"result\":{\"skills\":{\"_0\":{\"autoUpdate\":true,\"checkedAt\":1700000500,\"directory\":\"~/.agents/skills\",\"pi\":{\"agentDirectory\":\"~/.pi/agent\",\"shadowedInstalled\":{\"pdf\":\"~/.pi/agent/skills/pdf/SKILL.md\"},\"skills\":[{\"invocation\":\"automatic\",\"name\":\"review\",\"origin\":\"agentDirectory\",\"path\":\"~/.pi/agent/skills/review/SKILL.md\",\"summary\":\"Reviews a diff.\"},{\"invocation\":\"slashOnly\",\"name\":\"lint\",\"origin\":\"settingsPath\",\"path\":\"~/code/skills/lint/SKILL.md\",\"summary\":\"Runs the linters.\"},{\"invocation\":\"automatic\",\"name\":\"review\",\"origin\":\"package\",\"package\":\"@acme/skills\",\"path\":\"~/.pi/agent/npm/node_modules/@acme/skills/review/SKILL.md\",\"shadowedBy\":\"~/.pi/agent/skills/review/SKILL.md\",\"summary\":\"Another review.\"}]},\"skills\":[{\"files\":[{\"fileCount\":1,\"isDirectory\":false,\"name\":\"SKILL.md\"},{\"fileCount\":8,\"isDirectory\":true,\"name\":\"scripts\"}],\"invocation\":\"automatic\",\"isOn\":true,\"name\":\"pdf\",\"source\":{\"commit\":\"3f2a91c0\",\"committedAt\":1700000000,\"path\":\"skills/pdf\",\"repo\":\"anthropics/skills\"},\"summary\":\"Read, fill, merge and split PDFs.\",\"update\":{\"commit\":\"8c04e1d0\",\"committedAt\":1700000900,\"filesChanged\":3},\"updatedAt\":1700000100},{\"files\":[],\"invocation\":\"slashOnly\",\"isOn\":false,\"name\":\"changelog\",\"summary\":\"Drafts a \\\"CHANGELOG\\\" entry.\",\"updatedAt\":1690000000},{\"copiedFrom\":\"/Users/me/.pi/agent/skills/triage\",\"files\":[],\"invocation\":\"automatic\",\"isOn\":true,\"name\":\"triage\",\"summary\":\"Sorts issues.\",\"updatedAt\":1695000000}]}}},\"type\":\"skills\"}\n",
+        "{\"id\":1,\"result\":{\"skills\":{\"_0\":{\"autoUpdate\":true,\"checkedAt\":1700000500,\"directory\":\"~/.agents/skills\",\"pi\":{\"agentDirectory\":\"~/.pi/agent\",\"shadowedInstalled\":{\"pdf\":\"~/.pi/agent/skills/pdf/SKILL.md\"},\"skills\":[{\"invocation\":\"automatic\",\"name\":\"review\",\"origin\":\"agentDirectory\",\"path\":\"~/.pi/agent/skills/review/SKILL.md\",\"summary\":\"Reviews a diff.\"},{\"invocation\":\"slashOnly\",\"name\":\"lint\",\"origin\":\"settingsPath\",\"path\":\"~/code/skills/lint/SKILL.md\",\"summary\":\"Runs the linters.\"},{\"invocation\":\"automatic\",\"name\":\"review\",\"origin\":\"package\",\"package\":\"@acme/skills\",\"path\":\"~/.pi/agent/npm/node_modules/@acme/skills/review/SKILL.md\",\"shadowedBy\":\"~/.pi/agent/skills/review/SKILL.md\",\"summary\":\"Another review.\"}]},\"skills\":[{\"files\":[{\"fileCount\":1,\"isDirectory\":false,\"name\":\"SKILL.md\"},{\"fileCount\":8,\"isDirectory\":true,\"name\":\"scripts\"}],\"invocation\":\"automatic\",\"isOn\":true,\"name\":\"pdf\",\"source\":{\"commit\":\"3f2a91c0\",\"committedAt\":1700000000,\"path\":\"skills/pdf\",\"repo\":\"anthropics/skills\"},\"summary\":\"Read, fill, merge and split PDFs.\",\"update\":{\"commit\":\"8c04e1d0\",\"committedAt\":1700000900,\"filesChanged\":3},\"updatedAt\":1700000100},{\"files\":[],\"invocation\":\"slashOnly\",\"isOn\":false,\"name\":\"changelog\",\"summary\":\"Drafts a \\\"CHANGELOG\\\" entry.\",\"updatedAt\":1690000000},{\"copiedFrom\":\"/Users/me/.pi/agent/skills/triage\",\"files\":[],\"invocation\":\"automatic\",\"isOn\":true,\"name\":\"triage\",\"summary\":\"Sorts issues.\",\"updatedAt\":1695000000}]}}},\"type\":\"skills\"}\n",
+        "{\"id\":1,\"result\":{\"skills\":{\"_0\":{\"autoUpdate\":false,\"directory\":\"~/.agents/skills\",\"skills\":[]}}},\"type\":\"skills\"}\n",
+        "{\"id\":1,\"result\":{\"skills\":{\"_0\":{\"autoUpdate\":false,\"directory\":\"~/.agents/skills\",\"pi\":{\"agentDirectory\":\"~/.pi/agent\",\"problem\":\"pi_not_found\",\"shadowedInstalled\":{},\"skills\":[]},\"skills\":[]}}},\"type\":\"skills\"}\n",
+        "{\"id\":1,\"result\":{\"repo\":{\"_0\":{\"branch\":\"main\",\"commit\":\"8c04e1d0\",\"repo\":\"anthropics/skills\",\"skills\":[{\"files\":[{\"fileCount\":1,\"isDirectory\":false,\"name\":\"SKILL.md\"}],\"instructions\":\"---\\nname: docx\\n---\\n# Word documents\\n\",\"name\":\"docx\",\"path\":\"skills/docx\",\"summary\":\"Create and edit Word documents.\"},{\"files\":[],\"instructions\":\"\",\"name\":\"solo\",\"path\":\"\",\"summary\":\"The repository is the skill.\"}]}}},\"type\":\"skills\"}\n"
       ],
       "spaceAdded": [
         "{\"id\":6,\"spaceID\":\"space\",\"type\":\"spaceAdded\"}\n"
@@ -675,7 +707,9 @@
         "{\"frame\":{\"data\":{\"bytes\":\"SFRUUC8xLjEgMjAwIE9LDQoNCg==\",\"tunnel\":7}},\"type\":\"tunnel\"}\n"
       ],
       "uploadResult": [
-        "{\"id\":51,\"result\":{\"complete\":{\"path\":\"/host/private/image.png\"}},\"type\":\"uploadResult\"}\n"
+        "{\"id\":51,\"result\":{\"complete\":{\"path\":\"/host/private/image.png\"}},\"type\":\"uploadResult\"}\n",
+        "{\"id\":1,\"result\":{\"ready\":{\"uploadID\":\"00000000-0000-0000-0000-00000000000A\"}},\"type\":\"uploadResult\"}\n",
+        "{\"id\":1,\"result\":{\"complete\":{\"path\":\"/p\"}},\"type\":\"uploadResult\"}\n"
       ]
     },
     "remote-request": {
@@ -785,7 +819,26 @@
         "{\"cols\":120,\"id\":4,\"rows\":40,\"sessionID\":\"session\",\"type\":\"attach\",\"viewportGeneration\":2}\n"
       ],
       "automation": [
-        "{\"automationID\":\"automation\",\"id\":21,\"request\":{\"setEnabled\":{\"enabled\":false}},\"type\":\"automation\"}\n"
+        "{\"automationID\":\"automation\",\"id\":21,\"request\":{\"setEnabled\":{\"enabled\":false}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"setEnabled\":{\"enabled\":true}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"setEnabled\":{\"enabled\":false}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"run\":{}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"stop\":{}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"runs\":{}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"create\":{\"draft\":{\"cwd\":\"/host/repo\",\"enabled\":false,\"name\":\"Nightly \\\"dry\\\" run\",\"prompt\":\"Run every migration\\nReport\"}}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"update\":{\"draft\":{\"cwd\":\"/host/repo\",\"enabled\":false,\"name\":\"Nightly \\\"dry\\\" run\",\"prompt\":\"Run every migration\\nReport\"}}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"delete\":{}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"create\":{\"draft\":{\"cwd\":\"/r\",\"enabled\":true,\"name\":\"loop\",\"prompt\":\"p\",\"settings\":{\"limits\":{\"maxConcurrent\":2,\"maxPerDay\":20},\"trigger\":{\"triggers\":[{\"authors\":[],\"events\":[\"issueLabeled\",\"pullRequestMerged\"],\"labels\":[\"shepherd\"],\"repo\":\"acme/app\"}],\"type\":\"github\"},\"workspace\":\"worktree\"}}}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"update\":{\"draft\":{\"cwd\":\"/r\",\"enabled\":true,\"name\":\"unlimited\",\"prompt\":\"p\",\"settings\":{\"limits\":{\"maxConcurrent\":0,\"maxPerDay\":20}}}}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"update\":{\"draft\":{\"cwd\":\"/r\",\"enabled\":true,\"name\":\"no daily limit\",\"prompt\":\"p\",\"settings\":{\"limits\":{\"maxConcurrent\":2,\"maxPerDay\":0}}}}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"status\":{}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"pause\":{}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"resume\":{}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"runEvent\":{\"eventID\":\"acme/app#1:opened\"}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"dismissEvent\":{\"eventID\":\"schedule:5\"}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"markRead\":{\"runID\":\"00000000-0000-0000-0000-00000000000A\"}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"setAllPaused\":{\"paused\":true}},\"type\":\"automation\"}\n",
+        "{\"automationID\":\"automation\",\"id\":1,\"request\":{\"setRunPullRequest\":{\"agentID\":\"agent\",\"url\":\"https://github.com/acme/app/pull/12\"}},\"type\":\"automation\"}\n"
       ],
       "browserAnswer": [
         "{\"outcome\":{\"text\":\"Clicked button \\\"Pay\\\".\",\"type\":\"result\"},\"requestToken\":12,\"type\":\"browserAnswer\"}\n",
@@ -962,7 +1015,15 @@
         "{\"capabilities\":[\"native.revisions.v1\",\"native.fleetDigest.v1\",\"files.v1\",\"push.notifications.v1\",\"native.checkpointRecovery.v1\",\"logicalProjects.result.v1\",\"browser.tabs.v1\",\"logicalProjects.publications.v1\",\"logicalProjects.worker.v1\",\"logicalProjects.placement.v1\",\"logicalProjectRuntime.v1\",\"logicalProjects.execution.v1\",\"native.queue.v1\",\"native.startup-dialogs.v1\",\"thinking.levels.v1\",\"design.systems.v1\",\"designs.v1\",\"browser.tunnel.v1\",\"browser.drive.v1\",\"projects.v2\",\"designRelay.v2\",\"appRelay.v1\",\"apps.v2\",\"fleet.move.view.v1\"],\"clientName\":\"Mac\",\"id\":9,\"protocolVersion\":1,\"token\":\"t\",\"type\":\"hello\"}\n"
       ],
       "hooks": [
-        "{\"id\":29,\"request\":{\"setOn\":{\"hash\":\"ab12\",\"on\":false}},\"type\":\"hooks\"}\n"
+        "{\"id\":29,\"request\":{\"setOn\":{\"hash\":\"ab12\",\"on\":false}},\"type\":\"hooks\"}\n",
+        "{\"id\":1,\"request\":{\"fetch\":{}},\"type\":\"hooks\"}\n",
+        "{\"id\":1,\"request\":{\"setOn\":{\"hash\":\"ab12\",\"on\":true}},\"type\":\"hooks\"}\n",
+        "{\"id\":1,\"request\":{\"setReader\":{\"format\":\"codex\",\"on\":false}},\"type\":\"hooks\"}\n",
+        "{\"id\":1,\"request\":{\"save\":{\"drafts\":[{\"event\":\"PreToolUse\",\"handler\":{\"raw\":\"{\\n  \\\"type\\\": \\\"command\\\",\\n  \\\"command\\\": \\\"jq -r .tool_input.file_path\\\\n| xargs prettier\\\",\\n  \\\"timeout\\\": 10,\\n  \\\"zeta\\\": [\\n    true,\\n    null\\n  ],\\n  \\\"alpha\\\": \\\"kept in file order\\\"\\n}\\n\"},\"matcher\":\"Edit|Write\"},{\"event\":\"PreToolUse\",\"handler\":{\"raw\":\"{\\n  \\\"type\\\": \\\"command\\\",\\n  \\\"command\\\": \\\"ls\\\"\\n}\\n\"},\"matcher\":\"\"}],\"file\":\"/Users/sam/.shepherd/hooks.json\",\"kept\":0,\"replacing\":{\"hash\":\"ab12\",\"slot\":\"/Users/sam/.shepherd/hooks.json#PreToolUse/0/0\"}}},\"type\":\"hooks\"}\n",
+        "{\"id\":1,\"request\":{\"save\":{\"drafts\":[{\"event\":\"Stop\",\"handler\":{\"raw\":\"{\\n  \\\"type\\\": \\\"command\\\",\\n  \\\"command\\\": \\\"npm test\\\"\\n}\\n\"},\"matcher\":\"\"}],\"file\":\"/Users/sam/code/web/.shepherd/hooks.json\"}},\"type\":\"hooks\"}\n",
+        "{\"id\":1,\"request\":{\"delete\":{\"_0\":{\"hash\":\"cd34\",\"slot\":\"/Users/sam/.shepherd/hooks.json#Stop/1/0\"}}},\"type\":\"hooks\"}\n",
+        "{\"id\":1,\"request\":{\"test\":{\"command\":\"exit 2\",\"event\":\"PreToolUse\",\"matcher\":\"Bash\",\"root\":\"/Users/sam/code/web\",\"timeout\":5}},\"type\":\"hooks\"}\n",
+        "{\"id\":1,\"request\":{\"test\":{\"command\":\"true\",\"event\":\"SessionEnd\",\"matcher\":\"\"}},\"type\":\"hooks\"}\n"
       ],
       "hostConfig": [
         "{\"id\":28,\"request\":{\"mcpRefresh\":{}},\"type\":\"hostConfig\"}\n",
@@ -1065,7 +1126,11 @@
         "{\"data\":\"G1tB\",\"sessionID\":\"session\",\"type\":\"input\"}\n"
       ],
       "instructions": [
-        "{\"id\":23,\"request\":{\"save\":{\"content\":\"Never force-push.\\n\",\"file\":\"APPEND_SYSTEM.md\",\"origin\":\"studio\",\"sync\":true}},\"type\":\"instructions\"}\n"
+        "{\"id\":23,\"request\":{\"save\":{\"content\":\"Never force-push.\\n\",\"file\":\"APPEND_SYSTEM.md\",\"origin\":\"studio\",\"sync\":true}},\"type\":\"instructions\"}\n",
+        "{\"id\":1,\"request\":{\"fetch\":{}},\"type\":\"instructions\"}\n",
+        "{\"id\":1,\"request\":{\"save\":{\"content\":\"# How I work\\n- Prefer \\\"small\\\" commits.\\n\",\"file\":\"AGENTS.md\",\"origin\":\"studio\",\"sync\":false}},\"type\":\"instructions\"}\n",
+        "{\"id\":1,\"request\":{\"save\":{\"content\":\"\",\"file\":\"APPEND_SYSTEM.md\",\"origin\":\"iPhone\",\"sync\":true}},\"type\":\"instructions\"}\n",
+        "{\"id\":1,\"request\":{\"restore\":{\"origin\":\"This Mac\",\"revisionID\":\"00000000-0000-0000-0000-00000000000A\"}},\"type\":\"instructions\"}\n"
       ],
       "listDir": [
         "{\"id\":8,\"path\":\"\",\"type\":\"listDir\"}\n"
@@ -1122,7 +1187,18 @@
         "{\"agentID\":\"agent\",\"id\":16,\"ratio\":0.7,\"split\":{\"axis\":\"vertical\",\"first\":{\"pane\":{\"cwd\":\"/a\",\"id\":\"pane-a\"},\"type\":\"leaf\"},\"ratio\":0.5,\"second\":{\"pane\":{\"cwd\":\"/b\",\"id\":\"pane-b\"},\"type\":\"leaf\"},\"type\":\"split\"},\"type\":\"resizePaneSplit\"}\n"
       ],
       "skills": [
-        "{\"id\":29,\"request\":{\"install\":{\"paths\":[\"skills/pdf\"],\"repo\":\"anthropics/skills\"}},\"type\":\"skills\"}\n"
+        "{\"id\":29,\"request\":{\"install\":{\"paths\":[\"skills/pdf\"],\"repo\":\"anthropics/skills\"}},\"type\":\"skills\"}\n",
+        "{\"id\":1,\"request\":{\"fetch\":{}},\"type\":\"skills\"}\n",
+        "{\"id\":1,\"request\":{\"lookUp\":{\"repo\":\"https://github.com/anthropics/skills\"}},\"type\":\"skills\"}\n",
+        "{\"id\":1,\"request\":{\"install\":{\"commit\":\"8c04e1d0\",\"invocation\":\"slashOnly\",\"paths\":[\"skills/docx\",\"skills/pptx\"],\"repo\":\"anthropics/skills\"}},\"type\":\"skills\"}\n",
+        "{\"id\":1,\"request\":{\"install\":{\"paths\":[\"\"],\"repo\":\"acme/platform-skills\"}},\"type\":\"skills\"}\n",
+        "{\"id\":1,\"request\":{\"installFiles\":{\"files\":[{\"contents\":\"LS0tCm5hbWU6IGdvLXRhYmxlLXRlc3RzCi0tLQo=\",\"executable\":false,\"path\":\"SKILL.md\"},{\"contents\":\"IyE=\",\"executable\":true,\"path\":\"scripts/run.sh\"}],\"invocation\":\"automatic\",\"name\":\"go-table-tests\"}},\"type\":\"skills\"}\n",
+        "{\"id\":1,\"request\":{\"setOn\":{\"name\":\"pdf\",\"on\":false}},\"type\":\"skills\"}\n",
+        "{\"id\":1,\"request\":{\"setInvocation\":{\"invocation\":\"slashOnly\",\"name\":\"pdf\"}},\"type\":\"skills\"}\n",
+        "{\"id\":1,\"request\":{\"remove\":{\"name\":\"pdf\"}},\"type\":\"skills\"}\n",
+        "{\"id\":1,\"request\":{\"restore\":{\"name\":\"pdf\"}},\"type\":\"skills\"}\n",
+        "{\"id\":1,\"request\":{\"checkUpdates\":{}},\"type\":\"skills\"}\n",
+        "{\"id\":1,\"request\":{\"configure\":{\"autoUpdate\":true}},\"type\":\"skills\"}\n"
       ],
       "spaceAction": [
         "{\"action\":{\"rename\":{\"name\":\"acme-web\"}},\"id\":5,\"spaceID\":\"space\",\"type\":\"spaceAction\"}\n",
@@ -1143,20 +1219,31 @@
       ],
       "suggestions": [
         "{\"id\":25,\"request\":{\"add\":{\"id\":\"00000000-0000-0000-0000-00000000000A\",\"line\":\"- Ask for join keys first.\"}},\"type\":\"suggestions\"}\n",
-        "{\"id\":1,\"request\":{\"configure\":{\"_0\":{\"enabled\":true,\"files\":[\"AGENTS.md\"],\"sources\":[\"automation\"]}}},\"type\":\"suggestions\"}\n"
+        "{\"id\":1,\"request\":{\"fetch\":{}},\"type\":\"suggestions\"}\n",
+        "{\"id\":1,\"request\":{\"configure\":{\"_0\":{\"enabled\":true,\"files\":[\"AGENTS.md\"],\"since\":1700000000,\"sources\":[\"automation\"]}}},\"type\":\"suggestions\"}\n",
+        "{\"id\":1,\"request\":{\"configure\":{\"_0\":{\"enabled\":false,\"files\":[\"AGENTS.md\"],\"sources\":[\"thread\"]}}},\"type\":\"suggestions\"}\n",
+        "{\"id\":1,\"request\":{\"add\":{\"id\":\"00000000-0000-0000-0000-00000000000A\"}},\"type\":\"suggestions\"}\n",
+        "{\"id\":1,\"request\":{\"add\":{\"file\":\"APPEND_SYSTEM.md\",\"id\":\"00000000-0000-0000-0000-00000000000A\",\"line\":\"- Ask for \\\"join keys\\\" first.\"}},\"type\":\"suggestions\"}\n",
+        "{\"id\":1,\"request\":{\"addAll\":{}},\"type\":\"suggestions\"}\n",
+        "{\"id\":1,\"request\":{\"dismiss\":{\"id\":\"00000000-0000-0000-0000-00000000000A\"}},\"type\":\"suggestions\"}\n",
+        "{\"id\":1,\"request\":{\"undo\":{\"id\":\"00000000-0000-0000-0000-00000000000A\"}},\"type\":\"suggestions\"}\n"
       ],
       "tunnel": [
         "{\"frame\":{\"open\":{\"agentID\":\"agent\",\"port\":5173,\"tunnel\":7}},\"type\":\"tunnel\"}\n"
       ],
       "upload": [
-        "{\"action\":{\"begin\":{\"name\":\"image.png\",\"sessionID\":\"session\",\"size\":20}},\"id\":50,\"type\":\"upload\"}\n"
+        "{\"action\":{\"begin\":{\"name\":\"image.png\",\"sessionID\":\"session\",\"size\":20}},\"id\":50,\"type\":\"upload\"}\n",
+        "{\"action\":{\"begin\":{\"name\":\"a.png\",\"sessionID\":\"session\",\"size\":3}},\"id\":1,\"type\":\"upload\"}\n",
+        "{\"action\":{\"chunk\":{\"data\":\"AAEC\",\"uploadID\":\"00000000-0000-0000-0000-00000000000A\"}},\"id\":1,\"type\":\"upload\"}\n",
+        "{\"action\":{\"finish\":{\"uploadID\":\"00000000-0000-0000-0000-00000000000A\"}},\"id\":1,\"type\":\"upload\"}\n",
+        "{\"action\":{\"cancel\":{\"uploadID\":\"00000000-0000-0000-0000-00000000000A\"}},\"id\":1,\"type\":\"upload\"}\n"
       ]
     }
   },
   "referenceRevision": "234a2e74be4c76ab7a56ebb1a98fba6dbf52e3a6",
   "seed": {
     "clientName": "c-wire-validation",
-    "codec": "First sample per case in RemoteMessageTests.swift and ExtensionMessageTests.swift",
+    "codec": "Shared round-trip samples from RemoteMessageTests.swift and ExtensionMessageTests.swift, including nested remote variants",
     "defaultModel": "stub/model-a",
     "directories": [
       "acme-web",

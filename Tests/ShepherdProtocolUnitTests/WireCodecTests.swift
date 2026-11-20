@@ -8,8 +8,8 @@ struct WireCodecTests {
         try ValidationGolden.check("c-wire.json", from: #filePath, step: "codec-golden",
                                    completion: "c-wire codec samples matched the golden") { golden in
             let actual = try [
-                "remote-request": lines(RemoteRequestTests.samples + RemoteRequestTests.additionalWireSamples, in: "RemoteMessage"),
-                "remote-reply": lines(RemoteReplyTests.samples + RemoteReplyTests.additionalWireSamples, in: "RemoteMessage"),
+                "remote-request": lines(RemoteRequestTests.wireSamples, in: "RemoteMessage"),
+                "remote-reply": lines(RemoteReplyTests.wireSamples, in: "RemoteMessage"),
                 "extension-request": lines(ExtensionMessageTests.samples, in: "ExtensionMessage"),
                 "extension-reply": lines(ExtensionReplyTests.samples, in: "ExtensionMessage"),
             ]

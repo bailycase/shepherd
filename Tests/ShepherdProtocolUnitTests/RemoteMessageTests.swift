@@ -339,8 +339,9 @@ enum RemoteSamples {
                                                                   files: [.agents, .appendSystem])
     static let suggestionsRequests: [RemoteSuggestionsRequest] = [
         .fetch,
-        .configure(suggestionSettings),
-        .configure(SuggestedInstructionsSettings()),
+        // Exact NDJSON cannot pin the iteration order of a Set with multiple members.
+        .configure(suggestions.settings),
+        .configure(SuggestedInstructionsSettings(sources: [.thread])),
         .add(id: op, line: nil, file: nil),
         .add(id: op, line: "- Ask for \"join keys\" first.", file: .appendSystem),
         .addAll,
@@ -779,7 +780,14 @@ struct RemoteRequestTests {
         id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64),
         preferences: RemotePushPreferences(topics: [.questions, .failures], awayOnly: false)))
 
-    @Test(arguments: samples + [pushRegistrationWithMultipleTopics])
+    static let wireSamples = samples + additionalWireSamples
+
+    // Keep the multi-member Set cases in the round-trip test only.
+    @Test(arguments: wireSamples + [
+        pushRegistrationWithMultipleTopics,
+        .suggestions(id: 1, request: .configure(S.suggestionSettings)),
+        .suggestions(id: 1, request: .configure(SuggestedInstructionsSettings())),
+    ])
     func roundTripsThroughNDJSON(_ request: RemoteRequest) throws {
         #expect(try Wire.roundTrip(request) == request)
     }
@@ -787,22 +795,6 @@ struct RemoteRequestTests {
     @Test(arguments: samples)
     func typeDiscriminatorIsTheCaseName(_ request: RemoteRequest) throws {
         #expect(try Wire.object(request)["type"] as? String == Self.caseName(request))
-    }
-
-    @Test(arguments: RemoteSamples.agentQueries)
-    func everyAgentQueryRoundTrips(_ query: RemoteAgentQuery) throws {
-        let request = RemoteRequest.agentQuery(id: 1, agentID: S.agent, query: query)
-        #expect(try Wire.roundTrip(request) == request)
-    }
-
-    @Test(arguments: [
-        RemoteUploadAction.begin(sessionID: RemoteSamples.session, name: "a.png", size: 3),
-        .chunk(uploadID: RemoteSamples.op, data: Data([0, 1, 2])),
-        .finish(uploadID: RemoteSamples.op),
-        .cancel(uploadID: RemoteSamples.op),
-    ])
-    func everyUploadActionRoundTrips(_ action: RemoteUploadAction) throws {
-        #expect(try Wire.roundTrip(RemoteRequest.upload(id: 1, action: action)) == .upload(id: 1, action: action))
     }
 
     static let agentActions: [RemoteAgentAction] = [
@@ -813,23 +805,27 @@ struct RemoteRequestTests {
         .moveToMac(FleetMoveRequest(moveID: S.op, agentID: AgentID(rawValue: "a"), host: "Mac mini", when: .whenDone)),
     ]
 
-    static var additionalWireSamples: [RemoteRequest] {
+    // Add nested round-trip cases here so the same messages are pinned by WireCodecTests.
+    static let additionalWireSamples: [RemoteRequest] = {
         var samples = S.agentQueries.map { RemoteRequest.agentQuery(id: 1, agentID: S.agent, query: $0) }
         samples += agentActions.map { .agentAction(id: 1, agentID: S.agent, action: $0) }
         samples += S.hostSettingChanges.map { .hostSettings(id: 1, request: .change($0)) }
         samples += S.configRequests.map { .hostConfig(id: 1, request: $0) }
         samples += S.inventoryRequests.map { .hostInventory(id: 1, request: $0) }
-        // Set order is not stable; leave the multi-file/default configurations in the round-trip test.
-        samples += [.hostSettings(id: 2, request: .fetch), .suggestions(id: 1, request: .configure(
-            SuggestedInstructionsSettings(enabled: true, sources: [.automation], files: [.agents])))]
+        samples += S.automationRequests.map { .automation(id: 1, automationID: S.automation, request: $0) }
+        samples += S.instructionsRequests.map { .instructions(id: 1, request: $0) }
+        samples += S.suggestionsRequests.map { .suggestions(id: 1, request: $0) }
+        samples += S.skillsRequests.map { .skills(id: 1, request: $0) }
+        samples += S.hooksRequests.map { .hooks(id: 1, request: $0) }
+        samples += [
+            .hostSettings(id: 2, request: .fetch),
+            .upload(id: 1, action: .begin(sessionID: S.session, name: "a.png", size: 3)),
+            .upload(id: 1, action: .chunk(uploadID: S.op, data: Data([0, 1, 2]))),
+            .upload(id: 1, action: .finish(uploadID: S.op)),
+            .upload(id: 1, action: .cancel(uploadID: S.op)),
+        ]
         return samples
-    }
-
-    @Test(arguments: agentActions)
-    func everyAgentActionRoundTrips(_ action: RemoteAgentAction) throws {
-        #expect(try Wire.roundTrip(RemoteRequest.agentAction(id: 1, agentID: S.agent, action: action))
-            == .agentAction(id: 1, agentID: S.agent, action: action))
-    }
+    }()
 
     /// Run in terminal is gone: an older client's `typeInTerminal` is no action this side knows.
     /// An older host's skill carries no `copiedFrom`: it decodes as installed from a repository or
@@ -852,58 +848,6 @@ struct RemoteRequestTests {
     @Test func anOlderClientsRunInTerminalIsNoLongerAnAction() {
         let line = Data(#"{"type":"agentAction","id":4,"agentID":"a","action":{"typeInTerminal":{"paneID":"p","text":"ls"}}}"#.utf8)
         #expect(throws: DecodingError.self) { try NDJSON.decode(RemoteRequest.self, from: line) }
-    }
-
-    @Test(arguments: RemoteSamples.automationRequests)
-    func everyAutomationRequestRoundTrips(_ request: RemoteAutomationRequest) throws {
-        let message = RemoteRequest.automation(id: 1, automationID: S.automation, request: request)
-        #expect(try Wire.roundTrip(message) == message)
-    }
-
-    @Test(arguments: RemoteSamples.instructionsRequests)
-    func everyInstructionsRequestRoundTrips(_ request: RemoteInstructionsRequest) throws {
-        let message = RemoteRequest.instructions(id: 1, request: request)
-        #expect(try Wire.roundTrip(message) == message)
-    }
-
-    @Test(arguments: RemoteSamples.suggestionsRequests)
-    func everySuggestionsRequestRoundTrips(_ request: RemoteSuggestionsRequest) throws {
-        let message = RemoteRequest.suggestions(id: 1, request: request)
-        #expect(try Wire.roundTrip(message) == message)
-    }
-
-    @Test(arguments: RemoteSamples.hostSettingChanges)
-    func everyHostSettingChangeRoundTrips(_ change: HostSettingChange) throws {
-        let message = RemoteRequest.hostSettings(id: 1, request: .change(change))
-        #expect(try Wire.roundTrip(message) == message)
-    }
-
-    @Test(arguments: RemoteSamples.configRequests)
-    func everyConfigRequestRoundTrips(_ request: RemoteHostConfigRequest) throws {
-        let message = RemoteRequest.hostConfig(id: 1, request: request)
-        #expect(try Wire.roundTrip(message) == message)
-    }
-
-    @Test(arguments: RemoteSamples.inventoryRequests)
-    func everyInventoryRequestRoundTrips(_ request: RemoteHostInventoryRequest) throws {
-        let message = RemoteRequest.hostInventory(id: 1, request: request)
-        #expect(try Wire.roundTrip(message) == message)
-    }
-
-    @Test func fetchingHostSettingsRoundTrips() throws {
-        #expect(try Wire.roundTrip(RemoteRequest.hostSettings(id: 2, request: .fetch)) == .hostSettings(id: 2, request: .fetch))
-    }
-
-    @Test(arguments: RemoteSamples.hooksRequests)
-    func everyHooksRequestRoundTrips(_ request: RemoteHooksRequest) throws {
-        let message = RemoteRequest.hooks(id: 1, request: request)
-        #expect(try Wire.roundTrip(message) == message)
-    }
-
-    @Test(arguments: RemoteSamples.skillsRequests)
-    func everySkillsRequestRoundTrips(_ request: RemoteSkillsRequest) throws {
-        let message = RemoteRequest.skills(id: 1, request: request)
-        #expect(try Wire.roundTrip(message) == message)
     }
 
     @Test func anAutomationRequestNamesItsAutomation() throws {
@@ -1125,7 +1069,9 @@ struct RemoteReplyTests {
         return .suggestions(id: 26, snapshot: snapshot)
     }()
 
-    @Test(arguments: samples + [suggestionsWithMultipleFiles])
+    static let wireSamples = samples + additionalWireSamples
+
+    @Test(arguments: wireSamples + [suggestionsWithMultipleFiles])
     func roundTripsThroughNDJSON(_ reply: RemoteReply) throws {
         #expect(try Wire.roundTrip(reply) == reply)
     }
@@ -1135,24 +1081,23 @@ struct RemoteReplyTests {
         #expect(try Wire.object(reply)["type"] as? String == Self.caseName(reply))
     }
 
-    static var additionalWireSamples: [RemoteReply] {
-        RemoteSamples.agentResults.map { .agentResult(id: 1, result: $0) }
-    }
-
-    @Test(arguments: RemoteSamples.agentResults)
-    func everyAgentResultRoundTrips(_ result: RemoteAgentResult) throws {
-        #expect(try Wire.roundTrip(RemoteReply.agentResult(id: 1, result: result)) == .agentResult(id: 1, result: result))
-    }
-
-    @Test(arguments: RemoteSamples.automationResults)
-    func everyAutomationResultRoundTrips(_ result: RemoteAutomationResult) throws {
-        #expect(try Wire.roundTrip(RemoteReply.automationResult(id: 1, result: result)) == .automationResult(id: 1, result: result))
-    }
-
-    @Test(arguments: RemoteSamples.hooksResults)
-    func everyHooksResultRoundTrips(_ result: RemoteHooksResult) throws {
-        #expect(try Wire.roundTrip(RemoteReply.hooks(id: 1, result: result)) == .hooks(id: 1, result: result))
-    }
+    // Add nested round-trip cases here so the same messages are pinned by WireCodecTests.
+    static let additionalWireSamples: [RemoteReply] = {
+        var samples = S.agentResults.map { RemoteReply.agentResult(id: 1, result: $0) }
+        samples += S.automationResults.map { .automationResult(id: 1, result: $0) }
+        samples += S.hooksResults.map { .hooks(id: 1, result: $0) }
+        samples += S.skillsResults.map { .skills(id: 1, result: $0) }
+        samples += S.inventoryResults.map { .hostInventory(id: 1, result: $0) }
+        samples += S.configResults.map { .hostConfig(id: 1, result: $0) }
+        samples += [
+            .uploadResult(id: 1, result: .ready(uploadID: S.op)),
+            .uploadResult(id: 1, result: .complete(path: "/p")),
+            .sessionExited(sessionID: S.session, code: nil),
+            .dirListing(id: 9, path: "/", parent: nil, dirs: []),
+            .models(id: 11, models: [], defaultModel: nil),
+        ]
+        return samples
+    }()
 
     /// A test reply without output or cut marks decodes as empty and uncut.
     @Test func aHookTestResultWithoutOutputDecodesEmpty() throws {
@@ -1173,21 +1118,6 @@ struct RemoteReplyTests {
     @Test func aHooksSnapshotWithoutHomeDecodes() throws {
         let snapshot = try JSONDecoder().decode(HookCatalogSnapshot.self, from: Data(#"{"sources":[],"entries":[],"settings":{"off":[]}}"#.utf8))
         #expect(snapshot.home == "" && snapshot.settings.readers.codex)
-    }
-
-    @Test(arguments: RemoteSamples.skillsResults)
-    func everySkillsResultRoundTrips(_ result: RemoteSkillsResult) throws {
-        #expect(try Wire.roundTrip(RemoteReply.skills(id: 1, result: result)) == .skills(id: 1, result: result))
-    }
-
-    @Test(arguments: RemoteSamples.inventoryResults)
-    func everyInventoryResultRoundTrips(_ result: RemoteHostInventoryResult) throws {
-        #expect(try Wire.roundTrip(RemoteReply.hostInventory(id: 1, result: result)) == .hostInventory(id: 1, result: result))
-    }
-
-    @Test(arguments: RemoteSamples.configResults)
-    func everyConfigResultRoundTrips(_ result: RemoteHostConfigResult) throws {
-        #expect(try Wire.roundTrip(RemoteReply.hostConfig(id: 1, result: result)) == .hostConfig(id: 1, result: result))
     }
 
     /// An older host's settings carry none of the newer fields: they read as the Mac's defaults.
@@ -1413,20 +1343,6 @@ struct RemoteReplyTests {
     ])
     func aRunLastsUntilItsFirstFinishedTurnOrItsEnd(_ run: AutomationRun, _ duration: Double?) {
         #expect(run.duration == duration)
-    }
-
-    @Test(arguments: [RemoteUploadResult.ready(uploadID: RemoteSamples.op), .complete(path: "/p")])
-    func everyUploadResultRoundTrips(_ result: RemoteUploadResult) throws {
-        #expect(try Wire.roundTrip(RemoteReply.uploadResult(id: 1, result: result)) == .uploadResult(id: 1, result: result))
-    }
-
-    @Test(arguments: [
-        RemoteReply.sessionExited(sessionID: RemoteSamples.session, code: nil),
-        .dirListing(id: 9, path: "/", parent: nil, dirs: []),
-        .models(id: 11, models: [], defaultModel: nil),
-    ])
-    func absentOptionalsRoundTrip(_ reply: RemoteReply) throws {
-        #expect(try Wire.roundTrip(reply) == reply)
     }
 
     @Test func sessionExitCodeTravelsUnderExitCode() throws {
