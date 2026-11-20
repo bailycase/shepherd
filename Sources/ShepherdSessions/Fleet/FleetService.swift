@@ -379,18 +379,20 @@ final class FleetService: @unchecked Sendable {
     /// removes it when it isn't any more. A peer that can't reach this Mac on the routes it knows reads it (`lookUp`).
     private func refreshPresence() {
         guard let rendezvous else { return }
-        let key = FleetRendezvousKey.presence(of: identity.hostID)
         guard !stopped, let port = listenerPort, !peers.members.isEmpty else {
-            if publishedPresence != nil {
-                publishedPresence = nil
-                rendezvous.delete(key)
-            }
+            if publishedPresence != nil { retractPresence() }
             return
         }
         let current = ownRoutes(port)
         guard !current.isEmpty, current != publishedPresence else { return }
         publishedPresence = current
+        let key = FleetRendezvousKey.presence(of: identity.hostID)
         rendezvous.put(FleetRendezvousRecord(key: key, hostID: identity.hostID, routes: current, updatedAt: nowMilliseconds))
+    }
+
+    private func retractPresence() {
+        publishedPresence = nil
+        rendezvous?.delete(.presence(of: identity.hostID))
     }
 
     /// Writes the Join record of the code just shown: where this Mac listens, under the code's hash.
@@ -897,6 +899,9 @@ final class FleetService: @unchecked Sendable {
         guard updated.revoke(hostID, at: at) else { return false }
         do { try updated.save(to: directory) } catch { ShepherdLog.error("fleet: could not save a removal: \(error)") }
         peers = updated
+        // The previous host process may have published before this listener opened. Send an idempotent
+        // delete even if this process never published a record.
+        if peers.members.isEmpty { retractPresence() }
         let notified = links.filter { $0.key != hostID && $0.key != from }.compactMap(\.value.active)
         let leaving = links[hostID]?.active
         // The link's task disconnects its client when cancelled, so while the notice is still to be sent it is

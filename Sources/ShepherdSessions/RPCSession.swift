@@ -205,10 +205,14 @@ final class RPCSession: @unchecked Sendable {
         var stdinPipe: [Int32] = [-1, -1]
         var stdoutPipe: [Int32] = [-1, -1]
         var stderrPipe: [Int32] = [-1, -1]
+        var spawned = false
+        defer {
+            if !spawned {
+                for fd in stdinPipe + stdoutPipe + stderrPipe where fd >= 0 { close(fd) }
+            }
+        }
         guard pipe(&stdinPipe) == 0, pipe(&stdoutPipe) == 0, pipe(&stderrPipe) == 0 else {
-            let err = errno
-            for fd in stdinPipe + stdoutPipe + stderrPipe where fd >= 0 { close(fd) }
-            throw SpawnError(message: "pipe failed: errno \(err)")
+            throw SpawnError(message: "pipe failed: errno \(errno)")
         }
         for fd in stdinPipe + stdoutPipe + stderrPipe {
             _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
@@ -223,12 +227,17 @@ final class RPCSession: @unchecked Sendable {
             envC.forEach { free($0) }
         }
 
+        func checked(_ code: Int32, _ operation: String) throws(SpawnError) {
+            guard code == 0 else { throw SpawnError(message: "\(operation) failed: errno \(code)") }
+        }
+
         var actions: posix_spawn_file_actions_t?
-        posix_spawn_file_actions_init(&actions)
-        posix_spawn_file_actions_adddup2(&actions, stdinPipe[0], 0)
-        posix_spawn_file_actions_adddup2(&actions, stdoutPipe[1], 1)
-        posix_spawn_file_actions_adddup2(&actions, stderrPipe[1], 2)
-        posix_spawn_file_actions_addchdir(&actions, params.cwd)
+        try checked(posix_spawn_file_actions_init(&actions), "posix_spawn_file_actions_init")
+        defer { posix_spawn_file_actions_destroy(&actions) }
+        try checked(posix_spawn_file_actions_adddup2(&actions, stdinPipe[0], 0), "posix_spawn_file_actions_adddup2")
+        try checked(posix_spawn_file_actions_adddup2(&actions, stdoutPipe[1], 1), "posix_spawn_file_actions_adddup2")
+        try checked(posix_spawn_file_actions_adddup2(&actions, stderrPipe[1], 2), "posix_spawn_file_actions_adddup2")
+        try checked(posix_spawn_file_actions_addchdir(&actions, params.cwd), "posix_spawn_file_actions_addchdir")
 
         // The app may ignore SIGTERM/SIGINT (dispatch signal sources); SIG_IGN
         // and blocked masks survive exec, so restore defaults or the child is
@@ -236,18 +245,17 @@ final class RPCSession: @unchecked Sendable {
         // together, like the PTY group. CLOEXEC_DEFAULT keeps every other app
         // fd (sockets, state files) out of the child.
         var attr: posix_spawnattr_t?
-        posix_spawnattr_init(&attr)
+        try checked(posix_spawnattr_init(&attr), "posix_spawnattr_init")
+        defer { posix_spawnattr_destroy(&attr) }
         var allSignals = sigset_t()
         sigfillset(&allSignals)
-        posix_spawnattr_setsigdefault(&attr, &allSignals)
+        try checked(posix_spawnattr_setsigdefault(&attr, &allSignals), "posix_spawnattr_setsigdefault")
         var noSignals = sigset_t()
         sigemptyset(&noSignals)
-        posix_spawnattr_setsigmask(&attr, &noSignals)
-        posix_spawnattr_setpgroup(&attr, 0)
-        posix_spawnattr_setflags(
-            &attr,
-            Int16(POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT)
-        )
+        try checked(posix_spawnattr_setsigmask(&attr, &noSignals), "posix_spawnattr_setsigmask")
+        try checked(posix_spawnattr_setpgroup(&attr, 0), "posix_spawnattr_setpgroup")
+        let flags = Int16(POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT)
+        try checked(posix_spawnattr_setflags(&attr, flags), "posix_spawnattr_setflags")
 
         var pid: pid_t = 0
         let rc = argvC.withUnsafeMutableBufferPointer { argvBuf in
@@ -255,17 +263,11 @@ final class RPCSession: @unchecked Sendable {
                 posix_spawn(&pid, execPath, &actions, &attr, argvBuf.baseAddress, envBuf.baseAddress)
             }
         }
-        posix_spawn_file_actions_destroy(&actions)
-        posix_spawnattr_destroy(&attr)
+        try checked(rc, "posix_spawn")
+        spawned = true
         close(stdinPipe[0])
         close(stdoutPipe[1])
         close(stderrPipe[1])
-        guard rc == 0 else {
-            close(stdinPipe[1])
-            close(stdoutPipe[0])
-            close(stderrPipe[0])
-            throw SpawnError(message: "posix_spawn failed: errno \(rc)")
-        }
 
         childPID = pid
         ownedProcesses = OwnedProcessTree(root: pid)
