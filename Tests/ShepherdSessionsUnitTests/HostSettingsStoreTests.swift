@@ -1,0 +1,71 @@
+import Foundation
+import ShepherdCore
+import ShepherdProtocol
+import ShepherdTestKit
+import Testing
+@testable import ShepherdSessions
+
+/// The host's stored preferences: every field has a default a file may leave out, and the store keeps one file.
+@Suite("Host settings store")
+struct HostSettingsStoreTests {
+    private func file() throws -> URL { try makeScratchDirectory("hps").appendingPathComponent("host-preferences.json") }
+
+    /// Mirror lists each stored field; a field added without a default does not build (`Agents()`), and one that is not
+    /// encoded would not survive the file.
+    @Test func everyFieldHasADefaultAndIsInTheFile() throws {
+        var agents = StoredHostPreferences.Agents()
+        agents.compactAtPercent = 60 // nil is left out of the file
+        let encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(agents)) as? [String: Any])
+        let fields = Mirror(reflecting: agents).children.compactMap(\.label)
+        #expect(Set(fields) == Set(encoded.keys), "a stored field the file does not carry")
+        #expect(try StoredHostPreferences.decode(Data("{}".utf8)) == StoredHostPreferences())
+    }
+
+    @Test func aFileThatLacksAFieldReadsItAsItsDefault() throws {
+        let older = #"{"version":1,"agents":{"defaultThinking":"high","futureField":1}}"#
+        let read = try StoredHostPreferences.decode(Data(older.utf8))
+        #expect(read.agents.defaultThinking == .high)
+        #expect(read.agents.codemode && read.agents.defaultModel.isEmpty && read.agents.compactAtPercent == nil)
+    }
+
+    @Test func aChangeIsKeptInTheFileAndAReopenedStoreReadsIt() throws {
+        let url = try file()
+        let store = HostSettingsStore(file: url)
+        #expect(store.preferences == StoredHostPreferences(), "no file is the defaults")
+        store.update { $0.agents.defaultModel = "acme/model-a"; $0.agents.compactAtPercent = 80 }
+        let reopened = HostSettingsStore(file: url).preferences
+        #expect(reopened.agents.defaultModel == "acme/model-a" && reopened.agents.compactAtPercent == 80)
+        store.update { $0.agents.compactAtPercent = nil }
+        #expect(HostSettingsStore(file: url).preferences.agents.compactAtPercent == nil)
+    }
+
+    @Test func aFileThatCannotBeReadStartsFromDefaultsAndIsWrittenOver() throws {
+        let url = try file()
+        try Data(#"{"agents":{"codemode":"yes"}}"#.utf8).write(to: url)
+        let store = HostSettingsStore(file: url)
+        #expect(store.preferences == StoredHostPreferences())
+        store.update { $0.agents.codemode = false }
+        #expect(HostSettingsStore(file: url).preferences.agents.codemode == false)
+    }
+
+    /// A damaged file whose old keys were all at their defaults: nothing differs from the defaults, and the file is still repaired.
+    @Test func aDamagedFileIsRepairedEvenWhenNothingChanged() throws {
+        let url = try file()
+        try Data("not json".utf8).write(to: url)
+        let store = HostSettingsStore(file: url)
+        store.update { $0 = StoredHostPreferences() }
+        #expect(try StoredHostPreferences.decode(Data(contentsOf: url)) == StoredHostPreferences())
+    }
+
+    /// A write that fails is not remembered as done: the next update tries again, changed or not.
+    @Test func aFailedWriteIsRetriedAtTheNextUpdate() throws {
+        let folder = try makeScratchDirectory("hps")
+        let url = folder.appendingPathComponent("later").appendingPathComponent("host-preferences.json")
+        let store = HostSettingsStore(file: url)
+        store.update { $0.agents.codemode = false } // the folder is not there: the write fails
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        store.update { _ in }
+        #expect(try StoredHostPreferences.decode(Data(contentsOf: url)).agents.codemode == false)
+    }
+}

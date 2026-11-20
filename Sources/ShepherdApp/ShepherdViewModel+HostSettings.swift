@@ -66,16 +66,18 @@ enum HostSettingsMapping {
 
     static func settings(from app: AppSettings, shepherdVersion: String?, piVersion: String?,
                          slashCommands: [NativeCommand] = []) -> HostSettings {
-        HostSettings(
+        // The Agents group comes from the host's store (`AppSettings.hostAgents`); the rest still from `app`.
+        let agents = app.hostAgents
+        return HostSettings(
             shepherdVersion: shepherdVersion,
             piVersion: piVersion,
-            defaultModel: app.defaultModel.isEmpty ? nil : app.defaultModel,
-            defaultThinking: app.defaultThinking,
-            defaultServiceTier: app.defaultServiceTier,
-            textGenerationModel: app.textGenerationModel.isEmpty ? nil : app.textGenerationModel,
-            visionModel: app.visionModel.isEmpty ? nil : app.visionModel,
-            compactAtPercent: app.compactAtPercent,
-            queueDelivery: app.queueDelivery,
+            defaultModel: agents.defaultModel.isEmpty ? nil : agents.defaultModel,
+            defaultThinking: agents.defaultThinking,
+            defaultServiceTier: agents.defaultServiceTier,
+            textGenerationModel: agents.textGenerationModel.isEmpty ? nil : agents.textGenerationModel,
+            visionModel: agents.visionModel.isEmpty ? nil : agents.visionModel,
+            compactAtPercent: agents.compactAtPercent,
+            queueDelivery: agents.queueDelivery,
             goalsEnabled: app.goalsEnabled,
             projectsEnabled: app.projectsEnabled,
             worktreeBase: app.worktreeBaseMode == .head ? .head : .fresh,
@@ -83,8 +85,8 @@ enum HostSettingsMapping {
             generatePRDescriptions: app.worktreeGeneratePRDescription,
             closeOnMerge: app.worktreeCloseOnMerge,
             designToolEnabled: app.designToolEnabled,
-            threadsStartThreads: app.threadsStartThreads,
-            subThreadPlace: app.subThreadPlace,
+            threadsStartThreads: agents.threadsStartThreads,
+            subThreadPlace: agents.subThreadPlace,
             computerUseEnabled: app.computerUseEnabled,
             subagentDefaults: HostSettings.SubagentDefaults(
                 concurrency: app.childConcurrency,
@@ -97,7 +99,15 @@ enum HostSettingsMapping {
             slashCommands: slashCommands,
             hiddenSlashCommands: app.hiddenSlashCommands.sorted(),
             // Shepherd's pi updates with Shepherd: nothing runs `pi update` any more.
-            bundledExtensions: bundled.map { HostSettings.BundledExtension(id: $0.id, name: $0.name, on: app[keyPath: $0.keyPath]) },
+            bundledExtensions: bundled.map { item in
+                let on = switch item.id {
+                case "context": agents.trimToolOutput
+                case "deferTools": agents.deferTools
+                case "codemode": agents.codemode
+                default: app[keyPath: item.keyPath]
+                }
+                return HostSettings.BundledExtension(id: item.id, name: item.name, on: on)
+            },
             updatePiDaily: false,
             updateExtensionsDaily: false,
             fleetWeights: app.fleetWeights,
