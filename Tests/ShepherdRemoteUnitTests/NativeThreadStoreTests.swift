@@ -76,8 +76,9 @@ final class FirstPullGate {
 /// cancelled. Every refresh is the test's, so no poll lands between a test's steps however
 /// slowly the machine runs it.
 @MainActor
-func manualStore(startingLimit: Duration = .seconds(60)) -> NativeThreadStore {
+func manualStore(startingLimit: Duration = .seconds(60), onPause: (@Sendable () -> Void)? = nil) -> NativeThreadStore {
     NativeThreadStore(startingLimit: startingLimit) { _ in
+        onPause?()
         let (cancelled, continuation) = AsyncStream<Void>.makeStream()
         for await _ in cancelled {}
         continuation.finish()
@@ -2095,7 +2096,7 @@ struct NativeThreadStoreTests {
     /// A streamed chunk changes `liveRow` and leaves `listRows` as it was: the streaming reply
     /// sits in the list as a content-less shell, so the transcript that iterates the list is not
     /// invalidated per chunk. The turn ending puts the full row into the list.
-    @Test func aStreamedChunkChangesTheLiveRowAndNotTheList() async {
+    @Test func aStreamedChunkChangesTheLiveRowAndNotTheList() async throws {
         let prompt = F.user("go", id: "u")
         let (store, host, task) = await started(F.snapshot(running: true, messages: [prompt],
                                                            provisional: [F.assistant("Wri", status: "streaming", id: "p")]))
@@ -2110,10 +2111,15 @@ struct NativeThreadStoreTests {
         await store.refresh()
         #expect(store.listRows == list, "the chunk is the live row's alone")
         #expect(store.liveRow != nil && store.liveRow?.presentation != store.rows.first?.presentation)
+        let (hold, release) = AsyncStream<Void>.makeStream()
+        store.settlePause = { _ in for await _ in hold {} }
+        defer { release.finish() }
         host.snapshot = F.snapshot(revision: 3, messages: [prompt, F.assistant("Writing more.", id: "p")])
         await store.refresh()
-        // The end of a run settles after a short hold (`settleRunning`).
-        for _ in 0..<50 where store.liveRow != nil { try? await Task.sleep(for: .milliseconds(20)) }
+        #expect(store.settledRunning, "the reply stays live during the end-of-run hold")
+        let settling = try #require(store.settleTask)
+        release.finish()
+        await settling.value
         #expect(store.liveRow == nil)
         #expect(store.listRows == store.rows, "settled, the list holds every row's content")
         #expect(store.listRows.last?.live == false && store.listRows.last?.presentation != nil)

@@ -16,12 +16,11 @@ struct FleetRendezvousUnitTests {
         var log = Log()
         var held: [FleetRendezvousKey: FleetRendezvousRecord] = [:]
         var failure: FleetRendezvousError?
-        /// A put takes a moment, so a delete asked after it would overtake it without the queue.
-        var slowPut = false
+        var beforePut: (@Sendable () async -> Void)?
 
         func put(_ record: FleetRendezvousRecord) async throws {
             if let failure { throw failure }
-            if slowPut { try? await Task.sleep(for: .milliseconds(50)) }
+            await beforePut?()
             await log.add("put")
         }
         func fetch(_ key: FleetRendezvousKey) async throws -> FleetRendezvousRecord? {
@@ -56,11 +55,20 @@ struct FleetRendezvousUnitTests {
     }
 
     @Test func writesRunInTheOrderTheyWereAsked() async {
-        let store = Store(slowPut: true)
+        let (started, signalStarted) = AsyncStream<Void>.makeStream()
+        let (blocked, release) = AsyncStream<Void>.makeStream()
+        let store = Store(beforePut: {
+            signalStarted.yield(())
+            var gate = blocked.makeAsyncIterator()
+            _ = await gate.next()
+        })
         let rendezvous = FleetRendezvous(store: store)
-        // A code shown and cancelled at once: the delete must not land before the write it undoes.
+        // Cancel a code while its put is still in progress.
         rendezvous.put(FleetRendezvousRecord(key: .join(code: "482913"), hostID: UUID(), routes: [], updatedAt: 0))
+        var start = started.makeAsyncIterator()
+        _ = await start.next()
         rendezvous.delete(.join(code: "482913"))
+        release.finish()
         await rendezvous.settle()
         #expect(await store.log.entries == ["put", "delete"])
     }

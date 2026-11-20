@@ -991,7 +991,8 @@ final class AppSettings {
     }
 
     /// Every setting `Key.resettable` stores, as `resetToDefaults` lists them, and Serve this Mac's switch.
-    private static let followed: [(AppSettings, AppSettings) -> Void] = [
+    /// Internal for the test that every resettable setting is followed across processes.
+    static let followed: [(AppSettings, AppSettings) -> Void] = [
         take(\.terminalFontFamily), take(\.terminalFontSize), take(\.defaultModel), take(\.defaultThinking),
         take(\.defaultServiceTier), take(\.goalsEnabled), take(\.projectsEnabled), take(\.shareDiagnostics),
         take(\.textGenerationModel), take(\.visionModel), take(\.skillsInSlashMenu), take(\.hiddenSlashCommands), take(\.mcpProjectConfig),
@@ -1005,6 +1006,9 @@ final class AppSettings {
         take(\.worktreeFetchBeforeCreate), take(\.worktreeGeneratePRDescription), take(\.worktreeCloseOnMerge),
         take(\.worktreeDeleteAction), take(\.skippedConfirmations), take(\.designToolEnabled), take(\.computerUseEnabled),
         take(\.implementOpensThread), take(\.remoteListenerEnabled),
+        // Settings ▸ Fleet: the host's dispatch and thread starts read these, so a change in the app must reach it.
+        take(\.fleetWeights), take(\.fleetThreadsCanSend), take(\.fleetThreadCap), take(\.fleetAutoDispatch),
+        take(\.fleetBatteryCountsHalf), take(\.fleetUncommitted), take(\.fleetSnapshotExcludes), take(\.fleetCheckIgnores),
     ]
 }
 
