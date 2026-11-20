@@ -216,9 +216,10 @@ public enum FleetDispatchPresentation {
             card.detail = rowDetail(record, macs: macs)
             card.actions = record.remoteAgentID == nil ? [] : [.open]
         case .failed:
-            (card.pill, card.tone) = ("Not sent", .bad)
+            let ran = record.failure == FleetDispatchCode.turnFailed
+            (card.pill, card.tone) = (ran ? "Failed" : "Not sent", .bad)
             card.detail = failureWords(record, in: context)
-            card.actions = [.runHere, .tryAgain]
+            card.actions = ran ? (record.remoteAgentID == nil ? [] : [.open]) : [.runHere, .tryAgain]
         }
         card.compact = compact(card, record: record, host: host)
         return card
@@ -391,7 +392,7 @@ public enum FleetDispatchPresentation {
         records.filter { $0.parentAgentID == record.parentAgentID && $0.id != record.id && $0.state.countsAgainstCap }
     }
 
-    /// Why it wasn't sent, in a sentence, from the code.
+    /// Why dispatch failed, in a sentence, from the code.
     static func failureWords(_ record: FleetDispatchRecord, in context: FleetCardContext) -> String {
         let host = hostName(of: record, macs: context.snapshot.macNames).map { the($0, capitalized: true) } ?? "That Mac"
         let repo = repoName(record.repoKey)
@@ -412,6 +413,8 @@ public enum FleetDispatchPresentation {
             return "No Mac named \(requestedName(record.requestedHost, macs: context.snapshot.macNames) ?? "that") is in the fleet."
         case FleetDispatchCode.peerGone:
             return "\(host) stopped answering and doesn't know this thread. Run it again, or run it here."
+        case FleetDispatchCode.turnFailed:
+            return record.failureDetail ?? "The model request failed."
         case FleetDispatchCode.snapshotTooLarge:
             return "The changes to send are too large to send. Run it here, or commit and push them first."
         case FleetDispatchCode.snapshotMismatch, FleetDispatchCode.snapshotFailed:
@@ -560,7 +563,8 @@ public struct FleetResultMessage: Equatable, Sendable {
             let line = body[facts.upperBound...]
             if let colon = line.firstIndex(of: ":") {
                 branch = String(line[..<colon])
-                pushed = line.contains("pushed to origin")
+                if line.contains(", pushed to origin,") { pushed = true }
+                else if line.contains(", not on origin,") { pushed = false }
                 body = String(body[..<facts.lowerBound])
             }
         }

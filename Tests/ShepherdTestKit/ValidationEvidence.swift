@@ -1,12 +1,12 @@
 import Foundation
 
 /// Step records consumed by scripts/validate.py. Direct Swift test runs need no artifact directory.
-enum ValidationEvidence {
-    static var directory: URL? {
+public enum ValidationEvidence {
+    public static var directory: URL? {
         ProcessInfo.processInfo.environment["SHEPHERD_VALIDATION_DIR"].map { URL(fileURLWithPath: $0) }
     }
 
-    static func record(in directory: URL?, step: String, appearance: String? = nil, status: String,
+    public static func record(in directory: URL?, step: String, appearance: String? = nil, status: String,
                        expected: String, actual: String, evidence: [String] = []) throws {
         guard let directory else { return }
         let steps = directory.appendingPathComponent("steps", isDirectory: true)
