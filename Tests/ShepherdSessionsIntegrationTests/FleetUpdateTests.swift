@@ -931,13 +931,15 @@ struct FleetUpdateTests {
         let updater = FakeUpdater()
         let (a, b, _) = try await Self.fleet(updaterB: updater)
         defer { a.stop(); b.stop() }
-        try FileManager.default.createDirectory(at: b.server.supportDirectory.appendingPathComponent("host-update-handoff"), withIntermediateDirectories: true)
+        let blocker = b.server.supportDirectory.appendingPathComponent("host-update-handoff")
+        try FileManager.default.createDirectory(at: blocker.appendingPathComponent("keep"), withIntermediateDirectories: true)
         let error = await #expect(throws: RemoteHostClientError.self) {
             try await b.local.hostUpdate(.install(offerID: updater.offer, authorized: true))
         }
         guard case .rejected(_, let message)? = error else { Issue.record("not rejected: \(String(describing: error))"); return }
         #expect(message == SessionServer.installMarkerUnwritable)
         #expect(!updater.sawInstallNow)
+        #expect(FileManager.default.fileExists(atPath: blocker.appendingPathComponent("keep").path), "the folder that blocked the marker is not the host's to remove")
     }
 
     /// The same for an install the host sends once the threads have settled: it isn't sent, and the held offer is let go.
@@ -953,10 +955,49 @@ struct FleetUpdateTests {
         try await Self.waitForStage(.checking, on: a, of: id)
         try await updater.answerTheCheck()
         try await Self.waitForStage(.waitingForThreads, on: a, of: id)
-        try FileManager.default.createDirectory(at: b.server.supportDirectory.appendingPathComponent("host-update-handoff"), withIntermediateDirectories: true)
+        let blocker = b.server.supportDirectory.appendingPathComponent("host-update-handoff")
+        try FileManager.default.createDirectory(at: blocker.appendingPathComponent("keep"), withIntermediateDirectories: true)
         try await Self.settle(pi)
         try await FleetDispatchTests.wait("the host to let go of its wait") { b.server.queue.sync { !b.server.isWaitingForIdleInstall } }
         #expect(!updater.sawInstallNow)
+        #expect(FileManager.default.fileExists(atPath: blocker.appendingPathComponent("keep").path), "the folder that blocked the marker is not the host's to remove")
+        try await Self.waitForStage(.failed, on: a, of: id)
+        #expect(try await Self.job(a, id)?.message == SessionServer.installMarkerUnwritable)
+    }
+
+    /// A held install was sent and never answered, and the app is gone when the host's patience runs out: the host doesn't send it again (an
+    /// app that is gone would answer "unsupported" and clear the unknown marker), so after a restart the job still waits for the relaunch.
+    @Test func aHeldInstallThatWasSentIsNotSentAgainToAnAppThatIsGone() async throws {
+        let updater = FakeUpdater()
+        let (a, b, origin) = try await Self.fleet(updaterB: updater)
+        defer { a.stop() }
+        let id = try await b.hostID()
+        let pi = try await Self.busy(b)
+        b.server.queue.sync { b.server.installAnswerPatience = 0.2 }
+        Self.quicken(a)
+        try await Self.start(a, id, .idle)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.waitingForThreads, on: a, of: id)
+        a.server.queue.sync { a.server.fleet?.updates.interval = .seconds(3) }
+        updater.swallowAnswer { if case .install = $0 { true } else { false } }
+        try await Self.settle(pi)
+        try await FleetDispatchTests.wait("the updater to take the install") { updater.swallowedAnswers == 1 }
+        updater.quitApp()
+        try await FleetDispatchTests.wait("the host to stop waiting for an answer") { b.server.queue.sync { !b.server.isWaitingForIdleInstall } }
+        // Well past where a retry would have gone out (the interval is 0.02 s), the app is still gone.
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(updater.asked.filter { if case .install = $0 { true } else { false } }.count == 1, "the install is sent once")
+
+        let (dir, port) = (b.host.dir, b.port)
+        b.stop(keepFiles: true)
+        let b2 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, prepare: { updater.install(on: $0) })
+        defer { b2.stop() }
+        #expect(try await b2.local.hostUpdate(.status).installHandedOff == nil, "sent and never answered stays unknown")
+        a.server.queue.sync { a.server.fleet?.updates.interval = .milliseconds(20) }
+        try await Self.waitForStage(.relaunching, on: a, of: id)
+        updater.relaunch(build: "675")
+        try await Self.waitForStage(.updated, on: a, of: id)
     }
 
     /// B's host relays to its own app (the test's connection to it), and can't open one.

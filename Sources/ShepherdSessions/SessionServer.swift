@@ -525,10 +525,17 @@ public final class SessionServer: @unchecked Sendable {
         case true?: return FileManager.default.createFile(atPath: installHandoffMarker.path, contents: nil)
         case nil: return FileManager.default.createFile(atPath: installHandoffMarker.path, contents: Self.installUnknownMarker)
         case false?:
-            try? FileManager.default.removeItem(at: installHandoffMarker)
+            // Only a marker file is this host's to remove: a folder standing there was never written by it.
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: installHandoffMarker.path, isDirectory: &isDirectory), !isDirectory.boolValue {
+                try? FileManager.default.removeItem(at: installHandoffMarker)
+            }
             return !FileManager.default.fileExists(atPath: installHandoffMarker.path)
         }
     }
+    /// Why a held install was not sent (the marker couldn't be written), until the next request that isn't a status: the asker's next look
+    /// reads it as a failure, as the direct path tells its asker at once. Server queue.
+    private var heldInstallFailure: String?
     static let installMarkerUnwritable = "Shepherd couldn't record the update before starting it, so it did not start. Try again."
     private static let installUnknownMarker = Data("unknown".utf8)
     private var installHandoffMarker: URL { supportDirectory.appendingPathComponent("host-update-handoff") }
@@ -538,6 +545,8 @@ public final class SessionServer: @unchecked Sendable {
     var isWaitingForIdleInstall: Bool { idleInstall != nil }
     /// How often the host looks at its threads while an install waits for them, and the longest it waits.
     var idleInstallInterval: TimeInterval = 2
+    /// How long a held install that was sent waits for the updater's answer before the host stops waiting (it is never sent again).
+    var installAnswerPatience: TimeInterval = 15
     static let idleInstallLimit: TimeInterval = 12 * 3600
 
     /// Serves `request` through the updater (`onRemoteHostUpdate`) for `requester`: a client of this host, a Mac that called over its link
@@ -567,11 +576,10 @@ public final class SessionServer: @unchecked Sendable {
         }
         // The marker is written before the updater is called: unknown until its answer. No marker, no install.
         if case .install = forwarded {
-            guard setInstallHandedOff(nil) else {
-                setInstallHandedOff(false)
-                return ("failed", Self.installMarkerUnwritable)
-            }
+            // Nothing was written, so there is nothing of this attempt to clean up: a path already standing there stays.
+            guard setInstallHandedOff(nil) else { return ("failed", Self.installMarkerUnwritable) }
         } else if request != .status { setInstallHandedOff(false) }
+        if request != .status { heldInstallFailure = nil }
         switch request {
         case .install, .cancel, .check: idleInstall = nil
         case .installWhenIdle, .status: break
@@ -591,6 +599,9 @@ public final class SessionServer: @unchecked Sendable {
                 if let waits, status.waitingForIdle, status.offerID == waits, self.idleInstall == nil {
                     self.idleInstall = (waits, Date(), UUID())
                     self.pollIdleInstall(waits, attempt: self.idleInstall?.attempt)
+                }
+                if let failure = self.heldInstallFailure, status.phase != .downloading, status.phase != .installing {
+                    (status.phase, status.error) = (.failed, failure)
                 }
                 status.busyThreads = self.busyThreadCount
                 status.waitingForIdle = self.idleInstall != nil && status.phase == .available
@@ -635,8 +646,8 @@ public final class SessionServer: @unchecked Sendable {
             // Idle: the held offer is installed, as an install asked for now would be. An answer that is still an offer (the host
             // refused to reserve: a question waits, a Project runs) leaves it held and the wait goes on; one that never comes is looked at again.
             guard self.setInstallHandedOff(nil) else {
-                // Nothing was sent: the updater lets go of the offer, and the next look says the wait is over.
-                self.setInstallHandedOff(false)
+                // Nothing was sent: the updater lets go of the offer, and the next look says why.
+                self.heldInstallFailure = Self.installMarkerUnwritable
                 self.idleInstall = nil
                 return self.hopToMain { handler(.cancel, { true }) { _ in } }
             }
@@ -651,9 +662,12 @@ public final class SessionServer: @unchecked Sendable {
                     }
                 }
             }
-            self.queue.asyncAfter(deadline: .now() + 15) {
+            self.queue.asyncAfter(deadline: .now() + self.installAnswerPatience) {
                 guard answered.first() else { return }
-                next()
+                // Sent and never answered: the app may have taken it and quit, so the marker stays unknown and the install is not sent again
+                // (a second one to an app that is gone would answer "unsupported" and clear it). The wait is over.
+                guard let wait = self.idleInstall, wait.offerID == offerID, wait.attempt == attempt else { return }
+                self.idleInstall = nil
             }
         }
     }
