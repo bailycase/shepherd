@@ -40,6 +40,23 @@ struct StopAllWorkingTests {
         #expect(StopAllWorking.targets(host: Self.host, in: state) == [Self.target("plain")])
     }
 
+    @Test func aTriggerMadeRunIsLeftAloneEvenWithoutAnAutomationAgentID() {
+        var run = Self.agent("run", .working)
+        run.automationOrigin = AutomationOrigin(automationID: AutomationID(rawValue: "on-push"))
+        let automation = Automation(id: AutomationID(rawValue: "on-push"), name: "On push", prompt: "p", cwd: "/src")
+        let state = ShepherdState(agents: [run, Self.agent("plain", .working)], automations: [automation])
+        #expect(StopAllWorking.targets(host: Self.host, in: state) == [Self.target("plain")])
+    }
+
+    @Test func aThreadInASpaceFleetHidesIsLeftAlone() {
+        var hidden = Self.agent("hidden", .working)
+        hidden.spaceID = SpaceID(rawValue: "reserved")
+        let spaces = [Space(id: SpaceID(rawValue: "reserved"), name: "Reserved", path: "~", hidden: true),
+                      Space(id: SpaceID(rawValue: "acme-web"), name: "acme-web", path: "/src/acme-web")]
+        let state = ShepherdState(spaces: spaces, agents: [hidden, Self.agent("plain", .working)])
+        #expect(StopAllWorking.targets(host: Self.host, in: state) == [Self.target("plain")])
+    }
+
     @Test func nothingWorkingSelectsNothing() {
         #expect(StopAllWorking.targets(host: Self.host, in: ShepherdState(agents: [Self.agent("a", .idle)])).isEmpty)
     }
@@ -51,6 +68,7 @@ struct StopAllWorkingTests {
         var running: [String: Bool]
         var refused: [String: String] = [:]
         var actions: [String: [String]] = [:]
+        var asking: Set<String> = []
         var aborted: [(agent: String, session: String, generation: String)] = []
 
         init(running: [String: Bool]) { self.running = running }
@@ -62,7 +80,8 @@ struct StopAllWorkingTests {
                 guard let running = running[id] else { throw RemoteHostClientError.disconnected }
                 return .snapshot(value: NativeThreadSnapshot(
                     piSessionID: "session-\(id)", generation: "g-\(id)", revision: 1, running: running,
-                    supportedActions: actions[id] ?? ["send", "abort"], dialogsSupported: true, dialogs: [],
+                    supportedActions: actions[id] ?? ["send", "abort"], dialogsSupported: true,
+                    dialogs: asking.contains(id) ? [NativeThreadDialog(id: "q-\(id)", kind: .confirm, title: "Proceed?")] : [],
                     messages: [], provisional: [], clipped: false))
             case .abort(let session, let generation, let operationID):
                 if let message = refused[id] { return .failure(code: "refused", message: message) }
@@ -91,6 +110,18 @@ struct StopAllWorkingTests {
         #expect(outcome.stopped == 1 && outcome.alreadyStopped == 1 && outcome.failures.isEmpty)
         #expect(outcome.title == "Stopped 1 thread")
         #expect(outcome.message == "1 thread had already finished.")
+    }
+
+    @Test func aThreadThatStartedWaitingOnYouIsNotAbortedAndIsReported() async {
+        let host = FakeHost(running: ["a": true, "b": true])
+        host.asking = ["a"]
+        let outcome = await StopAllWorking.run([Self.target("a"), Self.target("b")]) { try host.answer($0, $1) }
+        #expect(host.aborted.map(\.agent) == ["b"])
+        #expect(outcome.stopped == 1 && outcome.waiting == ["thread a"] && outcome.failures.isEmpty)
+        #expect(outcome.title == "Stopped 1 thread")
+        #expect(outcome.message == "thread a: waiting for you, not stopped")
+        let only = await StopAllWorking.run([Self.target("a")]) { try host.answer($0, $1) }
+        #expect(only.title == "Nothing was stopped")
     }
 
     @Test func failuresNameTheThreadAndTheReasonAndDoNotStopTheRest() async {
