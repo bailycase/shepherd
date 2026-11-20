@@ -65,6 +65,13 @@ struct RemoteBrowserDriveTests {
             diagnostic?("initial-host-owner.after")
         }
 
+        /// A reply from the host over the viewer's connection. Anything the host said or the viewer started once the claim
+        /// was answered (a page adopted from the host's) has happened by the time it returns, so a check that something
+        /// did not happen can follow it instead of a fixed wait.
+        func hostHasAnswered() async {
+            _ = await session.remote?.devServers()
+        }
+
         /// The agent's extension on the host.
         func extensionConnection() throws -> AgentConnection {
             diagnostic?("extension-connect.before")
@@ -311,14 +318,14 @@ struct RemoteBrowserDriveTests {
         try await eventuallyOnMain("the viewer's own page") { session.webView?.title == "Terms" }
         s.remote.host.server.onBrowserPageURL = { [port = s.port] _, answer in answer("http://localhost:\(port)/checkout") }
         try await s.showTab()
-        try await Task.sleep(for: .milliseconds(300))
+        await s.hostHasAnswered()
         #expect(session.url?.absoluteString == s.url("/terms"), "a claim replaces nothing the user opened")
 
         let other = try await setup()
         defer { other.stop() }
         other.remote.host.server.onBrowserPageURL = { _, answer in answer("http://192.168.1.50:8080/admin") }
         try await other.showTab()
-        try await Task.sleep(for: .milliseconds(300))
+        await other.hostHasAnswered()
         #expect(!other.session.hasPage && other.session.webView == nil, "an address on the viewer's network is not adopted")
     }
 
@@ -421,15 +428,15 @@ struct RemoteBrowserDriveTests {
     }
 
     @Test func aTabThatStaysOutOfSightLetsTheAgentsBrowserGoBackToTheHostAndComesBackClaimingAgain() async throws {
-        let s = try await setup(grace: 0.4)
+        let s = try await setup(grace: 0.1)
         defer { s.stop() }
         let session = s.session
         try await s.showTab()
+        // A quick look at another tab keeps the claim. Hiding and showing in one main-actor turn is inside any grace, so
+        // the short grace cannot flake; no event says a cancelled release did not fire, so wait out its deadline (grace + 0.05).
         s.vm.browserPaneDisappeared(session)
-        // A quick look at another tab keeps the claim.
-        try await Task.sleep(for: .milliseconds(150))
         s.vm.browserPaneAppeared(session)
-        try await Task.sleep(for: .milliseconds(600))
+        try await Task.sleep(for: .milliseconds(400))
         #expect(session.remote?.claimant.phase == .owned && s.remote.host.server.browserOwnerFD(of: s.agent.agent.id) != nil)
 
         s.vm.browserPaneDisappeared(session)
@@ -495,7 +502,7 @@ struct RemoteBrowserDriveTests {
         #expect(s.connection.supportsBrowser, "the tab is there: the tunnel is")
         #expect(session.remote?.driveClient == nil)
         s.vm.browserPaneAppeared(session)
-        try await Task.sleep(for: .milliseconds(300))
+        await s.hostHasAnswered()
         #expect(session.remote?.claimant.phase == .idle && s.remote.host.server.browserOwnerFD(of: s.agent.agent.id) == nil, "nothing was claimed")
 
         // The agent's page stays the host's own, and no dot reaches the viewer. (With its capability taken
@@ -503,7 +510,7 @@ struct RemoteBrowserDriveTests {
         let agent = try s.extensionConnection()
         let hostPage = s.web.url("/terms").absoluteString.replacingOccurrences(of: "127.0.0.1", with: "localhost")
         _ = try await agent.ask(.open(url: hostPage, note: nil))
-        try await Task.sleep(for: .milliseconds(300))
+        await s.hostHasAnswered()
         #expect(!session.hasPage && session.openedByAgent == nil)
     }
 }

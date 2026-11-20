@@ -142,6 +142,22 @@ struct BrowserTunnelDataTests {
 
     // MARK: Pace
 
+    /// Waits until a firehose has written something and then nothing for `quiet`, and returns what it wrote. Two equal
+    /// 10 ms polls can catch a frame still in flight, not a blocked sender.
+    static func writesStopped(_ written: Locked<Int>, quiet: Duration = .seconds(1), _ what: String) async throws -> Int {
+        var settled = 0
+        var lastWrite = ContinuousClock.now
+        try await eventually("\(what) for \(quiet)") {
+            let now = written.current
+            if now != settled {
+                settled = now
+                lastWrite = .now
+            }
+            return now > 0 && ContinuousClock.now - lastWrite >= quiet
+        }
+        return settled
+    }
+
     /// A page that stops reading holds the dev server's writes back: the host does not read a
     /// target beyond the window the viewer has room for, so what the dev server got to write
     /// stays bounded (the window, and the kernel's socket buffers) instead of growing.
@@ -158,20 +174,8 @@ struct BrowserTunnelDataTests {
         // It reads a little, then stops.
         let first = await peer.read(10_000)
         #expect(first.count == 10_000)
-        var settled = 0
-        var lastWrite = ContinuousClock.now
-        // Two equal 10 ms polls can catch a frame still in flight, not a blocked sender.
-        try await eventually("the sender to stop for half a second") {
-            let now = written.current
-            if now != settled {
-                settled = now
-                lastWrite = .now
-            }
-            return now > 0 && ContinuousClock.now - lastWrite >= .milliseconds(500)
-        }
-        try await Task.sleep(for: .milliseconds(500))
-        let stalled = written.current
-        #expect(stalled == settled, "it does not keep writing")
+        let stalled = try await Self.writesStopped(written, "the sender to stop")
+        #expect(written.current == stalled, "it does not keep writing")
         // The window (256 KiB), the tunnel's frames in flight and the sockets' buffers: a few
         // megabytes at most, not the gigabytes an unpaced host would have read by now.
         #expect(stalled < 8 * 1024 * 1024, "the sender wrote \(stalled) bytes")
@@ -195,9 +199,7 @@ struct BrowserTunnelDataTests {
 
         // 40 tunnels, each with a full window of credit: 10 MiB against a 2 MiB write queue.
         for tunnel in 1...40 { try client.sendTunnel(.open(tunnel: tunnel, agentID: host.agent, port: Int(firehose.port))) }
-        try await Task.sleep(for: .seconds(1))
-        let stalled = written.current
-        try await Task.sleep(for: .milliseconds(500))
+        let stalled = try await Self.writesStopped(written, "the host to stop reading the firehose")
         #expect(written.current == stalled, "the host stopped reading the firehose")
         // Still connected: it reads what was queued, opened and data frames alike, and answers a request.
         try client.send(.stateFetch(id: 77))
@@ -255,12 +257,17 @@ struct BrowserTunnelDataTests {
         let client = try await host.client()
         defer { client.disconnect() }
         client.tunnels.keepaliveSeconds = 0.3
+        // A second connection that never says its tunnel is wanted (the default keepalive is a minute) is the control:
+        // the host reaping it shows its idle rule has run past the idle time while the first tunnel went on being kept.
+        let silent = try await host.client()
+        defer { silent.disconnect() }
 
         let peer = try TunnelPeer(hub: client.tunnels, agent: host.agent, port: deaf.port)
-        try await eventually("the host's socket") { open.current == 1 }
-        // Well past the idle time with nothing said but the keepalives.
-        try await Task.sleep(for: .seconds(3.6))
-        #expect(host.server.browserTunnelCount == 1 && open.current == 1, "an idle socket the page still holds stays open")
+        let unkept = try TunnelPeer(hub: silent.tunnels, agent: host.agent, port: deaf.port)
+        try await eventually("the host's two sockets") { open.current == 2 }
+        try await eventually("the host to reap the tunnel nobody keeps alive") { silent.tunnels.openCount == 0 && host.server.browserTunnelCount <= 1 }
+        #expect(host.server.browserTunnelCount == 1 && open.current == 1 && client.tunnels.openCount == 1, "an idle socket the page still holds stays open")
+        withExtendedLifetime(unkept) {}
         // The page is done sending, and the deaf target never closes: the keepalives stop and the
         // host's idle rule takes the tunnel.
         peer.finish()
