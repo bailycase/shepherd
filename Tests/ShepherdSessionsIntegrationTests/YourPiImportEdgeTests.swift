@@ -193,9 +193,12 @@ struct YourPiImportEdgeTests {
         try Self.write(#"{"copies":42}"#, to: importer.stateURL)
 
         let survey = importer.survey()
-        #expect(survey.problems.first?.contains(".shepherd-imports.json") == true)
+        let problem = try #require(survey.problems.first)
+        #expect(problem.contains(importer.stateURL.path))
+        #expect(problem.contains("typeMismatch") && problem.contains("copies"))
+        #expect(problem.contains("Restore the file from a backup or fix its JSON."))
         #expect(survey.copied && survey.copiedAt == nil)
-        #expect(survey.stateProblem == survey.problems.first)
+        #expect(survey.stateProblem == problem)
 
         _ = importer.copyOnce()
         let diagnostic = try #require(setup.logged.current.last)

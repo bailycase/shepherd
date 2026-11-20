@@ -933,10 +933,10 @@ public struct YourPiImport: Sendable {
             survey.copied = saved.copied
         case .missing:
             state = nil
-        case .damaged:
+        case .damaged(_, let error):
             state = nil
             survey.copied = true
-            let problem = "Shepherd couldn't read \(Self.stateName). \(stateRepairGuidance)"
+            let problem = damagedStateMessage(error)
             survey.stateProblem = problem
             survey.problems.append(problem)
         }
