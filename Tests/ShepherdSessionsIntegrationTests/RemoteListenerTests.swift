@@ -16,18 +16,20 @@ struct RemoteListenerTests {
         defer { r.stop() }
         let client = try await r.raw(authenticated: false)
         try client.send(.hello(id: 7, token: r.token, clientName: "test", protocolVersion: RemoteProtocol.version))
-        // Designs (and Pencil markup and Delete with them) only while the host's Design tool is
-        // on, and it starts off.
-        // Fleet is offered only by a host whose fleet has started (`SessionServer.startFleet`); a bare server has none.
-        // Nor an updater, so the host updates no Mac of its fleet (`fleet.update.v1`).
-        // A bare server also has no owner Project launcher/controller installed, and Files goes
-        // only to a client that lists it (this one lists nothing).
-        let offered = RemoteProtocol.capabilities.filter {
-            !RemoteProtocol.designCapabilities.contains($0) && $0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetLinkCapability && $0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetCheckCapability && $0 != RemoteProtocol.fleetDevicesCapability && $0 != RemoteProtocol.fleetSyncCapability && $0 != RemoteProtocol.fleetSnapshotCapability && $0 != RemoteProtocol.fleetDispatchCapability && $0 != RemoteProtocol.fleetMoveCapability && $0 != RemoteProtocol.fleetRendezvousCapability && $0 != RemoteProtocol.fleetPairLinkCapability && $0 != RemoteProtocol.hostUpdateCapability && $0 != RemoteProtocol.fleetUpdateCapability && $0 != RemoteProtocol.fleetUpdateViewCapability && $0 != RemoteProtocol.filesCapability && $0 != RemoteProtocol.logicalProjectRuntimeCapability && $0 != RemoteProtocol.projectWorkerCapability && $0 != RemoteProtocol.projectMessageImagesCapability && $0 != RemoteProtocol.projectExecutionCapability && $0 != RemoteProtocol.projectPlacementCapability && $0 != RemoteProtocol.projectPublicationsCapability && $0 != RemoteProtocol.projectResultCapability
-        }
-        // This host's fleet runs (a test's client is one of its devices), so it says who it is.
+        // The Design tool starts off. The test token authenticates a device, not a Fleet member.
+        let unavailable = RemoteProtocol.designCapabilities.union(RemoteProtocol.fleetMemberCapabilities).union([
+            // No updater, no Files opt-in, and no Project launcher or controller.
+            RemoteProtocol.hostUpdateCapability, RemoteProtocol.fleetUpdateViewCapability,
+            RemoteProtocol.filesCapability,
+            RemoteProtocol.logicalProjectRuntimeCapability, RemoteProtocol.projectWorkerCapability,
+            RemoteProtocol.projectMessageImagesCapability, RemoteProtocol.projectExecutionCapability,
+            RemoteProtocol.projectPlacementCapability, RemoteProtocol.projectPublicationsCapability,
+            RemoteProtocol.projectResultCapability,
+        ])
+        let offered = RemoteProtocol.capabilities.filter { !unavailable.contains($0) }
         guard case .helloOk(7, RemoteProtocol.version, let capabilities, _, let hostID) = try await client.next() else { Issue.record("expected helloOk"); return }
-        #expect(capabilities == offered && hostID != nil)
+        #expect(capabilities.sorted() == offered.sorted())
+        #expect(hostID != nil)
     }
 
     @Test(arguments: ["127.0.0.1", "localhost"])
