@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
@@ -63,6 +64,9 @@ struct ThreadRowMenuItems: View {
                 Button("Notifications for background alerts") { navigator.open(.settings(.notifications)) }
             }
             Section {
+                if hosts.host(thread.host)?.supports(RemoteProtocol.nativeThreadCapability) == true {
+                    Button("Copy Transcript", systemImage: "doc.on.doc") { copyTranscript() }
+                }
                 if abilities.rename {
                     Button("Rename…", systemImage: "pencil") { navigator.present(.search(.rename(thread))) }
                 }
@@ -98,6 +102,35 @@ struct ThreadRowMenuItems: View {
             }
         }
     }
+
+    /// Copy Transcript: the whole conversation as text, on the pasteboard (the Mac's row menu
+    /// item of the same name). Reads the thread's pages from its host like opening it would,
+    /// then copies; a failure says why and copies nothing.
+    private func copyTranscript() {
+        let (ref, hosts) = (thread, hosts)
+        AgentActions.run("Couldn’t copy the transcript", navigator: navigator) {
+            guard let host = hosts.host(ref.host), let client = host.connectedClient else { return }
+            guard case .snapshot(let page) = try await client.nativeThread(agentID: ref.agent, request: .snapshot()) else { return }
+            var messages = page.messages
+            var cursor = page.olderCursor
+            // Older pages, newest first onto the front, until the session's start.
+            for _ in 0..<Self.copyPageLimit {
+                guard let before = cursor else { break }
+                guard case .snapshot(let older) = try await client.nativeThread(
+                    agentID: ref.agent, request: .snapshot(expectedSessionID: page.piSessionID, beforeEntryID: before)),
+                    older.piSessionID == page.piSessionID, older.generation == page.generation else { break }
+                let seen = Set(messages.map(\.entryID))
+                messages = older.messages.filter { !seen.contains($0.entryID) } + messages
+                cursor = older.olderCursor
+            }
+            let text = nativeTranscriptText(messages)
+            guard !text.isEmpty else { return }
+            UIPasteboard.general.string = text
+        }
+    }
+
+    /// ponytail: a flat list stops here; a thread with more pages copies what was read.
+    private static let copyPageLimit = 512
 
     private func move(to space: SpaceID) {
         let ref = thread

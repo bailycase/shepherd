@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import UIKit
 import UserNotifications
 import ShepherdProtocol
 import ShepherdRemote
@@ -16,8 +15,9 @@ final class GoalNotifications: NSObject {
     /// When push is enabled for a host, skip local goal alerts for its agents to avoid duplicates.
     var pushEnabledHosts: Set<UUID> = []
     // The fixture app must never prompt for permission or post a real notification.
+    // Everywhere else, alerts gate on notification authorization at post time, not on idiom:
+    // iPad and iPhone Duo's inner display alert like the phone does.
     private let available = Bundle.main.bundleIdentifier == "com.bailycase.shepherd.ios"
-        && UIDevice.current.userInterfaceIdiom == .phone
 
     override init() {
         super.init()
@@ -58,12 +58,10 @@ final class GoalNotifications: NSObject {
         let previouslyLive = wasLive[ref] == true
         previous[ref] = goal
         wasLive[ref] = live
-        // A first snapshot is a baseline, not a newly completed goal. Reconnecting must not
-        // replay an old alert, and elapsed/metadata revisions must not post another one.
-        guard live, previouslyLive, let goal, let old, old.id == goal.id, old.state != goal.state,
-              goal.state == .met || goal.state == .needsYou,
-              // Skip local alert if push is enabled for this host (push delivers it instead).
-              !pushEnabledHosts.contains(ref.host) else { return }
+        // Skip local alert if push is enabled for this host (push delivers it instead).
+        guard GoalAlertPolicy.shouldPost(old: old, new: goal, previouslyLive: previouslyLive,
+                                         live: live, pushEnabled: pushEnabledHosts.contains(ref.host)) else { return }
+        guard let goal else { return }
         Task { [weak self, weak store, weak hosts] in
             guard let self else { return }
             let center = UNUserNotificationCenter.current()

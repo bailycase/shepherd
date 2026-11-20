@@ -54,29 +54,37 @@ private struct SettingsList: View {
 
     var body: some View {
         let designs = MobileDesigns.of(hosts).model
+        @Bindable var selection = navigator.settingsSelection
+        let query = selection.searchQuery
+        let hits = SettingsSearch.hits(for: query, showsHooks: store.showsHooks)
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                ForEach(Array(SettingsPage.groups.enumerated()), id: \.offset) { _, group in
-                    SettingsSection(group.title) {
-                        SHListCard {
-                            ForEach(store.listPages(group.pages), id: \.self) { page in
-                                Button { navigator.open(.settings(page.route)) } label: {
-                                    SettingsNavRow(page.title, value: store.listValue(page, appearance: appearance))
+                SettingsSearchField(query: $selection.searchQuery)
+                if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    SettingsSearchResults(hits: hits) { navigator.open(.settings($0.route)) }
+                } else {
+                    ForEach(Array(SettingsPage.groups.enumerated()), id: \.offset) { _, group in
+                        SettingsSection(group.title) {
+                            SHListCard {
+                                ForEach(store.listPages(group.pages), id: \.self) { page in
+                                    Button { navigator.open(.settings(page.route)) } label: {
+                                        SettingsNavRow(page.title, value: store.listValue(page, appearance: appearance))
+                                    }
+                                    .buttonStyle(.shRow(radius: 0))
                                 }
-                                .buttonStyle(.shRow(radius: 0))
-                            }
-                            // While a host serves designs (More's row, before the phone had five tabs).
-                            if group.title == "Agents", designs.available {
-                                Button { navigator.open(.designs(.systems)) } label: {
-                                    SettingsNavRow("Design systems", value: designs.systems.isEmpty ? nil : String(designs.systems.count))
+                                // While a host serves designs (More's row, before the phone had five tabs).
+                                if group.title == "Agents", designs.available {
+                                    Button { navigator.open(.designs(.systems)) } label: {
+                                        SettingsNavRow("Design systems", value: designs.systems.isEmpty ? nil : String(designs.systems.count))
+                                    }
+                                    .buttonStyle(.shRow(radius: 0))
                                 }
-                                .buttonStyle(.shRow(radius: 0))
                             }
                         }
                     }
-                }
-                SettingsSection("About") {
-                    SHListCard { AboutRow(agent: store.agentVersion) }
+                    SettingsSection("About") {
+                        SHListCard { AboutRow(agent: store.agentVersion) }
+                    }
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
@@ -145,26 +153,52 @@ struct SettingsNavRow: View {
 private struct SettingsSplit: View {
     let store: SettingsStore
     @Environment(MobileNavigator.self) private var navigator
-    private var selection: SettingsSelection { navigator.settingsSelection }
 
     var body: some View {
+        @Bindable var selection = navigator.settingsSelection
+        let query = selection.searchQuery
+        let hits = SettingsSearch.hits(for: query, showsHooks: store.showsHooks)
         PadListDetail(listWidth: MobileLayout.settingsListWidth) {
             ScrollView {
                 VStack(alignment: .leading, spacing: MobileLayout.settingsListRowSpacing) {
-                    ForEach(Array(SettingsPage.groups.enumerated()), id: \.offset) { index, group in
-                        if let title = group.title {
-                            Text(title)
+                    SettingsSearchField(query: $selection.searchQuery)
+                    if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        ForEach(hits, id: \.page) { page, rows in
+                            Text(page.title)
                                 .shText(.caption)
                                 .foregroundStyle(Color.sh.textTertiary)
                                 .accessibilityAddTraits(.isHeader)
                                 .padding(.horizontal, SH.Space.l)
                                 .padding(.top, MobileLayout.settingsListGroupGap)
                                 .padding(.bottom, SH.Space.xs)
-                        } else if index > 0 {
-                            Color.clear.frame(height: MobileLayout.settingsListGroupGap)
+                            if rows.isEmpty {
+                                SettingsListItem(page: page, selected: selection.page == page) { selection.page = page }
+                            } else {
+                                ForEach(rows, id: \.self) { row in
+                                    SettingsListItem(page: page, selected: selection.page == page, label: row) { selection.page = page }
+                                }
+                            }
                         }
-                        ForEach(store.listPages(group.pages), id: \.self) { page in
-                            SettingsListItem(page: page, selected: selection.page == page) { selection.page = page }
+                        if hits.isEmpty {
+                            SettingsFootnote("No settings match.")
+                                .padding(.horizontal, SH.Space.l)
+                        }
+                    } else {
+                        ForEach(Array(SettingsPage.groups.enumerated()), id: \.offset) { index, group in
+                            if let title = group.title {
+                                Text(title)
+                                    .shText(.caption)
+                                    .foregroundStyle(Color.sh.textTertiary)
+                                    .accessibilityAddTraits(.isHeader)
+                                    .padding(.horizontal, SH.Space.l)
+                                    .padding(.top, MobileLayout.settingsListGroupGap)
+                                    .padding(.bottom, SH.Space.xs)
+                            } else if index > 0 {
+                                Color.clear.frame(height: MobileLayout.settingsListGroupGap)
+                            }
+                            ForEach(store.listPages(group.pages), id: \.self) { page in
+                                SettingsListItem(page: page, selected: selection.page == page) { selection.page = page }
+                            }
                         }
                     }
                 }
@@ -186,17 +220,18 @@ private struct SettingsSplit: View {
     }
 }
 
-/// One page in the iPad's list: its name; the open one on `bgSelected` and semibold.
+/// One page in the iPad's list: its name (or a matching row's title while searching); the open one on `bgSelected` and semibold.
 private struct SettingsListItem: View {
     let page: SettingsPage
     let selected: Bool
     let open: () -> Void
+    var label: String? = nil
 
     var body: some View {
         let sh = Color.sh
         Button(action: open) {
             HStack(spacing: SH.Space.l) {
-                Text(page.title)
+                Text(label ?? page.title)
                     .font(.sh(.ui, weight: selected ? .semibold : .regular))
                     .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)

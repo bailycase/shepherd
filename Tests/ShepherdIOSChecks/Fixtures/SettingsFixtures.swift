@@ -47,6 +47,21 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings-experiments-off", routes: [.settings(.experiments)], tab: .settings),
             FixtureScreen(name: "settings-suggestion", hosts: FixtureData.suggestingHosts(),
                           routes: [.settings(.experiments), .settings(.suggestion(FixtureData.joinKeys))], tab: .settings),
+            // Settings search (S5): "model" matches the Models page and its model rows.
+            // Rendered on Duo outer (the phone's list) and Duo inner (beside the iPad's list),
+            // in light and dark.
+            FixtureScreen(name: "settings-search", routes: [.settings(.root)], tab: .settings,
+                          prepare: { app in
+                              await HomeFeed.of(app.hosts).refresh()
+                              app.navigator.settingsSelection.searchQuery = "model"
+                          },
+                          verify: { app in
+                              let hits = SettingsSearch.hits(for: "model", showsHooks: true)
+                              let models = hits.first { $0.page == .models }
+                              FixtureCheck.report(models != nil && !(models?.rows.isEmpty ?? true)
+                                  ? "FIXTURE CHECK ok: settings search finds Models and its rows"
+                                  : "FIXTURE CHECK FAILED: settings search for model found \(hits.map(\.page))")
+                          }),
             // The iPad's list beside a page (iPadSettingsInstructions).
             FixtureScreen(name: "settings-pad-instructions", routes: [.settings(.root)], tab: .settings, prepare: { app in
                 app.navigator.settingsSelection.page = .instructions
