@@ -80,14 +80,14 @@ struct AutomationTriggersTests {
 
     @Test func legacyTriggerFileKeepsPendingEventsAndDedupeCursors() throws {
         let json = """
-        {"version":1,"allPaused":true,"records":{"loop":{
+        {"version":1,"records":{"loop":{
           "fingerprint":"acme-trigger","baselineAt":1000,"lastCheckedAt":1100,"seen":{"acme-event":1100},
           "pending":[{"event":{"id":"acme-event","title":"New issue","occurredAt":1100},"attempts":1,"queuedAt":1101}],
           "failures":0,"starts":[1050]}}}
         """
         let file = try JSONDecoder().decode(AutomationTriggers.File.self, from: Data(json.utf8))
         let record = try #require(file.records["loop"])
-        #expect(file.allPaused)
+        #expect(!file.allPaused)
         #expect(record.fingerprint == "acme-trigger")
         #expect(record.lastCheckedAt == 1100)
         #expect(record.seen == ["acme-event": 1100])
@@ -95,6 +95,14 @@ struct AutomationTriggersTests {
         #expect(record.pending.map(\.attempts) == [1])
         #expect(record.starts == [1050])
         #expect(record.heads.isEmpty && record.windows.isEmpty)
+    }
+
+    @Test(arguments: [#"{"allPaused":true,"records":{}}"#, #"{"version":1,"allPaused":true}"#])
+    func sparseTriggerFileKeepsGlobalPause(json: String) throws {
+        let file = try JSONDecoder().decode(AutomationTriggers.File.self, from: Data(json.utf8))
+        #expect(file.version == 1)
+        #expect(file.allPaused)
+        #expect(file.records.isEmpty)
     }
 
     @Test func legacyPendingEventStartsWithNoAttempts() throws {
