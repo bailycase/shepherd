@@ -46,6 +46,10 @@ struct ThreadComposer: View {
         let wide = sizeClass == .regular
         let goalSize: SHGoalSize = wide && !navigator.padSidebarOverlays ? .desktop : .touch
         VStack(alignment: .leading, spacing: MobileLayout.composerSpacing) {
+            if let problem = store.startProblem {
+                StartProblemBanner(ref: ref, problem: problem, store: store)
+                    .shTransition(.list, edge: .bottom)
+            }
             if let notice = store.notice {
                 banner(notice)
             }
