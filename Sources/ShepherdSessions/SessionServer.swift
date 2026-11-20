@@ -3228,7 +3228,36 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// What `authorize` decides for one frame of a remote client.
+    private enum RemoteAuthorization {
+        /// Close the connection: a frame that cannot be answered.
+        case close(reason: String)
+        /// Answer with a refusal; `final` closes the connection after it.
+        case refuse(RemoteReply, final: Bool)
+        /// One of the fleet requests answered before `hello`, within its per-connection limit.
+        case serveFleet(RemoteRequest)
+        /// A `hello` of the right protocol version: its token decides.
+        case authenticate(id: Int, token: String, clientName: String, capabilities: [String]?)
+        /// Authorized: the route serves it.
+        case route(RemoteRequest)
+    }
+
     private func handleRemoteLine(_ line: Data, from client: ExtensionConnection) {
+        switch authorize(line, from: client) {
+        case .close(let reason): disconnect(client, reason: reason)
+        case .refuse(let reply, let final): if final { sendFinal(reply, to: client) } else { send(reply, to: client) }
+        case .serveFleet(let request): serveFleet(request, from: client)
+        case .authenticate(let id, let token, let clientName, let capabilities):
+            authenticate(id: id, token: token, clientName: clientName, capabilities: capabilities, client: client)
+        case .route(let request): route(request, line: line, from: client)
+        }
+    }
+
+    /// The one authorization step in front of every remote route: pre-hello rules, then what the
+    /// request's `MessageSpec` row asks (local socket only, a Mac of the fleet, a capability offered
+    /// and negotiated). Checks that read the payload stay in the route. Nothing but the pre-hello
+    /// fleet counter changes here.
+    private func authorize(_ line: Data, from client: ExtensionConnection) -> RemoteAuthorization {
         let request: RemoteRequest
         do {
             request = try NDJSON.decode(RemoteRequest.self, from: line)
@@ -3239,76 +3268,102 @@ public final class SessionServer: @unchecked Sendable {
             // version sends) is refused like any unsupported one once the client has said hello.
             // A frame without an id has no reply to take, so it still closes the connection.
             if client.authenticated, let id = (try? NDJSON.decode(RemoteRequestID.self, from: line))?.id {
-                send(.error(id: id, code: "unsupported", message: "The host does not take this request."), to: client)
-                return
+                return .refuse(.error(id: id, code: "unsupported", message: "The host does not take this request."), final: false)
             }
-            disconnect(client, reason: "undecodable request before hello")
-            return
+            return .close(reason: "undecodable request before hello")
+        }
+        // A kind with no row is never routed: refused `unsupported` like an unknown kind (`unauthenticated` before hello).
+        guard let spec = MessageSpec.spec(for: request.kind) else {
+            ShepherdLog.warning("remote request kind without a MessageSpec row on fd \(client.fd)")
+            if client.authenticated, let id = (try? NDJSON.decode(RemoteRequestID.self, from: line))?.id {
+                return .refuse(.error(id: id, code: "unsupported", message: "The host does not take this request."), final: false)
+            }
+            return .refuse(.error(id: 0, code: "unauthenticated", message: "hello required"), final: true)
         }
 
         guard client.authenticated else {
-            // The two fleet requests answered before `hello`: who is there, and pairing with a code.
-            switch request {
-            case .fleetIdentify(let id), .fleetPair(let id, _, _), .fleetPairDevice(let id, _, _):
+            switch (spec.access, request) {
+            // The fleet requests answered before `hello`: who is there, and pairing with a code.
+            case (.beforeHello, .fleetIdentify(let id)), (.beforeHello, .fleetPair(let id, _, _)), (.beforeHello, .fleetPairDevice(let id, _, _)):
                 client.unauthenticatedFleetRequests += 1
                 guard client.unauthenticatedFleetRequests <= FleetService.unauthenticatedRequestLimit else {
-                    sendFinal(.error(id: id, code: FleetProtocol.Code.busy, message: "Too many requests."), to: client)
-                    return
+                    return .refuse(.error(id: id, code: FleetProtocol.Code.busy, message: "Too many requests."), final: true)
                 }
-                serveFleet(request, from: client)
-                return
-            default: break
-            }
-            guard case .hello(let id, let token, let clientName, let protocolVersion, let capabilities) = request else {
+                return .serveFleet(request)
+            case (.hello, .hello(let id, let token, let clientName, let protocolVersion, let capabilities)):
+                guard protocolVersion == RemoteProtocol.version else {
+                    return .refuse(.error(
+                        id: id,
+                        code: RemoteProtocol.versionMismatchCode,
+                        message: "host speaks protocol \(RemoteProtocol.version)"
+                    ), final: true)
+                }
+                return .authenticate(id: id, token: token, clientName: clientName, capabilities: capabilities)
+            default:
                 ShepherdLog.warning("remote request before hello on fd \(client.fd)")
-                sendFinal(.error(id: 0, code: "unauthenticated", message: "hello required"), to: client)
-                return
+                return .refuse(.error(id: 0, code: "unauthenticated", message: "hello required"), final: true)
             }
-            guard protocolVersion == RemoteProtocol.version else {
-                sendFinal(.error(
-                    id: id,
-                    code: RemoteProtocol.versionMismatchCode,
-                    message: "host speaks protocol \(RemoteProtocol.version)"
-                ), to: client)
-                return
-            }
-            // This Mac's app (past `LocalPeer` at accept), a paired Mac's own token (a fleet peer) or a client
-            // device's own; the last two never on the local socket. There is no token shared by every client: one
-            // that isn't either is an old client's shared token, or a revoked device's.
-            let peer = client.isLocal ? nil : fleet?.authenticate(token: token)
-            let device = client.isLocal || peer != nil ? nil : fleet?.authenticateDevice(token: token)
-            guard client.isLocal || peer != nil || device != nil else {
-                ShepherdLog.warning("remote client '\(clientName)' rejected: no token of its own (fd \(client.fd))")
-                sendFinal(.error(id: id, code: RemoteProtocol.sharedTokenRetiredCode, message: RemoteProtocol.sharedTokenRetiredMessage), to: client)
-                return
-            }
-            // What the other clients are owed goes out first: the new one reads its state from its fetch.
-            flushRemoteState()
-            client.fleetPeerID = peer
-            client.fleetDeviceID = device
-            client.clientName = clientName
-            if let peer { fleet?.peerAuthenticated(peer, from: client.peerHost) }
-            if let device { fleet?.deviceAuthenticated(device, connection: client.fd) }
-            client.authenticated = true
-            client.clientCapabilities = Set(capabilities ?? [])
-            if client.isLocal { localAppsChanged() }
-            send(.helloOk(
-                id: id,
-                protocolVersion: RemoteProtocol.version,
-                capabilities: offeredCapabilities(to: client),
-                hostBuild: hostBuild,
-                hostID: fleet?.hostID
-            ), to: client)
-            sendStartProblems(to: client)
-            sendAppProcesses(to: client)
-            if let links = pullRequestLinksPush, client.isLocal, client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
-                send(links, to: client)
-            }
-            if let peer { fleet?.peerConnected(peer, connection: client.fd, capabilities: client.clientCapabilities) }
-            ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
-            return
         }
 
+        // A request that got this far decoded with its `id`.
+        func refuse(_ code: String, _ message: String) -> RemoteAuthorization {
+            .refuse(.error(id: (try? NDJSON.decode(RemoteRequestID.self, from: line))?.id ?? 0, code: code, message: message), final: false)
+        }
+        switch spec.access {
+        case .localOnly(let refusal) where !client.isLocal:
+            return refuse("unsupported", refusal)
+        case .fleetPeer(let refusal) where client.fleetPeerID == nil:
+            return refuse(FleetProtocol.Code.forbidden, refusal)
+        default: break
+        }
+        if let need = spec.requires {
+            let capability = need.capability.rawValue
+            if !offeredCapabilities.contains(capability) || need.negotiated && !client.clientCapabilities.contains(capability) {
+                return refuse("unsupported", need.message)
+            }
+        }
+        return .route(request)
+    }
+
+    /// Checks a `hello`'s token and opens the connection to its requests.
+    private func authenticate(id: Int, token: String, clientName: String, capabilities: [String]?, client: ExtensionConnection) {
+        // This Mac's app (past `LocalPeer` at accept), a paired Mac's own token (a fleet peer) or a client
+        // device's own; the last two never on the local socket. There is no token shared by every client: one
+        // that isn't either is an old client's shared token, or a revoked device's.
+        let peer = client.isLocal ? nil : fleet?.authenticate(token: token)
+        let device = client.isLocal || peer != nil ? nil : fleet?.authenticateDevice(token: token)
+        guard client.isLocal || peer != nil || device != nil else {
+            ShepherdLog.warning("remote client '\(clientName)' rejected: no token of its own (fd \(client.fd))")
+            sendFinal(.error(id: id, code: RemoteProtocol.sharedTokenRetiredCode, message: RemoteProtocol.sharedTokenRetiredMessage), to: client)
+            return
+        }
+        // What the other clients are owed goes out first: the new one reads its state from its fetch.
+        flushRemoteState()
+        client.fleetPeerID = peer
+        client.fleetDeviceID = device
+        client.clientName = clientName
+        if let peer { fleet?.peerAuthenticated(peer, from: client.peerHost) }
+        if let device { fleet?.deviceAuthenticated(device, connection: client.fd) }
+        client.authenticated = true
+        client.clientCapabilities = Set(capabilities ?? [])
+        if client.isLocal { localAppsChanged() }
+        send(.helloOk(
+            id: id,
+            protocolVersion: RemoteProtocol.version,
+            capabilities: offeredCapabilities(to: client),
+            hostBuild: hostBuild,
+            hostID: fleet?.hostID
+        ), to: client)
+        sendStartProblems(to: client)
+        sendAppProcesses(to: client)
+        if let links = pullRequestLinksPush, client.isLocal, client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
+            send(links, to: client)
+        }
+        if let peer { fleet?.peerConnected(peer, connection: client.fd, capabilities: client.clientCapabilities) }
+        ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
+    }
+
+    private func route(_ request: RemoteRequest, line: Data, from client: ExtensionConnection) {
         switch request {
         case .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
              .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetCheck, .fleetCheckNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
@@ -3316,17 +3371,9 @@ public final class SessionServer: @unchecked Sendable {
              .fleetPairDevice, .fleetSyncDevices:
             serveFleet(request, from: client)
         case .fleetPeerAnswer(let id, let reply):
-            // The answer of a Mac to a call this host sent over the connection it opened: only that Mac's.
-            guard client.fleetPeerID != nil else {
-                send(.error(id: id, code: FleetProtocol.Code.forbidden, message: "Only a Mac in the fleet answers a call."), to: client)
-                return
-            }
+            // The answer of a Mac to a call this host sent over the connection it opened: `authorize` took it from that Mac only.
             fleet?.peerAnswered(connection: client.fd, id: id, reply: reply)
         case .pushRegistration(let id, let registration):
-            guard offeredCapabilities.contains(RemoteProtocol.pushNotificationsCapability),
-                  client.clientCapabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
-                send(.error(id: id, code: "unsupported", message: "Push notifications are unavailable."), to: client); return
-            }
             do {
                 try pushNotifications.register(registration)
                 send(.ok(id: id), to: client)
@@ -3334,10 +3381,6 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "push_registration", message: "Could not save push registration."), to: client)
             }
         case .pushUnregister(let id, let registrationID):
-            guard offeredCapabilities.contains(RemoteProtocol.pushNotificationsCapability),
-                  client.clientCapabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
-                send(.error(id: id, code: "unsupported", message: "Push notifications are unavailable."), to: client); return
-            }
             do {
                 try pushNotifications.unregister(registrationID)
                 send(.ok(id: id), to: client)
@@ -3346,9 +3389,7 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .nativeThreadSubscribe(let id, let agentIDs):
             let visible = Set(remoteState(store.state, for: client).agents.map(\.id))
-            guard offeredCapabilities.contains(RemoteProtocol.nativeThreadRevisionsCapability),
-                  client.clientCapabilities.contains(RemoteProtocol.nativeThreadRevisionsCapability),
-                  agentIDs.count <= 64,
+            guard agentIDs.count <= 64,
                   agentIDs.allSatisfy({ visible.contains($0) && !store.state.isProjectCoordinator($0) }) else {
                 send(.error(id: id, code: "unsupported", message: "Watch at most 64 ordinary threads."), to: client); return
             }
@@ -3356,9 +3397,7 @@ public final class SessionServer: @unchecked Sendable {
             client.revisedThreads.formIntersection(client.watchedThreads)
             send(.ok(id: id), to: client)
         case .fleetDigest(let id, let agentID, let session, let revision):
-            guard offeredCapabilities.contains(RemoteProtocol.nativeFleetDigestCapability),
-                  client.clientCapabilities.contains(RemoteProtocol.nativeFleetDigestCapability),
-                  remoteState(store.state, for: client).agents.contains(where: { $0.id == agentID }), !store.state.isProjectCoordinator(agentID) else {
+            guard remoteState(store.state, for: client).agents.contains(where: { $0.id == agentID }), !store.state.isProjectCoordinator(agentID) else {
                 send(.error(id: id, code: "unsupported", message: "Fleet digests require an ordinary thread."), to: client); return
             }
             if ContinuousClock.now - client.digestWindow >= .seconds(1) {
@@ -3767,10 +3806,6 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .logicalProjects(let id, let request):
-            guard offeredCapabilities.contains(RemoteProtocol.logicalProjectsCapability) else {
-                send(.error(id: id, code: "unsupported", message: "Logical projects are unavailable on this host."), to: client)
-                return
-            }
             guard !request.requiresProjectAutomations || offeredCapabilities.contains(RemoteProtocol.logicalProjectAutomationsCapability) else {
                 send(.error(id: id, code: "unsupported", message: "Project automations are unavailable on this host."), to: client)
                 return
@@ -3949,17 +3984,13 @@ public final class SessionServer: @unchecked Sendable {
         case .listDir(let id, let path):
             remoteListDir(id: id, path: path, client: client)
         case .drain(let id):
-            guard client.isLocal, let handler = onDrainRequest else {
+            guard let handler = onDrainRequest else {
                 send(.error(id: id, code: "unsupported", message: "This host doesn't drain on request."), to: client)
                 return
             }
             send(.ok(id: id), to: client)
             hopToMain { handler() }
         case .hostUpdateGate(let id, let step):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's app installs this host's updates."), to: client)
-                return
-            }
             Task { [weak self, weak client] in
                 guard let self else { return }
                 let refusal: String? = switch step {
@@ -3993,26 +4024,14 @@ public final class SessionServer: @unchecked Sendable {
         case .addSpace(let id, let path):
             remoteAddSpace(id: id, path: path, client: client)
         case .focusThread(let id, let agentID, let paneID):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app says what it shows."), to: client)
-                return
-            }
             pushNotifications.focused = agentID
             localFocusedPane = paneID
             if let agentID { hopToMain { [weak self] in self?.onThreadFocused?(agentID) } }
             send(.ok(id: id), to: client)
         case .projectExecutors(let id, let update):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app says which Macs it reaches."), to: client)
-                return
-            }
             applyProjectExecutors(update)
             send(.ok(id: id), to: client)
         case .startThread(let id, let thread):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app starts threads this way."), to: client)
-                return
-            }
             var request = RemoteCreateAgentRequest(
                 spaceID: thread.spaceID ?? SpaceID(rawValue: ""), cwd: thread.cwd, model: thread.model, thinking: thread.thinking,
                 initialPrompt: thread.initialPrompt, worktreeBranch: thread.worktreeBranch, worktreeBase: thread.worktreeBase,
@@ -4029,10 +4048,6 @@ public final class SessionServer: @unchecked Sendable {
             }
             remoteCreateAgent(id: id, request: request, client: client)
         case .spaceAction(let id, let spaceID, let action):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app changes its spaces."), to: client)
-                return
-            }
             let connection = ChangesUnchecked(value: client)
             Task { [weak self] in
                 guard let self else { return }
@@ -4046,10 +4061,6 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .projectRequest(let id, let request):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app changes its spaces."), to: client)
-                return
-            }
             let connection = ChangesUnchecked(value: client)
             Task { @MainActor [weak self] in
                 guard let self else { return }
