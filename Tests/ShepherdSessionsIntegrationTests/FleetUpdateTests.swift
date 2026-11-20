@@ -536,6 +536,38 @@ struct FleetUpdateTests {
         try await Self.waitForStage(.updated, on: a, of: id)
     }
 
+    /// The host sent its install and the app quit to install, then the host restarted before the job looked: the job never saw the handoff. The
+    /// host keeps it across the restart, or the job would read the app that quit to install as one that was closed.
+    @Test func aHostThatRestartsBeforeTheHandoffWasSeenIsRelaunching() async throws {
+        let updater = FakeUpdater()
+        let (a, b, origin) = try await Self.fleet(updaterB: updater)
+        defer { a.stop() }
+        let id = try await b.hostID()
+        let pi = try await Self.busy(b)
+        b.server.queue.sync { b.server.idleInstallInterval = 0.02 }
+        updater.quitOnInstall()
+        Self.quicken(a)
+        try await Self.start(a, id, .idle)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.waitingForThreads, on: a, of: id)
+        // The job's next look is seconds away: the handoff and the restart both come first.
+        a.server.queue.sync { a.server.fleet?.updates.interval = .seconds(3) }
+        let looks = updater.asked.filter { $0 == .status }.count
+        try await FleetDispatchTests.wait("a look after the pause") { updater.asked.filter { $0 == .status }.count > looks }
+        try await Self.settle(pi)
+        try await updater.waitFor("install the held offer") { if case .install = $0 { true } else { false } }
+
+        let (dir, port) = (b.host.dir, b.port)
+        b.stop(keepFiles: true)
+        let b2 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, prepare: { updater.install(on: $0) })
+        defer { b2.stop() }
+        #expect(try await b2.local.hostUpdate(.status).installHandedOff == true, "the restarted host still says the install was handed over")
+        try await Self.waitForStage(.relaunching, on: a, of: id)
+        updater.relaunch(build: "675")
+        try await Self.waitForStage(.updated, on: a, of: id)
+    }
+
     /// No thread works any more but the host hasn't sent its install yet: an app that quits now handed nothing to an installer. Zero busy threads
     /// is not a handoff, so the person is told to open the app, and the wait that is left on its host is let go.
     @Test func anAppThatQuitsBeforeTheHostSentItsInstallNeedsToBeOpened() async throws {

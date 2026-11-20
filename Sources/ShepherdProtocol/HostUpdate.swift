@@ -58,7 +58,7 @@ public struct HostUpdateStatus: Codable, Hashable, Sendable {
     /// phase stays `available`, so an older client reads an offer it can't install yet.
     public var waitingForIdle: Bool
     /// The host sent the updater an install (asked for now, or held for idle threads) and the updater took it: an app that quits now is installing,
-    /// not closed by its person. Reset by the next request that isn't a status, and lost when the host restarts. Nil from a host that
+    /// not closed by its person. Reset by the next request that isn't a status, and kept across a restart of the host. Nil from a host that
     /// predates the field: unknown, which is not the same as "no".
     public var installHandedOff: Bool?
 

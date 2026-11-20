@@ -488,7 +488,7 @@
     host before it reserves, restarts or quits (`hostUpdateGate`, local clients only). Two more steps
     serve a Mac that updates another (`fleet.update.v1`, below): `installWhenIdle(offerID:authorized:)`
     holds the offer until no thread on the host is working, `cancel` lets go of one that is held or still
-    downloading. `HostUpdateStatus` carries `busyThreads`, `waitingForIdle` and `installHandedOff` (the host sent the updater an install and it took it, so an app that quits is installing, not closed), all optional on the wire.
+    downloading. `HostUpdateStatus` carries `busyThreads`, `waitingForIdle` and `installHandedOff` (the host sent the updater an install and it took it, so an app that quits is installing, not closed; a marker file keeps it across a host restart), all optional on the wire.
     For a request that needs the updater (`check`, an install) with no app connected, the host opens its own
     Shepherd hidden, without focus, and waits a few seconds for it to connect; if it can't open or doesn't
     answer, the status says to open Shepherd on that Mac.

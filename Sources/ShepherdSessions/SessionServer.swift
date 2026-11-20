@@ -510,8 +510,16 @@ public final class SessionServer: @unchecked Sendable {
     /// host sends `install` once none is busy. Memory only: a restart of the host drops it, and nothing resumes it. Server queue.
     private var idleInstall: (offerID: UUID, since: Date, attempt: UUID)?
     /// The updater took the last install this host sent it (it answered downloading or installing): from there the app quits and relaunches, which is
-    /// no sign that a person closed it (`HostUpdateStatus.installHandedOff`). Memory only. Server queue.
-    private var installHandedOff = false
+    /// no sign that a person closed it (`HostUpdateStatus.installHandedOff`). A marker file, because this host may restart before anyone looks:
+    /// the app quitting to install is what restarts it. Cleared by the next request that isn't a status. Server queue.
+    private var installHandedOff: Bool {
+        get { FileManager.default.fileExists(atPath: installHandoffMarker.path) }
+        set {
+            if newValue { FileManager.default.createFile(atPath: installHandoffMarker.path, contents: nil) }
+            else { try? FileManager.default.removeItem(at: installHandoffMarker) }
+        }
+    }
+    private var installHandoffMarker: URL { supportDirectory.appendingPathComponent("host-update-handoff") }
     /// Tests: answer as a host from before `installHandedOff` did, which says nothing of it.
     var omitsInstallHandoff = false
     /// Server queue: an install waits for the threads to settle.
