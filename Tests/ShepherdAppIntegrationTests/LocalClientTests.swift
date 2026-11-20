@@ -45,8 +45,8 @@ struct LocalClientTests {
         defer { old.stop(keepFiles: true) }
         old.server.hostBuild = "724"
         let space = Fixture.space("acme-web")
-        var state = Fixture.workspace([Fixture.agent(in: space, name: "Fix the checkout", status: .working)], space: space)
-        try await old.seed(state)
+        var state = Fixture.state(spaces: [space], agents: [Fixture.agent("Fix the checkout", in: space, status: .working)])
+        try await old.server.putState(state)
         let finished = Locked(false)
         let drain = HostDrain(server: old.server, poll: .milliseconds(10)) { finished.withValue { $0 = true } }
         let asked = Locked(0)
@@ -76,7 +76,7 @@ struct LocalClientTests {
             }
         } else {
             state.agents[0].status = .done
-            try await old.seed(state)
+            try await old.server.putState(state)
             try await eventually("the drained host to finish") { finished.current }
             #expect(restarts == 0)
         }
