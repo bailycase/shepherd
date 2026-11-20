@@ -7,10 +7,13 @@ public struct SHBanner<Actions: View>: View {
     let title: String
     let message: String?
     let systemImage: String?
+    let stacked: Bool
     @ViewBuilder let actions: () -> Actions
 
-    public init(_ state: AgentState, title: String, message: String? = nil, systemImage: String? = nil,
+    /// `stacked` puts the actions under the text instead of beside it, for a banner on a narrow screen.
+    public init(_ state: AgentState, title: String, message: String? = nil, systemImage: String? = nil, stacked: Bool = false,
                 @ViewBuilder actions: @escaping () -> Actions) {
+        self.stacked = stacked
         self.state = state
         self.title = title
         self.message = message
@@ -40,10 +43,13 @@ public struct SHBanner<Actions: View>: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
+                if stacked {
+                    HStack(spacing: SH.Space.s) { actions() }.padding(.top, SH.Space.s)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .combine)
-            HStack(spacing: SH.Space.s) { actions() }
+            .accessibilityElement(children: stacked ? .contain : .combine)
+            if !stacked { HStack(spacing: SH.Space.s) { actions() } }
         }
         .padding(.vertical, SH.Space.l)
         .padding(.horizontal, 14)

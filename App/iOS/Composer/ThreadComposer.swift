@@ -46,6 +46,11 @@ struct ThreadComposer: View {
         let wide = sizeClass == .regular
         let goalSize: SHGoalSize = wide && !navigator.padSidebarOverlays ? .desktop : .touch
         VStack(alignment: .leading, spacing: MobileLayout.composerSpacing) {
+            if let banner = NativeStartBanner(store: store, offered: restartOffered(host), connected: host?.connectedClient != nil,
+                                              host: host?.name ?? "the host") {
+                StartProblemBanner(banner: banner, perform: restartAgent).equatable()
+                    .shTransition(.list, edge: .bottom)
+            }
             if let notice = store.notice {
                 banner(notice)
             }
@@ -257,6 +262,20 @@ struct ThreadComposer: View {
     }
 
     // MARK: iPad
+
+    /// A tap on the Can't start banner's button: asks the agent's host to start pi again (the store keeps the progress and any refusal).
+    private func restartAgent(_ action: NativeStartAction) {
+        let host = hosts.host(ref.host)
+        guard let client = host?.connectedClient else { return }
+        let store = threads.store(for: ref), agent = ref.agent, offered = restartOffered(host)
+        Task {
+            await NativeStartRestart.perform(action, store: store, offered: offered, connected: true) {
+                try await client.agentAction(agentID: agent, action: $0)
+            }
+        }
+    }
+
+    private func restartOffered(_ host: MobileHost?) -> Bool { host.map { NativeStartRestart.isOffered(by: $0.capabilities) } ?? false }
 
     private func card(store: NativeThreadStore, state: ComposerState, host: MobileHost?, live: Bool) -> some View {
         SHComposer(isFocused: focused) {
