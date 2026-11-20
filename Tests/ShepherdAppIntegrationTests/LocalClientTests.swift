@@ -77,7 +77,7 @@ struct LocalClientTests {
         } else {
             state.agents[0].status = .done
             try await old.server.putState(state)
-            try await eventually("the drained host to finish") { finished.current }
+            try await eventuallyOnMain("the drained host to finish") { finished.current }
             #expect(restarts == 0)
         }
         await Task.detached { old.stop(keepFiles: true) }.value
