@@ -4,10 +4,8 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-// A thread's Browser on iOS (DuoSidePaneTabs › Browser): the address bar
-// ("localhost:5173", "from macbook", the host's dev servers, Reload), the page in a card, and the
-// line under it. The page is the thread's `BrowserPage` (one web view a thread, kept by
-// `MobileBrowsers`), so the side pane and the pushed screen show the same page without reloading.
+// Regular-width Browser shows the thread's tabs and console. The compact screen shows the
+// selected tab without reloading it or changing which tabs the thread keeps.
 
 extension MobileLayout {
     /// The address bar (DuoSidePaneTabs: 40pt, radius 8).
@@ -31,7 +29,7 @@ struct ThreadBrowserPane: View {
 
     var body: some View {
         if let host = hosts.host(thread.host) {
-            BrowserPageView(page: MobileBrowsers.shared.page(thread, host: host), host: host)
+            MobileBrowserView(tabs: MobileBrowsers.shared.tabs(thread, host: host), host: host)
         } else {
             SHEmptyState(Text("No host"), message: "This thread’s host was removed.", showsMark: false) { EmptyView() }
         }
@@ -52,6 +50,79 @@ struct ThreadBrowserScreen: View {
     }
 }
 
+private struct MobileBrowserView: View {
+    let tabs: MobileBrowserTabs
+    let host: MobileHost
+    @Environment(MobileNavigator.self) private var navigator
+
+    var body: some View {
+        let regular = navigator.layout == .pad
+        VStack(spacing: 0) {
+            if regular { BrowserTabChrome(tabs: tabs) }
+            if let page = tabs.selectedPage {
+                BrowserPageView(page: page, host: host, regular: regular).id(page.id)
+                if regular { BrowserConsoleStrip(page: page) }
+            }
+        }
+        .background(Color.sh.bgWindow)
+    }
+}
+
+private struct BrowserTabChrome: View {
+    let tabs: MobileBrowserTabs
+    @State private var listOpen = false
+
+    var body: some View {
+        let items = tabs.items
+        let selection = tabs.selection
+        VStack(spacing: 0) {
+            SHBrowserTabStrip(items: items, selection: selection.selected, canAdd: selection.canAdd, listOpen: listOpen, touch: true,
+                              actions: .init(select: tabs.select, close: tabs.close, new: { _ = tabs.add() }, toggleList: { listOpen.toggle() }))
+                .popover(isPresented: $listOpen, attachmentAnchor: .point(.bottomTrailing), arrowEdge: .top) {
+                    SHBrowserTabMenu(items: items, selection: selection.selected, maxTabs: BrowserTabSelection.limit, touch: true,
+                                     note: "sign-ins shared across this thread", select: { tabs.select($0); listOpen = false },
+                                     closeOthers: { tabs.closeOthers(); listOpen = false })
+                        .presentationCompactAdaptation(.popover)
+                        .presentationBackground(Color.sh.bgRaised)
+                }
+            if let notice = tabs.notice {
+                SHBrowserTabsNote(message: notice == .cap
+                    ? "This thread has \(BrowserTabSelection.limit) tabs, the most it keeps. New links open in this tab."
+                    : "A link opened a new window. Shepherd opened it as a tab.",
+                    glyph: notice == .cap ? SHBrowserTabsNote.capGlyph : SHBrowserTabsNote.globeGlyph, touch: true) {
+                        tabs.notice = nil
+                    }
+            }
+        }
+    }
+}
+
+private struct BrowserConsoleStrip: View {
+    let page: BrowserPage
+
+    var body: some View {
+        let console = page.console
+        VStack(spacing: 0) {
+            SHConsoleBar(network: console.network, warnings: console.warnings, open: page.consoleOpen, touch: true) {
+                page.consoleOpen.toggle()
+            }
+            if page.consoleOpen {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(console.lines) { SHConsoleRow($0).equatable() }
+                    }
+                    .padding(.vertical, SH.Space.s)
+                }
+                .defaultScrollAnchor(.bottom, for: .initialOffset)
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(idealHeight: SHBrowserMetrics.consoleListHeight, maxHeight: SHBrowserMetrics.consoleListHeight)
+                .background(Color.sh.bgSunken)
+                .accessibilityLabel("Console output")
+            }
+        }
+    }
+}
+
 /// What the page's state is, in the order it is decided.
 private enum BrowserPhase: Equatable {
     case offline
@@ -64,8 +135,8 @@ private enum BrowserPhase: Equatable {
 private struct BrowserPageView: View {
     let page: BrowserPage
     let host: MobileHost
+    let regular: Bool
     @Environment(ThreadStores.self) private var threads
-    @Environment(MobileNavigator.self) private var navigator
     @FocusState private var editing: Bool
     @State private var address = ""
 
@@ -89,9 +160,13 @@ private struct BrowserPageView: View {
             .nothingOpen
         }
         VStack(spacing: 0) {
-            addressBar(served: served)
-                .padding(.horizontal, SH.Space.l)
-                .padding(.bottom, MobileLayout.browserFootTop)
+            if regular {
+                regularToolbar(served: served)
+            } else {
+                addressBar(served: served)
+                    .padding(.horizontal, SH.Space.l)
+                    .padding(.bottom, MobileLayout.browserFootTop)
+            }
             ZStack(alignment: .top) {
                 content(phase)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -101,18 +176,20 @@ private struct BrowserPageView: View {
                 }
             }
             .background(sh.bgRaised)
-            .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
-            .shBorder(sh.lineSubtle, radius: SH.Radius.m)
-            .padding(.horizontal, SH.Space.l)
-            Text("localhost here is the host’s dev server, forwarded over Shepherd’s connection.")
-                .font(.sh(.caption))
-                .foregroundStyle(sh.textTertiary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, SH.Space.xl)
-                .padding(.top, MobileLayout.browserFootTop)
-                .padding(.bottom, MobileLayout.browserFootBottom)
-                .overlay(alignment: .top) { SHHairline() }
-                .padding(.top, MobileLayout.browserFootTop)
+            .clipShape(RoundedRectangle(cornerRadius: regular ? 0 : SH.Radius.m))
+            .shBorder(regular ? .clear : sh.lineSubtle, radius: SH.Radius.m)
+            .padding(.horizontal, regular ? 0 : SH.Space.l)
+            if !regular {
+                Text("localhost here is the host’s dev server, forwarded over Shepherd’s connection.")
+                    .font(.sh(.caption))
+                    .foregroundStyle(sh.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, SH.Space.xl)
+                    .padding(.top, MobileLayout.browserFootTop)
+                    .padding(.bottom, MobileLayout.browserFootBottom)
+                    .overlay(alignment: .top) { SHHairline() }
+                    .padding(.top, MobileLayout.browserFootTop)
+            }
         }
         .task(id: LoadKey(session: host.session, served: served)) { await page.loadDevServers() }
         .onChange(of: editing) { _, now in
@@ -122,10 +199,33 @@ private struct BrowserPageView: View {
 
     // MARK: Address bar
 
+    private func regularToolbar(served: Bool) -> some View {
+        HStack(spacing: 0) {
+            navigationButton("Back", glyph: "chevron.left", enabled: served && page.canGoBack, action: page.goBack)
+            navigationButton("Forward", glyph: "chevron.right", enabled: served && page.canGoForward, action: page.goForward)
+            reloadButton(served: served)
+            addressBar(served: served)
+            Button { page.toggleSelecting() } label: { Image(systemName: shElementGlyph) }
+                .buttonStyle(.shIcon(isOn: page.selecting, size: SH.Height.touch))
+                .disabled(page.url == nil || !served)
+                .accessibilityLabel(page.selecting ? "Stop selecting" : "Select an element")
+                .accessibilityAddTraits(page.selecting ? .isSelected : [])
+        }
+        .padding(.horizontal, SH.Space.s)
+        .overlay(alignment: .bottom) { SHHairline() }
+    }
+
+    private func navigationButton(_ label: LocalizedStringKey, glyph: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) { Image(systemName: glyph) }
+            .buttonStyle(.shIcon(size: SH.Height.touch))
+            .disabled(!enabled)
+            .accessibilityLabel(label)
+    }
+
     private func addressBar(served: Bool) -> some View {
         let sh = Color.sh
         let shown = BrowserAddress.display(page.url ?? page.waitingFor)
-        return HStack(spacing: SH.Space.m) {
+        return HStack(spacing: regular ? SH.Space.s : SH.Space.m) {
             Image(systemName: "globe")
                 .font(.sh(.ui))
                 .foregroundStyle(sh.textSecondary)
@@ -145,47 +245,41 @@ private struct BrowserPageView: View {
                     }
                     .opacity(editing || shown == nil ? 1 : 0)
                 if !editing, let shown {
-                    (Text(shown.host).foregroundStyle(sh.textPrimary) + Text(shown.path).foregroundStyle(sh.textSecondary))
-                        .font(.sh(.code))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .onTapGesture { editing = true }
-                        .accessibilityLabel("Address, \(shown.host)\(shown.path)")
-                        .accessibilityAddTraits(.isButton)
+                    Button { editing = true } label: {
+                        (Text(shown.host).foregroundStyle(sh.textPrimary) + Text(shown.path).foregroundStyle(sh.textSecondary))
+                            .font(.sh(.code))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!served)
+                    .accessibilityLabel("Address, \(shown.host)\(shown.path)")
                 }
             }
             .frame(maxWidth: .infinity)
             serversMenu(served: served)
-            Button {
-                page.reload()
-            } label: {
-                Image(systemName: page.isLoading ? "xmark" : "arrow.clockwise")
-                    .font(.sh(.ui))
-                    .frame(width: MobileLayout.browserBarButton, height: SH.Height.touch)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(sh.textSecondary)
-            .disabled(page.url == nil || !served)
-            .opacity(page.url == nil || !served ? SHBrowserToolbar<EmptyView>.disabledOpacity : 1)
-            .accessibilityLabel(page.isLoading ? "Stop loading" : "Reload")
-            // Select an element (iPadPaneBrowser): the next tap in the page picks what is under it. The phone's board has none.
-            if navigator.layout == .pad {
-                Button { page.toggleSelecting() } label: { Image(systemName: shElementGlyph) }
-                    .buttonStyle(.shIcon(isOn: page.selecting, size: MobileLayout.browserBarButton))
-                    .disabled(page.url == nil || !served)
-                    .opacity(page.url == nil || !served ? SHBrowserToolbar<EmptyView>.disabledOpacity : 1)
-                    .accessibilityLabel(page.selecting ? "Stop selecting" : "Select an element")
-                    .accessibilityAddTraits(page.selecting ? .isSelected : [])
-            }
+            if !regular { reloadButton(served: served) }
         }
-        .padding(.leading, SH.Space.l)
+        .padding(.leading, regular ? SH.Space.m : SH.Space.l)
         .padding(.trailing, SH.Space.xs)
-        .frame(height: MobileLayout.browserAddressHeight)
+        .frame(height: regular ? SH.Height.touch : MobileLayout.browserAddressHeight)
         .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
         .shBorder(sh.lineSubtle, radius: SH.Radius.m)
+    }
+
+    private func reloadButton(served: Bool) -> some View {
+        Button { page.reload() } label: {
+            ZStack {
+                Image(systemName: "xmark").opacity(page.isLoading ? 1 : 0)
+                Image(systemName: "arrow.clockwise").opacity(page.isLoading ? 0 : 1)
+            }
+            .font(.sh(.ui))
+        }
+        .buttonStyle(.shIcon(size: regular ? SH.Height.touch : MobileLayout.browserBarButton))
+        .disabled(page.url == nil || !served)
+        .accessibilityLabel(page.isLoading ? "Stop loading" : "Reload")
     }
 
     /// "from macbook", and the host's dev servers under it: open one (waiting for it to answer), or
@@ -249,7 +343,7 @@ private struct BrowserPageView: View {
         case .waiting(let url):
             BrowserWaiting(page: page, url: url)
         case .page:
-            BrowserWebView(page: page)
+            BrowserWebView(page: page, allowsPopupTabs: regular)
                 .overlay { BrowserPickOverlay(page: page, add: addPicked) }
         case .nothingOpen:
             BrowserNothingOpen(page: page) { editing = true }

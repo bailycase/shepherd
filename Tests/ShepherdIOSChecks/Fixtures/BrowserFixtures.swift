@@ -48,6 +48,12 @@ extension FixtureCatalog {
             // added to the draft.
             FixtureScreen(name: "browser-pad-pick", hosts: BrowserFixture.hosts(running: true, html: BrowserFixture.checkout), routes: routes,
                           prepare: { app in await BrowserFixture.pick(app, ref: ref) }),
+            FixtureScreen(name: "browser-tabs", hosts: BrowserFixture.hosts(running: true, html: BrowserFixture.payments), routes: routes,
+                          prepare: { app in await BrowserFixture.tabs(app, ref: ref, state: .two) }),
+            FixtureScreen(name: "browser-tabs-popup", hosts: BrowserFixture.hosts(running: true, html: BrowserFixture.payments), routes: routes,
+                          prepare: { app in await BrowserFixture.tabs(app, ref: ref, state: .popup) }),
+            FixtureScreen(name: "browser-tabs-full", hosts: BrowserFixture.hosts(running: true, html: BrowserFixture.payments), routes: routes,
+                          prepare: { app in await BrowserFixture.tabs(app, ref: ref, state: .full) }),
         ]
     }
 }
@@ -212,6 +218,88 @@ enum BrowserFixture {
         let chips = app.threads.store(for: ref).attachedElements.map(\.element.label)
         let ok = picked?.label == "button.pay" && picked?.sourceShort == "Checkout.tsx:88" && picked?.width == 240 && chips == ["button.pay"]
         FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): button.pay picked (\(picked?.label ?? "nil") \(picked?.sourceShort ?? "nil")), chips \(chips)")
+    }
+
+    static let payments = """
+    <!doctype html>
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Refund overview</title>
+    <style>
+    body{margin:0;font:15px -apple-system,sans-serif;color:light-dark(#24282e,#e5e7eb);background:light-dark(#fbfbfa,#181b1c)}
+    header,main{padding:20px 24px}header{border-bottom:1px solid light-dark(#e0e2e4,#333638);font-weight:600}
+    h1{font-size:26px;margin:0 0 8px}p,small{color:light-dark(#5c626a,#a4aab2)}
+    section{border:1px solid light-dark(#e0e2e4,#333638);border-radius:8px;padding:16px;margin:24px 0}
+    strong{display:block;font-size:26px;margin:8px 0 12px}a{display:inline-block;border-radius:6px;background:#3570c1;color:white;padding:8px 12px;text-decoration:none}
+    </style>
+    <header>Acme payments</header>
+    <main><h1></h1><p></p><section><small></small><strong></strong><a target="_blank" href="/?view=checkout">Open checkout</a></section></main>
+    <script>
+    const view = new URLSearchParams(location.search).get('view');
+    const checkout = view === 'checkout';
+    document.title = checkout ? 'Checkout' : view || 'Refund overview';
+    document.querySelector('h1').textContent = document.title;
+    document.querySelector('p').textContent = checkout ? 'Team plan · 5 seats · billed monthly.' : 'Track refunds and their ledger events.';
+    document.querySelector('small').textContent = checkout ? 'Due today' : 'Refunded this month';
+    document.querySelector('strong').textContent = checkout ? '$148.00' : '$12,480.00';
+    setTimeout(() => {
+        console.log('[dev] connected.');
+        console.log(checkout ? 'GET /api/checkout 200' : 'GET /api/refunds 200');
+        console.warn(checkout ? 'Checkout: test mode is on.' : 'Refund list: one transaction is pending.');
+        console.log('GET /api/events 200');
+    }, 100);
+    </script>
+    """
+
+    enum TabState { case two, popup, full }
+
+    @MainActor static func tabs(_ app: MobileApp, ref: AgentRef, state: TabState) async {
+        app.navigator.padColumns = .detailOnly
+        await FixtureCheck.wait("browser pane and real console output", seconds: 25) {
+            guard let page = MobileBrowsers.shared.existing(ref) else { return false }
+            return app.navigator.layout == .pad && page.allowsPopupTabs && page.title == "Refund overview"
+                && page.console.warnings == 1 && page.console.network > 0
+        }
+        guard let tabs = MobileBrowsers.shared.existingTabs(ref), let root = tabs.selectedPage, let web = root.webView else {
+            FixtureCheck.fail("no browser tab")
+        }
+        _ = try? await web.evaluateJavaScript("document.querySelector('a').click()")
+        await FixtureCheck.wait("the popup opened in a separate tab with its own console", seconds: 15) {
+            tabs.selection.ids.count == 2 && tabs.notice == .popup && tabs.selectedPage?.title == "Checkout"
+                && tabs.selectedPage?.console.lines.contains { $0.text == "GET /api/checkout 200" } == true
+        }
+        guard let popup = tabs.selectedPage, popup.source == .link,
+              root.console.lines.contains(where: { $0.text == "GET /api/refunds 200" }),
+              !root.console.lines.contains(where: { $0.text == "GET /api/checkout 200" }) else {
+            FixtureCheck.fail("the popup reused the opener's console")
+        }
+        switch state {
+        case .two:
+            tabs.select(root.id)
+            tabs.notice = nil
+        case .popup:
+            break
+        case .full:
+            for title in ["Payouts", "Ledger", "Invoices", "Support", "Test transactions", "Staging refunds"] {
+                guard let tab = tabs.add(), let url = URL(string: "http://localhost:\(port)/?view=" + title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!) else {
+                    FixtureCheck.fail("could not fill browser tabs")
+                }
+                tab.open(url)
+            }
+            tabs.select(root.id)
+            await FixtureCheck.wait("opener web view is visible again", seconds: 10) { web.window != nil }
+            _ = try? await web.evaluateJavaScript("document.querySelector('a').click()")
+            await FixtureCheck.wait("a full strip redirects the popup into the selected tab", seconds: 15) {
+                tabs.selection.ids.count == 8 && tabs.notice == .cap && tabs.selectedPage === root
+                    && root.title == "Checkout" && root.console.warnings == 1
+            }
+        }
+        tabs.selectedPage?.consoleOpen = true
+        await FixtureCheck.wait("browser pane without its sidebar", seconds: 10) {
+            if app.navigator.padColumns != .detailOnly { app.navigator.padColumns = .detailOnly }
+            return splitView()?.displayMode == .secondaryOnly && splitView()?.transitionCoordinator == nil
+        }
+        FixtureCheck.report("FIXTURE CHECK ok browser tabs \(state), \(tabs.items.count) tabs")
     }
 
     @MainActor static func splitView() -> UISplitViewController? {
