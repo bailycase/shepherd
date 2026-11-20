@@ -9,41 +9,69 @@ import ShepherdRemote
 struct ProjectTaskList: View {
     let ref: LogicalProjectRef
     @Environment(MobileProjects.self) private var projects
-    @Environment(MobileNavigator.self) private var navigator
     @State private var query = ""
+    @State private var history: [HistoryItem]?
+
+    private struct HistoryInput: Equatable {
+        let rows: [ProjectTaskRow]
+        let query: String
+
+        func items() -> [HistoryItem] {
+            ProjectTaskHistory(rows: rows, query: query).sections.flatMap { section in
+                [.header(section.group, count: section.rows.count)] + section.rows.map { row in
+                    .row(row, first: row.id == section.rows.first?.id, last: row.id == section.rows.last?.id)
+                }
+            }
+        }
+    }
+
+    /// Flatten the cards into the scroll view's lazy stack, keeping each row's own card segment.
+    private enum HistoryItem: Identifiable, Equatable {
+        case header(ProjectTaskGroup, count: Int)
+        case row(ProjectTaskRow, first: Bool, last: Bool)
+
+        enum ID: Hashable {
+            case header(ProjectTaskGroup)
+            case row(ProjectTaskID)
+        }
+
+        var id: ID {
+            switch self {
+            case .header(let group, _): .header(group)
+            case .row(let row, _, _): .row(row.id)
+            }
+        }
+    }
 
     var body: some View {
         let page = projects.pages[ref]
-        let rows = page?.rows ?? []
+        let input = HistoryInput(rows: page?.rows ?? [], query: query)
         ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 if let page {
                     Text(page.status).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
                 }
-                if rows.isEmpty {
+                if input.rows.isEmpty {
                     Text("Threads the project starts show here, grouped by what they need from you.")
                         .font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    let shown = Self.matching(rows, query: query)
-                    if shown.isEmpty {
+                        .padding(.top, page == nil ? 0 : MobileLayout.sectionSpacing)
+                } else if let history {
+                    if history.isEmpty {
                         Text("No thread matches.").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
+                            .padding(.top, MobileLayout.sectionSpacing)
                     }
-                    ForEach(ProjectTaskGroup.allCases, id: \.self) { group in
-                        let members = shown.filter { $0.group == group }
-                        if !members.isEmpty {
-                            VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                                SHListHeader(group.rawValue, attention: group == .waiting, count: members.count)
-                                SHListCard {
-                                    ForEach(members) { row in
-                                        Button { navigator.open(.projects(.task(ref, row.id))) } label: {
-                                            SHListRow(row.title, subtitle: row.line, subtitleMono: false,
-                                                      leading: .state(row.mobileState),
-                                                      trailing: row.settledAt.map { .meta(ProjectAge.text($0)) } ?? .none)
-                                        }
-                                        .buttonStyle(.shRow(radius: 0))
-                                    }
+                    ForEach(history) { item in
+                        VStack(spacing: 0) {
+                            switch item {
+                            case .header(let group, let count):
+                                SHListHeader(group.rawValue, attention: group == .waiting, count: count)
+                                    .padding(.top, MobileLayout.sectionSpacing)
+                            case .row(let row, let first, let last):
+                                SHListCardSegment(first: first, last: last) {
+                                    ProjectTaskHistoryRow(ref: ref, row: row).equatable()
                                 }
+                                .padding(.top, first ? MobileLayout.headerSpacing : 0)
                             }
                         }
                     }
@@ -52,18 +80,31 @@ struct ProjectTaskList: View {
             .padding(.horizontal, MobileLayout.gutter)
             .padding(.vertical, MobileLayout.sectionSpacing)
         }
+        .onChange(of: input, initial: true) { _, input in
+            let next = input.items()
+            if history != next { history = next }
+        }
         .searchable(text: $query, prompt: "Search threads")
         .refreshable { await projects.model.refresh(ref.home) }
         .background(Color.sh.bgWindow)
     }
+}
 
-    /// Every word in the title, its lead or its detail.
-    static func matching(_ rows: [ProjectTaskRow], query: String) -> [ProjectTaskRow] {
-        let words = query.lowercased().split(separator: " ").map(String.init)
-        guard !words.isEmpty else { return rows }
-        return rows.filter { row in
-            words.allSatisfy { word in [row.title, row.detail ?? "", row.lead ?? ""].contains { $0.lowercased().contains(word) } }
+private struct ProjectTaskHistoryRow: View, Equatable {
+    let ref: LogicalProjectRef
+    let row: ProjectTaskRow
+    @Environment(MobileNavigator.self) private var navigator
+
+    static func == (a: Self, b: Self) -> Bool { a.ref == b.ref && a.row == b.row }
+
+    var body: some View {
+        let _ = SHRenderProbe.tick("ios.projectTask.row")
+        Button { navigator.open(.projects(.task(ref, row.id))) } label: {
+            SHListRow(row.title, subtitle: row.line, subtitleMono: false,
+                      leading: .state(row.mobileState),
+                      trailing: row.settledAt.map { .meta(ProjectAge.text($0)) } ?? .none)
         }
+        .buttonStyle(.shRow(radius: 0))
     }
 }
 

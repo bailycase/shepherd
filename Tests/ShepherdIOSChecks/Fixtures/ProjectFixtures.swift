@@ -26,6 +26,13 @@ enum ProjectFixtures {
             FixtureScreen(name: "projects", hosts: [host], routes: [.projects(.list)], prepare: prepare),
             FixtureScreen(name: "project", hosts: [host], routes: [.projects(.project(ref))], prepare: prepare),
             FixtureScreen(name: "project-tasks", hosts: [host], routes: [.projects(.tasks(ref))], prepare: prepare),
+            FixtureScreen(name: "project-tasks-budget", hosts: [ProjectFixtureBackend(taskCount: 300).host],
+                          routes: [.projects(.tasks(ref))], prepare: prepare, setup: ListPerformanceFixture.start,
+                          verify: { app in
+                              // Count both navigation and the layout change when the owner reply fills the page.
+                              ListPerformanceFixture.check(rows: app.projects.pages[ref]?.rows.count ?? 0,
+                                                           expected: 300, viewports: 3, probes: "ios.projectTask.row")
+                          }),
             // ProjectLead-PausedV2 on a phone and an iPad: the person's own Pause, through the owner's revisioned setPaused.
             FixtureScreen(name: "project-paused", hosts: [ProjectFixtureBackend().host], routes: [.projects(.project(ref))], prepare: { app in
                 await prepare(app)
@@ -129,7 +136,7 @@ private final class ProjectFixtureBackend: @unchecked Sendable {
     var messageOperations: [UUID] { lock.withLock { operations } }
     func failNextMessage() { lock.withLock { refuseMessage = true } }
 
-    @MainActor init() {
+    @MainActor init(taskCount: Int = 3) {
         var question = ProjectTask(id: ProjectFixtures.waitingID, operationID: UUID(), workerAgentID: FixtureData.dock,
                                    spaceID: FixtureData.shepherdSpace.id, title: "Choose the release target", prompt: "Confirm the target.", phase: .waiting)
         question.question = "Which release target should I use?"
@@ -140,6 +147,12 @@ private final class ProjectFixtureBackend: @unchecked Sendable {
         var project = Project(id: ProjectFixtures.projectID, name: "Native iOS client", goal: "Ship one native client on every display.",
                               revision: 4, linkedSpaces: [ProjectSpaceLink(spaceID: FixtureData.shepherdSpace.id, linkedAt: FixtureData.start)])
         project.tasks = [question, running, stopped]
+        let phases: [ProjectTask.Phase] = [.waiting, .running, .settled, .resolved]
+        for index in project.tasks.count..<taskCount {
+            project.tasks.append(ProjectTask(id: ProjectTaskID(rawValue: "fixture-task-\(index)"), operationID: UUID(),
+                                             spaceID: FixtureData.shepherdSpace.id, title: "Review release check \(index)",
+                                             prompt: "Verify the release requirements.", phase: phases[index % phases.count]))
+        }
         project.coordinatorAgentID = AgentID(rawValue: "fixture-coordinator")
         records = [project]
     }

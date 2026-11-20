@@ -20,6 +20,8 @@ final class AutomationsStore {
     }
 
     private(set) var model = AutomationsModel()
+    /// One ordered list for iPad, so a row keeps its identity as its run starts or stops.
+    private(set) var liveFirst: [AutomationListRow] = []
     /// Each automation's detail, reused until its own inputs or displayed calendar day change.
     private(set) var details: [AutomationKey: AutomationDetail] = [:]
     /// One line per connected host whose automations are read-only here, saying why.
@@ -53,6 +55,11 @@ final class AutomationsStore {
     /// ••• menu's Delete).
     var confirming: Confirmation? {
         didSet { if let confirming, forgotten.contains(confirming.key.host) { self.confirming = nil } }
+    }
+
+    var selection: AutomationKey? {
+        if let chosen, details[chosen] != nil { return chosen }
+        return model.rows.first?.key
     }
 
     struct Confirmation: Equatable {
@@ -250,7 +257,11 @@ final class AutomationsStore {
             guard !row.offline, let reason = row.abilities.readOnlyReason, seen.insert(reason).inserted else { return nil }
             return reason
         }
-        if next != model { model = next }
+        if next != model {
+            model = next
+            let ordered = next.live + next.quiet
+            if ordered != liveFirst { liveFirst = ordered }
+        }
         if nextDetails != details { details = nextDetails }
         if notes != readOnlyNotes { readOnlyNotes = notes }
     }

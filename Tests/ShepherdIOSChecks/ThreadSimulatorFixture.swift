@@ -232,6 +232,7 @@ final class FixtureRunner {
         }
         await screen.prepare?(app)
         try? await Task.sleep(for: .seconds(2))
+        screen.verify?(app)
         for host in hosts {
             print("FIXTURE REQUESTS \(host.data.name) \(host.requests.joined(separator: ","))")
         }
