@@ -124,7 +124,7 @@ struct SpaceMCP: View {
     }
 
     private func message(_ error: any Error) -> String {
-        if let error = error as? ProjectFileError { return error.message }
+        if let error = error as? ProjectFileError { return error.description }
         if let error = error as? MCPCallbackError { return error.description }
         if let error = error as? LocalizedError, let reason = error.errorDescription { return reason }
         return settingsProblem(error)
