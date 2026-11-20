@@ -329,6 +329,76 @@ struct RemoteListenerTests {
         #expect(authenticated == connections)
     }
 
+    /// Changes asked while the server queue is busy (a start-up, a switch toggled twice) run in the order asked: the last one
+    /// is what stays, in what the callbacks report and on the real socket. The listener starts open, so each change waits for
+    /// its port to close before the next.
+    @Test(arguments: [[true, false], [true, false, true], [false, true, false]])
+    func listenerChangesAskedWhileTheQueueIsBusyEndInTheLastOne(asked: [Bool]) async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        let release = DispatchSemaphore(value: 0)
+        await host.server.holdQueue(until: release)
+        defer { release.signal() }
+        let outcomes = Locked<[UInt16?]>([])
+        for on in asked {
+            host.server.setRemoteListener(port: on ? 0 : nil) { result in
+                outcomes.withValue { $0.append((try? result.get()) ?? nil) }
+            }
+        }
+        release.signal()
+        try await eventually("every change to be answered") { outcomes.current.count == asked.count }
+
+        #expect(outcomes.current.map { $0 != nil } == asked, "each change is answered in the order asked")
+        let final = outcomes.current.last ?? nil
+        for port in Set(outcomes.current.compactMap { $0 } + [host.port]) where port != final {
+            #expect((try? RawRemote(port: port)) == nil, "port \(port) is closed")
+        }
+        if let final {
+            let client = try RawRemote(port: final)
+            client.closeConnection()
+        }
+    }
+
+    /// Stops that overlap each finish only once the port is closed, not just the first: the descriptor closes on the queue
+    /// after the stop's own turn, so within that turn no waiter, the second included, may be told it is closed.
+    @Test func everyStopThatOverlapsWaitsForThePortToClose() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let server = r.server
+        let told = Locked<[String]>([])
+        server.queue.sync {
+            server.stopRemoteListenerOnQueue()
+            for name in ["first", "second"] {
+                server.whenRemoteListenerClosedOnQueue { told.withValue { $0.append(name) } }
+            }
+            #expect(told.current.isEmpty, "a waiter was told the port is closed before its descriptor closed")
+        }
+        try await eventually("both waiters to be told") { told.current.count == 2 }
+        #expect((try? RawRemote(port: r.port)) == nil)
+    }
+
+    /// A stop returns only once the port is closed, however long that takes: the exit deadline belongs to `stop` alone, and
+    /// passing it does not count as closed. A descriptor that closes late is a stopped listener whose record stays open here.
+    @Test func stopRemoteListenerWaitsForTheCloseBeyondTheExitDeadline() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let server = r.server
+        server.stopRemoteListener()
+        let late = SessionServer.ListenerClose()
+        server.queue.sync { server.remoteListenerClosing = late }
+
+        server.remoteListenerExitDeadline = .milliseconds(200)
+        #expect(!server.awaitRemoteListenerClosed(within: server.remoteListenerExitDeadline), "the exit deadline passes without a close")
+        let returned = Locked(false)
+        let stopping = Task.detached { server.stopRemoteListener(); returned.withValue { $0 = true } }
+        try await Task.sleep(for: .seconds(1))
+        #expect(!returned.current, "the stop returned before the port closed")
+
+        server.queue.sync { server.remoteListenerClosing = nil; late.markClosed() }
+        await stopping.value
+        #expect(returned.current)
+    }
+
     /// A non-blocking connect to the listener on the loopback address.
     private static func connectInBackground(port: UInt16) throws -> Int32 {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
