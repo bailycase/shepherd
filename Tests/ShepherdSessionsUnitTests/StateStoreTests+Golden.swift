@@ -9,6 +9,7 @@ extension StateStoreTests {
     // Keep the reference golden frozen. StateRecoveryTests and YourPiImportEdgeTests exercise
     // the new policies for these damaged inputs instead of asserting the old rewrites.
     private static let damagedRows: Set<String> = [
+        "instruction-history-bad-element", "instruction-history-damaged",
         "workspace-invalid-split", "workspace-dangling-tab", "workspace-unreadable-agent", "workspace-truncated",
         "pi-import-bad-element", "pi-import-damaged",
     ]

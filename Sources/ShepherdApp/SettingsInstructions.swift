@@ -24,6 +24,9 @@ struct InstructionsSettings: View {
 
     private var list: some View {
         SettingsPage(title: "Instructions") {
+            if let problem = model.local?.historyProblem {
+                SHInlineProblem(problem)
+            }
             SettingsGroup(title: "Every agent reads", footnote: "Synced to every Mac in your fleet. A repo can add its own AGENTS.md.") {
                 ForEach(InstructionFile.allCases, id: \.self) { file in
                     SettingsRow(title: file.fileName, subtitle: "\(Self.size(model.text(file))) · \(Self.purpose(file))", mono: true) {
@@ -74,10 +77,10 @@ struct InstructionsMainColumn: View {
                 }
                 .shTransition(.disclosure)
             }
-            InstructionsEditorCard(model: model)
-            if let problem = model.problem {
+            if let problem = model.local?.historyProblem ?? model.problem {
                 SHInlineProblem(problem).shTransition(.disclosure)
             }
+            InstructionsEditorCard(model: model)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
@@ -106,6 +109,7 @@ private struct InstructionsEditorCard: View {
     private var history: some View {
         Button("History") { showsHistory.toggle() }
             .buttonStyle(.sh(.secondary, size: .s))
+            .disabled(model.local?.historyProblem != nil)
             .popover(isPresented: $showsHistory, arrowEdge: .bottom) {
                 ScrollView(.vertical) {
                     InstructionsHistoryList(model: model, now: Date())
