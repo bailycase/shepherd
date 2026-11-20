@@ -250,9 +250,9 @@ enum RemoteSamples {
                                          conflict: RemoteBranchConflict(rebase: true, files: ["ledger/outbox.go"]))),
         .branchStatus(RemoteBranchStatus(base: nil)),
         .branchUpdate(nil), .branchUpdate(RemoteBranchConflict(rebase: false, files: ["a.go", "b.go"])),
-        .terminals([RemoteTerminalActivity(paneID: pane, sessionID: SessionID(), process: "make", command: "make dev", outputSequence: 42),
-                    RemoteTerminalActivity(paneID: PaneID(), sessionID: SessionID(), process: nil, command: nil, outputSequence: 0),
-                    RemoteTerminalActivity(paneID: PaneID(), sessionID: SessionID(), process: "zsh", command: nil, outputSequence: 9,
+        .terminals([RemoteTerminalActivity(paneID: pane, sessionID: session, process: "make", command: "make dev", outputSequence: 42),
+                    RemoteTerminalActivity(paneID: PaneID(rawValue: "pane-2"), sessionID: SessionID(rawValue: "session-2"), process: nil, command: nil, outputSequence: 0),
+                    RemoteTerminalActivity(paneID: PaneID(rawValue: "pane-3"), sessionID: SessionID(rawValue: "session-3"), process: "zsh", command: nil, outputSequence: 9,
                                            newsSequence: 4)]),
         .terminals([]),
         .commitInfo(commitInfo),
@@ -348,8 +348,8 @@ enum RemoteSamples {
         .undo(id: op),
     ]
     static let suggestions = SuggestionsSnapshot(
-        // Set iteration order is not stable. Keep this wire sample to one file;
-        // the configure round trip above still covers both.
+        // Set iteration order is not stable. The byte fixture uses one file;
+        // the round-trip tests also cover settings with both files.
         settings: SuggestedInstructionsSettings(enabled: true, since: 1_700_000_000, sources: [.automation], files: [.agents]),
         waiting: [
             InstructionSuggestion(id: op, line: "- Run `go mod tidy` with any dependency bump.", reason: "CI failed twice on a stale go.sum.",
@@ -551,7 +551,7 @@ struct RemoteRequestTests {
         .fleetDigest(id: 98, agentID: S.agent, session: nil, revision: nil),
         .pushRegistration(id: 93, registration: RemotePushRegistration(id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64))),
         .pushRegistration(id: 94, registration: RemotePushRegistration(id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64),
-            preferences: RemotePushPreferences(topics: [.questions, .failures], awayOnly: false))),
+            preferences: RemotePushPreferences(topics: [.questions], awayOnly: false))),
         .pushUnregister(id: 94, registrationID: "11111111-2222-3333-4444-555555555555"),
         .fleetIdentify(id: 70),
         .fleetPair(id: 71, code: "482913", from: RemoteSamples.fleetIntroduction),
@@ -630,14 +630,14 @@ struct RemoteRequestTests {
         .fleetAction(id: 87, action: .stopDeviceCode),
         .fleetAction(id: 88, action: .revokeDevice(RemoteSamples.fleetDevice.deviceID)),
         .fleetAction(id: 100, action: .enrollApp(name: "MacBook Pro")),
-        .fleetAction(id: 101, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", host: nil))),
-        .fleetAction(id: 102, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", title: "Profile import",
+        .fleetAction(id: 101, action: .sendThread(FleetUserThread(dispatchID: S.dispatchID, spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", host: nil))),
+        .fleetAction(id: 102, action: .sendThread(FleetUserThread(dispatchID: S.dispatchID, spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", title: "Profile import",
                                                                     host: "Mac mini", model: "acme/model-1", thinking: "high"))),
-        .fleetAction(id: 126, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", host: "Mac mini",
+        .fleetAction(id: 126, action: .sendThread(FleetUserThread(dispatchID: S.dispatchID, spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", host: "Mac mini",
                                                                     start: FleetThreadStart(place: .newWorktree, base: "origin/main", branch: "fix/orders-import")))),
-        .fleetAction(id: 127, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.",
+        .fleetAction(id: 127, action: .sendThread(FleetUserThread(dispatchID: S.dispatchID, spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.",
                                                                     start: FleetThreadStart(place: .existingBranch, branch: "feat/orders")))),
-        .fleetAction(id: 128, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", start: FleetThreadStart(place: .checkout)))),
+        .fleetAction(id: 128, action: .sendThread(FleetUserThread(dispatchID: S.dispatchID, spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", start: FleetThreadStart(place: .checkout)))),
         .fleetAction(id: 103, action: .retryDispatch(id: RemoteSamples.dispatchID, host: nil)),
         .fleetAction(id: 104, action: .retryDispatch(id: RemoteSamples.dispatchID, host: RemoteSamples.fleetHost)),
         .fleetAction(id: 105, action: .cancelDispatch(id: RemoteSamples.dispatchID)),
@@ -752,7 +752,7 @@ struct RemoteRequestTests {
         .appRelayAnswer(requestToken: 10, result: .nativeThread(result: .failure(code: "starting", message: "The agent is starting."))),
         .appRelayAnswer(requestToken: 11, result: .projectExecution(result: ProjectExecutionResult(receipt: ProjectExecutionReceipt(
             key: ProjectExecutionKey(ownerID: UUID(uuidString: "00000000-0000-0000-0000-0000000000C1")!, projectID: ProjectID(rawValue: "acme-release"),
-                                     operationID: UUID(uuidString: "00000000-0000-0000-0000-0000000000C2")!), phase: .settled)))),
+                                     operationID: UUID(uuidString: "00000000-0000-0000-0000-0000000000C2")!), phase: .settled, admittedAt: 1_790_000_000)))),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -775,7 +775,11 @@ struct RemoteRequestTests {
         #expect(try NDJSON.decode(DesignRelayJob.self, from: NDJSON.encode(job)) == job)
     }
 
-    @Test(arguments: samples)
+    static let pushRegistrationWithMultipleTopics = RemoteRequest.pushRegistration(id: 94, registration: RemotePushRegistration(
+        id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64),
+        preferences: RemotePushPreferences(topics: [.questions, .failures], awayOnly: false)))
+
+    @Test(arguments: samples + [pushRegistrationWithMultipleTopics])
     func roundTripsThroughNDJSON(_ request: RemoteRequest) throws {
         #expect(try Wire.roundTrip(request) == request)
     }
@@ -801,11 +805,27 @@ struct RemoteRequestTests {
         #expect(try Wire.roundTrip(RemoteRequest.upload(id: 1, action: action)) == .upload(id: 1, action: action))
     }
 
-    @Test(arguments: [RemoteAgentAction.rename(name: "x"), .move(spaceID: SpaceID(rawValue: "destination")), .deleteKeepingWorktree, .reorder(target: AgentID(rawValue: "b")),
-                      .renameTerminal(paneID: PaneID(rawValue: "p"), title: "logs"), .renameTerminal(paneID: PaneID(rawValue: "p"), title: nil),
-                      .killTerminalProcess(paneID: PaneID(rawValue: "p")), .startTerminal(paneID: PaneID(rawValue: "p")),
-                      .openTerminal(cwd: "/host/repo/apps/web", command: "pnpm dev"), .restartPi(newConversation: true), .restartPi(newConversation: false, model: "anthropic/claude-x"), .markSeen(upTo: 1_760_000_000_123), .mutePushes(true), .mutePushes(false), .readCheckout,
-                      .moveToMac(FleetMoveRequest(moveID: UUID(), agentID: AgentID(rawValue: "a"), host: "Mac mini", when: .whenDone))])
+    static let agentActions: [RemoteAgentAction] = [
+        .rename(name: "x"), .move(spaceID: SpaceID(rawValue: "destination")), .deleteKeepingWorktree, .reorder(target: AgentID(rawValue: "b")),
+        .renameTerminal(paneID: PaneID(rawValue: "p"), title: "logs"), .renameTerminal(paneID: PaneID(rawValue: "p"), title: nil),
+        .killTerminalProcess(paneID: PaneID(rawValue: "p")), .startTerminal(paneID: PaneID(rawValue: "p")),
+        .openTerminal(cwd: "/host/repo/apps/web", command: "pnpm dev"), .restartPi(newConversation: true), .restartPi(newConversation: false, model: "anthropic/claude-x"), .markSeen(upTo: 1_760_000_000_123), .mutePushes(true), .mutePushes(false), .readCheckout,
+        .moveToMac(FleetMoveRequest(moveID: S.op, agentID: AgentID(rawValue: "a"), host: "Mac mini", when: .whenDone)),
+    ]
+
+    static var additionalWireSamples: [RemoteRequest] {
+        var samples = S.agentQueries.map { RemoteRequest.agentQuery(id: 1, agentID: S.agent, query: $0) }
+        samples += agentActions.map { .agentAction(id: 1, agentID: S.agent, action: $0) }
+        samples += S.hostSettingChanges.map { .hostSettings(id: 1, request: .change($0)) }
+        samples += S.configRequests.map { .hostConfig(id: 1, request: $0) }
+        samples += S.inventoryRequests.map { .hostInventory(id: 1, request: $0) }
+        // Set order is not stable; leave the multi-file/default configurations in the round-trip test.
+        samples += [.hostSettings(id: 2, request: .fetch), .suggestions(id: 1, request: .configure(
+            SuggestedInstructionsSettings(enabled: true, sources: [.automation], files: [.agents])))]
+        return samples
+    }
+
+    @Test(arguments: agentActions)
     func everyAgentActionRoundTrips(_ action: RemoteAgentAction) throws {
         #expect(try Wire.roundTrip(RemoteRequest.agentAction(id: 1, agentID: S.agent, action: action))
             == .agentAction(id: 1, agentID: S.agent, action: action))
@@ -1099,7 +1119,13 @@ struct RemoteReplyTests {
         #expect(Set(Self.samples.map(Self.caseName)).count == Self.caseCount)
     }
 
-    @Test(arguments: samples)
+    static let suggestionsWithMultipleFiles: RemoteReply = {
+        var snapshot = S.suggestions
+        snapshot.settings = S.suggestionSettings
+        return .suggestions(id: 26, snapshot: snapshot)
+    }()
+
+    @Test(arguments: samples + [suggestionsWithMultipleFiles])
     func roundTripsThroughNDJSON(_ reply: RemoteReply) throws {
         #expect(try Wire.roundTrip(reply) == reply)
     }
@@ -1107,6 +1133,10 @@ struct RemoteReplyTests {
     @Test(arguments: samples)
     func typeDiscriminatorIsTheCaseName(_ reply: RemoteReply) throws {
         #expect(try Wire.object(reply)["type"] as? String == Self.caseName(reply))
+    }
+
+    static var additionalWireSamples: [RemoteReply] {
+        RemoteSamples.agentResults.map { .agentResult(id: 1, result: $0) }
     }
 
     @Test(arguments: RemoteSamples.agentResults)

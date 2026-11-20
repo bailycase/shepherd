@@ -474,7 +474,7 @@ struct ExtensionReplyTests {
         .childScope(id: 80, scope: .init(key: Wire.projectKey, workerAgentID: AgentID(rawValue: "worker"), sessionID: "session", generation: "generation"), deadline: 1_800_000),
         .projectChildren(id: 79, scope: .init(key: Wire.projectKey, workerAgentID: AgentID(rawValue: "worker"), sessionID: "session", generation: "generation"), action: .stop),
         .projectRuntime(id: 75, project: Wire.project(named: "Owner project")),
-        .projectRuntime(id: 76, project: Project(name: "Owner project"), models: ["provider/a", "provider/b"]),
+        .projectRuntime(id: 76, project: Wire.project(named: "Owner project"), models: ["provider/a", "provider/b"]),
         .projectPublish(id: 76, result: .init(active: false)),
         .projectResult(id: 70, space: Space(id: SpaceID(rawValue: "project"), name: "Project", path: "/tmp/project"), created: true),
         .projectResult(id: 71, space: nil, created: false),

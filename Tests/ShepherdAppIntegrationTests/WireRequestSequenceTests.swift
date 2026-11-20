@@ -3,16 +3,31 @@ import ShepherdProtocol
 import ShepherdTestSupport
 import Testing
 
+@Suite(.integrationTimeLimit)
 struct WireRequestSequenceTests {
     @Test func wireMatchesGolden() throws {
-        let golden = try WireGolden.read()
-        let seed = try #require(golden["seed"] as? [String: Any])
-        let clientName = try #require(seed["clientName"] as? String)
-        let version = try #require(seed["protocolVersion"] as? Int)
-        let models = try #require(seed["models"] as? [String])
-        let defaultModel = try #require(seed["defaultModel"] as? String)
-        let directories = try #require(seed["directories"] as? [String])
-        let missing = try #require(seed["missingDirectory"] as? String)
+        let summary = "scratch-host request sequences matched the golden"
+        try ValidationGolden.check("c-wire.json", from: #filePath, step: "compare-golden", completion: summary) { golden in
+            guard var expected = golden["sequences"] as? [String: [[String: [String: Any]]]],
+                  let capabilities = expected["model-picker"]?.first?["reply"]?["capabilities"],
+                  let browse = expected["browse-project-directory"], browse.first?["reply"] != nil else {
+                throw ValidationGolden.Difference(expected: "c-wire.sequences", actual: "Missing or invalid sequence golden")
+            }
+            // Both connections must advertise the same capabilities. Store the list only once.
+            expected["browse-project-directory"]?[0]["reply"]?["capabilities"] = capabilities
+            try ValidationGolden.compare(expected, observations(seed: golden["seed"]), at: "c-wire.sequences")
+        }
+        try ValidationEvidence.record(in: ValidationEvidence.directory, step: "complete", status: "passed",
+                                      expected: summary, actual: summary)
+    }
+
+    private func observations(seed value: Any?) throws -> Any {
+        guard let seed = value as? [String: Any], let clientName = seed["clientName"] as? String,
+              let version = seed["protocolVersion"] as? Int, let models = seed["models"] as? [String],
+              let defaultModel = seed["defaultModel"] as? String, let directories = seed["directories"] as? [String],
+              let missing = seed["missingDirectory"] as? String else {
+            throw ValidationGolden.Difference(expected: "c-wire.seed", actual: "Missing or invalid sequence seed")
+        }
 
         let host = try ScratchServer(modelCatalog: { ModelListing(models: models, defaultModel: defaultModel) })
         defer { host.stop() }
@@ -27,36 +42,25 @@ struct WireRequestSequenceTests {
         func hello(_ id: Int) -> RemoteRequest {
             .hello(id: id, token: "", clientName: clientName, protocolVersion: version)
         }
-        let sequences: [(String, [(String, RemoteRequest)])] = [
-            ("model-picker", [("hello", hello(11)), ("list-models", .listModels(id: 17))]),
-            ("browse-project-directory", [
-                ("hello", hello(23)), ("list-projects", .listDir(id: 29, path: root.path)),
-                ("missing-directory", .listDir(id: 31, path: root.appendingPathComponent(missing).path)),
-                ("list-again", .listDir(id: 37, path: root.path)),
-            ]),
+        let sequences: [(String, [RemoteRequest])] = [
+            ("model-picker", [hello(11), .listModels(id: 17)]),
+            ("browse-project-directory", [hello(23), .listDir(id: 29, path: root.path),
+                .listDir(id: 31, path: root.appendingPathComponent(missing).path), .listDir(id: 37, path: root.path)]),
         ]
 
-        var observations: [String: Any] = [:]
+        var observations: [String: [[String: [String: Any]]]] = [:]
         for (sequence, requests) in sequences {
             let client = try ExtensionClient(path: socket)
-            observations[sequence] = try requests.map { step, request -> [String: Any] in
+            observations[sequence] = try requests.map { request in
                 let sent = try NDJSON.encode(request)
                 try client.sendRaw(sent)
-                func normalized(_ frame: Data) throws -> [String: Any] {
-                    let line = String(decoding: frame, as: UTF8.self).replacingOccurrences(of: scratch.path, with: "<scratch>")
-                    return try WireGolden.object(Data(line.utf8))
-                }
-                // These clients don't subscribe to pushes. Keep the next frame even if its ID is missing or wrong.
-                let reply = try normalized(client.readLine())
-                return ["step": step, "request": try normalized(sent), "reply": reply]
+                var reply: [String: Any]
+                repeat {
+                    reply = try ValidationGolden.object(client.readLine())
+                } while reply["id"] == nil  // Skip pushes, but keep a reply with the wrong ID.
+                return ["request": try ValidationGolden.object(sent), "reply": reply]
             }
         }
-
-        try WireGolden.check(golden["sequences"], observations, at: "sequences", step: "compare-golden")
-        let summary = "scratch-host request sequences matched the golden"
-        for step in ["compare-golden", "complete"] {
-            try ValidationEvidence.record(in: ValidationEvidence.directory, step: step, status: "passed",
-                                          expected: summary, actual: summary)
-        }
+        return ValidationGolden.normalize(observations, root: scratch.path)
     }
 }

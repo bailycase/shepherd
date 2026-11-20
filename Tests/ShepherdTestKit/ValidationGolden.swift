@@ -11,9 +11,7 @@ public final class ValidationGolden {
                              _ scenario: (ValidationGolden) async throws -> Void) async throws {
         let directory = ValidationEvidence.directory
         do {
-            let url = URL(fileURLWithPath: String(describing: source)).deletingLastPathComponent().deletingLastPathComponent()
-                .appendingPathComponent("Fixtures/\(filename)")
-            let golden = try ValidationGolden(Data(contentsOf: url))
+            let golden = try ValidationGolden(read(filename, from: source))
             try await scenario(golden)
             if golden.index < golden.observations.count {
                 throw Difference(expected: try display(golden.observations[golden.index]), actual: "<no observation>")
@@ -29,8 +27,27 @@ public final class ValidationGolden {
         }
     }
 
-    private init(_ data: Data) throws {
-        let json = try Self.object(data)
+    public static func check(_ filename: String, from source: StaticString, step: String, completion: String,
+                             _ scenario: ([String: Any]) throws -> Void) throws {
+        let directory = ValidationEvidence.directory
+        do {
+            try scenario(read(filename, from: source))
+            try ValidationEvidence.record(in: directory, step: step, status: "passed", expected: completion, actual: completion)
+        } catch {
+            let diff = error as? Difference ?? Difference(expected: completion, actual: "\(filename): \(error)")
+            try ValidationEvidence.record(in: directory, step: step, status: "failed",
+                                          expected: diff.expected, actual: diff.actual)
+            throw diff
+        }
+    }
+
+    private static func read(_ filename: String, from source: StaticString) throws -> [String: Any] {
+        let url = URL(fileURLWithPath: String(describing: source)).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/\(filename)")
+        return try object(Data(contentsOf: url))
+    }
+
+    private init(_ json: [String: Any]) throws {
         guard let seed = json["seed"], let observations = json["observations"] as? [[String: Any]] else {
             throw Difference(expected: "golden seed and observations", actual: try Self.display(json))
         }
@@ -44,6 +61,10 @@ public final class ValidationGolden {
             throw Difference(expected: try Self.display(row), actual: try Self.display(["step": step, "fields": actual]))
         }
         index += 1
+        try Self.compare(expected, actual, at: step)
+    }
+
+    public static func compare(_ expected: Any?, _ actual: Any?, at path: String) throws {
         var before: [String] = [], after: [String] = []
         func compare(_ path: String, _ old: Any?, _ new: Any?) throws {
             if let old = old as? [String: Any], let new = new as? [String: Any] {
@@ -56,13 +77,13 @@ public final class ValidationGolden {
                 }
             } else {
                 let old = try Self.display(old), new = try Self.display(new)
-                if old != new {
+                if !old.utf8.elementsEqual(new.utf8) {
                     before.append("\(path) = \(old)")
                     after.append("\(path) = \(new)")
                 }
             }
         }
-        try compare(step, expected, actual)
+        try compare(path, expected, actual)
         if !before.isEmpty {
             throw Difference(expected: before.joined(separator: "\n"), actual: after.joined(separator: "\n"))
         }
@@ -92,9 +113,15 @@ public final class ValidationGolden {
                       as: UTF8.self)
     }
 
-    private struct Difference: Error, CustomStringConvertible {
-        let expected: String
-        let actual: String
-        var description: String { "Expected: \(expected)\nActual:   \(actual)" }
+    public struct Difference: Error, CustomStringConvertible {
+        public let expected: String
+        public let actual: String
+
+        public init(expected: String, actual: String) {
+            self.expected = expected
+            self.actual = actual
+        }
+
+        public var description: String { "Expected: \(expected)\nActual:   \(actual)" }
     }
 }
