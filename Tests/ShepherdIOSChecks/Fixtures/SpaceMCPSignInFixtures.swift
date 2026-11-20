@@ -21,10 +21,12 @@ import ShepherdRemote
             guard case .projects(let id, let action) = request else { return nil }
             let result: RemoteProjectsResult
             switch action {
+            case .list: result = .listing(.init(projects: [.init(directory: directory, name: "acme-web", displayPath: directory, summary: "")]))
             case .files: result = .files([file])
             case .read: result = .text(.init(file: file, text: text))
             case .context: result = .context(.init(files: [], resources: 0, mcpServers: 2))
             case .mcp(_, _, .credentials): result = .mcp(.init(signedIn: ["acme-docs"]))
+            case .mcp(_, _, .cancel): result = .mcp(.init())
             case .mcp(_, _, .login), .mcp(_, _, .poll):
                 result = .mcp(.init(id: run, phase: phase, message: phase == .failed ? "The MCP server couldn't complete sign-in." : nil))
             default: return nil
