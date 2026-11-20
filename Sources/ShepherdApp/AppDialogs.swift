@@ -169,6 +169,9 @@ struct AppDialogs: ViewModifier {
                     vm.designRename = nil
                 }
             }
+            .sheet(item: Binding(get: { vm.stopAllConfirm.map(SheetItem.init) }, set: { vm.stopAllConfirm = $0?.value })) { item in
+                StopWorkingDialog(targets: item.value, stop: { vm.confirmStopAll(item.value) }, cancel: { vm.stopAllConfirm = nil })
+            }
             .sheet(item: $vm.actionErrorItem) { item in
                 ActionErrorDialog(error: item.value) { vm.actionError = nil }
             }

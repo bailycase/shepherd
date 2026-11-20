@@ -35,6 +35,7 @@ struct MobileRoot: View {
             .mobileEnvironment(app, navigator: navigator, window: window)
             .preferredColorScheme(app.appearance.mode.colorScheme)
         }
+        .modifier(StopAllWorkingDialogs(model: navigator.stopAll))
         .mobileEnvironment(app, navigator: navigator, window: window)
         .background(DesignRenderAnchor().allowsHitTesting(false).accessibilityHidden(true))
         .modifier(MobileCommandFocus(target: MobileCommandTarget(app: app, navigator: navigator)))

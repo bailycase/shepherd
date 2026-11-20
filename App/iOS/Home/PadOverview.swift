@@ -72,6 +72,7 @@ struct PadOverview: View {
                 Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
                 Button("New thread", systemImage: "plus") { NewThreadHooks.open(navigator: navigator) }
                     .disabled(model.hosts.isEmpty)
+                StopAllWorkingMenu()
             }
         }
     }
