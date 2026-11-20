@@ -86,6 +86,13 @@ final class RemoteHostStore {
         fileprivate(set) var config: HostConfig
         /// The background host on this Mac (client mode), whose workspace is the app's own.
         var isLocalHost: Bool { config.localSocket != nil }
+        /// The host refused the token: a revoked device's, or one it never knew. Trying it again fails the same way.
+        var tokenRefused: Bool {
+            switch phase.failure?.kind {
+            case .tokenRefused?, .sharedTokenRetired?: true
+            default: false
+            }
+        }
         var phase: Phase = .disconnected {
             didSet {
                 if oldValue == .connected, phase != .connected { lastSeen = Date() }
@@ -341,6 +348,8 @@ final class RemoteHostStore {
     @ObservationIgnored var onDropError: ((String) -> Void)?
     /// A host connected (again): what waits on it can go now (Settings ▸ Instructions' sync).
     @ObservationIgnored var onHostConnected: ((UUID) -> Void)?
+    /// A Mac of the fleet refused this app's token (`Connection.tokenRefused`): `FleetConnections` gets the app a new one.
+    @ObservationIgnored var onFleetTokenRefused: (() -> Void)?
     /// This app's build, compared with the background host's (`BackgroundHostClient.asksToDrain`).
     @ObservationIgnored var appBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
     @ObservationIgnored var onProjectExecutorConnected: ((ProjectHostReference) -> Void)?
@@ -615,6 +624,7 @@ final class RemoteHostStore {
                 let failure = RemoteHostFailure(error)
                 connection.phase = .failed(failure)
                 if failure.retries { self.scheduleReconnect(connection) }
+                if connection.config.fleetManaged, connection.tokenRefused { self.onFleetTokenRefused?() }
             }
         }
     }

@@ -61,7 +61,14 @@ struct ThreadScreen: View {
         let transcript = ThreadTranscript(ref: ref, store: store, banner: banner(host: host, agent: agent, store: store, supported: supported))
         let arranged = navigator.sidePane.arranged == ref
         // The laptop arrangement's bar names the thread alone, beside its capsule (DuoLaptop).
-        let title = ThreadTitle(name: agent?.name ?? "Thread", status: status, branch: arranged ? nil : branch,
+        // A thread another thread started names it in its title, a link where a host of this device has it (SubThreadPhone, SubThreadPad).
+        let parent: ThreadTitle.Parent? = arranged ? nil : agent?.startedBy.map { started in
+            // A thread keeps its id when it moves to another Mac, so the starter is looked up everywhere.
+            let found = hosts.hosts.lazy.compactMap { host in host.agent(started.agentID).map { (host.id, $0.name) } }.first
+            return ThreadTitle.Parent(name: found?.1 ?? started.agentTitle,
+                                      open: found.map { found in { navigator.open(.thread(AgentRef(host: found.0, agent: started.agentID))) } })
+        }
+        let title = ThreadTitle(name: agent?.name ?? "Thread", status: status, branch: arranged ? nil : branch, parent: parent,
                                 wide: sizeClass == .regular && !arranged, goalStore: store)
         // Where the bars run down the side on regular width (iPhone Duo open), the title heads the
         // thread's column, level with the side pane's tabs (DuoOpenThread, DuoOpenSidePane); else
@@ -94,14 +101,6 @@ struct ThreadScreen: View {
                                 .background(Color.sh.bgWindow)
                         }
                     }
-            }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            // A thread another thread started names it under the header (SubThreadPhone, SubThreadPad).
-            if !arranged, let startedBy = agent?.startedBy {
-                ThreadStartedByLine(startedBy: startedBy)
-                    .padding(.horizontal, MobileLayout.gutter)
-                    .background(Color.sh.bgWindow)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -395,13 +394,6 @@ struct ThreadTranscript: View {
                 }
                 tailPin.reader(scrolling: phase != .idle, touching: phase == .tracking || phase == .interacting)
             }
-            .onChange(of: store.sentCount) { _, _ in
-                // A send that goes in now re-attaches; a follow-up that waits in Up next leaves
-                // the reader where they are, now and when it goes.
-                guard !store.lastSendQueued else { return }
-                follow { $0.sent(queued: false, turnPresent: store.lastSendShownEarly); return false }
-                tailPin.asked(lander(proxy))
-            }
             .onChange(of: rows.last(where: \.isUser)?.id) { _, id in
                 // The echoed turn joins once pi takes it: land on it, unless the reader dragged
                 // away meanwhile.
@@ -427,7 +419,7 @@ struct ThreadTranscript: View {
             // 44pt hit area draws the capsule 8pt above it.
             .overlay(alignment: .bottom) {
                 SHJumpToLatest(action: NativeScrollFollower.showsJump(sticky: presentation.follows, unseen: presentation.unseen, running: running) ? {
-                    follow { $0.jumpToLatest(); return false }
+                    presentation.jumpToLatest()
                     tailPin.asked(lander(proxy))
                 } : nil)
             }
@@ -444,6 +436,12 @@ struct ThreadTranscript: View {
                 tailGuard.stop()
                 presentation.leave()
             }
+        }
+        .onChange(of: store.sentCount) { _, _ in
+            // A send that goes in now re-attaches; a follow-up in Up next leaves the reader where they are.
+            guard !store.lastSendQueued else { return }
+            presentation.sent(turnPresent: store.lastSendShownEarly)
+            tailPin.asked()
         }
     }
 
@@ -591,9 +589,16 @@ struct ThreadTitle: View {
         }
     }
 
+    /// The thread that started this one: its name, and opening it where this device has it.
+    struct Parent {
+        var name: String
+        var open: (() -> Void)?
+    }
+
     let name: String
     let status: Status
     var branch: AgentBranchLabel?
+    var parent: Parent?
     /// iPad: the one-line title without the phone's status line.
     var wide = false
     var goalTime: String? = nil
@@ -609,6 +614,19 @@ struct ThreadTitle: View {
             }
         }
         .accessibilityElement(children: .combine)
+        .accessibilityActions {
+            if let parent, let open = parent.open { Button("Open \(parent.name)", action: open) }
+        }
+    }
+
+    /// The parent's name: a link when it opens.
+    @ViewBuilder private func parentName(_ parent: Parent) -> some View {
+        let text = Text(parent.name).foregroundStyle(parent.open == nil ? Color.sh.textSecondary : Color.sh.running).lineLimit(1)
+        if let open = parent.open {
+            Button(action: open) { text }.buttonStyle(.plain)
+        } else {
+            text
+        }
     }
 
     private var compact: some View {
@@ -617,6 +635,11 @@ struct ThreadTitle: View {
             HStack(spacing: SH.Space.s) {
                 SHStatusDot(status.state)
                 Text(status.label).fontWeight(.medium).foregroundStyle(status.state.textColor).fixedSize()
+                // The phone's title has no room for a breadcrumb: the parent leads with the sidebar's sub-thread mark instead.
+                if let parent {
+                    Text("· ↳").foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+                    parentName(parent).layoutPriority(-1)
+                }
                 ThreadGoalHeader(store: goalStore, time: goalTime)
             }
             .font(.sh(.caption))
@@ -626,6 +649,10 @@ struct ThreadTitle: View {
 
     private var row: some View {
         HStack(spacing: SH.Space.m) {
+            if let parent {
+                parentName(parent).font(.sh(.headline, weight: .regular)).layoutPriority(-1)
+                Text("/").font(.sh(.headline, weight: .regular)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+            }
             Text(name).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             if let branch {
                 // Narrow (a half-open thread beside its pane), the host goes first, then the whole chip,

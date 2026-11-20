@@ -3,35 +3,6 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The designs track's screens: a host's designs on the phone (MobileDesigns, MobileDesignBoard),
-/// shown only for hosts that serve designs (`designs.v1`).
-enum DesignsRoute: Hashable, Codable {
-    /// Every host's designs and design systems (MobileDesigns), the Designs tab's root on iPhone.
-    case list
-    /// One design's boards (not drawn: a grid of its boards), from a tile, Recents or search.
-    case design(HostDesignRef)
-    /// One board full screen (MobileDesignBoard).
-    case board(HostDesignRef, path: String)
-    /// Every board of a design to jump to (the board's Boards), presented.
-    case boards(HostDesignRef, current: String)
-    /// A new design from a brief (not drawn), presented: Search's New design, the Designs screen's +.
-    case newDesign(brief: String, host: UUID?)
-    /// The hosts' design systems (Settings ▸ Design systems on iPhone).
-    case systems
-    /// One design system (not drawn): its colors, type and steps as the host read them.
-    case system(host: UUID, namespace: String)
-
-    /// The host it belongs to, so forgetting a host closes its screens.
-    var host: UUID? {
-        switch self {
-        case .design(let ref), .board(let ref, _), .boards(let ref, _): ref.host
-        case .newDesign(_, let host): host
-        case .system(let host, _): host
-        case .list, .systems: nil
-        }
-    }
-}
-
 /// Where other screens open designs (Recents, search, Settings).
 @MainActor
 enum DesignsHooks {

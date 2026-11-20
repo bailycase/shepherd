@@ -1,11 +1,6 @@
 import SwiftUI
 import ShepherdUI
-
-/// New thread's screens (newthread track). Presented modally: `NewThreadHooks.open`.
-enum NewThreadRoute: Hashable, Codable {
-    /// The prompt with its repo, host, model and thinking chips; `host` preselects one.
-    case compose(host: UUID?)
-}
+import ShepherdRemote
 
 /// Where other screens start a new thread (Home's New thread, the iPad sidebar).
 @MainActor

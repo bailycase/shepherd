@@ -18,6 +18,8 @@ PI_PACKAGE_DIR=/path/to/pinned/pi/package node --test 'Tests/Extensions/<affecte
 python3 -m unittest discover -s Tests/Release -p 'test_agent_docs.py' # docs guards
 ```
 
+On Mac, `python3 scripts/validate.py --case changes-review` or `python3 scripts/validate.py --case seeded-thread-rename` saves evidence under `.build/validation/`. Bare invocation does not select checks yet.
+
 App builds and engine staging: [docs/build-and-run.md](docs/build-and-run.md). Run the Mac app from
 `Shepherd.xcodeproj` (`Shepherd (Dev)`, My Mac), not `swift run`. [PR CI](docs/testing.md#ci) runs only for PRs targeting `master`.
 Docs alone run no Swift.

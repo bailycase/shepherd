@@ -1,16 +1,5 @@
 import SwiftUI
-
-/// The Browser's screens: a thread's page, pushed full screen at compact width (the side pane shows
-/// `ThreadBrowserPane` in place).
-enum BrowserRoute: Hashable, Codable {
-    case page(AgentRef)
-
-    var thread: AgentRef {
-        switch self {
-        case .page(let ref): ref
-        }
-    }
-}
+import ShepherdRemote
 
 struct BrowserDestination: View {
     let route: BrowserRoute
