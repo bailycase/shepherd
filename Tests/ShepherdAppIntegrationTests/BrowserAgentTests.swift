@@ -172,7 +172,7 @@ struct BrowserAgentTests {
         let snapshot = try text(await session.perform(.read(selector: nil, maxChars: nil)))
         let email = try ref(in: snapshot, "textbox \"Email\"")
         let typed = try text(await session.perform(.type(ref: email, text: "alex@acme.dev", clear: false, submit: false, note: nil)))
-        #expect(typed.contains("Typed 14 characters into textbox \"Email\"."))
+        #expect(typed.contains("Typed 13 characters into textbox \"Email\"."))
         let after = try text(await session.perform(.read(selector: nil, maxChars: nil)))
         #expect(after.contains("value=\"alex@acme.dev\""))
         #expect(after.contains("text \"typed: alex@acme.dev\""), "the page heard the input event:\n\(after)")

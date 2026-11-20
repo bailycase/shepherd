@@ -23,7 +23,7 @@ struct DesignGitTests {
         let design = Design(name: "Checkout funnel dashboard", createdAt: 1_000)
         _ = try await h.server.createDesign(design)
         try await DesignFixtures.draw(DesignFixtures.checkout, in: design.id, on: h.server, perRow: 3)
-        try Self.setIdentity("Baily", in: h)
+        try Self.setIdentity("Alex", in: h)
         return (h, design)
     }
 
@@ -227,7 +227,7 @@ struct DesignGitTests {
         let phoneElement = try #require(DesignTemplate(board: phoneSource)?.elements.first { $0.parent != nil })
         let named = try await author.server.addDesignComment(design.id, draft: DesignCommentDraft(
             board: try DesignPath.validate("A-phone.dc.html"), tid: phoneElement.tid, path: phoneElement.path, text: "Shorter labels here."))
-        #expect(named.comment.authorName == "Baily")
+        #expect(named.comment.authorName == "Alex")
 
         // The author changes a board: a local change, then Commit & push.
         let a = try DesignPath.validate("A.dc.html")
@@ -252,7 +252,7 @@ struct DesignGitTests {
         #expect(try await coworker.server.pullDesign(opened.id) == .updated)
         try await eventually("the pull's revision push") { pushes.current >= 1 }
         #expect(try await coworker.server.designBoard(opened.id, path: a).source.contains("<!-- counts -->"))
-        #expect(try await coworker.server.designComments(opened.id).comments.contains { $0.authorName == "Baily" && $0.text == "Shorter labels here." })
+        #expect(try await coworker.server.designComments(opened.id).comments.contains { $0.authorName == "Alex" && $0.text == "Shorter labels here." })
         #expect(try await coworker.server.designSnapshot(opened.id).revision == revision + 1)
         #expect(try await coworker.server.designVersions(opened.id, path: a).count == 1, "the pulled-over board's old content is a version")
         #expect(try await coworker.server.pullDesign(opened.id) == .upToDate)
@@ -370,7 +370,7 @@ struct DesignGitTests {
         let design = Design(name: "Busy", agentID: agent.agent.id, createdAt: 1_000)
         _ = try await h.server.createDesign(design)
         try await h.server.setAgentDesignForTests(agent.agent.id, design: design.id)
-        try Self.setIdentity("Baily", in: h)
+        try Self.setIdentity("Alex", in: h)
         try await DesignFixtures.draw(Array(DesignFixtures.checkout.prefix(1)), in: design.id, on: h.server, perRow: 1)
         let remote = try emptyRemote()
         _ = try await h.server.shareDesignWithGit(design.id, url: remote.path, message: "Add")
@@ -397,7 +397,7 @@ struct DesignGitTests {
         let design = Design(name: "Merge", agentID: agent.agent.id, createdAt: 1_000)
         _ = try await h.server.createDesign(design)
         try await h.server.setAgentDesignForTests(agent.agent.id, design: design.id)
-        try Self.setIdentity("Baily", in: h)
+        try Self.setIdentity("Alex", in: h)
         try await DesignFixtures.draw(Array(DesignFixtures.checkout.prefix(1)), in: design.id, on: h.server, perRow: 1)
         let remote = try emptyRemote()
         _ = try await h.server.shareDesignWithGit(design.id, url: remote.path, message: "Add")
