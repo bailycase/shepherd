@@ -344,6 +344,29 @@ struct BrowserPortForwarderTests {
         try await eventually("the tunnel to end") { client.tunnels.openCount == 0 }
     }
 
+    /// The same page claims its port again for another slot and agent while a connection is bridged:
+    /// releasing the page ends that bridge too, not only the ones to the current destination.
+    @Test func releasingAfterARetargetEndsTheBridgeMadeBeforeIt() async throws {
+        let host = try await TunnelHost()
+        defer { host.stop() }
+        let dev = try DevServerFixture()
+        defer { dev.stop() }
+        let client = try await host.client()
+        defer { client.disconnect() }
+        let forwarder = BrowserPortForwarder()
+        let port = Int(try unusedLoopbackPort())
+        #expect(forwarder.claim(port: port, hostPort: Int(dev.port), owner: owner, slot: slot(client), agent: host.agent) == nil)
+
+        let fd = connectLoopback(port)
+        #expect(fd >= 0)
+        defer { close(fd) }
+        try await eventually("the connection to be bridged") { client.tunnels.openCount == 1 }
+        #expect(forwarder.claim(port: port, hostPort: Int(dev.port), owner: owner, slot: BrowserTunnelHubSlot(), agent: AgentID()) == nil)
+        forwarder.release(owner)
+        #expect(await peerClosed(fd), "the bridge made before the retarget is closed")
+        try await eventually("the tunnel to end") { client.tunnels.openCount == 0 }
+    }
+
     /// The Mac closes a page's ports and waits for the sockets: made again at once, it gets them.
     @Test func releaseAndWaitReturnsOnceTheSocketsAreClosed() async throws {
         let queue = DispatchQueue(label: "test.browser.forward")

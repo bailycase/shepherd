@@ -136,6 +136,9 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         let owner: Owner
         var slot: BrowserTunnelHubSlot
         var agent: AgentID
+        /// Every hub and agent a connection was bridged to, for the listener's whole life: a claim
+        /// can retarget `slot` and `agent`, but the bridges made before it stay on their old ones.
+        var bridged: [(hub: BrowserTunnelHub, agent: AgentID)] = []
         var sources: [DispatchSourceRead] = []
 
         init(port: Int, hostPort: Int, owner: Owner, slot: BrowserTunnelHubSlot, agent: AgentID) {
@@ -217,7 +220,7 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         for (port, listener) in held {
             closeRemaining[port, default: 0] += listener.sources.count
             // Under the lock, so it is queued after any bridge the accept loop made before it saw this.
-            listener.slot.hub?.closeTunnels(agentID: listener.agent, port: listener.hostPort)
+            for (hub, agent) in listener.bridged { hub.closeTunnels(agentID: agent, port: listener.hostPort) }
         }
         let cancelled = Array(held.values)
         lock.unlock()
@@ -305,6 +308,7 @@ public final class BrowserPortForwarder: @unchecked Sendable {
                 Darwin.close(fd)
                 continue
             }
+            if !listener.bridged.contains(where: { $0.hub === hub && $0.agent == agent }) { listener.bridged.append((hub, agent)) }
             hub.bridge(fd: fd, agentID: agent, port: listener.hostPort)
             lock.unlock()
         }

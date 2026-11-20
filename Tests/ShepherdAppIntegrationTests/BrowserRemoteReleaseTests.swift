@@ -37,4 +37,23 @@ struct BrowserRemoteReleaseTests {
         #expect(refusal == nil, "the old socket was closed by the time the page was gone")
         again.release()
     }
+
+    /// A Start that finishes after the page was closed waits for the dev server, which forwards its
+    /// port: nothing may be claimed for a closed page.
+    @Test func aClosedPageForwardsNothingWhenAStartCompletesLate() async throws {
+        let forwarder = BrowserPortForwarder()
+        let ref = RemoteAgentRef(hostID: UUID(), agentID: AgentID(rawValue: "agent"))
+        let remote = BrowserRemote(ref: ref, hosts: nil, ports: forwarder)
+        let session = BrowserSession(agentID: ref.agentID, dataStores: .ephemeral, remote: remote)
+        let server = try LoopbackServer { _ in }
+        let port = Int(server.port)
+        server.stop()
+        let url = try #require(URL(string: "http://localhost:\(port)/"))
+
+        session.close()
+        session.wait(for: url)
+        session.load(url)
+        #expect(forwarder.ports(of: remote.owner).isEmpty, "no port is held for a closed page")
+        #expect(session.waitingFor == nil)
+    }
 }
