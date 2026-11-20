@@ -92,7 +92,7 @@ struct SidebarFilterTests {
     }
 
     @Test func checkoutProjectionRetainsOnlyDirtyVersusClean() {
-        var state = ShepherdState(agents: [thread("acme-web", .working, at: 1, changed: 1)])
+        var state = ShepherdState(agents: [thread("acme-web", .idle, at: 1, changed: 1)])
         let first = SidebarSource.presentationState(state, children: [:])
         state.agents[0].checkout = AgentCheckout(branch: "feat/new", changedFiles: 10)
         #expect(SidebarSource.presentationState(state, children: [:]) == first)
