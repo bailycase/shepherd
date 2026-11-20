@@ -82,6 +82,8 @@ final class FleetHooksSource: FleetUnitSource {
     private let catalog: () -> HookCatalog
     private let written: () -> Void
     private var present: [String] = []
+    /// unit → the fingerprint `fingerprints()` last reported: the state an op was computed from.
+    private var fingerprinted: [String: String]?
     /// What `isReady` validated, which `read` then uses: a reload in between could see a settings file that isn't.
     private var validated: HookCatalogSnapshot?
 
@@ -135,7 +137,7 @@ final class FleetHooksSource: FleetUnitSource {
 
     /// A write met files that were changing or settings that didn't read: it is tried again, never recorded as applied.
     private struct NotSettled: Error, CustomStringConvertible {
-        var description: String { "the hook files weren't readable together" }
+        var description = "the hook files weren't readable together"
     }
 
     /// The id of a hook: the same on every Mac, whatever its home folder.
@@ -148,14 +150,22 @@ final class FleetHooksSource: FleetUnitSource {
         return snapshot.entries.filter { $0.scope == .mac && $0.format == .shepherd && $0.file == path }
     }
 
+    private static func value(of entry: HookEntry) -> Data {
+        Data(HookJSON.object(["event": .string(entry.event), "handler": entry.handler.raw, "matcher": .string(entry.matcher), "on": .bool(entry.on)]).canonical.utf8)
+    }
+
+    func fingerprints() -> [String: String] {
+        let hashes = read().mapValues { FleetSyncProtocol.hash($0) }
+        fingerprinted = hashes
+        return hashes
+    }
+
     func read() -> [String: Data] {
         if validated == nil, !isReady { return [:] }
         guard let snapshot = validated else { return [:] }
         var values: [String: Data] = [:]
         for entry in ownEntries(snapshot) {
-            let id = Self.id(event: entry.event, matcher: entry.matcher, handler: entry.handler.raw)
-            let value = HookJSON.object(["event": .string(entry.event), "handler": entry.handler.raw, "matcher": .string(entry.matcher), "on": .bool(entry.on)])
-            values[Self.kind + id] = Data(value.canonical.utf8)
+            values[Self.kind + Self.id(event: entry.event, matcher: entry.matcher, handler: entry.handler.raw)] = Self.value(of: entry)
         }
         present = Array(values.keys)
         let readers = snapshot.settings.readers
@@ -200,11 +210,16 @@ final class FleetHooksSource: FleetUnitSource {
                 let snapshot = catalog.load()
                 guard snapshot.settingsProblem == nil, readsOwnFile(snapshot) else { throw NotSettled() }
                 let existing = ownEntries(snapshot).first { Self.id(event: $0.event, matcher: $0.matcher, handler: $0.handler.raw) == id }
+                // The op was computed from the fingerprint the pass read. If the hook moved since (a person
+                // deleted or edited it), writing would undo that: retry after a rescan turns it into an op.
+                if let fingerprinted, (fingerprinted[unit] ?? "-") != existing.map({ FleetSyncProtocol.hash(Self.value(of: $0)) }) ?? "-" {
+                    throw NotSettled(description: "\(unit) changed since it was read")
+                }
                 if let incoming {
                     if let existing {
                         if existing.on != incoming.on { try catalog.settingsStore.changeLocked { HookSettingsStore.switchHash(&$0, existing.hash, incoming.on) } }
                     } else {
-                        // A disabled hook is recorded off before its file publishes it; an enabled one clears an old off record.
+                        // A disabled hook is recorded off before its file publishes it. Bytes already off land off, even with on: true.
                         try writer.addLocked(incoming.draft, to: path, startsOff: !incoming.on)
                     }
                 } else if let existing {

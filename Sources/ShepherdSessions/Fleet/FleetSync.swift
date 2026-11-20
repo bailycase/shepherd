@@ -14,8 +14,10 @@ import ShepherdRemote
 final class FleetSync: @unchecked Sendable {
     /// A notice about what the first sync replaced stays on the sync line this long.
     static let noticeLifetime: TimeInterval = 24 * 3600
-    /// A write that failed (pi held its lock) is tried again after this.
+    /// A write that failed (pi held its lock) is tried again after this, at most `retryLimit` times (a minute)
+    /// in a row; after that the op stays pending for the next scan.
     static let retryDelay: TimeInterval = 5
+    static let retryLimit = 12
     /// A Mac about to start pi waits at most this long for its peers' newest sign-ins, then starts with what it has.
     static let fencePatience: TimeInterval = 3
     /// A peer that didn't catch a Mac up within `fencePatience` is not waited for again for this long.
@@ -33,6 +35,11 @@ final class FleetSync: @unchecked Sendable {
     private var started = false
     private var stopped = false
     private var retrying = false
+    private let retryDelay: TimeInterval
+    private let retryLimit: Int
+    /// Timed retries since a pass last wrote everything, and whether giving up was logged.
+    private var retries = 0
+    private var gaveUp = false
     /// peer → when waiting for it at a launch starts again (it failed to catch this Mac up in time).
     private var fenceSkips: [UUID: Date] = [:]
     private var noticeURL: URL { directory.appendingPathComponent("notice.json") }
@@ -59,7 +66,10 @@ final class FleetSync: @unchecked Sendable {
     }
 
     init(queue: DispatchQueue, directory: URL, mac: UUID, name: @escaping () -> String,
-         clock: @escaping @Sendable () -> Date = Date.init) throws {
+         clock: @escaping @Sendable () -> Date = Date.init,
+         retryDelay: TimeInterval = FleetSync.retryDelay, retryLimit: Int = FleetSync.retryLimit) throws {
+        self.retryDelay = retryDelay
+        self.retryLimit = retryLimit
         self.queue = queue
         self.directory = directory
         self.name = name
@@ -133,9 +143,21 @@ final class FleetSync: @unchecked Sendable {
             notice = (saved.text, saved.at)
             if let data = try? JSONEncoder().encode(saved) { FleetStore.write(data, to: noticeURL) }
         }
-        if result.failed, !retrying {
+        guard result.failed else {
+            retries = 0
+            gaveUp = false
+            return
+        }
+        if retries >= retryLimit {
+            // Not dropped: the op stays pending, and every later scan tries it once more.
+            if !gaveUp {
+                gaveUp = true
+                ShepherdLog.warning("fleet: writes still failing after \(retryLimit) tries. They are tried again on the next change.")
+            }
+        } else if !retrying {
             retrying = true
-            queue.asyncAfter(deadline: .now() + Self.retryDelay) { [weak self] in
+            retries += 1
+            queue.asyncAfter(deadline: .now() + retryDelay) { [weak self] in
                 guard let self else { return }
                 self.retrying = false
                 self.localChanged()

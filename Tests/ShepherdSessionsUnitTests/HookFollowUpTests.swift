@@ -5,7 +5,7 @@ import Testing
 @testable import ShepherdSessions
 
 /// Follow-ups to the disabled-hook fixes: an inbound Fleet op that can't be applied is retried, not recorded;
-/// adding a hook back is an explicit enable; lookups share the writer's lock; and the host's server queue
+/// only `setOn` removes an off record; lookups share the writer's lock; and the host's server queue
 /// never waits for a settings lock another process holds.
 @Suite("Hook follow-ups")
 struct HookFollowUpTests {
@@ -57,11 +57,12 @@ struct HookFollowUpTests {
         #expect(f.catalog.load().entries.count == 1, "an upsert didn't append a duplicate")
     }
 
-    // MARK: Adding a hook back is an explicit enable
+    // MARK: Only setOn enables
 
-    /// A hook that was turned off and then deleted leaves its off record; every way of adding the same bytes again turns it on.
+    /// A hook that was turned off and then deleted leaves its off record; every way of putting the same bytes
+    /// back lands off (Settings shows it off). Only `setOn` removes the record.
     @Test(arguments: ["add", "settings save", "fleet", "edit"])
-    func addingADeletedDisabledHookAgainIsAnExplicitEnable(how: String) throws {
+    func puttingADeletedDisabledHookBackLeavesItOff(how: String) throws {
         let f = try HookCatalogTests.Fixture(); defer { f.remove() }
         let catalog = f.catalog
         let path = f.home + "/.shepherd/hooks.json"
@@ -80,8 +81,59 @@ struct HookFollowUpTests {
             try writer.update(#require(catalog.load().entries.first), to: Self.draft)
         }
         let entry = try #require(catalog.load().entries.first { $0.handler.command == "./check.sh" })
-        #expect(entry.on && entry.hash == hash)
-        #expect(try catalog.settingsStore.read().off.isEmpty)
+        #expect(!entry.on && entry.hash == hash)
+        #expect(try catalog.settingsStore.read().off == [hash])
+
+        try catalog.settingsStore.setOn(hash, true)
+        #expect(try catalog.settingsStore.read().off.isEmpty && catalog.load().entries.first { $0.hash == hash }?.on == true)
+    }
+
+    @Test func editingAnEnabledHookIntoTheBytesOfADisabledOneLeavesBothOff() throws {
+        let f = try HookCatalogTests.Fixture(); defer { f.remove() }
+        let catalog = f.catalog
+        let path = f.home + "/.shepherd/hooks.json"
+        let writer = HookFileWriter(settings: catalog.settingsStore)
+        let disabled = try writer.add(Self.draft, to: path, on: false)
+        let other = HookDraft(event: Self.event, matcher: "Bash", handler: .command("./other.sh"))
+        try writer.add(other, to: path)
+        try writer.delete(#require(catalog.load().entries.first { $0.hash == disabled }))
+        let enabled = try #require(catalog.load().entries.first { $0.handler.command == "./other.sh" })
+
+        // Stale entry: the edit fails and changes nothing.
+        var stale = enabled
+        stale.hash = "stale"
+        let before = try Data(contentsOf: URL(fileURLWithPath: path))
+        #expect(throws: HookFileWriter.Failure.changed) { try writer.update(stale, to: Self.draft) }
+        #expect(try Data(contentsOf: URL(fileURLWithPath: path)) == before && catalog.settingsStore.read().off == [disabled])
+
+        try writer.update(enabled, to: Self.draft)
+        let entry = try #require(catalog.load().entries.first)
+        #expect(entry.hash == disabled && !entry.on)
+        #expect(try catalog.settingsStore.read().off == [disabled])
+    }
+
+    /// The pass computed its write from a fingerprint; a person deleted the hook after that. Writing would bring it back.
+    @Test func aDisabledHookDeletedBetweenTheFingerprintAndTheWriteIsNotAddedBack() throws {
+        let f = try HookCatalogTests.Fixture(); defer { f.remove() }
+        let catalog = f.catalog
+        let path = f.home + "/.shepherd/hooks.json"
+        let writer = HookFileWriter(settings: catalog.settingsStore)
+        let hash = try writer.add(Self.draft, to: path, on: false)
+        let source = FleetHooksSource(catalog: { catalog })
+        #expect(source.isReady)
+        let unit = FleetHooksSource.kind + Self.id
+        #expect(source.fingerprints()[unit] != nil)
+
+        try writer.delete(#require(catalog.load().entries.first))
+        #expect(throws: (any Error).self) { try source.write(unit, Self.value(on: true), origin: "B") }
+        #expect(catalog.load().entries.isEmpty, "the deletion was not undone")
+        #expect(try catalog.settingsStore.read().off == [hash])
+
+        // The next pass fingerprints again (the unit is gone), and then the write applies.
+        _ = source.fingerprints()
+        try source.write(unit, Self.value(on: true), origin: "B")
+        let entry = try #require(catalog.load().entries.first)
+        #expect(!entry.on, "bytes that are off land off")
     }
 
     @Test func editingOrDeletingADisabledHookNeverRemovesItsOffRecord() throws {
