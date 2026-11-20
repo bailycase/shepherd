@@ -5,7 +5,7 @@ import ShepherdProtocol
 /// Adds, changes and removes one handler in a Shepherd, Claude Code or Codex JSON hooks file
 /// (never Codex's `config.toml`). Every other key and entry stays as it was; the file is written
 /// whole, pretty-printed with a two-space indent, by temp file and rename (through a symbolic
-/// link to the file it names). A hook written here runs at once; one edited while off stays off.
+/// link to the file it names). A hook written here runs at once unless its bytes are already off; one edited while off stays off.
 public struct HookFileWriter: Sendable {
     public struct Failure: Error, Equatable, CustomStringConvertible, Sendable {
         public let description: String
@@ -24,8 +24,9 @@ public struct HookFileWriter: Sendable {
         try settings.withMutation { try addLocked(draft, to: path, startsOff: !on) }
     }
 
+    /// Call inside `settings.withMutation`.
     @discardableResult
-    private func addLocked(_ draft: HookDraft, to path: String, replacing old: HookEntry? = nil, startsOff: Bool = false) throws -> String {
+    func addLocked(_ draft: HookDraft, to path: String, replacing old: HookEntry? = nil, startsOff: Bool = false) throws -> String {
         var root = try document(path)
         try Self.insert(draft, into: &root)
         return try save(root, path: path, written: draft, replacing: old, startsOff: startsOff)
@@ -84,7 +85,8 @@ public struct HookFileWriter: Sendable {
         try settings.withMutation { try deleteLocked(entry) }
     }
 
-    private func deleteLocked(_ entry: HookEntry) throws {
+    /// Call inside `settings.withMutation`.
+    func deleteLocked(_ entry: HookEntry) throws {
         var root = try document(entry.file)
         try Self.verify(entry, in: root)
         Self.remove(entry, from: &root)
@@ -151,10 +153,12 @@ public struct HookFileWriter: Sendable {
     private func save(_ root: HookJSON, path: String, written draft: HookDraft?, replacing old: HookEntry?, startsOff: Bool = false) throws -> String {
         let hash = draft.map { HookCanonical.hash(file: path, event: $0.event, matcher: $0.matcher, canonical: $0.handler.raw.canonical) } ?? ""
         // Refuse damaged settings. Publish the new off hash first and keep old hashes for readers
-        // that still hold those hooks.
+        // that still hold those hooks. Only `setOn` ever removes a hash from `off`: bytes that are
+        // already off stay off however they come back (add, edit, move), so an edit can't enable a hook.
         try settings.changeLocked { current in
+            guard draft != nil else { return }
             let carriesOff = old.map { current.off.contains($0.hash) } ?? false
-            if draft != nil, carriesOff || startsOff, !current.off.contains(hash) { current.off.append(hash) }
+            if (carriesOff || startsOff), !current.off.contains(hash) { current.off.append(hash) }
         }
         let target = PiHome.canonical(path)
         try FileManager.default.createDirectory(atPath: (target as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
