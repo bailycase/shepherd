@@ -42,6 +42,10 @@ CASES = {
         "ThreadRenameTests/seededThreadRenameSurvivesHostRestart",
         {("compare-golden", None)}, "rename, restart and sidebar matched the golden", "local host",
     ),
+    "c-settings": Case(
+        "SettingsWritePathTests/everySettingsWritePathMatchesTheGolden",
+        {("compare-golden", None)}, "every settings write path matched the golden", "local host",
+    ),
 }
 
 
