@@ -115,16 +115,17 @@ struct SpaceScreen: View {
     var body: some View {
         let host = SettingsStore.of(hosts).hosts.first { $0.id == hostID }
         Group {
-            if let host, host.serves(RemoteProtocol.projectsV2Capability), let model {
+            // The route and its pushed editors outlive a connection. Keep their view identity.
+            if let model {
                 if let section, loaded, model.files != nil {
-                    SpaceSectionScreen(model: model, host: host, name: name, section: section)
+                    SpaceSectionScreen(model: model, name: name, section: section)
                 } else {
-                    SpaceOverview(model: model, host: host, name: name)
+                    SpaceOverview(model: model, name: name)
                 }
             } else {
                 VStack {
                     if host?.isConnected != true {
-                        SettingsFootnote("The host is offline. Reconnect to edit this space.")
+                        SHBanner(.attention, title: "Host offline", message: "Reconnect to edit this space.")
                     } else if host?.supports(.projectsV2) != true {
                         SettingsFootnote("Update Shepherd on the host to edit this space.")
                     } else {
@@ -137,11 +138,12 @@ struct SpaceScreen: View {
         }
         .background(Color.sh.bgWindow)
         .navigationBarTitleDisplayMode(.inline)
+        .environment(\.spaceSettingsConnection, .init(store: SettingsStore.of(hosts), hostID: hostID))
         .task(id: host?.isConnected == true ? host?.capabilities : nil) {
-            guard let host else { return }
+            guard let host, host.isConnected else { return }
             if let model {
                 model.updateCapabilities(host.capabilities)
-                if !loaded && host.serves(RemoteProtocol.projectsV2Capability) {
+                if (!loaded || model.files == nil) && host.supports(.projectsV2) {
                     await model.load()
                     loaded = !Task.isCancelled
                 }
@@ -163,10 +165,21 @@ struct SpaceScreen: View {
     }
 }
 
+private struct SpaceSettingsConnection {
+    let store: SettingsStore
+    let hostID: UUID
+
+    @MainActor var host: SettingsHost? { store.hosts.first { $0.id == hostID } }
+}
+
+private extension EnvironmentValues {
+    @Entry var spaceSettingsConnection: SpaceSettingsConnection?
+}
+
 private struct SpaceOverview: View {
     let model: ClientSpaceConfiguration
-    let host: SettingsHost
     let name: String
+    @Environment(\.spaceSettingsConnection) private var connection
 
     var body: some View {
         SpacePage(title: name, model: model) {
@@ -206,14 +219,15 @@ private struct SpaceOverview: View {
                 ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
             }
         }
-        .refreshable { await model.load() }
+        .refreshable { if connection?.host?.isConnected == true { await model.load() } }
     }
 
     private func sectionLink(_ section: SpaceConfigurationSection, count: Int? = nil) -> some View {
         NavigationLink {
-            SpaceSectionScreen(model: model, host: host, name: name, section: section)
+            SpaceSectionScreen(model: model, name: name, section: section)
+                .environment(\.spaceSettingsConnection, connection)
         } label: {
-            SettingsNavRow(section.rawValue, note: count.map { $0 == 0 ? "None" : "\($0) in this space" })
+            SettingsNavRow(section.title, note: count.map { $0 == 0 ? "None" : "\($0) in this space" })
         }
         .buttonStyle(.shRow(radius: 0))
         .disabled(model.busy)
@@ -224,11 +238,19 @@ private struct SpacePage<Content: View>: View {
     let title: String
     let model: ClientSpaceConfiguration
     @ViewBuilder let content: () -> Content
+    @Environment(\.spaceSettingsConnection) private var connection
+    private var host: SettingsHost? { connection?.host }
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                if let problem = model.problem { SHBanner(.failed, title: problem) }
+                if host?.isConnected != true {
+                    SHBanner(.attention, title: "Host offline", message: "Reconnect to save changes.")
+                } else if !model.canEdit {
+                    SHBanner(.attention, title: "Update Shepherd on the host to edit this space.")
+                } else if let problem = model.problem {
+                    SHBanner(.failed, title: problem)
+                }
                 content()
             }
             .padding(.horizontal, MobileLayout.gutter)
@@ -246,11 +268,13 @@ private struct SpacePage<Content: View>: View {
 private struct SpaceFileLinks: View {
     let files: [ProjectFile]
     let model: ClientSpaceConfiguration
+    @Environment(\.spaceSettingsConnection) private var connection
 
     var body: some View {
         SHLazyListCard(files) { file in
             NavigationLink {
                 SpaceFileScreen(file: file.path, model: model)
+                    .environment(\.spaceSettingsConnection, connection)
             } label: {
                 SettingsNavRow((file.path as NSString).lastPathComponent,
                                note: file.exists ? file.path : "\(file.path) · Not created", value: "Edit")
@@ -265,6 +289,8 @@ private struct SpaceDraftCard: View {
     let file: String
     let model: ClientSpaceConfiguration
     var compact = false
+    @Environment(\.spaceSettingsConnection) private var connection
+    private var host: SettingsHost? { connection?.host }
     @State private var focus = InstructionsEditorFocus()
     @State private var reload = false
 
@@ -278,10 +304,11 @@ private struct SpaceDraftCard: View {
                     if draft.conflict {
                         Button("Reload…") { reload = true }
                             .buttonStyle(.sh(.secondary, size: .l))
+                            .disabled(host?.isConnected != true || !model.canEdit || model.busy)
                     } else {
                         Button("Save") { Task { await model.save(file) } }
                             .buttonStyle(.sh(.primary, size: .l))
-                            .disabled(!draft.isEdited || model.busy)
+                            .disabled(host?.isConnected != true || !model.canEdit || !draft.isEdited || model.busy)
                     }
                 }
                 .padding(.horizontal, SH.Space.l)
@@ -303,6 +330,8 @@ private struct SpaceFileScreen: View {
     let file: String
     let model: ClientSpaceConfiguration
     var resource: ProjectResource? = nil
+    @Environment(\.spaceSettingsConnection) private var connection
+    private var host: SettingsHost? { connection?.host }
     @Environment(\.dismiss) private var dismiss
     @State private var deleting = false
 
@@ -313,7 +342,7 @@ private struct SpaceFileScreen: View {
             if let resource, model.canManageResources, let draft = model.drafts[file], draft.saved.text != nil {
                 Button("Delete file…", role: .destructive) { deleting = true }
                     .buttonStyle(.sh(.secondary, size: .l))
-                    .disabled(model.busy || draft.isEdited || draft.conflict)
+                    .disabled(host?.isConnected != true || model.busy || draft.isEdited || draft.conflict)
                     .confirmationDialog("Delete \(resource.name)?", isPresented: $deleting, titleVisibility: .visible) {
                         Button("Delete file", role: .destructive) {
                             Task { if await model.delete(resource) { dismiss() } }
@@ -321,19 +350,22 @@ private struct SpaceFileScreen: View {
                     } message: { Text("This removes the file from the space on its host.") }
             }
         }
-        .task { await model.open(file) }
+        .task(id: host?.isConnected == true) {
+            if host?.isConnected == true { await model.open(file) }
+        }
     }
 }
 
 private struct SpaceSectionScreen: View {
     let model: ClientSpaceConfiguration
-    let host: SettingsHost
     let name: String
     let section: SpaceConfigurationSection
+    @Environment(\.spaceSettingsConnection) private var connection
+    private var host: SettingsHost? { connection?.host }
     @State private var install = false
 
     var body: some View {
-        SpacePage(title: section.rawValue, model: model) {
+        SpacePage(title: section.title, model: model) {
             if let kind = section.resourceKind {
                 SpaceResources(model: model, kind: kind)
             } else {
@@ -341,17 +373,21 @@ private struct SpaceSectionScreen: View {
             }
             if model.busy { ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity) }
         }
-        .task { await load() }
+        .task(id: host?.isConnected == true) { await load() }
         .refreshable { await load() }
         .toolbar {
             if section == .skills, model.canManageResources {
-                Button("Add from repo") { install = true }.disabled(model.busy)
+                Button("Add from repo") { install = true }.disabled(host?.isConnected != true || model.busy)
             }
         }
-        .sheet(isPresented: $install) { SpaceSkillInstall(model: model, host: host, name: name) }
+        .sheet(isPresented: $install) {
+            SpaceSkillInstall(model: model, name: name)
+                .environment(\.spaceSettingsConnection, connection)
+        }
     }
 
     private func load() async {
+        guard host?.isConnected == true else { return }
         if section == .mcp { await model.loadMCP() } else { await model.loadResources() }
     }
 }
@@ -371,6 +407,7 @@ private extension SpaceConfigurationSection {
 private struct SpaceResources: View {
     let model: ClientSpaceConfiguration
     let kind: ProjectResource.Kind
+    @Environment(\.spaceSettingsConnection) private var connection
 
     var body: some View {
         if model.canManageResources {
@@ -381,6 +418,7 @@ private struct SpaceResources: View {
                     } else {
                         NavigationLink {
                             SpaceFileScreen(file: resource.path, model: model, resource: resource)
+                                .environment(\.spaceSettingsConnection, connection)
                         } label: {
                             SettingsNavRow(resource.name, note: resource.description.isEmpty ? resource.path : resource.description)
                         }
@@ -422,6 +460,8 @@ private struct SpaceInheritedRow: View {
     let kind: ClientSpaceConfiguration.Inherited
     let name: String
     let note: String?
+    @Environment(\.spaceSettingsConnection) private var connection
+    private var host: SettingsHost? { connection?.host }
 
     var body: some View {
         let on = model.inherits(kind, name)
@@ -431,7 +471,7 @@ private struct SpaceInheritedRow: View {
                 Toggle(name, isOn: Binding(get: { on }, set: { value in Task { await model.setInherited(kind, name, on: value) } }))
                     .labelsHidden()
                     .toggleStyle(.shSwitch)
-                    .disabled(model.busy)
+                    .disabled(host?.isConnected != true || model.busy)
                     .padding(.trailing, SH.Space.l)
             } else {
                 Text(on ? "Enabled" : "Disabled")
@@ -445,10 +485,8 @@ private struct SpaceInheritedRow: View {
 
 private struct SpaceMCP: View {
     let model: ClientSpaceConfiguration
-    @State private var authTask: Task<Void, Never>?
-    @State private var authorization: URL?
-    @State private var callback: CheckedContinuation<String, any Error>?
-    @State private var redirect = ""
+    @Environment(\.spaceSettingsConnection) private var connection
+    private var host: SettingsHost? { connection?.host }
 
     var body: some View {
         if !model.inheritedServers.isEmpty {
@@ -463,62 +501,25 @@ private struct SpaceMCP: View {
                 let signedIn = model.signedIn[server.file]?.contains(server.name) == true
                 HStack(spacing: SH.Space.m) {
                     SHListRow(server.name, subtitle: server.endpoint, subtitleMono: true, chevron: false)
-                    if model.canUseMCP, server.usesOAuth {
-                        Button(signedIn ? "Sign out" : "Sign in") { authenticate(server, signIn: !signedIn) }
+                    if model.canUseMCP, server.usesOAuth, signedIn {
+                        Button("Sign out") { Task { await model.signOut(server) } }
                             .buttonStyle(.sh(.secondary, size: .l))
-                            .disabled(model.busy || model.drafts[server.file]?.isEdited == true)
+                            .disabled(host?.isConnected != true || model.busy || model.drafts[server.file]?.isEdited == true)
                             .padding(.trailing, SH.Space.l)
                     }
                 }
             }
             SpaceFileLinks(files: model.files?[.mcp] ?? [], model: model)
-            SettingsFootnote(model.canUseMCP ? "Credentials stay on the host." : "Update Shepherd on the host to sign in here.")
+            SettingsFootnote("Sign in on the host. Credentials stay there.")
         }
-        .sheet(isPresented: Binding(get: { authorization != nil }, set: { if !$0 { finish() } })) {
-            if let authorization {
-                VStack(alignment: .leading, spacing: SH.Space.l) {
-                    Text("Sign in to the MCP server").shText(.title)
-                    Link("Open sign-in page", destination: authorization).buttonStyle(.sh(.primary, size: .l))
-                    Text("After signing in, copy the final URL from your browser, even if it says the page couldn't load.")
-                        .shText(.caption)
-                    SpaceInput(label: "Callback URL", placeholder: "http://localhost/…", text: $redirect)
-                    HStack {
-                        Button("Cancel") { finish() }.buttonStyle(.sh(.secondary, size: .l))
-                        Button("Finish sign-in") { finish(redirect.trimmingCharacters(in: .whitespacesAndNewlines)) }
-                            .buttonStyle(.sh(.primary, size: .l)).disabled(redirect.isEmpty)
-                    }
-                }
-                .padding(MobileLayout.gutter)
-            }
-        }
-        .onDisappear { finish(); authTask?.cancel() }
-    }
-
-    private func authenticate(_ server: ClientSpaceConfiguration.Server, signIn: Bool) {
-        authTask = Task {
-            await model.authenticate(server, signIn: signIn) { url in
-                try await withCheckedThrowingContinuation { continuation in
-                    callback = continuation
-                    authorization = url
-                }
-            }
-        }
-    }
-
-    private func finish(_ url: String? = nil) {
-        authorization = nil
-        redirect = ""
-        let pending = callback
-        callback = nil
-        if let url { pending?.resume(returning: url) }
-        else { pending?.resume(throwing: CancellationError()) }
     }
 }
 
 private struct SpaceSkillInstall: View {
     let model: ClientSpaceConfiguration
-    let host: SettingsHost
     let name: String
+    @Environment(\.spaceSettingsConnection) private var connection
+    private var host: SettingsHost? { connection?.host }
     @Environment(\.dismiss) private var dismiss
     @State private var repo = ""
     @State private var revision = ""
@@ -532,10 +533,11 @@ private struct SpaceSkillInstall: View {
         NavigationStack {
             SpacePage(title: "Add skills to \(name)", model: model) {
                 SpaceInput(label: "Repository URL", placeholder: "https://github.com/owner/skills", text: $repo)
-                SpaceInput(label: "Revision", placeholder: "Branch, tag or commit", text: $revision)
-                if revision.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, host.serves(RemoteProtocol.skillsCapability) {
+                SpaceInput(label: "Revision", placeholder: "Branch or commit", text: $revision)
+                if revision.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, host?.supports(.skills) == true {
                     Button("Preview skills") { Task { await preview() } }
-                        .buttonStyle(.sh(.secondary, size: .l)).disabled(repo.isEmpty || lookingUp || model.busy)
+                        .buttonStyle(.sh(.secondary, size: .l))
+                        .disabled(host?.isConnected != true || repo.isEmpty || lookingUp || model.busy)
                     if lookingUp { ProgressView().progressViewStyle(SHSpinnerStyle()) }
                     if let found {
                         SHLazyListCard(found.skills) { skill in
@@ -554,7 +556,7 @@ private struct SpaceSkillInstall: View {
                 SettingsFootnote("Global Skills stays unchanged.")
                 Button(selectedPaths.count == 1 ? "Add 1 skill" : "Add \(selectedPaths.count) skills") { Task { await install() } }
                     .buttonStyle(.sh(.primary, size: .l))
-                    .disabled(repo.isEmpty || selectedPaths.isEmpty || lookingUp || model.busy)
+                    .disabled(host?.isConnected != true || !model.canManageResources || repo.isEmpty || selectedPaths.isEmpty || lookingUp || model.busy)
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(model.busy) }
@@ -571,7 +573,7 @@ private struct SpaceSkillInstall: View {
     }
 
     private func preview() async {
-        guard let client = host.client as? RemoteHostClient, !lookingUp else { return }
+        guard let client = host?.client as? RemoteHostClient, !lookingUp else { return }
         lookingUp = true
         defer { lookingUp = false }
         let input = repo

@@ -77,7 +77,7 @@ struct ClientSpaceConfigurationTests {
         await model.load()
         await model.loadMCP()
         let server = try #require(model.servers.first)
-        await model.authenticate(server, signIn: true) { _ in Issue.record("OAuth must not start"); return "" }
+        await model.signOut(server)
         await model.loadResources()
         _ = await model.installSkills(repo: "acme/skills", paths: ["review"], commit: nil)
         _ = await model.delete(.init(kind: .skill, name: "review", path: ".pi/skills/review/SKILL.md"))
@@ -146,11 +146,9 @@ struct ClientSpaceConfigurationTests {
         #expect(model.drafts[path] == nil)
     }
 
-    @Test func oauthCompletesOnlyTheMatchingLoopbackCallback() async throws {
+    @Test func signingOutRefreshesCredentialsWithoutStartingSignIn() async throws {
         let file = ProjectFile(path: ".shepherd/mcp.json", category: .mcp, exists: true)
         let id = UUID()
-        let expected = "http://127.0.0.1:4718/callback?state=fixture&code=demo-code"
-        let authorization = "https://auth.example.com/login?redirect_uri=http%3A%2F%2F127.0.0.1%3A4718%2Fcallback&state=fixture"
         var actions: [ProjectMCPAction] = []
         let model = ClientSpaceConfiguration(directory: root, capabilities: [RemoteProtocol.projectsV2Capability, RemoteProtocol.projectMCPCapability]) { request in
             switch request {
@@ -159,9 +157,9 @@ struct ClientSpaceConfigurationTests {
             case .mcp(directory: root, file: file.path, action: let action):
                 actions.append(action)
                 switch action {
-                case .login(server: "docs"): return .mcp(.init(id: id, phase: .waiting, authorizationURL: authorization))
-                case .complete(id: id, redirectURL: expected), .cancel(id: id): return .mcp(.init())
-                case .credentials: return .mcp(.init(signedIn: actions.contains(.complete(id: id, redirectURL: expected)) ? ["docs"] : []))
+                case .logout(server: "docs"): return .mcp(.init(id: id))
+                case .cancel(id: id): return .mcp(.init())
+                case .credentials: return .mcp(.init(signedIn: actions.contains(.logout(server: "docs")) ? [] : ["docs"]))
                 default: throw ProjectFileError("test", "Unexpected MCP action: \(action)")
                 }
             default: throw ProjectFileError("test", "Unexpected request: \(request)")
@@ -170,14 +168,27 @@ struct ClientSpaceConfigurationTests {
         await model.load()
         await model.loadMCP()
         let server = try #require(model.servers.first)
-        await model.authenticate(server, signIn: true) { _ in "http://127.0.0.1:4718/callback?state=wrong&code=demo-code" }
-        #expect(actions == [.credentials, .login(server: "docs"), .cancel(id: id)])
-        #expect(model.signedIn[file.path] == [])
-        await model.authenticate(server, signIn: true) { url in
-            #expect(url.absoluteString == authorization)
-            return expected
-        }
-        #expect(actions.suffix(4) == [.login(server: "docs"), .complete(id: id, redirectURL: expected), .cancel(id: id), .credentials])
         #expect(model.signedIn[file.path] == ["docs"])
+        await model.signOut(server)
+        #expect(model.signedIn[file.path] == [])
+        await model.signOut(server)
+        #expect(actions == [.credentials, .logout(server: "docs"), .cancel(id: id), .credentials])
+    }
+
+    @Test(arguments: [("Skills", "skills"), ("Extensions", "extensions"), ("Slash commands", "prompts"),
+                      ("Subagents", "agents"), ("MCP servers", "mcp")])
+    func persistedRoutesReadOldTitlesAndWriteStableSectionIDs(legacy: String, stable: String) throws {
+        let host = UUID()
+        let section = try #require(SpaceConfigurationSection(rawValue: stable))
+        let route = SettingsRoute.spaceConfiguration(host: host, directory: root, name: "acme-web", section: section)
+        let json = Data("""
+            {"spaceConfiguration":{"host":"\(host)","directory":"\(root)","name":"acme-web","section":"\(legacy)"}}
+            """.utf8)
+        let decoder = JSONDecoder()
+        #expect(try decoder.decode(SettingsRoute.self, from: json) == route)
+        let encoded = try JSONEncoder().encode(route)
+        let fields = try #require((JSONSerialization.jsonObject(with: encoded) as? [String: [String: String]])?["spaceConfiguration"])
+        #expect(fields["section"] == stable)
+        #expect(try decoder.decode(SettingsRoute.self, from: encoded) == route)
     }
 }

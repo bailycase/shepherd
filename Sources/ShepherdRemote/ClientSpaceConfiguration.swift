@@ -193,51 +193,30 @@ public final class ClientSpaceConfiguration {
         }
     }
 
-    /// The UI supplies the browser handoff. Pi on the host validates the callback and keeps the credentials.
-    public func authenticate(_ server: Server, signIn: Bool, authorize: @MainActor (URL) async throws -> String) async {
-        guard canUseMCP, server.usesOAuth, servers.contains(server), drafts[server.file]?.isEdited != true else { return }
+    public func signOut(_ server: Server) async {
+        guard canUseMCP, server.usesOAuth, servers.contains(server), signedIn[server.file]?.contains(server.name) == true,
+              drafts[server.file]?.isEdited != true else { return }
         await perform {
-            let result = try await mcp(server.file, signIn ? .login(server: server.name) : .logout(server: server.name))
+            var result = try await mcp(server.file, .logout(server: server.name))
             if let id = result.id {
-                do { try await finishMCP(result, id: id, file: server.file, authorize: authorize) }
-                catch { _ = try? await mcp(server.file, .cancel(id: id)); throw error }
+                // Logout also runs in the host's bridge; wait for it before rereading credentials.
+                let deadline = ContinuousClock.now + .seconds(300)
+                do {
+                    while result.phase == .waiting {
+                        guard ContinuousClock.now < deadline else { throw ProjectFileError("timeout", "Sign out timed out. Try again.") }
+                        try await Task.sleep(for: .milliseconds(250))
+                        result = try await mcp(server.file, .poll(id: id))
+                    }
+                } catch {
+                    _ = try? await mcp(server.file, .cancel(id: id))
+                    throw error
+                }
                 _ = try? await mcp(server.file, .cancel(id: id))
-            } else if result.phase != .done { throw unexpected }
+            }
+            if result.phase == .failed { throw ProjectFileError("mcp", result.message ?? "Couldn't sign out.") }
+            guard result.phase == .done else { throw unexpected }
             signedIn[server.file] = try await mcp(server.file, .credentials).signedIn
         }
-    }
-
-    private func finishMCP(_ start: ProjectMCPResult, id: UUID, file: String,
-                           authorize: @MainActor (URL) async throws -> String) async throws {
-        let deadline = ContinuousClock.now + .seconds(300)
-        var result = start
-        var handedOff = false
-        while result.phase == .waiting {
-            try Task.checkCancellation()
-            guard ContinuousClock.now < deadline else { throw ProjectFileError("timeout", "Sign-in timed out. Try again.") }
-            if !handedOff, let address = result.authorizationURL {
-                guard let url = URL(string: address), url.scheme == "https" || url.scheme == "http", url.host != nil else { throw unexpected }
-                handedOff = true
-                let redirect = try await authorize(url)
-                guard Self.matchesCallback(redirect, for: url) else { throw ProjectFileError("callback", "The callback didn't match this sign-in. Try again.") }
-                result = try await mcp(file, .complete(id: id, redirectURL: redirect))
-            } else {
-                try await Task.sleep(for: .milliseconds(250))
-                result = try await mcp(file, .poll(id: id))
-            }
-        }
-        if result.phase == .failed { throw ProjectFileError("mcp", result.message ?? "The MCP action failed.") }
-    }
-
-    private static func matchesCallback(_ redirect: String, for authorization: URL) -> Bool {
-        let parameters = URLComponents(url: authorization, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        guard let address = parameters.first(where: { $0.name == "redirect_uri" })?.value,
-              let expected = URLComponents(string: address), let callback = URLComponents(string: redirect),
-              expected.scheme == "http", let host = expected.host, ["127.0.0.1", "localhost", "::1", "[::1]"].contains(host),
-              callback.scheme == expected.scheme, callback.host == host, callback.port == expected.port,
-              callback.path == expected.path, callback.user == nil, callback.password == nil,
-              let state = parameters.first(where: { $0.name == "state" })?.value, !state.isEmpty else { return false }
-        return callback.queryItems?.first(where: { $0.name == "state" })?.value == state
     }
 
     private static func servers(in value: ProjectFileText) -> [Server] {

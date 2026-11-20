@@ -339,8 +339,36 @@ public enum SettingsRoute: Hashable, Codable, Sendable {
 }
 
 public enum SpaceConfigurationSection: String, Identifiable, Codable, Sendable {
-    case skills = "Skills", extensions = "Extensions", prompts = "Slash commands", agents = "Subagents", mcp = "MCP servers"
+    case skills, extensions, prompts, agents, mcp
     public var id: Self { self }
+
+    public var title: String {
+        switch self {
+        case .skills: "Skills"
+        case .extensions: "Extensions"
+        case .prompts: "Slash commands"
+        case .agents: "Subagents"
+        case .mcp: "MCP servers"
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+        // Older window routes used the display titles as raw values.
+        switch value {
+        case "Skills": self = .skills
+        case "Extensions": self = .extensions
+        case "Slash commands": self = .prompts
+        case "Subagents": self = .agents
+        case "MCP servers": self = .mcp
+        default:
+            guard let section = Self(rawValue: value) else {
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown space configuration section: \(value)")
+            }
+            self = section
+        }
+    }
 }
 
 /// Subagents' screens (subagents track): a thread's runs, and one run's transcript.
