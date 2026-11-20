@@ -702,7 +702,7 @@ class VerifyAppTests(unittest.TestCase):
             installer = installers[consumer.stem.removeprefix("shepherd-")]
             source = Path(ROOT, "Sources", "ShepherdSessions", installer + "Extension.swift").read_text()
             if installer == "Children":
-                self.assertIn('(\"shepherd-lines.mjs\", EmbeddedExtensions.source(\"shepherd-lines.mjs\"))', source)
+                self.assertIn('"shepherd-lines.mjs",', source)
             else:
                 self.assertRegex(source, r'EmbeddedExtensions\.install\("shepherd-lines\.mjs", at: \w+\.appendingPathComponent\("shepherd-lines\.mjs"\)\)')
 

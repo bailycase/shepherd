@@ -25,6 +25,29 @@ struct SessionHostTests {
         try next.start()
     }
 
+    @Test func theHostExitsBeforeServingIfTheBundleChangedDuringStartup() async throws {
+        let dir = try makeScratchDirectory("host-update")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bundle = dir.appendingPathComponent("Shepherd.app")
+        let contents = bundle.appendingPathComponent("Contents")
+        try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        let plist = try PropertyListSerialization.data(fromPropertyList: ["CFBundleVersion": "2"], format: .xml, options: 0)
+        try plist.write(to: contents.appendingPathComponent("Info.plist"))
+        let socket = dir.appendingPathComponent("s.sock").path
+        let state = dir.appendingPathComponent("state.json").path
+
+        let result = await #expect(processExitsWith: .exitCode(EXIT_FAILURE), observing: [\.standardErrorContent]) {
+            [bundlePath = bundle.path as String, socket = socket as String, state = state as String] in
+            let server = SessionServer(socketPath: socket, stateURL: URL(fileURLWithPath: state))
+            server.hostBuild = "1"
+            SessionHost.run(server, bundle: URL(fileURLWithPath: bundlePath), supervised: true, respawn: Self.defaults,
+                            ready: { _exit(EXIT_SUCCESS) })
+        }
+        let stderr = String(decoding: try #require(result).standardErrorContent, as: UTF8.self)
+        #expect(stderr.contains("app bundle changed while its host was starting"), "\(stderr)")
+        #expect(!FileManager.default.fileExists(atPath: socket))
+    }
+
     /// While the server queue is busy (here, parked), start-up leaves the main actor free: the remote and local listeners bind
     /// once the queue turns, and nothing on main waits for it. A main actor that waited would be stuck until the safety release.
     @Test func startUpKeepsTheMainActorFreeWhileTheServerQueueIsBusy() async throws {

@@ -44,7 +44,17 @@ public enum SessionHost {
                            pullRequests: (@MainActor (SessionServer) -> PullRequestLinkHosting)? = nil,
                            banners: (@MainActor (SessionServer) -> ThreadBanners.Sink)? = nil,
                            ready: () -> Void = {}) -> Never {
-        let bundle = Bundle.main.bundleURL
+        run(server, bundle: Bundle.main.bundleURL, supervised: supervised, respawn: respawn, configure: configure,
+            threads: threads, automations: automations, pullRequests: pullRequests, banners: banners, ready: ready)
+    }
+
+    static func run(_ server: SessionServer, bundle: URL, supervised: Bool = false, respawn: @escaping @MainActor (Agent) -> AgentSpawn,
+                    configure: (@MainActor (SessionServer) -> Void)? = nil,
+                    threads: (@MainActor (SessionServer) -> ThreadHosting)? = nil,
+                    automations: (@MainActor (SessionServer) -> AutomationHosting)? = nil,
+                    pullRequests: (@MainActor (SessionServer) -> PullRequestLinkHosting)? = nil,
+                    banners: (@MainActor (SessionServer) -> ThreadBanners.Sink)? = nil,
+                    ready: () -> Void = {}) -> Never {
         do {
             try EmbeddedExtensions.preload()
         } catch {

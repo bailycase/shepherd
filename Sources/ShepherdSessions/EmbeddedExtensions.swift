@@ -16,12 +16,16 @@ public enum EmbeddedExtensions {
         _ = try bundled.get()
     }
 
+    static var snapshot: Snapshot {
+        switch bundled {
+        case .success(let snapshot): return snapshot
+        case .failure(let error): preconditionFailure("Shepherd could not read its bundled extensions: \(error)")
+        }
+    }
+
     /// The bytes of `Extensions/<name>` (`design-skill/SKILL.md` for a file in a folder).
     public static func data(_ name: String) -> Data {
-        guard let snapshot = try? bundled.get(), let bytes = snapshot.data(name) else {
-            preconditionFailure("Shepherd's resource bundle has no Extensions/\(name)")
-        }
-        return bytes
+        snapshot.data(name)
     }
 
     /// `data(name)` as text.
@@ -32,12 +36,7 @@ public enum EmbeddedExtensions {
     /// Writes `Extensions/<name>` to `url` when the file there differs, and returns `url`.
     @discardableResult
     public static func install(_ name: String, at url: URL) throws -> URL {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let bytes = data(name)
-        if (try? Data(contentsOf: url)) != bytes {
-            try bytes.write(to: url, options: .atomic)
-        }
-        return url
+        try snapshot.install(name, at: url)
     }
 
     struct Snapshot {
@@ -52,9 +51,22 @@ public enum EmbeddedExtensions {
             self.files = files
         }
 
-        func data(_ name: String) -> Data? {
+        func data(_ name: String) -> Data {
             // SwiftPM's `.process` flattens resource paths.
-            files[(name as NSString).lastPathComponent]
+            guard let bytes = files[(name as NSString).lastPathComponent] else {
+                preconditionFailure("Shepherd's resource bundle has no Extensions/\(name)")
+            }
+            return bytes
+        }
+
+        @discardableResult
+        func install(_ name: String, at url: URL) throws -> URL {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let bytes = data(name)
+            if (try? Data(contentsOf: url)) != bytes {
+                try bytes.write(to: url, options: .atomic)
+            }
+            return url
         }
     }
 }
