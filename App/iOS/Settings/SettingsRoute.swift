@@ -15,6 +15,8 @@ struct SettingsDestination: View {
         case .models: ModelsScreen()
         case .agents: AgentsScreen()
         case .worktrees: WorktreesScreen()
+        case .apps: AppsScreen()
+        case .app(let host, let id): AppScreen(hostID: host, rowID: id)
         case .tools: ToolsScreen()
         case .slashCommands: SlashCommandsScreen()
         case .subagents: SubagentProfilesScreen()
@@ -40,16 +42,16 @@ struct SettingsDestination: View {
 
 /// A page of Settings, named and grouped as the Mac's: pushed from the list on iPhone, shown
 /// beside it on iPad (iPadSettingsInstructions). General, Appearance | Agents: Models, Agents,
-/// Instructions, Skills, Tools, Hooks | Work: Spaces, Git, Fleet | Advanced, Experiments.
-/// The Mac's Keyboard and Apps have no phone page.
+/// Instructions, Skills, Tools, Hooks | Work: Spaces, Git, Apps, Fleet | Advanced, Experiments.
+/// The Mac's Keyboard has no phone page.
 enum SettingsPage: String, CaseIterable, Hashable, Codable {
-    case general, appearance, models, agents, instructions, skills, tools, hooks, spaces, git, fleet, advanced, experiments
+    case general, appearance, models, agents, instructions, skills, tools, hooks, spaces, git, apps, fleet, advanced, experiments
 
     /// The list's groups, in order: a nil title is a group with no label.
     static let groups: [(title: String?, pages: [SettingsPage])] = [
         (nil, [.general, .appearance]),
         ("Agents", [.models, .agents, .instructions, .skills, .tools, .hooks]),
-        ("Work", [.spaces, .git, .fleet]),
+        ("Work", [.spaces, .git, .apps, .fleet]),
         (nil, [.advanced, .experiments]),
     ]
 
@@ -65,6 +67,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .hooks: "Hooks"
         case .spaces: "Spaces"
         case .git: "Git"
+        case .apps: "Apps"
         case .fleet: "Fleet"
         case .advanced: "Advanced"
         case .experiments: "Experiments"
@@ -84,6 +87,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .hooks: .hooks
         case .spaces: .spaces
         case .git: .worktrees
+        case .apps: .apps
         case .fleet: .fleet
         case .advanced: .diagnostics
         case .experiments: .experiments

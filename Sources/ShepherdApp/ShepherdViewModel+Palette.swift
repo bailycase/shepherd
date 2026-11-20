@@ -24,6 +24,11 @@ extension ShepherdViewModel {
                                  title: "New thread", subtitle: newThreadPlaceName.map(Self.newThreadContext),
                                  shortcut: keys.display(.newAgent), icon: "plus"))
         items += supervisionPaletteItems(keys: keys)
+        let working = workingThreads.count
+        if working > 0 {
+            items.append(PaletteItem(id: "action.stopAll", kind: .action("stopAll"), section: .commands,
+                                     title: "Stop all working threads…", subtitle: "\(working) working", icon: "stop.circle"))
+        }
         // The New thread page's project: what the sidebar's space rows offered.
         if shownDestination == .newThread, let place = newThread.place, place.host == nil,
            let space = state.spaces.first(where: { $0.id == place.space }) {
@@ -380,6 +385,7 @@ extension ShepherdViewModel {
             case "newTerminal": newTerminalTab()
             case "maximizeTerminal": toggleTerminalMaximized()
             case "stop": stopVisibleAgent()
+            case "stopAll": requestStopAll()
             case "openAutomations": openDestination(.automations)
             case "openForge": openForge()
             case "openDesigns": openDestination(.designs)

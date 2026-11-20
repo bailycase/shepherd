@@ -3319,7 +3319,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         if let need = spec.requires {
             let capability = need.capability.rawValue
-            if !offeredCapabilities.contains(capability) || need.negotiated && !client.clientCapabilities.contains(capability) {
+            if !offeredCapabilities(to: client).contains(capability) || need.negotiated && !client.clientCapabilities.contains(capability) {
                 return refuse("unsupported", need.message)
             }
         }
@@ -3896,6 +3896,11 @@ public final class SessionServer: @unchecked Sendable {
             })
             if let refusal { send(.error(id: id, code: refusal.code, message: refusal.message), to: client) }
         case .hostSettings(let id, let request):
+            if case .change(let change) = request, let capability = change.capability,
+               !offeredCapabilities(to: client).contains(capability) {
+                send(.error(id: id, code: "unsupported", message: "The host does not take this request."), to: client)
+                return
+            }
             guard let handler = onRemoteHostSettings else {
                 send(.error(id: id, code: "unavailable", message: "This host has no settings to share."), to: client)
                 return

@@ -27,10 +27,13 @@ extension HookCatalog {
             case .fetch:
                 return .hooks(snapshot)
             case .setOn(let hash, let on):
-                guard snapshot.entries.contains(where: { $0.hash == hash }) else {
-                    throw RequestError(code: "hook_changed", description: "That hook is no longer in its file. Reload and try again.")
+                // The lookup and the switch run under one lock, so the hook can't go between them.
+                try settingsStore.withMutation {
+                    guard load(spaceRoots: spaceRoots).entries.contains(where: { $0.hash == hash }) else {
+                        throw RequestError(code: "hook_changed", description: "That hook is no longer in its file. Reload and try again.")
+                    }
+                    try settingsStore.changeLocked { HookSettingsStore.switchHash(&$0, hash, on) }
                 }
-                try settingsStore.setOn(hash, on)
             case .setReader(let format, let on):
                 try settingsStore.setReader(format, on)
             case .save(let drafts, let file, let ref, let kept):

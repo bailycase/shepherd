@@ -5,7 +5,7 @@ import ShepherdProtocol
 /// Adds, changes and removes one handler in a Shepherd, Claude Code or Codex JSON hooks file
 /// (never Codex's `config.toml`). Every other key and entry stays as it was; the file is written
 /// whole, pretty-printed with a two-space indent, by temp file and rename (through a symbolic
-/// link to the file it names). A hook written here runs at once; one edited while off stays off.
+/// link to the file it names). A hook written here runs at once unless its bytes are already off; one edited while off stays off.
 public struct HookFileWriter: Sendable {
     public struct Failure: Error, Equatable, CustomStringConvertible, Sendable {
         public let description: String
@@ -17,18 +17,30 @@ public struct HookFileWriter: Sendable {
     public init(settings: HookSettingsStore) { self.settings = settings }
 
     /// Adds `draft` to `path` (creating the file and its folders): into the event's first group
-    /// with the same matcher, else a new group at the end. Returns the new hook's hash.
+    /// with the same matcher, else a new group at the end. Returns the new hook's hash. `on: false`
+    /// records the hash as off before the file publishes it.
     @discardableResult
-    public func add(_ draft: HookDraft, to path: String) throws -> String {
+    public func add(_ draft: HookDraft, to path: String, on: Bool = true) throws -> String {
+        try settings.withMutation { try addLocked(draft, to: path, startsOff: !on) }
+    }
+
+    /// Call inside `settings.withMutation`.
+    @discardableResult
+    func addLocked(_ draft: HookDraft, to path: String, replacing old: HookEntry? = nil, startsOff: Bool = false) throws -> String {
         var root = try document(path)
         try Self.insert(draft, into: &root)
-        return try save(root, path: path, written: draft, replacing: nil)
+        return try save(root, path: path, written: draft, replacing: old, startsOff: startsOff)
     }
 
     /// Replaces `entry` with `draft`: in place when the event and matcher are the same, else moved
     /// as `add` places it. Throws when the file no longer holds `entry` as it was read. Returns the new hash.
     @discardableResult
     public func update(_ entry: HookEntry, to draft: HookDraft) throws -> String {
+        try settings.withMutation { try updateLocked(entry, to: draft) }
+    }
+
+    @discardableResult
+    private func updateLocked(_ entry: HookEntry, to draft: HookDraft) throws -> String {
         var root = try document(entry.file)
         try Self.verify(entry, in: root)
         if draft.event == entry.event && draft.matcher == entry.matcher {
@@ -46,22 +58,35 @@ public struct HookFileWriter: Sendable {
 
     /// Settings' Save: writes `drafts` into `target`. Editing `entry`, the draft at `kept` takes its
     /// place when `target` is its file; otherwise every draft is added and `entry` removed.
+    /// The replacement carries the off switch even when it moves to another file.
     public func save(_ drafts: [HookDraft], to target: String, replacing entry: HookEntry?, kept: Int?) throws {
-        guard let entry else {
-            for draft in drafts { try add(draft, to: target) }
-            return
-        }
-        if target == entry.file, let kept, drafts.indices.contains(kept) {
-            try update(entry, to: drafts[kept])
-            for (index, draft) in drafts.enumerated() where index != kept { try add(draft, to: target) }
-        } else {
-            for draft in drafts { try add(draft, to: target) }
-            try delete(entry)
+        try settings.withMutation {
+            guard let entry else {
+                for draft in drafts { try addLocked(draft, to: target) }
+                return
+            }
+            let replacement = kept.flatMap { drafts.indices.contains($0) ? $0 : nil }
+            if target == entry.file, let replacement {
+                try updateLocked(entry, to: drafts[replacement])
+                for (index, draft) in drafts.enumerated() where index != replacement { try addLocked(draft, to: target) }
+            } else {
+                try Self.verify(entry, in: document(entry.file))
+                for (index, draft) in drafts.enumerated() {
+                    // Without a designated original, any of the drafts may replace the old hook.
+                    try addLocked(draft, to: target, replacing: replacement == nil || replacement == index ? entry : nil)
+                }
+                try deleteLocked(entry)
+            }
         }
     }
 
-    /// Removes `entry` (and its group, when it was the last handler there) and forgets its off switch.
+    /// Removes `entry` (and its group, when it was the last handler there), leaving its off hash in place.
     public func delete(_ entry: HookEntry) throws {
+        try settings.withMutation { try deleteLocked(entry) }
+    }
+
+    /// Call inside `settings.withMutation`.
+    func deleteLocked(_ entry: HookEntry) throws {
         var root = try document(entry.file)
         try Self.verify(entry, in: root)
         Self.remove(entry, from: &root)
@@ -125,25 +150,21 @@ public struct HookFileWriter: Sendable {
 
     // MARK: Saving
 
-    private func save(_ root: HookJSON, path: String, written draft: HookDraft?, replacing old: HookEntry?) throws -> String {
-        // An edit must carry an off switch over, which needs the file; refuse before touching a hooks file.
-        let off = try settings.read().off
+    private func save(_ root: HookJSON, path: String, written draft: HookDraft?, replacing old: HookEntry?, startsOff: Bool = false) throws -> String {
+        let hash = draft.map { HookCanonical.hash(file: path, event: $0.event, matcher: $0.matcher, canonical: $0.handler.raw.canonical) } ?? ""
+        // Refuse damaged settings. Publish the new off hash first and keep old hashes for readers
+        // that still hold those hooks. Only `setOn` ever removes a hash from `off`: bytes that are
+        // already off stay off however they come back (add, edit, move), so an edit can't enable a hook.
+        try settings.changeLocked { current in
+            guard draft != nil else { return }
+            let carriesOff = old.map { current.off.contains($0.hash) } ?? false
+            if (carriesOff || startsOff), !current.off.contains(hash) { current.off.append(hash) }
+        }
         let target = PiHome.canonical(path)
         try FileManager.default.createDirectory(atPath: (target as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         var info = stat()
         let mode = lstat(target, &info) == 0 ? info.st_mode & 0o7777 : 0o644
-
-        let hash = draft.map { HookCanonical.hash(file: path, event: $0.event, matcher: $0.matcher, canonical: $0.handler.raw.canonical) } ?? ""
-        // Only an off switch carries over: an edit keeps a hook that was off, off; a removed one is forgotten.
-        let carriesOff = old.map { off.contains($0.hash) } ?? false
-        // Record the new hash as off before the file publishes it, or an event in between runs it.
-        if carriesOff, draft != nil {
-            try settings.change { if !$0.off.contains(hash) { $0.off.append(hash) } }
-        }
         try PiHome.write(Data(root.pretty.utf8), to: URL(fileURLWithPath: target), mode: mode)
-        guard let old, carriesOff else { return hash }
-        let remaining = Set(((try? HookCatalog.entries(of: root, file: path, scope: .mac, format: .shepherd, editable: true)) ?? []).map(\.hash))
-        if !remaining.contains(old.hash) { try settings.change { $0.off.removeAll { $0 == old.hash } } }
         return hash
     }
 }

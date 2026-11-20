@@ -585,18 +585,21 @@ private final class Corpus {
         try await refuse("capability/fleetDigest-others", on: connect(capabilities: lacking(digest))) { .fleetDigest(id: $0, agentID: id, session: nil, revision: nil) }
     }
 
-    /// The host has no offered-and-negotiated check for `hostSettings`: this records what it takes and refuses from a client that listed nothing.
-    /// A change it takes is applied, so it also persists: `host-preferences.json` is rewritten (`HostSettingsStore`, R3b #781), unlike a refusal.
+    /// The host checks its own offer, so an older client that lists nothing can still change an offered setting.
+    /// An accepted change rewrites `host-preferences.json`, unlike a refusal.
     private func hostSettings() async throws {
         let client = try await connect(capabilities: Self.bare)
         let stored = { [app] in ["stored.closeOnMerge": try #require(app.hostSettings).worktreeCloseOnMerge] as [String: Any] }
         try await refuse("hostSettings/fetch", on: client, extra: stored) { .hostSettings(id: $0, request: .fetch) }
-        // `closeOnMerge` needs `hostSettings.closeOnMerge.v1`, which this client never listed: the host still applies it.
+        // The host offers `hostSettings.closeOnMerge.v1` even though the client didn't list it.
         try await refuse("hostSettings/change-not-negotiated", on: client, extra: stored) { .hostSettings(id: $0, request: .change(.closeOnMerge(true))) }
         try await refuse("hostSettings/change-back", on: client, extra: stored) { .hostSettings(id: $0, request: .change(.closeOnMerge(false))) }
         // A share Settings does not offer is left as it is, and answered like any change.
         try await refuse("hostSettings/change-unoffered-share", on: client, extra: stored) { .hostSettings(id: $0, request: .change(.compactAtPercent(37))) }
         try await refuse("hostSettings/change-refused", on: client, extra: stored) { .hostSettings(id: $0, request: .change(.slashCommand(name: "", on: true))) }
+        #expect(client.offered.contains(RemoteProtocol.hostSettingsCapability))
+        #expect(!client.offered.contains(RemoteProtocol.fleetDispatchCapability))
+        try await refuse("hostSettings/change-capability-not-offered", on: client) { .hostSettings(id: $0, request: .change(.fleetThreadCap(4))) }
     }
 
     /// `fleetIdentify`, `fleetPair` and `fleetPairDevice` are answered before `hello`, twelve to a connection.
@@ -760,12 +763,46 @@ private final class Corpus {
 
 // MARK: - A refused settings change writes nothing
 
-/// A `hostSettings` change the host refuses leaves `host-preferences.json` and the preferences domain as they were. The host refuses it only
-/// before an authenticated `hello` (`MessageSpec` has no capability row for `hostSettings`: a change a client did not list, or a host
-/// does not advertise, is applied like any other), so those are the refusals here; the last step shows the watch would see a write.
+/// A refused settings change leaves `host-preferences.json` and the preferences domain unchanged.
 @Suite("Refused settings change", .mainActorExclusive)
 @MainActor
 struct RefusedSettingsChangeTests {
+    @Test(arguments: [RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostSettingsCloseOnMergeCapability])
+    func aChangeWithoutTheHostsOfferWritesNoPreferences(withheld: String) async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        app.server.advertisedCapabilities.removeAll { $0 == withheld }
+        try await app.start()
+        let port = try app.server.startRemoteListener(port: 0, tokenURL: app.dir.appendingPathComponent("remote-token"))
+        let file = app.dir.appendingPathComponent("host-preferences.json")
+        let before = try Data(contentsOf: file)
+        let domain = { NSDictionary(dictionary: app.defaults.persistentDomain(forName: app.defaults.name) ?? [:]) }
+        let defaultsBefore = domain()
+        let client = try Wire(port: port)
+        try client.send(NDJSON.encode(RemoteRequest.hello(id: client.nextID(), token: app.server.clientTokenForTests(), clientName: "acme-phone",
+                                                        protocolVersion: RemoteProtocol.version, capabilities: [])))
+        guard case .line(let hello) = await client.next(),
+              case .helloOk(_, _, let offered, _, _) = try NDJSON.decode(RemoteReply.self, from: hello) else {
+            Issue.record("expected helloOk")
+            return
+        }
+        #expect(!offered.contains(withheld))
+
+        let id = client.nextID()
+        try client.send(NDJSON.encode(RemoteRequest.hostSettings(id: id, request: .change(.closeOnMerge(true)))))
+        guard case .line(let reply) = await client.next(),
+              case .error(let replyID, let code, let message) = try NDJSON.decode(RemoteReply.self, from: reply) else {
+            Issue.record("expected a settings refusal")
+            return
+        }
+        #expect(replyID == id)
+        #expect(code == "unsupported")
+        #expect(message == "The host does not take this request.")
+        #expect(try Data(contentsOf: file) == before)
+        #expect(domain().isEqual(defaultsBefore))
+        #expect(app.hostSettings?.worktreeCloseOnMerge == false)
+    }
+
     @Test func aChangeRefusedBeforeAnAuthenticatedHelloWritesNoPreferences() async throws {
         let app = try AppHarness()
         defer { app.stop() }

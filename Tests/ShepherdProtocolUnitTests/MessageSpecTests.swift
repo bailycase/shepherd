@@ -51,8 +51,6 @@ struct MessageSpecTests {
         for kind in Set(RemoteRequest.Kind.allCases).subtracting(special) { #expect(access(kind) == .authenticated) }
     }
 
-    /// The host's own capability refusals today: push, thread subscribe, fleet digest, and logical projects.
-    /// Host settings are not here: the host does not check `HostSettingChange.capability`.
     @Test func capabilityRequirementsOfTheRefusalFamilies() {
         func requirement(_ kind: RemoteRequest.Kind) -> MessageSpec.Requirement? { MessageSpec.spec(for: kind)?.requires }
         #expect(requirement(.pushRegistration)?.capability.rawValue == "push.notifications.v1")
@@ -66,6 +64,7 @@ struct MessageSpecTests {
         #expect(requirement(.logicalProjects)?.negotiated == false)
         #expect(requirement(.spaceLifecycle)?.capability.rawValue == "spaces.lifecycle.v1")
         #expect(requirement(.spaceLifecycle)?.negotiated == false)
-        #expect(requirement(.hostSettings) == nil)
+        #expect(requirement(.hostSettings)?.capability == .hostSettings)
+        #expect(requirement(.hostSettings)?.negotiated == false)
     }
 }

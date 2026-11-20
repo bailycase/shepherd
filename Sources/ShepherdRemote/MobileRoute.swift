@@ -300,6 +300,10 @@ public enum SettingsRoute: Hashable, Codable, Sendable {
     case agents
     /// How a host creates worktrees and handles them when the work is done (Git).
     case worktrees
+    /// Every app on every host: its run, with Run, Stop and Restart (`apps.v2`); one app opens `app`.
+    case apps
+    /// One app's run and output; `id` is `AppRowValue.id`.
+    case app(host: UUID, id: String)
     /// A host's MCP servers and its extensions, slash commands and daily updates.
     case tools
     /// Every slash command the host's pi lists, each with a switch. Opened from Tools.
