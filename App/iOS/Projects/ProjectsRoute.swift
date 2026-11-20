@@ -47,8 +47,8 @@ extension EnvironmentValues {
 
 /// Ages as the Mac's pane says them: "29m", "2h", "3d".
 enum ProjectAge {
-    static func text(_ milliseconds: Double) -> String {
-        let seconds = max(0, Date().timeIntervalSince1970 - milliseconds / 1000)
+    static func text(_ milliseconds: Double, now: Date) -> String {
+        let seconds = max(0, now.timeIntervalSince1970 - milliseconds / 1000)
         if seconds < 3600 { return "\(max(1, Int(seconds / 60)))m" }
         if seconds < 86_400 { return "\(Int(seconds / 3600))h" }
         return "\(Int(seconds / 86_400))d"

@@ -3,46 +3,58 @@ import Testing
 import ShepherdProtocol
 import ShepherdCore
 
+enum ProjectsSamples {
+    private static let loginID = UUID(uuidString: "00000000-0000-0000-0000-000000000007")!
+
+    private static let requests: [RemoteProjectsRequest] = [
+        .mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .credentials),
+        .mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .approveProject),
+        .mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .login(server: "issues")),
+        .mcp(directory: "/host/repo", file: ".mcp.json", action: .logout(server: "issues")),
+        .mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .poll(id: loginID)),
+        .mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .cancel(id: loginID)),
+        .mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .complete(id: loginID, redirectURL: "http://127.0.0.1:1234/callback?code=test&state=test")),
+        .list(), .list(offset: 64), .files(directory: "/host/repo"),
+        .context(directory: "/host/repo"), .open(directory: "/host/repo", file: "AGENTS.md"),
+        .read(directory: "/host/repo", file: ".shepherd/settings.json"),
+        .save(directory: "/host/repo", file: "AGENTS.md", text: "new", expected: nil),
+        .save(directory: "/host/repo", file: "AGENTS.md", text: "new", expected: "old"),
+        .resources(directory: "/host/repo"), .delete(directory: "/host/repo", file: ".pi/prompts/review.md", expected: "old"),
+        .installSkills(directory: "/host/repo", repo: "acme/skills", paths: ["skills/pdf"], commit: nil),
+        .installSkills(directory: "/host/repo", repo: "https://example.invalid/skills.git", paths: [], commit: "main"),
+        .inheritance(directory: "/host/repo/web", excluded: SpaceInheritanceExclusions(mcp: ["docs"], skills: ["ledger-review"])),
+        .inheritance(directory: "/host/repo/web", excluded: SpaceInheritanceExclusions()),
+        .inheritance(directory: "/host/repo/web", excluded: SpaceInheritanceExclusions(prompts: ["ship"], extensions: ["lint.ts"])),
+        .organize(spaceID: SpaceID(rawValue: "web"), name: "acme-web", parentID: SpaceID(rawValue: "acme")),
+        .organize(spaceID: SpaceID(rawValue: "web"), name: nil, parentID: nil),
+    ]
+    private static let results: [RemoteProjectsResult] = [
+        .mcp(.init(id: loginID, phase: .waiting, authorizationURL: "https://example.test/auth")),
+        .mcp(.init(signedIn: ["issues"])), .mcp(.init(phase: .failed, message: "Cancelled.")),
+        .opened, .mcp(.init(projectTrusted: false)), .mcp(.init(projectTrusted: true)), .context(ProjectContext(files: [.init(path: "/a/AGENTS.md", displayPath: "~/a/AGENTS.md")], resources: 4, mcpServers: 1)), .context(ProjectContext(inheritsFrom: "/a", excluded: SpaceInheritanceExclusions(mcp: ["docs"]))), .listing(ProjectListing(projects: [], nextOffset: 64)),
+        .listing(ProjectListing(projects: [ProjectSummary(directory: "/a", name: "a", displayPath: "~/a", summary: "AGENTS.md only", minimal: true)])),
+        .files([ProjectFile(path: "AGENTS.md", category: .instructions, exists: false)]),
+        .text(ProjectFileText(file: ProjectFile(path: "AGENTS.md", category: .instructions, exists: false), text: nil)),
+        .text(ProjectFileText(file: ProjectFile(path: "AGENTS.md", category: .instructions, exists: true), text: "")),
+        .resources([ProjectResource(kind: .skill, name: "ledger-review", description: "Review ledgers.", path: ".pi/skills/ledger-review/SKILL.md"),
+                    ProjectResource(kind: .agent, name: "scout", path: "/support/pi/agents/scout.md", displayPath: "Shepherd/pi/agents/scout.md",
+                                    global: true, enabled: false, detail: "read · grep")]),
+    ]
+
+    static let wireRequests = requests.map { RemoteRequest.projects(id: 7, request: $0) }
+    static let wireReplies = results.map { RemoteReply.projects(id: 9, result: $0) }
+}
+
 @Suite("Project settings protocol")
 struct ProjectsProtocolTests {
-    @Test(arguments: [RemoteProjectsRequest.mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .credentials),
-                      .mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .approveProject),
-                      .mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .login(server: "issues")),
-                      .mcp(directory: "/host/repo", file: ".mcp.json", action: .logout(server: "issues")),
-                      .mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .poll(id: UUID())),
-                      .mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .cancel(id: UUID())),
-                      .mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .complete(id: UUID(), redirectURL: "http://127.0.0.1:1234/callback?code=test&state=test")),
-                      RemoteProjectsRequest.list(), .list(offset: 64), .files(directory: "/host/repo"),
-                      .context(directory: "/host/repo"), .open(directory: "/host/repo", file: "AGENTS.md"),
-                      .read(directory: "/host/repo", file: ".shepherd/settings.json"),
-                      .save(directory: "/host/repo", file: "AGENTS.md", text: "new", expected: nil),
-                      .save(directory: "/host/repo", file: "AGENTS.md", text: "new", expected: "old"),
-                      .resources(directory: "/host/repo"), .delete(directory: "/host/repo", file: ".pi/prompts/review.md", expected: "old"),
-                      .installSkills(directory: "/host/repo", repo: "acme/skills", paths: ["skills/pdf"], commit: nil),
-                      .installSkills(directory: "/host/repo", repo: "https://example.invalid/skills.git", paths: [], commit: "main"),
-                      .inheritance(directory: "/host/repo/web", excluded: SpaceInheritanceExclusions(mcp: ["docs"], skills: ["ledger-review"])),
-                      .inheritance(directory: "/host/repo/web", excluded: SpaceInheritanceExclusions()),
-                      .inheritance(directory: "/host/repo/web", excluded: SpaceInheritanceExclusions(prompts: ["ship"], extensions: ["lint.ts"])),
-                      .organize(spaceID: SpaceID(rawValue: "web"), name: "acme-web", parentID: SpaceID(rawValue: "acme")),
-                      .organize(spaceID: SpaceID(rawValue: "web"), name: nil, parentID: nil)])
-    func eachRequestRoundTrips(_ request: RemoteProjectsRequest) throws {
-        let value = RemoteRequest.projects(id: 7, request: request)
-        #expect(try NDJSON.decode(RemoteRequest.self, from: NDJSON.encode(value)) == value)
+    @Test(arguments: ProjectsSamples.wireRequests)
+    func eachRequestRoundTrips(_ request: RemoteRequest) throws {
+        #expect(try Wire.roundTrip(request) == request)
     }
 
-    @Test(arguments: [RemoteProjectsResult.mcp(.init(id: UUID(), phase: .waiting, authorizationURL: "https://example.test/auth")),
-                      .mcp(.init(signedIn: ["issues"])), .mcp(.init(phase: .failed, message: "Cancelled.")),
-                      RemoteProjectsResult.opened, .mcp(.init(projectTrusted: false)), .mcp(.init(projectTrusted: true)), .context(ProjectContext(files: [.init(path: "/a/AGENTS.md", displayPath: "~/a/AGENTS.md")], resources: 4, mcpServers: 1)), .context(ProjectContext(inheritsFrom: "/a", excluded: SpaceInheritanceExclusions(mcp: ["docs"]))), RemoteProjectsResult.listing(ProjectListing(projects: [], nextOffset: 64)),
-                      .listing(ProjectListing(projects: [ProjectSummary(directory: "/a", name: "a", displayPath: "~/a", summary: "AGENTS.md only", minimal: true)])),
-                      .files([ProjectFile(path: "AGENTS.md", category: .instructions, exists: false)]),
-                      .text(ProjectFileText(file: ProjectFile(path: "AGENTS.md", category: .instructions, exists: false), text: nil)),
-                      .text(ProjectFileText(file: ProjectFile(path: "AGENTS.md", category: .instructions, exists: true), text: "")),
-                      .resources([ProjectResource(kind: .skill, name: "ledger-review", description: "Review ledgers.", path: ".pi/skills/ledger-review/SKILL.md"),
-                                  ProjectResource(kind: .agent, name: "scout", path: "/support/pi/agents/scout.md", displayPath: "Shepherd/pi/agents/scout.md",
-                                                  global: true, enabled: false, detail: "read · grep")])])
-    func eachResultRoundTrips(_ result: RemoteProjectsResult) throws {
-        let value = RemoteReply.projects(id: 9, result: result)
-        #expect(try NDJSON.decode(RemoteReply.self, from: NDJSON.encode(value)) == value)
+    @Test(arguments: ProjectsSamples.wireReplies)
+    func eachResultRoundTrips(_ reply: RemoteReply) throws {
+        #expect(try Wire.roundTrip(reply) == reply)
     }
 
     /// An older host's context has no inheritance fields, and a list without one of its keys turns nothing off.

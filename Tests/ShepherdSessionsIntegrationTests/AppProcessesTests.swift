@@ -43,6 +43,7 @@ struct AppProcessesTests {
             let state = await snapshot(apps, key)
             return state?.status == .running && state?.port == 4321
         }
+        #expect(getsid(pid) != getsid(0))
         let lines = await apps.lines(key, tail: 50)
         #expect(lines.contains { $0.hasSuffix(dir.lastPathComponent) }, "it runs in its folder: \(lines)")
         #expect(lines.contains("ready on http://localhost:4321"))
