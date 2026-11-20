@@ -104,6 +104,22 @@ class ValidateTests(unittest.TestCase):
         self.assertEqual(result["status"], "passed")
         self.assertIn("PASS mac/changes-review", output)
 
+    def test_incomplete_reports_invalid_evidence_on_the_terminal(self):
+        code, output, result = self.run_case([{"step": "unknown", "evidence": []}])
+        self.assertEqual(code, 1)
+        self.assertIn("Evidence error: 0.json: invalid or duplicate step record", output)
+        self.assertEqual(result["evidence_errors"], ["0.json: invalid or duplicate step record"])
+
+    def test_a_thrown_golden_scenario_is_a_comparison_failure(self):
+        record = {"step": "compare-golden", "status": "failed", "evidence": [],
+                  "expected": "rename, restart and sidebar matched the golden",
+                  "actual": "Scenario threw: socket closed while awaiting reply"}
+        code, output, result = self.run_case([record], swift_exit=1, case="seeded-thread-rename")
+        self.assertEqual(code, 1)
+        self.assertEqual(result["status"], "assertion_failed")
+        self.assertIn("FAIL mac/seeded-thread-rename/compare-golden", output)
+        self.assertIn("Look first: Tests/Fixtures/seeded-thread-rename.json.", output)
+
     def test_seeded_rename_checks_require_the_golden_comparison_and_completion(self):
         matched = "rename, restart and sidebar matched the golden"
         record = {"status": "passed", "expected": matched, "actual": matched, "evidence": []}
