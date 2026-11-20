@@ -24,6 +24,10 @@ extension FixtureCatalog {
             // An immediate send from history also lands on the tail and follows the reply.
             FixtureScreen(name: "thread-send-from-history", hosts: NewTurnFixture.hosts(acceptingSend: true), routes: [.thread(thread)],
                           prepare: { await NewTurnFixture.returnToTail($0, sending: true) }),
+            // The same send after a screen pushed over the thread is popped (the pin loses its lander when the thread disappears),
+            // with no reply streaming after it: the send alone must land the thread on its tail.
+            FixtureScreen(name: "thread-send-after-pop", hosts: NewTurnFixture.hosts(acceptingSend: true), routes: [.thread(thread)],
+                          prepare: { await NewTurnFixture.returnToTail($0, sending: true, afterPush: true) }),
         ]
     }
 }
@@ -136,7 +140,7 @@ enum NewTurnFixture {
     }
 
     /// Return to the tail with the jump pill or Send, then watch for a trip back to history.
-    static func returnToTail(_ app: MobileApp, sending: Bool) async {
+    static func returnToTail(_ app: MobileApp, sending: Bool, afterPush: Bool = false) async {
         let ref = FixtureData.ref(FixtureData.preview)
         let store = app.threads.store(for: ref)
         let place = app.navigator.composerPresentation.state(for: ref)
@@ -154,6 +158,13 @@ enum NewTurnFixture {
         for _ in 0..<3 where !detachedInHistory() { await finger.drag(by: 600, frame: 60) }
         await FixtureCheck.wait("a detached history anchor after the drag ends", seconds: 5) {
             detachedInHistory() && !place.scrollFollower.userScrolling
+        }
+        if afterPush {
+            // A screen of no thread, so the pad pushes it over the thread rather than into the side pane.
+            app.navigator.open(.search(.search(query: "")))
+            try? await Task.sleep(for: .seconds(1.5))
+            if app.navigator.layout == .pad { app.navigator.padPath.removeLast() } else { app.navigator[path: app.navigator.tab].removeLast() }
+            try? await Task.sleep(for: .seconds(1.5))
         }
         SidebarAutomationsCheck.enableAccessibility()
         let action = sending ? "Send" : "Jump to latest"
@@ -178,6 +189,14 @@ enum NewTurnFixture {
             guard store.sentCount == sentBefore + 1, !store.lastSendQueued else {
                 FixtureCheck.fail("the host did not accept an immediate send")
             }
+            if afterPush {
+                // No reply streams, so no scroll reading follows the send to hand the pin its lander: only the send's own ask lands.
+                let shown = await TailFixture.shown(within: .seconds(4)) { $0.atTail }
+                _ = frames.stop()
+                _ = SHRenderProbe.stop()
+                guard shown.atTail, place.follows else { FixtureCheck.fail("Send after a popped screen did not land on the tail") }
+                return FixtureCheck.report("FIXTURE CHECK ok: Send after a popped screen, \(shown.distance)pt at rest, follows \(place.follows)")
+            }
             Host.shared.start(length: replyLength, rate: 360, stepsPerSecond: 20)
         } else {
             guard control()?.accessibilityActivate() == true else { FixtureCheck.fail("\(action) did not activate") }
@@ -192,13 +211,13 @@ enum NewTurnFixture {
         let counts = SHRenderProbe.stop()
         let landings = counts["thread.tailLanding", default: 0] + counts["thread.tailLandingResized", default: 0]
         let revisions = (store.snapshot?.revision ?? before) - before
-        FixtureCheck.report("FIXTURE CHECK ok: \(action), \(result.frames) frames, \(revisions) revisions since press, "
-            + "farthest \(Int(result.farthest))pt, \(result.backJumps) back jumps (\(result.backJumpsAfterLanding) after first landing), "
-            + "\(landings) landings, \(Int(result.awayAfterLanding))pt off after landing, \(shown.distance)pt at rest, follows \(place.follows)")
         guard store.running, result.landed, result.backJumpsAfterLanding == 0, result.awayAfterLanding < jolt,
               shown.atTail, shown.ink >= TailFixture.inkFloor else {
             FixtureCheck.fail("\(action) did not land and stay on the streaming tail")
         }
+        FixtureCheck.report("FIXTURE CHECK ok: \(action), \(result.frames) frames, \(revisions) revisions since press, "
+            + "farthest \(Int(result.farthest))pt, \(result.backJumps) back jumps (\(result.backJumpsAfterLanding) after first landing), "
+            + "\(landings) landings, \(Int(result.awayAfterLanding))pt off after landing, \(shown.distance)pt at rest, follows \(place.follows)")
     }
 
     /// Points the thread's visible bottom sits above the end of its content.
