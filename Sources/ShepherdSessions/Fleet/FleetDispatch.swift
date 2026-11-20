@@ -1187,6 +1187,23 @@ final class FleetDispatch: @unchecked Sendable {
     }
 }
 
+extension FleetDispatch.Inbound {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        record = try c.decode(FleetDispatchRecord.self, forKey: .record)
+        expectsResult = try c.decode(Bool.self, forKey: .expectsResult)
+        startedWorking = try c.decode(Bool.self, forKey: .startedWorking)
+        unsent = try c.decode(Bool.self, forKey: .unsent)
+        worktree = try c.decodeIfPresent(String.self, forKey: .worktree)
+        acceptedAt = try c.decode(Double.self, forKey: .acceptedAt)
+        cloneDirectory = try c.decodeIfPresent(String.self, forKey: .cloneDirectory)
+        handoff = try c.decodeIfPresent(FleetMoveHandoff.self, forKey: .handoff)
+        transcript = try c.decodeIfPresent(FleetBlobRef.self, forKey: .transcript)
+        spaceID = try c.decodeIfPresent(SpaceID.self, forKey: .spaceID)
+        madeRef = try c.decodeIfPresent(Bool.self, forKey: .madeRef) ?? false
+    }
+}
+
 extension FleetDispatch {
     /// Runs `body` on the server queue and returns its value to an async caller.
     func onQueue<T: Sendable>(_ body: @escaping @Sendable () -> T) async -> T {
