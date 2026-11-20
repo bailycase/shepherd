@@ -7,7 +7,8 @@ import Testing
 
 /// Stop all working threads: the confirm (seven working threads, so its list ends in "and 2 more") and the result
 /// it ends in, in light and dark. Made-up thread names. The Agent menu's item is a native menu a preview can't open;
-/// `StopAllMenuTests` covers it.
+/// `StopAllMenuTests` checks only the command's title and enablement, so the native menu item itself is not covered
+/// (verify by hand in the Dev app).
 @Suite("Stop all previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL)"))
 @MainActor
 struct StopAllPreviewTests {
