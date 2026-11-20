@@ -42,6 +42,9 @@ enum ForgeSamples {
         .edit(ref: pull, field: .reviewers, add: ["mara"], remove: []),
         .postReview(ref: pull, verdict: .comment, body: "", comments: [ForgeDraftComment(path: "x.go", line: 3, right: false, body: "why")]),
     ]
+    static let wireRequests = requests.map { RemoteRequest.forge(id: 1, request: $0) }
+    static let wireReplies = results.map { RemoteReply.forgeResult(id: 1, result: $0) }
+
     static let results: [RemoteForgeResult] = [
         .ok, .repos([ForgeRepo(nameWithOwner: "acme/payments", path: "/r/payments")]),
         .list(ForgeList(kind: .pullRequest, repo: "acme/payments", viewer: "baily",
@@ -62,15 +65,14 @@ enum ForgeSamples {
 
 @Suite("Forge wire")
 struct ForgeWireTests {
-    @Test(arguments: ForgeSamples.requests)
-    func everyRequestRoundTrips(_ request: RemoteForgeRequest) throws {
-        let message = RemoteRequest.forge(id: 1, request: request)
-        #expect(try Wire.roundTrip(message) == message)
+    @Test(arguments: ForgeSamples.wireRequests)
+    func everyRequestRoundTrips(_ request: RemoteRequest) throws {
+        #expect(try Wire.roundTrip(request) == request)
     }
 
-    @Test(arguments: ForgeSamples.results)
-    func everyResultRoundTrips(_ result: RemoteForgeResult) throws {
-        #expect(try Wire.roundTrip(RemoteReply.forgeResult(id: 1, result: result)) == .forgeResult(id: 1, result: result))
+    @Test(arguments: ForgeSamples.wireReplies)
+    func everyResultRoundTrips(_ reply: RemoteReply) throws {
+        #expect(try Wire.roundTrip(reply) == reply)
     }
 
     /// What each filter asks GitHub's search; across every repository it stays to what involves you
