@@ -119,3 +119,20 @@ final class AgentRecoveryStore {
         return directory.appendingPathComponent(name + ".json")
     }
 }
+
+extension AgentRecoveryStore.Checkpoint {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID = try c.decode(String.self, forKey: .sessionID)
+        active = try c.decode(Bool.self, forKey: .active)
+        items = try c.decode([RPCThreadState.QueueItem].self, forKey: .items)
+        pending = try c.decode([RPCThreadState.QueueItem].self, forKey: .pending)
+        paused = try c.decode(Bool.self, forKey: .paused)
+        mode = try c.decode(NativeQueueMode.self, forKey: .mode)
+        attempts = try c.decodeIfPresent(Int.self, forKey: .attempts) ?? 0
+        operationID = try c.decodeIfPresent(UUID.self, forKey: .operationID)
+        token = try c.decodeIfPresent(String.self, forKey: .token)
+        fence = try c.decodeIfPresent(String.self, forKey: .fence)
+        heldAfterExit = try c.decodeIfPresent(Bool.self, forKey: .heldAfterExit)
+    }
+}
