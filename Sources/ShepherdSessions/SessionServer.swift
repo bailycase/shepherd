@@ -967,7 +967,9 @@ public final class SessionServer: @unchecked Sendable {
     /// Marks when the remote listener's descriptor is really closed: until then its port is still taken.
     /// `Closed` belongs to the listener that is open, `Closing` to one that was stopped, kept until its descriptor closes.
     private var remoteListenerClosed: ListenerClose?
-    private var remoteListenerClosing: ListenerClose?
+    var remoteListenerClosing: ListenerClose?
+    /// How long `stop` waits for that close before it gives up and exits anyway (tests shorten it).
+    var remoteListenerExitDeadline: DispatchTimeInterval = .seconds(5)
     /// Changes `setRemoteListener` was asked for and has not finished, and whether one is running.
     private var listenerChanges: [(port: UInt16?, completion: @Sendable (Result<UInt16?, Error>) -> Void)] = []
     private var changingListener = false
@@ -2068,7 +2070,7 @@ public final class SessionServer: @unchecked Sendable {
         // Keep ownership until cleanup is over; a rejected instance cleans up nothing.
         if owned { designs.removeLeftovers() }
         queue.sync { releaseOwnershipOnQueue() }
-        awaitRemoteListenerClosed()
+        awaitRemoteListenerClosed(within: remoteListenerExitDeadline)
     }
 
     // MARK: - Lifecycle (server queue)
@@ -2880,7 +2882,7 @@ public final class SessionServer: @unchecked Sendable {
     // MARK: - Remote listener (server queue)
 
     /// Whoever waits for a stopped remote listener's descriptor to close. Touched only on the server queue.
-    private final class ListenerClose {
+    final class ListenerClose {
         var waiters: [() -> Void] = []
         func markClosed() {
             let pending = waiters
@@ -2901,10 +2903,10 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// Close the TCP listener and every remote client connection. Extension
-    /// connections and sessions are unaffected. Blocks like `startRemoteListener`.
+    /// connections and sessions are unaffected. Blocks like `startRemoteListener`, until the port is really closed.
     public func stopRemoteListener() {
         queue.sync { stopRemoteListenerOnQueue() }
-        awaitRemoteListenerClosed()
+        awaitRemoteListenerClosed(within: nil)
     }
 
     /// Makes the remote listener `port` (0 for an ephemeral one) or, with nil, closed, without blocking the caller. Changes run one
@@ -2939,11 +2941,14 @@ public final class SessionServer: @unchecked Sendable {
         if let closing = remoteListenerClosing { closing.waiters.append(body) } else { body() }
     }
 
-    /// The blocking wait for the same, for `stop` and `stopRemoteListener` (never the main thread).
-    private func awaitRemoteListenerClosed() {
+    /// The blocking wait for the same, for `stop` and `stopRemoteListener` (never the main thread). `within` nil waits
+    /// for the close however long it takes; `stop` gives up after its deadline so a host can still exit. Whether it closed.
+    @discardableResult
+    func awaitRemoteListenerClosed(within limit: DispatchTimeInterval?) -> Bool {
         let closed = DispatchSemaphore(value: 0)
         queue.sync { whenRemoteListenerClosedOnQueue { closed.signal() } }
-        _ = closed.wait(timeout: .now() + 5)
+        guard let limit else { closed.wait(); return true }
+        return closed.wait(timeout: .now() + limit) == .success
     }
 
     private func startRemoteListenerOnQueue(port: UInt16) throws -> UInt16 {
@@ -3032,37 +3037,48 @@ public final class SessionServer: @unchecked Sendable {
     /// client: the remote protocol over a unix socket, offered `local.v1`. Only this user's
     /// processes running this app's own code get past accept (`LocalPeer`), and that is all the proof
     /// they give: the `hello` token is not looked at. Off unless the host entry starts it.
+    /// Blocks on the server queue: for tests, never the main actor (`listenLocal`).
     public func startLocalListener(path: String) throws {
-        try queue.sync {
-            try requireStarted()
-            guard localAcceptSource == nil else { throw SessionServerError.conflict("local listener already running") }
-            // This Mac's app reads the run log again after each change (`automationsChanged`).
-            runLog.changed = { [weak self] in self?.sendToLocalApps(.automationsChanged) }
-            var addr = try Self.socketAddress(for: path)
-            // Only the workspace's owner binds here, and this server holds the ownership lock: any
-            // socket file left is a dead host's.
-            unlink(path)
-            let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-            guard fd >= 0 else { throw SessionServerError.system(call: "socket", errno: errno) }
-            let bound = withUnsafePointer(to: &addr) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
-            }
-            guard bound == 0, chmod(path, 0o600) == 0, listen(fd, SOMAXCONN) == 0 else {
-                let err = errno
-                close(fd)
-                unlink(path)
-                throw SessionServerError.system(call: "bind", errno: err)
-            }
-            _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
-            _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
-            let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
-            source.setEventHandler { [weak self] in self?.acceptLocalPending(on: fd) }
-            source.setCancelHandler { close(fd) }
-            localAcceptSource = source
-            localSocketPath = path
-            source.activate()
-            ShepherdLog.info("local listener on \(path)")
+        try queue.sync { try startLocalListenerOnQueue(path: path) }
+    }
+
+    /// `startLocalListener` that suspends instead of waiting: the host's start-up runs on the main actor, and the server
+    /// queue may still hold the remote listener's bind.
+    public func listenLocal(path: String) async throws {
+        try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
+            queue.async { done.resume(with: Result { try self.startLocalListenerOnQueue(path: path) }) }
         }
+    }
+
+    private func startLocalListenerOnQueue(path: String) throws {
+        try requireStarted()
+        guard localAcceptSource == nil else { throw SessionServerError.conflict("local listener already running") }
+        // This Mac's app reads the run log again after each change (`automationsChanged`).
+        runLog.changed = { [weak self] in self?.sendToLocalApps(.automationsChanged) }
+        var addr = try Self.socketAddress(for: path)
+        // Only the workspace's owner binds here, and this server holds the ownership lock: any
+        // socket file left is a dead host's.
+        unlink(path)
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw SessionServerError.system(call: "socket", errno: errno) }
+        let bound = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        guard bound == 0, chmod(path, 0o600) == 0, listen(fd, SOMAXCONN) == 0 else {
+            let err = errno
+            close(fd)
+            unlink(path)
+            throw SessionServerError.system(call: "bind", errno: err)
+        }
+        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
+        _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
+        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+        source.setEventHandler { [weak self] in self?.acceptLocalPending(on: fd) }
+        source.setCancelHandler { close(fd) }
+        localAcceptSource = source
+        localSocketPath = path
+        source.activate()
+        ShepherdLog.info("local listener on \(path)")
     }
 
     /// Drops the app's connections over `host.sock` and keeps listening, as a broken link does

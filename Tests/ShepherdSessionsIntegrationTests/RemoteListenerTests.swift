@@ -377,6 +377,28 @@ struct RemoteListenerTests {
         #expect((try? RawRemote(port: r.port)) == nil)
     }
 
+    /// A stop returns only once the port is closed, however long that takes: the exit deadline belongs to `stop` alone, and
+    /// passing it does not count as closed. A descriptor that closes late is a stopped listener whose record stays open here.
+    @Test func stopRemoteListenerWaitsForTheCloseBeyondTheExitDeadline() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let server = r.server
+        server.stopRemoteListener()
+        let late = SessionServer.ListenerClose()
+        server.queue.sync { server.remoteListenerClosing = late }
+
+        server.remoteListenerExitDeadline = .milliseconds(200)
+        #expect(!server.awaitRemoteListenerClosed(within: server.remoteListenerExitDeadline), "the exit deadline passes without a close")
+        let returned = Locked(false)
+        let stopping = Task.detached { server.stopRemoteListener(); returned.withValue { $0 = true } }
+        try await Task.sleep(for: .seconds(1))
+        #expect(!returned.current, "the stop returned before the port closed")
+
+        server.queue.sync { server.remoteListenerClosing = nil; late.markClosed() }
+        await stopping.value
+        #expect(returned.current)
+    }
+
     /// A non-blocking connect to the listener on the loopback address.
     private static func connectInBackground(port: UInt16) throws -> Int32 {
         let fd = socket(AF_INET, SOCK_STREAM, 0)

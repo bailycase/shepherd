@@ -141,7 +141,7 @@ public enum SessionHost {
         if let threads { server.serveThreads(threads(server)) }
         // The app's way in (`host.sock`), once its threads are served.
         do {
-            try server.startLocalListener(path: socket)
+            try await server.listenLocal(path: socket)
         } catch {
             ShepherdLog.error("host has no local socket: \(error)")
         }
