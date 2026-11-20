@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import Testing
 
 /// Helpers for pushing values through the real NDJSON framing.
 enum Wire {
@@ -15,7 +16,16 @@ enum Wire {
     }
 
     /// Encode as one NDJSON line and decode the payload back.
-    static func roundTrip<T: Codable>(_ value: T) throws -> T {
+    static func roundTrip<T: Codable>(_ value: T, source: SourceLocation = #_sourceLocation) throws -> T {
+        // Check the value, not the spelling of the call: parameterized arrays and local
+        // variables must be pinned too. The golden test checks the exact bytes separately.
+        if let request = value as? RemoteRequest {
+            let pinned = RemoteRequestTests.wireSamples.contains(request) || RemoteRequestTests.roundTripOnly.contains(request)
+            try #require(pinned, "c-wire: add RemoteRequest.\(caseName(request)) to the shared wireSamples", sourceLocation: source)
+        } else if let reply = value as? RemoteReply {
+            let pinned = RemoteReplyTests.wireSamples.contains(reply) || RemoteReplyTests.roundTripOnly.contains(reply)
+            try #require(pinned, "c-wire: add RemoteReply.\(caseName(reply)) to the shared wireSamples", sourceLocation: source)
+        }
         let line = try NDJSON.encode(value)
         guard line.last == 0x0A else { throw CocoaError(.coderInvalidValue) }
         return try NDJSON.decode(T.self, from: line.dropLast())

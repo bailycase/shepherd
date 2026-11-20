@@ -5,47 +5,56 @@ import ShepherdProtocol
 
 @Suite("Project executor wire contracts")
 struct ProjectExecutionWireTests {
-    static let key = Wire.projectKey
-    static let assignment = ProjectExecutionAssignment(key: key, taskID: ProjectTaskID(rawValue: "task"),
-                                                       reservedWorkerID: AgentID(rawValue: "worker"),
-                                                       executorSpaceID: SpaceID(rawValue: "executor-space"),
+    // The state validation tests require canonical UUIDs for all four assignment IDs.
+    static let key = ProjectExecutionKey(ownerID: Wire.projectKey.ownerID,
+                                         projectID: ProjectID(rawValue: "00000000-0000-0000-0000-000000000003"),
+                                         operationID: Wire.projectKey.operationID)
+    static let assignment = ProjectExecutionAssignment(key: key, taskID: ProjectTaskID(rawValue: "00000000-0000-0000-0000-000000000004"),
+                                                       reservedWorkerID: AgentID(rawValue: "00000000-0000-0000-0000-000000000005"),
+                                                       executorSpaceID: SpaceID(rawValue: "00000000-0000-0000-0000-000000000006"),
                                                        title: "Task", prompt: "Do assigned work")
-    @Test(arguments: [ProjectExecutionRequest.execute(assignment), .snapshot(key: key, watch: true),
-                      .worker(key: key), .result(key: key, offset: 8190, sha256: "exact-content-digest"),
-                      .snapshot(key: key, watch: false), .cancel(key: key), .pause(key: key), .resume(key: key),
-                      .answer(key: key, request: .answer(expectedSessionID: "session", generation: "generation", operationID: UUID(), dialogID: "dialog", answer: .confirm(value: true)))])
-    func everyExecutionActionRoundTrips(_ command: ProjectExecutionRequest) throws {
-        let request = RemoteRequest.projectExecution(id: 42, request: command)
+    private static let commands: [ProjectExecutionRequest] = [
+        .execute(assignment), .snapshot(key: key, watch: true),
+        .worker(key: key), .result(key: key, offset: 8190, sha256: "exact-content-digest"),
+        .snapshot(key: key, watch: false), .cancel(key: key), .pause(key: key), .resume(key: key),
+        .answer(key: key, request: .answer(expectedSessionID: "session", generation: "generation", operationID: key.operationID, dialogID: "dialog", answer: .confirm(value: true))),
+    ]
+    static let wireRequests = commands.map { RemoteRequest.projectExecution(id: 42, request: $0) }
+
+    private static let admittedAt = 1_790_000_000.0
+    private static let reserved = ProjectExecutionReceipt(key: key, assignment: assignment, phase: .sendReserved, admittedAt: admittedAt)
+    private static let settled = ProjectExecutionReceipt(key: key, assignment: assignment, phase: .settled, admittedAt: admittedAt)
+    private static let unknown = ProjectExecutionReceipt(key: key, assignment: assignment, phase: .unknown, admittedAt: admittedAt)
+    private static let receiptReply = RemoteReply.projectExecution(id: 43, result: .init(receipt: reserved))
+    private static let change = RemoteReply.projectExecutionChanged(key: key, revision: 3)
+    private static let pageReply = RemoteReply.projectExecution(id: 44, result: .init(
+        receipt: settled, resultPage: .init(availability: .unavailable, reason: "legacy capture has no exact complete result")))
+    private static let proofReply = RemoteReply.projectExecution(id: 7, result: .init(receipt: unknown, workerTakenOver: true))
+    static let wireReplies = [receiptReply, change, pageReply, proofReply]
+
+    @Test(arguments: wireRequests)
+    func everyExecutionActionRoundTrips(_ request: RemoteRequest) throws {
         #expect(try Wire.roundTrip(request) == request)
     }
     @Test func receiptAndChangeHintRoundTripAndOldWorkspaceDefaultsEmpty() throws {
-        let receipt = ProjectExecutionReceipt(key: Self.key, assignment: Self.assignment, phase: .sendReserved)
-        let reply = RemoteReply.projectExecution(id: 43, result: .init(receipt: receipt))
-        #expect(try Wire.roundTrip(reply) == reply)
-        let push = RemoteReply.projectExecutionChanged(key: Self.key, revision: 3)
-        #expect(try Wire.roundTrip(push) == push)
+        #expect(try Wire.roundTrip(Self.receiptReply) == Self.receiptReply)
+        #expect(try Wire.roundTrip(Self.change) == Self.change)
         let state = try JSONDecoder().decode(ShepherdState.self, from: Data(#"{"spaces":[],"tabs":[],"agents":[]}"#.utf8))
         #expect(state.projectExecutions.isEmpty)
-        let saved = ShepherdState(projectExecutions: [receipt])
+        let saved = ShepherdState(projectExecutions: [Self.reserved])
         try saved.validate()
         #expect(try Wire.roundTrip(saved) == saved)
         #expect(saved.withoutProjectExecutions.projectExecutions.isEmpty)
     }
     @Test func completeResultPagingIsExplicitAndOldPeersHaveNoResultPage() throws {
-        let receipt = ProjectExecutionReceipt(key: Self.key, assignment: Self.assignment, phase: .settled)
-        let page = ProjectResultPage(availability: .unavailable, reason: "legacy capture has no exact complete result")
-        let result = ProjectExecutionResult(receipt: receipt, resultPage: page)
-        #expect(try Wire.roundTrip(RemoteReply.projectExecution(id: 44, result: result)) == .projectExecution(id: 44, result: result))
-        let legacy = try JSONDecoder().decode(ProjectExecutionResult.self, from: JSONEncoder().encode(ProjectExecutionResult(receipt: receipt)))
+        #expect(try Wire.roundTrip(Self.pageReply) == Self.pageReply)
+        let legacy = try JSONDecoder().decode(ProjectExecutionResult.self, from: JSONEncoder().encode(ProjectExecutionResult(receipt: Self.settled)))
         #expect(legacy.resultPage == nil && RemoteProtocol.capabilities.contains(RemoteProtocol.projectResultCapability))
     }
 
     @Test func manualTakeoverProofRoundTripsButOlderExecutorsSupplyNoProof() throws {
-        let receipt = ProjectExecutionReceipt(key: Self.key, assignment: Self.assignment, phase: .unknown)
-        let proven = ProjectExecutionResult(receipt: receipt, workerTakenOver: true)
-        #expect(try Wire.roundTrip(RemoteReply.projectExecution(id: 7, result: proven))
-            == .projectExecution(id: 7, result: proven))
-        let old = try JSONDecoder().decode(ProjectExecutionResult.self, from: JSONEncoder().encode(ProjectExecutionResult(receipt: receipt)))
+        #expect(try Wire.roundTrip(Self.proofReply) == Self.proofReply)
+        let old = try JSONDecoder().decode(ProjectExecutionResult.self, from: JSONEncoder().encode(ProjectExecutionResult(receipt: Self.unknown)))
         #expect(old.workerTakenOver == nil)
     }
 

@@ -782,14 +782,18 @@ struct RemoteRequestTests {
         id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64),
         preferences: RemotePushPreferences(topics: [.questions, .failures], awayOnly: false)))
 
+    private static let minimalCreateAgent = RemoteRequest.createAgent(id: 7, spaceID: S.space, cwd: nil, model: nil, thinking: nil, initialPrompt: nil)
+
     static let wireSamples = samples + additionalWireSamples
 
-    // Keep the multi-member Set cases in the round-trip test only.
-    @Test(arguments: wireSamples + [
+    // Exact NDJSON cannot pin the order of these multi-member Sets.
+    static let roundTripOnly: [RemoteRequest] = [
         pushRegistrationWithMultipleTopics,
         .suggestions(id: 1, request: .configure(S.suggestionSettings)),
         .suggestions(id: 1, request: .configure(SuggestedInstructionsSettings())),
-    ])
+    ]
+
+    @Test(arguments: wireSamples + roundTripOnly)
     func roundTripsThroughNDJSON(_ request: RemoteRequest) throws {
         #expect(try Wire.roundTrip(request) == request)
     }
@@ -819,7 +823,12 @@ struct RemoteRequestTests {
         samples += S.suggestionsRequests.map { .suggestions(id: 1, request: $0) }
         samples += S.skillsRequests.map { .skills(id: 1, request: $0) }
         samples += S.hooksRequests.map { .hooks(id: 1, request: $0) }
+        samples += ForgeSamples.wireRequests + RemoteDesignSamples.wireRequests
+        samples += ProjectsSamples.wireRequests + LogicalProjectsSamples.wireRequests
+        samples += BrowserTunnelTests.frames.map(RemoteRequest.tunnel)
+        samples += ProjectExecutionWireTests.wireRequests + ProjectRuntimeWireTests.wireRequests
         samples += [
+            minimalCreateAgent,
             .hostSettings(id: 2, request: .fetch),
             .upload(id: 1, action: .begin(sessionID: S.session, name: "a.png", size: 3)),
             .upload(id: 1, action: .chunk(uploadID: S.op, data: Data([0, 1, 2]))),
@@ -870,7 +879,7 @@ struct RemoteRequestTests {
     }
 
     @Test func aMinimalCreateAgentOmitsEveryOptional() throws {
-        let request = RemoteRequest.createAgent(id: 7, spaceID: S.space, cwd: nil, model: nil, thinking: nil, initialPrompt: nil)
+        let request = Self.minimalCreateAgent
         #expect(Set(try Wire.object(request).keys) == ["type", "id", "spaceID"])
         #expect(try Wire.roundTrip(request) == request)
     }
@@ -993,7 +1002,7 @@ struct RemoteReplyTests {
         .hostInventory(id: 29, result: .mcp(S.mcpInventory)),
         .hostConfig(id: 29, result: .mcp(S.mcpInventory)),
         .skills(id: 30, result: .skills(S.skills)),
-        .hooks(id: 30, result: .hooks(S.hooks)),
+        hooksSnapshot,
         .apps(id: 35, result: RemoteAppsResult(space: "acme-web", apps: [
             RemoteApp(app: AppDefinition(name: "Web app", command: "npm run dev", folder: "apps/web", opens: .browser,
                                          address: "http://localhost:3000", quickAction: true),
@@ -1065,6 +1074,8 @@ struct RemoteReplyTests {
         #expect(Set(Self.samples.map(Self.caseName)).count == Self.caseCount)
     }
 
+    private static let hooksSnapshot = RemoteReply.hooks(id: 30, result: .hooks(S.hooks))
+
     static let suggestionsWithMultipleFiles: RemoteReply = {
         var snapshot = S.suggestions
         snapshot.settings = S.suggestionSettings
@@ -1073,7 +1084,10 @@ struct RemoteReplyTests {
 
     static let wireSamples = samples + additionalWireSamples
 
-    @Test(arguments: wireSamples + [suggestionsWithMultipleFiles])
+    // Exact NDJSON cannot pin the order of this multi-member Set.
+    static let roundTripOnly = [suggestionsWithMultipleFiles]
+
+    @Test(arguments: wireSamples + roundTripOnly)
     func roundTripsThroughNDJSON(_ reply: RemoteReply) throws {
         #expect(try Wire.roundTrip(reply) == reply)
     }
@@ -1091,6 +1105,13 @@ struct RemoteReplyTests {
         samples += S.skillsResults.map { .skills(id: 1, result: $0) }
         samples += S.inventoryResults.map { .hostInventory(id: 1, result: $0) }
         samples += S.configResults.map { .hostConfig(id: 1, result: $0) }
+        samples += ForgeSamples.wireReplies + RemoteDesignSamples.wireReplies + RemoteDesignSamples.pushes
+        samples += ProjectsSamples.wireReplies + LogicalProjectsSamples.wireReplies
+        samples += BrowserTunnelTests.frames.map(RemoteReply.tunnel)
+        samples += BrowserDriveTests.pushes.map(RemoteReply.browserDrive)
+        samples += NativeProjectActionWireTests.wireReplies
+        samples += ProjectExecutionWireTests.wireReplies + ProjectRuntimeWireTests.wireReplies
+        samples += [NativeThreadWireTests.startingRefusal]
         samples += [
             .uploadResult(id: 1, result: .ready(uploadID: S.op)),
             .uploadResult(id: 1, result: .complete(path: "/p")),
@@ -1110,7 +1131,7 @@ struct RemoteReplyTests {
 
     /// A handler keeps its keys in file order on the wire, so a remote edit leaves unknown keys where they were.
     @Test func aHookHandlerKeepsItsKeyOrderOnTheWire() throws {
-        guard case .hooks(_, .hooks(let snapshot)) = try Wire.roundTrip(RemoteReply.hooks(id: 1, result: .hooks(S.hooks))) else {
+        guard case .hooks(_, .hooks(let snapshot)) = try Wire.roundTrip(Self.hooksSnapshot) else {
             Issue.record("expected hooks"); return
         }
         #expect(snapshot.entries[0].handler.raw.objectValue?.map(\.key) == ["type", "command", "timeout", "zeta", "alpha"])
