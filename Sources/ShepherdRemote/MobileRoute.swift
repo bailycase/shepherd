@@ -75,6 +75,7 @@ public enum MobileRoute: Hashable, Codable, Sendable {
         case .padDesign(let route): route.host
         case .projects(let route): route.host
         case .forge(let route): route.host
+        case .settings(.spaceConfiguration(let host, _, _, _)): host
         case .home, .newThread, .search, .settings: nil
         }
     }
@@ -307,9 +308,10 @@ public enum SettingsRoute: Hashable, Codable, Sendable {
     /// The fleet's subagent profiles; one profile's Markdown. Opened from Agents.
     case subagents
     case subagent(String)
-    /// A host's spaces by folder, read-only; one space's configuration files and approval.
+    /// A host's spaces by folder. Older saved routes did not record the host.
     case spaces
     case space(String)
+    case spaceConfiguration(host: UUID, directory: String, name: String, section: SpaceConfigurationSection? = nil)
     /// The root instructions every session Shepherd starts reads.
     case instructions
     /// One root instruction file in the editor.
@@ -334,6 +336,11 @@ public enum SettingsRoute: Hashable, Codable, Sendable {
     case diagnostics
     /// A suggested line waiting on a host: edit it, choose its file, add it or dismiss it.
     case suggestion(UUID)
+}
+
+public enum SpaceConfigurationSection: String, Identifiable, Codable, Sendable {
+    case skills = "Skills", extensions = "Extensions", prompts = "Slash commands", agents = "Subagents", mcp = "MCP servers"
+    public var id: Self { self }
 }
 
 /// Subagents' screens (subagents track): a thread's runs, and one run's transcript.
