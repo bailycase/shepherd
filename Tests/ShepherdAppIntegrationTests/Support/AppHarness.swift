@@ -117,10 +117,10 @@ final class AppHarness {
         await vm?.persistenceTail?.value
     }
 
-    func stop() {
+    func stop(keepFiles: Bool = false) {
         for connection in remoteHosts.allConnections { remoteHosts.removeHost(id: connection.id) }
         vm = nil
-        scratch.stop()
+        scratch.stop(keepFiles: keepFiles)
     }
 }
 
