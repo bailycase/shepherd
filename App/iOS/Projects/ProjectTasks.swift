@@ -10,68 +10,45 @@ struct ProjectTaskList: View {
     let ref: LogicalProjectRef
     @Environment(MobileProjects.self) private var projects
     @State private var query = ""
-    @State private var history: [HistoryItem]?
-
-    private struct HistoryInput: Equatable {
-        let rows: [ProjectTaskRow]
-        let query: String
-
-        func items() -> [HistoryItem] {
-            ProjectTaskHistory(rows: rows, query: query).sections.flatMap { section in
-                [.header(section.group, count: section.rows.count)] + section.rows.map { row in
-                    .row(row, first: row.id == section.rows.first?.id, last: row.id == section.rows.last?.id)
-                }
-            }
-        }
-    }
-
-    /// Flatten the cards into the scroll view's lazy stack, keeping each row's own card segment.
-    private enum HistoryItem: Identifiable, Equatable {
-        case header(ProjectTaskGroup, count: Int)
-        case row(ProjectTaskRow, first: Bool, last: Bool)
-
-        enum ID: Hashable {
-            case header(ProjectTaskGroup)
-            case row(ProjectTaskID)
-        }
-
-        var id: ID {
-            switch self {
-            case .header(let group, _): .header(group)
-            case .row(let row, _, _): .row(row.id)
-            }
-        }
-    }
+    @State private var history: (input: ProjectHistoryInput, items: [ProjectHistoryInput.Item])?
 
     var body: some View {
         let page = projects.pages[ref]
-        let input = HistoryInput(rows: page?.rows ?? [], query: query)
+        let input = ProjectHistoryInput(rows: page?.rows ?? [], query: query)
+        let items = history?.input == input ? history?.items : nil
+        let status = page.map { Text($0.status).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary) }
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                if let page {
-                    Text(page.status).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
-                }
-                if input.rows.isEmpty {
-                    Text("Threads the project starts show here, grouped by what they need from you.")
-                        .font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, page == nil ? 0 : MobileLayout.sectionSpacing)
-                } else if let history {
-                    if history.isEmpty {
-                        Text("No thread matches.").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
-                            .padding(.top, MobileLayout.sectionSpacing)
+            Group {
+                if input.rows.isEmpty || items?.isEmpty == true {
+                    // Let the scroll view center the text block at its natural width.
+                    VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
+                        status
+                        if input.rows.isEmpty {
+                            Text("Threads the project starts show here, grouped by what they need from you.")
+                                .font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text("No thread matches.").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
+                        }
                     }
-                    ForEach(history) { item in
-                        VStack(spacing: 0) {
-                            switch item {
-                            case .header(let group, let count):
-                                SHListHeader(group.rawValue, attention: group == .waiting, count: count)
-                                    .padding(.top, MobileLayout.sectionSpacing)
-                            case .row(let row, let first, let last):
-                                SHListCardSegment(first: first, last: last) {
-                                    ProjectTaskHistoryRow(ref: ref, row: row).equatable()
+                } else {
+                    let now = Date()
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        status
+                        ForEach(items ?? []) { item in
+                            VStack(spacing: 0) {
+                                switch item {
+                                case .header(let group, let count):
+                                    SHListHeader(group.rawValue, attention: group == .waiting, count: count)
+                                        .padding(.top, MobileLayout.sectionSpacing)
+                                case .row(let row, let first, let last):
+                                    SHListCardSegment(first: first, last: last) {
+                                        ProjectTaskHistoryRow(ref: ref, row: row,
+                                                              age: row.settledAt.map { ProjectAge.text($0, now: now) })
+                                            .equatable()
+                                    }
+                                    .padding(.top, first ? MobileLayout.headerSpacing : 0)
                                 }
-                                .padding(.top, first ? MobileLayout.headerSpacing : 0)
                             }
                         }
                     }
@@ -81,8 +58,7 @@ struct ProjectTaskList: View {
             .padding(.vertical, MobileLayout.sectionSpacing)
         }
         .onChange(of: input, initial: true) { _, input in
-            let next = input.items()
-            if history != next { history = next }
+            history = (input, input.items())
         }
         .searchable(text: $query, prompt: "Search threads")
         .refreshable { await projects.model.refresh(ref.home) }
@@ -93,16 +69,17 @@ struct ProjectTaskList: View {
 private struct ProjectTaskHistoryRow: View, Equatable {
     let ref: LogicalProjectRef
     let row: ProjectTaskRow
+    let age: String?
     @Environment(MobileNavigator.self) private var navigator
 
-    static func == (a: Self, b: Self) -> Bool { a.ref == b.ref && a.row == b.row }
+    static func == (a: Self, b: Self) -> Bool { a.ref == b.ref && a.row == b.row && a.age == b.age }
 
     var body: some View {
         let _ = SHRenderProbe.tick("ios.projectTask.row")
         Button { navigator.open(.projects(.task(ref, row.id))) } label: {
             SHListRow(row.title, subtitle: row.line, subtitleMono: false,
                       leading: .state(row.mobileState),
-                      trailing: row.settledAt.map { .meta(ProjectAge.text($0)) } ?? .none)
+                      trailing: age.map { .meta($0) } ?? .none)
         }
         .buttonStyle(.shRow(radius: 0))
     }

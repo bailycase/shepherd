@@ -58,7 +58,7 @@ final class AutomationsStore {
     }
 
     var selection: AutomationKey? {
-        if let chosen, details[chosen] != nil { return chosen }
+        if let chosen, model.row(chosen) != nil { return chosen }
         return model.rows.first?.key
     }
 
