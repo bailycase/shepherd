@@ -56,7 +56,9 @@ struct SessionHostTests {
     }
 
     /// Shutdown waits on the server queue (and the port); the main queue, which received the signal, keeps answering meanwhile.
-    /// Here the queue is parked and only main can release it: a shutdown that ran on main would never get that far.
+    /// Here the queue is parked and only main can release it: a shutdown that ran on main would never get that far. Main is
+    /// asked to release it only once shutdown has begun (it has told `BoundedCommand` to stop, which refuses new commands from
+    /// then on; the wait releases main on that failure alone), so a signal that arrives late cannot let an inline stop pass by finding the queue already free.
     @Test func shutdownKeepsTheMainQueueAnsweringWhileItWaitsOnTheServerQueue() async throws {
         let dir = try makeScratchDirectory("host")
         let socket = dir.appendingPathComponent("s.sock").path
@@ -66,8 +68,19 @@ struct SessionHostTests {
             let release = DispatchSemaphore(value: 0)
             SessionHost.run(server, respawn: Self.defaults, ready: {
                 server.queue.async { release.wait() }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { release.signal() }
                 DispatchQueue.global().asyncAfter(deadline: .now() + 10) { _exit(EXIT_FAILURE) }
+                // Only `.terminating` means shutdown entered stop; any other error (a spawn failure) fails the run.
+                Task.detached {
+                    do {
+                        try await eventually("shutdown to enter stop", timeout: .seconds(5)) {
+                            do { _ = try BoundedCommand.run(["/usr/bin/true"], timeout: 5); return false }
+                            catch BoundedCommand.Failure.terminating { return true }
+                        }
+                    } catch {
+                        _exit(EXIT_FAILURE)
+                    }
+                    DispatchQueue.main.async { release.signal() }
+                }
                 kill(getpid(), SIGTERM)
             })
         }

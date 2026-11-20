@@ -1,6 +1,91 @@
 import Foundation
 import ShepherdProtocol
 
+/// A button of the composer's Can't start banner.
+public enum NativeStartAction: Hashable, Sendable {
+    /// Starts pi again, looking for the conversation it was resuming.
+    case retry
+    /// Starts pi again without looking for it (`resumedAsNew`).
+    case startNewConversation
+    /// The Mac's own app asks where the thread's folder went.
+    case locateFolder
+}
+
+/// A stopped agent's Retry from a phone or tablet: what the host must offer, and the one way to send it.
+public enum NativeStartRestart {
+    /// Whether a host takes `restartPi` from this client (`RemoteHostClient.agentAction` needs both).
+    public static func isOffered(by capabilities: some Collection<String>) -> Bool {
+        capabilities.contains(RemoteProtocol.agentActionsCapability) && capabilities.contains(RemoteProtocol.agentRestartCapability)
+    }
+
+    /// The thread reads as restarting at once (`NativeStartRestartState`) while the problem stays, and `send` asks the host.
+    /// A host that refuses or can't be reached leaves its reason beside the problem, which is fetched again now.
+    /// Sends only what the banner drawn from this same store, `offered` and `connected` offers (`NativeStartBanner.actions`).
+    @MainActor
+    public static func perform(_ action: NativeStartAction, store: NativeThreadStore, offered: Bool, connected: Bool,
+                               send: (RemoteAgentAction) async throws -> Void) async {
+        guard action != .locateFolder,
+              NativeStartBanner(store: store, offered: offered, connected: connected, host: "")?.actions.contains(action) == true
+        else { return }
+        store.restartRequested()
+        do {
+            try await send(.restartPi(newConversation: action == .startNewConversation))
+            store.restartAccepted()
+        } catch {
+            store.restartRefused("Couldn’t start the agent: \(error.localizedDescription)")
+        }
+        await store.refresh(fresh: true)
+    }
+}
+
+/// Where a phone's Retry stands, kept by the thread's store so it outlives the banner's views.
+public enum NativeStartRestartState: Equatable, Sendable {
+    /// The host is being asked.
+    case asking
+    /// The host took it: pi is starting, until it serves or stops again.
+    case starting
+    /// The host refused or couldn't be reached; the problem it didn't fix is still there.
+    case failed(String)
+}
+
+/// The Can't start banner of a phone or tablet: what it says and offers, from the thread's problem and restart, whether the
+/// host takes `restartPi` (`NativeStartRestart.isOffered`) and whether it is `live`: connected now and the thread still
+/// attached to it (a suspended thread keeps its problem but can't ask the host).
+public struct NativeStartBanner: Equatable, Sendable {
+    public var title: String
+    public var message: String
+    public var actions: [NativeStartAction]
+    /// A restart is under way: progress instead of the problem and its buttons.
+    public var inProgress: Bool
+
+    /// The one eligibility check: the banner is drawn from it, and a tap is sent only if its buttons include the action.
+    @MainActor
+    public init?(store: NativeThreadStore, offered: Bool, connected: Bool, host: String) {
+        self.init(problem: store.startProblem, restart: store.startRestart, offered: offered, live: connected && store.isLive, host: host)
+    }
+
+    public init?(problem: NativeStartProblem?, restart: NativeStartRestartState?, offered: Bool, live: Bool, host: String) {
+        switch restart {
+        case .asking?, .starting?:
+            self.init(title: "Starting the agent again…", message: "", actions: [], inProgress: true)
+        case let restart:
+            guard let problem else { return nil }
+            // A phone has no sign-in card: the Mac shows it instead of Retry (`hidesNotSignedIn`), so the advice says to sign in on the host.
+            let retryHere = offered && live && problem.kind != .notSignedIn
+            var message = problem.message(host: host, retryHere: retryHere)
+            if case .failed(let why)? = restart { message += "\n\n" + why }
+            self.init(title: problem.title, message: message, actions: problem.actions(canRestart: retryHere, canLocateFolder: false), inProgress: false)
+        }
+    }
+
+    private init(title: String, message: String, actions: [NativeStartAction], inProgress: Bool) {
+        self.title = title
+        self.message = message
+        self.actions = actions
+        self.inProgress = inProgress
+    }
+}
+
 /// What the composer's Can't start banner says.
 extension NativeStartProblem {
     public var title: String {
@@ -21,10 +106,14 @@ extension NativeStartProblem {
         exitCode.map { "code \($0)" } ?? signal.map { "signal \($0)" }
     }
 
-    /// What to do about it, then Retry: on this Mac, or on `host`, where a remote viewer's agent
-    /// runs (its banner has no Retry).
-    public func advice(host: String? = nil) -> String {
-        let retry = host.map { "Retry on \($0)" } ?? "Retry"
+    /// What to do about it, then Retry. `host` names the Mac where the agent runs when this
+    /// client is not that Mac's own app. Its banner has a Retry only while `retryHere` (a phone or
+    /// tablet whose host takes `restartPi`, `NativeStartRestart.isOffered`); otherwise the advice
+    /// sends the person to the host.
+    public func advice(host: String? = nil, retryHere: Bool? = nil) -> String {
+        let here = retryHere ?? (host == nil)
+        let retry = here ? "Retry" : "Retry on \(host ?? "the host")"
+        let retryAgain = here ? "Retry to start it again." : "Retry on \(host ?? "the host") to start it again."
         return switch kind {
         case .notSignedIn: "Sign in to a provider for Shepherd's pi (Settings ▸ Pi), then \(retry)."
         case .extensionFailed: "Fix or remove it, then \(retry)."
@@ -32,17 +121,30 @@ extension NativeStartProblem {
         case .homeUnsafe: "Its pi home and your own pi overlap. Move one of them, then \(retry)."
         case .resumedAsNew:
             "It would have started a new, empty one, so Shepherd stopped it. The conversation's file is untouched."
-                + (host.map { " Retry on \($0)." } ?? "")
+                + (here ? "" : " Retry on \(host ?? "the host").")
         case .folderMissing:
             "It was moved, renamed or deleted. Locate Folder… moves this thread and its conversation to where it is now"
                 + (host.map { ", on \($0)." } ?? ".")
-        case .exited: host.map { "Retry on \($0) to start it again." } ?? "Retry to start it again."
-        case .stopped: (host.map { "Retry on \($0) to start it again." } ?? "Retry to start it again.") + " Its conversation is saved."
+        case .exited: retryAgain
+        case .stopped: retryAgain + " Its conversation is saved."
+        }
+    }
+
+    /// The buttons the banner offers, in order, wherever it is drawn. `canRestart`: the client can
+    /// ask the agent's host to start pi again (the Mac's own app always can; a phone or tablet
+    /// when the host takes `restartPi`). `canLocateFolder`: the client has Locate Folder…, which
+    /// only the Mac's app does; a missing folder is fixed on the host, never retried.
+    public func actions(canRestart: Bool, canLocateFolder: Bool) -> [NativeStartAction] {
+        guard canRestart else { return [] }
+        switch kind {
+        case .folderMissing: return canLocateFolder ? [.locateFolder] : []
+        case .resumedAsNew: return [.startNewConversation, .retry]
+        default: return [.retry]
         }
     }
 
     /// The banner's message: the advice, then pi's own lines.
-    public func message(host: String? = nil) -> String {
-        ([advice(host: host)] + (lines.isEmpty ? [] : [lines.joined(separator: "\n")])).joined(separator: "\n\n")
+    public func message(host: String? = nil, retryHere: Bool? = nil) -> String {
+        ([advice(host: host, retryHere: retryHere)] + (lines.isEmpty ? [] : [lines.joined(separator: "\n")])).joined(separator: "\n\n")
     }
 }
