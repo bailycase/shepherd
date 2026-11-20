@@ -387,16 +387,21 @@ struct RemoteListenerTests {
         let late = SessionServer.ListenerClose()
         server.queue.sync { server.remoteListenerClosing = late }
 
+        // The stop is under way once its waiter is registered; only then does the deadline start to matter.
         server.remoteListenerExitDeadline = .milliseconds(200)
-        #expect(!server.awaitRemoteListenerClosed(within: server.remoteListenerExitDeadline), "the exit deadline passes without a close")
-        let returned = Locked(false)
-        let stopping = Task.detached { server.stopRemoteListener(); returned.withValue { $0 = true } }
-        try await Task.sleep(for: .seconds(1))
-        #expect(!returned.current, "the stop returned before the port closed")
+        let closed = Locked(false)
+        let returnedAfterClose = Locked<Bool?>(nil)
+        let stopping = Task.detached { server.stopRemoteListener(); returnedAfterClose.withValue { $0 = closed.current } }
+        try await eventually("the stop to wait for the close") { server.queue.sync { late.waiters.count } == 1 }
 
-        server.queue.sync { server.remoteListenerClosing = nil; late.markClosed() }
+        // This waiter registers after the stop's and gives up later than any deadline the stop could have started, so
+        // by the time it does, a stop that honoured the deadline has already returned.
+        #expect(!server.awaitRemoteListenerClosed(within: .milliseconds(400)), "the exit deadline passes without a close")
+        #expect(returnedAfterClose.current == nil, "the stop returned before the port closed")
+
+        server.queue.sync { server.remoteListenerClosing = nil; closed.withValue { $0 = true }; late.markClosed() }
         await stopping.value
-        #expect(returned.current)
+        #expect(returnedAfterClose.current == true, "the stop returned only after the port closed")
     }
 
     /// A non-blocking connect to the listener on the loopback address.

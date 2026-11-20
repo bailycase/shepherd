@@ -56,7 +56,9 @@ struct SessionHostTests {
     }
 
     /// Shutdown waits on the server queue (and the port); the main queue, which received the signal, keeps answering meanwhile.
-    /// Here the queue is parked and only main can release it: a shutdown that ran on main would never get that far.
+    /// Here the queue is parked and only main can release it: a shutdown that ran on main would never get that far. Main is
+    /// asked to release it only once shutdown has begun (it has told `BoundedCommand` to stop, which refuses new commands from
+    /// then on), so a signal that arrives late cannot let an inline stop pass by finding the queue already free.
     @Test func shutdownKeepsTheMainQueueAnsweringWhileItWaitsOnTheServerQueue() async throws {
         let dir = try makeScratchDirectory("host")
         let socket = dir.appendingPathComponent("s.sock").path
@@ -66,8 +68,11 @@ struct SessionHostTests {
             let release = DispatchSemaphore(value: 0)
             SessionHost.run(server, respawn: Self.defaults, ready: {
                 server.queue.async { release.wait() }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { release.signal() }
                 DispatchQueue.global().asyncAfter(deadline: .now() + 10) { _exit(EXIT_FAILURE) }
+                DispatchQueue.global().async {
+                    while (try? BoundedCommand.run(["/usr/bin/true"], timeout: 5)) != nil { usleep(5_000) }
+                    DispatchQueue.main.async { release.signal() }
+                }
                 kill(getpid(), SIGTERM)
             })
         }
