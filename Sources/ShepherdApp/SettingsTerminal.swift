@@ -4,7 +4,7 @@ import ShepherdUI
 
 // MARK: Terminal
 
-/// Settings ▸ Terminal: the terminals opened under a thread (⌘D, or by an agent).
+/// Settings ▸ Appearance ▸ Font and Shell: the terminals opened under a thread (⌘D, or by an agent).
 /// Agents are native threads and never use these.
 struct TerminalSettings: View {
     var vm: ShepherdViewModel
@@ -14,40 +14,33 @@ struct TerminalSettings: View {
     @State private var shells: [String] = []
 
     var body: some View {
-        SettingsPage(title: "Terminal", explanation: "Terminals under a thread: their font and which shell they run.") {
-            SettingsGroup(title: "Font", footnote: "Font changes apply to open terminals in place; running processes are untouched.") {
-                SettingsRow(title: "Font family",
-                            subtitle: "Fixed-pitch families installed on this Mac. Ghostty falls back if a family can't be loaded.") {
-                    SHPopupMenu(settings.terminalFontFamily == AppSettings.systemFontFamily ? "System font" : settings.terminalFontFamily,
-                                minWidth: AppLayout.settingsPopupWidth) {
-                        Button("System font") { settings.terminalFontFamily = AppSettings.systemFontFamily }
-                        Divider()
-                        ForEach(families, id: \.self) { family in
-                            Button(family) { settings.terminalFontFamily = family }
-                        }
+        SettingsGroup(title: "Terminal", footnote: "Font changes apply to open terminals; a new shell to terminals opened after.") {
+            SettingsRow(title: "Font") {
+                SHPopupMenu(settings.terminalFontFamily == AppSettings.systemFontFamily ? "System font" : settings.terminalFontFamily,
+                            minWidth: AppLayout.settingsPopupWidth) {
+                    Button("System font") { settings.terminalFontFamily = AppSettings.systemFontFamily }
+                    Divider()
+                    ForEach(families, id: \.self) { family in
+                        Button(family) { settings.terminalFontFamily = family }
                     }
-                    .accessibilityLabel("Font family")
-                    .onChange(of: settings.terminalFontFamily) { vm.rebuildSurfaces() }
                 }
-                SettingsRow(title: "Font size") {
-                    SHValueSlider("Font size", value: $settings.terminalFontSize, in: AppSettings.fontSizeRange, step: 0.5, unit: "points") {
-                        String(format: "%.1f", $0)
-                    }
-                    .onChange(of: settings.terminalFontSize) { vm.rebuildSurfaces() }
-                }
-                SettingsRow(title: "Preview", subtitle: "Updates as you change the family and size.") {
-                    FontPreview(family: TerminalFontCatalog.resolved(settings.terminalFontFamily), size: settings.terminalFontSize)
-                }
+                .accessibilityLabel("Font family")
+                .onChange(of: settings.terminalFontFamily) { vm.rebuildSurfaces() }
             }
-            SettingsGroup(title: "Shell", footnote: "A new shell applies to terminals opened afterwards.") {
-                SettingsRow(title: "Shell", subtitle: Self.shellSubtitle(keys)) {
-                    SHPopupMenu(settings.shellPath, mono: true, minWidth: AppLayout.settingsPopupWidth) {
-                        ForEach(shells, id: \.self) { shell in
-                            Button(shell) { settings.shellPath = shell }
-                        }
-                    }
-                    .accessibilityLabel("Shell")
+            SettingsRow(title: "Size") {
+                AppearanceSettings.stepMenu("Font size", value: $settings.terminalFontSize, range: AppSettings.fontSizeRange, step: 0.5) {
+                    $0.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int($0)) pt" : String(format: "%.1f pt", $0)
                 }
+                .onChange(of: settings.terminalFontSize) { vm.rebuildSurfaces() }
+            }
+            FontPreview(family: TerminalFontCatalog.resolved(settings.terminalFontFamily), size: settings.terminalFontSize)
+            SettingsRow(title: "Shell", subtitle: Self.shellSubtitle(keys)) {
+                SHPopupMenu(settings.shellPath, mono: true, minWidth: AppLayout.settingsPopupWidth) {
+                    ForEach(shells, id: \.self) { shell in
+                        Button(shell) { settings.shellPath = shell }
+                    }
+                }
+                .accessibilityLabel("Shell")
             }
         }
         .task(id: settings.terminalFontFamily) { families = TerminalFontCatalog.families(including: settings.terminalFontFamily) }
@@ -81,8 +74,7 @@ enum TerminalFontCatalog {
     }
 }
 
-/// A few shell lines in the configured terminal font and the theme's terminal colors, so font
-/// changes are judged without leaving Settings.
+/// The mono sample row: one line in the configured terminal font, on the sunken fill.
 private struct FontPreview: View {
     let family: String
     let size: Double
@@ -94,19 +86,15 @@ private struct FontPreview: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.xxs) {
-            Text("\(Text("~/proj ").foregroundStyle(Color.sh.running))❯ git status --short")
-            Text(" M Sources/App.swift").foregroundStyle(Color.sh.lanternText)
-            Text("?? Tests/AppTests.swift").foregroundStyle(Color.sh.done)
-            Text("ILil1| O0o {} -> the quick brown fox").foregroundStyle(Color.sh.textSecondary)
-        }
-        .font(font)
-        .foregroundStyle(Color.sh.textPrimary)
-        .lineLimit(1)
-        .padding(SH.Space.l)
-        .frame(width: AppLayout.settingsFontPreviewWidth, alignment: .leading)
-        .shCard(radius: SH.Radius.s, fill: Color.sh.bgWindow)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Preview of \(family) at \(size.formatted()) points")
+        Text("The quick brown fox jumps over the lazy dog  0123456789 {}[]")
+            .font(font)
+            .foregroundStyle(Color.sh.textSecondary)
+            .lineLimit(1)
+            .padding(.horizontal, SH.Space.l)
+            .padding(.vertical, SH.Space.m)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.sh.bgSunken)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Preview of \(family) at \(size.formatted()) points")
     }
 }

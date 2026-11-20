@@ -102,6 +102,6 @@ extension EnvironmentValues {
 }
 
 extension FocusedValues {
-    /// The focused window's navigator, for the app's keyboard commands (⌘K).
-    @Entry var mobileNavigator: MobileNavigator?
+    /// The focused window's target for the menu bar and keyboard shortcuts.
+    @Entry var mobileCommandFocus: MobileCommandFocus.Value?
 }

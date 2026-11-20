@@ -13,12 +13,14 @@ struct ComposerTextView: View {
     @Binding var focused: Bool
     var style: SHTextStyle = .body
     let label: String
+    /// Takes the images pasted into the field; nil where the thread takes none.
+    var pasteImages: (([NSItemProvider]) -> Void)?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Field(text: $text, focused: $focused, font: .sh(style, category: UIContentSizeCategory(dynamicTypeSize)),
-              dark: colorScheme == .dark, label: label)
+              dark: colorScheme == .dark, label: label, pasteImages: pasteImages)
             .overlay(alignment: .topLeading) {
                 if text.isEmpty {
                     Text(placeholder).font(.sh(style)).foregroundStyle(Color.sh.textTertiary)
@@ -33,11 +35,12 @@ struct ComposerTextView: View {
         let font: UIFont
         let dark: Bool
         let label: String
+        let pasteImages: (([NSItemProvider]) -> Void)?
 
         func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-        func makeUIView(context: Context) -> UITextView {
-            let view = UITextView()
+        func makeUIView(context: Context) -> ComposerPasteTextView {
+            let view = ComposerPasteTextView()
             view.backgroundColor = .clear
             view.textContainerInset = .zero
             view.textContainer.lineFragmentPadding = 0
@@ -47,9 +50,10 @@ struct ComposerTextView: View {
             return view
         }
 
-        func updateUIView(_ view: UITextView, context: Context) {
+        func updateUIView(_ view: ComposerPasteTextView, context: Context) {
             let coordinator = context.coordinator
             coordinator.parent = self
+            view.pasteImages = pasteImages
             view.tintColor = UIColor(Color.sh.lantern)
             view.accessibilityLabel = label
             let restyled = coordinator.drawn != Drawn(font: font, dark: dark)
@@ -80,7 +84,7 @@ struct ComposerTextView: View {
         /// only learns how far the field could stretch. Each answer lays the whole draft out, a draft on one line the slowest,
         /// so a height is kept for the edit and width it was measured for (`Coordinator.fits`), and an unlimited width is
         /// answered with the height at the width the field has.
-        func sizeThatFits(_ proposal: ProposedViewSize, uiView view: UITextView, context: Context) -> CGSize? {
+        func sizeThatFits(_ proposal: ProposedViewSize, uiView view: ComposerPasteTextView, context: Context) -> CGSize? {
             let width = proposal.width ?? view.bounds.width
             guard width > 0 else { return nil }
             SHRenderProbe.tick("layout.composerFieldProbed")

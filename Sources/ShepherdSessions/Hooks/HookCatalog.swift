@@ -58,7 +58,9 @@ public struct HookCatalog: Sendable {
     /// Reads This Mac's files and those of each space in `spaceRoots` (canonical roots, as
     /// `spaceRoot(forCwd:)` gives them; the home folder and repeats are dropped).
     public func load(spaceRoots: [String] = []) -> HookCatalogSnapshot {
-        let settings = settingsStore.read()
+        // Damaged settings fail closed: the person's off switches are unknown, so no hook is on.
+        let settings: HookSettings, settingsProblem: String?
+        do { settings = try settingsStore.read(); settingsProblem = nil } catch { settings = HookSettings(); settingsProblem = error.localizedDescription }
         let canonicalHome = PiHome.canonical(home)
         var sources: [HookSource] = [], entries: [HookEntry] = []
         var scopes: [(HookScope, String)] = [(.mac, home)]
@@ -93,7 +95,8 @@ public struct HookCatalog: Sendable {
                 sources.append(source)
             }
         }
-        return HookCatalogSnapshot(sources: sources, entries: entries, settings: settings, home: home)
+        if settingsProblem != nil { for index in entries.indices { entries[index].on = false } }
+        return HookCatalogSnapshot(sources: sources, entries: entries, settings: settings, home: home, settingsProblem: settingsProblem)
     }
 
     /// The composer glyph's counts for a thread in `cwd`: reads This Mac's files and that space's.

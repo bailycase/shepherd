@@ -1,0 +1,108 @@
+import Foundation
+import UniformTypeIdentifiers
+import ShepherdProtocol
+
+/// What a device's composer does with the things handed to it by paste, drop or the Files picker.
+/// A native send carries text and images only, so an item is an image or it is refused with a
+/// sentence the composer shows; `NativeImagePreparation` then resizes what is taken, within the
+/// same size limits as the Mac.
+public enum ComposerImageInput {
+    /// One pasted, dropped or picked item: the type identifiers it offers, best first, and the name it suggests.
+    public struct Item: Equatable, Sendable {
+        public var typeIdentifiers: [String]
+        public var name: String?
+
+        public init(typeIdentifiers: [String], name: String? = nil) {
+            self.typeIdentifiers = typeIdentifiers
+            self.name = name
+        }
+
+        /// A file transferred by URL (a drop that offers only `public.file-url`), typed by what the file is,
+        /// else by its extension, and named for it.
+        public init(fileURL url: URL) {
+            let type = (try? url.resourceValues(forKeys: [.contentTypeKey]))?.contentType
+                ?? UTType(filenameExtension: url.pathExtension.lowercased())
+            self.init(typeIdentifiers: type.map { [$0.identifier] } ?? [], name: url.lastPathComponent)
+        }
+
+        /// A file the Files picker returned, typed by its extension.
+        public init(fileName: String) {
+            self.init(typeIdentifiers: UTType(filenameExtension: (fileName as NSString).pathExtension.lowercased()).map { [$0.identifier] } ?? [],
+                      name: fileName)
+        }
+    }
+
+    /// An item to load: its place in the list handed in, the type to ask it for, and its name.
+    public struct Accepted: Equatable, Sendable {
+        public var index: Int
+        public var typeIdentifier: String
+        public var name: String
+    }
+
+    public struct Plan: Equatable, Sendable {
+        public var accepted: [Accepted] = []
+        /// Why items were left out, one sentence each.
+        public var rejections: [String] = []
+
+        /// The line the composer shows above the field, nil when everything was taken.
+        public var message: String? { rejections.isEmpty ? nil : rejections.joined(separator: " ") }
+    }
+
+    /// The first type the item offers that is an image; nil when it offers none (a PDF, a folder, plain text).
+    public static func imageType(of item: Item) -> String? {
+        item.typeIdentifiers.first { UTType($0)?.conforms(to: .image) == true }
+    }
+
+    /// Which of `items` a message holding room for `room` more images takes. Non-images are refused
+    /// by name; images past the room are refused together.
+    public static func plan(_ items: [Item], room: Int) -> Plan {
+        var plan = Plan()
+        var skipped = false
+        var notImages: [String] = []
+        for (index, item) in items.enumerated() {
+            guard let type = imageType(of: item) else {
+                notImages.append(item.name ?? "That item")
+                continue
+            }
+            guard plan.accepted.count < room else {
+                skipped = true
+                continue
+            }
+            plan.accepted.append(Accepted(index: index, typeIdentifier: type, name: name(item.name, type: type, number: index + 1, of: items.count)))
+        }
+        switch notImages.count {
+        case 0: break
+        case 1: plan.rejections.append("\(notImages[0]) isn't an image. Only images can be attached here.")
+        default: plan.rejections.append("\(notImages.count) items aren't images. Only images can be attached here.")
+        }
+        if skipped { plan.rejections.append(NativeImagePreparation.Failure.full.description) }
+        return plan
+    }
+
+    /// The attachment slots a batch may still fill, shared by the callbacks that load it. Only an item
+    /// confirmed to be an image takes a slot: a PDF offered by URL, found out only once its file is
+    /// looked at, must not use up the slot of an image after it.
+    public final class Slots: @unchecked Sendable {
+        private let lock = NSLock()
+        private var remaining: Int
+
+        public init(room: Int) { remaining = room }
+
+        /// Takes a slot for `item` when it is an image and one is left.
+        public func claim(_ item: Item) -> Bool {
+            guard imageType(of: item) != nil else { return false }
+            lock.lock()
+            defer { lock.unlock() }
+            guard remaining > 0 else { return false }
+            remaining -= 1
+            return true
+        }
+    }
+
+    /// The name an accepted item gets: the one it suggests, else "Image" with the type's extension.
+    public static func name(_ suggested: String?, type: String, number: Int, of count: Int) -> String {
+        if let suggested, !suggested.isEmpty { return suggested }
+        let ext = UTType(type)?.preferredFilenameExtension ?? "png"
+        return count == 1 ? "Image.\(ext)" : "Image \(number).\(ext)"
+    }
+}

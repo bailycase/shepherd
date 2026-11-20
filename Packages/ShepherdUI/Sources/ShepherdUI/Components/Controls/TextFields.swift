@@ -105,7 +105,7 @@ private struct SHFieldChrome: ViewModifier {
             .tint(sh.lantern)
             .padding(.horizontal, settings ? M.fieldPadding : SH.Space.m)
             .padding(.vertical, SH.Space.xs)
-            .frame(minHeight: settings ? (search ? M.controlHeight + 2 : M.fieldHeight) : SH.Height.controlM)
+            .frame(minHeight: settings ? (search ? M.fieldHeight + SH.Space.xs : M.fieldHeight) : SH.Height.controlM)
             .background(sh.bgRaised, in: shape)
             .overlay {
                 // The line and the ring fade on their own layer, so focusing a field or

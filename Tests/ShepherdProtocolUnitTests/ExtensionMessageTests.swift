@@ -24,17 +24,17 @@ struct ExtensionMessageTests {
              .designEditBoards, .designSearch, .designCheckpoint, .designRender, .designExport, .designExtract,
              .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote, .designPropose,
              .projectPublish, .projectRuntime, .helloBrowser, .browser, .registerProject, .refreshProjects, .addChildProject, .editProject, .deleteProject,
-             .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
+             .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 68
+    static let caseCount = 69
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
-        .projectRuntime(id: 75, agentID: agent, projectID: ProjectID(), expectedRevision: 1, request: .read),
+        .projectRuntime(id: 75, agentID: agent, projectID: ProjectID(rawValue: "project"), expectedRevision: 1, request: .read),
         .projectPublish(id: 76, agentID: agent, request: .eligibility),
-        .projectPublish(id: 77, agentID: agent, request: .publish(publicationID: UUID(), sourcePath: "report.txt", artifactName: "result.txt")),
+        .projectPublish(id: 77, agentID: agent, request: .publish(publicationID: UUID(uuidString: "00000000-0000-0000-0000-000000000011")!, sourcePath: "report.txt", artifactName: "result.txt")),
         .registerProject(id: 70, agentID: agent, path: "/tmp/project", name: "Project"),
         .refreshProjects(id: 71, agentID: agent),
         .editProject(id: 73, agentID: agent, projectID: SpaceID(rawValue: "p1"), request: ProjectEdit(name: "New name", parentProjectID: "", folderAction: .none)),
@@ -52,7 +52,7 @@ struct ExtensionMessageTests {
             ChildRun(runID: "r1", childIndex: 2, label: "src/jobs", state: "failed", startedAt: 1, endedAt: 2,
                      currentTool: "read", needsAttention: true, attentionText: "boom", asyncDir: "/tmp/a"),
             ChildRun(runID: "r2", label: "reviewer", state: "queued", role: "worker", name: "card-network-rules", attempt: "fresh-attempt",
-                     projectScope: .init(key: .init(ownerID: UUID(), projectID: ProjectID(), operationID: UUID()), workerAgentID: agent, sessionID: "session", generation: "generation")),
+                     projectScope: .init(key: Wire.projectKey, workerAgentID: agent, sessionID: "session", generation: "generation")),
         ]),
         .notify(agentID: agent, title: "CI passed", body: "PR #42 is green"),
         .helloAgent(agentID: agent),
@@ -84,6 +84,7 @@ struct ExtensionMessageTests {
         .fleetDispatchMessage(id: 134, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", text: "Also update the docs.", delivery: .steer),
         .fleetDispatchMessage(id: 135, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", text: "Thanks.", delivery: .followUp),
         .fleetDispatchCancel(id: 136, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11"),
+        .fleetDispatchClose(id: 137, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11"),
         .coordinateAgent(id: 19, agentID: agent, targetAgentID: AgentID(rawValue: "a2"),
                          request: AgentCoordinationRequest(operation: .read, limit: 10, after: "entry-1")),
         .agentResponse(agentID: AgentID(rawValue: "a2"), requestID: "server-token",
@@ -434,7 +435,7 @@ struct ExtensionReplyTests {
 
     static func caseName(_ reply: ExtensionReply) -> String {
         switch reply {
-        case .parentInput, .childCommand, .childStart, .childScope, .projectChildren, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .appResult, .automations,
+        case .parentInput, .stopManagedBash, .childCommand, .childStart, .childScope, .projectChildren, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .appResult, .automations,
              .agents, .fleetHosts, .fleetDispatch, .message, .agentRequest, .agentResult, .suggestion, .designList, .design, .designBoard, .designWritten, .designEdited,
              .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals,
              .designBatchEdited, .designSearchResult, .designCheckpoints, .designRendered, .designExported, .designExtracted,
@@ -442,7 +443,7 @@ struct ExtensionReplyTests {
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 43
+    static let caseCount = 44
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -471,14 +472,15 @@ struct ExtensionReplyTests {
 
     static let samples: [ExtensionReply] = [
         .childScope(id: 78, scope: nil),
-        .childScope(id: 80, scope: .init(key: .init(ownerID: UUID(), projectID: ProjectID(), operationID: UUID()), workerAgentID: AgentID(), sessionID: "session", generation: "generation"), deadline: 1_800_000),
-        .projectChildren(id: 79, scope: .init(key: .init(ownerID: UUID(), projectID: ProjectID(), operationID: UUID()), workerAgentID: AgentID(), sessionID: "session", generation: "generation"), action: .stop),
-        .projectRuntime(id: 75, project: Project(name: "Owner project")),
-        .projectRuntime(id: 76, project: Project(name: "Owner project"), models: ["provider/a", "provider/b"]),
+        .childScope(id: 80, scope: .init(key: Wire.projectKey, workerAgentID: AgentID(rawValue: "worker"), sessionID: "session", generation: "generation"), deadline: 1_800_000),
+        .projectChildren(id: 79, scope: .init(key: Wire.projectKey, workerAgentID: AgentID(rawValue: "worker"), sessionID: "session", generation: "generation"), action: .stop),
+        .projectRuntime(id: 75, project: Wire.project(named: "Owner project")),
+        .projectRuntime(id: 76, project: Wire.project(named: "Owner project"), models: ["provider/a", "provider/b"]),
         .projectPublish(id: 76, result: .init(active: false)),
-        .projectResult(id: 70, space: Space(name: "Project", path: "/tmp/project"), created: true),
+        .projectResult(id: 70, space: Space(id: SpaceID(rawValue: "project"), name: "Project", path: "/tmp/project"), created: true),
         .projectResult(id: 71, space: nil, created: false),
         .parentInput,
+        .stopManagedBash,
         .childStart(id: 1, requestID: "queued-1", text: "Review this", images: [NativeImage(mimeType: "image/png", data: Data([1, 2]))]),
         .childCommand(id: 1, runID: "native-1", action: .message, text: "Replace everywhere", mode: .steer),
         .ok(id: 1),
@@ -489,12 +491,12 @@ struct ExtensionReplyTests {
         .reviewResult(id: 7, text: "Looks good.\n\nSummary: ready to merge."),
         .appResult(id: 8, text: "Apps in payments:\n- Web app: running · port 3000"),
         .automations(id: 1, automations: [
-            AutomationInfo(id: AutomationID(), name: "pr-watch", prompt: "watch", cwd: "/r", enabled: true, agentStatus: "working"),
-            AutomationInfo(id: AutomationID(), name: "nightly", prompt: "check", cwd: "/t", enabled: false, agentStatus: nil),
+            AutomationInfo(id: AutomationID(rawValue: "au1"), name: "pr-watch", prompt: "watch", cwd: "/r", enabled: true, agentStatus: "working"),
+            AutomationInfo(id: AutomationID(rawValue: "au2"), name: "nightly", prompt: "check", cwd: "/t", enabled: false, agentStatus: nil),
         ]),
         .agents(id: 1, agents: [
-            AgentPeerInfo(id: AgentID(), name: "worker", status: "working", cwd: "/tmp", isSelf: false),
-            AgentPeerInfo(id: AgentID(), name: "me", status: "idle", cwd: "/tmp", isSelf: true),
+            AgentPeerInfo(id: AgentID(rawValue: "worker"), name: "worker", status: "working", cwd: "/tmp", isSelf: false),
+            AgentPeerInfo(id: AgentID(rawValue: "me"), name: "me", status: "idle", cwd: "/tmp", isSelf: true),
         ]),
         .fleetHosts(id: 140, hosts: [FleetHostInfo(name: "Mac mini", isThisMac: false, room: "most room", connected: true, problems: ["muse"], hasRepo: true, weight: "Prefer"),
                                      FleetHostInfo(name: "MacBook Pro", isThisMac: true, room: "no room", connected: true, without: ["bearcli"], weight: "Normal")]),
@@ -565,7 +567,7 @@ struct ExtensionReplyTests {
             sourceReport: DesignBoardReport(created: false, bytes: 900, delta: -100),
             checkpoint: DesignCheckpointInfo(name: "before extract", createdAt: 1, boards: 4, bytes: 5, revision: 9), pruned: ["old"])),
         .designComments(id: 24, comments: DesignComments(revision: 3, comments: [
-            comment, DesignComment(number: 2, board: DesignPath("flows/Cart.dc.html")!, tid: 2, path: [0, 1], text: "Bigger total",
+            comment, DesignComment(id: UUID(uuidString: "00000000-0000-0000-0000-00000000000C")!, number: 2, board: DesignPath("flows/Cart.dc.html")!, tid: 2, path: [0, 1], text: "Bigger total",
                                    createdAt: 3, resolvedAt: 4, detached: true),
         ])),
         .designComment(id: 25, comment: comment),
@@ -780,7 +782,7 @@ struct ChildRunTests {
          {"runID":"run-2","label":"scout","state":"complete","needsAttention":false},
          {"runID":"native-1","label":"worker: restyle","state":"running","startedAt":1,"needsAttention":false,
           "role":"worker","name":"restyle-tokens","model":"p/m","thinking":"high","context":"background","step":{"index":1,"total":3},
-          "turns":78,"toolCalls":82,"tokens":922000,"contextPercent":62,
+          "turns":78,"toolCalls":82,"tokens":922000,"cost":3.25,"contextPercent":62,
           "lastActivity":{"kind":"tool","tool":"edit","preview":"Sources/A.swift","diff":{"added":31,"removed":0},"at":2},
           "toolCallID":"call_1","task":"Restyle","sessionFile":"/tmp/c/session.jsonl","paused":true},
          {"runID":"native-2","label":"reviewer","state":"running","needsAttention":true,"attentionText":"Two names collide",
@@ -799,6 +801,7 @@ struct ChildRunTests {
         #expect(rows[1].name == "restyle-tokens" && rows[0].name == nil, "a run from an older publisher decodes without a label")
         #expect(rows[1].step == ChildStep(index: 1, total: 3))
         #expect(rows[1].lastActivity == ChildActivity(tool: "edit", preview: "Sources/A.swift", diff: ChildDiff(added: 31, removed: 0), at: 2))
+        #expect(rows[1].cost == 3.25 && rows[0].cost == nil, "a child's cost estimate; an older publisher sends none")
         #expect(rows[1].contextPercent == 62 && rows[1].paused == true && rows[1].toolCallID == "call_1")
         #expect(rows[2].question == ChildQuestion(text: "Two names collide", options: ["Replace everywhere", "Rename new ones"],
                                                   short: "token names?"))

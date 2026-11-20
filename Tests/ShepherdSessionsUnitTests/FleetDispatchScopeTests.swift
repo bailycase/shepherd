@@ -58,6 +58,31 @@ struct FleetDispatchScopeTests {
         }
     }
 
+    @Test func legacyInboundDispatchKeepsItsRecordWithoutMoveMetadata() throws {
+        let json = """
+        {"record":{"id":"F94561E6-7623-4BB2-8FB2-217B427A948C","parentHostID":"69EBE0BF-797D-4DE2-9E90-A4287C84186D",
+                   "kind":"agentDispatch","state":"running","title":"Check receipts","repoKey":"github.com/acme/web"},
+         "expectsResult":true,"startedWorking":true,"unsent":false,"worktree":"/tmp/acme-web","acceptedAt":1200}
+        """
+        let entry = try JSONDecoder().decode(FleetDispatch.Inbound.self, from: Data(json.utf8))
+        #expect(entry.record.title == "Check receipts")
+        #expect(entry.record.state == .running)
+        #expect(entry.expectsResult && entry.startedWorking && !entry.unsent)
+        #expect(entry.worktree == "/tmp/acme-web" && entry.acceptedAt == 1200)
+        #expect(!entry.madeRef)
+        #expect(entry.cleanupCandidates == nil)
+    }
+
+    @Test func inboundDispatchKeepsCleanupCandidatesAcrossARoundTrip() throws {
+        let record = FleetDispatchRecord(parentHostID: UUID(), parentHostName: "MacBook Pro", state: .done,
+                                         title: "Check receipts", task: "Run tests", repoKey: "github.com/acme/web", createdAt: 1)
+        let candidates = [".build", "DerivedData"]
+        let entry = FleetDispatch.Inbound(record: record, cleanupCandidates: candidates)
+        let data = try JSONEncoder().encode(entry)
+        let decoded = try JSONDecoder().decode(FleetDispatch.Inbound.self, from: data)
+        #expect(decoded.cleanupCandidates == candidates)
+    }
+
     @Test func aToolCallKeyStandsForOneStableIdPerThread() {
         let (one, two) = (AgentID(), AgentID())
         #expect(FleetDispatch.identifier(key: "toolu_01", agent: one) == FleetDispatch.identifier(key: "toolu_01", agent: one))

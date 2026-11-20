@@ -9,85 +9,35 @@ import ShepherdSessions
 
 struct AdvancedSettings: View {
     var vm: ShepherdViewModel
-    private var updater: AppUpdater { .shared }
     @State private var confirmingReset = false
-
-    private var version: String {
-        let info = Bundle.main.infoDictionary
-        let short = info?["CFBundleShortVersionString"] as? String ?? "dev"
-        let build = info?["CFBundleVersion"] as? String ?? "0"
-        return "\(short) (\(build))"
-    }
 
     /// Which confirmations "Don't ask again" turned off, by name.
     private var skippedSummary: String {
         let names = SkippableConfirmation.allCases.filter { vm.settings.skipped($0) != nil }.map(\.title)
             + (vm.settings.worktreeDeleteAction == .ask ? [] : ["Delete worktree agent"])
-        return names.isEmpty ? "Every confirmation asks first. Any you turn off with “Don't ask again” are listed here."
-            : "Act at once without asking: \(names.formatted(.list(type: .and)))."
+        return names.isEmpty ? "Every confirmation asks first" : names.formatted(.list(type: .and))
     }
 
     var body: some View {
-        SettingsPage(title: "Advanced", explanation: "Files, resets and app updates. Agents keep running in the background when you quit Shepherd.") {
-            if vm.backgroundServiceStatus == .requiresApproval {
-                SettingsGroup(title: "Background") {
-                    SettingsRow(title: "Shepherd stops its agents when you quit",
-                                subtitle: "Turn on Shepherd in Login Items to keep them running.") {
-                        Button("Open Login Items") { vm.backgroundService?.openLoginItems() }
-                            .buttonStyle(.sh(.secondary, size: .s))
-                    }
-                }
-            }
-            SettingsGroup(title: "Files") {
-                PathRow(title: "Workspace state", subtitle: "Spaces, agents and terminals restored on relaunch.",
-                        url: ShepherdPaths.stateURL())
-                PathRow(title: "Extension socket", subtitle: "Where each agent process reports status and terminal requests.",
-                        url: ShepherdPaths.socketURL())
-            }
-            EditorSettings(settings: vm.settings)
-            SettingsGroup(title: "Updates") {
-                if updater.available {
-                    SettingsRow(title: "Check for updates automatically") {
-                        SettingsSwitch(label: "Check for updates automatically", isOn: Binding(
-                            get: { updater.automaticallyChecks },
-                            set: { updater.automaticallyChecks = $0 }
-                        ))
-                    }
-                    .shTransition(.disclosure)
-                    UpdateChannelRow(edition: updater.edition, channel: Binding(
-                        get: { updater.channel },
-                        set: { updater.select($0) }
-                    ))
-                    .shTransition(.disclosure)
-                }
-                SettingsRow(title: "Version \(version)") {
-                    if updater.available {
-                        Button("Check for updates") { updater.checkForUpdates() }
-                            .buttonStyle(.sh(.secondary, size: .s))
-                    }
-                }
-            }
+        SettingsPage(title: "Advanced") {
             DiagnosticsSettings(settings: vm.settings, configured: ShepherdDiagnostics.shared.configured,
                                 active: ShepherdDiagnostics.shared.isActive)
-            SettingsGroup(title: "Confirmations") {
-                SettingsRow(title: "Skipped confirmations", subtitle: skippedSummary) {
+            SettingsGroup(title: "Files") {
+                PathRow(title: "Workspace state", subtitle: "Spaces, agents and terminals", url: ShepherdPaths.stateURL())
+                PathRow(title: "Extension socket", subtitle: "Where agents report status", url: ShepherdPaths.socketURL())
+            }
+            SettingsGroup(title: "Reset") {
+                SettingsRow(title: "Confirmations you skipped", subtitle: skippedSummary) {
                     Button("Ask again") { vm.settings.askAgainEverywhere() }
                         .buttonStyle(.sh(.secondary, size: .s))
                         .disabled(vm.settings.skippedConfirmationCount == 0)
                 }
-            }
-            SettingsGroup(title: "Reset") {
-                SettingsRow(title: "Reset settings",
-                            subtitle: "Restores appearance, terminal, agent, worktree, extension, keyboard and diagnostics preferences. Spaces, agents, layouts and Remote are untouched.") {
+                SettingsRow(title: "All settings", subtitle: "Spaces, agents and layouts stay") {
                     Button("Reset…") { confirmingReset = true }
                         .buttonStyle(.sh(.danger, size: .s))
                 }
             }
         }
-        // Sparkle reports whether it can update once it has started.
-        .shAnimation(.disclosure, value: updater.available)
-        // Login Items may have changed while the window was elsewhere.
-        .onAppear { if let service = vm.backgroundService { vm.backgroundServiceStatus = service.status() } }
         .sheet(isPresented: $confirmingReset) {
             ResetSettingsDialog {
                 confirmingReset = false
@@ -99,7 +49,66 @@ struct AdvancedSettings: View {
     }
 }
 
-/// Settings ▸ Advanced ▸ Editor: the app local files open in (file links in replies, review, project files), and the apps
+/// Settings ▸ General: what happens when you quit, notifications, the editor files open in, and
+/// app updates.
+struct GeneralSettings: View {
+    var vm: ShepherdViewModel
+    private var updater: AppUpdater { .shared }
+
+    private var version: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "dev"
+        return short
+    }
+
+    var body: some View {
+        @Bindable var settings = vm.settings
+        SettingsPage(title: "General") {
+            // Only while it needs you: otherwise the row has nothing to change.
+            if vm.backgroundServiceStatus == .requiresApproval {
+                SettingsGroup(title: "When you quit") {
+                    SettingsRow(title: "Keep agents running", subtitle: "Turn on Shepherd in Login Items to keep them running") {
+                        Button("Open Login Items") { vm.backgroundService?.openLoginItems() }
+                            .buttonStyle(.sh(.secondary, size: .s))
+                    }
+                }
+            }
+            SettingsGroup(title: "Notifications") {
+                SettingsRow(title: "Turn finished", subtitle: "Only for threads you aren’t viewing") {
+                    SettingsSwitch(label: "Turn finished", isOn: $settings.notifyOnTurnFinished)
+                }
+            }
+            EditorSettings(settings: vm.settings)
+            SettingsGroup(title: "Updates") {
+                UpdateChannelRow(edition: updater.edition, channel: Binding(
+                    get: { updater.channel },
+                    set: { updater.select($0) }
+                ))
+                if updater.available {
+                    SettingsRow(title: "Check automatically") {
+                        SettingsSwitch(label: "Check automatically", isOn: Binding(
+                            get: { updater.automaticallyChecks },
+                            set: { updater.automaticallyChecks = $0 }
+                        ))
+                    }
+                    .shTransition(.disclosure)
+                }
+                if updater.available {
+                    SettingsRow(title: "Version \(version)", subtitle: vm.pi.engine.version.map { "agent \($0)" }) {
+                        Button("Check now") { updater.checkForUpdates() }
+                            .buttonStyle(.sh(.secondary, size: .s))
+                    }
+                }
+            }
+        }
+        // Sparkle reports whether it can update once it has started.
+        .shAnimation(.disclosure, value: updater.available)
+        // Login Items may have changed while the window was elsewhere.
+        .onAppear { if let service = vm.backgroundService { vm.backgroundServiceStatus = service.status() } }
+    }
+}
+
+/// Settings ▸ General ▸ Editor: the app local files open in (file links in replies, review, project files), and the apps
 /// file types were given from a file's Open in menu.
 struct EditorSettings: View {
     @Bindable var settings: AppSettings
@@ -111,8 +120,8 @@ struct EditorSettings: View {
     }
 
     var body: some View {
-        SettingsGroup(title: "Editor") {
-            SettingsRow(title: "Open files in", subtitle: "File links in replies, reviewed files and project files. System default uses each file's own app.") {
+        SettingsGroup(title: "Files") {
+            SettingsRow(title: "Open files in", subtitle: "File links, reviewed files and space files") {
                 SHPopupMenu(title, minWidth: AppLayout.settingsPopupWidth) {
                     Button("System default") { settings.editor = nil }
                     Divider()
@@ -125,7 +134,7 @@ struct EditorSettings: View {
                 .accessibilityLabel("Open files in")
             }
             if !settings.editorsByType.isEmpty {
-                SettingsRow(title: "By file type", subtitle: byType + ". Picked from a file’s Open in menu; these win over the app above.") {
+                SettingsRow(title: "By file type", subtitle: byType) {
                     Button("Reset") { settings.editorsByType = [:] }
                         .buttonStyle(.sh(.secondary, size: .s))
                         .accessibilityLabel("Reset the apps picked for file types")
@@ -162,49 +171,37 @@ struct DiagnosticsSettings: View {
 
     static let disclosure = "Send crash and hang stacks, app and device details, resource metrics, operation timings, fixed diagnostic logs and app-session health to Sentry. No prompts, replies, tool output, file contents, command lines or session replay. Performance reports upload while Shepherd runs; crashes upload when you reopen it."
 
+    /// What turning it on or off does, when the build can report at all.
     private var status: String? {
-        guard configured else {
-            return settings.shareDiagnostics ? "Reporting is unavailable. Turn this off to revoke saved consent." : nil
-        }
-        let state = !settings.shareDiagnostics ? "Off. Turning on takes effect after you quit and reopen Shepherd."
-            : active ? "Reporting is active." : "Not active yet. Quit and reopen Shepherd to start reporting."
-        return state + " Turning off stops reporting and discards pending reports, but does not delete reports already sent."
+        guard configured else { return nil }
+        guard settings.shareDiagnostics else { return "Off. Turning on takes effect after you quit and reopen Shepherd." }
+        return active ? nil : "Not active yet. Quit and reopen Shepherd to start reporting."
     }
 
     var body: some View {
-        SettingsGroup(title: "Diagnostics", footnote: status) {
+        SettingsGroup(title: "Privacy", footnote: status) {
             SettingsRow(title: "Share diagnostics", subtitle: configured
-                        ? Self.disclosure : "Diagnostics reporting is not configured in this build.") {
+                        ? "Crashes and timings. Never prompts or code." : "Not configured in this build") {
                 SettingsSwitch(label: "Share diagnostics", isOn: $settings.shareDiagnostics)
                     .accessibilityHint(configured ? Self.disclosure : "Diagnostics reporting is not configured in this build.")
                     .disabled(!configured && !settings.shareDiagnostics)
             }
+            .help(configured ? Self.disclosure : "")
         }
     }
 }
 
-/// Settings ▸ Advanced ▸ Updates: Shepherd picks Stable or Beta; Shepherd Nightly has one
-/// channel and names it.
+/// Settings ▸ General ▸ Updates: Shepherd picks Stable or Beta; Shepherd Nightly has one
+/// channel, so no row.
 struct UpdateChannelRow: View {
     let edition: ShepherdEdition
     @Binding var channel: UpdateChannel
 
     var body: some View {
-        switch edition {
-        case .main:
-            SettingsRow(title: "Update channel",
-                        subtitle: "Stable: tagged releases. Beta: pre-releases, plus newer stable builds. Nightly builds are a separate app, Shepherd Nightly.") {
-                // SettingsAdvanced draws this one as the Controls board's segmented control.
+        if edition == .main {
+            SettingsRow(title: "Channel") {
                 SHSegmentedPicker("Update channel", selection: $channel,
                                   options: UpdateChannel.choices(for: edition).map { ($0, $0.label) })
-                    .shControlScale(.standard)
-            }
-        case .nightly:
-            SettingsRow(title: "Update channel",
-                        subtitle: "Every push to the integration branch, least tested. Tagged releases ship as Shepherd.") {
-                Text(UpdateChannel.nightly.label)
-                    .font(.sh(.ui))
-                    .foregroundStyle(Color.sh.textSecondary)
             }
         }
     }

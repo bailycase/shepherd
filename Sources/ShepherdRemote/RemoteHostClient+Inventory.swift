@@ -6,7 +6,7 @@ extension RemoteHostClient {
     /// the iPad), read-only. A host without `hostInventoryCapability` has none to share: this
     /// throws `update_required` before sending anything.
     public func hostInventory(_ request: RemoteHostInventoryRequest) async throws -> RemoteHostInventoryResult {
-        guard capabilities.contains(RemoteProtocol.hostInventoryCapability) else {
+        guard supports(.hostInventory) else {
             throw RemoteHostClientError.rejected(
                 code: "update_required", message: "Update Shepherd on the host to see its MCP servers, subagents and sign-ins from here."
             )

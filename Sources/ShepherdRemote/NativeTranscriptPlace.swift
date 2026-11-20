@@ -28,6 +28,8 @@ public struct NativeTranscriptPlace: Equatable, Sendable {
     /// through the binding, which replaces the marker as the turn but not the follower's claim to it, so this stays until the marker is
     /// kept again, the reader detaches or the session changes.
     private var withheld = false
+    /// After an explicit jump the tail pin owns the scroll position until the reader takes over.
+    private var jumpedToTail = false
 
     /// The id of the 1 pt row that ends the transcript's turns. SwiftUI reports it through the position binding at the end of a drag
     /// to the tail, and the transcript lands on it.
@@ -46,6 +48,29 @@ public struct NativeTranscriptPlace: Equatable, Sendable {
         follower = next
         if returned, mountsAtTail { turn = nil }
         if !next.sticky { withheld = false }
+        if !next.sticky || next.userScrolling { jumpedToTail = false }
+    }
+
+    /// Release the history anchor before the pin lands. Transient row IDs reported as the lazy stack measures the jump
+    /// must not be fed back as top anchors: they can send the next streaming layout back up the thread.
+    public mutating func jumpToLatest() {
+        follower.jumpToLatest()
+        releaseHistoryAnchor()
+    }
+
+    /// A message sent immediately brings a detached reader back to the tail. A reader already
+    /// following keeps the bottom marker if they had it.
+    public mutating func sent(turnPresent: Bool) {
+        let wasFollowing = follower.sticky
+        follower.sent(queued: false, turnPresent: turnPresent)
+        if !wasFollowing { releaseHistoryAnchor() }
+    }
+
+    private mutating func releaseHistoryAnchor() {
+        turn = nil
+        markerTail = nil
+        withheld = false
+        jumpedToTail = true
     }
 
     /// A transcript mounting with no turn to restore opens on its bottom anchor, at its tail, so the reader must follow it: one left
@@ -65,6 +90,7 @@ public struct NativeTranscriptPlace: Equatable, Sendable {
     /// (`withholdsMarker`): the pin lands the view at the mount, and `hold(tail:)` keeps the marker again once that landing has settled.
     /// A follower who keeps a row, a detached reader and a transcript that mounts at its tail are unchanged.
     public mutating func leave() {
+        jumpedToTail = false
         guard follower.sticky, !mountsAtTail, turn == Self.bottomMarker else { return }
         markerTail = nil
     }
@@ -72,6 +98,7 @@ public struct NativeTranscriptPlace: Equatable, Sendable {
     /// SwiftUI's write through the position binding: kept unless the reader follows where `mountsAtTail`. Nil clears, as another
     /// session's turns are not the ones kept. `tail` is the transcript's last row, which the bottom marker is then kept for.
     public mutating func note(_ id: String?, tail: String? = nil) {
+        guard !jumpedToTail else { return }
         if follower.sticky, !mountsAtTail, turn == Self.bottomMarker, markerTail != tail { withheld = true }
         turn = follower.sticky && mountsAtTail ? nil : id
         if turn == Self.bottomMarker {
@@ -82,6 +109,7 @@ public struct NativeTranscriptPlace: Equatable, Sendable {
 
     /// Another session's turns replace this one's: none is kept, and the marker is not the new session's to have back.
     public mutating func newSession() {
+        jumpedToTail = false
         turn = nil
         markerTail = nil
         withheld = false

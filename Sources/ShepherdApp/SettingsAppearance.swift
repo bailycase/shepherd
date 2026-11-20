@@ -10,28 +10,44 @@ struct AppearanceSettings: View {
     @Environment(\.colorScheme) private var systemColorScheme
 
     var body: some View {
-        SettingsPage(title: "Appearance", explanation: "How Shepherd looks. The terminal has its own font settings.") {
-            SettingsGroup(title: "Theme") {
-                SettingsRow(title: "Theme", subtitle: "Shepherd Design ships with Shepherd, in light and dark.") {
-                    // One theme ships: a name, not a popup with nothing else to choose.
-                    Text(ThemeStore.shared.theme.name)
-                        .font(.sh(.ui))
-                        .foregroundStyle(Color.sh.textSecondary)
-                }
-                SettingsRow(title: "Mode", subtitle: "System follows your Mac and switches with it.") {
+        // The sidebar reads the view model's settings (the app's own, a scratch set in tests).
+        @Bindable var sidebar = vm.settings
+        SettingsPage(title: "Appearance") {
+            SettingsGroup(title: "") {
+                SettingsRow(title: "Mode") {
                     SHSegmentedPicker("Mode", selection: Binding(
                         get: { themes.mode },
                         set: { vm.selectAppearance($0, systemColorScheme: systemColorScheme) }
                     ), options: AppearanceMode.allCases.map { ($0, $0.title) })
                 }
             }
-            // The sidebar reads the view model's settings (the app's own, a scratch set in tests).
-            @Bindable var sidebar = vm.settings
+            SettingsGroup(title: "Size") {
+                SettingsRow(title: "Sidebar rows") {
+                    SHSegmentedPicker("Sidebar rows", selection: $settings.sidebarRowDensity,
+                                      options: SHDensity.allCases.map { ($0, $0.title) })
+                }
+                SettingsRow(title: "Density") {
+                    Self.stepMenu("Density", value: $settings.uiDensity, range: AppSettings.uiDensityRange, step: 0.05) {
+                        "\(Int(($0 * 100).rounded()))%"
+                    }
+                }
+                SettingsRow(title: "Text size") {
+                    Self.stepMenu("Text size", value: $settings.uiTextScale, range: AppSettings.uiTextScaleRange, step: 0.05) {
+                        "\(Int(($0 * 100).rounded()))%"
+                    }
+                }
+                SettingsRow(title: "Sidebar width") {
+                    SHValueSlider("Sidebar width", value: $settings.sidebarWidth, in: AppSettings.sidebarWidthRange, step: 1,
+                                neutral: Double(AppLayout.sidebarDefaultWidth), unit: "points") { "\(Int($0))" }
+                }
+            }
             SettingsGroup(title: "Sidebar") {
-                OrganizeByRow(style: Binding(get: { sidebar.sidebarStyle }, set: { vm.setSidebarStyle($0) }))
+                SettingsRow(title: "Organize by") {
+                    SHSegmentedPicker("Organize by", selection: Binding(get: { sidebar.sidebarStyle }, set: { vm.setSidebarStyle($0) }),
+                                      options: SHSidebarStyle.allCases.map { ($0, $0.title) })
+                }
                 if sidebar.sidebarStyle == .projects {
-                    SettingsRow(title: "Keep idle threads",
-                                subtitle: "Then they leave the sidebar; ⌘K still finds them. Running threads and anything waiting on you stay.") {
+                    SettingsRow(title: "Keep idle threads", subtitle: "⌘K still finds them") {
                         SHPopupMenu(Self.keepIdleTitle(sidebar.sidebarKeepIdleDays)) {
                             Picker("Keep idle threads", selection: $sidebar.sidebarKeepIdleDays) {
                                 ForEach(AppSettings.sidebarKeepIdleChoices, id: \.self) { Text(Self.keepIdleTitle($0)).tag($0) }
@@ -43,27 +59,21 @@ struct AppearanceSettings: View {
                 }
             }
             .shAnimation(.disclosure, value: sidebar.sidebarStyle)
-            SettingsGroup(title: "Layout") {
-                SettingsRow(title: "Sidebar rows", subtitle: "Compact 22 · Standard 28 · Comfortable 36 pt, for the sidebar and menus.") {
-                    SHSegmentedPicker("Sidebar rows", selection: $settings.sidebarRowDensity,
-                                      options: SHDensity.allCases.map { ($0, $0.title) })
-                }
-                SettingsRow(title: "Density", subtitle: "Row heights across the sidebar and chrome. Lower fits more agents.") {
-                    SHValueSlider("Density", value: $settings.uiDensity, in: AppSettings.uiDensityRange, step: 0.05, neutral: 1, unit: "percent") {
-                        "\(Int(($0 * 100).rounded()))"
-                    }
-                }
-                SettingsRow(title: "Text size", subtitle: "App chrome only.") {
-                    SHValueSlider("Text size", value: $settings.uiTextScale, in: AppSettings.uiTextScaleRange, step: 0.05, neutral: 1, unit: "percent") {
-                        "\(Int(($0 * 100).rounded()))"
-                    }
-                }
-                SettingsRow(title: "Sidebar width") {
-                    SHValueSlider("Sidebar width", value: $settings.sidebarWidth, in: AppSettings.sidebarWidthRange, step: 1,
-                                neutral: Double(AppLayout.sidebarDefaultWidth), unit: "points") { "\(Int($0))" }
-                }
+            TerminalSettings(vm: vm)
+        }
+    }
+
+    /// A menu of a setting's existing steps: 100%, 95%, …
+    @MainActor static func stepMenu(_ label: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double,
+                                    format: @escaping (Double) -> String) -> some View {
+        let count = Int(((range.upperBound - range.lowerBound) / step).rounded())
+        let steps = (0...count).map { range.lowerBound + Double($0) * step }
+        return SHPopupMenu(format(value.wrappedValue), minWidth: 0) {
+            ForEach(steps.reversed(), id: \.self) { stop in
+                Button(format(stop)) { value.wrappedValue = stop }
             }
         }
+        .accessibilityLabel(label)
     }
 
     /// "7 days", "1 day", "Forever".
@@ -73,28 +83,5 @@ struct AppearanceSettings: View {
         case 1: "1 day"
         default: "\(days) days"
         }
-    }
-}
-
-/// Organize by: its title and what it does over the two cards (`SHSidebarStylePicker`).
-private struct OrganizeByRow: View {
-    @Binding var style: SHSidebarStyle
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: AppLayout.settingsStackedRowSpacing) {
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text("Organize by")
-                    .font(.sh(.body, weight: .medium))
-                    .foregroundStyle(Color.sh.textPrimary)
-                SHMarkupText("What the sidebar lists under New thread and the destinations. Also in View ▸ Organize Sidebar By.",
-                             size: SHTextStyle.ui.size, lineHeight: SHCardRowMetrics.settingsDescriptionLineHeight)
-                    .foregroundStyle(Color.sh.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            SHSidebarStylePicker(selection: $style)
-        }
-        .padding(AppLayout.settingsStackedRowInsets)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .contain)
     }
 }

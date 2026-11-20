@@ -574,7 +574,7 @@ public struct SHFieldLabel: View {
 
     public var body: some View {
         Text(text)
-            .font(.shSans(SHPiSignInMetrics.fieldLabelSize, .medium))
+            .font(.sh(.caption, weight: .semibold))
             .foregroundStyle(Color.sh.textSecondary)
     }
 }

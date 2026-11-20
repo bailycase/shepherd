@@ -53,6 +53,8 @@ struct NativeThreadWireTests {
         .subagentCommand(expectedSessionID: "s", generation: "g", operationID: op, runID: "native-1", action: .resume),
         .subagentCommand(expectedSessionID: "s", generation: "g", operationID: op, runID: "native-1", action: .pause),
         .subagentCommand(expectedSessionID: "s", generation: "g", operationID: op, runID: "native-1", action: .continue),
+        .transcriptSnapshot(),
+        .transcriptSnapshot(expectedSessionID: "s", beforeEntryID: "50"),
         .subagentTranscript(expectedSessionID: "s", runID: "native-1"),
         .subagentTranscript(expectedSessionID: "s", runID: "native-1", beforeEntryID: "c:9"),
         .send(expectedSessionID: "s", generation: "g", operationID: op, text: "see", delivery: .followUp,
@@ -467,9 +469,10 @@ struct NativeThreadWireTests {
         #expect(NativeThreadCode.unavailable == "native_unavailable")
     }
 
+    static let startingRefusal = RemoteReply.error(id: 4, code: NativeThreadCode.starting, message: "pi is starting.")
+
     @Test func aStartingRefusalTravelsAsARemoteError() throws {
-        let reply = RemoteReply.error(id: 4, code: NativeThreadCode.starting, message: "pi is starting.")
-        #expect(try Wire.roundTrip(reply) == reply)
+        #expect(try Wire.roundTrip(Self.startingRefusal) == Self.startingRefusal)
     }
 
     @Test func aV1SnapshotDecodesWithEveryV2FieldAbsent() throws {

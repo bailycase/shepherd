@@ -67,7 +67,11 @@ struct MCPSettingsControlTests {
             case "login":
                 onLine?("https://mcp.example.com/authorize?server=\(arguments.dropFirst().first ?? "")")
                 if blocksLogin {
-                    while !Task.isCancelled { try? await Task.sleep(for: .milliseconds(5)) }
+                    // Simulated pi waiting for a browser: stays, with no clock of its own, until
+                    // Cancel ends it (`Gate.wait` resumes its waiter on cancellation). The test's
+                    // own waits carry the timeout.
+                    let gate = Gate()
+                    await gate.wait()
                     return MCPCLIResult(status: 143, stdout: "", stderr: "")
                 }
                 return MCPCLIResult(status: loginStatus, stdout: "", stderr: loginStatus == 0 ? "" : "Sign-in to MCP server \"x\" failed: boom")
@@ -146,21 +150,23 @@ struct MCPSettingsControlTests {
         let settings = AppSettings.shared
         let window = OffscreenWindow(size: CGSize(width: 1200, height: 1000), dark: true, MCPSettings(vm: vm, store: store, initiallyExpanded: "linear"))
         defer { window.close() }
-        try await Task.sleep(for: .milliseconds(300))
+        try await eventuallyOnMain("the servers page to draw") { window.controls().contains { $0.label == "Direct" } }
 
         // Tool exposure: Direct and back to Search, each reaching the user's file.
-        let search = try labelStarting("Search, ", in: window), direct = try labelStarting("Direct, ", in: window)
-        #expect(window.element(search)?.isSelected == true && window.element(direct)?.isSelected == false)
-        try window.press(direct)
+        func selected(_ label: String) -> Bool? {
+            window.controls().first { $0.label == label && $0.role == ControlRole.radioButton }?.isSelected
+        }
+        #expect(selected("Search") == true && selected("Direct") == false)
+        try window.press("Direct", role: ControlRole.radioButton)
         try await eventuallyOnMain("Direct to reach the file") { (try? fileSettings(store, "linear").exposure) == .direct }
         #expect(store.details["linear"]?.direct == true)
-        #expect(window.element(try labelStarting("Direct, ", in: window))?.isSelected == true)
-        try window.press(try labelStarting("Search, ", in: window))
+        #expect(selected("Direct") == true)
+        try window.press("Search", role: ControlRole.radioButton)
         try await eventuallyOnMain("Search to reach the file") { (try? fileSettings(store, "linear").exposure) == .proxy }
         #expect(try Self.fileSettings(store, "linear").tools == nil, "no tools are chosen by it")
         #expect(cli.calls.map { $0.first } == ["list"], "choosing an exposure asks pi nothing: it takes effect at the next launch")
         // Each choice is as big as a pointer needs, whatever its label's size.
-        let options = window.controls().filter { ($0.label ?? "").hasPrefix("Search, ") || ($0.label ?? "").hasPrefix("Direct, ") }
+        let options = window.controls().filter { $0.role == ControlRole.radioButton && ($0.label == "Search" || $0.label == "Direct") }
         #expect(options.count == 2)
         #expect(ControlPress.undersized(options, minimum: .desktop).isEmpty, "\(ControlPress.undersized(options, minimum: .desktop))")
 
@@ -182,7 +188,9 @@ struct MCPSettingsControlTests {
         try await eventuallyOnMain("Sign out to run pi's logout and ask again") { cli.calls.contains(["logout", "linear"]) && cli.lists >= 3 }
         await store.settle()
         #expect(cli.lists == 3, "Sign out asks pi once more, after its logout")
-        try window.press("Sign in", nth: 0)
+        vm.mcpOpenServer = "sentry"
+        try await eventuallyOnMain("sentry's detail to draw") { window.controls().contains { $0.label == "Sign in" } }
+        try window.press("Sign in")
         try await eventuallyOnMain("the sign-in to start") { store.signIn?.server == "sentry" }
         try await eventuallyOnMain("pi's login to run") { cli.calls.contains(["login", "sentry", "--timeout", "300"]) }
         // A sign-in that succeeds asks pi again, and closing the sheet before it does would cancel that: so let it finish and
@@ -192,29 +200,29 @@ struct MCPSettingsControlTests {
         store.closeSignIn()
         #expect(cli.lists == 4, "the sign-in asked pi once more")
 
-        // The row's switch, off and on, which asks pi again only when it comes on.
+        // A server's On switch, off and on, which asks pi again only when it comes on.
         let before = cli.lists
-        try window.press("sentry", role: ControlRole.checkBox)
+        try window.press("On", role: ControlRole.checkBox)
         try await eventuallyOnMain("the switch to reach the file") { (try? fileSettings(store, "sentry").enabled) == false }
         #expect(store.rows.first { $0.name == "sentry" }?.status == .off)
         #expect(cli.lists == before)
-        try window.press("sentry", role: ControlRole.checkBox)
+        try window.press("On", role: ControlRole.checkBox)
         try await eventuallyOnMain("the switch to come back") { (try? fileSettings(store, "sentry").enabled) == true }
         try await eventuallyOnMain("pi to be asked") { cli.lists >= before + 1 }
         await store.settle()
         #expect(cli.lists == before + 1, "switching a server on asks pi once")
 
-        // The rail's switches.
+        // The list page's switch.
+        vm.mcpOpenServer = nil
+        try await eventuallyOnMain("the list to draw again") { window.controls().contains { $0.label == "Also use a repo’s .mcp.json" } }
         let repo = settings.mcpProjectConfig
         try window.press("Also use a repo’s .mcp.json", role: ControlRole.checkBox)
         try await eventuallyOnMain("the setting to follow") { settings.mcpProjectConfig == !repo }
         try window.press("Also use a repo’s .mcp.json", role: ControlRole.checkBox)
         try await eventuallyOnMain("the setting to go back") { settings.mcpProjectConfig == repo }
 
-        // Toolbar: Add server opens its sheet (a window of its own), and a filter narrows the list.
+        // Add server opens its sheet (a window of its own).
         try window.press("Add server")
-        try window.press("Needs you 2", role: ControlRole.radioButton)
-        try await eventuallyOnMain("the filter to narrow the rows") { store.rows(filter: .needsYou, query: "").count == 2 }
     }
 
     @MainActor
@@ -227,7 +235,7 @@ struct MCPSettingsControlTests {
         let store = try store(config: "{ nope", cli: cli, pasteboard: Pasteboard())
         let window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true, MCPSettings(vm: vm, store: store))
         defer { window.close() }
-        try await Task.sleep(for: .milliseconds(300))
+        try await eventuallyOnMain("the page to draw over an invalid file") { window.controls().contains { $0.label == "Open mcp.json" } }
         func refusal(_ body: () throws -> Void) -> ControlPressError? {
             do { try body() } catch let error as ControlPressError { return error } catch {}
             return nil
@@ -255,7 +263,7 @@ struct MCPSettingsControlTests {
         let window = OffscreenWindow(size: CGSize(width: SHMCPMetrics.sheetWidth, height: 380), dark: true,
                                      MCPSignInSheetHost(flow: flow) { closed += 1; store.closeSignIn() })
         defer { window.close() }
-        try await Task.sleep(for: .milliseconds(300))
+        try await eventuallyOnMain("the sign-in sheet to draw") { window.controls().contains { $0.label == "Copy link" } }
         try window.press("Copy link")
         #expect(pasteboard.copied == ["https://mcp.example.com/authorize?server=notion"])
         try window.press("Open browser again")
@@ -272,11 +280,14 @@ struct MCPSettingsControlTests {
         let failed = OffscreenWindow(size: CGSize(width: SHMCPMetrics.sheetWidth, height: 420), dark: true,
                                      MCPSignInSheetHost(flow: failing) { closed += 1 })
         defer { failed.close() }
-        try await Task.sleep(for: .milliseconds(300))
+        try await eventuallyOnMain("the failed sheet to draw") { failed.controls().contains { $0.label == "Try again" } }
         let logins = { cli.calls.filter { $0.first == "login" }.count }
         let before = logins()
         try failed.press("Try again")
         try await eventuallyOnMain("pi's login to run again") { logins() == before + 1 }
+        try await eventuallyOnMain("the failed retry sheet to draw") {
+            failing.model.phase == .failed && failed.controls().contains { $0.label == "Details" }
+        }
         try failed.press("Details")
         try failed.press("Close")
         #expect(closed == 2)
@@ -289,7 +300,7 @@ struct MCPSettingsControlTests {
         let finished = OffscreenWindow(size: CGSize(width: SHMCPMetrics.sheetWidth, height: 380), dark: true,
                                        MCPSignInSheetHost(flow: done) { closed += 1 })
         defer { finished.close() }
-        try await Task.sleep(for: .milliseconds(300))
+        try await eventuallyOnMain("the done sheet to draw") { finished.controls().contains { $0.label == "Done" } }
         try finished.press("Done")
         #expect(closed == 3)
     }
@@ -306,7 +317,7 @@ struct MCPSettingsControlTests {
         let window = OffscreenWindow(size: CGSize(width: 720, height: 700), dark: true,
                                      AddMCPServerSheet(store: store, initialKind: .remote, editing: nil, draft: draft) { closed += 1 })
         defer { window.close() }
-        try await Task.sleep(for: .milliseconds(400))
+        try await eventuallyOnMain("the add sheet to draw") { window.controls().contains { $0.label == "Add and sign in" } }
         // The kinds and sign-in choices are segments; Header shows its fields.
         try window.press("Header", role: ControlRole.radioButton)
         #expect(window.controls().compactMap(\.label).contains { $0.hasPrefix("Add") })

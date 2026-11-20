@@ -126,6 +126,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     case fleetDispatchMessage(id: Int, agentID: AgentID, dispatchID: String, text: String, delivery: FleetMessageDelivery)
     /// `fleet_cancel`: stop a dispatched thread. Answered with `ExtensionReply.fleetDispatch`.
     case fleetDispatchCancel(id: Int, agentID: AgentID, dispatchID: String)
+    case fleetDispatchClose(id: Int, agentID: AgentID, dispatchID: String)
 
     /// Read, steer, interrupt, or poll another live agent (relayed to the target's panes
     /// extension as `ExtensionReply.agentRequest`, never inferred from saved status), or ask
@@ -281,7 +282,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case createAutomation, listAutomations, updateAutomation, deleteAutomation
         case startAutomation, stopAutomation
         case listAgents, sendToAgent, spawnAgent, moveAgent, peerMessageReceived, coordinateAgent, agentResponse, cancelAgentRequest
-        case fleetListHosts, fleetDispatch, fleetDispatchStatus, fleetDispatchMessage, fleetDispatchCancel
+        case fleetListHosts, fleetDispatch, fleetDispatchStatus, fleetDispatchMessage, fleetDispatchCancel, fleetDispatchClose
         case suggestInstruction
         case designList, designRead, designWriteBoard, designEditBoard, designUpdateIndex, designComments, designCommentReply
         case designEditBoards, designSearch, designCheckpoint, designRender, designExport, designExtract
@@ -480,6 +481,9 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                                          delivery: (try? c.decodeIfPresent(FleetMessageDelivery.self, forKey: .delivery)) ?? .followUp)
         case .fleetDispatchCancel:
             self = .fleetDispatchCancel(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                                        dispatchID: try c.decode(String.self, forKey: .dispatchID))
+        case .fleetDispatchClose:
+            self = .fleetDispatchClose(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
                                         dispatchID: try c.decode(String.self, forKey: .dispatchID))
         case .coordinateAgent:
             self = .coordinateAgent(
@@ -894,6 +898,11 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(dispatchID, forKey: .dispatchID)
+        case .fleetDispatchClose(let id, let agentID, let dispatchID):
+            try c.encode(Kind.fleetDispatchClose, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(dispatchID, forKey: .dispatchID)
         case .coordinateAgent(let id, let agentID, let targetAgentID, let request):
             try c.encode(Kind.coordinateAgent, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1154,6 +1163,8 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
     public var turns: Int?
     public var toolCalls: Int?
     public var tokens: Int?
+    /// The catalog's cost estimate of the child's own messages; nil from an older publisher or a provider that reports none.
+    public var cost: Double?
     /// Context-window fill of the child's own session, 0–100.
     public var contextPercent: Double?
     public var lastActivity: ChildActivity?
@@ -1210,6 +1221,7 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
         turns: Int? = nil,
         toolCalls: Int? = nil,
         tokens: Int? = nil,
+        cost: Double? = nil,
         contextPercent: Double? = nil,
         lastActivity: ChildActivity? = nil,
         question: ChildQuestion? = nil,
@@ -1247,6 +1259,7 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
         self.turns = turns
         self.toolCalls = toolCalls
         self.tokens = tokens
+        self.cost = cost
         self.contextPercent = contextPercent
         self.lastActivity = lastActivity
         self.question = question
@@ -1399,6 +1412,7 @@ public struct PaneInfo: Codable, Hashable, Sendable {
 public enum ExtensionReply: Codable, Hashable, Sendable {
     /// Accepted host-queued user input: stop waiting in the parent, without stopping children.
     case parentInput
+    case stopManagedBash
     /// Sent on a `helloChildren` connection; answered by `ExtensionMessage.childCommandResult`.
     /// `mode` (steer/followUp) applies to `message`.
     case childCommand(id: Int, runID: String, action: ChildCommandAction, text: String?, mode: NativeThreadDelivery?)
@@ -1500,7 +1514,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     }
 
     private enum Kind: String, Codable {
-        case parentInput, childCommand, childStart, childScope, projectChildren, agentRequest, agentResult
+        case parentInput, stopManagedBash, childCommand, childStart, childScope, projectChildren, agentRequest, agentResult
         case projectResult
         case ok, error, panes, paneOpened, paneContent, reviewResult, appResult, automations, agents, message
         case suggestion
@@ -1521,6 +1535,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             self = .projectChildren(id: try c.decode(Int.self, forKey: .id), scope: try c.decode(ProjectChildScope.self, forKey: .scope), action: try c.decode(ProjectChildAction.self, forKey: .action))
         case .parentInput:
             self = .parentInput
+        case .stopManagedBash: self = .stopManagedBash
         case .childStart:
             self = .childStart(id: try c.decode(Int.self, forKey: .id), requestID: try c.decode(String.self, forKey: .requestID),
                                text: try c.decode(String.self, forKey: .text), images: try c.decode([NativeImage].self, forKey: .images))
@@ -1717,6 +1732,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         switch self {
         case .parentInput:
             try c.encode(Kind.parentInput, forKey: .type)
+        case .stopManagedBash: try c.encode(Kind.stopManagedBash, forKey: .type)
         case .childScope(let id, let scope, let deadline):
             try c.encode(Kind.childScope, forKey: .type); try c.encode(id, forKey: .id)
             try c.encodeIfPresent(scope, forKey: .scope); try c.encodeIfPresent(deadline, forKey: .deadline)

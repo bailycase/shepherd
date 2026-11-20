@@ -15,16 +15,25 @@ struct ProjectAutomationWireTests {
         #expect(try JSONDecoder().decode(Automation.self, from: JSONEncoder().encode(scoped)) == scoped)
     }
 
-    @Test(arguments: [ProjectAutomationAction.create(draft: .init(name: "Watch", prompt: "Inspect", cwd: "/tmp", enabled: true)),
-                      .update(draft: .init(name: "Edit", prompt: "Inspect again", cwd: "/tmp", enabled: false)),
-                      .setEnabled(false), .link, .delete])
-    func everyScopedActionRoundTripsWithItsFence(_ action: ProjectAutomationAction) throws {
-        let project = ProjectID(), automation = AutomationID()
-        let request = LogicalProjectsRequest.automation(projectID: project, expectedRevision: 7, automationID: automation, action: action)
-        let wire = RemoteRequest.logicalProjects(id: 4, request: request)
+    private static let actions: [ProjectAutomationAction] = [
+        .create(draft: .init(name: "Watch", prompt: "Inspect", cwd: "/tmp", enabled: true)),
+        .update(draft: .init(name: "Edit", prompt: "Inspect again", cwd: "/tmp", enabled: false)),
+        .setEnabled(false), .link, .delete,
+    ]
+    static let wireRequests = actions.map {
+        RemoteRequest.logicalProjects(id: 4, request: .automation(projectID: LogicalProjectsSamples.id,
+            expectedRevision: 7, automationID: AutomationID(rawValue: "00000000-0000-4000-8000-000000000007"), action: $0))
+    }
+
+    @Test(arguments: wireRequests)
+    func everyScopedActionRoundTripsWithItsFence(_ wire: RemoteRequest) throws {
         #expect(try Wire.roundTrip(wire) == wire)
+        guard case .logicalProjects(_, let request) = wire else {
+            Issue.record("Expected a logicalProjects request")
+            return
+        }
         #expect(request.requiresProjectAutomations)
-        #expect(request.projectID == project && request.expectedRevision == 7)
+        #expect(request.projectID == LogicalProjectsSamples.id && request.expectedRevision == 7)
         #expect(RemoteProtocol.capabilities.contains(RemoteProtocol.logicalProjectAutomationsCapability))
         #expect(!LogicalProjectsRequest.list.requiresProjectAutomations)
     }

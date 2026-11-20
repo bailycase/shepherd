@@ -31,7 +31,7 @@ Every decision has to pass one test: does this help one person supervise ten wor
 - A Space is the folder a thread runs in. A Project is the feature above Spaces and owns the
   word; copy never calls a folder a project.
 - Copy says "the agent", never "pi". The exception is where the user's own pi is the subject
-  (Settings ▸ Pi, Sign-in).
+  (Settings ▸ Models ▸ Your pi).
 - Experiments (Projects, Goals) are off by default and turning one off never discards its data;
   turning it back on never resumes work by itself.
 
@@ -91,20 +91,22 @@ What follows from them:
 
 ## Settings
 
-The macOS Settings board set (`docs/design/boards/Settings*.png`, `SignIn*.png`; page "macOS -
-Settings", revision 1083) is the source of truth for every Settings page.
+The Settings board set (`docs/design/boards/Settings*.png`, `MobileSettings*.png`,
+`iPadSettingsInstructions.png`; pages "macOS - Settings" and "Components - Settings", revision 3069)
+is the source of truth for every Settings page, on the Mac and on iPhone and iPad.
 
-- **Navigation** is one flat list on `bgBase`, in the boards' order: Appearance, Terminal,
-  Agents, Subagents, Worktrees, Spaces, Sign-in, Pi, Instructions, Skills, Extensions, Slash
-  commands, Apps, Hooks, MCP servers, Remote, Keyboard, Advanced, Experiments. No nested rows. Sign-in
-  carries a lantern dot while a sign-in needs the user. The footer reads
-  "Shepherd x.y.z · agent x.y.z", and "· pi x.y.z" on Pi.
-- **Pages** fill the width with 40pt side gutters. Each page has a Geist 22/600 title, one
-  explanation line, then groups 28pt apart. A group has a caps label, a flat card (radius 10,
-  1px `lineSubtle`), and an optional footnote.
+- **Navigation** is a 220pt list on `bgBase` with no icons, in groups: General, Appearance,
+  Keyboard · Agents: Models, Agents, Instructions, Skills, Tools, Hooks · Work: Spaces, Git, Apps,
+  Fleet · Advanced, Experiments. Keyboard and Apps are on the Mac only; the iPhone and iPad list
+  has the rest. Esc leaves a sub-page for its parent, else leaves Settings.
+- **Pages** are one centered 620pt column: a 15/600 title, then groups. A group has a
+  sentence-case caption label (optional links at its right), a card on `bgRaised` (radius `l`,
+  1px `lineSubtle`) and an optional footnote. Rows are 44pt with a one-line hint.
+- A sub-page (a profile, a skill, a server, a space, an editor) shows "‹ Parent" above its title.
 - Every row is wired: a row exists only if changing it changes the app, and a change applies at
-  once with no Save, except Instructions and Spaces, which edit files with an explicit Save.
-- Sliders show the bare number the board draws ("100", "232", "12.5"). VoiceOver reads the unit.
+  once with no Save, except editors, which keep an explicit Save.
+- On the Mac every multi-line text input has Open in ▾ at its top right: it opens the draft in an
+  app for its type (`ExternalDraft`), and saves there come back into the draft. iOS has none.
 
 ## Shepherd Design
 
@@ -161,8 +163,12 @@ status color, a raw color, a raw glyph name, or a symbol renamed where an animat
 - A store-driven change uses `.shAnimation(_:value:)` and `.shTransition`. An action-driven
   change uses `withSHAnimation`. Never use an ad-hoc `withAnimation`.
 - Switching agents, keyboard navigation, selection, streaming text and terminal resizes land at
-  once (`.shInstant()`). Under Reduce Motion nothing travels: cross-fade in 120ms or stand still.
-- Spinners and glows are Core Animation layers, never a view redrawn every frame.
+  once (`.shInstant()`); the one exception is the composer's focus ring in the layout a switch
+  brings on screen, which fades in over the `hover` 120ms (an ease-out, never a spring) and lands at
+  once under Reduce Motion. Under Reduce Motion nothing travels: cross-fade in 120ms or stand still.
+- Spinners and glows are Core Animation layers, never a view redrawn every frame; so is the
+  composer's focus line and ring, since a SwiftUI animation lays the visible layout out again on
+  every frame it lasts.
 - A glyph that swaps for another (Send and Stop, copy and its check) is two fixed images
   cross-faded by opacity, or one image keyed on its state; a disclosure chevron is one
   `SHTurningChevron` that turns. Renaming one symbol under any animation (a content transition,

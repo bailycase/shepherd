@@ -117,10 +117,10 @@ final class AppHarness {
         await vm?.persistenceTail?.value
     }
 
-    func stop() {
+    func stop(keepFiles: Bool = false) {
         for connection in remoteHosts.allConnections { remoteHosts.removeHost(id: connection.id) }
         vm = nil
-        scratch.stop()
+        scratch.stop(keepFiles: keepFiles)
     }
 }
 
@@ -191,8 +191,7 @@ extension ShepherdViewModel {
     @discardableResult
     func startHostTerminal(_ pane: PaneID, of agent: AgentID) async throws -> RemotePaneSession {
         let ref = try #require(localRef(agent))
-        do { try await remoteHosts.agentAction(ref, action: .startTerminal(paneID: pane)) }
-        catch where "\(error)".contains("That terminal is starting") {}
+        try await remoteHosts.agentAction(ref, action: .startTerminal(paneID: pane))
         var session: RemotePaneSession?
         try await eventuallyOnMain("the app to attach to the host's shell", timeout: .seconds(30)) {
             session = hostPaneSession(pane)

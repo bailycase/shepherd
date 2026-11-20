@@ -9,7 +9,7 @@ extension ShepherdViewModel {
 
     /// Settings ▸ MCP servers.
     func openMCPSettings() {
-        settingsSection = .mcp
+        settingsSection = .tools
         showSettings = true
     }
 }

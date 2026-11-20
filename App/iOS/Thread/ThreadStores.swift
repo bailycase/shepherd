@@ -17,7 +17,7 @@ import ShepherdRemote
 @MainActor
 @Observable
 final class ThreadStores {
-    @ObservationIgnored private var stores: [AgentRef: NativeThreadStore] = [:]
+    private var stores: [AgentRef: NativeThreadStore] = [:]
     @ObservationIgnored private var viewers: [AgentRef: NativeThreadViewers] = [:]
     /// Threads by when they were last asked for, most recent last.
     @ObservationIgnored private var recent: [AgentRef] = []

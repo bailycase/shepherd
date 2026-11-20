@@ -54,6 +54,9 @@ public struct SettingsHost: Identifiable, Sendable {
 
     public var isConnected: Bool { client != nil }
 
+    /// Whether the host offers `capability`, connected or not.
+    public func supports(_ capability: Capability) -> Bool { capabilities.contains(capability.rawValue) }
+
     /// Connected, and serving `capability`.
     public func serves(_ capability: String) -> Bool {
         client != nil && capabilities.contains(capability)
@@ -126,7 +129,7 @@ public final class ClientHostSettings {
 
     public func state(of host: SettingsHost) -> State {
         guard !forgotten.contains(host.id), host.isConnected else { return .offline }
-        guard host.capabilities.contains(RemoteProtocol.hostSettingsCapability) else { return .unsupported }
+        guard host.supports(.hostSettings) else { return .unsupported }
         return loaded[host.id] ?? .loading
     }
 
@@ -137,7 +140,7 @@ public final class ClientHostSettings {
 
     /// Reads a host's settings afresh.
     public func refresh(_ host: SettingsHost) async {
-        guard !forgotten.contains(host.id), let client = host.client, host.capabilities.contains(RemoteProtocol.hostSettingsCapability) else { return }
+        guard !forgotten.contains(host.id), let client = host.client, host.supports(.hostSettings) else { return }
         if loaded[host.id] == nil { loaded[host.id] = .loading }
         do {
             let settings = try await client.hostSettings(.fetch)
@@ -229,13 +232,17 @@ public final class ClientInstructions {
 
     public func files(of host: SettingsHost) -> InstructionsHostFiles {
         guard !forgotten.contains(host.id), host.isConnected else { return .offline }
-        guard host.capabilities.contains(RemoteProtocol.instructionsCapability) else { return .unsupported }
+        guard host.supports(.instructions) else { return .unsupported }
         return files[host.id] ?? .checking
     }
 
     /// The host whose files the page edits: the first whose files are read.
     public func edited(in hosts: [SettingsHost]) -> SettingsHost? {
         hosts.first { files(of: $0).snapshot != nil }
+    }
+
+    public func historyProblem(in hosts: [SettingsHost]) -> String? {
+        edited(in: hosts).flatMap { files(of: $0).snapshot?.historyProblem }
     }
 
     /// Reads every connected host's files.
@@ -369,7 +376,7 @@ public final class ClientSuggestions {
     /// Reads every connected host's suggestions.
     public func refresh(_ hosts: [SettingsHost]) async {
         for host in hosts where !forgotten.contains(host.id) {
-            guard let client = host.client, host.capabilities.contains(RemoteProtocol.suggestionsCapability) else {
+            guard let client = host.client, host.supports(.suggestions) else {
                 snapshots[host.id] = nil
                 continue
             }

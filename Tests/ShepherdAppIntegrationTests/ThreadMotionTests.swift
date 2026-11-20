@@ -473,8 +473,12 @@ struct ThreadMotionTests {
         #expect(recording.inBetween.isEmpty)
     }
 
-    /// A question takes the composer's place: the dock fades in over frames where the card sat,
-    /// its bottom edge never moving.
+    /// A question takes the composer's place: the dock fades in over frames where the card sat.
+    /// Both rest on one line, `AppLayout.composerBottom` above the thread's foot, and fill with the
+    /// same `bgRaised`, so a picture of the change differs from the card's only where the dock draws
+    /// something else: down to its own last content, a `SHQuestionDockMetrics.padding` above the line.
+    /// While the two cross-fade their fills together fall a hair short of opaque, and the picture
+    /// differs from the card's down to the line itself, never past it.
     @Test(.timingSensitive) func aQuestionDockFadesInWhereTheCardSat() async throws {
         let thread = MotionThread(Fixtures.snapshot([]))
         defer { thread.close() }
@@ -488,9 +492,16 @@ struct ThreadMotionTests {
 
         #expect(recording.settled.firstRow(differingFrom: recording.before, by: 0.02) != nil, "the dock came")
         #expect(!recording.inBetween.isEmpty, "it fades in over frames")
-        let bottom = try #require(recording.settled.lastRow(differingFrom: recording.before))
+        // The last row the card and the dock draw: their bottom line.
+        let line = Int(Self.size.height - AppLayout.composerBottom - column.minY) - 1
         let bottoms = recording.frames.compactMap { $0.lastRow(differingFrom: recording.before) }
-        #expect(bottoms.allSatisfy { $0 <= bottom }, "nothing below the card's bottom edge moved: \(bottoms), the dock ends at \(bottom)")
+        #expect(bottoms.allSatisfy { $0 <= line }, "nothing drew below the line the card sat on: \(bottoms), the line at \(line)")
+        let bottom = try #require(recording.settled.lastRow(differingFrom: recording.before))
+        let content = line - Int(SHQuestionDockMetrics.padding.bottom)
+        #expect(abs(bottom - content) <= 1, "the dock's content ends a padding above the card's line: it ends at \(bottom), the line at \(line)")
+        // The dock's line is the card's: the same row, with the thread's background under it.
+        #expect(abs(recording.settled.lightness(x: 0, y: line) - recording.before.lightness(x: 0, y: line)) < 0.005, "the dock's line sits on the card's")
+        #expect(abs(recording.settled.lightness(x: 0, y: line) - recording.settled.lightness(x: 0, y: line + 1)) > 0.05, "the dock ends on it")
     }
 
     /// Send and Stop are one button: when a turn starts, the glyph and the fill blend in place

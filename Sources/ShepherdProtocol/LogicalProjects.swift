@@ -3,9 +3,9 @@ import ShepherdCore
 
 extension RemoteProtocol {
     /// Persisted configuration only, not dispatch, cross-host execution or ownership transfer.
-    public static let logicalProjectFilesCapability = "logicalProjects.files.v1"
-    public static let logicalProjectsCapability = "logicalProjects.v1"
-    public static let logicalProjectAutomationsCapability = "logicalProjectAutomations.v1"
+    public static let logicalProjectFilesCapability = Capability.logicalProjectFiles.rawValue
+    public static let logicalProjectsCapability = Capability.logicalProjects.rawValue
+    public static let logicalProjectAutomationsCapability = Capability.logicalProjectAutomations.rawValue
 }
 
 /// All IDs and revisions are scoped to the host receiving this request. Create's supplied ID

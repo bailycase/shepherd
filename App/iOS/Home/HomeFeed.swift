@@ -29,12 +29,15 @@ import ShepherdRemote
 final class HomeFeed {
     /// Everything Home draws; written only when it changes.
     private(set) var model = FleetModel()
+    private(set) var supervisionQueues = SupervisionQueues<FleetRef>(blocked: [], unseenDone: [])
     /// Needs you items whose answer is on its way, by id.
     private(set) var answering: Set<String> = []
     /// Why an answer from Home did not land, by item id.
     private(set) var failures: [String: String] = [:]
 
     @ObservationIgnored private let hosts: MobileHosts
+    @ObservationIgnored private let sidebar: SidebarThreads
+    @ObservationIgnored private var queueSidebarState: FleetSidebarState?
     @ObservationIgnored var projectNative: ((AgentRef, NativeThreadRequest) async throws -> NativeThreadResult)?
     /// The snapshot a thread store already holds for an agent (`ThreadStores`), when one does.
     @ObservationIgnored var openSnapshot: ((AgentRef) -> NativeThreadSnapshot?)?
@@ -55,6 +58,8 @@ final class HomeFeed {
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var refreshing = false
     @ObservationIgnored private var again = false
+    /// Wakes `derive()` when a day changes for a thread's spend, so Home's "Spent today" resets without a state push.
+    @ObservationIgnored private var midnight: Task<Void, Never>?
 
     /// Between polls of the threads that run or wait.
     static let interval: Duration = .seconds(3)
@@ -78,6 +83,7 @@ final class HomeFeed {
 
     private init(hosts: MobileHosts) {
         self.hosts = hosts
+        sidebar = SidebarThreads.of(hosts)
         track()
     }
 
@@ -86,11 +92,12 @@ final class HomeFeed {
     /// Reads the hosts under observation tracking, derives when they changed, and tracks again.
     private func track() {
         let designs = MobileDesigns.of(hosts)
-        let (next, connections) = withObservationTracking {
+        let (next, connections, sidebarState) = withObservationTracking {
             (hosts.hosts.map { host in
                 FleetHost(id: host.id, name: host.name, address: host.record.address, port: host.record.port,
                           phase: host.phase, state: host.threadState, lastSeen: host.lastSeen, designs: designs.serving.contains(host.id))
-            }, Dictionary(hosts.hosts.compactMap { host in host.session.map { (host.id, $0) } }, uniquingKeysWith: { a, _ in a }))
+            }, Dictionary(hosts.hosts.compactMap { host in host.session.map { (host.id, $0) } }, uniquingKeysWith: { a, _ in a }),
+              sidebar.state)
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.track() }
         }
@@ -99,6 +106,8 @@ final class HomeFeed {
         if next != inputs {
             inputs = next
             prune()
+            derive()
+        } else if sidebarState != queueSidebarState {
             derive()
         }
         if reconnected, watchers > 0 { Task { await refresh() } }
@@ -115,7 +124,22 @@ final class HomeFeed {
     private func derive() {
         pending = false
         let next = FleetModel(hosts: inputs, digests: digests)
-        if next != model { model = next }
+        midnight?.cancel()
+        let now = Date()
+        if let change = SpendDay.nextChange(of: inputs.flatMap { $0.state.agents.compactMap(\.spend) }, after: now) {
+            midnight = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(change.timeIntervalSince(now) + 1))
+                guard !Task.isCancelled else { return }
+                self?.derive()
+            }
+        }
+        let sidebarState = sidebar.state
+        let modelChanged = next != model
+        guard modelChanged || sidebarState != queueSidebarState else { return }
+        if modelChanged { model = next }
+        queueSidebarState = sidebarState
+        let queues = sidebarState.supervisionQueues(next)
+        if queues != supervisionQueues { supervisionQueues = queues }
     }
 
     /// A digest changed: Home shows it once the sweep next waits, in one derive with every other

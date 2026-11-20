@@ -1,6 +1,7 @@
 import SwiftUI
 import ShepherdUI
 import ShepherdProtocol
+import ShepherdRemote
 
 /// A window's content: the phone shell or the iPad split view by width, the app's state and the
 /// window's own navigator in the environment, the chosen appearance, and hosts connected while
@@ -36,7 +37,7 @@ struct MobileRoot: View {
         }
         .mobileEnvironment(app, navigator: navigator, window: window)
         .background(DesignRenderAnchor().allowsHitTesting(false).accessibilityHidden(true))
-        .focusedSceneValue(\.mobileNavigator, navigator)
+        .modifier(MobileCommandFocus(target: MobileCommandTarget(app: app, navigator: navigator)))
         .tint(Color.sh.lantern)
         .preferredColorScheme(app.appearance.mode.colorScheme)
         .onChange(of: layout, initial: true) { _, layout in navigator.adopt(layout) }

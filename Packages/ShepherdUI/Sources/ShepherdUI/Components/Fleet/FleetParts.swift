@@ -139,6 +139,8 @@ public struct SHListRow: View, Equatable {
     let subtitle: String?
     let subtitleMono: Bool
     let subtitleTone: AgentState?
+    /// What the thread spent, on a line of its own under the status line.
+    let spend: String?
     let clock: SHRowClock?
     let leading: Leading
     let trailing: Trailing
@@ -153,12 +155,13 @@ public struct SHListRow: View, Equatable {
     /// moves the content in while the row (and its selection) keeps the full width (the iPad
     /// sidebar's More sub-rows).
     public init(_ title: String, subtitle: String? = nil, subtitleMono: Bool = true, subtitleTone: AgentState? = nil,
-                clock: SHRowClock? = nil, leading: Leading = .none, trailing: Trailing = .none, chevron: Bool = true,
+                spend: String? = nil, clock: SHRowClock? = nil, leading: Leading = .none, trailing: Trailing = .none, chevron: Bool = true,
                 selected: Bool = false, dimmed: Bool = false, compact: Bool = false, indent: CGFloat = 0) {
         self.title = title
         self.subtitle = subtitle
         self.subtitleMono = subtitleMono
         self.subtitleTone = subtitleTone
+        self.spend = spend
         self.clock = clock
         self.leading = leading
         self.trailing = trailing
@@ -170,7 +173,7 @@ public struct SHListRow: View, Equatable {
     }
 
     public nonisolated static func == (a: SHListRow, b: SHListRow) -> Bool {
-        a.title == b.title && a.subtitle == b.subtitle && a.subtitleMono == b.subtitleMono && a.subtitleTone == b.subtitleTone
+        a.title == b.title && a.subtitle == b.subtitle && a.subtitleMono == b.subtitleMono && a.subtitleTone == b.subtitleTone && a.spend == b.spend
             && a.clock == b.clock && a.leading == b.leading && a.trailing == b.trailing && a.chevron == b.chevron
             && a.selected == b.selected && a.dimmed == b.dimmed && a.compact == b.compact && a.indent == b.indent
     }
@@ -190,6 +193,10 @@ public struct SHListRow: View, Equatable {
                     statusLine
                         .font(subtitleMono ? .sh(.mono) : .sh(.caption))
                         .foregroundStyle(subtitleTone?.textColor ?? sh.textTertiary)
+                        .lineLimit(typeSize.isAccessibilitySize ? SHListMetrics.accessibilityStatusLines : 1)
+                }
+                if let spend {
+                    Text(spend).font(.sh(.mono)).foregroundStyle(sh.textTertiary)
                         .lineLimit(typeSize.isAccessibilitySize ? SHListMetrics.accessibilityStatusLines : 1)
                 }
                 // At accessibility sizes the accessory goes under the title, which keeps its width.
@@ -334,15 +341,18 @@ public struct SHOverviewRow: View, Equatable {
     let title: String
     let detail: String
     let detailMono: Bool
+    /// What the thread spent, on a line of its own under the detail.
+    let spend: String?
     let leading: SHListRow.Leading
     let time: Time
     let dimmed: Bool
 
-    public init(_ title: String, detail: String, detailMono: Bool = true, leading: SHListRow.Leading, time: Time = .none,
+    public init(_ title: String, detail: String, detailMono: Bool = true, spend: String? = nil, leading: SHListRow.Leading, time: Time = .none,
                 dimmed: Bool = false) {
         self.title = title
         self.detail = detail
         self.detailMono = detailMono
+        self.spend = spend
         self.leading = leading
         self.time = time
         self.dimmed = dimmed
@@ -362,6 +372,7 @@ public struct SHOverviewRow: View, Equatable {
                         .lineLimit(1).fixedSize()
                 }
                 Text(detail).font(detailMono ? .sh(.mono) : .sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1)
+                if let spend { Text(spend).font(.sh(.mono)).foregroundStyle(sh.textTertiary).lineLimit(1) }
             }
         }
         .padding(.horizontal, SH.Space.l)
@@ -436,12 +447,18 @@ public struct SHLazyListCard<Data: RandomAccessCollection, Row: View>: View wher
 
 /// One row's share of a list card: its corners where it ends the card, the rule above it
 /// otherwise, and the card's border along its sides.
-private struct SHListCardSegment<Content: View>: View {
+public struct SHListCardSegment<Content: View>: View {
     let first: Bool
     let last: Bool
     @ViewBuilder let content: () -> Content
 
-    var body: some View {
+    public init(first: Bool, last: Bool, @ViewBuilder content: @escaping () -> Content) {
+        self.first = first
+        self.last = last
+        self.content = content
+    }
+
+    public var body: some View {
         let _ = SHRenderProbe.tick("listCard.segment")
         let radius = SHListMetrics.cardRadius
         let shape = UnevenRoundedRectangle(topLeadingRadius: first ? radius : 0, bottomLeadingRadius: last ? radius : 0,

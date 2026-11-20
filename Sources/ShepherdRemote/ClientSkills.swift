@@ -36,7 +36,7 @@ public struct SkillsHost: Identifiable, Sendable {
     /// A remote host from Settings' own list.
     public init(_ host: SettingsHost) {
         self.init(id: host.id, name: host.name, client: host.client,
-                  serves: host.client == nil || host.capabilities.contains(RemoteProtocol.skillsCapability))
+                  serves: host.client == nil || host.supports(.skills))
     }
 
     public var isConnected: Bool { client != nil }

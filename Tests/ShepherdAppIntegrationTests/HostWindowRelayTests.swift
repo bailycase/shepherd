@@ -85,7 +85,8 @@ struct HostWindowRelayTests {
         }
         let relayed = try await phone.hostUpdate(.status)
         #expect(relayed.error != SessionServer.hostUpdateWindowClosed, "answered by the app's updater")
-        let own = await AppUpdater.shared.remoteUpdate(.status, authorized: { @Sendable in true })
+        var own = await AppUpdater.shared.remoteUpdate(.status, authorized: { @Sendable in true })
+        own.busyThreads = 0   // the host adds how many threads work on it
         #expect(relayed == own)
 
         // The gate: one reservation at a time, released by the app.

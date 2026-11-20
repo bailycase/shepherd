@@ -35,7 +35,7 @@ struct SpaceResourceEditorView: View {
                         if kind == .extension { extensionFields } else { commonFields(editor) }
                         if kind == .agent { agentFields(editor) }
                         if kind != .extension {
-                            field(kind == .prompt ? "Prompt" : "Instructions") {
+                            field(kind == .prompt ? "Prompt" : "Instructions", openIn: binding(\.body), file: kind == .prompt ? "prompt.md" : "instructions.md") {
                                 SpaceResourceTextArea(label: kind == .prompt ? "Prompt" : "Instructions", text: binding(\.body), mono: true,
                                                       height: kind == .agent ? AppLayout.resourceAgentBodyHeight : AppLayout.resourceBodyHeight)
                             }
@@ -72,9 +72,14 @@ struct SpaceResourceEditorView: View {
         Binding(get: { (model.editor ?? .init(kind: .skill))[keyPath: key] }, set: { model.editor?[keyPath: key] = $0; model.editor?.error = nil })
     }
 
-    private func field<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+    private func field<Content: View>(_ label: String, openIn: Binding<String>? = nil, file: String = "draft.txt",
+                                      @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: SH.Space.xs) {
-            Text(label).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
+            HStack(spacing: SH.Space.s) {
+                Text(label).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
+                Spacer(minLength: 0)
+                if let openIn { SettingsOpenIn(text: openIn, name: file) }
+            }
             content()
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -99,7 +104,7 @@ struct SpaceResourceEditorView: View {
                 }
             }
         }
-        field("Description") {
+        field("Description", openIn: binding(\.description), file: "description.txt") {
             SpaceResourceTextArea(label: "Resource description", text: binding(\.description), mono: false, height: AppLayout.resourceDescriptionHeight)
         }
     }

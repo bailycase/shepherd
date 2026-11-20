@@ -3,30 +3,39 @@ import ShepherdCore
 import ShepherdUI
 import ShepherdSessions
 
-/// Settings ▸ Pi (SettingsPi, SettingsPiFromPi, SettingsPiExtensions): Shepherd's own pi, then
-/// From pi, what came over from the user's pi. The bundled extensions are on Settings ▸ Extensions,
-/// native subagents on Settings ▸ Subagents.
-struct PiSettings: View {
+/// Settings ▸ Models: sign-in, the model defaults, Shepherd's own pi, and a way into the pi in
+/// your terminal. The bundled extensions are on Settings ▸ Tools, native subagents on Settings ▸ Agents.
+struct ModelsSettings: View {
     /// Shepherd's pi on this Mac: its version and home.
     let pi: PiSetup
-    /// The user's own pi, for From pi; nil leaves the section out (a test of the switches alone).
-    var yourPi: YourPiModel? = nil
-    var openExtensions: () -> Void = {}
+    let yourPi: YourPiModel
+    let auth: PiAuthStore
+    var settings: AppSettings? = nil
+    /// Opens Settings ▸ Your pi.
+    var openYourPi: () -> Void = {}
+
+    private var yourPiHint: String {
+        if yourPi.survey?.stateProblem != nil { return "Import history unavailable" }
+        guard let survey = yourPi.survey, survey.folder != nil else { return "No pi of yours found" }
+        return survey.copiedAt.map { "Imported \(FromYourPiSettings.day($0))" } ?? "Not imported yet"
+    }
 
     var body: some View {
-        SettingsPage(title: "Pi", explanation: "Shepherd's own copy of pi.") {
-            SettingsGroup(title: "Shepherd's pi",
-                          footnote: "Shepherd runs its own copy of pi, with its own sign-ins, settings and conversations. The pi in your terminal is yours: Shepherd never runs it or changes its files.") {
+        SettingsPage(title: "Models") {
+            PiSignInSettings(yourPi: yourPi, auth: auth)
+            AgentModelGroups(pi: pi, settings: settings)
+            SettingsGroup(title: "Shepherd’s pi") {
                 PathRow(title: pi.engine.version.map { "pi \($0)" } ?? "pi",
-                        subtitle: "Included with Shepherd, and updated with it. Its home:", url: pi.home)
+                        subtitle: "Included with Shepherd, updated with it", url: pi.home)
                 PiModelsRow(catalog: pi.catalog)
+                SettingsDrillRow(title: "Your pi", subtitle: yourPiHint,
+                                 value: yourPi.survey?.folder.map { ($0 as NSString).abbreviatingWithTildeInPath }, action: openYourPi)
             }
-            if let yourPi { FromYourPiSettings(model: yourPi, openExtensions: openExtensions) }
         }
     }
 }
 
-/// Settings ▸ Pi ▸ Models (SettingsPiModels): checks pi.dev for a newer model catalog now instead of
+/// Settings ▸ Models ▸ Shepherd's pi ▸ Models (SettingsPiModels): checks pi.dev for a newer model catalog now instead of
 /// at the host's daily check. pi writes the home's `models-store.json`, which the host's catalog
 /// watches, so the model picker lists the new models on its next ask.
 struct PiModelsRow: View {
@@ -42,45 +51,24 @@ struct PiModelsRow: View {
         _state = State(initialValue: state)
     }
 
-    var body: some View {
-        SettingsRow(title: "Models",
-                    subtitle: "pi's bundled list, plus models pi.dev added since this release. Shepherd checks pi.dev once a day.") {
-            HStack(spacing: SH.Space.l) {
-                status
-                Button(action: refresh) {
-                    Label(state == .failed ? "Try again" : state == .refreshing ? "Refreshing…" : "Refresh models",
-                          systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(.sh(.secondary, size: .s))
-                .disabled(state == .refreshing)
-            }
+    private var hint: String? {
+        switch state {
+        case .idle: checked.map { "Checked \(Self.checkedFormatter.string(from: $0))" }
+        case .refreshing: "Checking pi.dev…"
+        case .current: "Up to date · checked just now"
+        case .failed: "Couldn't reach pi.dev. The models you already have still work."
         }
-        .task { await readChecked() }
     }
 
-    @ViewBuilder private var status: some View {
-        VStack(alignment: .trailing, spacing: SH.Space.xxs) {
-            switch state {
-            case .idle:
-                if let checked {
-                    Text("Checked \(Self.checkedFormatter.string(from: checked))").foregroundStyle(Color.sh.textTertiary)
-                }
-            case .refreshing:
-                HStack(spacing: SH.Space.s) {
-                    ProgressView().progressViewStyle(.shSpinner).accessibilityHidden(true)
-                    Text("Checking pi.dev…").foregroundStyle(Color.sh.textSecondary)
-                }
-            case .current:
-                Text("Up to date").foregroundStyle(Color.sh.done)
-                Text("Checked just now.").foregroundStyle(Color.sh.textSecondary)
-            case .failed:
-                Text("Couldn't reach pi.dev").foregroundStyle(Color.sh.failed)
-                Text("The models you already have still work.").foregroundStyle(Color.sh.textSecondary)
+    var body: some View {
+        SettingsRow(title: "Models", subtitle: hint) {
+            Button(action: refresh) {
+                Text(state == .failed ? "Try again" : state == .refreshing ? "Refreshing…" : "Refresh models")
             }
+            .buttonStyle(.sh(.secondary, size: .s))
+            .disabled(state == .refreshing)
         }
-        .font(.sh(.caption))
-        .multilineTextAlignment(.trailing)
-        .accessibilityElement(children: .combine)
+        .task { await readChecked() }
     }
 
     private func refresh() {
@@ -109,70 +97,63 @@ struct PiModelsRow: View {
     }()
 }
 
-/// Settings ▸ Subagents, under the list: whether agents run native subagents, whether the app shows
-/// them, and the defaults a child run starts with. No board draws these; they moved here from Pi
-/// (the user's decision, 2026-10-07).
+/// Settings ▸ Agents ▸ Subagents: whether agents run native subagents, whether the app shows them,
+/// the defaults a child run starts with, and the Profiles drill-in as the card's last row.
 struct NativeSubagentSettings: View {
     /// Shepherd's pi on this Mac, whose catalog names the subagent model choices.
     let pi: PiSetup
     @Bindable var settings: AppSettings
+    var profiles: [String] = []
+    var editProfiles: () -> Void = {}
     @State private var modelOptions: [String] = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
-            SettingsGroup(title: "Native subagents") {
-                SettingsRow(title: "Native subagents",
-                            subtitle: "Shepherd helpers, agent files and scripted workflows. Needs pi 0.85.1+. Children stop with their parent.") {
-                    SettingsSwitch(label: "Native subagents", isOn: $settings.piNativeSubagents)
-                }
-                SettingsRow(title: "Subagent display",
-                            subtitle: "Show subagent runs in their agent's thread, the inspector and the palette. Off doesn't stop them running.") {
-                    SettingsSwitch(label: "Subagent display", isOn: $settings.subagentDisplay)
-                }
+        SettingsGroup(title: "Subagents", footnote: "Explicit call, then agent file, then these, then the parent.") {
+            SettingsRow(title: "Native subagents", subtitle: "Helpers, agent files and workflows") {
+                SettingsSwitch(label: "Native subagents", isOn: $settings.piNativeSubagents)
+            }
+            SettingsRow(title: "Show subagent runs") {
+                SettingsSwitch(label: "Subagent display", isOn: $settings.subagentDisplay)
             }
             if settings.piNativeSubagents {
-                SettingsGroup(title: "Native subagent defaults",
-                              footnote: "Precedence: explicit call → agent file → these defaults → parent. Child tools run with your account's access.") {
-                    SettingsRow(title: "Concurrency", subtitle: "Child process limit per parent, including workflows.") {
-                        SHStepper("Concurrency", value: $settings.childConcurrency, in: 1...16)
-                    }
-                    SettingsRow(title: "Model", subtitle: "Agent files and explicit calls override this.") {
-                        SHPopupMenu(settings.childModel.isEmpty ? "Inherit parent" : settings.childModel,
-                                    mono: !settings.childModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
-                            Button("Inherit parent") { settings.childModel = "" }
-                            Divider()
-                            ForEach(childModelOptions, id: \.self) { id in
-                                Button(id) { settings.childModel = id }
-                            }
-                        }
-                        .accessibilityLabel("Subagent model")
-                    }
-                    SettingsRow(title: "Thinking") {
-                        SHPopupMenu(settings.childThinking.isEmpty ? "Inherit parent" : settings.childThinking.capitalized,
-                                    minWidth: AppLayout.settingsPopupWidth) {
-                            Button("Inherit parent") { settings.childThinking = "" }
-                            Divider()
-                            ForEach(["off", "minimal", "low", "medium", "high", "xhigh", "max"], id: \.self) { level in
-                                Button(level.capitalized) { settings.childThinking = level }
-                            }
-                        }
-                        .accessibilityLabel("Subagent thinking")
-                    }
-                    SettingsRow(title: "Context", subtitle: "Start each child fresh, or fork the parent's conversation.") {
-                        SHSegmentedPicker("Context", selection: $settings.childContext, options: [("fresh", "Fresh"), ("fork", "Fork")])
-                    }
+                SettingsRow(title: "Run at most", subtitle: "Per parent, workflows included") {
+                    SHStepper("Concurrency", value: $settings.childConcurrency, in: 1...16)
                 }
-                .task {
-                    // Shepherd's pi's catalog: its home's models.json names only custom providers.
-                    let catalog = pi.catalog
-                    modelOptions = await Task.detached(priority: .userInitiated) {
-                        Array(Set(catalog.entriesOrConfigured().map(\.id))).sorted()
-                    }.value
+                SettingsRow(title: "Model") {
+                    SHPopupMenu(settings.childModel.isEmpty ? "Inherit parent" : settings.childModel,
+                                mono: !settings.childModel.isEmpty, minWidth: 0) {
+                        Button("Inherit parent") { settings.childModel = "" }
+                        Divider()
+                        ForEach(childModelOptions, id: \.self) { id in
+                            Button(id) { settings.childModel = id }
+                        }
+                    }
+                    .accessibilityLabel("Subagent model")
                 }
-                .shTransition(.disclosure)
+                SettingsRow(title: "Thinking") {
+                    SHPopupMenu(settings.childThinking.isEmpty ? "Inherit parent" : settings.childThinking.capitalized, minWidth: 0) {
+                        Button("Inherit parent") { settings.childThinking = "" }
+                        Divider()
+                        ForEach(["off", "minimal", "low", "medium", "high", "xhigh", "max"], id: \.self) { level in
+                            Button(level.capitalized) { settings.childThinking = level }
+                        }
+                    }
+                    .accessibilityLabel("Subagent thinking")
+                }
+                SettingsRow(title: "Context") {
+                    SHSegmentedPicker("Context", selection: $settings.childContext, options: [("fresh", "Fresh"), ("fork", "Fork")])
+                }
             }
+            SettingsDrillRow(title: "Profiles", subtitle: profiles.isEmpty ? nil : profiles.joined(separator: ", "),
+                             value: profiles.isEmpty ? nil : "\(profiles.count)", action: editProfiles)
         }
-        .shControlScale(.settings)
+        .task {
+            // Shepherd's pi's catalog: its home's models.json names only custom providers.
+            let catalog = pi.catalog
+            modelOptions = await Task.detached(priority: .userInitiated) {
+                Array(Set(catalog.entriesOrConfigured().map(\.id))).sorted()
+            }.value
+        }
         .shAnimation(.disclosure, value: settings.piNativeSubagents)
     }
 

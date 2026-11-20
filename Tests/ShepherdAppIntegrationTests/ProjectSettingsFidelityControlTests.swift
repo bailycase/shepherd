@@ -219,7 +219,7 @@ struct ProjectSettingsFidelityControlTests {
             near(delete.frame.height, 28, "Delete…'s height"); near(delete.frame.width, 68.1, "Delete…'s width", tolerance: 1)
             for name in ["Conversation model", "Thread model", "Threads at once"] {
                 let node = try await enabledPopup(window, name)
-                near(node.frame.height, 32, "\(name)'s height")
+                near(node.frame.height, SHSettingsControlMetrics.controlHeight, "\(name)'s height")
                 #expect(node.isEnabled, "\(name) is enabled")
                 #expect(node.frame.height >= HitArea.desktop.minimum, "\(name) clears the 24pt hit area")
             }
@@ -420,11 +420,11 @@ struct ProjectSettingsFidelityControlTests {
         let remove = try control(window, "Remove sample-app-api")
         near(remove.frame.height, 28, "Remove's height"); near(remove.frame.width, 69.2, "Remove's width", tolerance: 1)
         #expect(ControlPress.undersized([remove], minimum: .desktop).isEmpty, "Remove is \(remove.frame.size)")
-        near(try popup(window, "Hosts").frame.height, 32, "Hosts' height")
+        near(try popup(window, "Hosts").frame.height, SHSettingsControlMetrics.controlHeight, "Hosts' height")
         try await press(window, "Remove research")
         try await eventuallyOnMain("unlinked") { current().linkedSpaces.map(\.spaceID) == [spaces[0].id] }
         try await eventuallyOnMain("Add a space… is enabled again") { window.layout(); return (try? popup(window, "Add a space…").isEnabled) == true }
-        near(try popup(window, "Add a space…").frame.height, 32, "Add a space…'s height")
+        near(try popup(window, "Add a space…").frame.height, SHSettingsControlMetrics.controlHeight, "Add a space…'s height")
 
         // Memory: Forget is the same ghost button; the counter reads the real text.
         vm.logicalProjectSettingsTab = .memory

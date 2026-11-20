@@ -10,16 +10,19 @@ extension FixtureCatalog {
     static var hostConfig: [FixtureScreen] {
         [
             FixtureScreen(name: "settings-experiments-hosts", hosts: FixtureData.configuredHosts(), routes: [.settings(.experiments)], tab: .settings),
-            FixtureScreen(name: "settings-defaults-subagents", hosts: FixtureData.configuredHosts(), routes: [.settings(.defaults)], tab: .settings),
-            FixtureScreen(name: "settings-mcp", hosts: FixtureData.configuredHosts(), routes: [.settings(.mcp)], tab: .settings),
-            FixtureScreen(name: "settings-mcp-editor", hosts: FixtureData.configuredHosts(), routes: [.settings(.mcp)], tab: .settings,
+            FixtureScreen(name: "settings-agents-subagents", hosts: FixtureData.configuredHosts(), routes: [.settings(.agents)], tab: .settings),
+            // Agents' foot: the Subagents card ends with Profiles, which opens them.
+            FixtureScreen(name: "settings-agents-profiles", hosts: FixtureData.configuredHosts(), routes: [.settings(.agents)], tab: .settings,
+                          prepare: { _ in await TriggerFlowCheck.scrollDown(holding: nil) }),
+            FixtureScreen(name: "settings-mcp", hosts: FixtureData.configuredHosts(), routes: [.settings(.tools)], tab: .settings),
+            FixtureScreen(name: "settings-mcp-editor", hosts: FixtureData.configuredHosts(), routes: [.settings(.tools)], tab: .settings,
                           prepare: { app in
                               SettingsStore.of(app.hosts).mcpEditor = MCPEditor(replacing: "postgres", json: FixtureData.postgresJSON)
                           }),
             FixtureScreen(name: "settings-subagents", hosts: FixtureData.configuredHosts(), routes: [.settings(.subagents)], tab: .settings),
             FixtureScreen(name: "settings-subagent-edit", hosts: FixtureData.configuredHosts(),
                           routes: [.settings(.subagents), .settings(.subagent("reviewer.md"))], tab: .settings),
-            FixtureScreen(name: "settings-signin-accounts", hosts: FixtureData.configuredHosts(), routes: [.settings(.signIn)], tab: .settings),
+            FixtureScreen(name: "settings-signin-accounts", hosts: FixtureData.configuredHosts(), routes: [.settings(.models)], tab: .settings),
         ]
     }
 }

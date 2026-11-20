@@ -12,8 +12,8 @@ extension FixtureCatalog {
         return [
             FixtureScreen(name: "thread-started-by", hosts: SubThreadFixture.hosts(startedBy: true), routes: [.thread(ref)]),
             FixtureScreen(name: "thread-branch", hosts: SubThreadFixture.hosts(), routes: [.thread(ref)], presented: .review(.branch(ref))),
-            // Settings ▸ Defaults' lower half: Threads a thread starts.
-            FixtureScreen(name: "settings-defaults-lower", routes: [.settings(.defaults)], tab: .settings,
+            // Settings ▸ Agents' lower half: Threads a thread starts, Context and Subagents.
+            FixtureScreen(name: "settings-agents-lower", routes: [.settings(.agents)], tab: .settings,
                           prepare: { _ in await TriggerFlowCheck.scrollDown(holding: nil) }),
             FixtureScreen(name: "review-branch", hosts: SubThreadFixture.hosts(review: true),
                           routes: [.thread(ref), .review(.changes(ref, file: nil))], prepare: ReviewFixture.annotate),

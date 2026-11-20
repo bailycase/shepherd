@@ -117,6 +117,15 @@ struct HostModeSettingsTests {
         vm.settings.notifyOnTurnFinished = false
         vm.settings.piPanesExtension = false
         vm.settings.worktreeCloseOnMerge = true
+        vm.settings.fleetThreadsCanSend = true
+        vm.settings.fleetThreadCap = 7
+        vm.settings.fleetBatteryCountsHalf = false
+        let peerMac = try #require(UUID(uuidString: "00000000-0000-4000-8000-0000000000A1"))
+        vm.settings.setFleetWeight(.prefer, of: peerMac)
+        vm.settings.fleetAutoDispatch = false
+        vm.settings.fleetUncommitted = .leaveBehind
+        vm.settings.setFleetExcludes(FleetSnapshotExcludes(excluded: ["dist"]), of: SpaceID(rawValue: "acme-web"))
+        vm.settings.setFleetCheckIgnored(["spot-check"], on: peerMac)
         try await eventuallyOnMain("every on…Change to fire on the host") {
             fired == ["goals", "projects", "queue", "slash", "designs", "compact"]
         }
@@ -124,6 +133,29 @@ struct HostModeSettingsTests {
         #expect(hostSettings.hiddenSlashCommands == ["acme-deploy"] && hostSettings.compactAtPercent == 70)
         #expect(hostSettings.defaultModel == "acme/model-b" && !hostSettings.notifyOnTurnFinished)
         #expect(!hostSettings.agentLaunch.panes && hostSettings.worktreeCloseOnMerge)
+        // Settings ▸ Fleet in the app reaches the host, whose dispatch and thread starts read it.
+        try await eventuallyOnMain("the host to take the app's Fleet settings") {
+            hostSettings.fleetThreadsCanSend && hostSettings.fleetThreadCap == 7 && !hostSettings.fleetBatteryCountsHalf
+        }
+        // All eight Fleet settings reach the host, and the host's own copy of the group (what its reply reads) holds them.
+        try await eventuallyOnMain("the host to take every Fleet setting, in its own copy too") {
+            var expected = StoredHostPreferences.Fleet()
+            expected.weights = [FleetSendWeight.settingKey(hostID: peerMac): .prefer]
+            expected.threadsCanSend = true
+            expected.threadCap = 7
+            expected.uncommitted = .leaveBehind
+            expected.snapshotExcludes = [FleetSnapshotExcludes.settingKey(spaceID: "acme-web"): FleetSnapshotExcludes(excluded: ["dist"])]
+            expected.checkIgnores = [FleetCheckIgnoreSetting.settingKey(hostID: peerMac): ["spot-check"]]
+            expected.autoDispatch = false
+            expected.batteryCountsHalf = false
+            return hostSettings.hostFleet == expected
+        }
+        // The host reports what it took to its server (`observeWrites`): dispatch's send check reads it there.
+        try await eventuallyOnMain("the host's server to take the app's Fleet settings") {
+            host.server.fleetSettingsForTests?.fleetThreadsCanSend == true
+                && host.server.fleetSettingsForTests?.fleetThreadCap == 7
+                && host.server.fleetSettingsForTests?.fleetBatteryCountsHalf == false
+        }
         try await eventuallyOnMain("the host's server to serve designs") { phone.capabilities.contains(RemoteProtocol.designsCapability) }
 
         // A paired device changes the host's settings: the app's Settings show it.
@@ -143,7 +175,7 @@ struct HostModeSettingsTests {
         hostSettings.followOtherProcesses(notice: notice)
         var listener: (port: UInt16?, failure: RemoteListenerFailure?) = (nil, nil)
         HostSettingsMapping.serve(on: host.server, settings: hostSettings) { nil } listener: { listener }
-        #expect(ShepherdHost.serveSettings(hostSettings, on: host.server) { port, _ in listener.port = port } == nil)
+        ShepherdHost.serveSettings(hostSettings, on: host.server) { port, _ in listener.port = port }
 
         let (socket, token, phone) = try await Self.listen(host)
         phone.disconnect()

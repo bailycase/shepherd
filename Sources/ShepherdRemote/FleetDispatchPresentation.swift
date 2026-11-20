@@ -216,9 +216,10 @@ public enum FleetDispatchPresentation {
             card.detail = rowDetail(record, macs: macs)
             card.actions = record.remoteAgentID == nil ? [] : [.open]
         case .failed:
-            (card.pill, card.tone) = ("Not sent", .bad)
+            let ran = record.failure == FleetDispatchCode.turnFailed
+            (card.pill, card.tone) = (ran ? "Failed" : "Not sent", .bad)
             card.detail = failureWords(record, in: context)
-            card.actions = [.runHere, .tryAgain]
+            card.actions = ran ? (record.remoteAgentID == nil ? [] : [.open]) : [.runHere, .tryAgain]
         }
         card.compact = compact(card, record: record, host: host)
         return card
@@ -391,7 +392,7 @@ public enum FleetDispatchPresentation {
         records.filter { $0.parentAgentID == record.parentAgentID && $0.id != record.id && $0.state.countsAgainstCap }
     }
 
-    /// Why it wasn't sent, in a sentence, from the code.
+    /// Why dispatch failed, in a sentence, from the code.
     static func failureWords(_ record: FleetDispatchRecord, in context: FleetCardContext) -> String {
         let host = hostName(of: record, macs: context.snapshot.macNames).map { the($0, capitalized: true) } ?? "That Mac"
         let repo = repoName(record.repoKey)
@@ -412,6 +413,8 @@ public enum FleetDispatchPresentation {
             return "No Mac named \(requestedName(record.requestedHost, macs: context.snapshot.macNames) ?? "that") is in the fleet."
         case FleetDispatchCode.peerGone:
             return "\(host) stopped answering and doesn't know this thread. Run it again, or run it here."
+        case FleetDispatchCode.turnFailed:
+            return record.failureDetail ?? "The model request failed."
         case FleetDispatchCode.snapshotTooLarge:
             return "The changes to send are too large to send. Run it here, or commit and push them first."
         case FleetDispatchCode.snapshotMismatch, FleetDispatchCode.snapshotFailed:
@@ -453,20 +456,20 @@ public enum FleetDispatchPresentation {
 
 // MARK: - The dispatched thread
 
-/// What the dispatched thread draws of where it came from (FleetRemote): the header's host pill and "started by" link, the
+/// What the dispatched thread draws of where it came from (FleetRemote): the sender in the header's breadcrumb, the Mac in its options menu, the
 /// From box over the task, and the line saying where its last message goes. Derived from `Agent.dispatchedFrom`.
 public struct FleetSentBy: Equatable, Sendable {
-    /// The Mac running the thread, as the header's pill names it.
+    /// The Mac running the thread, as the options menu's "Runs on" names it.
     public var host: String
     /// The thread that sent it; "you" for one the person started.
     public var sender: String
-    /// The sender is a thread (the header offers its link, the banner says its last message goes back).
+    /// The sender is a thread (the breadcrumb offers its link, the banner says its last message goes back).
     public var fromThread: Bool
     /// "This Mac" or the Mac's own name: where the sender lives.
     public var senderHost: String
     /// Epoch milliseconds the dispatch was sent.
     public var at: Double
-    /// The header names the Mac it runs on: false for a thread another thread started on the same Mac (`StartedBy`).
+    /// The options menu names the Mac it runs on: false for a thread another thread started on the same Mac (`StartedBy`).
     public var showsHost = true
 
     /// "From Speed up checkout CI on This Mac".
@@ -486,7 +489,7 @@ public struct FleetSentBy: Equatable, Sendable {
         at = from.at
     }
 
-    /// A thread `agent_spawn` started on the Mac it runs on: only "started by" shows.
+    /// A thread `agent_spawn` started on the Mac it runs on: only its parent in the breadcrumb shows.
     public init(_ started: StartedBy, host: String) {
         self.host = host
         fromThread = true
@@ -560,7 +563,8 @@ public struct FleetResultMessage: Equatable, Sendable {
             let line = body[facts.upperBound...]
             if let colon = line.firstIndex(of: ":") {
                 branch = String(line[..<colon])
-                pushed = line.contains("pushed to origin")
+                if line.contains(", pushed to origin,") { pushed = true }
+                else if line.contains(", not on origin,") { pushed = false }
                 body = String(body[..<facts.lowerBound])
             }
         }

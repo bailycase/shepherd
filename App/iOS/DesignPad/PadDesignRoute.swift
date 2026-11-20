@@ -1,28 +1,6 @@
 import SwiftUI
 import ShepherdCore
-
-/// A design on one host.
-struct PadDesignRef: Hashable, Codable, Sendable {
-    var host: UUID
-    var design: DesignID
-}
-
-/// The Design tool's screens on iPad (iPadDesign, iPadSplitView, iPadSidebar boards): the
-/// Designs list the sidebar's row opens, and one design's canvas beside its chat. Only hosts
-/// that offer `designs.v1` (their Design tool experiment on) have any.
-enum PadDesignRoute: Hashable, Codable {
-    /// Every connected host's designs.
-    case list
-    /// One design's canvas and chat.
-    case design(PadDesignRef)
-
-    var host: UUID? {
-        switch self {
-        case .list: nil
-        case .design(let ref): ref.host
-        }
-    }
-}
+import ShepherdRemote
 
 struct PadDesignDestination: View {
     let route: PadDesignRoute

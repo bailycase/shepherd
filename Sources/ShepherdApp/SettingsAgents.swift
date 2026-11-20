@@ -6,7 +6,8 @@ import ShepherdProtocol
 
 // MARK: Agents
 
-struct AgentSettings: View {
+/// The model groups on Settings ▸ Models: new agents' defaults, text generation and image reading.
+struct AgentModelGroups: View {
     /// This Mac's pi: its catalog and settings.json give the model choices and pi's default.
     let pi: PiSetup
     @Bindable private var settings: AppSettings
@@ -26,12 +27,11 @@ struct AgentSettings: View {
     private var agentDefault: String { "Use the agent’s default" + (piDefaultModel.map { " · \($0)" } ?? "") }
 
     var body: some View {
-        SettingsPage(title: "Agents", explanation: Self.explanation) {
-            SettingsGroup(title: "New agents") {
-                SettingsRow(title: "Default model",
-                            subtitle: "Preselected in New thread. \"Use the agent's default\" starts every thread, automation and Project on the model Shepherd’s pi names as its own.") {
-                    SHPopupMenu(settings.defaultModel.isEmpty ? agentDefault : settings.defaultModel,
-                                mono: !settings.defaultModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
+        VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
+            SettingsGroup(title: "Defaults for new threads") {
+                SettingsRow(title: "Model", subtitle: settings.defaultModel.isEmpty ? agentDefault : nil) {
+                    SHPopupMenu(settings.defaultModel.isEmpty ? "Use the agent’s default" : settings.defaultModel,
+                                mono: !settings.defaultModel.isEmpty, minWidth: 0) {
                         Button(agentDefault) { settings.defaultModel = "" }
                         Divider()
                         ForEach(modelOptions, id: \.self) { id in
@@ -40,21 +40,23 @@ struct AgentSettings: View {
                     }
                     .accessibilityLabel("Default model")
                 }
-                SettingsRow(title: "Default thinking level", subtitle: "Can be changed per agent from the composer.") {
-                    SHSegmentedPicker("Default thinking level", selection: $settings.defaultThinking,
-                                      options: ThinkingLevel.allCases.map { ($0, $0.title) })
+                SettingsRow(title: "Thinking") {
+                    SHPopupMenu(settings.defaultThinking.title, minWidth: 0) {
+                        ForEach(ThinkingLevel.allCases, id: \.self) { level in
+                            Button(level.title) { settings.defaultThinking = level }
+                        }
+                    }
+                    .accessibilityLabel("Default thinking level")
                 }
-                SettingsRow(title: "Speed for new threads",
-                            subtitle: "New threads start on this speed. Each thread keeps its own after that.") {
+                SettingsRow(title: "Speed") {
                     SHSegmentedPicker("Speed for new threads", selection: $settings.defaultServiceTier,
                                       options: ServiceTier.allCases.map { ($0, $0.title) })
                 }
             }
-            SettingsGroup(title: "Text generation") {
-                SettingsRow(title: "Text generation model",
-                            subtitle: "The model Shepherd uses to generate short text itself: a thread's title from its first prompt, and the commit messages drafted from a diff. Your manual renames are never overwritten. Automatic prefers a low-cost model you’re signed in to, then the thread's own model.") {
+            SettingsGroup(title: "Small jobs") {
+                SettingsRow(title: "Titles and commit messages") {
                     SHPopupMenu(settings.textGenerationModel.isEmpty ? "Automatic" : settings.textGenerationModel,
-                                mono: !settings.textGenerationModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
+                                mono: !settings.textGenerationModel.isEmpty, minWidth: 0) {
                         Button("Automatic") { settings.textGenerationModel = "" }
                         Divider()
                         ForEach(modelOptions, id: \.self) { id in
@@ -63,12 +65,9 @@ struct AgentSettings: View {
                     }
                     .accessibilityLabel("Text generation model")
                 }
-            }
-            SettingsGroup(title: "Image reading") {
-                SettingsRow(title: "Image reading model",
-                            subtitle: "When a thread's model can't view images, this model describes each image for it: the pictures you attach, screenshots and board renders. The thread keeps the real image, and only what the model is sent changes. Automatic uses the cheapest model you're signed in to that takes images. New agents follow a change; running ones at their next launch.") {
+                SettingsRow(title: "Describe images for", subtitle: "Used when a thread’s model can’t see images") {
                     SHPopupMenu(settings.visionModel.isEmpty ? "Automatic" : settings.visionModel,
-                                mono: !settings.visionModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
+                                mono: !settings.visionModel.isEmpty, minWidth: 0) {
                         Button("Automatic") { settings.visionModel = "" }
                         Divider()
                         ForEach(imageModelOptions, id: \.self) { id in
@@ -78,54 +77,8 @@ struct AgentSettings: View {
                     .accessibilityLabel("Image reading model")
                 }
             }
-            SettingsGroup(title: "While the agent is working") {
-                SettingsRow(title: "When a turn ends, send the queue", subtitle: "All at once arrives as one turn, in the order you queued it.") {
-                    SHSegmentedPicker("When a turn ends, send the queue", selection: $settings.queueDelivery,
-                                      options: [(NativeQueueMode.oneAtATime, "One per turn"), (.all, "All at once")])
-                }
-                SettingsRow(title: "Notify when a turn finishes",
-                            subtitle: "A banner for each thread you are not looking at. Questions, failures and threads waiting on you always notify.") {
-                    SettingsSwitch(label: "Notify when a turn finishes", isOn: $settings.notifyOnTurnFinished)
-                }
-            }
-            SettingsGroup(title: "Threads a thread starts") {
-                SettingsRow(title: "Threads can start threads",
-                            subtitle: "A thread may start another for separate work without being asked. Off, it starts one only when you ask. "
-                                + "A thread started this way nests under the one that started it, three deep at most. New agents follow a change; running ones at their next launch.") {
-                    SettingsSwitch(label: "Threads can start threads", isOn: $settings.threadsStartThreads)
-                }
-                SettingsRow(title: "Where they work",
-                            subtitle: "When the thread starting one doesn't say. **Same checkout** works in its folder, on its branch. **New worktree** starts from its commit, on a branch of its own.") {
-                    SHSegmentedPicker("Where they work", selection: $settings.subThreadPlace,
-                                      options: [(SpawnPlace.checkout, "Same checkout"), (.worktree, "New worktree")])
-                }
-            }
-            SettingsGroup(title: "Context") {
-                SettingsRow(title: "Compact at",
-                            subtitle: "How full an agent lets its context get before it compacts on its own, as a share of the model's window. "
-                                + "The default leaves 16k tokens free, about 94% of a 272k window. New agents follow a change; running ones at their next launch.") {
-                    SHSegmentedPicker("Compact at", selection: Binding(get: { settings.compactAtPercent ?? 0 },
-                                                                       set: { settings.compactAtPercent = $0 == 0 ? nil : $0 }),
-                                      options: [(0, Self.compactAtTitle(nil))] + PiCompactionThreshold.choices.map { ($0, Self.compactAtTitle($0)) })
-                }
-                SettingsRow(title: "Trim old tool output from the model's context",
-                            subtitle: "Clips one huge tool result in what the model is sent and, as the context fills, replaces the oldest tool output, "
-                                + "file contents, reasoning and screenshots with a line saying what they were. The thread keeps all of it. "
-                                + "New agents follow a change; running ones at their next launch.") {
-                    SettingsSwitch(label: "Trim old tool output from the model's context", isOn: $settings.trimToolOutput)
-                }
-                SettingsRow(title: "Defer rarely used tools",
-                            subtitle: "Keeps the browser, other-thread, automation and review tools out of every request until the model asks for one "
-                                + "with a tool search, which leaves more of the window to the work. Off sends them all. "
-                                + "New agents follow a change; running ones at their next launch.") {
-                    SettingsSwitch(label: "Defer rarely used tools", isOn: $settings.deferTools)
-                }
-                SettingsRow(title: "Codemode",
-                            subtitle: "Lets the agent run JavaScript to batch tool calls and filter results, up to 128 calls and five minutes per script. Direct tool calls stay available. Scripts cannot call classifier or image models directly. Spaces can override this default.") {
-                    SettingsSwitch(label: "Codemode", isOn: $settings.codemode)
-                }
-            }
         }
+        .shControlScale(.settings)
         .task {
             let pi = pi
             let (entries, fallback) = await Task.detached(priority: .userInitiated) {
@@ -136,11 +89,68 @@ struct AgentSettings: View {
             if let fallback { piDefaultModel = fallback }
         }
     }
+}
 
-    /// "Default", or "80%": the segment's label for a Compact at choice.
-    static func compactAtTitle(_ percent: Int?) -> String {
-        percent.map { "\($0)%" } ?? "Default"
+struct AgentSettings: View {
+    /// This Mac's pi: its catalog names the subagent model choices.
+    let pi: PiSetup
+    @Bindable private var settings: AppSettings
+    /// The profiles' names, for Profiles' hint; empty until the list is read.
+    var profiles: [String] = []
+    /// Opens Settings ▸ Subagents (the profiles).
+    let editProfiles: () -> Void
+
+    /// Tests and previews may supply isolated settings.
+    init(pi: PiSetup, settings: AppSettings? = nil, profiles: [String] = [], editProfiles: @escaping () -> Void = {}) {
+        self.pi = pi
+        self.settings = settings ?? .shared
+        self.profiles = profiles
+        self.editProfiles = editProfiles
     }
 
-    static let explanation = "Defaults and behavior for your agents. Existing agents keep their model, thinking level and speed."
+    var body: some View {
+        SettingsPage(title: "Agents") {
+            SettingsGroup(title: "Queue") {
+                SettingsRow(title: "Send queued messages") {
+                    SHSegmentedPicker("When a turn ends, send the queue", selection: $settings.queueDelivery,
+                                      options: [(NativeQueueMode.oneAtATime, "One per turn"), (.all, "All at once")])
+                }
+            }
+            SettingsGroup(title: "Threads a thread starts") {
+                SettingsRow(title: "Threads can start threads", subtitle: "Three deep at most") {
+                    SettingsSwitch(label: "Threads can start threads", isOn: $settings.threadsStartThreads)
+                }
+                SettingsRow(title: "Where they work") {
+                    SHSegmentedPicker("Where they work", selection: $settings.subThreadPlace,
+                                      options: [(SpawnPlace.checkout, "Same checkout"), (.worktree, "New worktree")])
+                }
+            }
+            SettingsGroup(title: "Context", footnote: "Changes reach running agents when they next start.") {
+                SettingsRow(title: "Compact at") {
+                    SHPopupMenu(Self.compactAtTitle(settings.compactAtPercent, defaultLabel: "Default"), minWidth: 0) {
+                        Button(Self.compactAtTitle(nil, defaultLabel: "Default")) { settings.compactAtPercent = nil }
+                        ForEach(PiCompactionThreshold.choices, id: \.self) { percent in
+                            Button(Self.compactAtTitle(percent)) { settings.compactAtPercent = percent }
+                        }
+                    }
+                    .accessibilityLabel("Compact at")
+                }
+                SettingsRow(title: "Trim old tool output") {
+                    SettingsSwitch(label: "Trim old tool output from the model's context", isOn: $settings.trimToolOutput)
+                }
+                SettingsRow(title: "Load rarely used tools on demand") {
+                    SettingsSwitch(label: "Defer rarely used tools", isOn: $settings.deferTools)
+                }
+                SettingsRow(title: "Codemode", subtitle: "Batch tool calls in one script") {
+                    SettingsSwitch(label: "Codemode", isOn: $settings.codemode)
+                }
+            }
+            NativeSubagentSettings(pi: pi, settings: settings, profiles: profiles, editProfiles: editProfiles)
+        }
+    }
+
+    /// "Default", or "80%": the label for a Compact at choice.
+    static func compactAtTitle(_ percent: Int?, defaultLabel: String = "Default") -> String {
+        percent.map { "\($0)%" } ?? defaultLabel
+    }
 }

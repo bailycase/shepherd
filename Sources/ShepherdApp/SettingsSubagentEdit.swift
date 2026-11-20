@@ -16,142 +16,96 @@ struct SubagentEditForm: View {
     private static let piTools = ["read", "bash", "edit", "write"]
     private static let promptLimit = 65_536
 
+    private var title: String {
+        let name = model.form.scalar("name") ?? ""
+        return name.isEmpty ? (model.original == nil ? "New profile" : model.filename) : name
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: AppLayout.subagentEditGap) {
-            header
-            GeometryReader { geometry in
-                if geometry.size.width >= AppLayout.subagentEditFormWidth + AppLayout.subagentEditColumnGap + AppLayout.subagentEditInstructionsMinWidth {
-                    HStack(alignment: .top, spacing: AppLayout.subagentEditColumnGap) {
-                        ScrollView(.vertical) { fields }
-                            .scrollIndicators(.hidden).scrollClipDisabled()
-                            .frame(width: AppLayout.subagentEditFormWidth)
-                        instructions.frame(maxWidth: .infinity, maxHeight: .infinity)
+        SettingsPage(title: title) {
+            if let problem = model.problem ?? model.loadProblem {
+                SettingsGroup(title: "") {
+                    SettingsRow(title: "", problem: problem) {
+                        // The form draws only the fields Shepherd knows, so a file that does not load
+                        // (an unsupported field, say) is repaired in a text editor.
+                        if model.original != nil, model.loadProblem != nil {
+                            Button("Open in editor") { Task { await model.openInEditor() } }.buttonStyle(.sh(.secondary, size: .s))
+                        }
                     }
-                } else {
-                    ScrollView(.vertical) {
-                        VStack(alignment: .leading, spacing: AppLayout.subagentEditGap) {
-                            fields.frame(maxWidth: AppLayout.subagentEditFormWidth)
-                            instructions.frame(height: AppLayout.subagentEditNarrowInstructionsHeight)
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                    }.scrollIndicators(.hidden).scrollClipDisabled()
+                }
+            }
+            SettingsGroup(title: "") {
+                if model.original == nil {
+                    SettingsRow(title: "File name", subtitle: "pi/agents/") {
+                        TextField("Subagent filename", text: $model.filename)
+                            .textFieldStyle(.sh(mono: true))
+                            .frame(width: AppLayout.settingsFieldWidth)
+                    }
+                }
+                SettingsRow(title: "Name") {
+                    SubagentTextField(label: "Subagent name", text: stringBinding("name"), mono: true)
+                        .frame(width: AppLayout.settingsFieldWidth)
+                }
+                SettingsRow(title: "Description", subtitle: "The parent reads this to decide when to use it") {
+                    VStack(alignment: .trailing, spacing: SH.Space.s) {
+                        SettingsOpenIn(text: stringBinding("description"), name: "description.txt")
+                        SubagentTextField(label: "Subagent description", text: stringBinding("description"), multiline: true)
+                    }
+                    .frame(width: AppLayout.settingsFieldWidth)
+                }
+                SettingsRow(title: "Model") { modelMenu }
+                SettingsRow(title: "Thinking") { thinkingMenu }
+                VStack(alignment: .leading, spacing: SH.Space.m) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Tools").font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
+                        Text("Never more than the parent has").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                    }
+                    SHFlowLayout(spacing: AppLayout.subagentEditChipGap) {
+                        ForEach(Self.tools, id: \.self) { tool in
+                            let on = enabledTools.contains(tool)
+                            Button { toggle(tool) } label: {
+                                Text(tool).font(.shMono(AppLayout.subagentEditChipSize))
+                                    .foregroundStyle(on ? Color.sh.textPrimary : Color.sh.textTertiary)
+                                    .padding(.horizontal, AppLayout.subagentEditChipPadding)
+                                    .frame(height: AppLayout.subagentEditChipHeight)
+                                    .background(on ? Color.sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                                    .shBorder(Color.sh.lineStrong, radius: SH.Radius.s)
+                                    .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
+                            }.buttonStyle(.plain).shFocusRing(radius: SH.Radius.s, color: .sh.running)
+                                .accessibilityLabel(tool).accessibilityValue(on ? "on" : "off").accessibilityAddTraits(on ? .isSelected : [])
+                        }
+                    }
+                }
+                .padding(.horizontal, SH.Space.l).padding(.vertical, SH.Space.l)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                SettingsRow(title: "Starts with") {
+                    SubagentSegments(label: "Starts with", selection: stringBinding("defaultContext", fallback: inheritedContext, also: "context"),
+                                     options: [("fresh", "Fresh context"), ("fork", "A copy of the thread")])
+                }
+                SettingsRow(title: "Instructions are") {
+                    SubagentSegments(label: "Instructions are", selection: stringBinding("systemPromptMode", fallback: isDelegate ? "append" : "replace"),
+                                     options: [("replace", "Its whole prompt"), ("append", "Added to default")])
+                }
+                SettingsRow(title: "Read the space's AGENTS.md", subtitle: model.form.bool("inheritProjectContext") ?? isDelegate ? "On" : "Off by default") {
+                    SettingsSwitch(label: "Read the space's AGENTS.md", isOn: flag("inheritProjectContext", default: isDelegate))
+                }
+                SettingsRow(title: "Use the thread's skills", subtitle: flag("inheritSkills", default: false).wrappedValue ? "On" : "Off by default") {
+                    SettingsSwitch(label: "Use the thread's skills", isOn: flag("inheritSkills", default: false))
+                }
+                SettingsRow(title: "Disabled", subtitle: "It will refuse to launch") {
+                    SettingsSwitch(label: "Disabled", isOn: flag("disabled", default: false))
+                }
+            }
+            prompt
+            if model.original != nil {
+                SettingsGroup(title: "") {
+                    SettingsRow(title: "Delete profile", subtitle: "Removes the Markdown file") {
+                        Button("Delete…") { model.askDelete() }.buttonStyle(.sh(.danger, size: .s))
+                    }
                 }
             }
         }
         .disabled(model.busy)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    // MARK: Header
-
-    private var title: String {
-        let name = model.form.scalar("name") ?? ""
-        return name.isEmpty ? (model.original == nil ? "New subagent" : model.filename) : name
-    }
-
-    private var header: some View {
-        HStack(spacing: AppLayout.subagentToolbarGap) {
-            Button { model.back() } label: {
-                Text("Subagents").font(.shSans(AppLayout.subagentActionSize)).foregroundStyle(Color.sh.settingsMuted)
-                    .frame(minHeight: SH.Height.controlS).contentShape(Rectangle())
-            }.buttonStyle(.plain).shFocusRing(radius: SH.Radius.xs, color: .sh.running).accessibilityLabel("Back to Subagents")
-            Text("/").font(.shSans(AppLayout.subagentEditSlashSize)).foregroundStyle(Color.sh.settingsMuted).accessibilityHidden(true)
-            Text(title).font(.sh(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
-            path
-            Spacer(minLength: 0)
-            if model.original != nil {
-                Button("Delete") { model.askDelete() }.buttonStyle(SubagentEditButton(.delete))
-            }
-            Button("Revert") { model.revert() }.buttonStyle(SubagentEditButton(.revert)).disabled(!model.dirty)
-            Button("Save") { Task { await model.save() } }.buttonStyle(SubagentEditButton(.save)).disabled(!model.canSave)
-        }
-    }
-
-    /// The file's path in the pi folder. A new file's name is typed here.
-    private var path: some View {
-        HStack(spacing: 0) {
-            Text("pi/agents/")
-            if model.original == nil {
-                TextField("Subagent filename", text: $model.filename).textFieldStyle(.plain)
-                    .font(.shMono(AppLayout.subagentMetaSize)).foregroundStyle(Color.sh.textPrimary).tint(Color.sh.lantern)
-                    .fixedSize().accessibilityLabel("Subagent filename")
-            } else {
-                Text(model.filename)
-            }
-        }
-        .font(.shMono(AppLayout.subagentMetaSize)).foregroundStyle(Color.sh.settingsMuted).lineLimit(1)
-        .padding(.horizontal, AppLayout.subagentEditPathPadding).padding(.vertical, SH.Space.xxs)
-        .shBorder(Color.sh.lineStrong, radius: AppLayout.subagentEditPathRadius)
-    }
-
-    // MARK: Form
-
-    private var fields: some View {
-        VStack(alignment: .leading, spacing: AppLayout.subagentEditFieldGap) {
-            if let problem = model.problem ?? model.loadProblem {
-                VStack(alignment: .leading, spacing: SH.Space.m) {
-                    SHInlineProblem(problem)
-                    // The form draws only the fields Shepherd knows, so a file that does not load
-                    // (an unsupported field, say) is repaired in a text editor.
-                    if model.original != nil, model.loadProblem != nil {
-                        Button("Open in editor") { Task { await model.openInEditor() } }.buttonStyle(SubagentEditButton(.revert))
-                    }
-                }
-            }
-            field("Name") {
-                SubagentTextField(label: "Subagent name", text: stringBinding("name"), mono: true)
-            }
-            field("Description", hint: "the parent reads this to decide when to use it") {
-                SubagentTextField(label: "Subagent description", text: stringBinding("description"), multiline: true)
-            }
-            field("Tools", hint: "never more than the parent has", gap: AppLayout.subagentEditToolsGap) {
-                SHFlowLayout(spacing: AppLayout.subagentEditChipGap) {
-                    ForEach(Self.tools, id: \.self) { tool in
-                        let on = enabledTools.contains(tool)
-                        Button { toggle(tool) } label: {
-                            Text(tool).font(.shMono(AppLayout.subagentEditChipSize))
-                                .foregroundStyle(on ? Color.sh.textPrimary : Color.sh.settingsMuted)
-                                .padding(.horizontal, AppLayout.subagentEditChipPadding)
-                                .frame(height: AppLayout.subagentEditChipHeight)
-                                .background(on ? Color.sh.subagentChipOn : .clear, in: RoundedRectangle(cornerRadius: AppLayout.subagentEditChipRadius))
-                                .shBorder(on ? Color.sh.subagentChipOnBorder : Color.sh.lineStrong, radius: AppLayout.subagentEditChipRadius)
-                                .contentShape(RoundedRectangle(cornerRadius: AppLayout.subagentEditChipRadius))
-                        }.buttonStyle(.plain).shFocusRing(radius: AppLayout.subagentEditChipRadius, color: .sh.running)
-                            .accessibilityLabel(tool).accessibilityValue(on ? "on" : "off").accessibilityAddTraits(on ? .isSelected : [])
-                    }
-                }
-            }
-            HStack(alignment: .top, spacing: AppLayout.subagentEditPopupGap) {
-                field("Model") { modelMenu }.frame(maxWidth: .infinity, alignment: .leading)
-                field("Thinking") { thinkingMenu }.frame(maxWidth: .infinity, alignment: .leading)
-            }
-            field("Starts with") {
-                SubagentSegments(label: "Starts with", selection: stringBinding("defaultContext", fallback: inheritedContext, also: "context"),
-                                 options: [("fresh", "Fresh context"), ("fork", "A copy of the thread")])
-            }
-            field("Instructions are") {
-                SubagentSegments(label: "Instructions are", selection: stringBinding("systemPromptMode", fallback: isDelegate ? "append" : "replace"),
-                                 options: [("replace", "Its whole system prompt"), ("append", "Added to the default")])
-            }
-            VStack(alignment: .leading, spacing: AppLayout.subagentEditSwitchGap - SH.Space.s) {
-                SubagentSwitch(label: "Read the space's AGENTS.md", note: model.form.bool("inheritProjectContext") ?? isDelegate ? "on" : "off by default",
-                               isOn: flag("inheritProjectContext", default: isDelegate))
-                SubagentSwitch(label: "Use the thread's skills", note: flag("inheritSkills", default: false).wrappedValue ? "on" : "off by default",
-                               isOn: flag("inheritSkills", default: false))
-                SubagentSwitch(label: "Disabled", note: "it will refuse to launch", isOn: flag("disabled", default: false))
-            }.padding(.top, AppLayout.subagentEditSwitchesTop - SH.Space.s)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func field<Content: View>(_ title: String, hint: String? = nil, gap: CGFloat = AppLayout.subagentEditLabelGap,
-                                      @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: gap) {
-            HStack(alignment: .firstTextBaseline, spacing: SH.Space.xs) {
-                Text(title).font(.shSans(AppLayout.subagentEditLabelSize, .medium)).foregroundStyle(Color.sh.textSecondary)
-                if let hint { Text(hint).font(.shSans(AppLayout.subagentEditLabelSize)).foregroundStyle(Color.sh.settingsMuted) }
-            }.accessibilityElement(children: .combine)
-            content()
-        }
     }
 
     private var isDelegate: Bool { model.form.scalar("name") == "delegate" }
@@ -185,28 +139,27 @@ struct SubagentEditForm: View {
         }
     }
 
-    // MARK: Instructions
+    // MARK: Prompt
 
-    private var instructions: some View {
+    /// The profile's instructions in the Settings editor card.
+    private var prompt: some View {
         let used = model.form.body.trimmingCharacters(in: .whitespacesAndNewlines).utf16.count
-        return VStack(alignment: .leading, spacing: AppLayout.subagentEditLabelGap) {
-            HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
-                Text("Instructions").font(.shSans(AppLayout.subagentEditLabelSize, .medium)).foregroundStyle(Color.sh.textSecondary)
-                Text("Markdown").font(.shSans(AppLayout.subagentEditHintSize)).foregroundStyle(Color.sh.settingsMuted)
-                Spacer(minLength: 0)
-                Text("\(used.formatted()) / \(Self.promptLimit.formatted())").font(.shMono(AppLayout.subagentEditCountSize))
-                    .foregroundStyle(used > Self.promptLimit ? Color.sh.failed : Color.sh.settingsMuted)
+        return VStack(alignment: .leading, spacing: SH.Space.s) {
+            SHSectionHeader("Prompt", style: .settings) {
+                Text("\(used.formatted()) / \(Self.promptLimit.formatted())").font(.sh(.mono))
+                    .foregroundStyle(used > Self.promptLimit ? Color.sh.failed : Color.sh.textTertiary)
             }
-            InstructionsEditor(text: Binding(get: { model.form.body }, set: { model.form.body = $0 }), saved: "",
-                               accessibilityLabel: "Subagent instructions", project: true, plain: true)
-                .background(Color.sh.projectEditorBackground)
-                .clipShape(RoundedRectangle(cornerRadius: AppLayout.subagentEditFieldRadius))
-                .shBorder(Color.sh.lineStrong, radius: AppLayout.subagentEditFieldRadius)
-                .frame(maxHeight: .infinity)
-            Text("Saved as a plain .md file with the fields above as YAML at the top. A field Shepherd doesn't know stops the profile from loading, and the list says which one.")
-                .font(.shSans(AppLayout.subagentEditNoteSize)).foregroundStyle(Color.sh.settingsMuted)
-                .lineSpacing(AppLayout.subagentEditNoteLineExtra).fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, SH.Space.xs)
+            SettingsEditorCard(name: model.filename.isEmpty ? "profile.md" : model.filename, edited: model.dirty,
+                               openIn: Binding(get: { model.form.body }, set: { model.form.body = $0 })) {
+                Button("Revert") { model.revert() }.buttonStyle(.sh(.secondary, size: .s)).disabled(!model.dirty)
+                Button("Save") { Task { await model.save() } }.buttonStyle(.sh(.primary, size: .s)).disabled(!model.canSave)
+            } content: {
+                InstructionsEditor(text: Binding(get: { model.form.body }, set: { model.form.body = $0 }), saved: model.form.body,
+                                   accessibilityLabel: "Subagent instructions")
+            }
         }
+        .shControlScale(.settings)
     }
 
     // MARK: Bindings
@@ -336,41 +289,14 @@ struct SubagentModelField: View {
     }
 }
 
-/// The board's segmented control: unchosen labels in regular weight, the chosen one lifted on the
-/// window fill. Drawn here, and a native `Picker` to accessibility.
+/// The kit's segmented control at the Settings scale.
 private struct SubagentSegments: View {
     let label: String
     @Binding var selection: String
     let options: [(String, String)]
-    @Namespace private var pill
 
     var body: some View {
-        let M = SHSettingsControlMetrics.self
-        HStack(spacing: SH.Space.xxs) {
-            ForEach(options, id: \.0) { value, title in
-                let on = value == selection
-                Button { selection = value } label: {
-                    Text(title).font(.shSans(AppLayout.subagentEditChipSize, on ? .semibold : .regular))
-                        .foregroundStyle(on ? Color.sh.textPrimary : Color.sh.subagentControlText)
-                        .lineLimit(1).padding(.horizontal, M.segmentPadding).frame(height: M.segmentHeight)
-                        .background {
-                            if on {
-                                RoundedRectangle(cornerRadius: M.segmentRadius).fill(Color.sh.bgWindow)
-                                    .shadow(color: Color.sh.knobShadow, radius: 1, y: 1)
-                                    .matchedGeometryEffect(id: "pill", in: pill)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                }.buttonStyle(.plain).shFocusRing(radius: M.segmentRadius, color: .sh.running)
-            }
-        }
-        .padding(M.segmentTrackPadding)
-        .background(Color.sh.lineSubtle, in: RoundedRectangle(cornerRadius: M.segmentTrackRadius))
-        .shComponentAnimation(.content, value: selection)
-        .fixedSize()
-        .accessibilityRepresentation {
-            Picker(label, selection: $selection) { ForEach(options, id: \.0) { Text($0.1).tag($0.0) } }.pickerStyle(.segmented)
-        }
+        SHSegmentedPicker(label, selection: $selection, options: options).shControlScale(.settings)
     }
 }
 

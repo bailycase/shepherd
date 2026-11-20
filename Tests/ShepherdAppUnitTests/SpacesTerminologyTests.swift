@@ -21,9 +21,8 @@ struct SpacesTerminologyTests {
     @Test func settingsPageIsSpacesAndItsSearchFindsTheOldWordToo() {
         #expect(SettingsSection.projects.title == "Spaces")
         #expect(SettingsSection.projects.rawValue == "projects", "the stored section id is unchanged")
-        #expect(SettingsSection.projects.items.contains("Filter spaces"))
         #expect(SettingsSection.projects.items.contains("Add space"))
-        #expect(SettingsSection.projects.matches(for: "folders") == ["Filter spaces"])
+        #expect(SettingsSection.projects.matches(for: "folders") == ["Add space"])
         #expect(SettingsSection.appearance.matches(for: "spaces").contains("Organize by"))
     }
 

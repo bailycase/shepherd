@@ -509,6 +509,19 @@ public final class SessionServer: @unchecked Sendable {
     /// An install waiting for the threads that work here to settle (`RemoteHostUpdateRequest.installWhenIdle`): the updater holds the offer, and the
     /// host sends `install` once none is busy. Memory only: a restart of the host drops it, and nothing resumes it. Server queue.
     private var idleInstall: (offerID: UUID, since: Date, attempt: UUID)?
+    /// The updater took the last install this host sent it (it answered downloading or installing): from there the app quits and relaunches, which is
+    /// no sign that a person closed it (`HostUpdateStatus.installHandedOff`). A marker file, because this host may restart before anyone looks:
+    /// the app quitting to install is what restarts it. Cleared by the next request that isn't a status. Server queue.
+    private var installHandedOff: Bool {
+        get { FileManager.default.fileExists(atPath: installHandoffMarker.path) }
+        set {
+            if newValue { FileManager.default.createFile(atPath: installHandoffMarker.path, contents: nil) }
+            else { try? FileManager.default.removeItem(at: installHandoffMarker) }
+        }
+    }
+    private var installHandoffMarker: URL { supportDirectory.appendingPathComponent("host-update-handoff") }
+    /// Tests: answer as a host from before `installHandedOff` did, which says nothing of it.
+    var omitsInstallHandoff = false
     /// Server queue: an install waits for the threads to settle.
     var isWaitingForIdleInstall: Bool { idleInstall != nil }
     /// How often the host looks at its threads while an install waits for them, and the longest it waits.
@@ -539,6 +552,7 @@ public final class SessionServer: @unchecked Sendable {
         // `install` when the threads have settled. Another install, a cancel or a new look ends the wait.
         var forwarded = request
         var waits: UUID?
+        if request != .status { installHandedOff = false }
         switch request {
         case .installWhenIdle(let offerID, let consent):
             if consent, busyThreadCount == 0 { forwarded = .install(offerID: offerID, authorized: true) }
@@ -559,12 +573,14 @@ public final class SessionServer: @unchecked Sendable {
                     self.idleInstall = (waits, Date(), UUID())
                     self.pollIdleInstall(waits, attempt: self.idleInstall?.attempt)
                 }
+                if case .install = forwarded, status.phase == .downloading || status.phase == .installing { self.installHandedOff = true }
                 status.busyThreads = self.busyThreadCount
                 status.waitingForIdle = self.idleInstall != nil && status.phase == .available
+                status.installHandedOff = self.omitsInstallHandoff ? nil : self.installHandedOff
                 reply(status)
             }
         }
-        queue.asyncAfter(deadline: .now() + 10) { finish(nil) }
+        queue.asyncAfter(deadline: .now() + RemoteHostUpdateRequest.hostReplyDeadline) { finish(nil) }
         let toUpdater = forwarded
         hopToMain { [weak self] in
             guard let self else { return }
@@ -601,6 +617,7 @@ public final class SessionServer: @unchecked Sendable {
                 handler(.install(offerID: offerID, authorized: true), { true }) { status in
                     self.queue.async {
                         guard answered.first() else { return }
+                        if status.phase == .downloading || status.phase == .installing { self.installHandedOff = true }
                         guard let wait = self.idleInstall, wait.offerID == offerID, wait.attempt == attempt else { return }
                         if status.phase == .available { next() } else { self.idleInstall = nil }
                     }
@@ -837,8 +854,9 @@ public final class SessionServer: @unchecked Sendable {
     /// for an app that connects later.
     var pullRequestLinksPush: RemoteReply?
     @MainActor var startingAutomationRuns = Set<AutomationID>()
-    /// Main actor: terminal panes whose shell `startTerminal` is starting now.
-    @MainActor var startingTerminals = Set<PaneID>()
+    /// Main actor: the shell `startTerminal` is starting now in each terminal pane, which a second
+    /// request for the same pane waits for.
+    @MainActor var startingTerminals: [PaneID: Task<SessionID, Error>] = [:]
     /// Main actor: agents whose pi `spawnAgent` is starting now (a draining host waits for them).
     @MainActor var spawningAgents = 0
     /// Main actor: new agents `startNewAgent` is still starting, whose pi is its to spawn and bind (a
@@ -963,10 +981,15 @@ public final class SessionServer: @unchecked Sendable {
     private var acceptSource: DispatchSourceRead?
     private var remoteListenFD: Int32 = -1
     private var remoteAcceptSource: DispatchSourceRead?
-    /// Signalled when the remote listener's descriptor is really closed: until then its port is still taken.
-    /// `Closed` belongs to the listener that is open, `Closing` to one that was stopped and is awaited.
-    private var remoteListenerClosed: DispatchSemaphore?
-    private var remoteListenerClosing: DispatchSemaphore?
+    /// Marks when the remote listener's descriptor is really closed: until then its port is still taken.
+    /// `Closed` belongs to the listener that is open, `Closing` to one that was stopped, kept until its descriptor closes.
+    private var remoteListenerClosed: ListenerClose?
+    var remoteListenerClosing: ListenerClose?
+    /// How long `stop` waits for that close before it gives up and exits anyway (tests shorten it).
+    var remoteListenerExitDeadline: DispatchTimeInterval = .seconds(5)
+    /// Changes `setRemoteListener` was asked for and has not finished, and whether one is running.
+    private var listenerChanges: [(port: UInt16?, completion: @Sendable (Result<UInt16?, Error>) -> Void)] = []
+    private var changingListener = false
     /// The local socket (`host.sock`) the app connects to a background host through.
     private var localAcceptSource: DispatchSourceRead?
     private var localSocketPath: String?
@@ -1428,8 +1451,10 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// The host settings as the app last reported them: the fleet's policy (Threads can send work, the cap, the
-    /// weights) is read from here. Server queue.
-    private var fleetSettings: HostSettings?
+    /// weights) is read from here. Server queue (tests read it there, off the main actor).
+    private(set) var fleetSettings: HostSettings?
+    /// Tests: the host settings the app last reported (`fleetHostSettingsChanged`), read synchronously.
+    var fleetSettingsForTests: HostSettings? { queue.sync { fleetSettings } }
     /// Places promised to dispatches that haven't started (`FleetPressureSample.reserved`), for any thread.
     private let fleetReserved = FleetCounter()
     /// The agents whose pi is running a shell command now (`FleetPressureSample.commandAgents`), for any thread.
@@ -1704,6 +1729,18 @@ public final class SessionServer: @unchecked Sendable {
                 }
             },
             stopThread: { [weak self] agentID in self?.rpcThread(forAgent: agentID)?.stop { _ in } },
+            terminateThread: { [weak self] agentID in self?.terminateFleetThread(agentID) },
+            closeThread: { [weak self] agent, dispatch in
+                guard let self else { throw FleetDispatchRefusal(code: "unreachable", message: "The receiving host is shutting down.") }
+                let sessions = try await self.deleteAgent(agent, closingDispatch: dispatch)
+                let clock = ContinuousClock()
+                let deadline = clock.now + .seconds(4)
+                repeat {
+                    if await self.enqueueValue({ sessions.allSatisfy { self.sessions[$0]?.isAlive != true } }) { return true }
+                    try await clock.sleep(for: .milliseconds(20))
+                } while clock.now < deadline
+                return false
+            },
             messageThread: { [weak self] agentID, text, delivery in
                 await withCheckedContinuation { continuation in
                     self?.queue.async {
@@ -1719,13 +1756,15 @@ public final class SessionServer: @unchecked Sendable {
             },
             threadFacts: { [weak self] agentID in
                 guard let self, let agent = self.store.state.agents.first(where: { $0.id == agentID }) else { return nil }
-                var lastText: String?
-                if let thread = self.rpcThread(forAgent: agentID) {
-                    let assistant = thread.live.last(where: { $0.value.role == "assistant" })?.value
-                        ?? thread.history.last(where: { $0.role == "assistant" })
-                    lastText = assistant?.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
-                }
-                return FleetThreadFacts(status: agent.status, waitingOn: agent.waitingOn, lastText: lastText, worktree: agent.worktreePath)
+                let thread = self.rpcThread(forAgent: agentID)
+                return FleetThreadFacts(status: agent.status, waitingOn: agent.waitingOn, lastThreadEventAt: thread?.lastTurnEventAt,
+                                        completedAt: agent.completedAt, worktree: agent.worktreePath, failure: thread?.turnFailure)
+            },
+            threadResult: { [weak self] agentID in
+                guard let thread = self?.rpcThread(forAgent: agentID) else { return nil }
+                let assistant = thread.live.last(where: { $0.value.role == "assistant" })?.value
+                    ?? thread.history.last(where: { $0.role == "assistant" })
+                return assistant?.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
             },
             repoPlaces: { [weak self] in self?.fleetRepoPlaces() ?? [] },
             bindSpace: { [weak self] binding in self?.bindFleetCheckout(binding) },
@@ -1743,7 +1782,7 @@ public final class SessionServer: @unchecked Sendable {
         let id: Int, agentID: AgentID
         switch message {
         case .fleetListHosts(let value, let agent), .fleetDispatch(let value, let agent, _, _, _, _, _, _), .fleetDispatchStatus(let value, let agent, _),
-             .fleetDispatchMessage(let value, let agent, _, _, _), .fleetDispatchCancel(let value, let agent, _):
+             .fleetDispatchMessage(let value, let agent, _, _, _), .fleetDispatchCancel(let value, let agent, _), .fleetDispatchClose(let value, let agent, _):
             (id, agentID) = (value, agent)
         default: return
         }
@@ -1772,6 +1811,8 @@ public final class SessionServer: @unchecked Sendable {
             fleet.dispatch.agentControl(from: agentID, key: key, .message(text: text, delivery: delivery), reply: answer)
         case .fleetDispatchCancel(_, _, let key):
             fleet.dispatch.agentControl(from: agentID, key: key, .cancel, reply: answer)
+        case .fleetDispatchClose(_, _, let key):
+            fleet.dispatch.agentControl(from: agentID, key: key, .close, reply: answer)
         default: break
         }
     }
@@ -2006,21 +2047,25 @@ public final class SessionServer: @unchecked Sendable {
         defer { lifecycleLock.unlock() }
         if queue.sync(execute: { isStarted }) { return }
         do {
-            try queue.sync {
+            let (repair, recovered) = try queue.sync {
                 try acquireOwnershipOnQueue()
                 try bindOnQueue()
                 store.load()
-                projects.migrateExistingProjectConfiguration(in: store.state)
-                projects.remember(store.state)
-                runLog.reload()
+                let repair = store.recoveryError != nil, recovered = store.didRecover
+                if !repair && !recovered {
+                    projects.migrateExistingProjectConfiguration(in: store.state)
+                    projects.remember(store.state)
+                }
+                if !repair { runLog.reload() }
+                return (repair, recovered)
             }
-            try finishStart()
+            if !repair { try finishStart(recovered: recovered) }
             queue.sync {
                 isStarted = true
                 acceptOnQueue()
-                recoverCommittedProjectPublications()
+                if !repair && !recovered { recoverCommittedProjectPublications() }
             }
-            if refreshesModelCatalog { pi.catalog.refreshDaily() }
+            if !repair && refreshesModelCatalog { pi.catalog.refreshDaily() }
         } catch {
             queue.sync {
                 stopOnQueue()
@@ -2030,16 +2075,17 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    private func finishStart() throws {
+    private func finishStart(recovered: Bool) throws {
         // Which designs lost their folders is read on the store's queue, not the server's.
         let missingDesigns = designs.missingDesigns(among: store.committed.designs.map(\.id))
-        // A design deleted in its undo window before a crash (state.json no longer lists it), and
-        // an import a crash left staged.
-        designs.removeLeftovers()
-        // A Git merge copy is never resumed after a restart.
-        DesignGit.dropLeftoverMergeCopies(in: designs.directory)
+        // Do not prune files on the strength of a partially recovered workspace.
+        if !recovered {
+            designs.removeLeftovers()
+            DesignGit.dropLeftoverMergeCopies(in: designs.directory)
+        }
         try queue.sync { try startOnQueue(missingDesigns: missingDesigns) }
         countDesignBoards()
+        guard !recovered else { return }
         // Copies of design references whose agent or grant is gone (a send the app quit during).
         var kept: [AgentID: Set<UUID>] = [:]
         for agent in store.committed.agents { kept[agent.id] = Set(agent.designGrants.compactMap(\.payload)) }
@@ -2055,14 +2101,14 @@ public final class SessionServer: @unchecked Sendable {
         lifecycleLock.lock()
         defer { lifecycleLock.unlock() }
         let owned = queue.sync { () -> Bool in
-            let owned = isStarted
+            let owned = isStarted && store.recoveryError == nil && !store.didRecover
             stopOnQueue()
             return owned
         }
         // Keep ownership until cleanup is over; a rejected instance cleans up nothing.
         if owned { designs.removeLeftovers() }
         queue.sync { releaseOwnershipOnQueue() }
-        awaitRemoteListenerClosed()
+        awaitRemoteListenerClosed(within: remoteListenerExitDeadline)
     }
 
     // MARK: - Lifecycle (server queue)
@@ -2223,7 +2269,7 @@ public final class SessionServer: @unchecked Sendable {
             || !runAgents.isEmpty || staleDesigns || !store.state.projects.isEmpty || !store.state.projectExecutions.isEmpty
             || store.state.agents.contains(where: { $0.coordinatorFor != nil }) {
             do {
-                try store.update { state in
+                try store.reconcileStartup { state in
                     for id in stale {
                         if let i = state.agents.firstIndex(where: { $0.id == id }) {
                             state.agents[i].status = .idle
@@ -2314,6 +2360,7 @@ public final class SessionServer: @unchecked Sendable {
                 throw SessionServerError.persistFailed(String(describing: error))
             }
         }
+        guard !store.didRecover else { return }
         // Runs still open died with the previous launch, their agents with them.
         runLog.closeOpenRuns(keeping: Set(store.state.agents.filter { $0.automationOrigin != nil }.map(\.id)))
         do { try agentRecovery.prune(keeping: Set(store.state.agents.map(\.id))) }
@@ -2583,7 +2630,7 @@ public final class SessionServer: @unchecked Sendable {
         let unavailable = { (message: String) in completion(.failure(code: NativeThreadCode.unavailable, message: message)) }
         if hostUpdateReserved {
             switch request {
-            case .snapshot, .image, .subagentTranscript, .abort: break
+            case .snapshot, .transcriptSnapshot, .image, .subagentTranscript, .abort: break
             default:
                 completion(.result(.failure(code: "host_updating", message: "Host update in progress. Try again after reconnecting.")))
                 return
@@ -2615,6 +2662,11 @@ public final class SessionServer: @unchecked Sendable {
         guard let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
               let paneID = agent.paneID, let leaf = tab.layout.leaf(withID: paneID) else {
             unavailable("The agent has no thread.")
+            return
+        }
+        if case .transcriptSnapshot(let expectedSessionID, let beforeEntryID) = request {
+            serveTranscriptSnapshot(agent: agent, leaf: leaf, expectedSessionID: expectedSessionID,
+                                    beforeEntryID: beforeEntryID, authorized: transportAuthorization, completion: completion)
             return
         }
         // A pi that stopped, before it served or on its own after: its agent waits, and says why (or
@@ -2747,6 +2799,38 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// A copy reads the saved branch, not the engine's compacted context. Resolve the source on
+    /// the server queue and keep file I/O off it, as for a preview.
+    private func serveTranscriptSnapshot(agent: Agent, leaf: LeafPane, expectedSessionID: String?, beforeEntryID: String?,
+                                         authorized: @escaping () -> Bool, completion: @escaping (NativeOutcome) -> Void) {
+        let thread = leaf.sessionID.flatMap { sessions[$0] }.flatMap { $0.isAlive ? $0.thread : nil }
+        if thread?.isServable == false {
+            completion(.result(.failure(code: NativeThreadCode.starting, message: "The thread is still loading. Try copying it again when it’s ready.")))
+            return
+        }
+        let sessionID = thread?.piSessionID ?? agent.effectivePiSessionID
+        let stale = NativeOutcome.result(.failure(code: "stale_session", message: "The transcript changed. Nothing was copied."))
+        guard expectedSessionID == nil || expectedSessionID == sessionID else { completion(stale); return }
+        let root = pi.sessionsRoot
+        DispatchQueue.global(qos: .userInitiated).async {
+            let file = PiSessionFile.file(sessionID: sessionID, cwd: AgentLaunch.resolvedCwd(leaf.cwd), sessionsRoot: root)
+            let result = PiSessionFile.transcriptSnapshot(file: file, sessionID: sessionID, beforeEntryID: beforeEntryID)
+            self.queue.async {
+                guard authorized(), !self.movingThreads.contains(agent.id),
+                      let current = self.store.state.agents.first(where: { $0.id == agent.id }),
+                      current.tabID == agent.tabID, current.paneID == agent.paneID,
+                      let paneID = current.paneID,
+                      self.store.state.tabs.first(where: { $0.id == current.tabID })?.layout.leaf(withID: paneID) == leaf,
+                      (leaf.sessionID.flatMap { self.sessions[$0] }.flatMap { $0.isAlive ? $0.thread?.piSessionID : nil }
+                        ?? current.effectivePiSessionID) == sessionID else {
+                    completion(stale)
+                    return
+                }
+                completion(.result(result))
+            }
+        }
+    }
+
     /// Server queue: answers a snapshot for an agent whose pi is not running from pi's session file
     /// (`PiSessionPreview`), read off the queue; an agent with no file yet gets an empty thread.
     /// Marked `preview` with no actions: nothing a client can do with it reaches pi (`RemoteProtocol.nativeThreadPreviewCapability`).
@@ -2873,28 +2957,74 @@ public final class SessionServer: @unchecked Sendable {
 
     // MARK: - Remote listener (server queue)
 
+    /// Whoever waits for a stopped remote listener's descriptor to close. Touched only on the server queue.
+    final class ListenerClose {
+        var waiters: [() -> Void] = []
+        func markClosed() {
+            let pending = waiters
+            waiters = []
+            pending.forEach { $0() }
+        }
+    }
+
     /// Bind the TCP listener for remote Shepherd clients. Pass port 0 to bind
     /// an ephemeral port; the bound port is returned either way. A client
     /// gets in only with a token of its own (a device's, or a Mac's of the fleet)
     /// after pairing with a code; there is no token shared by every client. The
     /// listener binds all interfaces — the user's VPN is the reachability and
     /// security boundary; the tokens keep other devices on that network honest.
+    /// Blocks on the server queue: for setup and tests, never the main actor (`setRemoteListener`).
     public func startRemoteListener(port: UInt16) throws -> UInt16 {
         try queue.sync { try startRemoteListenerOnQueue(port: port) }
     }
 
     /// Close the TCP listener and every remote client connection. Extension
-    /// connections and sessions are unaffected.
+    /// connections and sessions are unaffected. Blocks like `startRemoteListener`, until the port is really closed.
     public func stopRemoteListener() {
         queue.sync { stopRemoteListenerOnQueue() }
-        awaitRemoteListenerClosed()
+        awaitRemoteListenerClosed(within: nil)
+    }
+
+    /// Makes the remote listener `port` (0 for an ephemeral one) or, with nil, closed, without blocking the caller. Changes run one
+    /// at a time in the order asked, each closing the listener and waiting for its port to be free before it binds, so the last
+    /// one asked is the state that stays. `completion` runs on the main queue with the bound port (nil when closed), or why the
+    /// bind failed.
+    public func setRemoteListener(port: UInt16?, completion: @escaping @Sendable (Result<UInt16?, Error>) -> Void) {
+        queue.async {
+            self.listenerChanges.append((port, completion))
+            self.runListenerChangeOnQueue()
+        }
+    }
+
+    private func runListenerChangeOnQueue() {
+        guard !changingListener, !listenerChanges.isEmpty else { return }
+        changingListener = true
+        let (port, completion) = listenerChanges.removeFirst()
+        stopRemoteListenerOnQueue()
+        whenRemoteListenerClosedOnQueue {
+            let result = Result { try port.map { try self.startRemoteListenerOnQueue(port: $0) } }
+            DispatchQueue.main.async { completion(result) }
+            self.changingListener = false
+            self.runListenerChangeOnQueue()
+        }
     }
 
     /// A cancelled dispatch source closes its descriptor later, on the queue, so a port is free again only
     /// once that has happened: a stop is not finished (a relisten on the same port would find it busy) before it.
-    private func awaitRemoteListenerClosed() {
-        guard let closing = queue.sync(execute: { () -> DispatchSemaphore? in defer { remoteListenerClosing = nil }; return remoteListenerClosing }) else { return }
-        _ = closing.wait(timeout: .now() + 5)
+    /// Calls `body` on the queue once the stopped listener's descriptor is closed (at once when none is pending).
+    /// Every caller waiting on the same listener is called.
+    func whenRemoteListenerClosedOnQueue(_ body: @escaping () -> Void) {
+        if let closing = remoteListenerClosing { closing.waiters.append(body) } else { body() }
+    }
+
+    /// The blocking wait for the same, for `stop` and `stopRemoteListener` (never the main thread). `within` nil waits
+    /// for the close however long it takes; `stop` gives up after its deadline so a host can still exit. Whether it closed.
+    @discardableResult
+    func awaitRemoteListenerClosed(within limit: DispatchTimeInterval?) -> Bool {
+        let closed = DispatchSemaphore(value: 0)
+        queue.sync { whenRemoteListenerClosedOnQueue { closed.signal() } }
+        guard let limit else { closed.wait(); return true }
+        return closed.wait(timeout: .now() + limit) == .success
     }
 
     private func startRemoteListenerOnQueue(port: UInt16) throws -> UInt16 {
@@ -2949,8 +3079,12 @@ public final class SessionServer: @unchecked Sendable {
 
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
         source.setEventHandler { [weak self] in self?.acceptRemotePending(on: fd) }
-        let closed = DispatchSemaphore(value: 0)
-        source.setCancelHandler { close(fd); closed.signal() }
+        let closed = ListenerClose()
+        source.setCancelHandler { [weak self] in
+            close(fd)
+            if self?.remoteListenerClosing === closed { self?.remoteListenerClosing = nil }
+            closed.markClosed()
+        }
         remoteAcceptSource = source
         remoteListenerClosed = closed
         source.activate()
@@ -2960,7 +3094,7 @@ public final class SessionServer: @unchecked Sendable {
         return boundPort
     }
 
-    private func stopRemoteListenerOnQueue() {
+    func stopRemoteListenerOnQueue() {
         for client in Array(clients.values) where client.isRemote && !client.isLocal {
             disconnect(client, reason: "remote listener stopped")
         }
@@ -2979,37 +3113,48 @@ public final class SessionServer: @unchecked Sendable {
     /// client: the remote protocol over a unix socket, offered `local.v1`. Only this user's
     /// processes running this app's own code get past accept (`LocalPeer`), and that is all the proof
     /// they give: the `hello` token is not looked at. Off unless the host entry starts it.
+    /// Blocks on the server queue: for tests, never the main actor (`listenLocal`).
     public func startLocalListener(path: String) throws {
-        try queue.sync {
-            try requireStarted()
-            guard localAcceptSource == nil else { throw SessionServerError.conflict("local listener already running") }
-            // This Mac's app reads the run log again after each change (`automationsChanged`).
-            runLog.changed = { [weak self] in self?.sendToLocalApps(.automationsChanged) }
-            var addr = try Self.socketAddress(for: path)
-            // Only the workspace's owner binds here, and this server holds the ownership lock: any
-            // socket file left is a dead host's.
-            unlink(path)
-            let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-            guard fd >= 0 else { throw SessionServerError.system(call: "socket", errno: errno) }
-            let bound = withUnsafePointer(to: &addr) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
-            }
-            guard bound == 0, chmod(path, 0o600) == 0, listen(fd, SOMAXCONN) == 0 else {
-                let err = errno
-                close(fd)
-                unlink(path)
-                throw SessionServerError.system(call: "bind", errno: err)
-            }
-            _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
-            _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
-            let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
-            source.setEventHandler { [weak self] in self?.acceptLocalPending(on: fd) }
-            source.setCancelHandler { close(fd) }
-            localAcceptSource = source
-            localSocketPath = path
-            source.activate()
-            ShepherdLog.info("local listener on \(path)")
+        try queue.sync { try startLocalListenerOnQueue(path: path) }
+    }
+
+    /// `startLocalListener` that suspends instead of waiting: the host's start-up runs on the main actor, and the server
+    /// queue may still hold the remote listener's bind.
+    public func listenLocal(path: String) async throws {
+        try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
+            queue.async { done.resume(with: Result { try self.startLocalListenerOnQueue(path: path) }) }
         }
+    }
+
+    private func startLocalListenerOnQueue(path: String) throws {
+        try requireStarted()
+        guard localAcceptSource == nil else { throw SessionServerError.conflict("local listener already running") }
+        // This Mac's app reads the run log again after each change (`automationsChanged`).
+        runLog.changed = { [weak self] in self?.sendToLocalApps(.automationsChanged) }
+        var addr = try Self.socketAddress(for: path)
+        // Only the workspace's owner binds here, and this server holds the ownership lock: any
+        // socket file left is a dead host's.
+        unlink(path)
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw SessionServerError.system(call: "socket", errno: errno) }
+        let bound = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        guard bound == 0, chmod(path, 0o600) == 0, listen(fd, SOMAXCONN) == 0 else {
+            let err = errno
+            close(fd)
+            unlink(path)
+            throw SessionServerError.system(call: "bind", errno: err)
+        }
+        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
+        _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
+        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+        source.setEventHandler { [weak self] in self?.acceptLocalPending(on: fd) }
+        source.setCancelHandler { close(fd) }
+        localAcceptSource = source
+        localSocketPath = path
+        source.activate()
+        ShepherdLog.info("local listener on \(path)")
     }
 
     /// Drops the app's connections over `host.sock` and keeps listening, as a broken link does
@@ -3082,7 +3227,36 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// What `authorize` decides for one frame of a remote client.
+    private enum RemoteAuthorization {
+        /// Close the connection: a frame that cannot be answered.
+        case close(reason: String)
+        /// Answer with a refusal; `final` closes the connection after it.
+        case refuse(RemoteReply, final: Bool)
+        /// One of the fleet requests answered before `hello`, within its per-connection limit.
+        case serveFleet(RemoteRequest)
+        /// A `hello` of the right protocol version: its token decides.
+        case authenticate(id: Int, token: String, clientName: String, capabilities: [String]?)
+        /// Authorized: the route serves it.
+        case route(RemoteRequest)
+    }
+
     private func handleRemoteLine(_ line: Data, from client: ExtensionConnection) {
+        switch authorize(line, from: client) {
+        case .close(let reason): disconnect(client, reason: reason)
+        case .refuse(let reply, let final): if final { sendFinal(reply, to: client) } else { send(reply, to: client) }
+        case .serveFleet(let request): serveFleet(request, from: client)
+        case .authenticate(let id, let token, let clientName, let capabilities):
+            authenticate(id: id, token: token, clientName: clientName, capabilities: capabilities, client: client)
+        case .route(let request): route(request, line: line, from: client)
+        }
+    }
+
+    /// The one authorization step in front of every remote route: pre-hello rules, then what the
+    /// request's `MessageSpec` row asks (local socket only, a Mac of the fleet, a capability offered
+    /// and negotiated). Checks that read the payload stay in the route. Nothing but the pre-hello
+    /// fleet counter changes here.
+    private func authorize(_ line: Data, from client: ExtensionConnection) -> RemoteAuthorization {
         let request: RemoteRequest
         do {
             request = try NDJSON.decode(RemoteRequest.self, from: line)
@@ -3093,76 +3267,102 @@ public final class SessionServer: @unchecked Sendable {
             // version sends) is refused like any unsupported one once the client has said hello.
             // A frame without an id has no reply to take, so it still closes the connection.
             if client.authenticated, let id = (try? NDJSON.decode(RemoteRequestID.self, from: line))?.id {
-                send(.error(id: id, code: "unsupported", message: "The host does not take this request."), to: client)
-                return
+                return .refuse(.error(id: id, code: "unsupported", message: "The host does not take this request."), final: false)
             }
-            disconnect(client, reason: "undecodable request before hello")
-            return
+            return .close(reason: "undecodable request before hello")
+        }
+        // A kind with no row is never routed: refused `unsupported` like an unknown kind (`unauthenticated` before hello).
+        guard let spec = MessageSpec.spec(for: request.kind) else {
+            ShepherdLog.warning("remote request kind without a MessageSpec row on fd \(client.fd)")
+            if client.authenticated, let id = (try? NDJSON.decode(RemoteRequestID.self, from: line))?.id {
+                return .refuse(.error(id: id, code: "unsupported", message: "The host does not take this request."), final: false)
+            }
+            return .refuse(.error(id: 0, code: "unauthenticated", message: "hello required"), final: true)
         }
 
         guard client.authenticated else {
-            // The two fleet requests answered before `hello`: who is there, and pairing with a code.
-            switch request {
-            case .fleetIdentify(let id), .fleetPair(let id, _, _), .fleetPairDevice(let id, _, _):
+            switch (spec.access, request) {
+            // The fleet requests answered before `hello`: who is there, and pairing with a code.
+            case (.beforeHello, .fleetIdentify(let id)), (.beforeHello, .fleetPair(let id, _, _)), (.beforeHello, .fleetPairDevice(let id, _, _)):
                 client.unauthenticatedFleetRequests += 1
                 guard client.unauthenticatedFleetRequests <= FleetService.unauthenticatedRequestLimit else {
-                    sendFinal(.error(id: id, code: FleetProtocol.Code.busy, message: "Too many requests."), to: client)
-                    return
+                    return .refuse(.error(id: id, code: FleetProtocol.Code.busy, message: "Too many requests."), final: true)
                 }
-                serveFleet(request, from: client)
-                return
-            default: break
-            }
-            guard case .hello(let id, let token, let clientName, let protocolVersion, let capabilities) = request else {
+                return .serveFleet(request)
+            case (.hello, .hello(let id, let token, let clientName, let protocolVersion, let capabilities)):
+                guard protocolVersion == RemoteProtocol.version else {
+                    return .refuse(.error(
+                        id: id,
+                        code: RemoteProtocol.versionMismatchCode,
+                        message: "host speaks protocol \(RemoteProtocol.version)"
+                    ), final: true)
+                }
+                return .authenticate(id: id, token: token, clientName: clientName, capabilities: capabilities)
+            default:
                 ShepherdLog.warning("remote request before hello on fd \(client.fd)")
-                sendFinal(.error(id: 0, code: "unauthenticated", message: "hello required"), to: client)
-                return
+                return .refuse(.error(id: 0, code: "unauthenticated", message: "hello required"), final: true)
             }
-            guard protocolVersion == RemoteProtocol.version else {
-                sendFinal(.error(
-                    id: id,
-                    code: RemoteProtocol.versionMismatchCode,
-                    message: "host speaks protocol \(RemoteProtocol.version)"
-                ), to: client)
-                return
-            }
-            // This Mac's app (past `LocalPeer` at accept), a paired Mac's own token (a fleet peer) or a client
-            // device's own; the last two never on the local socket. There is no token shared by every client: one
-            // that isn't either is an old client's shared token, or a revoked device's.
-            let peer = client.isLocal ? nil : fleet?.authenticate(token: token)
-            let device = client.isLocal || peer != nil ? nil : fleet?.authenticateDevice(token: token)
-            guard client.isLocal || peer != nil || device != nil else {
-                ShepherdLog.warning("remote client '\(clientName)' rejected: no token of its own (fd \(client.fd))")
-                sendFinal(.error(id: id, code: RemoteProtocol.sharedTokenRetiredCode, message: RemoteProtocol.sharedTokenRetiredMessage), to: client)
-                return
-            }
-            // What the other clients are owed goes out first: the new one reads its state from its fetch.
-            flushRemoteState()
-            client.fleetPeerID = peer
-            client.fleetDeviceID = device
-            client.clientName = clientName
-            if let peer { fleet?.peerAuthenticated(peer, from: client.peerHost) }
-            if let device { fleet?.deviceAuthenticated(device, connection: client.fd) }
-            client.authenticated = true
-            client.clientCapabilities = Set(capabilities ?? [])
-            if client.isLocal { localAppsChanged() }
-            send(.helloOk(
-                id: id,
-                protocolVersion: RemoteProtocol.version,
-                capabilities: offeredCapabilities(to: client),
-                hostBuild: hostBuild,
-                hostID: fleet?.hostID
-            ), to: client)
-            sendStartProblems(to: client)
-            sendAppProcesses(to: client)
-            if let links = pullRequestLinksPush, client.isLocal, client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
-                send(links, to: client)
-            }
-            if let peer { fleet?.peerConnected(peer, connection: client.fd, capabilities: client.clientCapabilities) }
-            ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
-            return
         }
 
+        // A request that got this far decoded with its `id`.
+        func refuse(_ code: String, _ message: String) -> RemoteAuthorization {
+            .refuse(.error(id: (try? NDJSON.decode(RemoteRequestID.self, from: line))?.id ?? 0, code: code, message: message), final: false)
+        }
+        switch spec.access {
+        case .localOnly(let refusal) where !client.isLocal:
+            return refuse("unsupported", refusal)
+        case .fleetPeer(let refusal) where client.fleetPeerID == nil:
+            return refuse(FleetProtocol.Code.forbidden, refusal)
+        default: break
+        }
+        if let need = spec.requires {
+            let capability = need.capability.rawValue
+            if !offeredCapabilities(to: client).contains(capability) || need.negotiated && !client.clientCapabilities.contains(capability) {
+                return refuse("unsupported", need.message)
+            }
+        }
+        return .route(request)
+    }
+
+    /// Checks a `hello`'s token and opens the connection to its requests.
+    private func authenticate(id: Int, token: String, clientName: String, capabilities: [String]?, client: ExtensionConnection) {
+        // This Mac's app (past `LocalPeer` at accept), a paired Mac's own token (a fleet peer) or a client
+        // device's own; the last two never on the local socket. There is no token shared by every client: one
+        // that isn't either is an old client's shared token, or a revoked device's.
+        let peer = client.isLocal ? nil : fleet?.authenticate(token: token)
+        let device = client.isLocal || peer != nil ? nil : fleet?.authenticateDevice(token: token)
+        guard client.isLocal || peer != nil || device != nil else {
+            ShepherdLog.warning("remote client '\(clientName)' rejected: no token of its own (fd \(client.fd))")
+            sendFinal(.error(id: id, code: RemoteProtocol.sharedTokenRetiredCode, message: RemoteProtocol.sharedTokenRetiredMessage), to: client)
+            return
+        }
+        // What the other clients are owed goes out first: the new one reads its state from its fetch.
+        flushRemoteState()
+        client.fleetPeerID = peer
+        client.fleetDeviceID = device
+        client.clientName = clientName
+        if let peer { fleet?.peerAuthenticated(peer, from: client.peerHost) }
+        if let device { fleet?.deviceAuthenticated(device, connection: client.fd) }
+        client.authenticated = true
+        client.clientCapabilities = Set(capabilities ?? [])
+        if client.isLocal { localAppsChanged() }
+        send(.helloOk(
+            id: id,
+            protocolVersion: RemoteProtocol.version,
+            capabilities: offeredCapabilities(to: client),
+            hostBuild: hostBuild,
+            hostID: fleet?.hostID
+        ), to: client)
+        sendStartProblems(to: client)
+        sendAppProcesses(to: client)
+        if let links = pullRequestLinksPush, client.isLocal, client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
+            send(links, to: client)
+        }
+        if let peer { fleet?.peerConnected(peer, connection: client.fd, capabilities: client.clientCapabilities) }
+        ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
+    }
+
+    private func route(_ request: RemoteRequest, line: Data, from client: ExtensionConnection) {
         switch request {
         case .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
              .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetCheck, .fleetCheckNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
@@ -3170,17 +3370,9 @@ public final class SessionServer: @unchecked Sendable {
              .fleetPairDevice, .fleetSyncDevices:
             serveFleet(request, from: client)
         case .fleetPeerAnswer(let id, let reply):
-            // The answer of a Mac to a call this host sent over the connection it opened: only that Mac's.
-            guard client.fleetPeerID != nil else {
-                send(.error(id: id, code: FleetProtocol.Code.forbidden, message: "Only a Mac in the fleet answers a call."), to: client)
-                return
-            }
+            // The answer of a Mac to a call this host sent over the connection it opened: `authorize` took it from that Mac only.
             fleet?.peerAnswered(connection: client.fd, id: id, reply: reply)
         case .pushRegistration(let id, let registration):
-            guard offeredCapabilities.contains(RemoteProtocol.pushNotificationsCapability),
-                  client.clientCapabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
-                send(.error(id: id, code: "unsupported", message: "Push notifications are unavailable."), to: client); return
-            }
             do {
                 try pushNotifications.register(registration)
                 send(.ok(id: id), to: client)
@@ -3188,10 +3380,6 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "push_registration", message: "Could not save push registration."), to: client)
             }
         case .pushUnregister(let id, let registrationID):
-            guard offeredCapabilities.contains(RemoteProtocol.pushNotificationsCapability),
-                  client.clientCapabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
-                send(.error(id: id, code: "unsupported", message: "Push notifications are unavailable."), to: client); return
-            }
             do {
                 try pushNotifications.unregister(registrationID)
                 send(.ok(id: id), to: client)
@@ -3200,9 +3388,7 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .nativeThreadSubscribe(let id, let agentIDs):
             let visible = Set(remoteState(store.state, for: client).agents.map(\.id))
-            guard offeredCapabilities.contains(RemoteProtocol.nativeThreadRevisionsCapability),
-                  client.clientCapabilities.contains(RemoteProtocol.nativeThreadRevisionsCapability),
-                  agentIDs.count <= 64,
+            guard agentIDs.count <= 64,
                   agentIDs.allSatisfy({ visible.contains($0) && !store.state.isProjectCoordinator($0) }) else {
                 send(.error(id: id, code: "unsupported", message: "Watch at most 64 ordinary threads."), to: client); return
             }
@@ -3210,9 +3396,7 @@ public final class SessionServer: @unchecked Sendable {
             client.revisedThreads.formIntersection(client.watchedThreads)
             send(.ok(id: id), to: client)
         case .fleetDigest(let id, let agentID, let session, let revision):
-            guard offeredCapabilities.contains(RemoteProtocol.nativeFleetDigestCapability),
-                  client.clientCapabilities.contains(RemoteProtocol.nativeFleetDigestCapability),
-                  remoteState(store.state, for: client).agents.contains(where: { $0.id == agentID }), !store.state.isProjectCoordinator(agentID) else {
+            guard remoteState(store.state, for: client).agents.contains(where: { $0.id == agentID }), !store.state.isProjectCoordinator(agentID) else {
                 send(.error(id: id, code: "unsupported", message: "Fleet digests require an ordinary thread."), to: client); return
             }
             if ContinuousClock.now - client.digestWindow >= .seconds(1) {
@@ -3274,6 +3458,10 @@ public final class SessionServer: @unchecked Sendable {
             if case .retry = request, !client.clientCapabilities.contains(RemoteProtocol.checkpointRecoveryCapability) {
                 send(.nativeThread(id: id, result: .failure(code: "recovery_unsupported",
                     message: "Update the client to use message-free checkpoint recovery. Nothing was resent.")), to: client)
+                return
+            }
+            if case .transcriptSnapshot = request, !offeredCapabilities.contains(RemoteProtocol.nativeThreadTranscriptCapability) {
+                send(.error(id: id, code: "unsupported", message: "Update Shepherd on the host to copy the transcript."), to: client)
                 return
             }
             let olderClient = !client.clientCapabilities.contains(RemoteProtocol.nativeQueueCapability)
@@ -3621,10 +3809,6 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .logicalProjects(let id, let request):
-            guard offeredCapabilities.contains(RemoteProtocol.logicalProjectsCapability) else {
-                send(.error(id: id, code: "unsupported", message: "Logical projects are unavailable on this host."), to: client)
-                return
-            }
             guard !request.requiresProjectAutomations || offeredCapabilities.contains(RemoteProtocol.logicalProjectAutomationsCapability) else {
                 send(.error(id: id, code: "unsupported", message: "Project automations are unavailable on this host."), to: client)
                 return
@@ -3710,6 +3894,11 @@ public final class SessionServer: @unchecked Sendable {
             })
             if let refusal { send(.error(id: id, code: refusal.code, message: refusal.message), to: client) }
         case .hostSettings(let id, let request):
+            if case .change(let change) = request, let capability = change.capability,
+               !offeredCapabilities(to: client).contains(capability) {
+                send(.error(id: id, code: "unsupported", message: "The host does not take this request."), to: client)
+                return
+            }
             guard let handler = onRemoteHostSettings else {
                 send(.error(id: id, code: "unavailable", message: "This host has no settings to share."), to: client)
                 return
@@ -3762,6 +3951,10 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .stateFetch(let id):
+            if store.recoveryError != nil {
+                send(.error(id: id, code: RemoteProtocol.workspaceRepairRequiredCode, message: "Workspace state.json on this Mac needs repair. Workspace writes are disabled."), to: client)
+                return
+            }
             let state = remoteState(store.state, for: client)
             send(.state(id: id, state: client.knowsLegacyThinkingOnly ? state.legacyThinkingLevels() : state), to: client)
         case .attach(let id, let sessionID, let cols, let rows, let viewportGeneration):
@@ -3803,17 +3996,13 @@ public final class SessionServer: @unchecked Sendable {
         case .listDir(let id, let path):
             remoteListDir(id: id, path: path, client: client)
         case .drain(let id):
-            guard client.isLocal, let handler = onDrainRequest else {
+            guard let handler = onDrainRequest else {
                 send(.error(id: id, code: "unsupported", message: "This host doesn't drain on request."), to: client)
                 return
             }
             send(.ok(id: id), to: client)
             hopToMain { handler() }
         case .hostUpdateGate(let id, let step):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's app installs this host's updates."), to: client)
-                return
-            }
             Task { [weak self, weak client] in
                 guard let self else { return }
                 let refusal: String? = switch step {
@@ -3847,26 +4036,14 @@ public final class SessionServer: @unchecked Sendable {
         case .addSpace(let id, let path):
             remoteAddSpace(id: id, path: path, client: client)
         case .focusThread(let id, let agentID, let paneID):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app says what it shows."), to: client)
-                return
-            }
             pushNotifications.focused = agentID
             localFocusedPane = paneID
             if let agentID { hopToMain { [weak self] in self?.onThreadFocused?(agentID) } }
             send(.ok(id: id), to: client)
         case .projectExecutors(let id, let update):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app says which Macs it reaches."), to: client)
-                return
-            }
             applyProjectExecutors(update)
             send(.ok(id: id), to: client)
         case .startThread(let id, let thread):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app starts threads this way."), to: client)
-                return
-            }
             var request = RemoteCreateAgentRequest(
                 spaceID: thread.spaceID ?? SpaceID(rawValue: ""), cwd: thread.cwd, model: thread.model, thinking: thread.thinking,
                 initialPrompt: thread.initialPrompt, worktreeBranch: thread.worktreeBranch, worktreeBase: thread.worktreeBase,
@@ -3883,10 +4060,6 @@ public final class SessionServer: @unchecked Sendable {
             }
             remoteCreateAgent(id: id, request: request, client: client)
         case .spaceAction(let id, let spaceID, let action):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app changes its spaces."), to: client)
-                return
-            }
             let connection = ChangesUnchecked(value: client)
             Task { [weak self] in
                 guard let self else { return }
@@ -3900,10 +4073,6 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .projectRequest(let id, let request):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app changes its spaces."), to: client)
-                return
-            }
             let connection = ChangesUnchecked(value: client)
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -5458,7 +5627,7 @@ public final class SessionServer: @unchecked Sendable {
         // The fleet tools answer for themselves, ahead of the scope lists below: a thread that may not send work
         // is told `fleet_scope`, whichever kind of thread it is (the lists below refuse them too, as a second wall).
         switch message {
-        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
             serveFleetTool(message, from: client)
             return
         default: break
@@ -5482,7 +5651,7 @@ public final class SessionServer: @unchecked Sendable {
         if assignedWorker {
             switch message {
             case .childScope, .spawnAgent, .moveAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation,
-                 .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
+                 .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
                 if let id = message.replyID { reply(.error(id: id, code: "project_scope", message: "Use Project threads through the coordinator; subagents and workflows are unavailable in Projects. Peer and automation admission is also unavailable."), to: client) }
                 return
             default: break
@@ -5582,6 +5751,7 @@ public final class SessionServer: @unchecked Sendable {
             // Ahead of the rows: a run anyone can see is one the Changes engine has heard of.
             changes.noteChildren(agentID: agentID, runs: children)
             rpcThread(forAgent: agentID)?.setSubagents(children)
+            recordChildSpend(agentID: agentID, runs: children)
             if wasActive, !active(children) { noteChildrenSettled(agentID) }
             let touchedFiles = CheckoutMonitor.childrenTouchedFiles(from: before, to: children)
             hopToMain { [weak self] in
@@ -5698,7 +5868,7 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             routeAgentPeerRequest(.move(agentID: agentID, targetAgentID: targetAgentID, spaceID: spaceID), requestID: id, client: client)
-        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
             break // Served ahead of the scope lists above (`serveFleetTool`).
         case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking, let place, let branch):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -6827,7 +6997,7 @@ public final class SessionServer: @unchecked Sendable {
 
     private func replyID(_ message: ExtensionReply) -> Int {
         switch message {
-        case .parentInput: return 0
+        case .parentInput, .stopManagedBash: return 0
         case .projectPublish(let id, _), .childScope(let id, _, _), .projectChildren(let id, _, _), .projectRuntime(let id, _, _, _), .childStart(let id, _, _, _), .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
              .error(let id, _, _),
              .panes(let id, _),
@@ -7051,6 +7221,35 @@ public final class SessionServer: @unchecked Sendable {
             $0.agents[index].waitingOn = question
             $0.agents[index].waitingReason = reason
         }
+        let committedState = store.state
+        scheduleRemoteState()
+        hopToMain { [weak self] in self?.onStateChanged?(committedState) }
+    }
+
+    /// Server queue: pi reported a thread's session totals. Keeps the agent's spend (`AgentSpend`) and, when it moved, broadcasts it
+    /// like a status: live state, written along with the next change. The model is the one the thread runs, which the growth is for;
+    /// the day is this host's, stamped with its zone so every viewer agrees which day is today.
+    func recordSpend(agentID: AgentID, stats: NativeThreadStats, model: String?, sessionID: String? = nil, now: Date = Date(),
+                     zone: TimeZone = .current) {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else { return }
+        let next = AgentSpend.updated(agent.spend, tokens: stats.totalTokens, cost: stats.cost, model: model ?? agent.model,
+                                      day: SpendDay.key(now, zone: zone.identifier), zone: zone.identifier, sessionID: sessionID)
+        applySpend(next, to: agentID)
+    }
+
+    /// Server queue: the agent's background subagents published their rows. Each runs in its own pi process, so its usage (tokens and
+    /// cost of its own messages, not the history a fork inherited) joins the thread's spend once, by what each run grew by.
+    func recordChildSpend(agentID: AgentID, runs: [ChildRun], now: Date = Date(), zone: TimeZone = .current) {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else { return }
+        let usage = runs.map { ChildUsage(id: $0.id, model: $0.model, tokens: $0.tokens, cost: $0.cost, finished: $0.isTerminal,
+                                          startedAt: $0.startedAt.map { Date(timeIntervalSince1970: $0 / 1000) }) }
+        let next = AgentSpend.addingChildren(agent.spend, usage, day: SpendDay.key(now, zone: zone.identifier), zone: zone.identifier)
+        applySpend(next, to: agentID)
+    }
+
+    private func applySpend(_ next: AgentSpend?, to agentID: AgentID) {
+        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }), next != store.state.agents[index].spend else { return }
+        store.updateLive { $0.agents[index].spend = next }
         let committedState = store.state
         scheduleRemoteState()
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
@@ -8058,9 +8257,21 @@ public final class SessionServer: @unchecked Sendable {
     /// layout. The GUI never observes the invalid intermediate state where
     /// only one side of that relationship exists.
     public func deleteAgent(_ agentID: AgentID) async throws {
+        _ = try await deleteAgent(agentID, closingDispatch: nil)
+    }
+
+    private func deleteAgent(_ agentID: AgentID, closingDispatch: UUID?) async throws -> Set<SessionID> {
         try await enqueue {
             guard let agent = self.store.state.agents.first(where: { $0.id == agentID }) else {
                 throw SessionServerError.noSuchAgent(agentID)
+            }
+            if let closingDispatch {
+                let thread = self.rpcThread(forAgent: agentID)
+                guard agent.dispatchedFrom?.dispatchID == closingDispatch, agent.movedTo == nil,
+                      agent.status != .working, agent.status != .blocked,
+                      thread?.piBusy != true, thread?.items.isEmpty != false else {
+                    throw FleetDispatchRefusal(code: "not_settled", message: "The thread is active, has queued work, or has moved. It was not closed.")
+                }
             }
             guard let tab = self.store.state.tabs.first(where: { $0.id == agent.tabID }) else {
                 throw SessionServerError.noSuchTab(agent.tabID)
@@ -8099,7 +8310,11 @@ public final class SessionServer: @unchecked Sendable {
                 // prompt it holds) goes with the agent.
                 self.keptStarts.removeValue(forKey: sessionID)
                 self.killSessionOnQueue(sessionID)
+                if closingDispatch != nil, let session = self.sessions[sessionID], session.isAlive {
+                    session.signalProcessGroup(SIGKILL)
+                }
             }
+            return layoutSessions
         }
     }
 
@@ -9521,6 +9736,23 @@ public final class SessionServer: @unchecked Sendable {
         return true
     }
 
+    /// Cancel stops pi and its owned descendants, not a person's terminals in the same tab.
+    private func terminateFleetThread(_ id: AgentID) {
+        guard store.state.agents.contains(where: { $0.id == id && $0.dispatchedFrom != nil && $0.movedTo == nil }) else { return }
+        fleet?.dispatch.cancelDispatches(ownedBy: id)
+        if let thread = rpcThread(forAgent: id), let session = sessions[thread.session.id], session.isAlive {
+            let sessionID = thread.session.id
+            startRecords[sessionID]?.requestStop()
+            clearAgentRecovery(sessionID: sessionID)
+            session.thread?.pushRunArmed = false
+            // A pi abort and even SIGTERM can leave tools running. The session owns the
+            // group and captures descendants before signaling; no scan by cwd or name.
+            session.signalProcessGroup(SIGKILL)
+        }
+        applyAgentQuestion(agentID: id, question: nil)
+        applyAgentStatus(agentID: id, status: .idle)
+    }
+
     /// Stops an agent's pi without retiring its agent (`SessionExit.keepsAgent`).
     public func stopKeepingAgent(sessionID: SessionID) async {
         await enqueueValue {
@@ -9616,6 +9848,9 @@ public final class SessionServer: @unchecked Sendable {
             // Stop on a thread cancels the work it sent to other Macs, and nothing wakes it back up.
             thread.onStopRequested = { [weak serverWeak] in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                if let children = server.clients.values.first(where: { $0.childrenAgentID == agentID }) {
+                    server.reply(.stopManagedBash, to: children)
+                }
                 server.queue.async { server.fleet?.dispatch.cancelDispatches(ownedBy: agentID) }
             }
             thread.onIdleAfterQueue = { [weak serverWeak] in
@@ -9659,6 +9894,10 @@ public final class SessionServer: @unchecked Sendable {
                         server?.onNotify?(agentID, goal.state == .met ? "Goal met" : "Goal needs you", goal.notificationLabel)
                     }
                 }
+            }
+            thread.onStatsChanged = { [weak serverWeak, weak thread] stats, piSessionID in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                server.recordSpend(agentID: agentID, stats: stats, model: thread?.model, sessionID: piSessionID)
             }
             thread.onRecoveryChanged = { [weak serverWeak, weak thread] in
                 guard let server = serverWeak, let thread, server.isStarted else { return true }
@@ -10192,6 +10431,8 @@ public final class SessionServer: @unchecked Sendable {
                 ShepherdLog.warning("rpc session \(sessionID) stopped before it served; its agent stays: \(problem.map { "\($0.kind.rawValue) \($0.lines.last ?? "")" } ?? "requested")")
             }
             if let problem, let agent {
+                let diskFull = problem.lines.contains { $0.contains("ENOSPC:") || $0.localizedCaseInsensitiveContains("no space left on device") }
+                fleet?.dispatch.agentStopped(agent, message: diskFull ? "No space left on device (ENOSPC)." : problem.title)
                 recordAgentFailure(agentID: agent, problem.title)
                 sendToLocalApps(.agentStartProblem(agentID: agent, problem: problem))
             }

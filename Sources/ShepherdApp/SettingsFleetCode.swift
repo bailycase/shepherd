@@ -36,18 +36,18 @@ extension FleetSettings {
     /// The Code group: the two rows that exist (the clone row waits for cloning).
     @ViewBuilder var codeGroup: some View {
         if let code {
-            SettingsGroup(title: "Code", footnote: Self.codeFootnote) {
-                SettingsRow(title: "Uncommitted changes", subtitle: "When a thread sends work from a checkout with edits that aren't committed.") {
-                    SHPopupMenu(code.uncommitted.title, minWidth: AppLayout.settingsPopupWidth) {
+            SettingsGroup(title: "Code", footnote: "Work runs in a new worktree on its Mac and comes back as a pushed branch.") {
+                SettingsRow(title: "Uncommitted changes") {
+                    SHPopupMenu(code.uncommitted.title, minWidth: 0) {
                         ForEach(FleetUncommittedChanges.allCases, id: \.self) { choice in
                             Button(choice.title) { code.setUncommitted(choice) }
                         }
                     }
                     .accessibilityLabel("Uncommitted changes")
                 }
-                SettingsRow(title: "Ignored files", subtitle: Self.ignoredFilesDetail) {
+                SettingsRow(title: "Ignored files", subtitle: ".env and node_modules travel; build caches stay") {
                     Button("Per space…") { excluding = true }
-                        .buttonStyle(.sh(.secondary))
+                        .buttonStyle(.sh(.secondary, size: .s))
                         .disabled(code.spaces.isEmpty)
                 }
             }
@@ -73,10 +73,14 @@ struct FleetExcludesSheet: View {
                     subtitle: "Always kept home: Swift .build, Xcode DerivedData, Python virtualenvs, CMake build trees and a Cargo target. List more below, or name one of those to send it anyway. One path or name per line.",
                     actions: [DialogAction("Done", kind: .prominent) { commit(); done() }]) {
             VStack(alignment: .leading, spacing: SH.Space.l) {
-                SHPopupMenu(current?.name ?? "", minWidth: AppLayout.settingsPopupWidth) {
-                    ForEach(spaces) { space in Button(space.name) { commit(); choose(space) } }
+                VStack(alignment: .leading, spacing: SH.Space.s) {
+                    SettingsSheetLabel(title: "Space")
+                    SHPopupMenu(current?.name ?? "", minWidth: AppLayout.settingsPopupWidth) {
+                        ForEach(spaces) { space in Button(space.name) { commit(); choose(space) } }
+                    }
+                    .shControlScale(.settings)
+                    .accessibilityLabel("Space")
                 }
-                .accessibilityLabel("Space")
                 field("Keep home", text: $home, example: "packages/web/dist")
                 field("Send anyway", text: $send, example: ".build")
             }
@@ -86,16 +90,16 @@ struct FleetExcludesSheet: View {
     }
 
     private func field(_ label: String, text: Binding<String>, example: String) -> some View {
-        VStack(alignment: .leading, spacing: SH.Space.xs) {
-            Text(label).font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            SettingsSheetLabel(title: label, openIn: text, file: label == "Keep home" ? "keep-home.txt" : "send-anyway.txt", scope: selection)
             TextEditor(text: text)
                 .font(.sh(.mono))
                 .scrollContentBackground(.hidden)
                 .foregroundStyle(Color.sh.textSecondary)
                 .padding(SH.Space.m)
                 .frame(height: AppLayout.fleetExcludeEditorHeight)
-                .background(Color.sh.bgBase, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
+                .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                .shBorder(Color.sh.lineStrong, radius: SH.Radius.s)
                 .accessibilityLabel(label)
                 .accessibilityHint("One path or name per line, like \(example)")
         }

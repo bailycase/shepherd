@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import Testing
 import ShepherdCore
-import ShepherdSessions
+@testable import ShepherdSessions
 import ShepherdTestSupport
 
 /// `Shepherd --host`: the session server with no UI. Each host runs in its own process (an exit
@@ -23,6 +23,67 @@ struct SessionHostTests {
         let next = SessionServer(socketPath: socket, stateURL: URL(fileURLWithPath: state))
         defer { next.stop() }
         try next.start()
+    }
+
+    /// While the server queue is busy (here, parked), start-up leaves the main actor free: the remote and local listeners bind
+    /// once the queue turns, and nothing on main waits for it. A main actor that waited would be stuck until the safety release.
+    @Test func startUpKeepsTheMainActorFreeWhileTheServerQueueIsBusy() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let release = DispatchSemaphore(value: 0)
+        await h.server.holdQueue(until: release)
+        defer { release.signal() }
+        let safetyReleased = Locked(false)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 5) { safetyReleased.withValue { $0 = true }; release.signal() }
+        let configured = Locked(false)
+        let remote = Locked<UInt16??>(nil)
+        let local = h.dir.appendingPathComponent("h.sock").path
+        let serving = Task { @MainActor in
+            await SessionHost.serve(h.server, socket: local, recovering: false, respawn: Self.defaults, configure: { server in
+                server.setRemoteListener(port: 0) { result in remote.withValue { $0 = .some((try? result.get()) ?? nil) } }
+                configured.withValue { $0 = true }
+            })
+        }
+        try await eventually("start-up to configure the remote listener") { configured.current }
+        await MainActor.run {}
+        #expect(!safetyReleased.current, "the main actor answered only after the parked queue was released: start-up waits on it")
+
+        release.signal()
+        _ = await serving.value
+        try await eventually("the remote listener to bind") { remote.current != nil }
+        #expect((remote.current ?? nil) != nil)
+        #expect(FileManager.default.fileExists(atPath: local), "the local socket is bound")
+    }
+
+    /// Shutdown waits on the server queue (and the port); the main queue, which received the signal, keeps answering meanwhile.
+    /// Here the queue is parked and only main can release it: a shutdown that ran on main would never get that far. Main is
+    /// asked to release it only once shutdown has begun (it has told `BoundedCommand` to stop, which refuses new commands from
+    /// then on; the wait releases main on that failure alone), so a signal that arrives late cannot let an inline stop pass by finding the queue already free.
+    @Test func shutdownKeepsTheMainQueueAnsweringWhileItWaitsOnTheServerQueue() async throws {
+        let dir = try makeScratchDirectory("host")
+        let socket = dir.appendingPathComponent("s.sock").path
+        let state = dir.appendingPathComponent("state.json").path
+        await #expect(processExitsWith: .success) { [socket = socket as String, state = state as String] in
+            let server = SessionServer(socketPath: socket, stateURL: URL(fileURLWithPath: state))
+            let release = DispatchSemaphore(value: 0)
+            SessionHost.run(server, respawn: Self.defaults, ready: {
+                server.queue.async { release.wait() }
+                DispatchQueue.global().asyncAfter(deadline: .now() + 10) { _exit(EXIT_FAILURE) }
+                // Only `.terminating` means shutdown entered stop; any other error (a spawn failure) fails the run.
+                Task.detached {
+                    do {
+                        try await eventually("shutdown to enter stop", timeout: .seconds(5)) {
+                            do { _ = try BoundedCommand.run(["/usr/bin/true"], timeout: 5); return false }
+                            catch BoundedCommand.Failure.terminating { return true }
+                        }
+                    } catch {
+                        _exit(EXIT_FAILURE)
+                    }
+                    DispatchQueue.main.async { release.signal() }
+                }
+                kill(getpid(), SIGTERM)
+            })
+        }
     }
 
     @Test func aHostRefusesAWorkspaceTheAppOwns() async throws {

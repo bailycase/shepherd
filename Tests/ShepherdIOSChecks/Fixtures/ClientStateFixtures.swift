@@ -9,6 +9,8 @@ extension FixtureCatalog {
     static var clientState: [FixtureScreen] {
         [FixtureScreen(name: "client-state-regressions", hosts: ClientStateChecks.hosts(), prepare: { app in
             await ClientStateChecks.run(app)
+        }), FixtureScreen(name: "keyboard-command-regression", hosts: FixtureData.hosts(), prepare: { app in
+            await ClientStateChecks.keyboardCommands(app)
         }), FixtureScreen(name: "forgotten-design-regression", hosts: DesignsFixtures.hosts(updating: false), prepare: { app in
             await ClientStateChecks.forgottenDesign(app)
         }), FixtureScreen(name: "forgotten-automation-regression", hosts: AutomationsFixtureData.fleet(), prepare: { app in
@@ -46,6 +48,69 @@ enum ClientStateChecks {
         await creation(app)
         await review(app)
         await reviewColors(app)
+    }
+
+    static func keyboardCommands(_ app: MobileApp) async {
+        let nav = MobileNavigator()
+        let ref = FixtureData.ref(FixtureData.preview)
+        nav.adopt(.pad)
+        nav.open(.thread(ref))
+        let target = MobileCommandTarget(app: app, navigator: nav)
+        let store = app.threads.store(for: ref)
+        var snapshot = FixtureData.snapshot([])
+        snapshot.supportedActions.append("setModel")
+        let serving = Task { await store.run { _ in .snapshot(value: snapshot) } }
+        defer { serving.cancel(); store.stop() }
+        await FixtureWindows.wait(seconds: 5) { store.ready }
+
+        func menu() -> MobileCommandFocus.MenuState? { target.menu(supportsMultipleWindows: true) }
+
+        func observeMenu() -> ClientStateFlag {
+            let changed = ClientStateFlag()
+            withObservationTracking { _ = menu() } onChange: { changed.raised = true }
+            return changed
+        }
+
+        check(menu()?.canStop == false && menu()?.canRename == true && menu()?.canChooseModel == true,
+              "idle thread can rename and choose a model, but not stop")
+        let started = observeMenu()
+        snapshot.running = true
+        await store.refresh()
+        check(started.raised && menu()?.canStop == true, "a running thread invalidates and enables Stop")
+
+        snapshot.running = false
+        await store.refresh()
+        await FixtureWindows.wait("Stop disabled after the run ends", seconds: 5) { menu()?.canStop == false }
+        let asked = observeMenu()
+        snapshot.dialogs = FixtureData.questionThread().dialogs
+        await store.refresh()
+        check(asked.raised && menu()?.canStop == true, "a pending question invalidates and enables Stop without a run")
+
+        let presentation = nav.composerPresentation.state(for: ref)
+        let presented = observeMenu()
+        presentation.showingContext = true
+        check(presented.raised && menu()?.canStart == false && menu()?.canRename == false
+              && menu()?.canChooseModel == false, "context sheet invalidates and blocks other presentations")
+        presentation.showingContext = false
+        check(menu()?.canRename == true && menu()?.canChooseModel == true, "dismissing context restores commands")
+
+        nav.hingeClosed = false
+        check(menu()?.canOpenWindows == true, "Duo held upright offers New Window")
+        let rotated = observeMenu()
+        nav.padSidebarOverlays = true
+        check(rotated.raised && menu()?.canOpenWindows == false, "turning Duo sideways invalidates and hides New Window")
+
+        let disconnected = observeMenu()
+        app.hosts.disconnect(ref.host)
+        check(disconnected.raised && menu()?.canStop == false && menu()?.canRename == false
+              && menu()?.canChooseModel == false, "disconnect invalidates and disables host actions")
+
+        nav.open(.forge(.list))
+        check(menu()?.canToggleSidebar == true, "Issues & PRs list allows toggling the sidebar")
+        let wideForge = observeMenu()
+        nav.padForgeDiff = true
+        check(wideForge.raised && menu()?.canToggleSidebar == false,
+              "a diff beside Issues & PRs invalidates and disables the sidebar command")
     }
 
     static func sentImagesKeepTheNextAttachment() async {
@@ -255,7 +320,7 @@ enum ClientStateChecks {
         a.composerPresentation.state(for: ref).choosingModel = true
         a.composerPresentation.state(for: ref).showingContext = true
         a.commitPopover = ref
-        check(b.settingsSelection.page == .appearance, "Settings page belongs to its window")
+        check(b.settingsSelection.page == .general, "Settings page belongs to its window")
         check(!b.composerPresentation.state(for: ref).choosingModel && !b.composerPresentation.state(for: ref).showingContext,
               "composer sheets open in one window only")
         b.commitPopover = nil
@@ -381,6 +446,9 @@ enum ClientStateChecks {
         let old = #"{"pad":false,"tab":{"settings":{}},"homePath":[],"settingsPath":[],"padPath":[]}"#
         let decoded = try? JSONDecoder().decode(MobileNavigator.Restoration.self, from: Data(old.utf8))
         check(decoded?.tab == .settings && decoded?.designsPath == [], "a window saved with two tabs restores")
+        let removed = #"{"pad":false,"tab":{"settings":{}},"homePath":[],"settingsPath":[{"settings":{"_0":{"defaults":{}}}},{"settings":{"_0":{"fleet":{}}}}],"padPath":[]}"#
+        let kept = try? JSONDecoder().decode(MobileNavigator.Restoration.self, from: Data(removed.utf8))
+        check(kept?.settingsPath == [.settings(.fleet)], "a saved screen a later version removed is dropped, the rest restore")
         let restored = MobileNavigator()
         restored.restore(MobileNavigator.Restoration(pad: false, tab: .home, homePath: [.home(.more), .thread(a)], settingsPath: [],
                                                      padSelection: nil, padPath: []), hosts: [a.host])

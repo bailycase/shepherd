@@ -26,42 +26,45 @@ extension View {
 /// The Settings boards' control measures, as the canvas renders them (a 30pt CSS box plus its
 /// 1px lines is 32pt).
 public enum SHSettingsControlMetrics {
-    /// Buttons and popups: 32pt, radius 7, Geist 13.
-    public static let controlHeight: CGFloat = 32
-    public static let radius: CGFloat = 7
-    public static let textSize: CGFloat = 13
-    public static let buttonPadding: CGFloat = 12
-    /// A popup: 12pt before the value, 10 after the chevrons, 10 between.
-    public static let popupLeading: CGFloat = 12
-    public static let popupTrailing: CGFloat = 10
-    public static let popupGap: CGFloat = 10
+    /// Buttons and popups: 26pt, radius `s`, `caption` text.
+    public static let controlHeight: CGFloat = 26
+    public static let radius: CGFloat = SH.Radius.s
+    public static let textSize: CGFloat = SHTextStyle.caption.size
+    public static let buttonPadding: CGFloat = SH.Space.m
+    /// A popup: 8pt before the value, 8 after the chevron, 6 between.
+    public static let popupLeading: CGFloat = SH.Space.m
+    public static let popupTrailing: CGFloat = SH.Space.m
+    public static let popupGap: CGFloat = SH.Space.s
+    public static let popupChevronSize: CGFloat = 8
     /// Text fields: 30pt, 10pt side padding, 240pt wide (a port 100).
     public static let fieldHeight: CGFloat = 30
     public static let fieldPadding: CGFloat = 10
     public static let fieldTextSize: CGFloat = 12.5
     public static let fieldWidth: CGFloat = 240
     public static let portFieldWidth: CGFloat = 100
-    /// The segmented control: 26pt segments 12pt in, 2pt apart on a 3pt-padded track at radius 8,
-    /// the chosen one at radius 6.
-    public static let segmentHeight: CGFloat = 26
-    public static let segmentPadding: CGFloat = 12
+    /// The segmented control: 24pt segments 8pt in, `lineStrong` dividers inside a 1pt `lineStrong`
+    /// border at radius `s`; the chosen one fills `bgSelected`.
+    public static let segmentHeight: CGFloat = 24
+    public static let segmentPadding: CGFloat = SH.Space.m
+    public static let segmentTrackRadius: CGFloat = SH.Radius.s
+    /// The Subagents editor's hand-drawn track keeps its lifted pill.
     public static let segmentTrackPadding: CGFloat = 3
-    public static let segmentTrackRadius: CGFloat = 8
-    public static let segmentRadius: CGFloat = 6
+    public static let segmentRadius: CGFloat = SH.Radius.s
     /// The slider: a 180 × 4 track, an 18pt knob inside a 1px line, its value 12pt after it.
-    public static let sliderWidth: CGFloat = 180
-    public static let sliderTrack: CGFloat = 4
-    public static let sliderKnob: CGFloat = 20
-    public static let sliderValueGap: CGFloat = 12
+    public static let sliderWidth: CGFloat = 140
+    public static let sliderTrack: CGFloat = 3
+    public static let sliderKnob: CGFloat = 14
+    public static let sliderValueGap: CGFloat = SH.Space.m
     /// The stepper: 30pt tall, 30pt buttons around a 34pt mono 13 value.
     public static let stepperHeight: CGFloat = 30
     public static let stepperButtonWidth: CGFloat = 30
     public static let stepperValueWidth: CGFloat = 34
     public static let stepperGlyphSize: CGFloat = 11
-    /// Keycaps: 22pt, at least 22 wide, 6pt in, radius 5, mono 11.5 in `textPrimary`, 4pt apart.
-    public static let keycapHeight: CGFloat = 22
-    public static let keycapPadding: CGFloat = 6
-    public static let keycapRadius: CGFloat = 5
-    public static let keycapTextSize: CGFloat = 11.5
-    public static let keycapSpacing: CGFloat = 4
+    /// Keycaps: mono `caption`, 2pt above and below, 6pt in, 1pt `lineStrong` border at radius
+    /// `xs`, 4pt apart.
+    public static let keycapVerticalPadding: CGFloat = SH.Space.xxs
+    public static let keycapPadding: CGFloat = SH.Space.s
+    public static let keycapRadius: CGFloat = SH.Radius.xs
+    public static let keycapTextSize: CGFloat = SHTextStyle.caption.size
+    public static let keycapSpacing: CGFloat = SH.Space.xs
 }

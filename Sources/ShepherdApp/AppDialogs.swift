@@ -20,7 +20,7 @@ struct AppDialogs: ViewModifier {
                               retry: { vm.retryImportSignIns() },
                               reviewExtensions: {
                                   vm.finishImport()
-                                  vm.settingsSection = .pi
+                                  vm.settingsSection = .models
                                   vm.showSettings = true
                               },
                               close: { vm.finishImport() },

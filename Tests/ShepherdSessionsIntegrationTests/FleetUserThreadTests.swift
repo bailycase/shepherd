@@ -57,6 +57,28 @@ struct FleetUserThreadTests {
         #expect(ended.all == [bID], "once per dispatch")
     }
 
+    @Test func acknowledgingAnOlderPushKeepsNewActivityWithTheSameTimestampPending() async throws {
+        let origin = try await D.makeOrigin()
+        let mac = try await D.Mac("MacBook Pro", origin: origin)
+        defer { mac.stop() }
+
+        let id = try mac.server.queue.sync {
+            let dispatch = try #require(mac.server.fleet?.dispatch)
+            let record = FleetDispatchRecord(parentHostID: dispatch.hostID, parentHostName: mac.name, targetHostID: dispatch.hostID,
+                                             state: .running, title: "Check build tools", task: "Check build tools", repoKey: D.repoKey,
+                                             activity: "idle", createdAt: dispatch.now)
+            dispatch.outbound[record.id] = record
+            dispatch.inbound[record.id] = .init(record: record, unsent: true)
+            dispatch.pushPending()
+
+            // The local push replies on a later queue turn. Make new activity pending before that reply, without advancing the clock.
+            dispatch.inbound[record.id]?.record.activity = "working"
+            dispatch.pushPending()
+            return record.id
+        }
+        try await D.wait("the sender to see working after acknowledging idle") { mac.sent().first { $0.id == id }?.activity == "working" }
+    }
+
     @Test func autoKeepsTheThreadOnThisMacWhenItHasTheRoomAndMakesNoRecord() async throws {
         let (a, b, _) = try await D.pair(busyA: 10, busyB: 90)
         defer { a.stop(); b.stop() }
