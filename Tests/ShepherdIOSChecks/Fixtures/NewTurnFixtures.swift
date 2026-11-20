@@ -18,6 +18,8 @@ extension FixtureCatalog {
             // The same new turn for a reader who scrolled up into the thread and dragged back down to the end.
             FixtureScreen(name: "thread-new-turn-from-above", hosts: NewTurnFixture.hosts(), routes: [.thread(thread)],
                           prepare: { await NewTurnFixture.run($0, reader: .backFromAbove) }),
+            FixtureScreen(name: "thread-jump-while-working", hosts: NewTurnFixture.hosts(), routes: [.thread(thread)],
+                          prepare: NewTurnFixture.jumpWhileWorking),
         ]
     }
 }
@@ -120,6 +122,40 @@ enum NewTurnFixture {
         FixtureCheck.report("FIXTURE CHECK \(shown.ink >= TailFixture.inkFloor ? "ok" : "FAILED"): the transcript draws after the new turn")
     }
 
+    /// Press the actual pill from history during a stream, then watch for a trip back to history.
+    static func jumpWhileWorking(_ app: MobileApp) async {
+        let ref = FixtureData.ref(FixtureData.preview)
+        let store = app.threads.store(for: ref)
+        let place = app.navigator.composerPresentation.state(for: ref)
+        await FixtureWindows.wait("the long thread", seconds: 20) { store.rows.count > 150 && FollowFixture.threadScrollView() != nil }
+        guard let scroll = FollowFixture.threadScrollView() else { FixtureCheck.fail("no transcript") }
+        let gutter = TailFixture.gutter(of: scroll)
+        let rest = gutter + NativeScrollFollower.repinSlack
+        await FixtureWindows.wait("the initial tail landing", seconds: 10) { distance(scroll) <= rest }
+        await TailFixture.Finger(scroll: scroll).drag(by: -14_000, frame: 350)
+        await FixtureWindows.wait("a detached history anchor", seconds: 5) { !place.follows && place.visibleTurn != nil && distance(scroll) > 2_000 }
+        SidebarAutomationsCheck.enableAccessibility()
+        Host.shared.start(length: replyLength, rate: 360, stepsPerSecond: 20)
+        func pill() -> NSObject? { TriggerFlowCheck.element("Jump to latest") }
+        await FixtureWindows.wait("the Jump to latest pill on a streaming thread", seconds: 6) { store.running && pill() != nil }
+        let before = store.snapshot?.revision ?? 0
+        let frames = Frames(scroll: scroll, gutter: gutter)
+        frames.start()
+        guard pill()?.accessibilityActivate() == true else { FixtureCheck.fail("Jump to latest did not activate") }
+        await FixtureCheck.wait("revisions to keep streaming after the press", seconds: 6) {
+            (store.snapshot?.revision ?? before) >= before + 60
+        }
+        // A chunk can grow several lines before the next pin. Require the reply to reach the composer and rule out
+        // jolts back into history with the same limit as the new-turn check.
+        let shown = await TailFixture.shown(within: .seconds(2)) { $0.atTail }
+        let result = frames.stop()
+        let revisions = (store.snapshot?.revision ?? before) - before
+        FixtureCheck.report("FIXTURE CHECK ok: \(result.frames) frames, \(revisions) revisions since press, farthest \(Int(result.farthest))pt, \(result.backJumps) back jumps, \(Int(result.awayAfterLanding))pt off after landing, \(shown.distance)pt at rest")
+        guard store.running, result.landed, result.awayAfterLanding < jolt, shown.atTail, shown.ink >= TailFixture.inkFloor else {
+            FixtureCheck.fail("Jump to latest did not land and stay on the streaming tail")
+        }
+    }
+
     /// Points the thread's visible bottom sits above the end of its content.
     private static func distance(_ scroll: UIScrollView) -> CGFloat {
         scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.contentOffset.y - scroll.bounds.height
@@ -135,6 +171,8 @@ enum NewTurnFixture {
             var farthest: CGFloat
             var backJumps: Int
             var shrinks: Int
+            var landed: Bool
+            var awayAfterLanding: CGFloat
         }
 
         private let gutter: CGFloat
@@ -150,6 +188,8 @@ enum NewTurnFixture {
         private var content: CGFloat
         private var backJumps = 0
         private var shrinks = 0
+        private var landed = false
+        private var awayAfterLanding: CGFloat = 0
 
         init(scroll: UIScrollView, gutter: CGFloat) {
             self.scroll = scroll
@@ -171,6 +211,8 @@ enum NewTurnFixture {
             guard let scroll else { return }
             frames += 1
             let away = NewTurnFixture.distance(scroll) - gutter
+            if landed { awayAfterLanding = max(awayAfterLanding, away) }
+            if abs(away) <= gutter + NativeScrollFollower.repinSlack { landed = true }
             let at = (now - began) * 1000
             farthest = max(farthest, away)
             if away > NewTurnFixture.jolt {
@@ -188,7 +230,7 @@ enum NewTurnFixture {
             link?.invalidate()
             link = nil
             return Result(frames: frames, over: over, firstMs: Int(max(first, 0).rounded()), lastMs: Int(max(last, 0).rounded()),
-                          farthest: farthest, backJumps: backJumps, shrinks: shrinks)
+                          farthest: farthest, backJumps: backJumps, shrinks: shrinks, landed: landed, awayAfterLanding: awayAfterLanding)
         }
     }
 

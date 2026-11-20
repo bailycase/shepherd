@@ -58,6 +58,11 @@ final class ComposerPresentation {
         publish()
     }
 
+    func jumpToLatest() {
+        place.jumpToLatest()
+        publish()
+    }
+
     /// A transcript mounting with no turn to restore must follow its tail (`NativeTranscriptPlace.mount()`).
     func mount() {
         place.mount()

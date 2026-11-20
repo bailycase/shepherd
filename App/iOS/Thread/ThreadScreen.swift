@@ -426,7 +426,7 @@ struct ThreadTranscript: View {
             // 44pt hit area draws the capsule 8pt above it.
             .overlay(alignment: .bottom) {
                 SHJumpToLatest(action: NativeScrollFollower.showsJump(sticky: presentation.follows, unseen: presentation.unseen, running: running) ? {
-                    follow { $0.jumpToLatest(); return false }
+                    presentation.jumpToLatest()
                     tailPin.asked(lander(proxy))
                 } : nil)
             }
