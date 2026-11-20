@@ -13,7 +13,7 @@ extension RemoteProtocol {
     /// pane (`RemoteRequest.openPane`'s `command`). A client lists it in `hello` too: the host
     /// carries tunnels only for a client that says it reads them. An older host lists nothing, and
     /// a thread it hosts has no Browser tab.
-    public static let browserTunnelCapability = "browser.tunnel.v1"
+    public static let browserTunnelCapability = Capability.browserTunnel.rawValue
 }
 
 /// The numbers a tunnel lives by, on both ends.

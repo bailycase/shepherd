@@ -2,7 +2,7 @@ import Foundation
 import ShepherdCore
 
 public extension RemoteProtocol {
-    static let projectPublicationsCapability = "logicalProjects.publications.v1"
+    static let projectPublicationsCapability = Capability.projectPublications.rawValue
 }
 
 /// Only the worker's authenticated extension can submit a relative source. Network readers

@@ -93,8 +93,8 @@ public enum ProjectRuntimeTransport: Codable, Hashable, Sendable {
 }
 
 public extension RemoteProtocol {
-    static let projectWorkerCapability = "logicalProjects.worker.v1"
-    static let projectResultCapability = "logicalProjects.result.v1"
+    static let projectWorkerCapability = Capability.projectWorker.rawValue
+    static let projectResultCapability = Capability.projectResult.rawValue
 }
 
 public enum ProjectRuntimeResult: Codable, Hashable, Sendable {
