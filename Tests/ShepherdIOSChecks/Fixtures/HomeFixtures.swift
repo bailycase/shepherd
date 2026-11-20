@@ -1,5 +1,4 @@
 import Foundation
-import SwiftUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
@@ -81,44 +80,7 @@ extension FixtureCatalog {
             // home-fleet after another device opened Studio's finished thread: its host says so, and it leaves Done here
             // (on an iPad with --sidebar, the sidebar's Done too).
             FixtureScreen(name: "home-done-seen", hosts: HomeFixtureData.seenElsewhere(), prepare: settle),
-            // The thread's long-press menu with Copy Transcript (S5): a context menu needs a press
-            // the headless harness can't do, so the run presents the menu's rows in a sheet instead.
-            FixtureScreen(name: "thread-menu", prepare: { app in
-                await settle(app)
-                await ThreadMenuFixture.present(app)
-            }),
         ]
-    }
-}
-
-/// Presents a thread's long-press menu rows for the headless render (S5). Aired as a sheet: the
-/// harness can't long-press, and the rows it shows are the menu's own `ThreadRowMenuItems`.
-@MainActor enum ThreadMenuFixture {
-    static func present(_ app: MobileApp) async {
-        let ref = FixtureData.ref(FixtureData.preview)
-        await FixtureCheck.wait("preview thread listed", seconds: 10) {
-            app.hosts.host(ref.host)?.agent(ref.agent) != nil
-        }
-        guard let host = app.hosts.host(ref.host), let agent = host.agent(ref.agent) else {
-            FixtureCheck.fail("preview thread missing for thread-menu")
-        }
-        let abilities = FleetThreadAbilities(agent: agent, state: host.state,
-            connected: host.phase.isConnected, capabilities: host.capabilities)
-        FixtureCheck.report(abilities.connected
-            ? "FIXTURE CHECK ok: preview thread connected for thread-menu"
-            : "FIXTURE CHECK FAILED: preview thread offline for thread-menu")
-        let view = ThreadRowMenuItems(thread: ref, abilities: abilities, hostName: host.name)
-            .environment(app.hosts)
-            .environment(app.navigator)
-            .environment(\.mobileApp, app)
-        let sheet = UIHostingController(rootView: NavigationStack { List { view }.navigationTitle(agent.name) })
-        sheet.modalPresentationStyle = .formSheet
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        guard var top = scenes.flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController else {
-            FixtureCheck.fail("no key window for thread-menu")
-        }
-        while let presented = top.presentedViewController { top = presented }
-        top.present(sheet, animated: false)
     }
 }
 
