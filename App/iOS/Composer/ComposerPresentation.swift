@@ -54,12 +54,21 @@ final class ComposerPresentation {
     /// changes nothing it shows redraws nothing.
     func follow(_ next: NativeScrollFollower) {
         place.follow(next)
-        if !Self.nativeTail { followerChanges &+= 1 }
-        publish()
+        publishFollowerChange()
     }
 
     func jumpToLatest() {
         place.jumpToLatest()
+        publishFollowerChange()
+    }
+
+    func sent(turnPresent: Bool) {
+        place.sent(turnPresent: turnPresent)
+        publishFollowerChange()
+    }
+
+    private func publishFollowerChange() {
+        if !Self.nativeTail { followerChanges &+= 1 }
         publish()
     }
 

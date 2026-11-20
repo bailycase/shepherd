@@ -55,6 +55,18 @@ public struct NativeTranscriptPlace: Equatable, Sendable {
     /// must not be fed back as top anchors: they can send the next streaming layout back up the thread.
     public mutating func jumpToLatest() {
         follower.jumpToLatest()
+        releaseHistoryAnchor()
+    }
+
+    /// A message sent immediately brings a detached reader back to the tail. A reader already
+    /// following keeps the bottom marker if they had it.
+    public mutating func sent(turnPresent: Bool) {
+        let wasFollowing = follower.sticky
+        follower.sent(queued: false, turnPresent: turnPresent)
+        if !wasFollowing { releaseHistoryAnchor() }
+    }
+
+    private mutating func releaseHistoryAnchor() {
         turn = nil
         markerTail = nil
         withheld = false
