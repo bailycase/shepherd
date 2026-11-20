@@ -146,7 +146,7 @@ private struct OverviewColumns: View {
     private func runningButton(_ row: FleetThreadRow) -> some View {
         let time: SHOverviewRow.Time = if case .elapsed(let since)? = row.clock { .elapsed(since: Date(milliseconds: since)) } else { .none }
         return Button { navigator.open(.thread(row.ref.agentRef)) } label: {
-            SHOverviewRow(row.title, detail: row.running(withSpend: true), leading: RunningGlyph.of(row), time: time, dimmed: row.offline)
+            SHOverviewRow(row.title, detail: row.now, spend: row.spend, leading: RunningGlyph.of(row), time: time, dimmed: row.offline)
                 .equatable()
         }
         .buttonStyle(.shRow(radius: 0))

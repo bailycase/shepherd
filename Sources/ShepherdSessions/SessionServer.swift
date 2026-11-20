@@ -7174,7 +7174,8 @@ public final class SessionServer: @unchecked Sendable {
     /// cost of its own messages, not the history a fork inherited) joins the thread's spend once, by what each run grew by.
     func recordChildSpend(agentID: AgentID, runs: [ChildRun], now: Date = Date(), zone: TimeZone = .current) {
         guard let agent = store.state.agents.first(where: { $0.id == agentID }) else { return }
-        let usage = runs.map { ChildUsage(id: $0.id, model: $0.model, tokens: $0.tokens, cost: $0.cost, finished: $0.isTerminal) }
+        let usage = runs.map { ChildUsage(id: $0.id, model: $0.model, tokens: $0.tokens, cost: $0.cost, finished: $0.isTerminal,
+                                          startedAt: $0.startedAt.map { Date(timeIntervalSince1970: $0 / 1000) }) }
         let next = AgentSpend.addingChildren(agent.spend, usage, day: SpendDay.key(now, zone: zone.identifier), zone: zone.identifier)
         applySpend(next, to: agentID)
     }

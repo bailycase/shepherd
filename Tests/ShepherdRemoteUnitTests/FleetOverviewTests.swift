@@ -164,14 +164,10 @@ struct FleetSpendTodayTests {
         let unspent = rows.first { $0.ref.agent.rawValue == "none" }
         #expect(spent?.spend == "est. $4.20 · 3.1M tok")
         #expect(spent?.saying(spendAfter: "done · acme-web") == "done · acme-web · est. $4.20 · 3.1M tok")
-        #expect(spent?.spendBrief == "est. $4.20", "a line with little room says the cost alone")
-        #expect(spent?.saying(spendAfter: "Pushing", brief: true) == "Pushing · est. $4.20")
         #expect(unspent != nil && unspent?.spend == nil)
         #expect(unspent?.saying(spendAfter: "done") == "done")
         var running = FleetOverviewTests.row("one", activity: "swift build", host: "Studio")
-        #expect(running.running(withSpend: true) == "swift build · Studio")
-        running.spendBrief = "est. $4.20"
-        #expect(running.running(withSpend: true) == "swift build · est. $4.20 · Studio")
-        #expect(running.now == "swift build · Studio", "without the spend, as before")
+        running.spend = "12.4k tok"
+        #expect(running.now == "swift build · Studio", "a running row's spend is its own line, not part of this one")
     }
 }

@@ -81,10 +81,16 @@ struct SpendRecordingTests {
             host.server.recordChildSpend(agentID: id, runs: [run(300, 0.3)], now: monday)
             host.server.recordChildSpend(agentID: id, runs: [run(700, 0.7, state: "complete")], now: monday)
             host.server.recordChildSpend(agentID: id, runs: [run(700, 0.7, state: "complete")], now: monday)
+            // A run that started today and was first seen finished counts once; one that started yesterday is history.
+            let today = ChildRun(runID: "native-2", label: "worker: lint", state: "complete", startedAt: monday.timeIntervalSince1970 * 1000 - 60_000,
+                                 model: "acme/helper", tokens: 40, cost: 0.04)
+            let before = ChildRun(runID: "native-3", label: "worker: old", state: "complete", startedAt: monday.timeIntervalSince1970 * 1000 - 86_400_000,
+                                  model: "acme/helper", tokens: 9_000, cost: 9)
+            for _ in 0..<2 { host.server.recordChildSpend(agentID: id, runs: [run(700, 0.7, state: "complete"), today, before], now: monday) }
         }
         let recorded = try #require(spend())
-        #expect(recorded.today.first { $0.model == "acme/helper" }?.tokens == 700)
-        #expect(recorded.totalTokens == 1_700)
-        #expect(abs((recorded.totalCost ?? 0) - 1.7) < 1e-9)
+        #expect(recorded.today.first { $0.model == "acme/helper" }?.tokens == 740)
+        #expect(recorded.totalTokens == 10_740)
+        #expect(abs((recorded.totalCost ?? 0) - 10.74) < 1e-9)
     }
 }

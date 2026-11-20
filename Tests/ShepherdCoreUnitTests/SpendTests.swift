@@ -130,6 +130,24 @@ struct SpendTests {
         #expect(spend.today.map(\.tokens) == [160])
     }
 
+    @Test func aRunThatStartedAndFinishedTodayCountsOnceAndOneFromBeforeIsHistory() throws {
+        let sunday = Self.noon(Self.monday).addingTimeInterval(-86_400)
+        func run(_ id: String, startedAt: Date?) -> ChildUsage {
+            ChildUsage(id: id, model: "b/helper", tokens: 300, cost: 0.3, finished: true, startedAt: startedAt)
+        }
+        var spend = try #require(AgentSpend.updated(nil, tokens: 1_000, cost: 1, model: "a/one", day: Self.monday, zone: "UTC"))
+        // First reported already finished: it ran between two publishes, so it is today's work, once however often it is replayed.
+        for _ in 0..<3 {
+            spend = try #require(AgentSpend.addingChildren(spend, [run("new", startedAt: Self.noon(Self.monday))], day: Self.monday, zone: "UTC"))
+        }
+        #expect(spend.today.map(\.tokens) == [300])
+        #expect(abs((spend.today.first?.cost ?? 0) - 0.3) < 1e-9)
+        // Restored history (started the day before, or with no start known) still adds nothing.
+        spend = try #require(AgentSpend.addingChildren(spend, [run("old", startedAt: sunday), run("unknown", startedAt: nil)], day: Self.monday, zone: "UTC"))
+        #expect(spend.today.map(\.tokens) == [300])
+        #expect(spend.totalTokens == 1_900)
+    }
+
     @Test func aNewSessionForgetsTheOldSessionsSubagents() throws {
         var spend = try #require(AgentSpend.updated(nil, tokens: 1_000, cost: 1, model: "a/one", day: Self.monday, sessionID: "s1"))
         spend = try #require(AgentSpend.addingChildren(spend, [Self.run("r1", tokens: 300, cost: 0.3)], day: Self.monday))
@@ -228,9 +246,6 @@ struct SpendTests {
         #expect(SpendFormat.line(tokens: 0, cost: 0.001) == "est. <$0.01")
         #expect(SpendFormat.line(tokens: 0, cost: nil) == nil)
         #expect(SpendFormat.line(nil as AgentSpend?) == nil)
-        #expect(SpendFormat.brief(AgentSpend(tokens: 3_100_000, cost: 4.2, day: Self.monday)) == "est. $4.20")
-        #expect(SpendFormat.brief(AgentSpend(tokens: 12_400, cost: nil, day: Self.monday)) == "12.4k tok")
-        #expect(SpendFormat.brief(nil) == nil)
         #expect(SpendFormat.modelName("anthropic/claude-sonnet-4") == "claude-sonnet-4")
         #expect(SpendFormat.modelName(nil) == "Unknown model")
     }

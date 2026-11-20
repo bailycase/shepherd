@@ -207,18 +207,13 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
     public var design: FleetDesign?
     /// What the thread spent, as "est. $4.20 · 3.1M tok" (tokens alone with no cost); nil while unknown (`SpendFormat`).
     public var spend: String?
-    /// The same for a line with little room, a running thread's: the cost alone ("est. $4.20"), or the tokens when there is none.
-    public var spendBrief: String?
 
     public var id: FleetRef { ref }
 
     /// What a running thread does now, under its title in the overview (iPadOverview): the call
     /// running now, else its live subagents ("3 subagents · 1 waiting on parent"), with the host when
     /// rows from several hosts mix ("swift build · This Mac"); "running" when nothing says more.
-    public var now: String { running(withSpend: false) }
-
-    /// `now`, with what the thread spent (briefly) before the host, which is what gets cut when the line is long.
-    public func running(withSpend: Bool) -> String {
+    public var now: String {
         var parts: [String] = []
         if let activity {
             parts.append(activity)
@@ -226,14 +221,13 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
             parts.append(nativeCount(subagents, "subagent"))
             if subagentsAsking > 0 { parts.append("\(subagentsAsking) waiting on parent") }
         }
-        if withSpend, let spendBrief { parts.append(spendBrief) }
         if let hostTag { parts.append(hostTag) }
         return parts.isEmpty ? FleetModel.statusWord(status) : parts.joined(separator: " · ")
     }
 
     /// `line` with what the thread spent after it ("Running python · est. $4.20 · 3.1M tok"), as every row says its spend.
-    public func saying(spendAfter line: String, brief: Bool = false) -> String {
-        (brief ? spendBrief : spend).map { "\(line) · \($0)" } ?? line
+    public func saying(spendAfter line: String) -> String {
+        spend.map { "\(line) · \($0)" } ?? line
     }
 
     /// When it last moved (ms since epoch), for a finished thread's time and day.
@@ -630,7 +624,6 @@ public struct FleetModel: Equatable, Sendable {
         row.result = digest?.result
         row.session = digest?.session
         row.spend = SpendFormat.line(agent.spend)
-        row.spendBrief = SpendFormat.brief(agent.spend)
         return row
     }
 

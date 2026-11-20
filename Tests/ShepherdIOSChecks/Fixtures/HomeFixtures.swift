@@ -15,6 +15,11 @@ extension FixtureCatalog {
             FixtureScreen(name: "home-fleet", hosts: fleet, prepare: settle),
             // Home's header: what every host's threads spent today, per model (a thread of a subscription model has tokens alone).
             FixtureScreen(name: "home-spend", hosts: HomeFixtureData.spending(), prepare: settle),
+            // The Running filter lifts the working threads, each with its spend on a line of its own, above the fold.
+            FixtureScreen(name: "home-spend-running", hosts: HomeFixtureData.spending(), prepare: { app in
+                await settle(app)
+                SidebarThreads.of(app.hosts).filters = .init(chips: [.running])
+            }),
             FixtureScreen(name: "overview-spend", hosts: HomeFixtureData.spending(), prepare: { app in
                 await settle(app)
                 await OverviewOpenCheck.hideSidebar(app)

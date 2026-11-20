@@ -39,15 +39,18 @@ public struct ChildUsage: Hashable, Sendable {
     public var model: String?
     public var tokens: Int?
     public var cost: Double?
-    /// The run has ended: seen for the first time, it is history rather than today's work.
+    /// The run has ended: seen for the first time, it is history unless it started today.
     public var finished: Bool
+    /// When the run started; nil when unknown, which a finished run's first sighting reads as history.
+    public var startedAt: Date?
 
-    public init(id: String, model: String?, tokens: Int?, cost: Double?, finished: Bool) {
+    public init(id: String, model: String?, tokens: Int?, cost: Double?, finished: Bool, startedAt: Date? = nil) {
         self.id = id
         self.model = model
         self.tokens = tokens
         self.cost = cost
         self.finished = finished
+        self.startedAt = startedAt
     }
 }
 
@@ -136,15 +139,17 @@ public struct AgentSpend: Codable, Hashable, Sendable {
     }
 
     /// The spend after the subagent runs' usage as the extension last published it: what each grew by since it was last seen
-    /// joins today, under the model the run uses. A run's first sighting counts whole while it runs and as history once it has
-    /// finished (it is a run from before this host knew the thread). Nothing is recorded before the thread's own baseline.
+    /// joins today, under the model the run uses. A run's first sighting counts whole while it runs, or when it has finished but
+    /// started today (it ran and ended between two publishes); a finished run from an earlier day is history (it is from before this
+    /// host knew the thread). Nothing is recorded before the thread's own baseline.
     public static func addingChildren(_ previous: AgentSpend?, _ runs: [ChildUsage], day: String, zone: String? = nil) -> AgentSpend? {
         guard var spend = previous else { return nil }
         spend.start(day, zone)
         for run in runs {
             guard let tokens = run.tokens else { continue }
             let known = spend.children[run.id]
-            if known != nil || !run.finished {
+            let startedToday = run.startedAt.map { SpendDay.key($0, zone: zone) == day } ?? false
+            if known != nil || !run.finished || startedToday {
                 let before = known ?? ChildSpend(tokens: 0, cost: nil)
                 spend.add(model: run.model, tokens: max(0, tokens - before.tokens), cost: run.cost.map { max(0, $0 - (before.cost ?? 0)) })
             }
@@ -316,12 +321,6 @@ public enum SpendFormat {
     /// A thread's whole session, for its sidebar row; nil while unknown.
     public static func line(_ spend: AgentSpend?) -> String? {
         spend.flatMap { line(tokens: $0.totalTokens, cost: $0.totalCost) }
-    }
-
-    /// The cost alone ("est. $4.20"), or the tokens when the thread has no cost: for a line with little room.
-    public static func brief(_ spend: AgentSpend?) -> String? {
-        guard let spend else { return nil }
-        return (spend.totalCost ?? 0) > 0 ? line(tokens: nil, cost: spend.totalCost) : line(tokens: spend.totalTokens, cost: nil)
     }
 
     /// A day's total, for a page header; nil when nothing was spent.
