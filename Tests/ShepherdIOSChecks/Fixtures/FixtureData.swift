@@ -21,6 +21,9 @@ struct FixtureScreen {
     var setup: (@MainActor () -> Void)? = nil
     /// Checks the rendered screen after the runner has let layout settle.
     var verify: (@MainActor (MobileApp) -> Void)? = nil
+    /// iPad: the app runs in a window this many points wide, centred on the screen (a Stage Manager window's width, which a
+    /// headless simulator cannot drag). Everything the window shows, sheets included, is laid out at that width.
+    var frameWidth: CGFloat? = nil
 }
 
 /// A host the harness serves: its state, each agent's thread, and answers for anything else.
@@ -214,7 +217,7 @@ enum FixtureData {
 @MainActor enum FixtureCatalog {
     static var all: [FixtureScreen] {
         home + thread + context + newThread + subagents + review + changes + commit + search + settings + hooks + automations + automationFlow + windows + terminal + clientState + duo + fleetScreens
-            + designs + designPad + designPadMarkup + designPages + browser + files + ProjectFixtures.screens + hostConfig + freshness + forge + tailFrames + tail + tailFollowUps + newTurn + historyRead + composerField + subThreads + startProblems
+            + designs + designPad + designPadMarkup + designPages + browser + files + ProjectFixtures.screens + hostConfig + freshness + forge + tailFrames + tail + tailFollowUps + newTurn + historyRead + composerField + subThreads + startProblems + resize
     }
 
     static func screen(named name: String) -> FixtureScreen? {
