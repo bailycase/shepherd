@@ -159,7 +159,10 @@ struct ThreadView: View {
         // from the newest (`ThreadRestore`): the eager tail grows over the lazy stack's rows, which the second frame brings back.
         let eagerCount = eagerCount(origins, rows: rows)
         let restored = restore.plan(active: active, hiddenKept: kept, rows: rows, eagerRows: eagerCount, following: follower.sticky,
-                                    tailParsed: !store.tailAwaitsParse(lastRows: eagerCount), keepsOnlyTail: store.keepsOnlyTail) { [store] drawn in
+                                    tailParsed: !store.tailAwaitsParse(lastRows: eagerCount), keepsOnlyTail: store.keepsOnlyTail,
+                                    covering: {
+            store.eagerTailRows(maxRows: eagerCount, costCap: 0, coveringHeight: eagerCover) { $0.isUser && origins.hides($0.turn) }
+        }) { [store] drawn in
             store.restoreCost(drawn: drawn, upTo: eagerCount)
         }
         let restoreStepping = restore.restoring
@@ -1449,9 +1452,13 @@ final class ThreadRestore {
     /// no more than a step (`AppLayout.restoreStepBytes`) draws them all in its first frame, as it would after any release, because
     /// there is nothing to spread (a dozen rows of one line owe nothing), and a last screen that is all it drew might not fill its
     /// window (`ThreadTailAnchor`). `keepsOnlyTail` is whether the thread holds only the end of its history, as it is shown
-    /// (`NativeThreadStore.keepsOnlyTail`): its restore waits for the pull that catches it up (`awaitsPull`).
+    /// (`NativeThreadStore.keepsOnlyTail`): its restore waits for the pull that catches it up (`awaitsPull`). `covering` is how many rows
+    /// at the end of the thread cover the window by the low height estimate (`NativeThreadStore.eagerTailRows`), read once as it comes
+    /// back, with `owed`: a restore draws that many in its first frame, and not only the rows it kept, when they cost no more than a
+    /// step beyond them (`firstFrameRows`).
     func plan<Rows: BidirectionalCollection>(active: Bool, hiddenKept: Int?, rows: Rows, eagerRows: Int, following: Bool = true,
-                                             tailParsed: Bool = true, keepsOnlyTail: Bool = false, owed: (Int) -> Int) -> Plan?
+                                             tailParsed: Bool = true, keepsOnlyTail: Bool = false, covering: () -> Int = { 0 },
+                                             owed: (Int) -> Int) -> Plan?
     where Rows.Element == NativeThreadRow, Rows.Index == Int {
         _ = steps
         tailDrawnParsed = tailParsed
@@ -1480,7 +1487,7 @@ final class ThreadRestore {
             begun = true
             // At least one row, so that the first frame is not blank.
             if let kept = self.hiddenKept.map({ max(1, $0) }), kept < min(rows.count, eagerRows), owed(kept) > AppLayout.restoreStepBytes {
-                first = rows[rows.endIndex - kept].id
+                first = rows[rows.endIndex - Self.firstFrameRows(kept: kept, covering: min(covering(), rows.count, eagerRows), owed: owed)].id
                 restoring = true
                 history = false
             } else if keepsOnlyTail, self.hiddenKept != nil, rows.count > eagerRows, eagerRows < ThreadView.eagerRows {
@@ -1503,6 +1510,19 @@ final class ThreadRestore {
             return nil
         }
         return plan
+    }
+
+    /// How many rows the first frame of a restore that starts from the `kept` rows its hidden view still draws draws: those, and more while
+    /// they do not cover the window (`covering` rows do, by the low height estimate), as many more as owe no more than a step
+    /// (`AppLayout.restoreStepBytes`) beyond them. A last screen of a few short rows is not the window's: what is above it stays blank until
+    /// the first step, which a thread that kept only its tail waits for its pull for (`awaitsPull`), a fraction of a second at the least.
+    /// Short rows are what costs little to build, so the window is covered at the price of a step the first frame never bore, at most.
+    static func firstFrameRows(kept: Int, covering: Int, owed: (Int) -> Int) -> Int {
+        guard covering > kept else { return kept }
+        let bound = owed(kept) - AppLayout.restoreStepBytes
+        var drawn = kept
+        while drawn < covering, owed(drawn + 1) >= bound { drawn += 1 }
+        return drawn
     }
 
     /// What a restore under way draws: the eager stack from the row it has reached. A tail that waits for its lazy stack is the rule's at

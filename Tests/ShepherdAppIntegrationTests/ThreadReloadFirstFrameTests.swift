@@ -131,6 +131,129 @@ struct ThreadReloadFirstFrameTests {
         #expect(distances.allSatisfy { abs($0) < 2 }, "the reader stayed at the end of the thread: \(distances)")
     }
 
+    /// The replies of an ordinary working thread: a few lines of prose, or a few blocks of about two kilobytes.
+    enum Replies: CaseIterable, CustomTestStringConvertible {
+        case twoParagraphs, threeParagraphs, eightParagraphs, twoKilobytesOfBlocks
+
+        var testDescription: String { "\(self)" }
+
+        func text(_ i: Int) -> String {
+            let paragraph = "Answer paragraph with enough words to wrap a line or two in the column, like a real reply."
+            switch self {
+            case .twoParagraphs: return "\(i). " + Array(repeating: paragraph, count: 2).joined(separator: "\n\n")
+            case .threeParagraphs: return "\(i). " + Array(repeating: paragraph, count: 3).joined(separator: "\n\n")
+            case .eightParagraphs: return "\(i). " + Array(repeating: paragraph, count: 8).joined(separator: "\n\n")
+            case .twoKilobytesOfBlocks: return MarkdownFixtures.longReply(cycles: 5, from: i * 5)
+            }
+        }
+
+        /// 40 questions and their answers.
+        var session: [NativeThreadMessage] {
+            (0..<40).flatMap { i in [ThreadFixture.user("u\(i)", "Question \(i)"), ThreadFixture.assistant("a\(i)", text(i))] }
+        }
+    }
+
+    /// What the thread's scroll view shows above its composer, from one capture of the window.
+    private func drawing(_ thread: FakeThread) throws -> Drawing {
+        let scroll = try #require(thread.scrollView)
+        var region = scroll.convert(scroll.bounds, to: thread.window.host)
+        region.size.height = max(1, region.height - scroll.contentInsets.bottom - 24)
+        let capture = FrameTimer.capture(thread.window, region)
+        return Drawing(ink: capture.ink, longestBlankBand: capture.longestBlankBand, inkBottom: capture.inkBottom)
+    }
+
+    private struct Drawing: Equatable, CustomStringConvertible {
+        let ink: Int
+        let longestBlankBand: Int
+        let inkBottom: Int
+
+        var description: String { "ink \(ink), blank band \(longestBlankBand) pt, lowest ink \(inkBottom)" }
+
+        /// Draws what `settled` does of the window: no more blank stretch, and at least nine tenths of its ink (the last row of a settled
+        /// thread draws a footer under it that a thread coming back has not).
+        func covers(like settled: Drawing) -> Bool { longestBlankBand <= settled.longestBlankBand && ink * 10 >= settled.ink * 9 }
+    }
+
+    /// A thread of ordinary replies that held the host's newest page and was left past the history bounds: it keeps that page, and its
+    /// hidden view draws only the last screen of it. Returns the thread and what the window showed while it was settled on screen. The
+    /// view counts of a thread like this say little about its first frame: the rows it draws first are few beside the whole page.
+    private func openOrdinaryOffTheDeck(_ replies: Replies) async throws -> (thread: FakeThread, settled: Drawing) {
+        let thread = FakeThread(ThreadFixture.snapshot([]), history: replies.session, deckHosting: true)
+        do {
+            try await thread.waitUntilReady()
+            await thread.store.waitForProse()
+            ListPerf.settle(thread.window)
+            let store = thread.store
+            #expect(store.messages.count == FakeThread.pageSize && store.rows.count == FakeThread.pageSize, "the host's newest page: \(store.messages.count) messages, \(store.rows.count) rows")
+            let settled = try drawing(thread)
+            try await leaveTheDeck(thread)
+            #expect(store.keepsOnlyTail && store.messages.count == FakeThread.pageSize, "it keeps its page: \(store.messages.count) messages")
+            #expect(store.keptRows > 0 && store.keptRows < ThreadView.eagerRows, "its hidden view kept a last screen of \(store.keptRows) rows, with more to come")
+            return (thread, settled)
+        } catch {
+            thread.close()
+            throw error
+        }
+    }
+
+    /// Shows the thread with its pull on its way, and what its first frame draws.
+    private func showWithHeldPull(_ thread: FakeThread) async throws -> Drawing {
+        let requests = thread.snapshotRequests
+        thread.holdingSnapshots = true
+        thread.visibility.active = true
+        thread.visibility.motionPaused = false
+        ListPerf.settle(thread.window)
+        let frame = try drawing(thread)
+        try await eventuallyOnMain("the pull to be on its way") { thread.snapshotRequests > requests }
+        return frame
+    }
+
+    /// A thread of ordinary replies, shown after it kept only its page, draws rows that cover the window in its first frame, before its
+    /// pull returns: what the window shows once the thread has settled, from what the store holds, with the rest of the page still to come
+    /// above them. A last screen of a few short rows would leave the top of the window empty until the pull had landed.
+    @Test(arguments: Replies.allCases)
+    func anOrdinaryThreadPastTheBoundsDrawsWhatTheWindowShowsBeforeItsPullReturns(replies: Replies) async throws {
+        let (thread, settled) = try await openOrdinaryOffTheDeck(replies)
+        defer { thread.close() }
+        defer { thread.releaseSnapshots() }
+        let store = thread.store
+
+        let frame = try await showWithHeldPull(thread)
+        let first = ThreadRowMemory.built(in: store)
+        #expect(first >= store.keptRows && first < store.rows.count, "its first frame drew the rows it kept and not the whole page: \(first) rows built, \(store.keptRows) kept, \(store.rows.count) in the thread")
+        #expect(frame.covers(like: settled), "its first frame shows what the settled thread does of the window: \(frame), settled \(settled)")
+        #expect(try abs(distanceFromTail(thread)) < 2, "at the end of the thread")
+    }
+
+    /// The rest of the page comes back above those rows over the frames after it, and the window shows the same thing in each of them: the
+    /// reader is at the end of the thread throughout, and no row that was drawn goes.
+    @Test(arguments: Replies.allCases)
+    func theRestOfAnOrdinaryThreadFillsInAboveItsFirstFrameWithoutChangingWhatTheWindowShows(replies: Replies) async throws {
+        let (thread, settled) = try await openOrdinaryOffTheDeck(replies)
+        defer { thread.close() }
+        defer { thread.releaseSnapshots() }
+        let store = thread.store
+
+        _ = try await showWithHeldPull(thread)
+        var built = [ThreadRowMemory.built(in: store)]
+        var drawings = [try drawing(thread)]
+        var distances = [try distanceFromTail(thread)]
+        thread.releaseSnapshots()
+        var still = 0
+        try await eventuallyOnMain("the rest of its tail to come back", timeout: .seconds(30)) {
+            ListPerf.settle(thread.window)
+            built.append(ThreadRowMemory.built(in: store))
+            drawings.append(try drawing(thread))
+            distances.append(try distanceFromTail(thread))
+            still = built.last == built.dropLast().last ? still + 1 : 0
+            return built.last! >= min(store.rows.count, ThreadView.eagerRows) && still >= 5
+        }
+        #expect(Set(built).count >= 2, "the rest came back after the first frame: \(built)")
+        #expect(built == built.sorted(), "no row was built again, none went: \(built)")
+        #expect(drawings.allSatisfy { $0.covers(like: settled) }, "the window showed what the settled thread does of it, in every frame: \(Set(drawings.map(\.description)).sorted()), settled \(settled)")
+        #expect(distances.allSatisfy { abs($0) < 2 }, "the reader stayed at the end of the thread: \(distances), rows built \(built), ink \(drawings.map(\.ink))")
+    }
+
     /// A thread of heavy rows, whose eager tail is a few of them with more above: its first frame draws that tail alone, from what it kept,
     /// and the lazy stack of the older rows waits for the pull that catches it up. Neither moves the end of the thread.
     @Test func aHeavyThreadDrawsItsEagerTailAloneAndItsStackAfterThePull() async throws {
