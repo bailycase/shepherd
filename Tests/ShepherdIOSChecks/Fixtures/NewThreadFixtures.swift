@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 // New thread track's screens: the form, Where it runs (the iPad's Run on popover), the model
 // picker, Add repo's folder browser, a host on an older Shepherd, images, an error, and every
