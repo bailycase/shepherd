@@ -133,7 +133,7 @@ enum ChangesBoard {
     }
 
     static let overview = ChangesOverview(
-        repository: "/Users/baily/payments", branch: "agent/refund-events", head: "a1c9f2e", defaultScope: .branch(base: nil),
+        repository: "/Users/alex/payments", branch: "agent/refund-events", head: "a1c9f2e", defaultScope: .branch(base: nil),
         defaultBase: "origin/main",
         entries: [
             .init(scope: .lastTurn, files: 2, added: 12, removed: 3),
@@ -172,7 +172,7 @@ enum ChangesBoard {
     static func session(comment: Bool = true) -> ReviewSession {
         let files = files
         let list = listed(files, scope: .branch(base: nil), comparison: branchComparison)
-        let session = ReviewSession(agentID: AgentID(), paneID: PaneID(), cwd: "/Users/baily/payments", reference: nil)
+        let session = ReviewSession(agentID: AgentID(), paneID: PaneID(), cwd: "/Users/alex/payments", reference: nil)
         session.engine = engine(files, list: list)
         session.scope = .branch(base: nil)
         session.list = list
@@ -215,7 +215,7 @@ enum ChangesBoard {
         let files = GitDiff.parse([outbox, added("ledger/refund.go", Array(refund.prefix(3)))].joined(separator: "\n"))
         let list = listed(files, scope: .lastTurn,
                           comparison: ChangesComparison(head: "End of turn", base: "Start of turn", turn: lastTurn))
-        let session = ReviewSession(agentID: AgentID(), paneID: PaneID(), cwd: "/Users/baily/payments", reference: nil)
+        let session = ReviewSession(agentID: AgentID(), paneID: PaneID(), cwd: "/Users/alex/payments", reference: nil)
         session.engine = engine(files, list: list)
         session.scope = .lastTurn
         session.list = list

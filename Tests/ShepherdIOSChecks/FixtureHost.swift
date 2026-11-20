@@ -365,8 +365,14 @@ final class FixtureHost: @unchecked Sendable {
             }
             mutation("apps")
             return [.error(id: id, code: "fixture", message: refused)]
-        case .projects(let id, _), .logicalProjectRuntime(let id, _):
-            // Projects are not drawn by any fixture screen: a request is refused rather than served.
+        case .projects(let id, let request):
+            switch request {
+            case .list, .files, .context, .read, .resources, .mcp(_, _, .credentials): return nil
+            default:
+                mutation("projects")
+                return [.error(id: id, code: "fixture", message: refused)]
+            }
+        case .logicalProjectRuntime(let id, _):
             mutation("projects")
             return [.error(id: id, code: "fixture", message: refused)]
         case .forge(let id, let request):

@@ -267,19 +267,19 @@ enum HomeFixtureData {
         let started = Date().timeIntervalSince1970 * 1000
         return [
             FixtureHostData(id: FixtureData.studio, name: "Studio", state: ShepherdState(
-                spaces: [FixtureData.shepherdSpace, FixtureData.horizonSpace, hiddenSpace],
+                spaces: [FixtureData.shepherdSpace, FixtureData.orbitSpace, hiddenSpace],
                 agents: [
                     FixtureData.agent(FixtureData.preview, "Investigate SwiftUI live preview", .working),
                     FixtureData.agent(FixtureData.extensions, "Plan shepherd extensions", .working),
                     FixtureData.agent(FixtureData.dock, "Dock review pane", .blocked),
-                    FixtureData.agent(FixtureData.deletion, "Fix remote subagent deletion", .done, space: FixtureData.horizonSpace),
+                    FixtureData.agent(FixtureData.deletion, "Fix remote subagent deletion", .done, space: FixtureData.orbitSpace),
                     FixtureData.agent(merge, "Merge PR #24 after CI", .working, space: hiddenSpace),
                 ],
                 automations: [
                     Automation(id: AutomationID(rawValue: "auto-merge"), name: "Merge PR #24 after CI", prompt: "Merge PR #24 once CI is green",
                                cwd: "/Users/dev/Shepherd", agentID: merge),
                     Automation(id: AutomationID(rawValue: "auto-cleanup"), name: "Stale branch cleanup", prompt: "Delete merged branches",
-                               cwd: "/Users/dev/horizon", enabled: false),
+                               cwd: "/Users/dev/orbit", enabled: false),
                 ]),
                 threads: [
                     FixtureData.preview: command("git push origin main", startedAgo: 21_000, at: started),

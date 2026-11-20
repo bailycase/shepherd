@@ -377,7 +377,7 @@ public struct FleetHostCard: Identifiable, Equatable, Sendable {
     /// "studio.local:7433".
     public var address: String
     public var phase: RemoteHostPhase
-    /// "2 threads running · Shepherd, horizon", "3 threads", or why it is offline.
+    /// "2 threads running · Shepherd, orbit", "3 threads", or why it is offline.
     public var summary: String
     public var threads: Int
     public var running: Int

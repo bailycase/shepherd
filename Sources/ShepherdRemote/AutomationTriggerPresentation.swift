@@ -181,7 +181,7 @@ public struct AutomationTriggerState: Equatable, Sendable {
     /// "Watching", "Scheduled", "Paused", "Retrying", "Off".
     public var word: String
     public var tone: AutomationTone
-    /// Why it's paused or retrying, from the host.
+    /// Why it's paused or retrying, or why trigger storage is damaged, from the host.
     public var reason: String?
     /// Resume is offered (else Pause).
     public var paused: Bool
@@ -189,7 +189,7 @@ public struct AutomationTriggerState: Equatable, Sendable {
     public init(_ status: AutomationTriggerStatus, trigger: AutomationTrigger) {
         switch status.state {
         case .off:
-            (word, tone, reason, paused) = ("Off", .off, nil, false)
+            (word, tone, reason, paused) = ("Off", .off, status.storageDamaged == true ? status.reason : nil, false)
         case .paused:
             // A lasting error pauses with a reason; a person's pause has none.
             (word, tone, reason, paused) = ("Paused", status.reason == nil ? .stopped : .failed, status.reason, true)
@@ -229,6 +229,7 @@ public struct AutomationTriggerDetail: Equatable, Sendable {
     public var today: String?
     public var pending: [AutomationPendingRow]
     public var allPaused: Bool
+    public var storageDamaged: Bool
     /// The facts under the trigger.
     public var runsOn: String
     public var workspace: String?
@@ -257,7 +258,7 @@ public struct AutomationTriggerDetail: Equatable, Sendable {
                 AutomationPendingRow(id: event.id, summary: event.summary, url: event.url.flatMap(URL.init(string:)),
                                      when: AutomationsModel.stamp(Date(timeIntervalSince1970: event.occurredAt), timeZone: timeZone, locale: locale))
             },
-            allPaused: status?.allPaused ?? false,
+            allPaused: status?.allPaused ?? false, storageDamaged: status?.storageDamaged == true,
             runsOn: row.runsOn,
             workspace: settings.destination == .newThread || settings.destination == nil
                 ? AutomationTriggerText.workspace(settings.workspace ?? .worktree) : nil,

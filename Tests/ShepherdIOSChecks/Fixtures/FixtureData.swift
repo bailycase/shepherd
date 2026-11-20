@@ -93,7 +93,7 @@ enum FixtureData {
     static let laptop = UUID(uuidString: "5E0A0000-0000-4000-8000-000000000003")!
 
     static let shepherdSpace = Space(id: SpaceID(rawValue: "space-shepherd"), name: "Shepherd", path: "/Users/dev/Shepherd")
-    static let horizonSpace = Space(id: SpaceID(rawValue: "space-horizon"), name: "horizon", path: "/Users/dev/horizon")
+    static let orbitSpace = Space(id: SpaceID(rawValue: "space-orbit"), name: "orbit", path: "/Users/dev/orbit")
 
     static let preview = AgentID(rawValue: "agent-preview")
     static let extensions = AgentID(rawValue: "agent-extensions")
@@ -107,11 +107,11 @@ enum FixtureData {
     /// Two hosts online (this Mac and a build box) and one laptop offline.
     static func hosts() -> [FixtureHostData] {
         [
-            FixtureHostData(id: studio, name: "Studio", state: ShepherdState(spaces: [shepherdSpace, horizonSpace], agents: [
+            FixtureHostData(id: studio, name: "Studio", state: ShepherdState(spaces: [shepherdSpace, orbitSpace], agents: [
                 agent(preview, "Investigate SwiftUI live preview", .idle, worktree: "pi/swiftui-previews", changed: 3),
                 agent(extensions, "Plan shepherd extensions", .working, worktree: "pi/shepherd-extensions", changed: 1),
                 agent(dock, "Dock review pane", .blocked, checkout: "chore/remove-homarr", changed: 11),
-                agent(deletion, "Fix remote subagent deletion", .done, space: horizonSpace),
+                agent(deletion, "Fix remote subagent deletion", .done, space: orbitSpace),
             ], automations: [Automation(name: "Merge PR #24 after CI", prompt: "watch CI", cwd: "/Users/dev/Shepherd", enabled: false)]),
             threads: [preview: thread(), extensions: runningThread(), dock: questionThread()]),
             FixtureHostData(id: buildBox, name: "build-01", state: ShepherdState(spaces: [shepherdSpace], agents: [
@@ -214,7 +214,7 @@ enum FixtureData {
 @MainActor enum FixtureCatalog {
     static var all: [FixtureScreen] {
         home + thread + context + newThread + subagents + review + changes + commit + search + settings + hooks + apps + automations + automationFlow + windows + terminal + clientState + duo + fleetScreens
-            + designs + designPad + designPadMarkup + designPages + browser + files + ProjectFixtures.screens + hostConfig + freshness + forge + tailFrames + tail + tailFollowUps + newTurn + historyRead + composerField + subThreads + supervision + startProblems + composerImages
+            + designs + designPad + designPadMarkup + designPages + browser + files + ProjectFixtures.screens + hostConfig + spaceConfiguration + freshness + forge + tailFrames + tail + tailFollowUps + newTurn + historyRead + composerField + subThreads + supervision + startProblems + composerImages
     }
 
     static func screen(named name: String) -> FixtureScreen? {

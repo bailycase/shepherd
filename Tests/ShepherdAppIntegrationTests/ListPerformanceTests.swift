@@ -1009,8 +1009,8 @@ struct ListPerformanceTests {
         let screenful = 20
         var asking = thread.snapshot
         asking.revision += 1
-        asking.dialogs = [NativeThreadDialog(id: "d1", kind: .select, title: "How should I handle Horizon’s uncommitted edits?",
-                                             options: ["Compare first (Recommended)\nDiff the 11 files.", "Leave Horizon alone\nDeploy from a clean checkout."])]
+        asking.dialogs = [NativeThreadDialog(id: "d1", kind: .select, title: "How should I handle Orbit’s uncommitted edits?",
+                                             options: ["Compare first (Recommended)\nDiff the 11 files.", "Leave Orbit alone\nDeploy from a clean checkout."])]
         var answered = asking
         answered.revision += 1
         answered.dialogs = []

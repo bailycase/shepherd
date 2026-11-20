@@ -30,7 +30,7 @@ public enum SHSidePaneMetrics {
 /// agent works. A worktree Shepherd made reads "⧉ pi/swiftui-previews ●3"; the space's own
 /// checkout reads "⌂ chore/remove-homarr your checkout ●11" in lantern, since pi edits your
 /// files there. The count is files changed in that checkout (left out at zero), and a remote
-/// host trails it ("▭ horizon").
+/// host trails it ("▭ orbit").
 public struct SHBranchChip: View {
     public enum Kind: Equatable, Sendable {
         case worktree, checkout
@@ -102,7 +102,7 @@ public struct SHBranchChip: View {
         .accessibilityLabel(Self.accessibilityLabel(kind: kind, branch: branch, changedFiles: changedFiles, host: host))
     }
 
-    /// "Worktree, pi/x, 3 files changed, on horizon".
+    /// "Worktree, pi/x, 3 files changed, on orbit".
     public static func accessibilityLabel(kind: Kind, branch: String, changedFiles: Int, host: String?) -> String {
         [kind == .worktree ? "Worktree" : "Your checkout", branch,
          changedFiles > 0 ? "\(changedFiles) file\(changedFiles == 1 ? "" : "s") changed" : nil,

@@ -310,7 +310,7 @@ struct ClientSettingsTests {
 
     @Test func aHostsSettingsSayWhetherTheyCanBeShown() async {
         let model = ClientHostSettings()
-        let offline = Self.host("horizon", nil)
+        let offline = Self.host("orbit", nil)
         let old = Self.host("studio", FakeSettingsClient(), capabilities: [])
         let live = Self.host("demo-mac", FakeSettingsClient(settings: HostSettings(piVersion: "0.87.1")))
         #expect(model.state(of: offline) == .offline)
@@ -355,7 +355,7 @@ struct ClientSettingsTests {
     @Test func theFirstHostThatAnswersIsEditedAndOnlyItIsWritten() async throws {
         let first = FakeSettingsClient(files: InstructionsSnapshot(agents: "- a\n", directory: "~/i"))
         let second = FakeSettingsClient(files: InstructionsSnapshot(agents: "- old\n", appendSystem: "rule\n", directory: "~/i"))
-        let hosts = [Self.host("demo-mac", first), Self.host("studio", second), Self.host("horizon", nil)]
+        let hosts = [Self.host("demo-mac", first), Self.host("studio", second), Self.host("orbit", nil)]
         let model = ClientInstructions(origin: "iPhone")
         await model.refresh(hosts)
         #expect(model.edited(in: hosts)?.name == "demo-mac")
@@ -473,7 +473,7 @@ struct ClientSettingsTests {
         let on = SuggestedInstructionsSettings(enabled: true, since: 1)
         let first = FakeSettingsClient(suggestions: SuggestionsSnapshot(settings: on, waiting: [Self.suggestion("- a", at: 10)]))
         let second = FakeSettingsClient(suggestions: SuggestionsSnapshot(settings: on, waiting: [Self.suggestion("- b", at: 20)]))
-        let hosts = [Self.host("demo-mac", first), Self.host("studio", second), Self.host("horizon", nil)]
+        let hosts = [Self.host("demo-mac", first), Self.host("studio", second), Self.host("orbit", nil)]
         let model = ClientSuggestions()
         await model.refresh(hosts)
         #expect(model.isOn(hosts))
