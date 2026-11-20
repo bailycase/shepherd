@@ -131,9 +131,15 @@ enum NewTurnFixture {
         guard let scroll = FollowFixture.threadScrollView() else { FixtureCheck.fail("no transcript") }
         let gutter = TailFixture.gutter(of: scroll)
         let rest = gutter + NativeScrollFollower.repinSlack
-        await FixtureWindows.wait("the initial tail landing", seconds: 10) { distance(scroll) <= rest }
-        await TailFixture.Finger(scroll: scroll).drag(by: -14_000, frame: 350)
-        await FixtureWindows.wait("a detached history anchor", seconds: 5) { !place.follows && place.visibleTurn != nil && distance(scroll) > 2_000 }
+        await FixtureWindows.wait("the initial tail landing", seconds: 10) {
+            (-NativeScrollFollower.repinSlack...rest).contains(distance(scroll))
+        }
+        let finger = TailFixture.Finger(scroll: scroll)
+        func detachedInHistory() -> Bool { !place.follows && place.visibleTurn != nil && distance(scroll) > 2_000 }
+        await finger.drag(by: -14_000, frame: 350)
+        // If SwiftUI is still measuring after the long drag it can write a nil anchor. Let it report a row on a short drag.
+        for _ in 0..<3 where !detachedInHistory() { await finger.drag(by: 600, frame: 60) }
+        await FixtureWindows.wait("a detached history anchor", seconds: 5, until: detachedInHistory)
         SidebarAutomationsCheck.enableAccessibility()
         Host.shared.start(length: replyLength, rate: 360, stepsPerSecond: 20)
         func pill() -> NSObject? { TriggerFlowCheck.element("Jump to latest") }
