@@ -22,7 +22,8 @@ final class FleetInstructionsSource: FleetUnitSource {
     }
 
     func storesBlob(_ unit: String) -> Bool { true }
-    var watchedFiles: [URL] { InstructionFile.allCases.map { store.directory.appendingPathComponent($0.fileName) } }
+    var isReady: Bool { store.historyIsReadable }
+    var watchedFiles: [URL] { [store.historyURL] + InstructionFile.allCases.map { store.directory.appendingPathComponent($0.fileName) } }
 
     func read() -> [String: Data] {
         Dictionary(uniqueKeysWithValues: InstructionFile.allCases.map { (FleetUnit.instruction($0), Data(store.content($0).utf8)) })

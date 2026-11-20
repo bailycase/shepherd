@@ -268,8 +268,9 @@
     (labels, assignees, reviewers) and `postReview` (a review with line comments). A client
     sends none of them to a host without it
   - `instructions` (`instructions.v1`): Settings ▸ Instructions' files on the host (fetch, save,
-    restore a saved version), answered with the files and their history. The Mac's page syncs
-    them to every host, or edits one host at a time
+    restore a saved version), answered with the files and their history. When the history file
+    needs repair, the host still returns the current text, with an optional `historyProblem`
+    instead of history entries, and refuses saves and restores with `write_failed`.
   - `suggestions` (`suggestions.v1`): Settings ▸ Experiments ▸ Suggested instructions on the host
     (fetch, configure, add as edited and retargeted, add all, dismiss, undo), answered with the
     experiment's settings and its lines

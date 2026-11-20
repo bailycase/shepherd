@@ -8,6 +8,7 @@ import Testing
 extension StateStoreTests {
     // Keep the reference golden frozen. C-RECOVER replaces only its known damaged rows.
     private static let damagedRows: Set<String> = [
+        "instruction-history-bad-element", "instruction-history-damaged",
         "workspace-invalid-split", "workspace-dangling-tab", "workspace-unreadable-agent", "workspace-truncated",
     ]
 
