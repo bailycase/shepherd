@@ -211,6 +211,66 @@ struct HostSettingsMappingTests {
         }
     }
 
+    /// The Worktrees fields of the reply are read from the host's store, not from `AppSettings`: each of the five shows
+    /// the store's value, in its own field, and nothing else of the reply moves.
+    @Test func theReplyReadsTheWorktreesGroupFromTheHostsStore() throws {
+        let app = AppSettings(store: Fixture.defaults())
+        let store = HostSettingsStore(file: try makeScratchDirectory("hps").appendingPathComponent("host-preferences.json"))
+        app.adoptHostPreferences(store)
+        let before = HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil)
+        #expect(before.worktreeBase == .fresh && before.fetchBeforeCreating && before.generatePRDescriptions
+                && !before.closeOnMerge && before.worktreeDeleteAction == .ask)
+        store.update {
+            $0.worktrees.baseMode = .head
+            $0.worktrees.fetchBeforeCreate = false
+            $0.worktrees.generatePRDescription = false
+            $0.worktrees.closeOnMerge = true
+            $0.worktrees.deleteAction = .removeWorktree
+        }
+        #expect(app.worktreeBaseMode == .fresh && app.worktreeFetchBeforeCreate && !app.worktreeCloseOnMerge, "AppSettings still holds its own values")
+        let reply = HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil)
+        #expect(reply.worktreeBase == .head)
+        #expect(!reply.fetchBeforeCreating)
+        #expect(!reply.generatePRDescriptions)
+        #expect(reply.closeOnMerge)
+        #expect(reply.worktreeDeleteAction == .removeWorktree)
+        var expected = before
+        expected.worktreeBase = .head
+        expected.fetchBeforeCreating = false
+        expected.generatePRDescriptions = false
+        expected.closeOnMerge = true
+        expected.worktreeDeleteAction = .removeWorktree
+        #expect(reply == expected, "no other field moved")
+    }
+
+    /// The Experiments fields of the reply are read from the host's store, not from `AppSettings`: each of the four shows
+    /// the store's value, in its own field, and nothing else of the reply moves.
+    @Test func theReplyReadsTheExperimentsGroupFromTheHostsStore() throws {
+        let app = AppSettings(store: Fixture.defaults())
+        let store = HostSettingsStore(file: try makeScratchDirectory("hps").appendingPathComponent("host-preferences.json"))
+        app.adoptHostPreferences(store)
+        let before = HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil)
+        #expect(!before.goalsEnabled && !before.projectsEnabled && !before.designToolEnabled && !before.computerUseEnabled)
+        store.update {
+            $0.experiments.goals = true
+            $0.experiments.projects = true
+            $0.experiments.designTool = true
+            $0.experiments.computerUse = true
+        }
+        #expect(!app.goalsEnabled && !app.projectsEnabled && !app.designToolEnabled && !app.computerUseEnabled, "AppSettings still holds its own values")
+        let reply = HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil)
+        #expect(reply.goalsEnabled)
+        #expect(reply.projectsEnabled)
+        #expect(reply.designToolEnabled)
+        #expect(reply.computerUseEnabled)
+        var expected = before
+        expected.goalsEnabled = true
+        expected.projectsEnabled = true
+        expected.designToolEnabled = true
+        expected.computerUseEnabled = true
+        #expect(reply == expected, "no other field moved")
+    }
+
     /// The stored Agents defaults are the ones `AppSettings` starts with, so a host with no old keys stores the defaults.
     @Test func theStoredAgentsDefaultsAreTheSettingsOwn() throws {
         let app = AppSettings(store: Fixture.defaults())

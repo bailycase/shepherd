@@ -442,7 +442,7 @@ public enum GitWorktree {
 }
 
 /// What a new worktree branches from (Settings ▸ Worktrees).
-public enum WorktreeBaseMode: String, CaseIterable, Sendable {
+public enum WorktreeBaseMode: String, CaseIterable, Codable, Sendable {
     /// The remote default branch (origin/<default>), fetched first when
     /// enabled — a clean start matching the remote.
     case fresh

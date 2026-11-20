@@ -213,3 +213,298 @@ struct HostPreferencesMigrationTests {
         #expect(try Self.stored(file) == expected && Self.previousRelease(defaults) == expected)
     }
 }
+
+/// C-MIGRATE for the Worktrees group (Settings ▸ Git, the five `shepherd.worktree.*` keys), as for Agents. All five
+/// have the three paths: (a) the Mac's own write followed by the host, (b) a client's `HostSettingChange`, which is
+/// also answered with the reply that must carry the value, (c) an incoming Fleet sync (no request, no reply).
+@Suite("Host preferences migration: Worktrees", .mainActorExclusive)
+@MainActor
+struct HostPreferencesWorktreesMigrationTests {
+    typealias Worktrees = StoredHostPreferences.Worktrees
+
+    /// What the previous release read for the group: its own parsing of the old keys, kept as it was.
+    private static func previousRelease(_ d: UserDefaults) -> Worktrees {
+        var w = Worktrees()
+        w.baseMode = d.string(forKey: "shepherd.worktree.baseMode").flatMap(WorktreeBaseMode.init(rawValue:)) ?? .fresh
+        w.fetchBeforeCreate = d.object(forKey: "shepherd.worktree.fetchBeforeCreate") as? Bool ?? true
+        w.generatePRDescription = d.object(forKey: "shepherd.worktree.generatePRDescription") as? Bool ?? true
+        w.closeOnMerge = d.bool(forKey: "shepherd.worktree.closeOnMerge")
+        w.deleteAction = d.string(forKey: "shepherd.worktree.deleteAction").flatMap(HostSettings.WorktreeDeleteAction.init(rawValue:)) ?? .ask
+        return w
+    }
+
+    /// Every setting of the group away from its default, as the previous release left its keys.
+    private static func seed(_ d: UserDefaults) {
+        d.set("head", forKey: "shepherd.worktree.baseMode")
+        d.set(false, forKey: "shepherd.worktree.fetchBeforeCreate")
+        d.set(false, forKey: "shepherd.worktree.generatePRDescription")
+        d.set(true, forKey: "shepherd.worktree.closeOnMerge")
+        d.set("keepWorktree", forKey: "shepherd.worktree.deleteAction")
+    }
+
+    private static func stored(_ file: URL) throws -> Worktrees {
+        try StoredHostPreferences.decode(Data(contentsOf: file)).worktrees
+    }
+
+    /// The reply's field for each setting, in the order of `Worktrees`.
+    private static func reply(_ s: HostSettings) -> [String] {
+        [s.worktreeBase.rawValue, "\(s.fetchBeforeCreating)", "\(s.generatePRDescriptions)", "\(s.closeOnMerge)", s.worktreeDeleteAction.rawValue]
+    }
+
+    private static func fields(_ w: Worktrees) -> [String] {
+        [w.baseMode.rawValue, "\(w.fetchBeforeCreate)", "\(w.generatePRDescription)", "\(w.closeOnMerge)", w.deleteAction.rawValue]
+    }
+
+    private struct Step {
+        let label: String
+        let expect: (inout Worktrees) -> Void
+    }
+
+    @Test func everyWorktreesSettingReachesTheFileAndTheOldKeysThroughEachPathItHas() async throws {
+        let harness = try AppHarness()
+        defer { harness.stop() }
+        Self.seed(harness.defaults)
+        try await harness.start()
+        let file = harness.server.supportDirectory.appendingPathComponent("host-preferences.json")
+
+        // Upgrade with old keys: the host's copy starts as the keys hold it.
+        var expected = Self.previousRelease(harness.defaults)
+        #expect(expected.baseMode == .head && expected.closeOnMerge && expected.deleteAction == .keepWorktree)
+        #expect(try Self.stored(file) == expected)
+
+        func check(_ label: String) throws {
+            #expect(try Self.stored(file) == expected, "\(label): the host's copy")
+            #expect(Self.previousRelease(harness.defaults) == expected, "\(label): the old keys, as the previous release reads them")
+        }
+
+        // (a) The Mac's own write, followed by the host.
+        let app = harness.settings
+        let direct: [Step] = [
+            Step(label: "baseMode") { app.worktreeBaseMode = .fresh; $0.baseMode = .fresh },
+            Step(label: "fetchBeforeCreate") { app.worktreeFetchBeforeCreate = true; $0.fetchBeforeCreate = true },
+            Step(label: "generatePRDescription") { app.worktreeGeneratePRDescription = true; $0.generatePRDescription = true },
+            Step(label: "closeOnMerge") { app.worktreeCloseOnMerge = false; $0.closeOnMerge = false },
+            Step(label: "deleteAction") { app.worktreeDeleteAction = .removeWorktree; $0.deleteAction = .removeWorktree },
+        ]
+        for step in direct {
+            let before = expected
+            step.expect(&expected) // also makes the write, once
+            #expect(expected != before, "\(step.label) changes something")
+            try await eventuallyOnMain("the host's copy to take \(step.label)") { (try? Self.stored(file)) == expected }
+            try check("direct \(step.label)")
+        }
+
+        // (b) A client's request over the host's socket, answered with the settings afterwards.
+        let client = RemoteHostClient(localSocket: harness.hostSocket)
+        _ = try await client.connect(host: "", port: 0, token: "", clientName: "migration")
+        defer { client.disconnect() }
+        let wire: [(HostSettingChange, Step)] = [
+            (.worktreeBase(.head), Step(label: "baseMode") { $0.baseMode = .head }),
+            (.fetchBeforeCreating(false), Step(label: "fetchBeforeCreate") { $0.fetchBeforeCreate = false }),
+            (.generatePRDescriptions(false), Step(label: "generatePRDescription") { $0.generatePRDescription = false }),
+            (.closeOnMerge(true), Step(label: "closeOnMerge") { $0.closeOnMerge = true }),
+            (.worktreeDeleteAction(.keepWorktree), Step(label: "deleteAction") { $0.deleteAction = .keepWorktree }),
+        ]
+        for (change, step) in wire {
+            step.expect(&expected)
+            let reply = try await client.hostSettings(.change(change))
+            #expect(Self.reply(reply) == Self.fields(expected), "request \(step.label): the reply")
+            try check("request \(step.label)")
+        }
+
+        // (c) A peer's Fleet op, delivered to the host's own fleet: no request, no reply.
+        let server = harness.server
+        let engine = try #require(await onQueue(server.queue) { server.fleet?.syncEngine })
+        await onQueue(server.queue) { engine.start() }
+        let hostSettings = try #require(harness.hostSettings)
+        func reported() async throws {
+            try await eventuallyAsync("the host to report its settings to the fleet") {
+                await onQueue(server.queue) { server.fleetSettings } == HostSettingsMapping.settings(from: hostSettings, shepherdVersion: nil, piVersion: nil)
+            }
+        }
+        try await reported()
+        let peer = try #require(UUID(uuidString: "00000000-0000-4000-8000-0000000000C3"))
+        let base = UInt64(Date().timeIntervalSince1970 * 1000) + 3_600_000
+        let synced: [(FleetHostSetting, String, Step)] = [
+            (.worktreeBase, "\"fresh\"", Step(label: "baseMode") { $0.baseMode = .fresh }),
+            (.fetchBeforeCreating, "true", Step(label: "fetchBeforeCreate") { $0.fetchBeforeCreate = true }),
+            (.generatePRDescriptions, "true", Step(label: "generatePRDescription") { $0.generatePRDescription = true }),
+            (.closeOnMerge, "false", Step(label: "closeOnMerge") { $0.closeOnMerge = false }),
+            (.worktreeDeleteAction, "\"ask\"", Step(label: "deleteAction") { $0.deleteAction = .ask }),
+        ]
+        for (index, (setting, json, step)) in synced.enumerated() {
+            step.expect(&expected)
+            let seq = UInt64(index + 1)
+            let op = FleetOp(mac: peer, seq: seq, hlc: FleetHLC(wallMs: base + seq), unit: setting.unit, change: .value(json), macName: "Peer")
+            await onQueue(server.queue) { _ = engine.serve(.op(op), from: peer) }
+            try await eventuallyOnMain("the host's copy to take the synced \(step.label)") { (try? Self.stored(file)) == expected }
+            try check("fleet sync \(step.label)")
+            try await reported()
+        }
+    }
+
+    @Test func aHostWithNoOldKeysStoresTheDefaults() throws {
+        let defaults = ScratchDefaults()
+        let file = try makeScratchDirectory("hpm").appendingPathComponent("host-preferences.json")
+        AppSettings(store: defaults).adoptHostPreferences(HostSettingsStore(file: file))
+        #expect(try Self.stored(file) == Worktrees())
+        #expect(Self.previousRelease(defaults) == Worktrees(), "and the keys the previous release reads still mean the defaults")
+    }
+
+    /// Upgrade, change, downgrade (the old release edits its keys), upgrade: the old release's edit is in effect,
+    /// and a change after that reaches both again.
+    @Test func downgradingAndUpgradingAgainKeepsTheLatestValue() throws {
+        let defaults = ScratchDefaults()
+        let file = try makeScratchDirectory("hpm").appendingPathComponent("host-preferences.json")
+        Self.seed(defaults)
+        let first = AppSettings(store: defaults)
+        first.adoptHostPreferences(HostSettingsStore(file: file))
+        first.worktreeBaseMode = .fresh
+        #expect(try Self.stored(file).baseMode == .fresh && Self.previousRelease(defaults).baseMode == .fresh,
+                "downgrading now leaves the new value in effect")
+
+        // The previous release runs and edits its keys; the file, which it does not know, stays behind.
+        defaults.set("head", forKey: "shepherd.worktree.baseMode")
+        defaults.set(true, forKey: "shepherd.worktree.fetchBeforeCreate")
+        defaults.removeObject(forKey: "shepherd.worktree.closeOnMerge")
+        defaults.set("removeWorktree", forKey: "shepherd.worktree.deleteAction")
+        #expect(try Self.stored(file).baseMode == .fresh)
+
+        let second = AppSettings(store: defaults)
+        second.adoptHostPreferences(HostSettingsStore(file: file))
+        var expected = Self.previousRelease(defaults)
+        #expect(expected.baseMode == .head && expected.fetchBeforeCreate && !expected.closeOnMerge && expected.deleteAction == .removeWorktree)
+        #expect(try Self.stored(file) == expected, "the old release's edits are what the host stores now")
+
+        second.worktreeGeneratePRDescription = true
+        expected.generatePRDescription = true
+        #expect(try Self.stored(file) == expected && Self.previousRelease(defaults) == expected)
+    }
+}
+
+/// C-MIGRATE for the Experiments group (Settings ▸ Experiments, the four `shepherd.experiments.*` keys), as for Agents. All
+/// four have two paths: (a) the Mac's own write followed by the host, (b) a client's `HostSettingChange`, which is also
+/// answered with the reply that must carry the value. None is synced by Fleet, so there is no path (c).
+@Suite("Host preferences migration: Experiments", .mainActorExclusive)
+@MainActor
+struct HostPreferencesExperimentsMigrationTests {
+    typealias Experiments = StoredHostPreferences.Experiments
+
+    /// What the previous release read for the group: its own parsing of the old keys, kept as it was.
+    private static func previousRelease(_ d: UserDefaults) -> Experiments {
+        var e = Experiments()
+        e.goals = d.object(forKey: "shepherd.experiments.goals") as? Bool ?? false
+        e.projects = d.object(forKey: "shepherd.experiments.projects") as? Bool ?? false
+        e.designTool = d.bool(forKey: "shepherd.experiments.designTool")
+        e.computerUse = d.bool(forKey: "shepherd.experiments.computerUse")
+        return e
+    }
+
+    /// Every setting of the group away from its default, as the previous release left its keys.
+    private static func seed(_ d: UserDefaults) {
+        for key in ["goals", "projects", "designTool", "computerUse"] { d.set(true, forKey: "shepherd.experiments.\(key)") }
+    }
+
+    private static func stored(_ file: URL) throws -> Experiments {
+        try StoredHostPreferences.decode(Data(contentsOf: file)).experiments
+    }
+
+    /// The reply's field for each setting, in the order of `Experiments`.
+    private static func reply(_ s: HostSettings) -> [Bool] { [s.goalsEnabled, s.projectsEnabled, s.designToolEnabled, s.computerUseEnabled] }
+
+    private static func fields(_ e: Experiments) -> [Bool] { [e.goals, e.projects, e.designTool, e.computerUse] }
+
+    private struct Step {
+        let label: String
+        let expect: (inout Experiments) -> Void
+    }
+
+    @Test func everyExperimentsSettingReachesTheFileAndTheOldKeysThroughEachPathItHas() async throws {
+        let harness = try AppHarness()
+        defer { harness.stop() }
+        Self.seed(harness.defaults)
+        try await harness.start()
+        let file = harness.server.supportDirectory.appendingPathComponent("host-preferences.json")
+
+        // Upgrade with old keys: the host's copy starts as the keys hold it.
+        var expected = Self.previousRelease(harness.defaults)
+        #expect(Self.fields(expected) == [true, true, true, true])
+        #expect(try Self.stored(file) == expected)
+
+        func check(_ label: String) throws {
+            #expect(try Self.stored(file) == expected, "\(label): the host's copy")
+            #expect(Self.previousRelease(harness.defaults) == expected, "\(label): the old keys, as the previous release reads them")
+        }
+
+        // (a) The Mac's own write, followed by the host.
+        let app = harness.settings
+        let direct: [Step] = [
+            Step(label: "goals") { app.goalsEnabled = false; $0.goals = false },
+            Step(label: "projects") { app.projectsEnabled = false; $0.projects = false },
+            Step(label: "designTool") { app.designToolEnabled = false; $0.designTool = false },
+            Step(label: "computerUse") { app.computerUseEnabled = false; $0.computerUse = false },
+        ]
+        for step in direct {
+            let before = expected
+            step.expect(&expected) // also makes the write, once
+            #expect(expected != before, "\(step.label) changes something")
+            try await eventuallyOnMain("the host's copy to take \(step.label)") { (try? Self.stored(file)) == expected }
+            try check("direct \(step.label)")
+        }
+
+        // (b) A client's request over the host's socket, answered with the settings afterwards.
+        let client = RemoteHostClient(localSocket: harness.hostSocket)
+        _ = try await client.connect(host: "", port: 0, token: "", clientName: "migration")
+        defer { client.disconnect() }
+        let wire: [(HostSettingChange, Step)] = [
+            (.goalsEnabled(true), Step(label: "goals") { $0.goals = true }),
+            (.projectsEnabled(true), Step(label: "projects") { $0.projects = true }),
+            (.designToolEnabled(true), Step(label: "designTool") { $0.designTool = true }),
+            (.computerUseEnabled(true), Step(label: "computerUse") { $0.computerUse = true }),
+            (.goalsEnabled(false), Step(label: "goals off") { $0.goals = false }),
+        ]
+        for (change, step) in wire {
+            step.expect(&expected)
+            let reply = try await client.hostSettings(.change(change))
+            #expect(Self.reply(reply) == Self.fields(expected), "request \(step.label): the reply")
+            try check("request \(step.label)")
+        }
+    }
+
+    @Test func aHostWithNoOldKeysStoresTheDefaults() throws {
+        let defaults = ScratchDefaults()
+        let file = try makeScratchDirectory("hpm").appendingPathComponent("host-preferences.json")
+        AppSettings(store: defaults).adoptHostPreferences(HostSettingsStore(file: file))
+        #expect(try Self.stored(file) == Experiments())
+        #expect(Self.previousRelease(defaults) == Experiments(), "and the keys the previous release reads still mean the defaults")
+    }
+
+    /// Upgrade, change, downgrade (the old release edits its keys), upgrade: the old release's edit is in effect,
+    /// and a change after that reaches both again.
+    @Test func downgradingAndUpgradingAgainKeepsTheLatestValue() throws {
+        let defaults = ScratchDefaults()
+        let file = try makeScratchDirectory("hpm").appendingPathComponent("host-preferences.json")
+        Self.seed(defaults)
+        let first = AppSettings(store: defaults)
+        first.adoptHostPreferences(HostSettingsStore(file: file))
+        first.goalsEnabled = false
+        #expect(try Self.stored(file).goals == false && Self.previousRelease(defaults).goals == false,
+                "downgrading now leaves the new value in effect")
+
+        // The previous release runs and edits its keys; the file, which it does not know, stays behind.
+        defaults.set(true, forKey: "shepherd.experiments.goals")
+        defaults.set(false, forKey: "shepherd.experiments.projects")
+        defaults.removeObject(forKey: "shepherd.experiments.designTool")
+        #expect(try Self.stored(file).goals == false)
+
+        let second = AppSettings(store: defaults)
+        second.adoptHostPreferences(HostSettingsStore(file: file))
+        var expected = Self.previousRelease(defaults)
+        #expect(Self.fields(expected) == [true, false, false, true])
+        #expect(try Self.stored(file) == expected, "the old release's edits are what the host stores now")
+
+        second.computerUseEnabled = false
+        expected.computerUse = false
+        #expect(try Self.stored(file) == expected && Self.previousRelease(defaults) == expected)
+    }
+}
