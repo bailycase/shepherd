@@ -83,8 +83,8 @@ struct DesignGitControlTests {
     /// Git's identity, in the scratch global config the test isolation made.
     private static func setIdentity() throws {
         let config = try #require(ProcessInfo.processInfo.environment["GIT_CONFIG_GLOBAL"])
-        try git(["config", "--file", config, "user.name", "Baily"], in: URL(fileURLWithPath: NSTemporaryDirectory()))
-        try git(["config", "--file", config, "user.email", "baily@example.com"], in: URL(fileURLWithPath: NSTemporaryDirectory()))
+        try git(["config", "--file", config, "user.name", "Alex"], in: URL(fileURLWithPath: NSTemporaryDirectory()))
+        try git(["config", "--file", config, "user.email", "alex@acme.dev"], in: URL(fileURLWithPath: NSTemporaryDirectory()))
     }
 
     private static func emptyRemote() throws -> URL {

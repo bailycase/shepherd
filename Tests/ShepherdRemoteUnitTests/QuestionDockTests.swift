@@ -6,9 +6,9 @@ import Testing
 /// affordances pi's dialogs can take, the answer the picks make, and the dock's keys.
 @Suite("Question dock")
 struct QuestionDockTests {
-    static let select = NativeThreadDialog(id: "d1", kind: .select, title: "How should I handle Horizon’s uncommitted edits?",
+    static let select = NativeThreadDialog(id: "d1", kind: .select, title: "How should I handle Orbit’s uncommitted edits?",
                                            options: ["Compare first (Recommended)\nDiff the 11 files against master.",
-                                                     "Leave Horizon alone\nDeploy from a clean checkout.",
+                                                     "Leave Orbit alone\nDeploy from a clean checkout.",
                                                      "Discard the edits"])
 
     // MARK: Kinds

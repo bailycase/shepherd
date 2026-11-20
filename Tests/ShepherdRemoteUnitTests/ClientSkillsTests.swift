@@ -96,7 +96,7 @@ struct ClientSkillsTests {
         let away = FakeSkillsClient([Self.skill("lost")])
         let first = FakeSkillsClient([Self.skill("pdf", summary: "first"), Self.skill("docx")])
         let second = FakeSkillsClient([Self.skill("pdf", summary: "second"), Self.skill("changelog")])
-        let hosts = [Self.host("horizon", nil), Self.host("This Mac", first), Self.host("build-01", second)]
+        let hosts = [Self.host("orbit", nil), Self.host("This Mac", first), Self.host("build-01", second)]
         let model = ClientSkills()
         await model.refresh(hosts)
         #expect(model.edited(in: hosts)?.name == "This Mac")
@@ -137,10 +137,10 @@ struct ClientSkillsTests {
         let later = FakeSkillsClient([Self.skill("pdf")])
         let id = UUID()
         let model = ClientSkills()
-        let hosts = [Self.host("horizon", nil, id: id)]
+        let hosts = [Self.host("orbit", nil, id: id)]
         await model.refresh(hosts)
         #expect(model.edited(in: hosts) == nil && model.rows(in: hosts).isEmpty)
-        let back = [Self.host("horizon", later, id: id)]
+        let back = [Self.host("orbit", later, id: id)]
         await model.hostConnected(back[0])
         #expect(later.requests == ["fetch"])
         #expect(model.rows(in: back).map(\.name) == ["pdf"])

@@ -87,7 +87,7 @@ struct AutomationHostingTests {
         #expect(launch(of: run)?.env["SHEPHERD_AUTOMATION"] == "1", "a run can't create automations")
         #expect(launch(of: run)?.env["MCP_SECRET"] == "acme-token", "a run's pi gets the host's MCP")
 
-        try h.server.stopAutomation(automation.id)
+        try await h.server.stopAutomation(automation.id)
         try await eventuallyOnMain("the run to go") {
             !h.server.state.agents.contains { $0.id == run } && h.server.state.automations.first?.agentID == nil
         }

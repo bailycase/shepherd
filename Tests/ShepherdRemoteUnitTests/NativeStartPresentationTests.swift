@@ -19,9 +19,9 @@ struct NativeStartPresentationTests {
     @Test func aStoppedAgentPointsAtRetryAndSaysTheConversationIsSaved() {
         let problem = NativeStartProblem(kind: .stopped, signal: 9, lines: ["FATAL ERROR: heap out of memory"])
         #expect(problem.advice() == "Retry to start it again. Its conversation is saved.")
-        #expect(problem.advice(host: "horizon") == "Retry on horizon to start it again. Its conversation is saved.")
-        #expect(problem.message(host: "horizon")
-                == "Retry on horizon to start it again. Its conversation is saved.\n\nFATAL ERROR: heap out of memory")
+        #expect(problem.advice(host: "orbit") == "Retry on orbit to start it again. Its conversation is saved.")
+        #expect(problem.message(host: "orbit")
+                == "Retry on orbit to start it again. Its conversation is saved.\n\nFATAL ERROR: heap out of memory")
     }
 
     @Test(arguments: [
@@ -37,7 +37,7 @@ struct NativeStartPresentationTests {
     @Test func everyKindHasATitleAndAdvice() {
         for kind in NativeStartProblem.Kind.allCases {
             let problem = NativeStartProblem(kind: kind)
-            #expect(!problem.title.isEmpty && !problem.advice().isEmpty && !problem.advice(host: "horizon").isEmpty)
+            #expect(!problem.title.isEmpty && !problem.advice().isEmpty && !problem.advice(host: "orbit").isEmpty)
         }
     }
 
@@ -45,12 +45,12 @@ struct NativeStartPresentationTests {
 
     @Test func aPhoneWhoseHostTakesRestartRetriesInsteadOfSendingThePersonToTheHost() {
         let stopped = NativeStartProblem(kind: .stopped, signal: 9)
-        #expect(stopped.advice(host: "horizon", retryHere: true) == "Retry to start it again. Its conversation is saved.")
-        #expect(stopped.advice(host: "horizon", retryHere: false) == stopped.advice(host: "horizon"))
+        #expect(stopped.advice(host: "orbit", retryHere: true) == "Retry to start it again. Its conversation is saved.")
+        #expect(stopped.advice(host: "orbit", retryHere: false) == stopped.advice(host: "orbit"))
         #expect(stopped.advice(retryHere: false) == "Retry on the host to start it again. Its conversation is saved.")
         let signedOut = NativeStartProblem(kind: .notSignedIn)
-        #expect(signedOut.advice(host: "horizon", retryHere: true) == "Sign in to a provider for Shepherd's pi (Settings ▸ Pi), then Retry.")
-        #expect(signedOut.advice(host: "horizon") == "Sign in to a provider for Shepherd's pi (Settings ▸ Pi), then Retry on horizon.")
+        #expect(signedOut.advice(host: "orbit", retryHere: true) == "Sign in to a provider for Shepherd's pi (Settings ▸ Pi), then Retry.")
+        #expect(signedOut.advice(host: "orbit") == "Sign in to a provider for Shepherd's pi (Settings ▸ Pi), then Retry on orbit.")
         #expect(signedOut.advice() == "Sign in to a provider for Shepherd's pi (Settings ▸ Pi), then Retry.")
     }
 
@@ -60,9 +60,9 @@ struct NativeStartPresentationTests {
         #expect(problem.actions(canRestart: true, canLocateFolder: false) == [.startNewConversation, .retry])
         #expect(problem.actions(canRestart: false, canLocateFolder: false).isEmpty)
         let advice = "It would have started a new, empty one, so Shepherd stopped it. The conversation's file is untouched."
-        #expect(problem.advice(host: "horizon", retryHere: true) == advice)
+        #expect(problem.advice(host: "orbit", retryHere: true) == advice)
         #expect(problem.advice() == advice)
-        #expect(problem.advice(host: "horizon") == advice + " Retry on horizon.")
+        #expect(problem.advice(host: "orbit") == advice + " Retry on orbit.")
     }
 
     @Test func aMissingFolderHasNoRetryOnAPhoneOnlyGuidanceForTheHost() {
@@ -70,9 +70,9 @@ struct NativeStartPresentationTests {
         #expect(problem.actions(canRestart: true, canLocateFolder: true) == [.locateFolder], "the Mac's Retry is Locate Folder…")
         #expect(problem.actions(canRestart: true, canLocateFolder: false).isEmpty)
         #expect(problem.actions(canRestart: false, canLocateFolder: false).isEmpty)
-        #expect(problem.advice(host: "horizon", retryHere: true)
-                == "It was moved, renamed or deleted. Locate Folder… moves this thread and its conversation to where it is now, on horizon.")
-        #expect(problem.advice(host: "horizon", retryHere: true) == problem.advice(host: "horizon"))
+        #expect(problem.advice(host: "orbit", retryHere: true)
+                == "It was moved, renamed or deleted. Locate Folder… moves this thread and its conversation to where it is now, on orbit.")
+        #expect(problem.advice(host: "orbit", retryHere: true) == problem.advice(host: "orbit"))
     }
 
     @Test(arguments: NativeStartProblem.Kind.allCases.filter { $0 != .folderMissing && $0 != .resumedAsNew })
@@ -97,7 +97,7 @@ struct NativeStartPresentationTests {
 
     private func banner(_ problem: NativeStartProblem?, restart: NativeStartRestartState? = nil, offered: Bool = true,
                         live: Bool = true) -> NativeStartBanner? {
-        NativeStartBanner(problem: problem, restart: restart, offered: offered, live: live, host: "horizon")
+        NativeStartBanner(problem: problem, restart: restart, offered: offered, live: live, host: "orbit")
     }
 
     @Test func noProblemAndNoRestartDrawsNothing() {
@@ -115,27 +115,27 @@ struct NativeStartPresentationTests {
     @Test func aDroppedConnectionOffersNoRetryAndSendsThePersonToTheHost() throws {
         let shown = try #require(banner(NativeStartProblem(kind: .stopped, signal: 9), live: false))
         #expect(shown.actions.isEmpty)
-        #expect(shown.message == "Retry on horizon to start it again. Its conversation is saved.")
+        #expect(shown.message == "Retry on orbit to start it again. Its conversation is saved.")
         let again = try #require(banner(NativeStartProblem(kind: .resumedAsNew), live: false))
-        #expect(again.actions.isEmpty && again.message.hasSuffix("Retry on horizon."))
+        #expect(again.actions.isEmpty && again.message.hasSuffix("Retry on orbit."))
     }
 
     @Test func aHostWithoutRestartOffersNoRetry() throws {
         let shown = try #require(banner(NativeStartProblem(kind: .stopped), offered: false))
         #expect(shown.actions.isEmpty)
-        #expect(shown.message.hasPrefix("Retry on horizon"))
+        #expect(shown.message.hasPrefix("Retry on orbit"))
     }
 
     @Test func notSignedInOffersNoRetryWhereTheMacShowsItsSignInCardInstead() throws {
         let shown = try #require(banner(NativeStartProblem(kind: .notSignedIn)))
         #expect(shown.actions.isEmpty)
-        #expect(shown.message == "Sign in to a provider for Shepherd's pi (Settings ▸ Pi), then Retry on horizon.")
+        #expect(shown.message == "Sign in to a provider for Shepherd's pi (Settings ▸ Pi), then Retry on orbit.")
     }
 
     @Test func aMissingFolderHasOnlyGuidance() throws {
         let shown = try #require(banner(NativeStartProblem(kind: .folderMissing)))
         #expect(shown.actions.isEmpty)
-        #expect(shown.message.hasSuffix("on horizon."))
+        #expect(shown.message.hasSuffix("on orbit."))
     }
 
     @Test func aRestartInProgressReplacesTheButtonsWithProgressWithOrWithoutTheProblem() throws {
@@ -169,7 +169,7 @@ struct NativeStartRestartTests {
     }
 
     private func shown(_ store: NativeThreadStore) -> NativeStartBanner? {
-        NativeStartBanner(store: store, offered: true, connected: true, host: "horizon")
+        NativeStartBanner(store: store, offered: true, connected: true, host: "orbit")
     }
 
     @Test func retrySendsRestartPiAndTheThreadReadsAsStartingUntilPiIsUp() async {
@@ -283,7 +283,7 @@ struct NativeStartRestartTests {
         #expect(store.startRestart == .starting)
         store.suspend()
         #expect(store.startRestart == nil)
-        #expect(NativeStartBanner(store: store, offered: true, connected: false, host: "horizon")?.inProgress != true,
+        #expect(NativeStartBanner(store: store, offered: true, connected: false, host: "orbit")?.inProgress != true,
                 "an offline thread does not say it is starting")
     }
 }

@@ -230,6 +230,28 @@ extension PreviewTests {
         }
     }
 
+    @Test func automationsPageDamagedTriggerStorage() async throws {
+        let automation = Automation(name: "Check the build", prompt: "Check build status.", cwd: "/tmp/acme",
+                                    enabled: false, trigger: .schedule(AutomationSchedule(rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0")))
+        let key = AutomationKey(host: PageHost.localID, automation: automation.id)
+        let host = AutomationHost(id: PageHost.localID, name: PageHost.localName, connected: true, manageable: true,
+                                  state: ShepherdState(automations: [automation]), triggers: true)
+        let root = try makeScratchDirectory("acme")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("automation-triggers.json")
+        try Data("{".utf8).write(to: url)
+        let status = await AutomationTriggers(url: url).status(of: automation)
+        let model = AutomationsPageModel.make(hosts: [host], runs: [:], selection: key, filter: "", triggers: [key: status],
+                                              allPaused: status.allPaused)
+        #expect(status.state == .off)
+        #expect(model.detail?.banner?.message == "Invalid trigger state JSON: \(url.path)")
+        #expect(model.allPaused)
+        #expect(model.detail?.banner?.canResume == false)
+        try await Preview.render("page-automations-damaged-trigger-storage", size: Self.triggerPageSize) {
+            AutomationsPage(model: model, actions: Self.noAutomationActions)
+        }
+    }
+
     /// A new every-30-minutes schedule pinned to Fast: the editor says the interval counts from
     /// the save, and shows the Speed pin.
     @Test(arguments: [0, 20]) func automationEditorIntervalAndSpeed(maxPerDay: Int) async throws {

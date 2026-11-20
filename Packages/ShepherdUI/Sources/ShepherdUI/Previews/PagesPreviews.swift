@@ -30,7 +30,7 @@ private let previewColumns: [SHTableColumns.Column] = [.flex(2), .fixed(76), .fi
             SHAutomationTableRow("Weekly dependency bumps", isOn: true, host: "This Mac",
                                  outcome: SHRunOutcome("running", state: .running, clock: .elapsed(since: Date().addingTimeInterval(-240))),
                                  selected: false, columns: previewColumns, toggle: { _ in }, select: {})
-            SHAutomationTableRow("Stale branch cleanup", isOn: false, switchEnabled: false, host: "horizon",
+            SHAutomationTableRow("Stale branch cleanup", isOn: false, switchEnabled: false, host: "orbit",
                                  outcome: SHRunOutcome("host offline"), selected: false, columns: previewColumns,
                                  toggle: nil, select: {})
         }
@@ -62,10 +62,10 @@ private let previewColumns: [SHTableColumns.Column] = [.flex(2), .fixed(76), .fi
         HStack(alignment: .top, spacing: SHPageMetrics.columnGap) {
             SHHostPageCard(name: "This Mac", subtitle: "Shepherd app · agent 0.8.2", status: "Connected", state: .done,
                            facts: [.init("Running", "2 threads"), .init("Worktrees", "11"), .init("Repos", "shepherd, dashboard-web")])
-            SHHostPageCard(name: "horizon", subtitle: "Shepherd app", offlineSince: Date().addingTimeInterval(-3 * 3600),
+            SHHostPageCard(name: "orbit", subtitle: "Shepherd app", offlineSince: Date().addingTimeInterval(-3 * 3600),
                            status: "Unreachable", state: .failed,
                            facts: [.init("Waiting", "2 threads, 1 automation"), .init("Last seen", "Sep 24 07:12"),
-                                   .init("Address", "horizon.local:7040")]) {
+                                   .init("Address", "orbit.local:7040")]) {
                 Button("Retry", systemImage: "arrow.clockwise") {}.buttonStyle(.sh(.secondary, size: .s))
                 Button("Remove") {}.buttonStyle(.sh(.ghost, size: .s))
             }

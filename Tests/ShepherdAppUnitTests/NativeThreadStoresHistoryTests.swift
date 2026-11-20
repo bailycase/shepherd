@@ -145,6 +145,33 @@ struct NativeThreadStoresHistoryTests {
         #expect(big.rows.count == 2 && big.rows.last?.id == "u59/reply", "under any cap, the last question and its answer: \(big.rows.count) rows")
     }
 
+    /// A thread that holds no question (a page that starts inside one long reply) holds one agent turn, the last answer, which the rule
+    /// keeps whatever it holds: past the bounds only what older pages added above the host's newest page is cut, and only over the cap.
+    @Test func aThreadWithNoQuestionKeepsItsNewestPageWhateverTheCap() {
+        let stores = NativeThreadStores<String>()
+        stores.retainedHistories = 0
+        let words = String(repeating: "word ", count: 2_000)
+        func notes(_ count: Int, _ text: String) -> NativeThreadSnapshot {
+            var value = snapshot("notes")
+            value.messages = (0..<count).map { NativeThreadMessage(entryID: "a\($0)", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "\(text) \($0)")]) }
+            return value
+        }
+        let paged = stores.store(for: "paged"), page = stores.store(for: "page"), within = stores.store(for: "within")
+        paged.preview(notes(120, words))
+        page.preview(notes(30, words + words + words + words))
+        within.preview(notes(120, "Note"))
+        stores.store(for: "newest").preview(snapshot("newest"))
+        for key in ["paged", "page", "within", "newest"] { stores.noteShown(key) }
+        let before = paged.retainedHistoryBytes, rows = within.rows
+
+        stores.tailCap = before / 2
+        stores.enforceHistoryBounds()
+        #expect(paged.keepsOnlyTail && paged.messages.count == NativeThreadStore.releasedTailMessages && paged.retainedHistoryBytes <= stores.tailCap,
+                "\(paged.retainedHistoryBytes) of \(stores.tailCap): the page the host sends")
+        #expect(page.keepsOnlyTail && page.messages.count == 30 && page.retainedHistoryBytes > stores.tailCap, "one page is not cut, whatever it holds")
+        #expect(within.keepsOnlyTail && within.rows == rows, "what fits the cap stays")
+    }
+
     // MARK: Hidden threads' row views
 
     private typealias Mounted = NativeThreadStores<String>.MountedEntry<String>

@@ -19,7 +19,7 @@ struct RunElsewherePreviewTests {
                        ProjectHostOption(reference: studio, name: "studio", spaces: [web])]
         let rows = RunElsewhereHosts.rows(options: options, settings: .init(hostPolicy: .anyConnected), from: build, spaceName: "demo-web",
                                           ownerName: "This Mac", running: { [.local: 2, build: 1, studio: 0][$0] ?? nil },
-                                          offline: [.init(id: UUID(), name: "horizon", lastSeen: Date().addingTimeInterval(-3 * 3_600))])
+                                          offline: [.init(id: UUID(), name: "orbit", lastSeen: Date().addingTimeInterval(-3 * 3_600))])
         try await Preview.renderMatrix("run-elsewhere", size: CGSize(width: SHLeadMetrics.runElsewhereWidth, height: 640)) {
             RunElsewhereDialog(subtitle: "Reading widget mockup · now on build-01 in demo-web", rows: rows, chosen: rows.first?.id,
                                spaceName: "demo-web", status: nil, moving: false, canMove: true, pick: { _ in }, cancel: {}, move: {})

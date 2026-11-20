@@ -69,13 +69,13 @@ import SwiftUI
 #Preview("Question") {
     SHPreviewBoth {
         VStack(spacing: SH.Space.xl) {
-            SHQuestionCard(docked: false, count: 2, question: "How should I handle Horizon's uncommitted edits?", hide: {}) {
-                SHQuestionDetails("Horizon is 50 commits behind and has 11 uncommitted files.\n\nNothing on Horizon is overwritten.")
+            SHQuestionCard(docked: false, count: 2, question: "How should I handle Orbit's uncommitted edits?", hide: {}) {
+                SHQuestionDetails("Orbit is 50 commits behind and has 11 uncommitted files.\n\nNothing on Orbit is overwritten.")
                 VStack(spacing: SH.Space.xxs) {
                     SHQuestionRadioRow(SHQuestionDockOption(number: 1, title: "Compare, keep what's unique, then go through GitHub",
                                                             detail: "New branch and PR for anything not merged.", recommended: true),
                                        picked: true, showsNumber: false) {}
-                    SHQuestionRadioRow(SHQuestionDockOption(number: 2, title: "Leave Horizon alone and deploy from a clean checkout"),
+                    SHQuestionRadioRow(SHQuestionDockOption(number: 2, title: "Leave Orbit alone and deploy from a clean checkout"),
                                        picked: false, showsNumber: false) {}
                 }
                 .padding(.horizontal, -SH.Space.m)
@@ -96,7 +96,7 @@ import SwiftUI
                     Button("Answer") {}.buttonStyle(.shReviewBar(.primary))
                 }
             }
-            SHQuestionCardHiddenLine(question: "How should I handle Horizon's uncommitted edits?") {}
+            SHQuestionCardHiddenLine(question: "How should I handle Orbit's uncommitted edits?") {}
         }
         .frame(width: 400)
     }

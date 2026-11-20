@@ -35,7 +35,7 @@ struct AutomationTriggerAppTests {
             association: "NONE", labels: ["shepherd"], headOID: nil,
             events: [.init(id: "LE1", at: at, activity: .labeled(label: "shepherd", actor: "maintainer"))])] }
         // The app's own trigger clock may have checked already; check again now.
-        await app.server.automationTriggers.resume(automation.id)
+        try await app.server.automationTriggers.resume(automation.id)
         await app.server.automationTriggers.tick()
 
         try await eventuallyOnMain("the run thread to exist", timeout: .seconds(20)) {
@@ -62,7 +62,7 @@ struct AutomationTriggerAppTests {
         }
 
         // The same event never fires again.
-        await app.server.automationTriggers.resume(automation.id)
+        try await app.server.automationTriggers.resume(automation.id)
         await app.server.automationTriggers.tick()
         await app.settle()
         #expect(vm.state.agents.filter { $0.automationOrigin != nil }.count == 1)
