@@ -146,7 +146,9 @@ public struct GateTimeout: Error, CustomStringConvertible {
 
 /// Runs the event-driven `wait` (which returns the moment its signal arrives), giving up after
 /// `timeout` with a `GateTimeout`. The clock only fires on the failure path; the happy path waits
-/// on events alone, with no sleeps or polls.
+/// on events alone, with no sleeps or polls. Only fails if `wait` honors cancellation: a closure
+/// that ignores it keeps the group from returning, so pass a `Gate.wait` or another
+/// cancellation-aware wait.
 public func bounded<T: Sendable>(
     _ what: String,
     timeout: Duration = .seconds(10),

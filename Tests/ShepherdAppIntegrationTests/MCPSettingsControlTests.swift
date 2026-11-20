@@ -68,13 +68,10 @@ struct MCPSettingsControlTests {
                 onLine?("https://mcp.example.com/authorize?server=\(arguments.dropFirst().first ?? "")")
                 if blocksLogin {
                     // Simulated pi waiting for a browser: stays, with no clock of its own, until
-                    // Cancel ends it. The test's own waits carry the timeout.
+                    // Cancel ends it (`Gate.wait` resumes its waiter on cancellation). The test's
+                    // own waits carry the timeout.
                     let gate = Gate()
-                    await withTaskCancellationHandler {
-                        await gate.wait()
-                    } onCancel: {
-                        gate.open()
-                    }
+                    await gate.wait()
                     return MCPCLIResult(status: 143, stdout: "", stderr: "")
                 }
                 return MCPCLIResult(status: loginStatus, stdout: "", stderr: loginStatus == 0 ? "" : "Sign-in to MCP server \"x\" failed: boom")

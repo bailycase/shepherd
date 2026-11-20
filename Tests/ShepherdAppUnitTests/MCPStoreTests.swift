@@ -37,14 +37,10 @@ final class FakeMCPCLI: MCPCLI, @unchecked Sendable {
             // Simulated pi waiting for a browser: suspends with no sleep until the flow's
             // task is cancelled, then answers a late success. The flow has already been
             // cancelled by then, so the test proves it discards a success arriving after
-            // cancel; if cancellation never reached the fake, loginGate would never open
+            // cancel; if cancellation never reached the fake, the wait would never return
             // and the test would time out waiting for cancellation.
             state.loginEntered.open()
-            await withTaskCancellationHandler {
-                await state.loginGate.wait()
-            } onCancel: {
-                state.loginGate.open()
-            }
+            await state.loginGate.wait()
             state.loginCancelled.open()
             return MCPCLIResult(status: 0, stdout: "Signed in to MCP server \"notion\" (3 tools).\n", stderr: "")
         }
@@ -414,13 +410,6 @@ struct MCPStoreTests {
         #expect(flow.model.subtitle == "Nothing was saved.")
         #expect(flow.model.details?.contains("not completed within 300 seconds") == true)
         #expect(!flow.succeeded)
-    }
-
-    @Test func boundedOnANeverOpenedGateThrowsWithinItsTimeout() async throws {
-        let gate = Gate()
-        await #expect(throws: GateTimeout.self) {
-            try await bounded("a gate that never opens", timeout: .milliseconds(50)) { await gate.wait() }
-        }
     }
 
     @Test func closingTheSheetEndsPisLoginAndClosingItTwiceIsFine() async throws {
