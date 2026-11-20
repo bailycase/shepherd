@@ -113,19 +113,20 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         }
     }
 
-    private let queue = DispatchQueue(label: "shepherd.browser.forward")
+    private let queue: DispatchQueue
     private let lock = NSLock()
     private var listeners: [Int: Listener] = [:]
-    /// Ports let go of but whose listening sockets have not closed yet: a claim made now still finds
-    /// the old socket bound. A page coming back waits for the close (`waitForClose(of:)`) instead of
-    /// reading it as another program's.
-    private var closing: [Int: Owner] = [:]
-    /// How many listening sockets of each closing port have not closed yet.
+    /// How many listening sockets of each released port have not closed yet. A claim made while a
+    /// port is here still finds the old socket bound; `waitForClose(of:)` waits for it.
     private var closeRemaining: [Int: Int] = [:]
     /// Tasks waiting for a closing port's sockets to close (`waitForClose(of:)`).
     private var closeWaiters: [Int: [CheckedContinuation<Void, Never>]] = [:]
 
-    public init() {}
+    /// `queue` runs the accept loops and closes the listening sockets; a test gives its own to hold a
+    /// close late.
+    public init(queue: DispatchQueue = DispatchQueue(label: "shepherd.browser.forward")) {
+        self.queue = queue
+    }
 
     private final class Listener {
         let port: Int
@@ -185,23 +186,16 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         }
     }
 
-    /// Tests only: holds the queue that closes listening sockets, so a test can keep a close late
-    /// without sleeping. Balanced with `resumeCloseQueueForTesting`.
-    public func suspendCloseQueueForTesting() { queue.suspend() }
-
-    /// Tests only: lets the queue held by `suspendCloseQueueForTesting` run again.
-    public func resumeCloseQueueForTesting() { queue.resume() }
-
     /// Lets go of every port `owner` holds, and returns at once: the listening sockets close on the
     /// forwarding queue shortly after, so this never blocks the caller (a page suspends on the iOS
     /// client's main actor). A port claimed again before its old sockets close still reads as in use
-    /// until the close lands; `waitForClose(of:)` waits for it.
+    /// until the close lands; `waitForClose(of:)` waits for it. (On the Mac, a thread's page that is
+    /// closed and made again at once can meet that "in use" for a moment: nothing there retries.)
     public func release(_ owner: Owner) {
         lock.lock()
         let held = listeners.filter { $0.value.owner == owner }
         for port in held.keys { listeners.removeValue(forKey: port) }
         for (port, listener) in held {
-            if closing[port] == nil { closing[port] = listener.owner }
             closeRemaining[port, default: 0] += listener.sources.count
         }
         let cancelled = Array(held.values)
@@ -215,7 +209,7 @@ public final class BrowserPortForwarder: @unchecked Sendable {
     public func waitForClose(of port: Int) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             lock.lock()
-            if closing[port] == nil {
+            if closeRemaining[port] == nil {
                 lock.unlock()
                 continuation.resume()
             } else {
@@ -232,7 +226,6 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         let waiters: [CheckedContinuation<Void, Never>]
         if remaining <= 1 {
             closeRemaining.removeValue(forKey: port)
-            closing.removeValue(forKey: port)
             waiters = closeWaiters.removeValue(forKey: port) ?? []
         } else {
             closeRemaining[port] = remaining - 1
@@ -240,6 +233,13 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         }
         lock.unlock()
         for waiter in waiters { waiter.resume() }
+    }
+
+    /// How many tasks wait for `port`'s sockets to close. Tests only.
+    func closeWaiterCount(of port: Int) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return closeWaiters[port]?.count ?? 0
     }
 
     /// The ports `owner` holds.

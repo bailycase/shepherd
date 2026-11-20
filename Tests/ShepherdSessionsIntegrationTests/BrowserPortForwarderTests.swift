@@ -3,7 +3,7 @@ import Foundation
 import Testing
 import ShepherdCore
 import ShepherdProtocol
-import ShepherdRemote
+@testable import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
@@ -204,26 +204,65 @@ struct BrowserPortForwarderTests {
         #expect(await get("/hello", host: "127.0.0.1", port: UInt16(port)) == "hello from the host")
     }
 
-    /// Suspending while the forwarding queue runs late, then resuming: the port the page held must
-    /// come back, not be forgotten as in use. The gate holds the old sockets' close without sleeping;
-    /// the resume waits for the real close instead of blocking the caller.
-    @Test func suspendThenResumeAcrossALateCloseKeepsThePort() async throws {
-        let forwarder = BrowserPortForwarder()
+    /// A page that held a port, was suspended and resumed while its forwarding queue ran late: the
+    /// old socket is still bound, so the port is pending, not refused. `queue` is held (suspended) on
+    /// return; the caller must `resume()` it. The gate holds the close without sleeping.
+    @MainActor private func pageWithALateClose(queue: DispatchQueue) async throws -> (BrowserPortForwarder, BrowserPagePorts, Int) {
+        let forwarder = BrowserPortForwarder(queue: queue)
         let port = Int(try unusedLoopbackPort())
         let page = BrowserPagePorts(forwarder: forwarder, owner: owner, agent: AgentID(rawValue: "agent"),
                                      slot: BrowserTunnelHubSlot())
-        defer { page.close() }
-        await page.resume()
+        page.resume()
         #expect(page.forward(try #require(URL(string: "http://localhost:\(port)/"))) == nil)
-        forwarder.suspendCloseQueueForTesting()
+        queue.suspend()
         page.suspend()
         #expect(forwarder.ports(of: owner).isEmpty)
+        #expect(page.resume().isEmpty, "a socket still bound is not a refusal yet")
+        #expect(page.pending == [port])
+        #expect(forwarder.claim(port: port, owner: .init(id: "other", hostName: "x"), slot: BrowserTunnelHubSlot(), agent: AgentID())
+            == .inUse(port: port), "the old socket is still bound while the queue is held")
+        return (forwarder, page, port)
+    }
+
+    /// Suspending while the forwarding queue runs late, then resuming: the port the page held must
+    /// come back once the close lands, not be forgotten as in use.
+    @MainActor @Test func suspendThenResumeAcrossALateCloseKeepsThePort() async throws {
+        let queue = DispatchQueue(label: "test.browser.forward")
+        let (forwarder, page, port) = try await pageWithALateClose(queue: queue)
+        defer { page.close() }
+        let late = Task { await page.finishResume() }
+        try await eventuallyOnMain("the retry to wait for the close") { forwarder.closeWaiterCount(of: port) == 1 }
+        queue.resume()
+        #expect(await late.value.isEmpty)
         #expect(page.ports == [port])
-        async let refused = page.resume()
-        // The resume waits for the old sockets' close; letting the queue run finishes it with no refusal.
-        forwarder.resumeCloseQueueForTesting()
-        #expect(await refused.isEmpty)
+        #expect(forwarder.ports(of: owner) == [port])
+    }
+
+    /// Suspended again while the retry waits: it claims nothing, and the port stays remembered.
+    @MainActor @Test func aSuspendWhileWaitingForTheCloseClaimsNothing() async throws {
+        let queue = DispatchQueue(label: "test.browser.forward")
+        let (forwarder, page, port) = try await pageWithALateClose(queue: queue)
+        defer { page.close() }
+        let late = Task { await page.finishResume() }
+        try await eventuallyOnMain("the retry to wait for the close") { forwarder.closeWaiterCount(of: port) == 1 }
+        page.suspend()
+        queue.resume()
+        #expect(await late.value.isEmpty)
+        #expect(forwarder.ports(of: owner).isEmpty)
         #expect(page.ports == [port])
+    }
+
+    /// The page is closed while the retry waits: nothing is claimed for a page that is gone.
+    @MainActor @Test func aCloseWhileWaitingForTheCloseClaimsNothing() async throws {
+        let queue = DispatchQueue(label: "test.browser.forward")
+        let (forwarder, page, port) = try await pageWithALateClose(queue: queue)
+        let late = Task { await page.finishResume() }
+        try await eventuallyOnMain("the retry to wait for the close") { forwarder.closeWaiterCount(of: port) == 1 }
+        page.close()
+        queue.resume()
+        #expect(await late.value.isEmpty)
+        #expect(forwarder.ports(of: owner).isEmpty)
+        #expect(page.ports.isEmpty)
     }
 
     /// The iOS client's page: its ports are held only while the host is connected and let go when it
@@ -242,7 +281,7 @@ struct BrowserPortForwarderTests {
         let url = try #require(URL(string: "http://localhost:\(port)/hello"))
 
         #expect(page.forward(url) == .failed(port: port, errno: ENOTCONN), "nothing is held before the host is connected")
-        await page.resume()
+        page.resume()
         #expect(page.forward(url) == nil)
         #expect(await get("/hello", host: "127.0.0.1", port: UInt16(port)) == "hello from the host")
 
@@ -250,7 +289,8 @@ struct BrowserPortForwarderTests {
         #expect(page.forwarder.ports(of: owner).isEmpty)
         await page.forwarder.waitForClose(of: port)
         #expect(await get("/hello", host: "127.0.0.1", port: UInt16(port)) == nil, "nothing listens while suspended")
-        #expect(await page.resume().isEmpty)
+        #expect(page.resume().isEmpty)
+        #expect(await page.finishResume().isEmpty)
         #expect(page.ports == [port])
         #expect(await get("/hello", host: "127.0.0.1", port: UInt16(port)) == "hello from the host")
 
@@ -259,7 +299,7 @@ struct BrowserPortForwarderTests {
         await page.forwarder.waitForClose(of: port)
         let other = BrowserPortForwarder.Owner(id: "host-b/agent", hostName: "build-02")
         #expect(page.forwarder.claim(port: port, owner: other, slot: BrowserTunnelHubSlot(), agent: AgentID()) == nil)
-        #expect(await page.resume() == [.forwardedFor(port: port, hostName: "build-02")])
+        #expect(page.resume() == [.forwardedFor(port: port, hostName: "build-02")])
         #expect(page.ports.isEmpty)
         page.forwarder.release(other)
 

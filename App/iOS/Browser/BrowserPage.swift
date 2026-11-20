@@ -48,6 +48,8 @@ final class BrowserPage {
     @ObservationIgnored private var delegate: Delegate?
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     @ObservationIgnored private var waitTask: Task<Void, Never>?
+    /// Takes the ports again whose old sockets were still closing at `resume`; cancelled by `suspend`/`close`.
+    @ObservationIgnored private var resumeTask: Task<Void, Never>?
 
     /// Shepherd's world in the page: the page can't see or call the picker that runs there.
     static let world = WKContentWorld.world(name: "shepherd-browser")
@@ -75,13 +77,18 @@ final class BrowserPage {
 
     // MARK: The connection
 
-    /// The host is connected: the ports the page held are taken again, once their old sockets'
-    /// closes have landed, without blocking the caller.
+    /// The host is connected: the ports the page held are taken again. One whose old socket is still
+    /// closing is taken once the close lands, without blocking the caller.
     func resume() {
         guard host?.supports(RemoteProtocol.browserTunnelCapability) == true else { return }
-        Task { [weak self] in
+        resumeTask?.cancel()
+        resumeTask = nil
+        if let first = ports.resume().first { notice = first.message(hostName: hostName, here: Self.here) }
+        guard !ports.pending.isEmpty else { return }
+        resumeTask = Task { [weak self] in
             guard let self else { return }
-            let refused = await self.ports.resume()
+            let refused = await self.ports.finishResume()
+            guard !Task.isCancelled else { return }
             if let first = refused.first { self.notice = first.message(hostName: self.hostName, here: Self.here) }
         }
     }
@@ -89,12 +96,16 @@ final class BrowserPage {
     /// The host went away (or the app is leaving the foreground): nothing listens until it is back.
     func suspend() {
         stopWaiting()
+        resumeTask?.cancel()
+        resumeTask = nil
         ports.suspend()
     }
 
     /// The page is gone: its ports, its web view and its wait go with it.
     func close() {
         stopWaiting()
+        resumeTask?.cancel()
+        resumeTask = nil
         ports.close()
         observations.removeAll()
         webView?.configuration.userContentController.removeAllScriptMessageHandlers()
