@@ -42,7 +42,8 @@ struct ThreadCompletionReproductionTests {
                 host.subagents = workers
                 host.bump()
                 await deck.store.refresh()
-                try await Task.sleep(for: .milliseconds(18))
+                // Streaming cadence between chunks, via the suite's frame pump (lays out each frame).
+                try await deck.pass(.milliseconds(18))
             }
             for index in workers.indices {
                 workers[index].state = "complete"
@@ -58,7 +59,8 @@ struct ThreadCompletionReproductionTests {
                 host.provisional = live
                 host.bump()
                 await deck.store.refresh()
-                try await Task.sleep(for: .milliseconds(18))
+                // Streaming cadence between chunks, via the suite's frame pump (lays out each frame).
+                try await deck.pass(.milliseconds(18))
             }
             host.running = false
             host.provisional = []
@@ -83,12 +85,15 @@ struct ThreadCompletionReproductionTests {
             print("COMPLETION \(prefix): rows=\(deck.store.rows.count), targets=\(deck.tailGuard.visible), following=\(deck.tailGuard.following), attempts=\(deck.tailGuard.attempts), repairing=\(deck.tailGuard.repairing), rowsInView=\(deck.tailGuard.rowsInView), reportedDistance=\(deck.tailGuard.distance), \(deck.reading.map(String.init(describing:)) ?? "no scroll view"), answer=\(recognizedFinal)")
             guard recognizedFinal else {
                 // Save what the user would try next as evidence, not as a way to pass the test.
+                // Failure path only: bounded waits for the scroll and reshown captures to settle.
                 deck.scroll(by: -500)
                 try await Task.sleep(for: .seconds(1))
                 _ = try capture(deck, to: directory.appendingPathComponent(prefix + "-scrolled.png"), placement: true)
                 deck.hide()
+                // Failure path only: bounded wait for the hide to apply before reshowing.
                 try await Task.sleep(for: .milliseconds(100))
                 deck.show()
+                // Failure path only: bounded wait for the reshown capture to settle.
                 try await Task.sleep(for: .seconds(1))
                 _ = try capture(deck, to: directory.appendingPathComponent(prefix + "-reshown.png"), placement: true)
                 Issue.record("Completion did not paint its final answer; see \(directory.path)/\(prefix).png")
@@ -117,6 +122,7 @@ struct ThreadCompletionReproductionTests {
             let prompt = "tools:1 completion trial \(turn)" + (turn.isMultiple(of: 2) ? " long:100" : "")
             if turn == 6 || turn == 12 {
                 window.window.contentView?.setFrameSize(CGSize(width: size.width, height: 420))
+                // A transient user resize mid-run: pacing, not a wait; nothing downstream depends on its duration.
                 try await Task.sleep(for: .milliseconds(120))
                 window.window.contentView?.setFrameSize(size)
             }
@@ -210,7 +216,7 @@ struct ThreadCompletionReproductionTests {
         defer { deck.close() }
         deck.model.tray = true
         try await eventuallyOnMain("history loaded") { deck.store.ready && !deck.store.rows.isEmpty }
-        try await Task.sleep(for: .seconds(2))
+        try await deck.expectTail("giant history to paint")
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("shepherd-completion-repro")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let image = try capture(deck, to: directory.appendingPathComponent("giant-\(Int(size.width)).png"))

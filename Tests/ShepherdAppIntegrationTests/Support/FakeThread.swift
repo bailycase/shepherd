@@ -164,10 +164,13 @@ final class FakeThread {
         if shown {
             try await eventuallyOnMain("the thread's first pull since it was shown") { self.snapshotRequests > requests }
         }
-        // Let the pull land and whatever it sets off run.
-        for _ in 0..<5 {
-            try await Task.sleep(for: .milliseconds(20))
+        // Let the pull land and whatever it sets off run: quiet polls, not a fixed sleep.
+        var last = snapshotRequests, steady = 0
+        try await eventuallyOnMain("the shown thread to settle") {
             ListPerf.settle(window)
+            steady = snapshotRequests == last ? steady + 1 : 0
+            last = snapshotRequests
+            return steady >= 5
         }
     }
 
@@ -233,7 +236,11 @@ enum MountedWorkspace {
         switch mounting {
         case .every:
             try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
-            try await Task.sleep(for: .milliseconds(300))
+            // Mounting creates each layout's thread store; wait for the stores to exist (not to
+            // finish loading — hidden threads load on their own schedule, as the old fixed wait did).
+            try await eventuallyOnMain("every mounted layout's thread to exist", timeout: .seconds(60)) {
+                agents.allSatisfy { vm.threadStores.existing(for: $0.agent.id) != nil }
+            }
         case .launch:
             try await eventuallyOnMain("the selected layout to mount") { vm.mountedTabs.count == 1 }
         }
@@ -384,6 +391,7 @@ final class Adoptions {
 extension FakeThread {
     /// Moves the host's revision every 20 ms for `duration`, a few words more of the streaming
     /// reply each time, as a local pi streams, and pushes each one to the store when `push`.
+    /// Simulated pi latency inside the fake; kept: it models the paced arrival the tests drive.
     func stream(for duration: Duration, push: Bool) async throws {
         let end = ContinuousClock.now + duration
         var words = 0

@@ -102,6 +102,7 @@ struct ThreadTailFlowTests {
         }
 
         func answer(_ request: NativeThreadRequest) async -> NativeThreadResult {
+            // Simulated slow host inside the fake (history arriving late); kept: it models the scenario.
             if delay > .zero { try? await Task.sleep(for: delay) }
             switch request {
             case .snapshot(_, let before?, _):
@@ -343,7 +344,8 @@ struct ThreadTailFlowTests {
         }
 
         /// Lets `duration` of real time pass, laying out and drawing about every 16 ms, and notes
-        /// what the window showed (nothing while the thread is hidden).
+        /// what the window showed (nothing while the thread is hidden). The 16 ms is the frame pump's
+        /// poll, not a wait for a condition: blank detection needs wall time to pass.
         func pass(_ duration: Duration = .milliseconds(300)) async throws {
             let end = ContinuousClock.now + duration
             repeat {
@@ -364,6 +366,7 @@ struct ThreadTailFlowTests {
         }
 
         /// Waits for the thread to draw its tail and keep it for `holding`, with time passing.
+        /// An event wait with a timeout and a message (like `eventually`); the 16 ms is its frame poll.
         func expectTail(_ what: String, within: Duration = .seconds(8), holding: Duration = .milliseconds(250)) async throws {
             var last = state()
             let deadline = ContinuousClock.now + within

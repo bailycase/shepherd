@@ -92,7 +92,8 @@ struct ThreadCompletionMatrixTests {
             host.provisional = live
             host.bump()
             await deck.store.refresh()
-            try await Task.sleep(for: .milliseconds(40))
+            // Streaming cadence between chunks, via the suite's frame pump (lays out each frame).
+            try await deck.pass(.milliseconds(40))
         }
         if boundary == .hidden { deck.hide() }
         if boundary == .readerAbove || boundary == .scrolledReplyCollapses {
@@ -103,7 +104,9 @@ struct ThreadCompletionMatrixTests {
                 deck.tailGuard.readerMoved()
                 scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, document.frame.height - 4000)))
                 scroll.reflectScrolledClipView(scroll.contentView)
-                try await Task.sleep(for: .milliseconds(150))
+                try await eventuallyOnMain("the manual scroll to leave the tail") {
+                    (deck.reading?.distance ?? 0) > NativeScrollFollower.threshold
+                }
             }
         }
         if boundary == .composerGrows { deck.store.draft = String(repeating: "A draft line.\n", count: 30) }
@@ -128,7 +131,8 @@ struct ThreadCompletionMatrixTests {
             host.provisional = []
             host.bump()
             await deck.store.refresh()
-            try await Task.sleep(for: .milliseconds(80))
+            // Let the emptied provisional flush through layout before capturing its geometry.
+            try await deck.pass(.milliseconds(80))
         }
         capturePhase("before-replacement")
         host.provisional = []
@@ -142,8 +146,15 @@ struct ThreadCompletionMatrixTests {
         await deck.store.refresh()
         capturePhase("after-refresh")
         if boundary == .hidden { deck.show() }
-        // No forced layout between completion and this bounded recovery interval.
-        try await Task.sleep(for: .seconds(2))
+        // Bounded recovery interval: the guard gets its walk, then the thread must draw.
+        // Sustained quiet on the guard (not a fixed sleep), then one layout for the capture.
+        // No forced layout in between, so a stranded thread is still stranded here.
+        var quiet = 0
+        try await eventuallyOnMain("tail recovery to finish", timeout: .seconds(15), poll: .milliseconds(30)) {
+            quiet = deck.tailGuard.repairing ? 0 : quiet + 1
+            return quiet >= 8
+        }
+        deck.layout()
         let image = try ThreadWindowCapture.image(deck.window.window)
         capturePhase("final-image")
         let scroll = try #require(deck.scrollView)

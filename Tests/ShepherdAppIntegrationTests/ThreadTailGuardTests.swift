@@ -292,7 +292,8 @@ struct ThreadTailGuardTests {
         try await eventuallyOnMain("bounded attempts are exhausted", timeout: .seconds(10)) {
             rig.landings == ThreadTailGuard.maxAttempts
         }
-        try await Task.sleep(for: .milliseconds(250))
+        // The exhausted guard has no check left running; the pending rest is cancelled by turnFinished below.
+        try await eventuallyOnMain("the exhausted guard to go idle") { rig.guardian.isIdle }
         rig.guardian.scrollView = { rig.scroll }
         rig.onFirstMove { rig.guardian.targets(["completed-reply", "thread-bottom"]) }
         rig.guardian.rowIDs = ["completed-reply"]
@@ -329,7 +330,12 @@ struct ThreadTailGuardTests {
         if state == "reader" { rig.guardian.readerMoved() }
         rig.guardian.targets([])
         rig.guardian.turnFinished()
-        try await Task.sleep(for: .milliseconds(300))
+        if state == "reader" {
+            // Negative assertion: nothing may land while the reader's hands are on the view.
+            // No event proves an absence, so this keeps a bounded wait inside the hands window.
+            try await Task.sleep(for: .milliseconds(300))
+        }
+        // (hidden: an inactive guard schedules nothing, so the assertion below is already deterministic.)
         #expect(rig.landings == 0)
         #expect(!rig.guardian.repairing)
     }
@@ -344,9 +350,13 @@ struct ThreadTailGuardTests {
             rig.guardian.targets(["row", "thread-bottom"])
         }
         rig.guardian.targets([])
-        try await eventuallyOnMain("the guard to walk the view", timeout: .seconds(10)) { rig.guardian.visible.count == 2 && !rig.guardian.repairing }
-        try await Task.sleep(for: .milliseconds(300))
+        try await eventuallyOnMain("the guard to walk the view", timeout: .seconds(10)) {
+            rig.guardian.visible.count == 2 && !rig.guardian.repairing
+        }
         #expect(rig.gap > 400, "the view was left where the walk put it, \(Int(rig.gap)) pt above the end")
+        // The guard stands down with the view far above the end: idle proves no landing or walk follows.
+        try await eventuallyOnMain("the guard to stand down") { rig.guardian.isIdle }
+        #expect(rig.gap > 400, "the view stays where the walk put it, \(Int(rig.gap)) pt above the end")
     }
 
     /// The follower stands aside while the guard walks. A thread that grew by a line in that time

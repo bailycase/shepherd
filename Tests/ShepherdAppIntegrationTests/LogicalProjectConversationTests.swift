@@ -1670,6 +1670,7 @@ private static func chipsAndLinks() async throws {
         #expect(input.attachments.items.count == 1, "the image stays after a refusal")
         let kept = r.vm.logicalProjects.operations[r.ref]?.id
         // Nothing retries on its own: the identity and the owner's record are as the refusal left them.
+        // Negative assertion with no event to wait on, so this keeps a bounded wait.
         try await Task.sleep(for: .milliseconds(300))
         #expect(r.vm.logicalProjects.operations[r.ref]?.id == kept, "no automatic retry made another operation")
         #expect(r.app.server.state.projects.isEmpty)
@@ -2332,6 +2333,7 @@ private static func chipsAndLinks() async throws {
         defer { window.close() }
         _ = await r.vm.logicalProjects.sendMessage(r.ref, text: "hello")
         try await eventuallyOnMain("the failed launch pauses the Project") { r.app.server.state.projects.first?.paused == true }
+        // Negative assertion: give the page's loop time to pull and misreport, with no event to wait on.
         try await Task.sleep(for: .seconds(1))
         window.layout()
         #expect(r.vm.state.agents.isEmpty, "no coordinator was created")
@@ -2378,6 +2380,7 @@ private static func chipsAndLinks() async throws {
                 window.host.appearance = window.window.appearance
                 ThemeStore.shared.textScale = scale
                 window.layout()
+                // Preview-evidence captures only (SHEPHERD_PREVIEW_DIR): bounded render settle before each shot.
                 try await Task.sleep(for: .milliseconds(300)); window.layout()
                 let bitmap = try #require(window.host.bitmapImageRepForCachingDisplay(in: window.host.bounds))
                 window.host.cacheDisplay(in: window.host.bounds, to: bitmap)
@@ -2503,9 +2506,17 @@ private static func chipsAndLinks() async throws {
         try await eventuallyOnMain("the page mounts the reserved coordinator's thread") {
             window.layout(); return r.vm.logicalProjects.project(r.ref)?.coordinatorAgentID == reserved
         }
-        // Give the page's own loop time to pull while the creation is held.
-        try await Task.sleep(for: .seconds(2)); window.layout()
+        // The page's own loop pulls while the creation is held: wait for it to be polling,
+        // then hold error-free across its pulls instead of a fixed sleep.
         let store = r.vm.threadStores.store(for: reserved)
+        try await eventuallyOnMain("the page's thread to poll while the creation is held") { store.isLive }
+        var steady = 0
+        try await eventuallyOnMain("the held creation to stay error-free") {
+            window.layout()
+            steady = store.loadError == nil ? steady + 1 : 0
+            return steady >= 50
+        }
+        window.layout()
         #expect(store.loadError == nil, "no error while the creation is held: \(store.loadError ?? "-")")
         #expect(!window.elements().contains { $0.label?.contains("Lost connection") == true || $0.label?.contains("no longer exists") == true },
                 "the page draws no lost connection while the agent is being created")

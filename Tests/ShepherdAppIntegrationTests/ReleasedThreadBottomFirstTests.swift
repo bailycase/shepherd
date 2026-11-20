@@ -287,6 +287,8 @@ struct ReleasedThreadBottomFirstTests {
             Issue.record("\(error): the document stayed at \(heights.first ?? 0) points over \(looks) looks, drawn \(try work.fields(1)) of \(fences) fields")
         }
         // A key at every look for two more seconds, a step's time many times over: no row joins the tail.
+        // Bounded simulation pacing (keys keep coming while the restore waits); wall-time spacing is the
+        // scenario, so no event exists to wait on instead.
         let until = ContinuousClock.now + .seconds(2)
         var most = 0
         while ContinuousClock.now < until {
@@ -348,6 +350,7 @@ struct ReleasedThreadBottomFirstTests {
             clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 0, y: clip.bounds.origin.y - 250), size: clip.bounds.size)).origin)
             scroll.reflectScrolledClipView(clip)
             ListPerf.settle(work.window)
+            // Yields between scroll steps so the lazy stack can realize rows; bounded by ticks, not a wait.
             try await Task.sleep(for: .milliseconds(10))
             ticks += 1
             top = clip.bounds.origin.y
@@ -358,6 +361,7 @@ struct ReleasedThreadBottomFirstTests {
         #expect(reached, "scrolling up \(ticks) times reached rows above the last screen: \(built) fields, from \(held), \(above) points above the tail, at \(top) of the document")
         #expect(above > 80, "the reader is above the tail: \(above)")
         let rest = clip.bounds.origin.y
+        // Holds the reader's place over a bounded window: asserts nothing moves it while keys come.
         for _ in 0..<20 {
             work.vm.userActivity.noteEvent()
             ListPerf.settle(work.window)
@@ -419,6 +423,7 @@ struct ReleasedThreadBottomFirstTests {
         var reached = false, ticks = 0
         while !reached, ticks < 80 {
             up(250)
+            // Yields between scroll steps so the lazy stack can realize rows; bounded by ticks, not a wait.
             try await Task.sleep(for: .milliseconds(10))
             ticks += 1
             reached = try work.fields(1) > held
@@ -461,6 +466,7 @@ struct ReleasedThreadBottomFirstTests {
         #expect(before > 80 && scroll.documentView?.bounds.height == height, "the reader is \(before) points above the tail, in the last screen alone")
 
         // The scroll view reports the momentum at every look, for well over the restore's retry.
+        // Bounded hold asserting the lazy stack stays out while momentum lasts; no event proves the absence.
         for _ in 0..<60 {
             input.decelerating = true
             ListPerf.settle(work.window)
