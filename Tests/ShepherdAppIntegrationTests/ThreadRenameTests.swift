@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
@@ -12,6 +13,149 @@ import Testing
 @Suite("Optimistic thread rename", .mainActorExclusive)
 @MainActor
 struct ThreadRenameTests {
+    @Test func seededThreadRenameSurvivesHostRestart() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.checkingSeededRename() }
+        }
+        expectScenarioCompleted(result)
+    }
+
+    private static func checkingSeededRename() async throws {
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/seeded-thread-rename.json")
+        let golden = try jsonObject(Data(contentsOf: fixture))
+        let seed = try #require(golden["seed"] as? [String: String])
+        let observations = try #require(golden["observations"] as? [[String: Any]])
+        let directory = ValidationEvidence.directory
+        var index = 0
+
+        try await observeSeededRename(spaceName: try #require(seed["space"]), oldName: try #require(seed["name"]),
+                                     newName: try #require(seed["renameTo"])) { step, actual in
+            let previous = try #require(observations.indices.contains(index) ? observations[index] : nil,
+                                        "unexpected observation: \(step)")
+            let expectedStep = try #require(previous["step"] as? String)
+            try #require(expectedStep == step, "observation \(index) out of order")
+            let expected = try #require(previous["fields"] as? [String: Any])
+            index += 1
+
+            func display(_ value: Any?) throws -> String {
+                guard let value else { return "<missing>" }
+                let json = try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .sortedKeys])
+                return String(decoding: json, as: UTF8.self)
+            }
+            var before: [String] = [], after: [String] = []
+            for field in Set(expected.keys).union(actual.keys).sorted() {
+                let old = try display(expected[field]), new = try display(actual[field])
+                if old != new {
+                    before.append("\(step).\(field) = \(old)")
+                    after.append("\(step).\(field) = \(new)")
+                }
+            }
+            if !before.isEmpty {
+                let expected = before.joined(separator: "\n"), actual = after.joined(separator: "\n")
+                try? ValidationEvidence.record(in: directory, step: "compare-golden", status: "failed",
+                                               expected: expected, actual: actual)
+                try #require(before.isEmpty, "Expected: \(expected)\nActual:   \(actual)")
+            }
+        }
+        try #require(index == observations.count, "not all golden observations were checked")
+        let completed = "rename, restart and sidebar matched the golden"
+        for step in ["compare-golden", "complete"] {
+            try ValidationEvidence.record(in: directory, step: step, status: "passed", expected: completed, actual: completed)
+        }
+    }
+
+    /// Observe raw replies and stored JSON, so a Codable default can't hide a missing field.
+    private static func observeSeededRename(spaceName: String, oldName: String, newName: String,
+                                            observe: (String, [String: Any]) throws -> Void) async throws {
+        AccessibilityNode.enable()
+        let app = try AppHarness()
+        let directory = app.dir
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let space = Fixture.space(spaceName, path: directory.path)
+        let agent = Fixture.agent(oldName, in: space)
+        let id = agent.agent.id
+
+        func threadFields(_ state: [String: Any]?) -> [String: Any] {
+            let agent = (state?["agents"] as? [[String: Any]])?.first { ($0["id"] as? String) == id.rawValue }
+            guard let agent else { return [:] }
+            var fields: [String: Any] = ["agents[thread].id": "<thread>"]
+            for field in ["name", "nameIsFinal"] { fields["agents[thread].\(field)"] = agent[field] }
+            return fields
+        }
+
+        func exchange(_ socket: String, _ requests: [(String, RemoteRequest)]) async throws -> String? {
+            let frames = try await Task.detached {
+                let client = try ExtensionClient(path: socket)
+                return try requests.map { step, request in
+                    let sent = try NDJSON.encode(request)
+                    try client.sendRaw(sent)
+                    while true {
+                        let received = try client.readLine()
+                        let reply = try jsonObject(received)
+                        // A pushed notification has no request ID. Keep the actual reply ID even
+                        // if it is wrong so the golden can show the broken correlation.
+                        if reply["id"] != nil { return (step, sent, received) }
+                    }
+                }
+            }.value
+            var name: String?
+            for (step, sent, received) in frames {
+                let request = try jsonObject(sent), reply = try jsonObject(received)
+                var fields: [String: Any] = [:]
+                for key in ["id", "type", "protocolVersion"] {
+                    fields["request.\(key)"] = request[key]
+                    fields["reply.\(key)"] = reply[key]
+                }
+                fields["reply.code"] = reply["code"]
+                if let target = request["agentID"] as? String {
+                    fields["request.agentID"] = target == id.rawValue ? "<thread>" : "<unexpected thread>"
+                }
+                fields["request.action"] = request["action"]
+                let thread = threadFields(reply["state"] as? [String: Any])
+                for (key, value) in thread { fields["reply.state.\(key)"] = value }
+                name = thread["agents[thread].name"] as? String
+                try observe(step, fields)
+            }
+            return name
+        }
+
+        func hello(_ id: Int) -> RemoteRequest {
+            .hello(id: id, token: "", clientName: "validation", protocolVersion: RemoteProtocol.version)
+        }
+        do {
+            defer { app.stop(keepFiles: true) }
+            try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+            _ = try await exchange(app.hostSocket, [
+                ("hello", hello(1)),
+                ("seeded", .stateFetch(id: 2)),
+                ("rename", .agentAction(id: 3, agentID: id, action: .rename(name: newName))),
+                ("renamed", .stateFetch(id: 4)),
+            ])
+            try observe("stored", threadFields(try jsonObject(Data(contentsOf: app.scratch.stateURL))))
+        }
+
+        let restarted = try AppHarness(directory: directory)
+        defer { restarted.stop() }
+        let vm = try await restarted.start()
+        let name = try await exchange(restarted.hostSocket, [("restart-hello", hello(5)), ("reloaded", .stateFetch(id: 6))])
+        let window = OffscreenWindow(size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 650), dark: true, SidebarView(vm: vm))
+        defer { window.close() }
+        var label: String?
+        if let name {
+            try? await eventuallyOnMain("the reloaded thread's accessibility label", timeout: .seconds(2)) {
+                window.layout()
+                label = AccessibilityNode.all(under: window.host).compactMap(\.label).first { $0.hasPrefix(name + ", ") }
+                return label != nil
+            }
+        }
+        try observe("sidebar", ["accessibilityLabel": label].compactMapValues { $0 })
+    }
+
+    nonisolated private static func jsonObject(_ data: Data) throws -> [String: Any] {
+        try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
     private func sidebarTitle(_ vm: ShepherdViewModel, _ row: SidebarRowID) -> String? {
         vm.sidebarLists.all.first { $0.id == row }?.title
     }

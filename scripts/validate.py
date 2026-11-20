@@ -2,6 +2,7 @@
 """Run a named local Shepherd check and keep its evidence in .build/validation/."""
 
 import argparse
+from dataclasses import dataclass
 import hashlib
 import json
 import os
@@ -12,14 +13,36 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-CASE = "changes-review"
-TEST = "ReviewFlowTests/opensCommitSheetWithoutChangingGit"
-STEPS = {"load-changes", "open-commit-sheet", "commit-sheet-files", "close-commit-sheet", "git-unchanged"}
-APPEARANCES = ("light", "dark")
-COMPLETE = "light and dark scenarios finished"
-TOOLBAR = "the narrow toolbar in Sources/ShepherdApp/DiffReviewView.swift"
-SCENARIO = "Tests/ShepherdAppIntegrationTests/ReviewFlowTests.swift"
 LOG = "mac/run.log"
+TOOLBAR = "the narrow toolbar in Sources/ShepherdApp/DiffReviewView.swift"
+
+
+@dataclass(frozen=True)
+class Case:
+    test: str
+    steps: set[tuple[str, str | None]]
+    completion: str
+    scope: str
+    appearances: str = ""
+
+    @property
+    def scenario(self):
+        return f"Tests/ShepherdAppIntegrationTests/{self.test.split('/')[0]}.swift"
+
+
+CASES = {
+    "changes-review": Case(
+        "ReviewFlowTests/opensCommitSheetWithoutChangingGit",
+        {(step, appearance)
+         for step in ("load-changes", "open-commit-sheet", "commit-sheet-files", "close-commit-sheet", "git-unchanged")
+         for appearance in ("light", "dark")},
+        "light and dark scenarios finished", "narrow", ", light and dark",
+    ),
+    "seeded-thread-rename": Case(
+        "ThreadRenameTests/seededThreadRenameSurvivesHostRestart",
+        {("compare-golden", None)}, "rename, restart and sidebar matched the golden", "local host",
+    ),
+}
 
 
 def source_identity():
@@ -46,14 +69,14 @@ def source_identity():
             "dirty_sha256": dirty.hexdigest() if changes else None}
 
 
-def read_steps(run):
+def read_steps(run, required_steps):
     records, problems = {}, []
     for path in sorted((run / "mac/steps").glob("*.json")):
         try:
             step = json.loads(path.read_text(encoding="utf-8"))
             name, appearance = step["step"], step.get("appearance")
-            valid_name = (name == "complete" and appearance is None) or (name in STEPS and appearance in APPEARANCES)
-            if (not valid_name or step["status"] not in ("passed", "failed") or (name, appearance) in records
+            if ((name, appearance) not in required_steps or step["status"] not in ("passed", "failed")
+                    or (name, appearance) in records
                     or not all(isinstance(step[key], str) and step[key] for key in ("expected", "actual"))
                     or not isinstance(step["evidence"], list)
                     or not all(isinstance(p, str) and p.startswith("mac/") and ".." not in Path(p).parts
@@ -71,16 +94,17 @@ def log_diagnostic(path):
     return "\n".join(errors[-5:] or lines[-5:]) or "swift test produced no output"
 
 
-def run_case():
+def run_case(name):
+    case = CASES[name]
     parent = ROOT / ".build/validation"
     if parent.resolve() != parent:
         raise OSError(f"refusing to write validation artifacts through a symlink: {parent}")
     parent.mkdir(parents=True, exist_ok=True)
-    run = Path(tempfile.mkdtemp(prefix=f"{CASE}-", dir=parent))
+    run = Path(tempfile.mkdtemp(prefix=f"{name}-", dir=parent))
     mac = run / "mac"
     mac.mkdir()
-    command = ["swift", "test", "-j", "4", "--filter", TEST]
-    result = {"case": f"mac/{CASE}", "selected_checks": [TEST], "command": command,
+    command = ["swift", "test", "-j", "4", "--filter", case.test]
+    result = {"case": f"mac/{name}", "selected_checks": [case.test], "command": command,
               "log": LOG, "source": None, "toolchain": None, "exit_status": None, "build_test_seconds": None}
     env = {**os.environ, "SHEPHERD_VALIDATION_DIR": str(mac)}
     env.pop("SHEPHERD_LIVE_MODEL", None)
@@ -89,7 +113,7 @@ def run_case():
         try:
             result["source"] = source_identity()
             if sys.platform != "darwin":
-                setup_error = "changes-review requires macOS and AppKit"
+                setup_error = f"{name} requires macOS and AppKit"
                 print(setup_error, file=log)
             else:
                 version = subprocess.check_output(["swift", "--version"], cwd=ROOT, env=env, stderr=subprocess.STDOUT)
@@ -103,21 +127,22 @@ def run_case():
             if isinstance(error, subprocess.CalledProcessError) and error.output:
                 print(error.output.decode(errors="replace").strip(), file=log)
 
-    records, problems = read_steps(run)
+    required_steps = case.steps | {("complete", None)}
+    records, problems = read_steps(run, required_steps)
     failed = [step for step in records.values() if step["status"] == "failed"]
     for step in failed:
-        step["look_first"] = TOOLBAR if step["step"] == "open-commit-sheet" else SCENARIO
+        step["look_first"] = TOOLBAR if step["step"] == "open-commit-sheet" else case.scenario
     completion = records.get(("complete", None), {})
-    missing = sorted({(name, appearance) for name in STEPS for appearance in APPEARANCES} - records.keys())
+    missing = sorted(required_steps - records.keys())
     if failed:
         status, reason = "assertion_failed", None
     elif setup_error:
         status, reason = "not_run", log_diagnostic(run / LOG)
     elif result["exit_status"] and not records and not problems:
         status, reason = "build_or_setup_failed", log_diagnostic(run / LOG)
-    elif (result["exit_status"] != 0 or missing or problems or completion.get("actual") != COMPLETE
-          or completion.get("expected") != COMPLETE):
-        status, reason = "incomplete", "no valid completion evidence (requires all checks in light and dark and a zero Swift exit)"
+    elif (result["exit_status"] != 0 or missing or problems or completion.get("actual") != case.completion
+          or completion.get("expected") != case.completion):
+        status, reason = "incomplete", "no valid completion evidence (requires every step and a zero Swift exit)"
         result.update(missing_steps=missing, log_diagnostic=log_diagnostic(run / LOG))
     else:
         status, reason = "passed", None
@@ -129,17 +154,19 @@ def run_case():
         return str((run / path).relative_to(ROOT))
 
     for step in failed:
-        print(f"FAIL mac/{CASE}/{step['step']} [narrow, {step['appearance']}]")
+        scope = f"{case.scope}, {step['appearance']}" if step.get("appearance") else case.scope
+        print(f"FAIL mac/{name}/{step['step']} [{scope}]")
         print(f"- Expected: {step['expected']}\n+ Actual:   {step['actual']}")
         print(f"Look first: {step['look_first']}.")
         print(f"Evidence: {', '.join(evidence_path(path) for path in [LOG, *step['evidence']])}")
     if status == "passed":
-        print(f"PASS mac/{CASE} [narrow, light and dark] ({result['build_test_seconds']:.2f}s build/test)")
+        print(f"PASS mac/{name} [{case.scope}{case.appearances}] ({result['build_test_seconds']:.2f}s build/test)")
     elif reason:
-        print(f"{'NOT RUN' if status == 'not_run' else 'FAIL'} mac/{CASE} [{status}]: {reason}")
+        print(f"{'NOT RUN' if status == 'not_run' else 'FAIL'} mac/{name} [{status}]: {reason}")
         if status == "incomplete":
             if missing:
-                print("Missing steps: " + ", ".join(f"{name} [{appearance}]" for name, appearance in missing))
+                print("Missing steps: " + ", ".join(f"{step} [{appearance}]" if appearance else step
+                                                   for step, appearance in missing))
             print(result["log_diagnostic"])
         print(f"Evidence: {evidence_path(LOG)}")
     print(f"Report: {report.relative_to(ROOT)}")
@@ -148,14 +175,15 @@ def run_case():
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--case", choices=[CASE])
-    if parser.parse_args(argv).case is None:
+    parser.add_argument("--case", choices=CASES)
+    name = parser.parse_args(argv).case
+    if name is None:
         print("selection not implemented", file=sys.stderr)
         return 1
     try:
-        return run_case()
+        return run_case(name)
     except OSError as error:
-        print(f"NOT RUN mac/{CASE}: {error}", file=sys.stderr)
+        print(f"NOT RUN mac/{name}: {error}", file=sys.stderr)
         return 1
 
 
