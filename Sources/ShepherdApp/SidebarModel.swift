@@ -520,7 +520,7 @@ enum SidebarDerivation {
                 } ?? false
                 var parent: Automation?
                 if !host.offline, let candidate = watcher ?? origin, live || candidate.activeTrigger { parent = candidate }
-                var row = remoteRow(agent, host: host, automation: watcher != nil, needsYou: needsYou, folded: parent != nil)
+                var row = remoteRow(agent, host: host, automation: watcher != nil, needsYou: needsYou, folded: parent != nil, live: live)
                 if let info = sentInfo(of: agent, host: host.id, source) { sent[row.id] = info }
                 if let dispatch = agent.dispatchedFrom?.dispatchID { sentThreads.insert(dispatch) }
                 if let parent {
@@ -756,8 +756,9 @@ enum SidebarDerivation {
     }
 
     /// `folded`: it sits under its automation in Automations (else `automation` says).
+    /// `live`: a watcher the run last read says is working, which counts as running while its agent idles at startup.
     static func remoteRow(_ agent: Agent, host: SidebarSource.Host, automation: Bool,
-                          needsYou: Bool, folded: Bool? = nil) -> SidebarListRow {
+                          needsYou: Bool, folded: Bool? = nil, live: Bool = false) -> SidebarListRow {
         let leading: SHSidebarRow.Leading
         let accessory: SHSidebarRow.Accessory
         let word: String
@@ -782,7 +783,7 @@ enum SidebarDerivation {
             accessibilityLabel: label(agent, word: word, automation: automation, host: host.name)
                 + (host.offline ? ", host offline" : "") + (agent.goalState != nil ? ", goal" : ""),
             worktree: agent.worktreeBranch != nil, hasChanges: (agent.checkout?.changedFiles ?? 0) > 0,
-            running: !needsYou && agent.status == .working, automation: nil, automationLive: false)
+            running: !needsYou && (live || agent.status == .working), automation: nil, automationLive: false)
     }
 
     private static func label(_ agent: Agent, word: String, automation: Bool, host: String?) -> String {
