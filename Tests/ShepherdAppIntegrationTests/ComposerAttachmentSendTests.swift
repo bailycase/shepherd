@@ -9,6 +9,53 @@ import Testing
 @Suite("Composer attachment acknowledgement", .mainActorExclusive)
 @MainActor
 struct ComposerAttachmentSendTests {
+    @Test(arguments: ["send this image", "send this image\nA follow-up"])
+    func aProjectSendClearsOnlyTheSubmittedDraft(nextDraft: String) async throws {
+        let store = NativeThreadStore()
+        let input = ThreadInput()
+        let sent = ImageAttachment(name: "sent.png", image: NativeImage(mimeType: "image/png", data: Data([1, 2, 3])))
+        input.attachments.add([(sent.name, sent)])
+        let original = "send this image"
+        store.draft = original
+        var reply: CheckedContinuation<Bool, Never>?
+        let project = ProjectComposerSend(placeholder: "Ask the project…", send: { text, images in
+            #expect(text == original)
+            #expect(images == [sent.image])
+            return await withCheckedContinuation { reply = $0 }
+        })
+        let window = OffscreenWindow(size: CGSize(width: 800, height: 500))
+        defer {
+            reply?.resume(returning: false)
+            store.stop()
+            window.close()
+        }
+        let snapshot = ComposerThread.snapshot(messages: 0, commands: [])
+        window.show(ThreadView(store: store, active: true, isFocused: false, request: { _ in
+            .snapshot(value: snapshot)
+        }, listModels: { .empty }, retainedInput: input).environment(\.projectComposerSend, project))
+        func monitor(_ view: NSView) -> ComposerKeyMonitor? {
+            if let reader = view as? ComposerWindowReader.Reader,
+               reader.monitor?.chord() == KeybindingsStore.shared.chord(for: .alternateSend) { return reader.monitor }
+            return view.subviews.lazy.compactMap(monitor).first
+        }
+        try await eventuallyOnMain("project composer to accept a send") {
+            window.layout()
+            return store.ready && input.available && monitor(window.host)?.accepts() == true
+        }
+        let keyMonitor = try #require(monitor(window.host))
+        let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
+            timestamp: 0, windowNumber: window.window.windowNumber, context: nil, characters: "\r",
+            charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+        #expect(keyMonitor.handle(event))
+        try await eventuallyOnMain("project send to await acknowledgement") { reply != nil }
+        store.draft = nextDraft
+        let pending = try #require(reply)
+        reply = nil
+        pending.resume(returning: true)
+        try await eventuallyOnMain("submitted attachment to clear after acceptance") { input.attachments.isEmpty }
+        #expect(store.draft == (nextDraft == original ? "" : nextDraft))
+    }
+
     @Test(arguments: [true, false])
     func aDelayedSendCapturesItsImagesAndKeepsImagesAddedMeanwhile(accepted: Bool) async throws {
         let store = NativeThreadStore()
