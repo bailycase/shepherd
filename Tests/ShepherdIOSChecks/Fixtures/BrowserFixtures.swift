@@ -54,6 +54,10 @@ extension FixtureCatalog {
                           prepare: { app in await BrowserFixture.tabs(app, ref: ref, state: .popup) }),
             FixtureScreen(name: "browser-tabs-full", hosts: BrowserFixture.hosts(running: true, html: BrowserFixture.payments), routes: routes,
                           prepare: { app in await BrowserFixture.tabs(app, ref: ref, state: .full) }),
+            FixtureScreen(name: "browser-tabs-full-menu", hosts: BrowserFixture.hosts(running: true, html: BrowserFixture.payments), routes: routes,
+                          prepare: { app in await BrowserFixture.tabs(app, ref: ref, state: .fullMenu) }),
+            FixtureScreen(name: "browser-tabs-close", hosts: BrowserFixture.hosts(running: true, html: BrowserFixture.payments), routes: routes,
+                          prepare: { app in await BrowserFixture.tabs(app, ref: ref, state: .close) }),
         ]
     }
 }
@@ -61,6 +65,7 @@ extension FixtureCatalog {
 enum BrowserFixture {
     /// The dev server's port on the host, and the one forwarded on the device.
     static let port = 41_731
+    static let popupPort = 41_732
     static let title = "Widget gallery"
 
     static func hosts(running: Bool, capable: Bool = true, html: String = BrowserFixture.html) -> [FixtureHostData] {
@@ -101,7 +106,9 @@ enum BrowserFixture {
         func answer(_ frame: BrowserTunnelFrame) -> [BrowserTunnelFrame] {
             switch frame {
             case .open(let tunnel, _, let port):
-                guard running, port == BrowserFixture.port else { return [.close(tunnel: tunnel, code: BrowserTunnelCode.refused)] }
+                guard running, port == BrowserFixture.port || port == BrowserFixture.popupPort else {
+                    return [.close(tunnel: tunnel, code: BrowserTunnelCode.refused)]
+                }
                 return [.opened(tunnel: tunnel)]
             case .data(let tunnel, let bytes):
                 let request: Data = lock.withLock {
@@ -251,7 +258,7 @@ enum BrowserFixture {
     </script>
     """
 
-    enum TabState { case two, popup, full }
+    enum TabState { case two, popup, full, fullMenu, close }
 
     @MainActor static func tabs(_ app: MobileApp, ref: AgentRef, state: TabState) async {
         app.navigator.padColumns = .detailOnly
@@ -262,6 +269,9 @@ enum BrowserFixture {
         }
         guard let tabs = MobileBrowsers.shared.existingTabs(ref), let root = tabs.selectedPage, let web = root.webView else {
             FixtureCheck.fail("no browser tab")
+        }
+        if state == .close {
+            _ = try? await web.evaluateJavaScript("document.querySelector('a').port = '\(popupPort)'")
         }
         _ = try? await web.evaluateJavaScript("document.querySelector('a').click()")
         await FixtureCheck.wait("the popup opened in a separate tab with its own console", seconds: 15) {
@@ -276,11 +286,14 @@ enum BrowserFixture {
         switch state {
         case .two:
             tabs.select(root.id)
-            tabs.notice = nil
+            guard tabs.notice == nil else { FixtureCheck.fail("popup note survived a tab switch") }
         case .popup:
             break
-        case .full:
-            for title in ["Payouts", "Ledger", "Invoices", "Support", "Test transactions", "Staging refunds"] {
+        case .close:
+            await checkClosingTabs(tabs, root: root, popup: popup)
+        case .full, .fullMenu:
+            let otherTitles = ["Payouts", "Ledger", "Invoices", "Support", "Test transactions", "Staging refunds"]
+            for title in otherTitles {
                 guard let tab = tabs.add(), let url = URL(string: "http://localhost:\(port)/?view=" + title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!) else {
                     FixtureCheck.fail("could not fill browser tabs")
                 }
@@ -293,13 +306,50 @@ enum BrowserFixture {
                 tabs.selection.ids.count == 8 && tabs.notice == .cap && tabs.selectedPage === root
                     && root.title == "Checkout" && root.console.warnings == 1
             }
+            await FixtureCheck.wait("every tab has its WebKit title", seconds: 15) {
+                tabs.items.suffix(otherTitles.count).map(\.title) == otherTitles
+            }
         }
         tabs.selectedPage?.consoleOpen = true
         await FixtureCheck.wait("browser pane without its sidebar", seconds: 10) {
             if app.navigator.padColumns != .detailOnly { app.navigator.padColumns = .detailOnly }
             return splitView()?.displayMode == .secondaryOnly && splitView()?.transitionCoordinator == nil
         }
+        tabs.fixtureListOpen = state == .fullMenu
         FixtureCheck.report("FIXTURE CHECK ok browser tabs \(state), \(tabs.items.count) tabs")
+    }
+
+    @MainActor private static func checkClosingTabs(_ tabs: MobileBrowserTabs, root: BrowserPage, popup: BrowserPage) async {
+        guard popup.url?.port == popupPort, tabs.ports.ports == [port, popupPort], let web = popup.webView else {
+            FixtureCheck.fail("popup did not claim its own port")
+        }
+        tabs.close(root.id)
+        guard tabs.items.map(\.id) == [popup.id], tabs.selectedPage === popup, root.webView == nil,
+              tabs.ports.ports == [popupPort] else {
+            FixtureCheck.fail("closing the opener did not keep only the popup and its port")
+        }
+        let ok = try? await web.callAsyncJavaScript("return (await fetch('/?after=close', { cache: 'no-store' })).ok",
+                                                    arguments: [:], in: nil, contentWorld: .page) as? Bool
+        guard ok == true else { FixtureCheck.fail("the popup's tunnel stopped serving after the opener closed") }
+
+        await tabs.ports.forwarder.waitForClose(of: port)
+        guard let sibling = tabs.add(), tabs.notice == nil,
+              sibling.open(URL(string: "http://localhost:\(port)/")!) else {
+            FixtureCheck.fail("could not open a sibling or clear the popup note on a new tab")
+        }
+        tabs.select(popup.id)
+        tabs.closeOthers()
+        guard tabs.items.map(\.id) == [popup.id], tabs.selectedPage === popup, popup.webView === web,
+              sibling.webView == nil, tabs.ports.ports == [popupPort] else {
+            FixtureCheck.fail("close others did not retain the selected page and release its sibling's port")
+        }
+
+        tabs.close(popup.id)
+        guard let blank = tabs.selectedPage, blank.id != popup.id, blank.url == nil, tabs.items.map(\.id) == [blank.id],
+              popup.webView == nil, tabs.ports.ports.isEmpty else {
+            FixtureCheck.fail("closing the last tab did not leave a blank tab with no claims")
+        }
+        FixtureCheck.report("FIXTURE CHECK ok second-port popup survived opener close; closeOthers and last-tab close released their claims")
     }
 
     @MainActor static func splitView() -> UISplitViewController? {

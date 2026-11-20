@@ -77,14 +77,8 @@ private struct BrowserTabChrome: View {
         let selection = tabs.selection
         VStack(spacing: 0) {
             SHBrowserTabStrip(items: items, selection: selection.selected, canAdd: selection.canAdd, listOpen: listOpen, touch: true,
-                              actions: .init(select: tabs.select, close: tabs.close, new: { _ = tabs.add() }, toggleList: { listOpen.toggle() }))
-                .popover(isPresented: $listOpen, attachmentAnchor: .point(.bottomTrailing), arrowEdge: .top) {
-                    SHBrowserTabMenu(items: items, selection: selection.selected, maxTabs: BrowserTabSelection.limit, touch: true,
-                                     note: "sign-ins shared across this thread", select: { tabs.select($0); listOpen = false },
-                                     closeOthers: { tabs.closeOthers(); listOpen = false })
-                        .presentationCompactAdaptation(.popover)
-                        .presentationBackground(Color.sh.bgRaised)
-                }
+                              actions: .init(select: tabs.select, close: tabs.close, new: { _ = tabs.add() }, toggleList: { listOpen.toggle() }),
+                              listButtonModifier: TabListPopover(isOpen: $listOpen, menu: menu))
             if let notice = tabs.notice {
                 SHBrowserTabsNote(message: notice == .cap
                     ? "This thread has \(BrowserTabSelection.limit) tabs, the most it keeps. New links open in this tab."
@@ -92,6 +86,28 @@ private struct BrowserTabChrome: View {
                     glyph: notice == .cap ? SHBrowserTabsNote.capGlyph : SHBrowserTabsNote.globeGlyph, touch: true) {
                         tabs.notice = nil
                     }
+            }
+        }
+        #if DEBUG
+        .onChange(of: tabs.fixtureListOpen, initial: true) { _, open in listOpen = open }
+        #endif
+    }
+
+    private var menu: SHBrowserTabMenu {
+        SHBrowserTabMenu(items: tabs.items, selection: tabs.selection.selected, maxTabs: BrowserTabSelection.limit, touch: true,
+                         note: "sign-ins shared across this thread", select: { tabs.select($0); listOpen = false },
+                         closeOthers: { tabs.closeOthers(); listOpen = false })
+    }
+
+    private struct TabListPopover: ViewModifier {
+        @Binding var isOpen: Bool
+        let menu: SHBrowserTabMenu
+
+        func body(content: Content) -> some View {
+            content.popover(isPresented: $isOpen, attachmentAnchor: .point(.bottom), arrowEdge: .top) {
+                menu
+                    .presentationCompactAdaptation(.popover)
+                    .presentationBackground(Color.sh.bgRaised)
             }
         }
     }

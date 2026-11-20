@@ -154,7 +154,7 @@ public struct SHBrowserTabItem: Identifiable, Equatable, Sendable {
 
 // MARK: The strip
 
-public struct SHBrowserTabStrip: View {
+public struct SHBrowserTabStrip<ListButtonModifier: ViewModifier>: View {
     public struct Actions {
         public var select: (UUID) -> Void
         public var close: (UUID) -> Void
@@ -177,9 +177,10 @@ public struct SHBrowserTabStrip: View {
     let newShortcut: String?
     let touch: Bool
     let actions: Actions
+    let listButtonModifier: ListButtonModifier
 
     public init(items: [SHBrowserTabItem], selection: UUID?, canAdd: Bool, listOpen: Bool, newShortcut: String? = nil,
-                touch: Bool = false, actions: Actions) {
+                touch: Bool = false, actions: Actions, listButtonModifier: ListButtonModifier) {
         self.items = items
         self.selection = selection
         self.canAdd = canAdd
@@ -187,6 +188,7 @@ public struct SHBrowserTabStrip: View {
         self.newShortcut = newShortcut
         self.touch = touch
         self.actions = actions
+        self.listButtonModifier = listButtonModifier
     }
 
     public var body: some View {
@@ -217,6 +219,7 @@ public struct SHBrowserTabStrip: View {
                 .shHelp("All tabs")
                 .accessibilityLabel("All tabs")
                 .accessibilityValue(listOpen ? "open" : "closed")
+                .modifier(listButtonModifier)
         }
         .padding(.horizontal, SH.Space.m)
         .frame(height: touch ? SH.Height.touch : SHBrowserTabsMetrics.stripHeight)
@@ -301,6 +304,14 @@ public struct SHBrowserTabStrip: View {
     }
 }
 
+extension SHBrowserTabStrip where ListButtonModifier == EmptyModifier {
+    public init(items: [SHBrowserTabItem], selection: UUID?, canAdd: Bool, listOpen: Bool, newShortcut: String? = nil,
+                touch: Bool = false, actions: Actions) {
+        self.init(items: items, selection: selection, canAdd: canAdd, listOpen: listOpen, newShortcut: newShortcut,
+                  touch: touch, actions: actions, listButtonModifier: EmptyModifier())
+    }
+}
+
 /// A page's tile: its first letter on a themed square.
 public struct SHBrowserFavicon: View {
     let letter: String
@@ -349,8 +360,21 @@ public struct SHBrowserTabMenu: View {
     }
 
     public var body: some View {
+        Group {
+            if touch {
+                menuContent
+            } else {
+                menuContent.frame(width: SHBrowserTabsMetrics.menuWidth).shPopover()
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("All tabs")
+    }
+
+    private var menuContent: some View {
         let sh = Color.sh
-        VStack(alignment: .leading, spacing: 0) {
+        let listHeight = min(rowsHeight, SHBrowserTabsMetrics.menuListMaxHeight)
+        return VStack(alignment: .leading, spacing: 0) {
             // Rows keep their height; a menu taller than the pane scrolls instead of squeezing them.
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -362,7 +386,7 @@ public struct SHBrowserTabMenu: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowsHeight = $0 }
             }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(height: min(rowsHeight, SHBrowserTabsMetrics.menuListMaxHeight))
+            .frame(minHeight: touch ? nil : listHeight, idealHeight: touch ? listHeight : nil, maxHeight: listHeight)
             SHChangesMenuDivider()
             Button(action: closeOthers) {
                 Text("Close other tabs").font(.sh(.ui, weight: .regular))
@@ -382,10 +406,6 @@ public struct SHBrowserTabMenu: View {
                 .padding(.bottom, SH.Space.xs)
         }
         .padding(SH.Space.s)
-        .frame(width: SHBrowserTabsMetrics.menuWidth)
-        .shPopover()
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("All tabs")
     }
 
     private struct Row: View {

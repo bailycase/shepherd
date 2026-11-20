@@ -435,9 +435,14 @@ final class MobileBrowserTabs {
     let ports: BrowserPagePorts
     // Preserve the existing isolation between threads, while sharing sign-ins within this one.
     @ObservationIgnored lazy var websiteDataStore = WKWebsiteDataStore.nonPersistent()
-    private(set) var selection: BrowserTabSelection
+    private(set) var selection: BrowserTabSelection {
+        didSet { if selection.selected != oldValue.selected, notice == .popup { notice = nil } }
+    }
     private var pages: [UUID: BrowserPage] = [:]
     var notice: Notice?
+    #if DEBUG
+    var fixtureListOpen = false
+    #endif
     @ObservationIgnored private var resumeTask: Task<Void, Never>?
 
     init(ref: AgentRef, host: MobileHost, forwarder: BrowserPortForwarder) {
