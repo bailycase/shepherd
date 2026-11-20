@@ -36,8 +36,8 @@ public final class ValidationGolden {
             try ValidationEvidence.record(in: directory, step: step, status: "passed", expected: completion, actual: completion)
         } catch {
             let diff = error as? Difference ?? Difference(expected: completion, actual: "\(filename): \(error)")
-            try ValidationEvidence.record(in: directory, step: step, status: "failed",
-                                          expected: diff.expected, actual: diff.actual)
+            try? ValidationEvidence.record(in: directory, step: step, status: "failed",
+                                           expected: diff.expected, actual: diff.actual)
             throw diff
         }
     }

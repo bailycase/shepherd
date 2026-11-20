@@ -827,6 +827,7 @@ struct RemoteRequestTests {
         samples += ProjectsSamples.wireRequests + LogicalProjectsSamples.wireRequests
         samples += BrowserTunnelTests.frames.map(RemoteRequest.tunnel)
         samples += ProjectExecutionWireTests.wireRequests + ProjectRuntimeWireTests.wireRequests
+        samples.append(ProjectPublicationWireTests.wireRequest)
         samples += [
             minimalCreateAgent,
             .hostSettings(id: 2, request: .fetch),
@@ -1111,6 +1112,7 @@ struct RemoteReplyTests {
         samples += BrowserDriveTests.pushes.map(RemoteReply.browserDrive)
         samples += NativeProjectActionWireTests.wireReplies
         samples += ProjectExecutionWireTests.wireReplies + ProjectRuntimeWireTests.wireReplies
+        samples.append(ProjectPublicationWireTests.wireReply)
         samples += [NativeThreadWireTests.startingRefusal]
         samples += [
             .uploadResult(id: 1, result: .ready(uploadID: S.op)),

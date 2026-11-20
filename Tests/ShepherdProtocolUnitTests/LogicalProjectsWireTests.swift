@@ -37,6 +37,7 @@ enum LogicalProjectsSamples {
     ]
 
     static let wireRequests = requests.map { RemoteRequest.logicalProjects(id: 19, request: $0) }
+        + ProjectAutomationWireTests.wireRequests
     static let wireReplies = results.map { RemoteReply.logicalProjects(id: 19, result: $0) }
 }
 
@@ -65,6 +66,7 @@ struct LogicalProjectsWireTests {
         switch request {
         case .list: #expect(request.projectID == nil)
         case .get, .create, .files, .read: #expect(request.projectID == S.id && request.expectedRevision == nil)
+        case .automation: #expect(request.projectID == S.id && request.expectedRevision == 7)
         default: #expect(request.projectID == S.id && request.expectedRevision == 4)
         }
     }
