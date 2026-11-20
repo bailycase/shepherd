@@ -382,22 +382,22 @@ struct Composer: View, Equatable {
             }
             if let problem = store.startProblem, !(hidesNotSignedIn && problem.kind == .notSignedIn) {
                 SHBanner(.failed, title: problem.title, message: problem.message(host: restartPi == nil ? store.hostName ?? "the host" : nil)) {
-                    if let restartPi {
-                        if problem.kind == .resumedAsNew {
+                    // Retry opens Locate Folder… while the folder is still gone (`retryAgentStart`).
+                    ForEach(problem.actions(canRestart: restartPi != nil, canLocateFolder: true), id: \.self) { action in
+                        switch action {
+                        case .startNewConversation:
                             Button("Start new conversation") {
                                 store.restarting()
-                                restartPi(true)
+                                restartPi?(true)
                             }
                             .buttonStyle(.sh(.ghost, size: .s))
-                        }
-                        if problem.kind == .folderMissing {
-                            // Retry opens Locate Folder… while the folder is still gone (`retryAgentStart`).
-                            Button("Locate Folder…") { restartPi(false) }
+                        case .locateFolder:
+                            Button("Locate Folder…") { restartPi?(false) }
                                 .buttonStyle(.sh(.secondary, size: .s))
-                        } else {
+                        case .retry:
                             Button("Retry") {
                                 store.restarting()
-                                restartPi(false)
+                                restartPi?(false)
                             }
                             .buttonStyle(.sh(.secondary, size: .s))
                         }
