@@ -23,6 +23,7 @@ public enum ChildrenExtension {
          ("shepherd-workflow.ts", workflowSource),
          ("shepherd-children-ui.ts", uiSource), ("shepherd-cli.ts", EmbeddedExtensions.source("shepherd-cli.ts")),
          ("shepherd-cli-client.mjs", EmbeddedExtensions.source("shepherd-cli-client.mjs")),
+         ("shepherd-bash.mjs", EmbeddedExtensions.source("shepherd-bash.mjs")),
          ("shepherd-inspect.mjs", InspectExtension.extensionSource)]
     }
     public static var extensionSource: String { EmbeddedExtensions.source("shepherd-children.ts") }

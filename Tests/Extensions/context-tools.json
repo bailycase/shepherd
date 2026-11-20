@@ -127,7 +127,8 @@
         "fleet_read",
         "fleet_wait",
         "fleet_send",
-        "fleet_cancel"
+        "fleet_cancel",
+        "fleet_close"
       ],
       "group": "fleet",
       "extension": "shepherd-panes.ts",

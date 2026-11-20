@@ -24,11 +24,11 @@ struct ExtensionMessageTests {
              .designEditBoards, .designSearch, .designCheckpoint, .designRender, .designExport, .designExtract,
              .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote, .designPropose,
              .projectPublish, .projectRuntime, .helloBrowser, .browser, .registerProject, .refreshProjects, .addChildProject, .editProject, .deleteProject,
-             .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
+             .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 68
+    static let caseCount = 69
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -84,6 +84,7 @@ struct ExtensionMessageTests {
         .fleetDispatchMessage(id: 134, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", text: "Also update the docs.", delivery: .steer),
         .fleetDispatchMessage(id: 135, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", text: "Thanks.", delivery: .followUp),
         .fleetDispatchCancel(id: 136, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11"),
+        .fleetDispatchClose(id: 137, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11"),
         .coordinateAgent(id: 19, agentID: agent, targetAgentID: AgentID(rawValue: "a2"),
                          request: AgentCoordinationRequest(operation: .read, limit: 10, after: "entry-1")),
         .agentResponse(agentID: AgentID(rawValue: "a2"), requestID: "server-token",
@@ -434,7 +435,7 @@ struct ExtensionReplyTests {
 
     static func caseName(_ reply: ExtensionReply) -> String {
         switch reply {
-        case .parentInput, .childCommand, .childStart, .childScope, .projectChildren, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .appResult, .automations,
+        case .parentInput, .stopManagedBash, .childCommand, .childStart, .childScope, .projectChildren, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .appResult, .automations,
              .agents, .fleetHosts, .fleetDispatch, .message, .agentRequest, .agentResult, .suggestion, .designList, .design, .designBoard, .designWritten, .designEdited,
              .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals,
              .designBatchEdited, .designSearchResult, .designCheckpoints, .designRendered, .designExported, .designExtracted,
@@ -442,7 +443,7 @@ struct ExtensionReplyTests {
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 43
+    static let caseCount = 44
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -479,6 +480,7 @@ struct ExtensionReplyTests {
         .projectResult(id: 70, space: Space(name: "Project", path: "/tmp/project"), created: true),
         .projectResult(id: 71, space: nil, created: false),
         .parentInput,
+        .stopManagedBash,
         .childStart(id: 1, requestID: "queued-1", text: "Review this", images: [NativeImage(mimeType: "image/png", data: Data([1, 2]))]),
         .childCommand(id: 1, runID: "native-1", action: .message, text: "Replace everywhere", mode: .steer),
         .ok(id: 1),
