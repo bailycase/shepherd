@@ -142,20 +142,26 @@ struct BrowserTunnelDataTests {
 
     // MARK: Pace
 
-    /// Waits until a firehose has written something and then nothing for `quiet`, and returns what it wrote. Two equal
-    /// 10 ms polls can catch a frame still in flight, not a blocked sender.
-    static func writesStopped(_ written: Locked<Int>, quiet: Duration = .seconds(1), _ what: String) async throws -> Int {
+    /// Detects the first stall, then confirms the count stays frozen. Two equal 10 ms polls
+    /// can catch a frame in flight, not a blocked sender.
+    static func writesStopped(_ written: Locked<Int>, _ what: String) async throws -> Int {
         var settled = 0
         var lastWrite = ContinuousClock.now
-        try await eventually("\(what) for \(quiet)") {
+        try await eventually(what) {
             let now = written.current
             if now != settled {
                 settled = now
                 lastWrite = .now
             }
-            return now > 0 && ContinuousClock.now - lastWrite >= quiet
+            return now > 0 && ContinuousClock.now - lastWrite >= .milliseconds(500)
         }
-        return settled
+        let stalled = settled
+        let confirmedAt = ContinuousClock.now + .seconds(1)
+        try await eventually("the write count to stay at \(stalled)") {
+            try #require(written.current == stalled, "the sender resumed writing after it stalled")
+            return ContinuousClock.now >= confirmedAt
+        }
+        return stalled
     }
 
     /// A page that stops reading holds the dev server's writes back: the host does not read a
@@ -175,7 +181,6 @@ struct BrowserTunnelDataTests {
         let first = await peer.read(10_000)
         #expect(first.count == 10_000)
         let stalled = try await Self.writesStopped(written, "the sender to stop")
-        #expect(written.current == stalled, "it does not keep writing")
         // The window (256 KiB), the tunnel's frames in flight and the sockets' buffers: a few
         // megabytes at most, not the gigabytes an unpaced host would have read by now.
         #expect(stalled < 8 * 1024 * 1024, "the sender wrote \(stalled) bytes")
@@ -199,8 +204,7 @@ struct BrowserTunnelDataTests {
 
         // 40 tunnels, each with a full window of credit: 10 MiB against a 2 MiB write queue.
         for tunnel in 1...40 { try client.sendTunnel(.open(tunnel: tunnel, agentID: host.agent, port: Int(firehose.port))) }
-        let stalled = try await Self.writesStopped(written, "the host to stop reading the firehose")
-        #expect(written.current == stalled, "the host stopped reading the firehose")
+        _ = try await Self.writesStopped(written, "the host to stop reading the firehose")
         // Still connected: it reads what was queued, opened and data frames alike, and answers a request.
         try client.send(.stateFetch(id: 77))
         var sawState = false
@@ -252,22 +256,29 @@ struct BrowserTunnelDataTests {
         limits.idle = 1.5
         host.server.browserTunnelLimits = limits
         let open = Locked(0)
-        let deaf = try LoopbackServer.deaf(open: open)
+        let greeting = Data([1])
+        let deaf = try LoopbackServer.deaf(open: open, greeting: greeting)
         defer { deaf.stop() }
         let client = try await host.client()
         defer { client.disconnect() }
         client.tunnels.keepaliveSeconds = 0.3
-        // A second connection that never says its tunnel is wanted (the default keepalive is a minute) is the control:
-        // the host reaping it shows its idle rule has run past the idle time while the first tunnel went on being kept.
-        let silent = try await host.client()
-        defer { silent.disconnect() }
+        let controlOpen = Locked(0)
+        let control = try LoopbackServer.deaf(open: controlOpen)
+        defer { control.stop() }
+        let link = WithoutControlKeepalives(client: client, controlPort: control.port)
+        client.tunnels.link = link
+        defer { withExtendedLifetime(link) {} }
 
         let peer = try TunnelPeer(hub: client.tunnels, agent: host.agent, port: deaf.port)
-        let unkept = try TunnelPeer(hub: silent.tunnels, agent: host.agent, port: deaf.port)
-        try await eventually("the host's two sockets") { open.current == 2 }
-        try await eventually("the host to reap the tunnel nobody keeps alive") { silent.tunnels.openCount == 0 && host.server.browserTunnelCount <= 1 }
-        #expect(host.server.browserTunnelCount == 1 && open.current == 1 && client.tunnels.openCount == 1, "an idle socket the page still holds stays open")
-        withExtendedLifetime(unkept) {}
+        try #require(await peer.read(greeting.count, timeout: 10) == greeting)
+        // Open the control later on the same scanner. By the time it is idle enough to reap,
+        // the older tunnel would be too without keepalives.
+        let unkept = try TunnelPeer(hub: client.tunnels, agent: host.agent, port: control.port)
+        defer { unkept.close() }
+        try await eventually("the control's target to connect") { controlOpen.current == 1 }
+        try await eventually("the scanner to reap only the control tunnel") {
+            controlOpen.current == 0 && open.current == 1 && host.server.browserTunnelCount == 1 && client.tunnels.openCount == 1
+        }
         // The page is done sending, and the deaf target never closes: the keepalives stop and the
         // host's idle rule takes the tunnel.
         peer.finish()
@@ -307,6 +318,30 @@ struct BrowserTunnelDataTests {
         frame.append(contentsOf: mask)
         frame.append(contentsOf: payload.enumerated().map { $0.element ^ mask[$0.offset % 4] })
         return frame
+    }
+}
+
+/// Both tunnels use the real client and hub. Suppress only the control's keepalives on the hub's queue.
+private final class WithoutControlKeepalives: BrowserTunnelLink {
+    let client: RemoteHostClient
+    let controlPort: Int
+    private var controlID: Int?
+
+    init(client: RemoteHostClient, controlPort: UInt16) {
+        self.client = client
+        self.controlPort = Int(controlPort)
+    }
+
+    var tunnelBacklogBytes: Int { client.tunnelBacklogBytes }
+    var tunnelsAvailable: Bool { client.tunnelsAvailable }
+
+    func sendTunnel(_ frame: BrowserTunnelFrame) {
+        switch frame {
+        case .open(let id, _, let port) where port == controlPort: controlID = id
+        case .keepalive(let id) where id == controlID: return
+        default: break
+        }
+        client.sendTunnel(frame)
     }
 }
 
