@@ -114,6 +114,7 @@ public struct FleetSentStage: Equatable, Sendable {
         case FleetDispatchCode.hostNotReady: return "not ready for it"
         case FleetDispatchCode.noSuchHost: return "no Mac by that name"
         case FleetDispatchCode.peerGone: return "stopped answering"
+        case FleetDispatchCode.turnFailed: return "model request failed"
         case FleetDispatchCode.refused: return "refused it"
         case FleetDispatchCode.snapshotTooLarge: return "changes too large"
         case FleetDispatchCode.snapshotMismatch, FleetDispatchCode.snapshotFailed: return "changes didn't arrive"

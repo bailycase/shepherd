@@ -8,7 +8,7 @@ if [ -n "${GITHUB_ENV:-}" ]; then printf 'MOBILE_CLIENT_CHECK_BUILD=%s\n' "$buil
 # Retain compiler outputs on failure; CI collects this owned root with the failing log.
 trap 'result=$?; if [ "$result" -ne 0 ]; then echo "Retained failed client check: $build"; fi' EXIT
 sdk=$(xcrun --sdk macosx --show-sdk-path)
-flags=(-sdk "$sdk" -target "$(uname -m)-apple-macos26.0" -swift-version 5 -I "$build" -L "$build")
+flags=(-j 4 -sdk "$sdk" -target "$(uname -m)-apple-macos26.0" -swift-version 5 -I "$build" -L "$build")
 xcrun swiftc "${flags[@]}" -parse-as-library Tests/ShepherdIOSChecks/Fixtures/FixtureCheck.swift \
     Tests/ShepherdIOSChecks/FixtureReadinessCheck.swift -o "$build/readiness-check"
 "$build/readiness-check" success | grep -q '^FIXTURE READY readiness-check$'
@@ -71,6 +71,10 @@ xcrun swiftc "${flags[@]}" -D DEBUG -lShepherdCore -lShepherdProtocol -lShepherd
     App/iOS/Automations/AutomationsStore.swift Tests/ShepherdIOSChecks/AutomationsStoreCheck.swift -o "$build/automations-check"
 DYLD_LIBRARY_PATH="$build" "$build/automations-check"
 echo 'AUTOMATIONS CHECK COMPLETE'
+
+xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -parse-as-library \
+    App/iOS/Projects/ProjectHistoryInput.swift Tests/ShepherdIOSChecks/ProjectHistoryInputCheck.swift -o "$build/project-history-check"
+DYLD_LIBRARY_PATH="$build" "$build/project-history-check"
 
 xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -parse-as-library \
     App/iOS/Forge/ForgeRows.swift Tests/ShepherdIOSChecks/ForgeRowsCheck.swift -o "$build/forge-rows-check"

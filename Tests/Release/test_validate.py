@@ -24,7 +24,9 @@ class ValidateTests(unittest.TestCase):
 
     def run_case(self, records, swift_exit=0, case="changes-review"):
         test = {"changes-review": "ReviewFlowTests/opensCommitSheetWithoutChangingGit",
-                "seeded-thread-rename": "ThreadRenameTests/seededThreadRenameSurvivesHostRestart"}[case]
+                "seeded-thread-rename": "ThreadRenameTests/seededThreadRenameSurvivesHostRestart",
+                "c-state": "StateStoreTests/historicalFilesLoadAndRewriteAsRecorded",
+                "c-settings": "SettingsWritePathTests/everySettingsWritePathMatchesTheGolden"}[case]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             source = {"revision": "test-revision", "dirty_paths": []}
@@ -104,6 +106,34 @@ class ValidateTests(unittest.TestCase):
         self.assertEqual(result["status"], "passed")
         self.assertIn("PASS mac/changes-review", output)
 
+    def test_incomplete_reports_invalid_evidence_on_the_terminal(self):
+        code, output, result = self.run_case([{"step": "unknown", "evidence": []}])
+        self.assertEqual(code, 1)
+        self.assertIn("Evidence error: 0.json: invalid or duplicate step record", output)
+        self.assertEqual(result["evidence_errors"], ["0.json: invalid or duplicate step record"])
+
+    def test_a_thrown_golden_scenario_is_a_comparison_failure(self):
+        record = {"step": "compare-golden", "status": "failed", "evidence": [],
+                  "expected": "rename, restart and sidebar matched the golden",
+                  "actual": "Scenario threw: socket closed while awaiting reply"}
+        code, output, result = self.run_case([record], swift_exit=1, case="seeded-thread-rename")
+        self.assertEqual(code, 1)
+        self.assertEqual(result["status"], "assertion_failed")
+        self.assertIn("FAIL mac/seeded-thread-rename/compare-golden", output)
+        self.assertIn("Look first: Tests/Fixtures/seeded-thread-rename.json.", output)
+
+    def test_multiline_diff_and_evidence_errors_are_reported_together(self):
+        record = {"step": "compare-golden", "status": "failed", "evidence": [],
+                  "expected": "case.loaded = 1\ncase.rewritten = 1",
+                  "actual": "case.loaded = 2\ncase.rewritten = 2"}
+        code, output, result = self.run_case([record, {"step": "unknown", "evidence": []}], swift_exit=1, case="c-state")
+        self.assertEqual(code, 1)
+        self.assertEqual(result["status"], "assertion_failed")
+        self.assertIn("- Expected: case.loaded = 1\n- case.rewritten = 1\n"
+                      "+ Actual:   case.loaded = 2\n+ case.rewritten = 2", output)
+        self.assertIn("Look first: Tests/Fixtures/c-state.json.", output)
+        self.assertIn("Evidence error: 1.json: invalid or duplicate step record", output)
+
     def test_seeded_rename_checks_require_the_golden_comparison_and_completion(self):
         matched = "rename, restart and sidebar matched the golden"
         record = {"status": "passed", "expected": matched, "actual": matched, "evidence": []}
@@ -116,3 +146,21 @@ class ValidateTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(result["status"], "passed")
         self.assertIn("PASS mac/seeded-thread-rename", output)
+
+    def test_settings_write_path_checks_require_the_golden_comparison_and_completion(self):
+        matched = "every settings write path matched the golden"
+        record = {"status": "passed", "expected": matched, "actual": matched, "evidence": []}
+        complete = {**record, "step": "complete"}
+        code, _, result = self.run_case([complete], case="c-settings")
+        self.assertEqual(code, 1)
+        self.assertEqual(result["missing_steps"], [["compare-golden", None]])
+        failed = {**record, "step": "compare-golden", "status": "failed",
+                  "expected": "sync.host.defaultThinking.reply.settings.defaultThinking = \"low\"",
+                  "actual": "sync.host.defaultThinking.reply.settings.defaultThinking = \"high\""}
+        code, output, result = self.run_case([failed], case="c-settings")
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL mac/c-settings/compare-golden [local host]", output)
+        self.assertIn("Tests/Fixtures/settings-write-paths.json", result["steps"][0]["look_first"])
+        code, output, result = self.run_case([{**record, "step": "compare-golden"}, complete], case="c-settings")
+        self.assertEqual(code, 0)
+        self.assertIn("PASS mac/c-settings", output)

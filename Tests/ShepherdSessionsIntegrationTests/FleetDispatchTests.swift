@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 import ShepherdCore
@@ -306,10 +307,345 @@ struct FleetDispatchTests {
         #expect(result.delivery == .task)
         #expect(result.text.hasPrefix("[from: Fix flaky payment test on Mac mini, an agent, not the user."), "the result is framed as another agent's words")
         #expect(result.text.contains("Result from Fix flaky payment test on Mac mini:"))
-        #expect(result.text.contains("Branch fleet/fix-flaky-payment-test: 0 commits ahead of the start, not on origin"))
+        #expect(result.text.contains("Branch fleet/fix-flaky-payment-test: 0 commits ahead of origin/main, not on origin"))
         try await Self.wait("both records to finish") { a.sent().first?.state == .done && b.taken().first?.state == .done }
         #expect(a.sent().first?.resultBranchFacts?.branch == "fleet/fix-flaky-payment-test")
+        let read = try await parent.status(info)
+        #expect(read.state == "done" && read.activity != "working")
         #expect(a.dispatched.isEmpty, "nothing ran on the sender")
+    }
+
+    @Test func theResultAndReadReportThePushedDispatchBranchNotTheCheckedOutHead() async throws {
+        let (a, b, origin) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch("Use branch fix/payment if available.", title: "Investigate flaky payments from dashboard", host: "Mac mini"))
+        try await eventuallyOnMain("the receiving Mac to run the dispatch") { b.taken().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        let branch = try #require(thread.worktreeBranch)
+        #expect(branch == "fleet/investigate-flaky-payments-from")
+        let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
+        try await eventuallyOnMain("the stub to start in the worktree") { StubPi.launches().contains { $0.env["SHEPHERD_AGENT_ID"] == thread.id.rawValue } }
+        try b.report(thread.id, .working)
+        try await eventuallyOnMain("the sender to know the thread is working") { a.sent().first?.activity == "working" }
+
+        // Push from B only, then leave the checkout detached at the base. The PR branch still holds the work.
+        try "payments\n".write(to: worktree.appendingPathComponent("PAYMENTS.md"), atomically: true, encoding: .utf8)
+        try git(["add", "PAYMENTS.md"], in: worktree)
+        try git(["commit", "-qm", "Add payment notes"], in: worktree)
+        let pushed = try Self.head(worktree)
+        try git(["push", "-q", "origin", branch], in: worktree)
+        try git(["update-ref", "-d", "refs/remotes/origin/\(branch)"], in: worktree)
+        try git(["switch", "-q", "--detach", origin.sha], in: worktree)
+        try b.report(thread.id, .done)
+
+        let result = try #require(await parent.nextMessage())
+        #expect(result.text.contains("Branch \(branch): 1 commit ahead of origin/main, pushed to origin, 1 file changed (+1 -0)."))
+        try await eventuallyOnMain("the sender to finish delivery") { a.sent().first?.state == .done }
+        let read = try await parent.status(info)
+        var expected = FleetBranchFacts(branch: branch, head: pushed, ahead: 1, pushed: true, filesChanged: 1, insertions: 1)
+        expected.comparedTo = "origin/main"
+        #expect(read.branchFacts == expected)
+        #expect(try Self.head(a.folder) == origin.sha)
+    }
+
+    @Test func theDispatchResultExcludesUpstreamCommitsAfterAFastForward() async throws {
+        let (a, b, origin) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        // Configure nightly without checking it out: the sender's current branch and origin's default are main.
+        try git(["push", "-q", "origin", "HEAD:nightly"], in: a.folder)
+        var space = a.space
+        space.worktreeBase = "origin/nightly"
+        try await a.server.updateSpace(space)
+        // Reach the scratch checkout through a tilde path without creating anything in the real home.
+        space.path = "~" + String(repeating: "/..", count: (NSHomeDirectory() as NSString).pathComponents.count - 1) + a.folder.path
+        let (agent, tab) = Fixture.agent(in: space)
+        try await a.server.addAgent(agent, withTab: tab)
+        let parent = Parent(agent: agent, extension: try ExtensionClient(path: a.host.socketPath), mac: a)
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch(host: "Mac mini"))
+        try await eventuallyOnMain("the receiver to start") { b.taken().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        let branch = try #require(thread.worktreeBranch)
+        let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
+        try b.report(thread.id, .working)
+        try await eventuallyOnMain("the receiver to report working") { b.taken().first?.activity == "working" }
+
+        try git(["switch", "-q", "nightly"], in: a.folder)
+        try "upstream\n".write(to: a.folder.appendingPathComponent("UPSTREAM.md"), atomically: true, encoding: .utf8)
+        try git(["add", "UPSTREAM.md"], in: a.folder)
+        try git(["commit", "-qm", "Advance nightly"], in: a.folder)
+        try git(["push", "-q", "origin", "nightly"], in: a.folder)
+        try git(["fetch", "-q", "origin", "nightly"], in: worktree)
+        try git(["merge", "--ff-only", "origin/nightly"], in: worktree)
+        try "dispatch\n".write(to: worktree.appendingPathComponent("PAYMENTS.md"), atomically: true, encoding: .utf8)
+        try git(["add", "PAYMENTS.md"], in: worktree)
+        try git(["commit", "-qm", "Add payment notes"], in: worktree)
+        try git(["push", "-q", "origin", branch], in: worktree)
+        try b.report(thread.id, .done)
+
+        let result = try #require(await parent.nextMessage())
+        #expect(result.text.contains("1 commit ahead of origin/nightly, pushed to origin, 1 file changed (+1 -0)."))
+        try await eventuallyOnMain("result delivery") { a.sent().first?.state == .done }
+        let facts = try #require(try await parent.status(info).branchFacts)
+        #expect(facts.ahead == 1 && facts.filesChanged == 1 && facts.insertions == 1 && facts.pushed)
+        #expect(a.sent().first?.commitSHA == origin.sha, "the start pin did not change")
+    }
+
+    @Test func anUnreachableOriginDoesNotReportAStaleTrackingRefAsPushed() throws {
+        let origin = try Self.makeOrigin()
+        let checkout = try makeScratchDirectory("report").appendingPathComponent("checkout")
+        try git(["clone", "-q", origin.url.path, checkout.path], in: origin.url)
+        let branch = "fleet/check-payments"
+        try git(["branch", branch, origin.sha], in: checkout)
+        try git(["update-ref", "refs/remotes/origin/\(branch)", origin.sha], in: checkout)
+        try git(["remote", "set-url", "origin", checkout.appendingPathComponent("no-such-origin").path], in: checkout)
+
+        let facts = try #require(FleetDispatchGit.branchFacts(worktree: checkout.path, branch: branch, start: origin.sha))
+        #expect(facts.head == origin.sha && facts.ahead == 0)
+        #expect(facts.originCheckFailed == true && !facts.pushed)
+        #expect(FleetDispatchGit.branchFacts(worktree: checkout.path, branch: "fleet/missing", start: origin.sha) == nil)
+    }
+
+    @Test func aProviderErrorMarksTheDispatchFailedOnBothMacs() async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch("flaky-hold", host: "Mac mini"))
+        try await eventuallyOnMain("the receiving Mac to start the dispatch") { b.taken().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
+        try await eventuallyOnMain("the stub to start in the worktree") { StubPi.launches().contains { $0.env["SHEPHERD_AGENT_ID"] == thread.id.rawValue } }
+        try b.report(thread.id, .working)
+        try await eventuallyOnMain("the sender to know the thread is working") { a.sent().first?.activity == "working" }
+        try await eventuallyOnMain("pi to start the failing turn") { b.server.queue.sync { b.server.rpcThread(forAgent: thread.id)?.running == true } }
+        try Data().write(to: worktree.appendingPathComponent("flaky-go"))
+        try b.report(thread.id, .done)
+        try await eventuallyOnMain("the sender to settle") { a.sent().first?.state.isLive == false }
+        try await eventuallyOnMain("the receiver to settle") { b.taken().first?.state.isLive == false }
+        let read = try await parent.status(info)
+        #expect(b.taken().first?.state == .failed)
+        #expect(read.state == "failed" && read.failure == "turn_failed" && read.detail == "529 overloaded")
+        #expect(read.resultText == nil && read.activity != "working")
+    }
+
+    @Test func anUnexpectedPiExitMarksTheDispatchFailedOnBothMacs() async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch("flaky-hold", host: "Mac mini"))
+        try await eventuallyOnMain("the receiver to start") { b.taken().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        try await Self.wait("pi to run the held turn") {
+            await b.server.enqueueValue { @Sendable in b.server.rpcThread(forAgent: thread.id)?.running == true }
+        }
+        let signalled = await b.server.enqueueValue { @Sendable in
+            guard let pid = b.server.rpcThread(forAgent: thread.id)?.session.processIdentifier, pid > 0 else { return false }
+            return kill(pid, SIGKILL) == 0
+        }
+        try #require(signalled)
+        try await eventuallyOnMain("the pi exit failure to reach the sender") { a.sent().first?.state == .failed }
+        #expect(b.taken().first?.state == .failed)
+        #expect(b.dispatched.first?.id == thread.id, "the receiving Mac keeps the thread for retry")
+        let read = try await parent.status(info)
+        #expect(read.state == "failed" && read.failure == "turn_failed")
+        #expect(read.detail?.contains("stopped unexpectedly") == true)
+        #expect(read.resultText == nil && read.activity != "working")
+    }
+
+    @Test func readingARunningDispatchGetsActivityFromTheReceiverEvenWhenTheSenderMissedIt() async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent()
+        try parent.hello()
+        let before = SessionServer.nowMilliseconds()
+        let info = try parent.info(try await parent.dispatch("flaky-hold", host: "Mac mini"))
+        try await eventuallyOnMain("the receiving Mac to start the dispatch") { b.taken().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        try b.report(thread.id, .working)
+        try await eventuallyOnMain("the opening turn to start and its status to reach the sender") {
+            a.sent().first?.activity == "working" && b.server.queue.sync { b.server.rpcThread(forAgent: thread.id)?.running == true }
+        }
+        // The outbound log can have a running record without a status; the dispatch is still live on B.
+        let dispatchID = try #require(UUID(uuidString: info.dispatchID))
+        a.server.queue.sync { a.server.fleet?.dispatch.outbound[dispatchID]?.activity = nil }
+        let read = try await parent.status(info)
+        #expect(read.state == "running" && read.activity == "working")
+        let timestamp = try #require(read.lastThreadEventAt)
+        #expect((before...SessionServer.nowMilliseconds()).contains(timestamp))
+        #expect(a.sent().first?.lastThreadEventAt == nil, "polling doesn't rewrite the dispatch log")
+
+        // A missing peer link gives back the cached state, not a fresh activity time.
+        a.server.queue.sync { a.server.fleet?.dispatch.client = { _ in nil } }
+        let offline = try await parent.status(info)
+        #expect(offline.state == "running" && offline.lastThreadEventAt == nil)
+    }
+
+    @Test func aNamedDispatchRefusesBeforeStartingWhenTheReceiverIsLowOnDisk() async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        b.server.queue.sync { b.server.fleet?.dispatch.freeWorktreeBytes = { _ in 0 } }
+        let parent = try await a.parent()
+        try parent.hello()
+        let refused = try await parent.dispatch(key: "disk", host: "Mac mini")
+        guard case .error(_, "disk_low", let message) = refused else { Issue.record("Expected low disk refusal, got \(refused)"); return }
+        #expect(message.contains("disk space"))
+        #expect(b.taken().isEmpty && b.dispatched.isEmpty)
+        #expect(a.sent().first?.state == .failed)
+    }
+
+    @Test func aFollowUpThatSettlesBeforeTheSendReplyDoesNotStayRunning() async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch(host: "Mac mini"))
+        try await eventuallyOnMain("the windowless receiver to start the thread") { b.taken().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        try b.report(thread.id, .working)
+        try await eventuallyOnMain("the first turn to work") { b.taken().first?.activity == "working" }
+        try b.report(thread.id, .done)
+        _ = try #require(await parent.nextMessage())
+        try await eventuallyOnMain("the first result to settle") { a.sent().first?.state == .done && b.taken().first?.state == .done }
+        let prior = b.dispatched.first?.completedAt
+
+        let gate = FleetTestGate()
+        await gate.close()
+        b.server.queue.sync {
+            if let dispatch = b.server.fleet?.dispatch {
+                let message = dispatch.host.messageThread
+                dispatch.host.messageThread = { id, text, delivery in
+                    let sent = await message(id, text, delivery)
+                    await gate.pass()
+                    return sent
+                }
+            }
+        }
+        let sending = Task { @MainActor in
+            try await parent.call { .fleetDispatchMessage(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID, text: "Follow up.", delivery: .followUp) }
+        }
+        do {
+            try await Self.wait("the receiver to hold the send reply") { await gate.waiting == 1 }
+            try b.report(thread.id, .working)
+            try await eventuallyOnMain("the follow-up to work") { b.dispatched.first?.status == .working }
+            try b.report(thread.id, .done)
+            try await eventuallyOnMain("the follow-up to settle before the acknowledgement") {
+                b.dispatched.first?.status == .done && b.dispatched.first?.completedAt != prior
+            }
+        } catch {
+            await gate.open()
+            throw error
+        }
+        await gate.open()
+        _ = try parent.info(try await sending.value)
+        _ = try #require(await parent.nextMessage())
+        try await eventuallyOnMain("both dispatch records to finish the second turn") { a.sent().first?.state == .done && b.taken().first?.state == .done }
+    }
+
+    @Test func ordinaryStopTellsTheThreadToStopItsRetainedBashGroups() async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent()
+        let spawn = AgentSpawn(agent: parent.agent, cwd: a.folder.path, settings: AgentLaunchSettings())
+        _ = try #require(try await a.server.respawnAgent(spawn))
+        try parent.extension.send(.helloChildren(agentID: parent.agent.id))
+        try await eventuallyOnMain("the parent agent to serve before stopping") {
+            a.server.queue.sync { a.server.rpcThread(forAgent: parent.agent.id)?.isServable == true }
+        }
+        // Ordering on one socket: a Fleet request answered after hello proves the control registration landed.
+        _ = try await parent.call { .fleetListHosts(id: $0, agentID: parent.agent.id) }
+        a.pressStop(parent.agent.id)
+        #expect(try await parent.read() == .stopManagedBash)
+    }
+
+    @Test func cancellingADispatchStopsItsBackgroundProcessAndKeepsItsThread() async throws {
+        let (a, b, origin) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch("flaky-hold fleet-close-background fleet-detached", host: "Mac mini"))
+        try await eventuallyOnMain("the receiver to run the dispatch") { b.taken().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
+        let pidFile = worktree.appendingPathComponent("fleet-child-pid")
+        func childPID() -> Int32? { (try? String(contentsOf: pidFile, encoding: .utf8)).flatMap(Int32.init) }
+        try await eventuallyOnMain("the stub to launch a background child") { childPID() != nil }
+        let pid = try #require(childPID())
+        #expect(kill(pid, 0) == 0)
+        try await b.local.openTerminal(agentID: thread.id, cwd: worktree.path, command: "/bin/sleep 60")
+        let tab = try #require(b.server.state.tabs.first { $0.id == thread.tabID })
+        let terminal = try #require(tab.layout.leaves.first { $0.agentID == nil }?.sessionID)
+        #expect(await b.server.sessionInfo(sessionID: terminal)?.isAlive == true)
+        let cancelled = try await parent.cancel(info)
+        #expect(cancelled.state == "cancelled")
+        try await eventuallyOnMain("the receiver to cancel") { b.taken().first?.state == .cancelled }
+        try await eventuallyOnMain("the cancelled dispatch's background child to exit", timeout: .seconds(5)) { kill(pid, 0) != 0 }
+        #expect(await b.server.sessionInfo(sessionID: terminal)?.isAlive == true, "cancel does not stop the person's shell")
+        #expect(b.dispatched.first?.id == thread.id)
+        #expect(try Self.head(worktree) == origin.sha)
+    }
+
+    @Test(arguments: [false, true]) func aSettledDispatchClosesItsThreadAndBuildOutputButKeepsTheCheckout(losesRecord: Bool) async throws {
+        let (a, b, origin) = try await Self.pair(originExtra: [".gitignore": "*.log\n.build/\nDerivedData/\n"])
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch("flaky-hold fleet-close-background fleet-disk-failure", host: "Mac mini"))
+        let close = { try await parent.call { .fleetDispatchClose(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID) } }
+        try await eventuallyOnMain("the receiving Mac to start") { b.taken().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
+        let pidFile = worktree.appendingPathComponent("fleet-child-pid")
+        try await eventuallyOnMain("the stub to launch its background process") {
+            (try? String(contentsOf: pidFile, encoding: .utf8)).flatMap(Int32.init) != nil
+        }
+        let pid = try #require(Int32(String(contentsOf: pidFile, encoding: .utf8)))
+        #expect(kill(pid, 0) == 0)
+        guard case .error(_, "not_settled", _) = try await close() else { Issue.record("closed a live thread"); return }
+        try b.report(thread.id, .working)
+        try await eventuallyOnMain("the receiver to report working") { b.taken().first?.activity == "working" }
+        let build = worktree.appendingPathComponent(".build")
+        let derived = worktree.appendingPathComponent("DerivedData")
+        try FileManager.default.createDirectory(at: build, withIntermediateDirectories: false)
+        try Data(repeating: 0x61, count: 8192).write(to: build.appendingPathComponent("workspace-state.json"))
+        try FileManager.default.createDirectory(at: derived, withIntermediateDirectories: false)
+        try Data("keep unverified output".utf8).write(to: derived.appendingPathComponent("notes.txt"))
+        try Data().write(to: worktree.appendingPathComponent("flaky-go"))
+        try b.report(thread.id, .done)
+        try await eventuallyOnMain("the structured disk error to reach the sender") { a.sent().first?.state == .failed }
+        #expect(a.sent().first?.failureDetail?.contains("ENOSPC") == true)
+        let cancelled = try await parent.cancel(info)
+        #expect(cancelled.state == "failed" && !b.dispatched.isEmpty, "cancel does not close a settled thread")
+        if losesRecord {
+            await b.server.enqueueValue { @Sendable in
+                guard let engine = b.server.fleet?.dispatch else { return }
+                let close = engine.host.closeThread
+                engine.host.closeThread = { [weak server = b.server] agent, id in
+                    let stopped = try await close(agent, id)
+                    if let server {
+                        await server.enqueueValue { @Sendable in _ = server.fleet?.dispatch.inbound.removeValue(forKey: id) }
+                    }
+                    return stopped
+                }
+            }
+        }
+        let reply = try await close()
+        if losesRecord {
+            guard case .error(_, "unknown_dispatch", _) = reply else { Issue.record("Expected a missing dispatch refusal, got \(reply)"); return }
+        } else {
+            let report = try #require(try parent.info(reply).closeReport)
+            #expect(report.contains("Thread removed") && report.contains("process groups stopped") && report.contains("bytes freed"))
+            #expect(report.contains("Kept the checkout, branches, and saved conversation"))
+            #expect(try parent.info(try await close()).closeReport == report, "a repeated close returns the same receipt")
+        }
+        try await eventuallyOnMain("the background process to exit") { kill(pid, 0) != 0 }
+        #expect(b.dispatched.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: build.path) && FileManager.default.fileExists(atPath: derived.path))
+        #expect(FileManager.default.fileExists(atPath: pidFile.path))
+        #expect(try Self.head(worktree) == origin.sha)
     }
 
     // MARK: Idempotency
@@ -453,7 +789,7 @@ struct FleetDispatchTests {
     }
 
     @Test func aTargetWithEightRunningDispatchesAnswersWaitingRoomAndKeepsNothing() async throws {
-        let (a, b, origin) = try await Self.pair()
+        let (a, b, _) = try await Self.pair()
         defer { a.stop(); b.stop() }
         let aID = try await a.hostID()
         // B already runs as many as it admits.
@@ -468,16 +804,22 @@ struct FleetDispatchTests {
         try parent.hello()
         let info = try parent.info(try await parent.dispatch(key: "ninth", host: "Mac mini"))
         #expect(info.state == "waitingRoom", "the sender waits and decides again")
+        #expect(info.host == "Mac mini")
+        #expect(a.sent().first?.targetHostID == (try await b.hostID()))
+        let waiting = try await parent.status(info)
+        #expect(waiting.state == "waitingRoom" && waiting.host == "Mac mini")
+        #expect(waiting.hostRunningDispatches == FleetDispatchProtocol.admissionLimit)
         #expect(b.taken().count == FleetDispatchProtocol.admissionLimit && b.dispatched.isEmpty)
 
-        // A place frees up: the sender sends it, and the same id starts exactly once.
+        // A place frees up: the sender sends it to the named Mac, and the same id starts exactly once.
         b.server.queue.sync {
             if let id = b.server.fleet?.dispatch.inbound.keys.first { b.server.fleet?.dispatch.inbound[id]?.record.state = .done }
-            a.server.fleet?.dispatch.evaluate()
         }
         a.server.queue.sync { a.server.fleet?.dispatch.evaluate() }
-        try await Self.wait("the waiting dispatch to start on B") { b.dispatched.count == 1 }
-        _ = origin
+        let dispatchID = try #require(UUID(uuidString: info.dispatchID))
+        try await eventuallyOnMain("the same dispatch to run on B") { b.dispatched.first?.dispatchedFrom?.dispatchID == dispatchID }
+        #expect(a.dispatched.isEmpty && b.dispatched.count == 1)
+        #expect(a.sent().first?.hostRunningDispatches == nil)
     }
 
     // MARK: Stop and delete

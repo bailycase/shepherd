@@ -201,21 +201,27 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         _ = detach(owner)
     }
 
+    /// `release` for only `ports` of `owner`: a closed tab's ports, while the page's others stay.
+    public func release(_ owner: Owner, ports: Set<Int>) {
+        _ = detach(owner, ports: ports)
+    }
+
     /// `release`, then waits (up to `timeout`) for the sockets to close, so the ports can be claimed
     /// again at once. For the Mac, where a thread's page may be closed and made again at once and
     /// nothing retries a claim that finds the old socket bound.
-    public func releaseAndWait(_ owner: Owner, timeout: TimeInterval = 2) {
+    public func releaseAndWait(_ owner: Owner, ports: Set<Int>? = nil, timeout: TimeInterval = 2) {
         let deadline = DispatchTime.now() + timeout
-        for port in detach(owner) {
+        for port in detach(owner, ports: ports) {
             let closed = DispatchSemaphore(value: 0)
             if addCloseWaiter(of: port, { closed.signal() }) { _ = closed.wait(timeout: deadline) }
         }
     }
 
-    /// Removes `owner`'s listeners and ends their bridges, and cancels their sockets. Returns the ports.
-    private func detach(_ owner: Owner) -> [Int] {
+    /// Removes `owner`'s listeners (only those on `ports`, when given) and ends their bridges, and
+    /// cancels their sockets. Returns the ports.
+    private func detach(_ owner: Owner, ports: Set<Int>? = nil) -> [Int] {
         lock.lock()
-        let held = listeners.filter { $0.value.owner == owner }
+        let held = listeners.filter { $0.value.owner == owner && ports?.contains($0.key) != false }
         for port in held.keys { listeners.removeValue(forKey: port) }
         for (port, listener) in held {
             closeRemaining[port, default: 0] += listener.sources.count

@@ -24,10 +24,8 @@ class Case:
     completion: str
     scope: str
     appearances: str = ""
-
-    @property
-    def scenario(self):
-        return f"Tests/ShepherdAppIntegrationTests/{self.test.split('/')[0]}.swift"
+    golden: str | None = None
+    scenario: str | None = None
 
 
 CASES = {
@@ -37,10 +35,30 @@ CASES = {
          for step in ("load-changes", "open-commit-sheet", "commit-sheet-files", "close-commit-sheet", "git-unchanged")
          for appearance in ("light", "dark")},
         "light and dark scenarios finished", "narrow", ", light and dark",
+        scenario="Tests/ShepherdAppIntegrationTests/ReviewFlowTests.swift",
     ),
     "seeded-thread-rename": Case(
         "ThreadRenameTests/seededThreadRenameSurvivesHostRestart",
         {("compare-golden", None)}, "rename, restart and sidebar matched the golden", "local host",
+        golden="Tests/Fixtures/seeded-thread-rename.json",
+        scenario="Tests/ShepherdAppIntegrationTests/ThreadRenameTests.swift",
+    ),
+    "c-state": Case(
+        "StateStoreTests/historicalFilesLoadAndRewriteAsRecorded",
+        {("compare-golden", None)}, "persisted file shapes matched the golden", "scratch files",
+        golden="Tests/Fixtures/c-state.json",
+        scenario="Tests/ShepherdSessionsUnitTests/StateStoreTests+Golden.swift",
+    ),
+    "c-settings": Case(
+        "SettingsWritePathTests/everySettingsWritePathMatchesTheGolden",
+        {("compare-golden", None)}, "every settings write path matched the golden", "local host",
+        golden="Tests/Fixtures/settings-write-paths.json",
+        scenario="Tests/ShepherdAppIntegrationTests/SettingsWritePathTests.swift",
+    ),
+    "c-wire": Case(
+        "WireRequestSequenceTests/wireMatchesGolden|WireCodecTests/wireMatchesGolden",
+        {("codec-golden", None), ("compare-golden", None)}, "scratch-host request sequences matched the golden", "wire",
+        golden="Tests/Fixtures/c-wire.json",
     ),
 }
 
@@ -131,7 +149,8 @@ def run_case(name):
     records, problems = read_steps(run, required_steps)
     failed = [step for step in records.values() if step["status"] == "failed"]
     for step in failed:
-        step["look_first"] = TOOLBAR if step["step"] == "open-commit-sheet" else case.scenario
+        step["look_first"] = (TOOLBAR if step["step"] == "open-commit-sheet"
+                              else case.golden or case.scenario or case.test)
     completion = records.get(("complete", None), {})
     missing = sorted(required_steps - records.keys())
     if failed:
@@ -156,7 +175,9 @@ def run_case(name):
     for step in failed:
         scope = f"{case.scope}, {step['appearance']}" if step.get("appearance") else case.scope
         print(f"FAIL mac/{name}/{step['step']} [{scope}]")
-        print(f"- Expected: {step['expected']}\n+ Actual:   {step['actual']}")
+        for prefix, label, value in (("-", "Expected: ", step["expected"]), ("+", "Actual:   ", step["actual"])):
+            for line in (label + value).splitlines():
+                print(f"{prefix} {line}")
         print(f"Look first: {step['look_first']}.")
         print(f"Evidence: {', '.join(evidence_path(path) for path in [LOG, *step['evidence']])}")
     if status == "passed":
@@ -169,6 +190,8 @@ def run_case(name):
                                                    for step, appearance in missing))
             print(result["log_diagnostic"])
         print(f"Evidence: {evidence_path(LOG)}")
+    for problem in problems:
+        print(f"Evidence error: {problem}")
     print(f"Report: {report.relative_to(ROOT)}")
     return 0 if status == "passed" else 1
 

@@ -156,7 +156,7 @@ struct HostModeSettingsTests {
         hostSettings.followOtherProcesses(notice: notice)
         var listener: (port: UInt16?, failure: RemoteListenerFailure?) = (nil, nil)
         HostSettingsMapping.serve(on: host.server, settings: hostSettings) { nil } listener: { listener }
-        #expect(ShepherdHost.serveSettings(hostSettings, on: host.server) { port, _ in listener.port = port } == nil)
+        ShepherdHost.serveSettings(hostSettings, on: host.server) { port, _ in listener.port = port }
 
         let (socket, token, phone) = try await Self.listen(host)
         phone.disconnect()

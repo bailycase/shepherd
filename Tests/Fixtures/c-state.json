@@ -1,0 +1,6134 @@
+{
+  "observations": [
+    {
+      "fields": {
+        "fileStillPresentAfterLoad": true,
+        "loaded": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": false,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        },
+        "quarantinedCopies": 0,
+        "rewritten": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": false,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      "step": "workspace-initial"
+    },
+    {
+      "fields": {
+        "fileStillPresentAfterLoad": true,
+        "loaded": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "piSessionID": "old-session",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        },
+        "quarantinedCopies": 0,
+        "rewritten": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "piSessionID": "old-session",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      "step": "workspace-terminal-era"
+    },
+    {
+      "fields": {
+        "fileStillPresentAfterLoad": true,
+        "loaded": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000020",
+              "layout": {
+                "pane": {
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000021"
+                },
+                "type": "leaf"
+              },
+              "order": 1
+            }
+          ]
+        },
+        "quarantinedCopies": 0,
+        "rewritten": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000020",
+              "layout": {
+                "pane": {
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000021"
+                },
+                "type": "leaf"
+              },
+              "order": 1
+            }
+          ]
+        }
+      },
+      "step": "workspace-global-shell"
+    },
+    {
+      "fields": {
+        "fileStillPresentAfterLoad": true,
+        "loaded": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "axis": "horizontal",
+                "first": {
+                  "pane": {
+                    "agentID": "00000000-0000-4000-8000-000000000001",
+                    "cwd": "/tmp/acme",
+                    "id": "00000000-0000-4000-8000-000000000005"
+                  },
+                  "type": "leaf"
+                },
+                "ratio": 0.4,
+                "second": {
+                  "pane": {
+                    "cwd": "/tmp/acme",
+                    "id": "00000000-0000-4000-8000-000000000021",
+                    "title": "Sample terminal"
+                  },
+                  "type": "leaf"
+                },
+                "type": "split"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        },
+        "quarantinedCopies": 0,
+        "rewritten": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "axis": "horizontal",
+                "first": {
+                  "pane": {
+                    "agentID": "00000000-0000-4000-8000-000000000001",
+                    "cwd": "/tmp/acme",
+                    "id": "00000000-0000-4000-8000-000000000005"
+                  },
+                  "type": "leaf"
+                },
+                "ratio": 0.4,
+                "second": {
+                  "pane": {
+                    "cwd": "/tmp/acme",
+                    "id": "00000000-0000-4000-8000-000000000021",
+                    "title": "Sample terminal"
+                  },
+                  "type": "leaf"
+                },
+                "type": "split"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      "step": "workspace-split-with-terminal"
+    },
+    {
+      "fields": {
+        "fileStillPresentAfterLoad": false,
+        "loaded": {
+          "agents": [],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [],
+          "tabs": []
+        },
+        "quarantineMatchesInput": true,
+        "quarantinedCopies": 1,
+        "rewritten": {
+          "agents": [],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [],
+          "tabs": []
+        }
+      },
+      "step": "workspace-invalid-split"
+    },
+    {
+      "fields": {
+        "fileStillPresentAfterLoad": true,
+        "loaded": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [
+            {
+              "createdAt": 10,
+              "id": "sample-design",
+              "lastActiveAt": 12,
+              "name": "Sample",
+              "spaceID": "standalone-design"
+            }
+          ],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        },
+        "quarantinedCopies": 0,
+        "rewritten": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [
+            {
+              "createdAt": 10,
+              "id": "sample-design",
+              "lastActiveAt": 12,
+              "name": "Sample",
+              "spaceID": "standalone-design"
+            }
+          ],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      "step": "workspace-design-in-space"
+    },
+    {
+      "fields": {
+        "fileStillPresentAfterLoad": true,
+        "loaded": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [
+            {
+              "buildsSystem": true,
+              "createdAt": 10,
+              "id": "sample-design",
+              "lastActiveAt": 12,
+              "name": "Sample",
+              "sourceSpaceID": "00000000-0000-4000-8000-000000000003",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "systemNamespace": "sample"
+            }
+          ],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        },
+        "quarantinedCopies": 0,
+        "rewritten": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [
+            {
+              "buildsSystem": true,
+              "createdAt": 10,
+              "id": "sample-design",
+              "lastActiveAt": 12,
+              "name": "Sample",
+              "sourceSpaceID": "00000000-0000-4000-8000-000000000003",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "systemNamespace": "sample"
+            }
+          ],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      "step": "workspace-system-build-in-space"
+    },
+    {
+      "fields": {
+        "fileStillPresentAfterLoad": true,
+        "loaded": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": false,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [
+            {
+              "artifacts": [],
+              "goal": "Review the sample.",
+              "id": "00000000-0000-4000-8000-000000000032",
+              "interruptPending": false,
+              "linkedSpaces": [],
+              "memory": [],
+              "memoryOperations": [],
+              "messages": [],
+              "name": "Sample Project",
+              "ownerID": "00000000-0000-4000-8000-000000000033",
+              "paused": false,
+              "pausedByPerson": false,
+              "referencedTasks": [],
+              "retiredWakeups": [],
+              "revision": 1,
+              "settings": {
+                "allowedHosts": [],
+                "canRequestSpaceLinks": true,
+                "hostPolicy": "selected",
+                "instructions": "Check samples.",
+                "maxConcurrentWorkers": 2
+              },
+              "spaceProposals": [],
+              "tasks": []
+            }
+          ],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        },
+        "quarantinedCopies": 0,
+        "rewritten": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": false,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [
+            {
+              "archivedResolvedTaskCount": 0,
+              "artifacts": [],
+              "goal": "Review the sample.",
+              "historyPending": false,
+              "id": "00000000-0000-4000-8000-000000000032",
+              "interruptPending": false,
+              "linkedSpaces": [],
+              "memory": [],
+              "memoryOperations": [],
+              "messages": [],
+              "name": "Sample Project",
+              "ownerID": "00000000-0000-4000-8000-000000000033",
+              "paused": false,
+              "pausedByPerson": false,
+              "referencedTasks": [],
+              "retiredWakeups": [],
+              "revision": 2,
+              "settings": {
+                "allowedHosts": [],
+                "canRequestSpaceLinks": true,
+                "hostPolicy": "selected",
+                "instructions": "Check samples.",
+                "maxConcurrentWorkers": 2
+              },
+              "spaceProposals": [],
+              "tasks": []
+            }
+          ],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      "step": "workspace-project-era"
+    },
+    {
+      "fields": {
+        "fileStillPresentAfterLoad": true,
+        "loaded": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [
+            {
+              "createdAt": 10,
+              "id": "sample-design",
+              "lastActiveAt": 12,
+              "name": "Sample",
+              "spaceID": "standalone-design"
+            }
+          ],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        },
+        "quarantinedCopies": 0,
+        "rewritten": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [
+            {
+              "createdAt": 10,
+              "id": "sample-design",
+              "lastActiveAt": 12,
+              "name": "Sample",
+              "spaceID": "standalone-design"
+            }
+          ],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      "step": "workspace-standalone-design"
+    },
+    {
+      "fields": {
+        "fileStillPresentAfterLoad": true,
+        "loaded": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        },
+        "quarantinedCopies": 0,
+        "rewritten": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      "step": "workspace-removed-missions-and-subagents"
+    },
+    {
+      "fields": {
+        "fileStillPresentAfterLoad": true,
+        "loaded": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [
+            {
+              "cwd": "/tmp/acme",
+              "deleteAfterRun": false,
+              "enabled": true,
+              "id": "00000000-0000-4000-8000-000000000002",
+              "name": "Check",
+              "prompt": "Inspect"
+            }
+          ],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        },
+        "quarantinedCopies": 0,
+        "rewritten": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [
+            {
+              "cwd": "/tmp/acme",
+              "deleteAfterRun": false,
+              "enabled": true,
+              "id": "00000000-0000-4000-8000-000000000002",
+              "name": "Check",
+              "prompt": "Inspect"
+            }
+          ],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      "step": "workspace-manual-automation"
+    },
+    {
+      "fields": {
+        "fileStillPresentAfterLoad": true,
+        "loaded": {
+          "agents": [
+            {
+              "automationOrigin": {
+                "automationID": "00000000-0000-4000-8000-000000000002",
+                "eventID": "acme/web#12:opened",
+                "trigger": "Sample issue",
+                "triggerURL": "https://github.com/acme/web/issues/12"
+              },
+              "checkout": {
+                "branch": "agent/check-samples",
+                "changedFiles": 3
+              },
+              "completedAt": 1735689599000,
+              "designGrants": [
+                {
+                  "board": "sample.dc.html",
+                  "boardSHA": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "designID": "reference-design",
+                  "element": "header",
+                  "grantedAt": 1735689600000,
+                  "label": "Header",
+                  "page": "Overview",
+                  "payload": "00000000-0000-4000-8000-000000000053",
+                  "revision": 3
+                }
+              ],
+              "designID": "sample-design",
+              "dispatchedFrom": {
+                "agentID": "00000000-0000-4000-8000-000000000054",
+                "agentTitle": "Check links",
+                "at": 1735689597000,
+                "depth": 2,
+                "dispatchID": "00000000-0000-4000-8000-000000000055",
+                "hostID": "00000000-0000-4000-8000-000000000050",
+                "hostName": "Sample Mac"
+              },
+              "executionFor": {
+                "operationID": "00000000-0000-4000-8000-000000000035",
+                "ownerID": "00000000-0000-4000-8000-000000000033",
+                "projectID": "00000000-0000-4000-8000-000000000032"
+              },
+              "goalState": "active",
+              "id": "00000000-0000-4000-8000-000000000001",
+              "lastActiveAt": 1735689600000,
+              "lastFailure": "Sample failure",
+              "model": "openai/gpt-5.4",
+              "movedFrom": {
+                "at": 1735689599000,
+                "branch": "agent/check-samples",
+                "hostID": "00000000-0000-4000-8000-000000000050",
+                "hostName": "Sample Mac",
+                "moveID": "00000000-0000-4000-8000-000000000058",
+                "uncommittedFiles": 2
+              },
+              "movedTo": {
+                "at": 1735689601000,
+                "hostID": "00000000-0000-4000-8000-000000000051",
+                "hostName": "Sample Studio",
+                "moveID": "00000000-0000-4000-8000-000000000057"
+              },
+              "name": "Check samples",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "piSessionID": "sample-session",
+              "projectWorkerFor": "00000000-0000-4000-8000-000000000032",
+              "pushMuted": true,
+              "reviewTarget": "/tmp/acme",
+              "runtime": "rpc",
+              "seenCompletedAt": 1735689598000,
+              "serviceTier": "fast",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "startedBy": {
+                "agentID": "00000000-0000-4000-8000-000000000056",
+                "agentTitle": "Check previews",
+                "at": 1735689598000,
+                "depth": 1
+              },
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004",
+              "thinkingLevel": "xhigh",
+              "waitingOn": "Use the sample branch?",
+              "waitingReason": "branch?",
+              "worktreeBase": "origin/main",
+              "worktreeBranch": "agent/check-samples",
+              "worktreeOriginalBranch": "agent/sample",
+              "worktreePath": "/tmp/acme-samples"
+            },
+            {
+              "coordinatorFor": "00000000-0000-4000-8000-000000000032",
+              "id": "00000000-0000-4000-8000-000000000044",
+              "name": "Sample coordinator",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000046",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000041",
+              "status": "idle",
+              "tabID": "00000000-0000-4000-8000-000000000045"
+            }
+          ],
+          "automations": [
+            {
+              "agentID": "00000000-0000-4000-8000-000000000001",
+              "authorGate": "contributors",
+              "cwd": "/tmp/acme",
+              "deleteAfterRun": true,
+              "destination": {
+                "agentID": "00000000-0000-4000-8000-000000000001",
+                "type": "thread"
+              },
+              "enabled": true,
+              "id": "00000000-0000-4000-8000-000000000002",
+              "limits": {
+                "maxConcurrent": 2,
+                "maxPerDay": 6
+              },
+              "model": "openai/gpt-5.4",
+              "name": "Check issues",
+              "projectID": "00000000-0000-4000-8000-000000000032",
+              "prompt": "Inspect the sample issue.",
+              "serviceTier": "fast",
+              "thinking": "high",
+              "trigger": {
+                "triggers": [
+                  {
+                    "authors": [
+                      "acme-bot"
+                    ],
+                    "events": [
+                      "issueOpened"
+                    ],
+                    "labels": [
+                      "sample"
+                    ],
+                    "number": 12,
+                    "repo": "acme/web",
+                    "titleContains": "Sample"
+                  }
+                ],
+                "type": "github"
+              },
+              "workspace": "local"
+            }
+          ],
+          "designs": [
+            {
+              "agentID": "00000000-0000-4000-8000-000000000001",
+              "boardCount": 3,
+              "buildsSystem": true,
+              "createdAt": 1735689590000,
+              "id": "sample-design",
+              "importedFrom": {
+                "file": "sample.zip",
+                "importedAt": 1735689580000,
+                "stamp": "[123]",
+                "title": "Acme sample"
+              },
+              "lastActiveAt": 1735689600000,
+              "name": "Sample design",
+              "recentsHiddenAt": 1735689595000,
+              "sourceSpaceID": "00000000-0000-4000-8000-000000000003",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "systemNamespace": "sample"
+            },
+            {
+              "createdAt": 1735689580000,
+              "id": "reference-design",
+              "lastActiveAt": 1735689599000,
+              "name": "Sample reference",
+              "spaceID": "standalone-design"
+            }
+          ],
+          "projectExecutions": [
+            {
+              "admittedAt": 1735689596000,
+              "assignment": {
+                "executorSpaceID": "00000000-0000-4000-8000-000000000003",
+                "goal": "Review the sample.",
+                "instructions": "Record broken links.",
+                "key": {
+                  "operationID": "00000000-0000-4000-8000-000000000035",
+                  "ownerID": "00000000-0000-4000-8000-000000000033",
+                  "projectID": "00000000-0000-4000-8000-000000000032"
+                },
+                "memory": "Use the sample repository. [source: person]",
+                "memoryFacts": [
+                  {
+                    "createdAt": 1735689595000,
+                    "id": "00000000-0000-4000-8000-000000000061",
+                    "source": "person",
+                    "text": "Use the sample repository."
+                  }
+                ],
+                "memoryOmittedCount": 0,
+                "model": "openai/gpt-5.4",
+                "prompt": "Verify sample links.",
+                "publicationsEnabled": true,
+                "reservedWorkerID": "00000000-0000-4000-8000-000000000001",
+                "taskID": "00000000-0000-4000-8000-000000000034",
+                "thinking": "high",
+                "title": "Check sample"
+              },
+              "generation": "sample-generation",
+              "key": {
+                "operationID": "00000000-0000-4000-8000-000000000035",
+                "ownerID": "00000000-0000-4000-8000-000000000033",
+                "projectID": "00000000-0000-4000-8000-000000000032"
+              },
+              "matchedUserEntryID": "sample-prompt",
+              "outcome": "finished",
+              "phase": "settled",
+              "publications": [
+                {
+                  "artifactName": "sample.txt",
+                  "executor": {
+                    "remote": {
+                      "bindingID": "00000000-0000-4000-8000-000000000052",
+                      "hostID": "00000000-0000-4000-8000-000000000050"
+                    }
+                  },
+                  "generation": "sample-generation",
+                  "id": "00000000-0000-4000-8000-000000000062",
+                  "key": {
+                    "operationID": "00000000-0000-4000-8000-000000000035",
+                    "ownerID": "00000000-0000-4000-8000-000000000033",
+                    "projectID": "00000000-0000-4000-8000-000000000032"
+                  },
+                  "relativePath": "sample.txt",
+                  "sessionID": "sample-session",
+                  "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "size": 12,
+                  "sourceIdentity": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "state": "ready",
+                  "taskID": "00000000-0000-4000-8000-000000000034",
+                  "workerAgentID": "00000000-0000-4000-8000-000000000001"
+                }
+              ],
+              "resultEntryID": "sample-reply",
+              "resultText": "Links checked.",
+              "revision": 2,
+              "sessionID": "sample-session"
+            }
+          ],
+          "projects": [
+            {
+              "archivedResolvedTaskCount": 1,
+              "artifacts": [
+                {
+                  "artifactName": "sample.txt",
+                  "executor": {
+                    "remote": {
+                      "bindingID": "00000000-0000-4000-8000-000000000052",
+                      "hostID": "00000000-0000-4000-8000-000000000050"
+                    }
+                  },
+                  "generation": "sample-generation",
+                  "id": "00000000-0000-4000-8000-000000000062",
+                  "key": {
+                    "operationID": "00000000-0000-4000-8000-000000000035",
+                    "ownerID": "00000000-0000-4000-8000-000000000033",
+                    "projectID": "00000000-0000-4000-8000-000000000032"
+                  },
+                  "relativePath": "sample.txt",
+                  "sessionID": "sample-session",
+                  "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "size": 12,
+                  "sourceIdentity": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "state": "ready",
+                  "taskID": "00000000-0000-4000-8000-000000000034",
+                  "workerAgentID": "00000000-0000-4000-8000-000000000001"
+                }
+              ],
+              "commandReceipt": {
+                "operationID": "00000000-0000-4000-8000-000000000071",
+                "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+              },
+              "coordinatorAgentID": "00000000-0000-4000-8000-000000000044",
+              "goal": "Review the sample.",
+              "historyPending": false,
+              "id": "00000000-0000-4000-8000-000000000032",
+              "interruptPending": true,
+              "linkedSpaces": [
+                {
+                  "host": {
+                    "remote": {
+                      "bindingID": "00000000-0000-4000-8000-000000000052",
+                      "hostID": "00000000-0000-4000-8000-000000000050"
+                    }
+                  },
+                  "linkedAt": 1735689594000,
+                  "provenance": "user",
+                  "spaceID": "00000000-0000-4000-8000-000000000003"
+                }
+              ],
+              "memory": [
+                {
+                  "createdAt": 1735689595000,
+                  "id": "00000000-0000-4000-8000-000000000061",
+                  "source": "person",
+                  "text": "Use the sample repository."
+                }
+              ],
+              "memoryOperations": [
+                "00000000-0000-4000-8000-000000000068"
+              ],
+              "messages": [
+                {
+                  "humanSubmitted": true,
+                  "id": "00000000-0000-4000-8000-000000000064",
+                  "nativeDeliveryID": "00000000-0000-4000-8000-000000000065",
+                  "phase": "delivered",
+                  "text": "Check the links."
+                }
+              ],
+              "name": "Sample project",
+              "ownerID": "00000000-0000-4000-8000-000000000033",
+              "paused": true,
+              "pausedByPerson": true,
+              "referencedTasks": [
+                {
+                  "operations": [
+                    "00000000-0000-4000-8000-000000000035"
+                  ],
+                  "taskID": "00000000-0000-4000-8000-000000000034",
+                  "workerAgentID": "00000000-0000-4000-8000-000000000001"
+                }
+              ],
+              "retiredWakeups": [
+                "00000000-0000-4000-8000-000000000069"
+              ],
+              "revision": 3,
+              "settings": {
+                "allowedHosts": [
+                  {
+                    "remote": {
+                      "bindingID": "00000000-0000-4000-8000-000000000052",
+                      "hostID": "00000000-0000-4000-8000-000000000050"
+                    }
+                  }
+                ],
+                "canRequestSpaceLinks": true,
+                "conversationModel": "openai/gpt-5.4",
+                "conversationThinking": "xhigh",
+                "hostPolicy": "selected",
+                "instructions": "Record broken links.",
+                "maxConcurrentWorkers": 2,
+                "threadModel": "openai/gpt-5.4"
+              },
+              "spaceProposals": [
+                {
+                  "displayPath": "/tmp/acme-docs",
+                  "id": "00000000-0000-4000-8000-000000000066",
+                  "operationID": "00000000-0000-4000-8000-000000000067",
+                  "originTaskID": "00000000-0000-4000-8000-000000000034",
+                  "path": "/tmp/acme-docs",
+                  "phase": "pending",
+                  "revision": 1
+                }
+              ],
+              "tasks": [
+                {
+                  "executionAssignment": {
+                    "executorSpaceID": "00000000-0000-4000-8000-000000000003",
+                    "goal": "Review the sample.",
+                    "instructions": "Record broken links.",
+                    "key": {
+                      "operationID": "00000000-0000-4000-8000-000000000035",
+                      "ownerID": "00000000-0000-4000-8000-000000000033",
+                      "projectID": "00000000-0000-4000-8000-000000000032"
+                    },
+                    "memory": "Use the sample repository. [source: person]",
+                    "memoryFacts": [
+                      {
+                        "createdAt": 1735689595000,
+                        "id": "00000000-0000-4000-8000-000000000061",
+                        "source": "person",
+                        "text": "Use the sample repository."
+                      }
+                    ],
+                    "memoryOmittedCount": 0,
+                    "model": "openai/gpt-5.4",
+                    "prompt": "Verify sample links.",
+                    "publicationsEnabled": true,
+                    "reservedWorkerID": "00000000-0000-4000-8000-000000000001",
+                    "taskID": "00000000-0000-4000-8000-000000000034",
+                    "thinking": "high",
+                    "title": "Check sample"
+                  },
+                  "host": {
+                    "remote": {
+                      "bindingID": "00000000-0000-4000-8000-000000000052",
+                      "hostID": "00000000-0000-4000-8000-000000000050"
+                    }
+                  },
+                  "id": "00000000-0000-4000-8000-000000000034",
+                  "model": "openai/gpt-5.4",
+                  "operationID": "00000000-0000-4000-8000-000000000035",
+                  "outcomes": [
+                    {
+                      "evidence": "Sample links match.",
+                      "id": "00000000-0000-4000-8000-000000000063",
+                      "kind": "accepted",
+                      "operationID": "00000000-0000-4000-8000-000000000035",
+                      "recordedAt": 1735689600000,
+                      "recordedBy": "00000000-0000-4000-8000-000000000044"
+                    }
+                  ],
+                  "phase": "settled",
+                  "prompt": "Verify sample links.",
+                  "revision": 2,
+                  "settledAt": 1735689600000,
+                  "spaceID": "00000000-0000-4000-8000-000000000003",
+                  "thinking": "high",
+                  "title": "Check sample",
+                  "workerAgentID": "00000000-0000-4000-8000-000000000001",
+                  "workerSessionID": "sample-session"
+                }
+              ]
+            }
+          ],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "parentID": "00000000-0000-4000-8000-000000000040",
+              "parentIsExplicit": true,
+              "path": "/tmp/acme",
+              "repoKey": "github.com/acme/web",
+              "sidebarHidden": true,
+              "worktreeBase": "origin/main"
+            },
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000040",
+              "name": "Acme parent",
+              "path": "/tmp"
+            },
+            {
+              "hidden": true,
+              "holdsProjects": true,
+              "id": "00000000-0000-4000-8000-000000000041",
+              "name": "Projects",
+              "path": "~"
+            },
+            {
+              "hidden": false,
+              "holdsThreads": true,
+              "id": "00000000-0000-4000-8000-000000000042",
+              "name": "No space",
+              "path": "~"
+            },
+            {
+              "hidden": true,
+              "holdsDesigns": true,
+              "id": "00000000-0000-4000-8000-000000000043",
+              "name": "Designs",
+              "path": "~"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "axis": "horizontal",
+                "first": {
+                  "pane": {
+                    "agentID": "00000000-0000-4000-8000-000000000001",
+                    "cwd": "/tmp/acme",
+                    "id": "00000000-0000-4000-8000-000000000005",
+                    "sessionID": "00000000-0000-4000-8000-000000000059",
+                    "title": "Sample terminal"
+                  },
+                  "type": "leaf"
+                },
+                "ratio": 0.6,
+                "second": {
+                  "pane": {
+                    "cwd": "/tmp/acme",
+                    "id": "00000000-0000-4000-8000-000000000049",
+                    "isReview": true
+                  },
+                  "type": "leaf"
+                },
+                "type": "split"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000045",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000044",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000046"
+                },
+                "type": "leaf"
+              },
+              "order": 1,
+              "spaceID": "00000000-0000-4000-8000-000000000041"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000047",
+              "inspectorFor": "00000000-0000-4000-8000-000000000001",
+              "layout": {
+                "pane": {
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000048",
+                  "sessionID": "00000000-0000-4000-8000-000000000060",
+                  "title": "Inspector"
+                },
+                "type": "leaf"
+              },
+              "order": 2,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        },
+        "quarantinedCopies": 0,
+        "rewritten": {
+          "agents": [
+            {
+              "automationOrigin": {
+                "automationID": "00000000-0000-4000-8000-000000000002",
+                "eventID": "acme/web#12:opened",
+                "trigger": "Sample issue",
+                "triggerURL": "https://github.com/acme/web/issues/12"
+              },
+              "checkout": {
+                "branch": "agent/check-samples",
+                "changedFiles": 3
+              },
+              "completedAt": 1735689599000,
+              "designGrants": [
+                {
+                  "board": "sample.dc.html",
+                  "boardSHA": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "designID": "reference-design",
+                  "element": "header",
+                  "grantedAt": 1735689600000,
+                  "label": "Header",
+                  "page": "Overview",
+                  "payload": "00000000-0000-4000-8000-000000000053",
+                  "revision": 3
+                }
+              ],
+              "designID": "sample-design",
+              "dispatchedFrom": {
+                "agentID": "00000000-0000-4000-8000-000000000054",
+                "agentTitle": "Check links",
+                "at": 1735689597000,
+                "depth": 2,
+                "dispatchID": "00000000-0000-4000-8000-000000000055",
+                "hostID": "00000000-0000-4000-8000-000000000050",
+                "hostName": "Sample Mac"
+              },
+              "executionFor": {
+                "operationID": "00000000-0000-4000-8000-000000000035",
+                "ownerID": "00000000-0000-4000-8000-000000000033",
+                "projectID": "00000000-0000-4000-8000-000000000032"
+              },
+              "id": "00000000-0000-4000-8000-000000000001",
+              "lastActiveAt": 1735689600000,
+              "lastFailure": "Sample failure",
+              "model": "openai/gpt-5.4",
+              "movedFrom": {
+                "at": 1735689599000,
+                "branch": "agent/check-samples",
+                "hostID": "00000000-0000-4000-8000-000000000050",
+                "hostName": "Sample Mac",
+                "moveID": "00000000-0000-4000-8000-000000000058",
+                "uncommittedFiles": 2
+              },
+              "movedTo": {
+                "at": 1735689601000,
+                "hostID": "00000000-0000-4000-8000-000000000051",
+                "hostName": "Sample Studio",
+                "moveID": "00000000-0000-4000-8000-000000000057"
+              },
+              "name": "Check samples",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "piSessionID": "sample-session",
+              "projectWorkerFor": "00000000-0000-4000-8000-000000000032",
+              "pushMuted": true,
+              "reviewTarget": "/tmp/acme",
+              "runtime": "rpc",
+              "seenCompletedAt": 1735689598000,
+              "serviceTier": "fast",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "startedBy": {
+                "agentID": "00000000-0000-4000-8000-000000000056",
+                "agentTitle": "Check previews",
+                "at": 1735689598000,
+                "depth": 1
+              },
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004",
+              "thinkingLevel": "xhigh",
+              "worktreeBase": "origin/main",
+              "worktreeBranch": "agent/check-samples",
+              "worktreeOriginalBranch": "agent/sample",
+              "worktreePath": "/tmp/acme-samples"
+            },
+            {
+              "coordinatorFor": "00000000-0000-4000-8000-000000000032",
+              "id": "00000000-0000-4000-8000-000000000044",
+              "name": "Sample coordinator",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000046",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000041",
+              "status": "idle",
+              "tabID": "00000000-0000-4000-8000-000000000045"
+            }
+          ],
+          "automations": [
+            {
+              "agentID": "00000000-0000-4000-8000-000000000001",
+              "authorGate": "contributors",
+              "cwd": "/tmp/acme",
+              "deleteAfterRun": true,
+              "destination": {
+                "agentID": "00000000-0000-4000-8000-000000000001",
+                "type": "thread"
+              },
+              "enabled": true,
+              "id": "00000000-0000-4000-8000-000000000002",
+              "limits": {
+                "maxConcurrent": 2,
+                "maxPerDay": 6
+              },
+              "model": "openai/gpt-5.4",
+              "name": "Check issues",
+              "projectID": "00000000-0000-4000-8000-000000000032",
+              "prompt": "Inspect the sample issue.",
+              "serviceTier": "fast",
+              "thinking": "high",
+              "trigger": {
+                "triggers": [
+                  {
+                    "authors": [
+                      "acme-bot"
+                    ],
+                    "events": [
+                      "issueOpened"
+                    ],
+                    "labels": [
+                      "sample"
+                    ],
+                    "number": 12,
+                    "repo": "acme/web",
+                    "titleContains": "Sample"
+                  }
+                ],
+                "type": "github"
+              },
+              "workspace": "local"
+            }
+          ],
+          "designs": [
+            {
+              "agentID": "00000000-0000-4000-8000-000000000001",
+              "buildsSystem": true,
+              "createdAt": 1735689590000,
+              "id": "sample-design",
+              "importedFrom": {
+                "file": "sample.zip",
+                "importedAt": 1735689580000,
+                "stamp": "[123]",
+                "title": "Acme sample"
+              },
+              "lastActiveAt": 1735689600000,
+              "name": "Sample design",
+              "recentsHiddenAt": 1735689595000,
+              "sourceSpaceID": "00000000-0000-4000-8000-000000000003",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "systemNamespace": "sample"
+            },
+            {
+              "createdAt": 1735689580000,
+              "id": "reference-design",
+              "lastActiveAt": 1735689599000,
+              "name": "Sample reference",
+              "spaceID": "standalone-design"
+            }
+          ],
+          "projectExecutions": [
+            {
+              "admittedAt": 1735689596000,
+              "assignment": {
+                "executorSpaceID": "00000000-0000-4000-8000-000000000003",
+                "goal": "Review the sample.",
+                "instructions": "Record broken links.",
+                "key": {
+                  "operationID": "00000000-0000-4000-8000-000000000035",
+                  "ownerID": "00000000-0000-4000-8000-000000000033",
+                  "projectID": "00000000-0000-4000-8000-000000000032"
+                },
+                "memory": "Use the sample repository. [source: person]",
+                "memoryFacts": [
+                  {
+                    "createdAt": 1735689595000,
+                    "id": "00000000-0000-4000-8000-000000000061",
+                    "source": "person",
+                    "text": "Use the sample repository."
+                  }
+                ],
+                "memoryOmittedCount": 0,
+                "model": "openai/gpt-5.4",
+                "prompt": "Verify sample links.",
+                "publicationsEnabled": true,
+                "reservedWorkerID": "00000000-0000-4000-8000-000000000001",
+                "taskID": "00000000-0000-4000-8000-000000000034",
+                "thinking": "high",
+                "title": "Check sample"
+              },
+              "generation": "sample-generation",
+              "key": {
+                "operationID": "00000000-0000-4000-8000-000000000035",
+                "ownerID": "00000000-0000-4000-8000-000000000033",
+                "projectID": "00000000-0000-4000-8000-000000000032"
+              },
+              "matchedUserEntryID": "sample-prompt",
+              "outcome": "finished",
+              "phase": "settled",
+              "publications": [
+                {
+                  "artifactName": "sample.txt",
+                  "executor": {
+                    "remote": {
+                      "bindingID": "00000000-0000-4000-8000-000000000052",
+                      "hostID": "00000000-0000-4000-8000-000000000050"
+                    }
+                  },
+                  "generation": "sample-generation",
+                  "id": "00000000-0000-4000-8000-000000000062",
+                  "key": {
+                    "operationID": "00000000-0000-4000-8000-000000000035",
+                    "ownerID": "00000000-0000-4000-8000-000000000033",
+                    "projectID": "00000000-0000-4000-8000-000000000032"
+                  },
+                  "relativePath": "sample.txt",
+                  "sessionID": "sample-session",
+                  "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "size": 12,
+                  "sourceIdentity": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "state": "ready",
+                  "taskID": "00000000-0000-4000-8000-000000000034",
+                  "workerAgentID": "00000000-0000-4000-8000-000000000001"
+                }
+              ],
+              "resultEntryID": "sample-reply",
+              "resultText": "Links checked.",
+              "revision": 2,
+              "sessionID": "sample-session"
+            }
+          ],
+          "projects": [
+            {
+              "archivedResolvedTaskCount": 1,
+              "artifacts": [
+                {
+                  "artifactName": "sample.txt",
+                  "executor": {
+                    "remote": {
+                      "bindingID": "00000000-0000-4000-8000-000000000052",
+                      "hostID": "00000000-0000-4000-8000-000000000050"
+                    }
+                  },
+                  "generation": "sample-generation",
+                  "id": "00000000-0000-4000-8000-000000000062",
+                  "key": {
+                    "operationID": "00000000-0000-4000-8000-000000000035",
+                    "ownerID": "00000000-0000-4000-8000-000000000033",
+                    "projectID": "00000000-0000-4000-8000-000000000032"
+                  },
+                  "relativePath": "sample.txt",
+                  "sessionID": "sample-session",
+                  "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "size": 12,
+                  "sourceIdentity": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "state": "ready",
+                  "taskID": "00000000-0000-4000-8000-000000000034",
+                  "workerAgentID": "00000000-0000-4000-8000-000000000001"
+                }
+              ],
+              "commandReceipt": {
+                "operationID": "00000000-0000-4000-8000-000000000071",
+                "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+              },
+              "coordinatorAgentID": "00000000-0000-4000-8000-000000000044",
+              "goal": "Review the sample.",
+              "historyPending": false,
+              "id": "00000000-0000-4000-8000-000000000032",
+              "interruptPending": true,
+              "linkedSpaces": [
+                {
+                  "host": {
+                    "remote": {
+                      "bindingID": "00000000-0000-4000-8000-000000000052",
+                      "hostID": "00000000-0000-4000-8000-000000000050"
+                    }
+                  },
+                  "linkedAt": 1735689594000,
+                  "provenance": "user",
+                  "spaceID": "00000000-0000-4000-8000-000000000003"
+                }
+              ],
+              "memory": [
+                {
+                  "createdAt": 1735689595000,
+                  "id": "00000000-0000-4000-8000-000000000061",
+                  "source": "person",
+                  "text": "Use the sample repository."
+                }
+              ],
+              "memoryOperations": [
+                "00000000-0000-4000-8000-000000000068"
+              ],
+              "messages": [
+                {
+                  "humanSubmitted": true,
+                  "id": "00000000-0000-4000-8000-000000000064",
+                  "nativeDeliveryID": "00000000-0000-4000-8000-000000000065",
+                  "phase": "delivered",
+                  "text": "Check the links."
+                }
+              ],
+              "name": "Sample project",
+              "ownerID": "00000000-0000-4000-8000-000000000033",
+              "paused": true,
+              "pausedByPerson": true,
+              "referencedTasks": [
+                {
+                  "operations": [
+                    "00000000-0000-4000-8000-000000000035"
+                  ],
+                  "taskID": "00000000-0000-4000-8000-000000000034",
+                  "workerAgentID": "00000000-0000-4000-8000-000000000001"
+                }
+              ],
+              "retiredWakeups": [
+                "00000000-0000-4000-8000-000000000069"
+              ],
+              "revision": 3,
+              "settings": {
+                "allowedHosts": [
+                  {
+                    "remote": {
+                      "bindingID": "00000000-0000-4000-8000-000000000052",
+                      "hostID": "00000000-0000-4000-8000-000000000050"
+                    }
+                  }
+                ],
+                "canRequestSpaceLinks": true,
+                "conversationModel": "openai/gpt-5.4",
+                "conversationThinking": "xhigh",
+                "hostPolicy": "selected",
+                "instructions": "Record broken links.",
+                "maxConcurrentWorkers": 2,
+                "threadModel": "openai/gpt-5.4"
+              },
+              "spaceProposals": [
+                {
+                  "displayPath": "/tmp/acme-docs",
+                  "id": "00000000-0000-4000-8000-000000000066",
+                  "operationID": "00000000-0000-4000-8000-000000000067",
+                  "originTaskID": "00000000-0000-4000-8000-000000000034",
+                  "path": "/tmp/acme-docs",
+                  "phase": "pending",
+                  "revision": 1
+                }
+              ],
+              "tasks": [
+                {
+                  "executionAssignment": {
+                    "executorSpaceID": "00000000-0000-4000-8000-000000000003",
+                    "goal": "Review the sample.",
+                    "instructions": "Record broken links.",
+                    "key": {
+                      "operationID": "00000000-0000-4000-8000-000000000035",
+                      "ownerID": "00000000-0000-4000-8000-000000000033",
+                      "projectID": "00000000-0000-4000-8000-000000000032"
+                    },
+                    "memory": "Use the sample repository. [source: person]",
+                    "memoryFacts": [
+                      {
+                        "createdAt": 1735689595000,
+                        "id": "00000000-0000-4000-8000-000000000061",
+                        "source": "person",
+                        "text": "Use the sample repository."
+                      }
+                    ],
+                    "memoryOmittedCount": 0,
+                    "model": "openai/gpt-5.4",
+                    "prompt": "Verify sample links.",
+                    "publicationsEnabled": true,
+                    "reservedWorkerID": "00000000-0000-4000-8000-000000000001",
+                    "taskID": "00000000-0000-4000-8000-000000000034",
+                    "thinking": "high",
+                    "title": "Check sample"
+                  },
+                  "host": {
+                    "remote": {
+                      "bindingID": "00000000-0000-4000-8000-000000000052",
+                      "hostID": "00000000-0000-4000-8000-000000000050"
+                    }
+                  },
+                  "id": "00000000-0000-4000-8000-000000000034",
+                  "model": "openai/gpt-5.4",
+                  "operationID": "00000000-0000-4000-8000-000000000035",
+                  "outcomes": [
+                    {
+                      "evidence": "Sample links match.",
+                      "id": "00000000-0000-4000-8000-000000000063",
+                      "kind": "accepted",
+                      "operationID": "00000000-0000-4000-8000-000000000035",
+                      "recordedAt": 1735689600000,
+                      "recordedBy": "00000000-0000-4000-8000-000000000044"
+                    }
+                  ],
+                  "phase": "settled",
+                  "prompt": "Verify sample links.",
+                  "revision": 2,
+                  "settledAt": 1735689600000,
+                  "spaceID": "00000000-0000-4000-8000-000000000003",
+                  "thinking": "high",
+                  "title": "Check sample",
+                  "workerAgentID": "00000000-0000-4000-8000-000000000001",
+                  "workerSessionID": "sample-session"
+                }
+              ]
+            }
+          ],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "parentID": "00000000-0000-4000-8000-000000000040",
+              "parentIsExplicit": true,
+              "path": "/tmp/acme",
+              "repoKey": "github.com/acme/web",
+              "sidebarHidden": true,
+              "worktreeBase": "origin/main"
+            },
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000040",
+              "name": "Acme parent",
+              "path": "/tmp"
+            },
+            {
+              "hidden": true,
+              "holdsProjects": true,
+              "id": "00000000-0000-4000-8000-000000000041",
+              "name": "Projects",
+              "path": "~"
+            },
+            {
+              "hidden": false,
+              "holdsThreads": true,
+              "id": "00000000-0000-4000-8000-000000000042",
+              "name": "No space",
+              "path": "~"
+            },
+            {
+              "hidden": true,
+              "holdsDesigns": true,
+              "id": "00000000-0000-4000-8000-000000000043",
+              "name": "Designs",
+              "path": "~"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "axis": "horizontal",
+                "first": {
+                  "pane": {
+                    "agentID": "00000000-0000-4000-8000-000000000001",
+                    "cwd": "/tmp/acme",
+                    "id": "00000000-0000-4000-8000-000000000005",
+                    "sessionID": "00000000-0000-4000-8000-000000000059",
+                    "title": "Sample terminal"
+                  },
+                  "type": "leaf"
+                },
+                "ratio": 0.6,
+                "second": {
+                  "pane": {
+                    "cwd": "/tmp/acme",
+                    "id": "00000000-0000-4000-8000-000000000049",
+                    "isReview": true
+                  },
+                  "type": "leaf"
+                },
+                "type": "split"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000045",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000044",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000046"
+                },
+                "type": "leaf"
+              },
+              "order": 1,
+              "spaceID": "00000000-0000-4000-8000-000000000041"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000047",
+              "inspectorFor": "00000000-0000-4000-8000-000000000001",
+              "layout": {
+                "pane": {
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000048",
+                  "sessionID": "00000000-0000-4000-8000-000000000060",
+                  "title": "Inspector"
+                },
+                "type": "leaf"
+              },
+              "order": 2,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      "step": "workspace-current-full"
+    },
+    {
+      "fields": {
+        "fileStillPresentAfterLoad": true,
+        "loaded": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": false,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [
+            {
+              "cwd": "/tmp/acme",
+              "deleteAfterRun": false,
+              "enabled": true,
+              "id": "00000000-0000-4000-8000-000000000002",
+              "name": "Check samples",
+              "prompt": "Inspect the sample."
+            }
+          ],
+          "designs": [
+            {
+              "createdAt": 1735689590000,
+              "id": "sample-design",
+              "lastActiveAt": 1735689600000,
+              "name": "Sample design",
+              "spaceID": "standalone-design"
+            }
+          ],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        },
+        "loadedServiceTier": "standard",
+        "quarantinedCopies": 0,
+        "rewritten": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": false,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [
+            {
+              "cwd": "/tmp/acme",
+              "deleteAfterRun": false,
+              "enabled": true,
+              "id": "00000000-0000-4000-8000-000000000002",
+              "name": "Check samples",
+              "prompt": "Inspect the sample."
+            }
+          ],
+          "designs": [
+            {
+              "createdAt": 1735689590000,
+              "id": "sample-design",
+              "lastActiveAt": 1735689600000,
+              "name": "Sample design",
+              "spaceID": "standalone-design"
+            }
+          ],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      "step": "workspace-lenient-values"
+    },
+    {
+      "fields": {
+        "fileStillPresentAfterLoad": false,
+        "loaded": {
+          "agents": [],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [],
+          "tabs": []
+        },
+        "quarantineMatchesInput": true,
+        "quarantinedCopies": 1,
+        "rewritten": {
+          "agents": [],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [],
+          "tabs": []
+        }
+      },
+      "step": "workspace-dangling-tab"
+    },
+    {
+      "fields": {
+        "fileStillPresentAfterLoad": false,
+        "loaded": {
+          "agents": [],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [],
+          "tabs": []
+        },
+        "quarantineMatchesInput": true,
+        "quarantinedCopies": 1,
+        "rewritten": {
+          "agents": [],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [],
+          "tabs": []
+        }
+      },
+      "step": "workspace-unreadable-agent"
+    },
+    {
+      "fields": {
+        "fileStillPresentAfterLoad": false,
+        "loaded": {
+          "agents": [],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [],
+          "tabs": []
+        },
+        "quarantineMatchesInput": true,
+        "quarantinedCopies": 1,
+        "rewritten": {
+          "agents": [],
+          "automations": [],
+          "designs": [],
+          "projectExecutions": [],
+          "projects": [],
+          "spaces": [],
+          "tabs": []
+        }
+      },
+      "step": "workspace-truncated"
+    },
+    {
+      "fields": {
+        "loaded": [
+          {
+            "endedAt": 13,
+            "id": "00000000-0000-4000-8000-000000000010",
+            "result": "finished",
+            "startedAt": 12
+          }
+        ],
+        "rewritten": {
+          "runs": {
+            "00000000-0000-4000-8000-000000000002": [
+              {
+                "endedAt": 13,
+                "id": "00000000-0000-4000-8000-000000000010",
+                "result": "finished",
+                "startedAt": 12
+              },
+              {
+                "endedAt": 1700000000,
+                "failure": "Sample write",
+                "id": "<new-run>",
+                "result": "failed",
+                "startedAt": 1700000000,
+                "unread": true
+              }
+            ]
+          },
+          "version": 1
+        }
+      },
+      "step": "automation-runs-original"
+    },
+    {
+      "fields": {
+        "loaded": [
+          {
+            "endedAt": 13,
+            "id": "00000000-0000-4000-8000-000000000010",
+            "result": "finished",
+            "startedAt": 12,
+            "trigger": "Sample trigger",
+            "triggerURL": "https://github.com/acme/web/issues/1",
+            "unread": true
+          }
+        ],
+        "rewritten": {
+          "runs": {
+            "00000000-0000-4000-8000-000000000002": [
+              {
+                "endedAt": 13,
+                "id": "00000000-0000-4000-8000-000000000010",
+                "result": "finished",
+                "startedAt": 12,
+                "trigger": "Sample trigger",
+                "triggerURL": "https://github.com/acme/web/issues/1",
+                "unread": true
+              },
+              {
+                "endedAt": 1700000000,
+                "failure": "Sample write",
+                "id": "<new-run>",
+                "result": "failed",
+                "startedAt": 1700000000,
+                "unread": true
+              }
+            ]
+          },
+          "version": 1
+        }
+      },
+      "step": "automation-runs-triggered"
+    },
+    {
+      "fields": {
+        "loaded": [],
+        "rewritten": {
+          "runs": {
+            "00000000-0000-4000-8000-000000000002": [
+              {
+                "endedAt": 1700000000,
+                "failure": "Sample write",
+                "id": "<new-run>",
+                "result": "failed",
+                "startedAt": 1700000000,
+                "unread": true
+              }
+            ]
+          },
+          "version": 1
+        }
+      },
+      "step": "automation-runs-bad-element"
+    },
+    {
+      "fields": {
+        "loaded": [],
+        "rewritten": {
+          "runs": {
+            "00000000-0000-4000-8000-000000000002": [
+              {
+                "endedAt": 1700000000,
+                "failure": "Sample write",
+                "id": "<new-run>",
+                "result": "failed",
+                "startedAt": 1700000000,
+                "unread": true
+              }
+            ]
+          },
+          "version": 1
+        }
+      },
+      "step": "automation-runs-damaged"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "allPaused": false,
+          "lastCheckedAt": 12,
+          "pending": [],
+          "runsToday": 0,
+          "state": "active",
+          "timeZone": "GMT"
+        },
+        "rewritten": {
+          "allPaused": false,
+          "records": {
+            "00000000-0000-4000-8000-000000000002": {
+              "baselineAt": 10,
+              "failures": 0,
+              "fingerprint": "demo",
+              "heads": {},
+              "lastCheckedAt": 12,
+              "pending": [],
+              "seen": {
+                "one": 12
+              },
+              "starts": [
+                13
+              ],
+              "windows": {}
+            }
+          },
+          "version": 1
+        }
+      },
+      "step": "automation-triggers-early"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "allPaused": true,
+          "lastCheckedAt": 12,
+          "pending": [
+            {
+              "id": "legacy",
+              "occurredAt": 20,
+              "title": "Queued"
+            }
+          ],
+          "reason": "All triggers are paused.",
+          "runsToday": 0,
+          "state": "paused",
+          "timeZone": "GMT"
+        },
+        "rewritten": {
+          "allPaused": true,
+          "records": {
+            "00000000-0000-4000-8000-000000000002": {
+              "baselineAt": 10,
+              "failures": 0,
+              "fingerprint": "demo",
+              "heads": {
+                "acme/web#1": "abc"
+              },
+              "heldReason": "Held",
+              "lastCheckedAt": 12,
+              "pending": [
+                {
+                  "attempts": 0,
+                  "event": {
+                    "id": "legacy",
+                    "occurredAt": 20,
+                    "title": "Queued"
+                  },
+                  "queuedAt": 21
+                }
+              ],
+              "seen": {
+                "one": 12
+              },
+              "starts": [
+                13
+              ],
+              "windows": {}
+            }
+          },
+          "version": 1
+        }
+      },
+      "step": "automation-triggers-legacy-queue"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "allPaused": false,
+          "lastCheckedAt": 12,
+          "nextRunAt": 1735689900,
+          "pending": [
+            {
+              "id": "legacy",
+              "occurredAt": 20,
+              "title": "Queued"
+            }
+          ],
+          "reason": "Sample pause",
+          "runsToday": 0,
+          "state": "paused",
+          "timeZone": "GMT"
+        },
+        "rewritten": {
+          "allPaused": false,
+          "records": {
+            "00000000-0000-4000-8000-000000000002": {
+              "baselineAt": 10,
+              "capNotifiedDay": "2025-01-01",
+              "failures": 2,
+              "fingerprint": "demo",
+              "heads": {
+                "acme/web#1": "abc"
+              },
+              "heldReason": "Held",
+              "lastCheckedAt": 12,
+              "nextRunAt": 1735689900,
+              "pausedReason": "Sample pause",
+              "pending": [
+                {
+                  "attempts": 1,
+                  "event": {
+                    "id": "legacy",
+                    "occurredAt": 20,
+                    "title": "Queued"
+                  },
+                  "queuedAt": 21
+                }
+              ],
+              "retryAt": 1735689660,
+              "retryReason": "Sample retry",
+              "seen": {
+                "one": 12
+              },
+              "starts": [
+                13
+              ],
+              "windows": {
+                "acme/web#1": {
+                  "end": 19,
+                  "start": 12
+                }
+              }
+            }
+          },
+          "version": 1
+        }
+      },
+      "step": "automation-triggers-current-full"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "allPaused": false,
+          "pending": [],
+          "runsToday": 0,
+          "state": "active",
+          "timeZone": "GMT"
+        },
+        "rewritten": {
+          "allPaused": false,
+          "records": {},
+          "version": 1
+        }
+      },
+      "step": "automation-triggers-bad-element"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "allPaused": false,
+          "pending": [],
+          "runsToday": 0,
+          "state": "active",
+          "timeZone": "GMT"
+        },
+        "rewritten": {
+          "allPaused": false,
+          "records": {},
+          "version": 1
+        }
+      },
+      "step": "automation-triggers-damaged"
+    },
+    {
+      "fields": {
+        "loaded": [
+          {
+            "cwd": "/tmp/acme",
+            "startTree": "abc",
+            "turn": {
+              "added": 0,
+              "canRedo": false,
+              "canUndo": false,
+              "fileCount": 0,
+              "files": [],
+              "id": "00000000-0000-4000-8000-000000000011",
+              "reason": "Shepherd quit before this turn ended.",
+              "removed": 0,
+              "startedAt": 10,
+              "state": "unavailable"
+            }
+          }
+        ],
+        "rewritten": {
+          "00000000-0000-4000-8000-000000000001": [
+            {
+              "cwd": "/tmp/acme",
+              "startTree": "abc",
+              "turn": {
+                "added": 0,
+                "canRedo": false,
+                "canUndo": false,
+                "fileCount": 0,
+                "files": [],
+                "id": "00000000-0000-4000-8000-000000000011",
+                "reason": "Shepherd quit before this turn ended.",
+                "removed": 0,
+                "startedAt": 10,
+                "state": "unavailable"
+              }
+            }
+          ]
+        }
+      },
+      "step": "turns-before-recovery-journal"
+    },
+    {
+      "fields": {
+        "loaded": [
+          {
+            "cwd": "/tmp/acme",
+            "endTree": "def",
+            "recovery": {
+              "completed": [
+                "a.txt"
+              ],
+              "inFlight": "b.txt",
+              "redo": false
+            },
+            "startTree": "abc",
+            "turn": {
+              "added": 0,
+              "canRedo": false,
+              "canUndo": true,
+              "endedAt": 20,
+              "fileCount": 0,
+              "files": [],
+              "id": "00000000-0000-4000-8000-000000000011",
+              "removed": 0,
+              "startedAt": 10,
+              "state": "ready"
+            }
+          }
+        ],
+        "rewritten": {
+          "00000000-0000-4000-8000-000000000001": [
+            {
+              "cwd": "/tmp/acme",
+              "endTree": "def",
+              "recovery": {
+                "completed": [
+                  "a.txt"
+                ],
+                "inFlight": "b.txt",
+                "redo": false
+              },
+              "startTree": "abc",
+              "turn": {
+                "added": 0,
+                "canRedo": false,
+                "canUndo": true,
+                "endedAt": 20,
+                "fileCount": 0,
+                "files": [],
+                "id": "00000000-0000-4000-8000-000000000011",
+                "removed": 0,
+                "startedAt": 10,
+                "state": "ready"
+              }
+            }
+          ]
+        }
+      },
+      "step": "turns-with-recovery-journal"
+    },
+    {
+      "fields": {
+        "loaded": [],
+        "rewritten": {}
+      },
+      "step": "turns-bad-element"
+    },
+    {
+      "fields": {
+        "loaded": [],
+        "rewritten": {}
+      },
+      "step": "turns-damaged"
+    },
+    {
+      "fields": {
+        "loaded": [
+          "topic",
+          "main"
+        ],
+        "rewritten": {
+          "/tmp/acme": [
+            "topic",
+            "main"
+          ],
+          "/tmp/docs": [
+            "main"
+          ]
+        }
+      },
+      "step": "base-recents"
+    },
+    {
+      "fields": {
+        "loaded": [],
+        "rewritten": {
+          "/tmp/acme": [
+            "main"
+          ]
+        }
+      },
+      "step": "base-recents-bad-element"
+    },
+    {
+      "fields": {
+        "loaded": [],
+        "rewritten": {
+          "/tmp/acme": [
+            "main"
+          ]
+        }
+      },
+      "step": "base-recents-damaged"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "entries": [
+            {
+              "id": "entry",
+              "record": {
+                "parts": [
+                  {
+                    "bytes": 5,
+                    "images": 0,
+                    "sentAt": 10
+                  }
+                ]
+              }
+            }
+          ],
+          "questions": []
+        },
+        "rewritten": {
+          "entries": [
+            {
+              "id": "entry",
+              "record": {
+                "parts": [
+                  {
+                    "bytes": 5,
+                    "images": 0,
+                    "sentAt": 10
+                  }
+                ]
+              }
+            }
+          ],
+          "version": 1
+        }
+      },
+      "step": "thread-origins-legacy-queue"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "entries": [
+            {
+              "id": "entry",
+              "record": {
+                "parts": [
+                  {
+                    "bytes": 5,
+                    "images": 0,
+                    "sentAt": 10
+                  }
+                ]
+              }
+            },
+            {
+              "id": "command",
+              "record": {
+                "command": "/check sample",
+                "references": [
+                  "piece"
+                ],
+                "steered": true
+              }
+            }
+          ],
+          "questions": []
+        },
+        "rewritten": {
+          "entries": [
+            {
+              "id": "entry",
+              "record": {
+                "parts": [
+                  {
+                    "bytes": 5,
+                    "images": 0,
+                    "sentAt": 10
+                  }
+                ]
+              }
+            },
+            {
+              "id": "command",
+              "record": {
+                "command": "/check sample",
+                "references": [
+                  "piece"
+                ],
+                "steered": true
+              }
+            }
+          ],
+          "version": 1
+        }
+      },
+      "step": "thread-origins-with-reference-and-command"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "entries": [
+            {
+              "id": "entry",
+              "record": {
+                "parts": [
+                  {
+                    "bytes": 5,
+                    "images": 0,
+                    "sentAt": 10
+                  }
+                ]
+              }
+            },
+            {
+              "id": "command",
+              "record": {
+                "command": "/check sample",
+                "references": [
+                  "piece"
+                ],
+                "steered": true
+              }
+            }
+          ],
+          "questions": [
+            {
+              "endedAt": 12000,
+              "id": "question-1",
+              "record": {
+                "answer": "Acme",
+                "askedAt": 11000,
+                "kind": "input",
+                "outcome": "answered",
+                "question": "Which sample?"
+              }
+            }
+          ]
+        },
+        "rewritten": {
+          "entries": [
+            {
+              "id": "entry",
+              "record": {
+                "parts": [
+                  {
+                    "bytes": 5,
+                    "images": 0,
+                    "sentAt": 10
+                  }
+                ]
+              }
+            },
+            {
+              "id": "command",
+              "record": {
+                "command": "/check sample",
+                "references": [
+                  "piece"
+                ],
+                "steered": true
+              }
+            }
+          ],
+          "questions": [
+            {
+              "endedAt": 12000,
+              "id": "question-1",
+              "record": {
+                "answer": "Acme",
+                "askedAt": 11000,
+                "kind": "input",
+                "outcome": "answered",
+                "question": "Which sample?"
+              }
+            }
+          ],
+          "version": 1
+        }
+      },
+      "step": "thread-origins-with-questions"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "entries": [],
+          "questions": []
+        },
+        "rewritten": {
+          "entries": [],
+          "version": 1
+        }
+      },
+      "step": "thread-origins-bad-element"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "entries": [],
+          "questions": []
+        },
+        "rewritten": {
+          "entries": [],
+          "version": 1
+        }
+      },
+      "step": "thread-origins-damaged"
+    },
+    {
+      "fields": {
+        "loaded": [
+          {
+            "file": "AGENTS.md",
+            "id": "00000000-0000-4000-8000-000000000012",
+            "savedAt": 11,
+            "summary": "Initial instructions"
+          }
+        ],
+        "rewritten": {
+          "revisions": [
+            {
+              "content": "Sample write\n",
+              "file": "AGENTS.md",
+              "id": "<new-revision>",
+              "savedAt": 1700000000,
+              "summary": "Added “Sample write”"
+            },
+            {
+              "content": "Check samples.\n",
+              "file": "AGENTS.md",
+              "id": "00000000-0000-4000-8000-000000000012",
+              "savedAt": 11,
+              "summary": "Initial instructions"
+            }
+          ],
+          "version": 1
+        }
+      },
+      "step": "instruction-history"
+    },
+    {
+      "fields": {
+        "loaded": [
+          {
+            "file": "AGENTS.md",
+            "id": "00000000-0000-4000-8000-000000000012",
+            "origin": "Sample Mac",
+            "savedAt": 11,
+            "summary": "Synced from Sample Mac"
+          }
+        ],
+        "rewritten": {
+          "revisions": [
+            {
+              "content": "Sample write\n",
+              "file": "AGENTS.md",
+              "id": "<new-revision>",
+              "savedAt": 1700000000,
+              "summary": "Added “Sample write”"
+            },
+            {
+              "content": "Check samples.\n",
+              "file": "AGENTS.md",
+              "id": "00000000-0000-4000-8000-000000000012",
+              "origin": "Sample Mac",
+              "savedAt": 11,
+              "summary": "Synced from Sample Mac"
+            }
+          ],
+          "version": 1
+        }
+      },
+      "step": "instruction-history-with-origin"
+    },
+    {
+      "fields": {
+        "loaded": [],
+        "rewritten": {
+          "revisions": [
+            {
+              "content": "Sample write\n",
+              "file": "AGENTS.md",
+              "id": "<new-revision>",
+              "savedAt": 1700000000,
+              "summary": "Added “Sample write”"
+            }
+          ],
+          "version": 1
+        }
+      },
+      "step": "instruction-history-bad-element"
+    },
+    {
+      "fields": {
+        "loaded": [],
+        "rewritten": {
+          "revisions": [
+            {
+              "content": "Sample write\n",
+              "file": "AGENTS.md",
+              "id": "<new-revision>",
+              "savedAt": 1700000000,
+              "summary": "Added “Sample write”"
+            }
+          ],
+          "version": 1
+        }
+      },
+      "step": "instruction-history-damaged"
+    },
+    {
+      "fields": {
+        "loaded": [
+          {
+            "pinnedAt": 12,
+            "ref": {
+              "kind": "issue",
+              "number": 12,
+              "repo": "acme/web"
+            },
+            "title": "Fix the sample"
+          }
+        ],
+        "rewritten": {
+          "pins": [
+            {
+              "pinnedAt": 12,
+              "ref": {
+                "kind": "issue",
+                "number": 12,
+                "repo": "acme/web"
+              },
+              "title": "Fix the sample"
+            }
+          ]
+        }
+      },
+      "step": "forge-pins"
+    },
+    {
+      "fields": {
+        "loaded": [],
+        "rewritten": {
+          "pins": []
+        }
+      },
+      "step": "forge-pins-bad-element"
+    },
+    {
+      "fields": {
+        "loaded": [],
+        "rewritten": {
+          "pins": []
+        }
+      },
+      "step": "forge-pins-damaged"
+    },
+    {
+      "fields": {
+        "loaded": [
+          {
+            "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+            "sendToken": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        ],
+        "rewritten": [
+          {
+            "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+            "sendToken": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        ]
+      },
+      "step": "push-before-preferences"
+    },
+    {
+      "fields": {
+        "loaded": [
+          {
+            "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+            "preferences": {
+              "awayOnly": false,
+              "topics": [
+                "blocked",
+                "questions"
+              ]
+            },
+            "sendToken": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        ],
+        "rewritten": [
+          {
+            "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+            "preferences": {
+              "awayOnly": false,
+              "topics": [
+                "blocked",
+                "questions"
+              ]
+            },
+            "sendToken": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        ]
+      },
+      "step": "push-with-legacy-topic"
+    },
+    {
+      "fields": {
+        "loaded": [
+          {
+            "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+            "sendToken": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        ],
+        "rewritten": [
+          {
+            "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+            "sendToken": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        ]
+      },
+      "step": "push-drops-invalid-registrations"
+    },
+    {
+      "fields": {
+        "loaded": [],
+        "rewritten": []
+      },
+      "step": "push-registrations-bad-element"
+    },
+    {
+      "fields": {
+        "loaded": [],
+        "rewritten": []
+      },
+      "step": "push-registrations-damaged"
+    },
+    {
+      "fields": {
+        "loaded": [
+          {
+            "agentID": "00000000-0000-4000-8000-000000000001",
+            "board": "sample.dc.html",
+            "createdAt": 1000,
+            "id": "00000000-0000-4000-8000-000000000013",
+            "revision": 3,
+            "text": "Check the sample",
+            "thread": "Sample"
+          }
+        ],
+        "rewritten": {
+          "notes": [
+            {
+              "agentID": "00000000-0000-4000-8000-000000000001",
+              "board": "sample.dc.html",
+              "createdAt": 1000,
+              "id": "00000000-0000-4000-8000-000000000013",
+              "revision": 3,
+              "text": "Check the sample",
+              "thread": "Sample"
+            }
+          ],
+          "version": 1
+        }
+      },
+      "step": "design-thread-notes"
+    },
+    {
+      "fields": {
+        "loaded": [],
+        "rewritten": {
+          "notes": [],
+          "version": 1
+        }
+      },
+      "step": "design-thread-notes-bad-element"
+    },
+    {
+      "fields": {
+        "loaded": [],
+        "rewritten": {
+          "notes": [],
+          "version": 1
+        }
+      },
+      "step": "design-thread-notes-damaged"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "off": [
+            "sample-hook"
+          ],
+          "readers": {
+            "claude": false,
+            "codex": true
+          },
+          "version": 1
+        },
+        "rewritten": {
+          "off": [
+            "sample-hook"
+          ],
+          "readers": {
+            "claude": false,
+            "codex": true
+          },
+          "version": 1
+        }
+      },
+      "step": "hook-settings"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "off": [],
+          "readers": {
+            "claude": false,
+            "codex": true
+          },
+          "version": 1
+        },
+        "rewritten": {
+          "off": [],
+          "readers": {
+            "claude": false,
+            "codex": true
+          },
+          "version": 1
+        }
+      },
+      "step": "hook-settings-bad-element"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "off": [],
+          "readers": {
+            "claude": true,
+            "codex": true
+          },
+          "version": 1
+        },
+        "rewritten": {
+          "off": [],
+          "readers": {
+            "claude": true,
+            "codex": true
+          },
+          "version": 1
+        }
+      },
+      "step": "hook-settings-damaged"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "added": [
+            {
+              "addedAt": 9,
+              "file": "AGENTS.md",
+              "id": "00000000-0000-4000-8000-000000000015",
+              "line": "- Check links.",
+              "sourceName": "Sample"
+            }
+          ],
+          "settings": {
+            "enabled": true,
+            "files": [
+              "AGENTS.md"
+            ],
+            "since": 11,
+            "sources": [
+              "thread"
+            ]
+          },
+          "waiting": [
+            {
+              "file": "AGENTS.md",
+              "id": "00000000-0000-4000-8000-000000000014",
+              "line": "- Check samples.",
+              "reason": "Repeatable checks",
+              "source": {
+                "kind": "thread",
+                "name": "Sample"
+              },
+              "suggestedAt": 12
+            }
+          ]
+        },
+        "rewritten": {
+          "added": [
+            {
+              "addedAt": 9,
+              "file": "AGENTS.md",
+              "id": "00000000-0000-4000-8000-000000000015",
+              "line": "- Check links.",
+              "sourceName": "Sample"
+            }
+          ],
+          "dismissed": [
+            "old sample"
+          ],
+          "settings": {
+            "enabled": true,
+            "files": [
+              "AGENTS.md"
+            ],
+            "since": 11,
+            "sources": [
+              "thread"
+            ]
+          },
+          "version": 1,
+          "waiting": [
+            {
+              "file": "AGENTS.md",
+              "id": "00000000-0000-4000-8000-000000000014",
+              "line": "- Check samples.",
+              "reason": "Repeatable checks",
+              "source": {
+                "kind": "thread",
+                "name": "Sample"
+              },
+              "suggestedAt": 12
+            }
+          ]
+        }
+      },
+      "step": "suggestions"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "added": [],
+          "settings": {
+            "enabled": false,
+            "files": [
+              "AGENTS.md"
+            ],
+            "sources": [
+              "automation",
+              "thread"
+            ]
+          },
+          "waiting": []
+        },
+        "rewritten": {
+          "added": [],
+          "dismissed": [],
+          "settings": {
+            "enabled": false,
+            "files": [
+              "AGENTS.md"
+            ],
+            "sources": [
+              "automation",
+              "thread"
+            ]
+          },
+          "version": 1,
+          "waiting": []
+        }
+      },
+      "step": "suggestions-bad-element"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "added": [],
+          "settings": {
+            "enabled": false,
+            "files": [
+              "AGENTS.md"
+            ],
+            "sources": [
+              "automation",
+              "thread"
+            ]
+          },
+          "waiting": []
+        },
+        "rewritten": {
+          "added": [],
+          "dismissed": [],
+          "settings": {
+            "enabled": false,
+            "files": [
+              "AGENTS.md"
+            ],
+            "sources": [
+              "automation",
+              "thread"
+            ]
+          },
+          "version": 1,
+          "waiting": []
+        }
+      },
+      "step": "suggestions-damaged"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "autoUpdate": false,
+          "directory": "<root>/active",
+          "skills": [
+            {
+              "files": [
+                {
+                  "fileCount": 1,
+                  "isDirectory": false,
+                  "name": "SKILL.md"
+                }
+              ],
+              "invocation": "automatic",
+              "isOn": true,
+              "name": "sample",
+              "source": {
+                "commit": "abcdef",
+                "path": "skills/sample",
+                "repo": "acme/skills"
+              },
+              "summary": "Sample skill",
+              "updatedAt": 1700000000
+            }
+          ]
+        },
+        "rewritten": {
+          "autoUpdate": false,
+          "removed": {},
+          "skills": {
+            "sample": {
+              "installedAt": 13,
+              "source": {
+                "commit": "abcdef",
+                "path": "skills/sample",
+                "repo": "acme/skills"
+              }
+            }
+          },
+          "version": 1
+        }
+      },
+      "step": "skill-records-early"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "autoUpdate": true,
+          "checkedAt": 23,
+          "directory": "<root>/active",
+          "skills": [
+            {
+              "files": [
+                {
+                  "fileCount": 1,
+                  "isDirectory": false,
+                  "name": "SKILL.md"
+                }
+              ],
+              "invocation": "automatic",
+              "isOn": true,
+              "name": "sample",
+              "source": {
+                "commit": "abcdef",
+                "path": "skills/sample",
+                "repo": "acme/skills"
+              },
+              "summary": "Sample skill",
+              "update": {
+                "commit": "bcdefa",
+                "filesChanged": 1
+              },
+              "updatedAt": 1700000000
+            }
+          ]
+        },
+        "rewritten": {
+          "autoUpdate": true,
+          "checkedAt": 23,
+          "removed": {
+            "other": {
+              "record": {
+                "installedAt": 13,
+                "source": {
+                  "commit": "abcdef",
+                  "path": "skills/sample",
+                  "repo": "acme/skills"
+                }
+              },
+              "removedAt": 21,
+              "wasOn": true
+            }
+          },
+          "skills": {
+            "sample": {
+              "installedAt": 13,
+              "source": {
+                "commit": "abcdef",
+                "path": "skills/sample",
+                "repo": "acme/skills"
+              },
+              "update": {
+                "commit": "bcdefa",
+                "filesChanged": 1
+              }
+            }
+          },
+          "version": 1
+        }
+      },
+      "step": "skill-records-with-removed"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "autoUpdate": false,
+          "directory": "<root>/active",
+          "skills": [
+            {
+              "files": [
+                {
+                  "fileCount": 1,
+                  "isDirectory": false,
+                  "name": "SKILL.md"
+                }
+              ],
+              "invocation": "automatic",
+              "isOn": true,
+              "name": "sample",
+              "summary": "Sample skill",
+              "updatedAt": 1700000000
+            }
+          ]
+        },
+        "rewritten": {
+          "autoUpdate": false,
+          "removed": {},
+          "skills": {},
+          "version": 1
+        }
+      },
+      "step": "skill-records-damaged"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "copied": true,
+          "copiedAt": "2025-01-01T00:00:00Z",
+          "copies": [],
+          "extensionEntries": [],
+          "extensionFailures": {},
+          "extensionsOn": [],
+          "from": "/tmp/acme-pi",
+          "prompts": [
+            "/tmp/acme-pi/prompts"
+          ],
+          "skills": [
+            "/tmp/acme-pi/skills"
+          ],
+          "version": 1
+        },
+        "rewritten": {
+          "copied": true,
+          "copiedAt": "2025-01-01T00:00:00Z",
+          "copies": [],
+          "extensionEntries": [],
+          "extensionFailures": {},
+          "extensionsOn": [],
+          "from": "/tmp/acme-pi",
+          "prompts": [
+            "/tmp/acme-pi/prompts"
+          ],
+          "skills": [
+            "/tmp/acme-pi/skills"
+          ],
+          "version": 1
+        }
+      },
+      "step": "pi-import-v1"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "copied": true,
+          "copiedAt": "2025-01-01T00:00:00Z",
+          "copies": [],
+          "extensionEntries": [
+            "sample.ts"
+          ],
+          "extensionFailures": {
+            "sample.ts": {
+              "lines": [],
+              "modified": 12,
+              "reason": "Example failure"
+            }
+          },
+          "extensionsOn": [
+            "sample.ts"
+          ],
+          "from": "/tmp/acme-pi",
+          "version": 2
+        },
+        "rewritten": {
+          "copied": true,
+          "copiedAt": "2025-01-01T00:00:00Z",
+          "copies": [],
+          "extensionEntries": [
+            "sample.ts"
+          ],
+          "extensionFailures": {
+            "sample.ts": {
+              "lines": [],
+              "modified": 12,
+              "reason": "Example failure"
+            }
+          },
+          "extensionsOn": [
+            "sample.ts"
+          ],
+          "from": "/tmp/acme-pi",
+          "version": 2
+        }
+      },
+      "step": "pi-import-v2"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "copied": true,
+          "copiedAt": "2025-01-01T00:00:00Z",
+          "copies": [],
+          "digests": {
+            "defaultModel": "mock-digest"
+          },
+          "extensionEntries": [
+            "sample.ts"
+          ],
+          "extensionFailures": {
+            "sample.ts": {
+              "lines": [],
+              "modified": 12,
+              "reason": "Example failure"
+            }
+          },
+          "extensionsHeld": [
+            "sample.ts"
+          ],
+          "extensionsOn": [
+            "sample.ts"
+          ],
+          "from": "/tmp/acme-pi",
+          "version": 2
+        },
+        "rewritten": {
+          "copied": true,
+          "copiedAt": "2025-01-01T00:00:00Z",
+          "copies": [],
+          "digests": {
+            "defaultModel": "mock-digest"
+          },
+          "extensionEntries": [
+            "sample.ts"
+          ],
+          "extensionFailures": {
+            "sample.ts": {
+              "lines": [],
+              "modified": 12,
+              "reason": "Example failure"
+            }
+          },
+          "extensionsHeld": [
+            "sample.ts"
+          ],
+          "extensionsOn": [
+            "sample.ts"
+          ],
+          "from": "/tmp/acme-pi",
+          "version": 2
+        }
+      },
+      "step": "pi-import-with-held-extensions"
+    },
+    {
+      "fields": {
+        "loaded": {
+          "copied": true,
+          "copiedAt": "2025-01-01T00:00:00Z",
+          "copies": [],
+          "digests": {
+            "defaultModel": "mock-digest"
+          },
+          "extensionEntries": [],
+          "extensionFailures": {
+            "sample.ts": {
+              "lines": [],
+              "modified": 12,
+              "reason": "Example failure"
+            }
+          },
+          "extensionsHeld": [
+            "sample.ts"
+          ],
+          "extensionsOn": [
+            "sample.ts"
+          ],
+          "from": "/tmp/acme-pi",
+          "version": 2
+        },
+        "rewritten": {
+          "copied": true,
+          "copiedAt": "2025-01-01T00:00:00Z",
+          "copies": [],
+          "digests": {
+            "defaultModel": "mock-digest"
+          },
+          "extensionEntries": [],
+          "extensionFailures": {
+            "sample.ts": {
+              "lines": [],
+              "modified": 12,
+              "reason": "Example failure"
+            }
+          },
+          "extensionsHeld": [
+            "sample.ts"
+          ],
+          "extensionsOn": [
+            "sample.ts"
+          ],
+          "from": "/tmp/acme-pi",
+          "version": 2
+        }
+      },
+      "step": "pi-import-bad-element"
+    },
+    {
+      "fields": {
+        "loaded": null,
+        "rewritten": {
+          "copied": false,
+          "copiedAt": "2023-11-14T22:13:20Z",
+          "copies": [],
+          "extensionEntries": [],
+          "extensionFailures": {},
+          "extensionsOn": [],
+          "version": 2
+        }
+      },
+      "step": "pi-import-damaged"
+    }
+  ],
+  "referenceRevision": "39b59678d2597655b02c7e23a428b10278ddc33f",
+  "seed": {
+    "files": [
+      {
+        "case": "workspace-initial",
+        "file": "state.json",
+        "fromRevision": "5bf478f5b",
+        "json": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": false,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      {
+        "case": "workspace-terminal-era",
+        "file": "state.json",
+        "fromRevision": "a51f49513",
+        "json": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "piSessionID": "old-session",
+              "runtime": "terminal",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "spaces": [
+            {
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "name": "Old tab",
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      {
+        "case": "workspace-global-shell",
+        "file": "state.json",
+        "fromRevision": "812ea0e23",
+        "json": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "spaces": [
+            {
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000020",
+              "layout": {
+                "pane": {
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000021"
+                },
+                "type": "leaf"
+              },
+              "name": "Logs",
+              "nameIsFinal": true,
+              "order": 1,
+              "restoreCommand": "pwd"
+            }
+          ]
+        }
+      },
+      {
+        "case": "workspace-split-with-terminal",
+        "file": "state.json",
+        "fromRevision": "33a90f2fa",
+        "json": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "spaces": [
+            {
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "axis": "horizontal",
+                "first": {
+                  "pane": {
+                    "agentID": "00000000-0000-4000-8000-000000000001",
+                    "cwd": "/tmp/acme",
+                    "id": "00000000-0000-4000-8000-000000000005"
+                  },
+                  "type": "leaf"
+                },
+                "ratio": 0.4,
+                "second": {
+                  "pane": {
+                    "cwd": "/tmp/acme",
+                    "id": "00000000-0000-4000-8000-000000000021",
+                    "title": "Sample terminal"
+                  },
+                  "type": "leaf"
+                },
+                "type": "split"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      {
+        "case": "workspace-invalid-split",
+        "file": "state.json",
+        "fromRevision": "39b59678d",
+        "json": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "spaces": [
+            {
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "axis": "horizontal",
+                "first": {
+                  "pane": {
+                    "agentID": "00000000-0000-4000-8000-000000000001",
+                    "cwd": "/tmp/acme",
+                    "id": "00000000-0000-4000-8000-000000000005"
+                  },
+                  "type": "leaf"
+                },
+                "ratio": 1,
+                "second": {
+                  "pane": {
+                    "cwd": "/tmp/acme",
+                    "id": "00000000-0000-4000-8000-000000000021"
+                  },
+                  "type": "leaf"
+                },
+                "type": "split"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      {
+        "case": "workspace-design-in-space",
+        "file": "state.json",
+        "fromRevision": "a0d88a648",
+        "json": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "designs": [
+            {
+              "createdAt": 10,
+              "id": "sample-design",
+              "lastActiveAt": 12,
+              "name": "Sample",
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ],
+          "spaces": [
+            {
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      {
+        "case": "workspace-system-build-in-space",
+        "file": "state.json",
+        "fromRevision": "543259666",
+        "json": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "designs": [
+            {
+              "buildsSystem": true,
+              "createdAt": 10,
+              "id": "sample-design",
+              "lastActiveAt": 12,
+              "name": "Sample",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "systemNamespace": "sample"
+            }
+          ],
+          "spaces": [
+            {
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      {
+        "case": "workspace-project-era",
+        "file": "state.json",
+        "fromRevision": "b564329d9",
+        "json": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "nameIsFinal": false,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "projectExecutions": [],
+          "projects": [
+            {
+              "artifacts": [],
+              "goal": "Review the sample.",
+              "id": "00000000-0000-4000-8000-000000000032",
+              "interruptPending": false,
+              "linkedSpaces": [],
+              "memory": [],
+              "memoryOperations": [],
+              "messages": [],
+              "name": "Sample Project",
+              "ownerID": "00000000-0000-4000-8000-000000000033",
+              "paused": false,
+              "revision": 1,
+              "settings": {
+                "allowedHosts": [],
+                "canRequestSpaceLinks": true,
+                "hostPolicy": "selected",
+                "instructions": "Check samples.",
+                "maxConcurrentWorkers": 2
+              },
+              "spaceProposals": [],
+              "tasks": []
+            }
+          ],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      {
+        "case": "workspace-standalone-design",
+        "file": "state.json",
+        "fromRevision": "f532b5781",
+        "json": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "designs": [
+            {
+              "createdAt": 10,
+              "id": "sample-design",
+              "lastActiveAt": 12,
+              "name": "Sample",
+              "spaceID": "standalone-design"
+            }
+          ],
+          "spaces": [
+            {
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      {
+        "case": "workspace-removed-missions-and-subagents",
+        "file": "state.json",
+        "fromRevision": "0e3761cee",
+        "json": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "missions": [
+            {
+              "id": "00000000-0000-4000-8000-000000000030"
+            }
+          ],
+          "spaces": [
+            {
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "subagents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000031"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      {
+        "case": "workspace-manual-automation",
+        "file": "state.json",
+        "fromRevision": "abb29ae71",
+        "json": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "automations": [
+            {
+              "cwd": "/tmp/acme",
+              "enabled": true,
+              "id": "00000000-0000-4000-8000-000000000002",
+              "name": "Check",
+              "prompt": "Inspect"
+            }
+          ],
+          "spaces": [
+            {
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      {
+        "case": "workspace-current-full",
+        "file": "state.json",
+        "fromRevision": "39b59678d",
+        "json": {
+          "agents": [
+            {
+              "automationOrigin": {
+                "automationID": "00000000-0000-4000-8000-000000000002",
+                "eventID": "acme/web#12:opened",
+                "trigger": "Sample issue",
+                "triggerURL": "https://github.com/acme/web/issues/12"
+              },
+              "checkout": {
+                "branch": "agent/check-samples",
+                "changedFiles": 3
+              },
+              "completedAt": 1735689599000,
+              "designGrants": [
+                {
+                  "board": "sample.dc.html",
+                  "boardSHA": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "designID": "reference-design",
+                  "element": "header",
+                  "grantedAt": 1735689600000,
+                  "label": "Header",
+                  "page": "Overview",
+                  "payload": "00000000-0000-4000-8000-000000000053",
+                  "revision": 3
+                }
+              ],
+              "designID": "sample-design",
+              "dispatchedFrom": {
+                "agentID": "00000000-0000-4000-8000-000000000054",
+                "agentTitle": "Check links",
+                "at": 1735689597000,
+                "depth": 2,
+                "dispatchID": "00000000-0000-4000-8000-000000000055",
+                "hostID": "00000000-0000-4000-8000-000000000050",
+                "hostName": "Sample Mac"
+              },
+              "executionFor": {
+                "operationID": "00000000-0000-4000-8000-000000000035",
+                "ownerID": "00000000-0000-4000-8000-000000000033",
+                "projectID": "00000000-0000-4000-8000-000000000032"
+              },
+              "goalState": "active",
+              "id": "00000000-0000-4000-8000-000000000001",
+              "lastActiveAt": 1735689600000,
+              "lastFailure": "Sample failure",
+              "model": "openai/gpt-5.4",
+              "movedFrom": {
+                "at": 1735689599000,
+                "branch": "agent/check-samples",
+                "hostID": "00000000-0000-4000-8000-000000000050",
+                "hostName": "Sample Mac",
+                "moveID": "00000000-0000-4000-8000-000000000058",
+                "uncommittedFiles": 2
+              },
+              "movedTo": {
+                "at": 1735689601000,
+                "hostID": "00000000-0000-4000-8000-000000000051",
+                "hostName": "Sample Studio",
+                "moveID": "00000000-0000-4000-8000-000000000057"
+              },
+              "name": "Check samples",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "piSessionID": "sample-session",
+              "projectWorkerFor": "00000000-0000-4000-8000-000000000032",
+              "pushMuted": true,
+              "reviewTarget": "/tmp/acme",
+              "runtime": "rpc",
+              "seenCompletedAt": 1735689598000,
+              "serviceTier": "fast",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "startedBy": {
+                "agentID": "00000000-0000-4000-8000-000000000056",
+                "agentTitle": "Check previews",
+                "at": 1735689598000,
+                "depth": 1
+              },
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004",
+              "thinkingLevel": "xhigh",
+              "waitingOn": "Use the sample branch?",
+              "waitingReason": "branch?",
+              "worktreeBase": "origin/main",
+              "worktreeBranch": "agent/check-samples",
+              "worktreeOriginalBranch": "agent/sample",
+              "worktreePath": "/tmp/acme-samples"
+            },
+            {
+              "coordinatorFor": "00000000-0000-4000-8000-000000000032",
+              "id": "00000000-0000-4000-8000-000000000044",
+              "name": "Sample coordinator",
+              "nameIsFinal": true,
+              "paneID": "00000000-0000-4000-8000-000000000046",
+              "runtime": "rpc",
+              "spaceID": "00000000-0000-4000-8000-000000000041",
+              "status": "idle",
+              "tabID": "00000000-0000-4000-8000-000000000045"
+            }
+          ],
+          "automations": [
+            {
+              "agentID": "00000000-0000-4000-8000-000000000001",
+              "authorGate": "contributors",
+              "cwd": "/tmp/acme",
+              "deleteAfterRun": true,
+              "destination": {
+                "agentID": "00000000-0000-4000-8000-000000000001",
+                "type": "thread"
+              },
+              "enabled": true,
+              "id": "00000000-0000-4000-8000-000000000002",
+              "limits": {
+                "maxConcurrent": 2,
+                "maxPerDay": 6
+              },
+              "model": "openai/gpt-5.4",
+              "name": "Check issues",
+              "projectID": "00000000-0000-4000-8000-000000000032",
+              "prompt": "Inspect the sample issue.",
+              "serviceTier": "fast",
+              "thinking": "high",
+              "trigger": {
+                "triggers": [
+                  {
+                    "authors": [
+                      "acme-bot"
+                    ],
+                    "events": [
+                      "issueOpened"
+                    ],
+                    "labels": [
+                      "sample"
+                    ],
+                    "number": 12,
+                    "repo": "acme/web",
+                    "titleContains": "Sample"
+                  }
+                ],
+                "type": "github"
+              },
+              "workspace": "local"
+            }
+          ],
+          "designs": [
+            {
+              "agentID": "00000000-0000-4000-8000-000000000001",
+              "boardCount": 3,
+              "buildsSystem": true,
+              "createdAt": 1735689590000,
+              "id": "sample-design",
+              "importedFrom": {
+                "file": "sample.zip",
+                "importedAt": 1735689580000,
+                "stamp": "[123]",
+                "title": "Acme sample"
+              },
+              "lastActiveAt": 1735689600000,
+              "name": "Sample design",
+              "recentsHiddenAt": 1735689595000,
+              "sourceSpaceID": "00000000-0000-4000-8000-000000000003",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "systemNamespace": "sample"
+            },
+            {
+              "createdAt": 1735689580000,
+              "id": "reference-design",
+              "lastActiveAt": 1735689599000,
+              "name": "Sample reference",
+              "spaceID": "standalone-design"
+            }
+          ],
+          "projectExecutions": [
+            {
+              "admittedAt": 1735689596000,
+              "assignment": {
+                "executorSpaceID": "00000000-0000-4000-8000-000000000003",
+                "goal": "Review the sample.",
+                "instructions": "Record broken links.",
+                "key": {
+                  "operationID": "00000000-0000-4000-8000-000000000035",
+                  "ownerID": "00000000-0000-4000-8000-000000000033",
+                  "projectID": "00000000-0000-4000-8000-000000000032"
+                },
+                "memory": "Use the sample repository. [source: person]",
+                "memoryFacts": [
+                  {
+                    "createdAt": 1735689595000,
+                    "id": "00000000-0000-4000-8000-000000000061",
+                    "source": "person",
+                    "text": "Use the sample repository."
+                  }
+                ],
+                "memoryOmittedCount": 0,
+                "model": "openai/gpt-5.4",
+                "prompt": "Verify sample links.",
+                "publicationsEnabled": true,
+                "reservedWorkerID": "00000000-0000-4000-8000-000000000001",
+                "taskID": "00000000-0000-4000-8000-000000000034",
+                "thinking": "high",
+                "title": "Check sample"
+              },
+              "generation": "sample-generation",
+              "key": {
+                "operationID": "00000000-0000-4000-8000-000000000035",
+                "ownerID": "00000000-0000-4000-8000-000000000033",
+                "projectID": "00000000-0000-4000-8000-000000000032"
+              },
+              "matchedUserEntryID": "sample-prompt",
+              "outcome": "finished",
+              "phase": "settled",
+              "publications": [
+                {
+                  "artifactName": "sample.txt",
+                  "executor": {
+                    "remote": {
+                      "bindingID": "00000000-0000-4000-8000-000000000052",
+                      "hostID": "00000000-0000-4000-8000-000000000050"
+                    }
+                  },
+                  "generation": "sample-generation",
+                  "id": "00000000-0000-4000-8000-000000000062",
+                  "key": {
+                    "operationID": "00000000-0000-4000-8000-000000000035",
+                    "ownerID": "00000000-0000-4000-8000-000000000033",
+                    "projectID": "00000000-0000-4000-8000-000000000032"
+                  },
+                  "relativePath": "sample.txt",
+                  "sessionID": "sample-session",
+                  "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "size": 12,
+                  "sourceIdentity": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "state": "ready",
+                  "taskID": "00000000-0000-4000-8000-000000000034",
+                  "workerAgentID": "00000000-0000-4000-8000-000000000001"
+                }
+              ],
+              "resultEntryID": "sample-reply",
+              "resultText": "Links checked.",
+              "revision": 2,
+              "sessionID": "sample-session"
+            }
+          ],
+          "projects": [
+            {
+              "archivedResolvedTaskCount": 1,
+              "artifacts": [
+                {
+                  "artifactName": "sample.txt",
+                  "executor": {
+                    "remote": {
+                      "bindingID": "00000000-0000-4000-8000-000000000052",
+                      "hostID": "00000000-0000-4000-8000-000000000050"
+                    }
+                  },
+                  "generation": "sample-generation",
+                  "id": "00000000-0000-4000-8000-000000000062",
+                  "key": {
+                    "operationID": "00000000-0000-4000-8000-000000000035",
+                    "ownerID": "00000000-0000-4000-8000-000000000033",
+                    "projectID": "00000000-0000-4000-8000-000000000032"
+                  },
+                  "relativePath": "sample.txt",
+                  "sessionID": "sample-session",
+                  "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "size": 12,
+                  "sourceIdentity": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "state": "ready",
+                  "taskID": "00000000-0000-4000-8000-000000000034",
+                  "workerAgentID": "00000000-0000-4000-8000-000000000001"
+                }
+              ],
+              "commandReceipt": {
+                "operationID": "00000000-0000-4000-8000-000000000071",
+                "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+              },
+              "coordinatorAgentID": "00000000-0000-4000-8000-000000000044",
+              "goal": "Review the sample.",
+              "historyPending": false,
+              "id": "00000000-0000-4000-8000-000000000032",
+              "interruptPending": true,
+              "linkedSpaces": [
+                {
+                  "host": {
+                    "remote": {
+                      "bindingID": "00000000-0000-4000-8000-000000000052",
+                      "hostID": "00000000-0000-4000-8000-000000000050"
+                    }
+                  },
+                  "linkedAt": 1735689594000,
+                  "provenance": "user",
+                  "spaceID": "00000000-0000-4000-8000-000000000003"
+                }
+              ],
+              "memory": [
+                {
+                  "createdAt": 1735689595000,
+                  "id": "00000000-0000-4000-8000-000000000061",
+                  "source": "person",
+                  "text": "Use the sample repository."
+                }
+              ],
+              "memoryOperations": [
+                "00000000-0000-4000-8000-000000000068"
+              ],
+              "messages": [
+                {
+                  "humanSubmitted": true,
+                  "id": "00000000-0000-4000-8000-000000000064",
+                  "nativeDeliveryID": "00000000-0000-4000-8000-000000000065",
+                  "phase": "delivered",
+                  "text": "Check the links."
+                }
+              ],
+              "name": "Sample project",
+              "ownerID": "00000000-0000-4000-8000-000000000033",
+              "paused": true,
+              "pausedByPerson": true,
+              "referencedTasks": [
+                {
+                  "operations": [
+                    "00000000-0000-4000-8000-000000000035"
+                  ],
+                  "taskID": "00000000-0000-4000-8000-000000000034",
+                  "workerAgentID": "00000000-0000-4000-8000-000000000001"
+                }
+              ],
+              "retiredWakeups": [
+                "00000000-0000-4000-8000-000000000069"
+              ],
+              "revision": 3,
+              "settings": {
+                "allowedHosts": [
+                  {
+                    "remote": {
+                      "bindingID": "00000000-0000-4000-8000-000000000052",
+                      "hostID": "00000000-0000-4000-8000-000000000050"
+                    }
+                  }
+                ],
+                "canRequestSpaceLinks": true,
+                "conversationModel": "openai/gpt-5.4",
+                "conversationThinking": "xhigh",
+                "hostPolicy": "selected",
+                "instructions": "Record broken links.",
+                "maxConcurrentWorkers": 2,
+                "threadModel": "openai/gpt-5.4"
+              },
+              "spaceProposals": [
+                {
+                  "displayPath": "/tmp/acme-docs",
+                  "id": "00000000-0000-4000-8000-000000000066",
+                  "operationID": "00000000-0000-4000-8000-000000000067",
+                  "originTaskID": "00000000-0000-4000-8000-000000000034",
+                  "path": "/tmp/acme-docs",
+                  "phase": "pending",
+                  "revision": 1
+                }
+              ],
+              "tasks": [
+                {
+                  "executionAssignment": {
+                    "executorSpaceID": "00000000-0000-4000-8000-000000000003",
+                    "goal": "Review the sample.",
+                    "instructions": "Record broken links.",
+                    "key": {
+                      "operationID": "00000000-0000-4000-8000-000000000035",
+                      "ownerID": "00000000-0000-4000-8000-000000000033",
+                      "projectID": "00000000-0000-4000-8000-000000000032"
+                    },
+                    "memory": "Use the sample repository. [source: person]",
+                    "memoryFacts": [
+                      {
+                        "createdAt": 1735689595000,
+                        "id": "00000000-0000-4000-8000-000000000061",
+                        "source": "person",
+                        "text": "Use the sample repository."
+                      }
+                    ],
+                    "memoryOmittedCount": 0,
+                    "model": "openai/gpt-5.4",
+                    "prompt": "Verify sample links.",
+                    "publicationsEnabled": true,
+                    "reservedWorkerID": "00000000-0000-4000-8000-000000000001",
+                    "taskID": "00000000-0000-4000-8000-000000000034",
+                    "thinking": "high",
+                    "title": "Check sample"
+                  },
+                  "host": {
+                    "remote": {
+                      "bindingID": "00000000-0000-4000-8000-000000000052",
+                      "hostID": "00000000-0000-4000-8000-000000000050"
+                    }
+                  },
+                  "id": "00000000-0000-4000-8000-000000000034",
+                  "model": "openai/gpt-5.4",
+                  "operationID": "00000000-0000-4000-8000-000000000035",
+                  "outcomes": [
+                    {
+                      "evidence": "Sample links match.",
+                      "id": "00000000-0000-4000-8000-000000000063",
+                      "kind": "accepted",
+                      "operationID": "00000000-0000-4000-8000-000000000035",
+                      "recordedAt": 1735689600000,
+                      "recordedBy": "00000000-0000-4000-8000-000000000044"
+                    }
+                  ],
+                  "phase": "settled",
+                  "prompt": "Verify sample links.",
+                  "revision": 2,
+                  "settledAt": 1735689600000,
+                  "spaceID": "00000000-0000-4000-8000-000000000003",
+                  "thinking": "high",
+                  "title": "Check sample",
+                  "workerAgentID": "00000000-0000-4000-8000-000000000001",
+                  "workerSessionID": "sample-session"
+                }
+              ]
+            }
+          ],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "parentID": "00000000-0000-4000-8000-000000000040",
+              "parentIsExplicit": true,
+              "path": "/tmp/acme",
+              "repoKey": "github.com/acme/web",
+              "sidebarHidden": true,
+              "worktreeBase": "origin/main"
+            },
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000040",
+              "name": "Acme parent",
+              "path": "/tmp"
+            },
+            {
+              "hidden": true,
+              "holdsProjects": true,
+              "id": "00000000-0000-4000-8000-000000000041",
+              "name": "Projects",
+              "path": "~"
+            },
+            {
+              "hidden": false,
+              "holdsThreads": true,
+              "id": "00000000-0000-4000-8000-000000000042",
+              "name": "No space",
+              "path": "~"
+            },
+            {
+              "hidden": true,
+              "holdsDesigns": true,
+              "id": "00000000-0000-4000-8000-000000000043",
+              "name": "Designs",
+              "path": "~"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "axis": "horizontal",
+                "first": {
+                  "pane": {
+                    "agentID": "00000000-0000-4000-8000-000000000001",
+                    "cwd": "/tmp/acme",
+                    "id": "00000000-0000-4000-8000-000000000005",
+                    "sessionID": "00000000-0000-4000-8000-000000000059",
+                    "title": "Sample terminal"
+                  },
+                  "type": "leaf"
+                },
+                "ratio": 0.6,
+                "second": {
+                  "pane": {
+                    "cwd": "/tmp/acme",
+                    "id": "00000000-0000-4000-8000-000000000049",
+                    "isReview": true
+                  },
+                  "type": "leaf"
+                },
+                "type": "split"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000045",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000044",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000046"
+                },
+                "type": "leaf"
+              },
+              "order": 1,
+              "spaceID": "00000000-0000-4000-8000-000000000041"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000047",
+              "inspectorFor": "00000000-0000-4000-8000-000000000001",
+              "layout": {
+                "pane": {
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000048",
+                  "sessionID": "00000000-0000-4000-8000-000000000060",
+                  "title": "Inspector"
+                },
+                "type": "leaf"
+              },
+              "order": 2,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      {
+        "case": "workspace-lenient-values",
+        "file": "state.json",
+        "fromRevision": "39b59678d",
+        "json": {
+          "agents": [
+            {
+              "automationOrigin": {
+                "automationID": []
+              },
+              "dispatchedFrom": {
+                "hostID": "not-a-uuid"
+              },
+              "id": "00000000-0000-4000-8000-000000000001",
+              "movedFrom": {
+                "at": "yesterday"
+              },
+              "movedTo": [],
+              "name": "pi-1",
+              "nameIsFinal": false,
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "serviceTier": "unknown-tier",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "startedBy": {
+                "depth": "one"
+              },
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000004",
+              "thinkingLevel": "unknown-level"
+            }
+          ],
+          "automations": [
+            {
+              "cwd": "/tmp/acme",
+              "enabled": true,
+              "id": "00000000-0000-4000-8000-000000000002",
+              "name": "Check samples",
+              "prompt": "Inspect the sample.",
+              "serviceTier": "unknown-tier",
+              "thinking": "unknown-level"
+            }
+          ],
+          "designs": [
+            {
+              "createdAt": 1735689590000,
+              "id": "sample-design",
+              "importedFrom": {
+                "importedAt": "yesterday"
+              },
+              "lastActiveAt": 1735689600000,
+              "name": "Sample design",
+              "spaceID": "standalone-design"
+            }
+          ],
+          "spaces": [
+            {
+              "hidden": false,
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      {
+        "case": "workspace-dangling-tab",
+        "file": "state.json",
+        "fromRevision": "39b59678d",
+        "json": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": "working",
+              "tabID": "00000000-0000-4000-8000-000000000027"
+            }
+          ],
+          "spaces": [
+            {
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      {
+        "case": "workspace-unreadable-agent",
+        "file": "state.json",
+        "fromRevision": "39b59678d",
+        "json": {
+          "agents": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "pi-1",
+              "paneID": "00000000-0000-4000-8000-000000000005",
+              "spaceID": "00000000-0000-4000-8000-000000000003",
+              "status": {
+                "bad": true
+              },
+              "tabID": "00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "spaces": [
+            {
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Acme",
+              "path": "/tmp/acme"
+            }
+          ],
+          "tabs": [
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "layout": {
+                "pane": {
+                  "agentID": "00000000-0000-4000-8000-000000000001",
+                  "cwd": "/tmp/acme",
+                  "id": "00000000-0000-4000-8000-000000000005"
+                },
+                "type": "leaf"
+              },
+              "order": 0,
+              "spaceID": "00000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      {
+        "case": "workspace-truncated",
+        "file": "state.json",
+        "fromRevision": "39b59678d",
+        "malformed": "{\"spaces\":["
+      },
+      {
+        "case": "automation-runs-original",
+        "file": "automation-runs.json",
+        "fromRevision": "14ad080ff",
+        "json": {
+          "runs": {
+            "00000000-0000-4000-8000-000000000002": [
+              {
+                "endedAt": 13,
+                "id": "00000000-0000-4000-8000-000000000010",
+                "result": "finished",
+                "startedAt": 12
+              }
+            ]
+          },
+          "version": 1
+        }
+      },
+      {
+        "case": "automation-runs-triggered",
+        "file": "automation-runs.json",
+        "fromRevision": "9f50b7132",
+        "json": {
+          "runs": {
+            "00000000-0000-4000-8000-000000000002": [
+              {
+                "endedAt": 13,
+                "id": "00000000-0000-4000-8000-000000000010",
+                "result": "finished",
+                "startedAt": 12,
+                "trigger": "Sample trigger",
+                "triggerURL": "https://github.com/acme/web/issues/1",
+                "unread": true
+              }
+            ]
+          },
+          "version": 1
+        }
+      },
+      {
+        "case": "automation-runs-bad-element",
+        "file": "automation-runs.json",
+        "fromRevision": "39b59678d",
+        "json": {
+          "runs": {
+            "00000000-0000-4000-8000-000000000002": [
+              {
+                "endedAt": 13,
+                "id": "00000000-0000-4000-8000-000000000010",
+                "result": "finished",
+                "startedAt": 12,
+                "trigger": "Sample trigger",
+                "triggerURL": "https://github.com/acme/web/issues/1",
+                "unread": true
+              },
+              null
+            ]
+          },
+          "version": 1
+        }
+      },
+      {
+        "case": "automation-runs-damaged",
+        "file": "automation-runs.json",
+        "fromRevision": "39b59678d",
+        "malformed": "{\"truncated\":"
+      },
+      {
+        "case": "automation-triggers-early",
+        "file": "automation-triggers.json",
+        "fromRevision": "9f50b7132",
+        "json": {
+          "records": {
+            "00000000-0000-4000-8000-000000000002": {
+              "baselineAt": 10,
+              "failures": 0,
+              "fingerprint": "demo",
+              "lastCheckedAt": 12,
+              "pending": [],
+              "seen": {
+                "one": 12
+              },
+              "starts": [
+                13
+              ]
+            }
+          },
+          "version": 1
+        }
+      },
+      {
+        "case": "automation-triggers-legacy-queue",
+        "file": "automation-triggers.json",
+        "fromRevision": "7fd27a7d0",
+        "json": {
+          "allPaused": true,
+          "records": {
+            "00000000-0000-4000-8000-000000000002": {
+              "baselineAt": 10,
+              "failures": 0,
+              "fingerprint": "demo",
+              "heads": {
+                "acme/web#1": "abc"
+              },
+              "heldReason": "Held",
+              "lastCheckedAt": 12,
+              "pending": [
+                {
+                  "event": {
+                    "id": "legacy",
+                    "occurredAt": 20,
+                    "title": "Queued"
+                  },
+                  "queuedAt": 21
+                }
+              ],
+              "seen": {
+                "one": 12
+              },
+              "starts": [
+                13
+              ],
+              "windows": {}
+            }
+          },
+          "version": 1
+        },
+        "note": "First reader that accepts queued entries without attempts. The original synthesized writer already emitted attempts."
+      },
+      {
+        "case": "automation-triggers-current-full",
+        "file": "automation-triggers.json",
+        "fromRevision": "39b59678d",
+        "json": {
+          "allPaused": false,
+          "records": {
+            "00000000-0000-4000-8000-000000000002": {
+              "baselineAt": 10,
+              "capNotifiedDay": "2025-01-01",
+              "failures": 2,
+              "fingerprint": "demo",
+              "heads": {
+                "acme/web#1": "abc"
+              },
+              "heldReason": "Held",
+              "lastCheckedAt": 12,
+              "nextRunAt": 1735689900,
+              "pausedReason": "Sample pause",
+              "pending": [
+                {
+                  "attempts": 1,
+                  "event": {
+                    "id": "legacy",
+                    "occurredAt": 20,
+                    "title": "Queued"
+                  },
+                  "queuedAt": 21
+                }
+              ],
+              "retryAt": 1735689660,
+              "retryReason": "Sample retry",
+              "seen": {
+                "one": 12
+              },
+              "starts": [
+                13
+              ],
+              "windows": {
+                "acme/web#1": {
+                  "end": 19,
+                  "start": 12
+                }
+              }
+            }
+          },
+          "version": 1
+        }
+      },
+      {
+        "case": "automation-triggers-bad-element",
+        "file": "automation-triggers.json",
+        "fromRevision": "39b59678d",
+        "json": {
+          "allPaused": false,
+          "records": {
+            "00000000-0000-4000-8000-000000000002": {
+              "baselineAt": 10,
+              "capNotifiedDay": "2025-01-01",
+              "failures": 2,
+              "fingerprint": "demo",
+              "heads": {
+                "acme/web#1": "abc"
+              },
+              "heldReason": "Held",
+              "lastCheckedAt": 12,
+              "nextRunAt": 1735689900,
+              "pausedReason": "Sample pause",
+              "pending": [
+                {
+                  "attempts": 1,
+                  "event": {
+                    "id": "legacy",
+                    "occurredAt": 20,
+                    "title": "Queued"
+                  },
+                  "queuedAt": 21
+                },
+                null
+              ],
+              "retryAt": 1735689660,
+              "retryReason": "Sample retry",
+              "seen": {
+                "one": 12
+              },
+              "starts": [
+                13
+              ],
+              "windows": {
+                "acme/web#1": {
+                  "end": 19,
+                  "start": 12
+                }
+              }
+            }
+          },
+          "version": 1
+        }
+      },
+      {
+        "case": "automation-triggers-damaged",
+        "file": "automation-triggers.json",
+        "fromRevision": "39b59678d",
+        "malformed": "{\"truncated\":"
+      },
+      {
+        "case": "turns-before-recovery-journal",
+        "file": "changes/turns.json",
+        "fromRevision": "df20372b1",
+        "json": {
+          "00000000-0000-4000-8000-000000000001": [
+            {
+              "cwd": "/tmp/acme",
+              "startTree": "abc",
+              "turn": {
+                "added": 0,
+                "canRedo": false,
+                "canUndo": false,
+                "fileCount": 0,
+                "files": [],
+                "id": "00000000-0000-4000-8000-000000000011",
+                "removed": 0,
+                "startedAt": 10,
+                "state": "running"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "case": "turns-with-recovery-journal",
+        "file": "changes/turns.json",
+        "fromRevision": "b4a1f5336",
+        "json": {
+          "00000000-0000-4000-8000-000000000001": [
+            {
+              "cwd": "/tmp/acme",
+              "endTree": "def",
+              "recovery": {
+                "completed": [
+                  "a.txt"
+                ],
+                "inFlight": "b.txt",
+                "redo": false
+              },
+              "startTree": "abc",
+              "turn": {
+                "added": 0,
+                "canRedo": false,
+                "canUndo": true,
+                "endedAt": 20,
+                "fileCount": 0,
+                "files": [],
+                "id": "00000000-0000-4000-8000-000000000011",
+                "removed": 0,
+                "startedAt": 10,
+                "state": "ready"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "case": "turns-bad-element",
+        "file": "changes/turns.json",
+        "fromRevision": "39b59678d",
+        "json": {
+          "00000000-0000-4000-8000-000000000001": [
+            {
+              "cwd": "/tmp/acme",
+              "endTree": "def",
+              "recovery": {
+                "completed": [
+                  "a.txt"
+                ],
+                "inFlight": "b.txt",
+                "redo": false
+              },
+              "startTree": "abc",
+              "turn": {
+                "added": 0,
+                "canRedo": false,
+                "canUndo": true,
+                "endedAt": 20,
+                "fileCount": 0,
+                "files": [],
+                "id": "00000000-0000-4000-8000-000000000011",
+                "removed": 0,
+                "startedAt": 10,
+                "state": "ready"
+              }
+            },
+            null
+          ]
+        }
+      },
+      {
+        "case": "turns-damaged",
+        "file": "changes/turns.json",
+        "fromRevision": "39b59678d",
+        "malformed": "{\"truncated\":"
+      },
+      {
+        "case": "base-recents",
+        "file": "changes/bases.json",
+        "fromRevision": "df20372b1",
+        "json": {
+          "/tmp/acme": [
+            "topic",
+            "main"
+          ],
+          "/tmp/docs": [
+            "main"
+          ]
+        }
+      },
+      {
+        "case": "base-recents-bad-element",
+        "file": "changes/bases.json",
+        "fromRevision": "39b59678d",
+        "json": {
+          "/tmp/acme": [
+            "topic",
+            "main",
+            null
+          ],
+          "/tmp/docs": [
+            "main"
+          ]
+        }
+      },
+      {
+        "case": "base-recents-damaged",
+        "file": "changes/bases.json",
+        "fromRevision": "39b59678d",
+        "malformed": "{\"truncated\":"
+      },
+      {
+        "case": "thread-origins-legacy-queue",
+        "file": "thread-origins/sample.json",
+        "fromRevision": "bdda112a3",
+        "json": {
+          "entries": [
+            {
+              "id": "entry",
+              "record": {
+                "parts": [
+                  {
+                    "bytes": 5,
+                    "images": 0,
+                    "sentAt": 10
+                  }
+                ]
+              }
+            }
+          ],
+          "version": 1
+        }
+      },
+      {
+        "case": "thread-origins-with-reference-and-command",
+        "file": "thread-origins/sample.json",
+        "fromRevision": "07676d1c6",
+        "json": {
+          "entries": [
+            {
+              "id": "entry",
+              "record": {
+                "parts": [
+                  {
+                    "bytes": 5,
+                    "images": 0,
+                    "sentAt": 10
+                  }
+                ]
+              }
+            },
+            {
+              "id": "command",
+              "record": {
+                "command": "/check sample",
+                "references": [
+                  "piece"
+                ],
+                "steered": true
+              }
+            }
+          ],
+          "version": 1
+        }
+      },
+      {
+        "case": "thread-origins-with-questions",
+        "file": "thread-origins/sample.json",
+        "fromRevision": "49f666f52",
+        "json": {
+          "entries": [
+            {
+              "id": "entry",
+              "record": {
+                "parts": [
+                  {
+                    "bytes": 5,
+                    "images": 0,
+                    "sentAt": 10
+                  }
+                ]
+              }
+            },
+            {
+              "id": "command",
+              "record": {
+                "command": "/check sample",
+                "references": [
+                  "piece"
+                ],
+                "steered": true
+              }
+            }
+          ],
+          "questions": [
+            {
+              "endedAt": 12000,
+              "id": "question-1",
+              "record": {
+                "answer": "Acme",
+                "askedAt": 11000,
+                "kind": "input",
+                "outcome": "answered",
+                "question": "Which sample?"
+              }
+            }
+          ],
+          "version": 1
+        }
+      },
+      {
+        "case": "thread-origins-bad-element",
+        "file": "thread-origins/sample.json",
+        "fromRevision": "39b59678d",
+        "json": {
+          "entries": [
+            {
+              "id": "entry",
+              "record": {
+                "parts": [
+                  {
+                    "bytes": 5,
+                    "images": 0,
+                    "sentAt": 10
+                  }
+                ]
+              }
+            },
+            {
+              "id": "command",
+              "record": {
+                "command": "/check sample",
+                "references": [
+                  "piece"
+                ],
+                "steered": true
+              }
+            },
+            null
+          ],
+          "questions": [
+            {
+              "endedAt": 12000,
+              "id": "question-1",
+              "record": {
+                "answer": "Acme",
+                "askedAt": 11000,
+                "kind": "input",
+                "outcome": "answered",
+                "question": "Which sample?"
+              }
+            }
+          ],
+          "version": 1
+        }
+      },
+      {
+        "case": "thread-origins-damaged",
+        "file": "thread-origins/sample.json",
+        "fromRevision": "39b59678d",
+        "malformed": "{\"truncated\":"
+      },
+      {
+        "case": "instruction-history",
+        "file": "instructions/history.json",
+        "fromRevision": "3bd9c84ed",
+        "json": {
+          "revisions": [
+            {
+              "content": "Check samples.\n",
+              "file": "AGENTS.md",
+              "id": "00000000-0000-4000-8000-000000000012",
+              "savedAt": 11,
+              "summary": "Initial instructions"
+            }
+          ],
+          "version": 1
+        }
+      },
+      {
+        "case": "instruction-history-with-origin",
+        "file": "instructions/history.json",
+        "fromRevision": "698054876",
+        "json": {
+          "revisions": [
+            {
+              "content": "Check samples.\n",
+              "file": "AGENTS.md",
+              "id": "00000000-0000-4000-8000-000000000012",
+              "origin": "Sample Mac",
+              "savedAt": 11,
+              "summary": "Synced from Sample Mac"
+            }
+          ],
+          "version": 1
+        }
+      },
+      {
+        "case": "instruction-history-bad-element",
+        "file": "instructions/history.json",
+        "fromRevision": "39b59678d",
+        "json": {
+          "revisions": [
+            {
+              "content": "Check samples.\n",
+              "file": "AGENTS.md",
+              "id": "00000000-0000-4000-8000-000000000012",
+              "origin": "Sample Mac",
+              "savedAt": 11,
+              "summary": "Synced from Sample Mac"
+            },
+            null
+          ],
+          "version": 1
+        }
+      },
+      {
+        "case": "instruction-history-damaged",
+        "file": "instructions/history.json",
+        "fromRevision": "39b59678d",
+        "malformed": "{\"truncated\":"
+      },
+      {
+        "case": "forge-pins",
+        "file": "forge-pins.json",
+        "fromRevision": "c7cde3c9a",
+        "json": {
+          "pins": [
+            {
+              "pinnedAt": 12,
+              "ref": {
+                "kind": "issue",
+                "number": 12,
+                "repo": "acme/web"
+              },
+              "title": "Fix the sample"
+            }
+          ]
+        }
+      },
+      {
+        "case": "forge-pins-bad-element",
+        "file": "forge-pins.json",
+        "fromRevision": "39b59678d",
+        "json": {
+          "pins": [
+            {
+              "pinnedAt": 12,
+              "ref": {
+                "kind": "issue",
+                "number": 12,
+                "repo": "acme/web"
+              },
+              "title": "Fix the sample"
+            },
+            null
+          ]
+        }
+      },
+      {
+        "case": "forge-pins-damaged",
+        "file": "forge-pins.json",
+        "fromRevision": "39b59678d",
+        "malformed": "{\"truncated\":"
+      },
+      {
+        "case": "push-before-preferences",
+        "file": "push-registrations.json",
+        "fromRevision": "acf270e21",
+        "json": [
+          {
+            "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "sendToken": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        ]
+      },
+      {
+        "case": "push-with-legacy-topic",
+        "file": "push-registrations.json",
+        "fromRevision": "6d4e40594",
+        "json": [
+          {
+            "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "preferences": {
+              "awayOnly": false,
+              "missions": {
+                "sample-mission": "onlyBlocked"
+              },
+              "topics": [
+                "blocked",
+                "questions"
+              ]
+            },
+            "sendToken": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        ]
+      },
+      {
+        "case": "push-drops-invalid-registrations",
+        "file": "push-registrations.json",
+        "fromRevision": "39b59678d",
+        "json": [
+          {
+            "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "sendToken": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          {
+            "id": "not-a-uuid",
+            "sendToken": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000070",
+            "sendToken": "not-a-token"
+          }
+        ]
+      },
+      {
+        "case": "push-registrations-bad-element",
+        "file": "push-registrations.json",
+        "fromRevision": "39b59678d",
+        "json": [
+          {
+            "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "preferences": {
+              "awayOnly": false,
+              "missions": {
+                "sample-mission": "onlyBlocked"
+              },
+              "topics": [
+                "blocked",
+                "questions"
+              ]
+            },
+            "sendToken": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          null
+        ]
+      },
+      {
+        "case": "push-registrations-damaged",
+        "file": "push-registrations.json",
+        "fromRevision": "39b59678d",
+        "malformed": "{\"truncated\":"
+      },
+      {
+        "case": "design-thread-notes",
+        "file": "design/thread-notes.json",
+        "fromRevision": "dcde1a37d",
+        "json": {
+          "notes": [
+            {
+              "agentID": "00000000-0000-4000-8000-000000000001",
+              "board": "sample.dc.html",
+              "createdAt": 1000,
+              "id": "00000000-0000-4000-8000-000000000013",
+              "revision": 3,
+              "text": "Check the sample",
+              "thread": "Sample"
+            }
+          ],
+          "version": 1
+        }
+      },
+      {
+        "case": "design-thread-notes-bad-element",
+        "file": "design/thread-notes.json",
+        "fromRevision": "39b59678d",
+        "json": {
+          "notes": [
+            {
+              "agentID": "00000000-0000-4000-8000-000000000001",
+              "board": "sample.dc.html",
+              "createdAt": 1000,
+              "id": "00000000-0000-4000-8000-000000000013",
+              "revision": 3,
+              "text": "Check the sample",
+              "thread": "Sample"
+            },
+            null
+          ],
+          "version": 1
+        }
+      },
+      {
+        "case": "design-thread-notes-damaged",
+        "file": "design/thread-notes.json",
+        "fromRevision": "39b59678d",
+        "malformed": "{\"truncated\":"
+      },
+      {
+        "case": "hook-settings",
+        "file": "hooks/settings.json",
+        "fromRevision": "ff8f98cec",
+        "json": {
+          "off": [
+            "sample-hook"
+          ],
+          "readers": {
+            "claude": false,
+            "codex": true
+          }
+        }
+      },
+      {
+        "case": "hook-settings-bad-element",
+        "file": "hooks/settings.json",
+        "fromRevision": "39b59678d",
+        "json": {
+          "off": [
+            "sample-hook",
+            null
+          ],
+          "readers": {
+            "claude": false,
+            "codex": true
+          }
+        }
+      },
+      {
+        "case": "hook-settings-damaged",
+        "file": "hooks/settings.json",
+        "fromRevision": "39b59678d",
+        "malformed": "{\"truncated\":"
+      },
+      {
+        "case": "suggestions",
+        "file": "suggestions.json",
+        "fromRevision": "981dd0888",
+        "json": {
+          "added": [
+            {
+              "addedAt": 9,
+              "file": "AGENTS.md",
+              "id": "00000000-0000-4000-8000-000000000015",
+              "line": "- Check links.",
+              "sourceName": "Sample"
+            }
+          ],
+          "dismissed": [
+            "old sample"
+          ],
+          "settings": {
+            "enabled": true,
+            "files": [
+              "AGENTS.md"
+            ],
+            "since": 11,
+            "sources": [
+              "thread"
+            ]
+          },
+          "version": 1,
+          "waiting": [
+            {
+              "file": "AGENTS.md",
+              "id": "00000000-0000-4000-8000-000000000014",
+              "line": "- Check samples.",
+              "reason": "Repeatable checks",
+              "source": {
+                "kind": "thread",
+                "name": "Sample"
+              },
+              "suggestedAt": 12
+            }
+          ]
+        }
+      },
+      {
+        "case": "suggestions-bad-element",
+        "file": "suggestions.json",
+        "fromRevision": "39b59678d",
+        "json": {
+          "added": [
+            {
+              "addedAt": 9,
+              "file": "AGENTS.md",
+              "id": "00000000-0000-4000-8000-000000000015",
+              "line": "- Check links.",
+              "sourceName": "Sample"
+            }
+          ],
+          "dismissed": [
+            "old sample"
+          ],
+          "settings": {
+            "enabled": true,
+            "files": [
+              "AGENTS.md"
+            ],
+            "since": 11,
+            "sources": [
+              "thread"
+            ]
+          },
+          "version": 1,
+          "waiting": [
+            {
+              "file": "AGENTS.md",
+              "id": "00000000-0000-4000-8000-000000000014",
+              "line": "- Check samples.",
+              "reason": "Repeatable checks",
+              "source": {
+                "kind": "thread",
+                "name": "Sample"
+              },
+              "suggestedAt": 12
+            },
+            null
+          ]
+        }
+      },
+      {
+        "case": "suggestions-damaged",
+        "file": "suggestions.json",
+        "fromRevision": "39b59678d",
+        "malformed": "{\"truncated\":"
+      },
+      {
+        "case": "skill-records-early",
+        "file": "skills/skills.json",
+        "fromRevision": "b11dcbef0",
+        "json": {
+          "skills": {
+            "sample": {
+              "installedAt": 13,
+              "source": {
+                "commit": "abcdef",
+                "path": "skills/sample",
+                "repo": "acme/skills"
+              }
+            }
+          },
+          "version": 1
+        }
+      },
+      {
+        "case": "skill-records-with-removed",
+        "file": "skills/skills.json",
+        "fromRevision": "a44190d68",
+        "json": {
+          "autoUpdate": true,
+          "checkedAt": 23,
+          "removed": {
+            "other": {
+              "record": {
+                "installedAt": 13,
+                "source": {
+                  "commit": "abcdef",
+                  "path": "skills/sample",
+                  "repo": "acme/skills"
+                }
+              },
+              "removedAt": 21,
+              "wasOn": true
+            }
+          },
+          "skills": {
+            "sample": {
+              "installedAt": 13,
+              "source": {
+                "commit": "abcdef",
+                "path": "skills/sample",
+                "repo": "acme/skills"
+              },
+              "update": {
+                "commit": "bcdefa",
+                "filesChanged": 1
+              }
+            }
+          },
+          "version": 1
+        }
+      },
+      {
+        "case": "skill-records-damaged",
+        "file": "skills/skills.json",
+        "fromRevision": "39b59678d",
+        "malformed": "{\"truncated\":"
+      },
+      {
+        "case": "pi-import-v1",
+        "file": "pi/.shepherd-imports.json",
+        "fromRevision": "b5ab43057",
+        "json": {
+          "copiedAt": "2025-01-01T00:00:00Z",
+          "from": "/tmp/acme-pi",
+          "instructions": false,
+          "prompts": [
+            "/tmp/acme-pi/prompts"
+          ],
+          "promptsOn": false,
+          "skills": [
+            "/tmp/acme-pi/skills"
+          ],
+          "skillsOn": true,
+          "version": 1
+        }
+      },
+      {
+        "case": "pi-import-v2",
+        "file": "pi/.shepherd-imports.json",
+        "fromRevision": "ee52567aa",
+        "json": {
+          "copiedAt": "2025-01-01T00:00:00Z",
+          "extensionEntries": [
+            "sample.ts"
+          ],
+          "extensionFailures": {
+            "sample.ts": {
+              "modified": 12,
+              "reason": "Example failure"
+            }
+          },
+          "extensionsOn": [
+            "sample.ts"
+          ],
+          "from": "/tmp/acme-pi",
+          "version": 2
+        }
+      },
+      {
+        "case": "pi-import-with-held-extensions",
+        "file": "pi/.shepherd-imports.json",
+        "fromRevision": "c3d8d9c96",
+        "json": {
+          "copiedAt": "2025-01-01T00:00:00Z",
+          "digests": {
+            "defaultModel": "mock-digest"
+          },
+          "extensionEntries": [
+            "sample.ts"
+          ],
+          "extensionFailures": {
+            "sample.ts": {
+              "modified": 12,
+              "reason": "Example failure"
+            }
+          },
+          "extensionsHeld": [
+            "sample.ts"
+          ],
+          "extensionsOn": [
+            "sample.ts"
+          ],
+          "from": "/tmp/acme-pi",
+          "version": 2
+        }
+      },
+      {
+        "case": "pi-import-bad-element",
+        "file": "pi/.shepherd-imports.json",
+        "fromRevision": "39b59678d",
+        "json": {
+          "copiedAt": "2025-01-01T00:00:00Z",
+          "digests": {
+            "defaultModel": "mock-digest"
+          },
+          "extensionEntries": [
+            "sample.ts",
+            null
+          ],
+          "extensionFailures": {
+            "sample.ts": {
+              "modified": 12,
+              "reason": "Example failure"
+            }
+          },
+          "extensionsHeld": [
+            "sample.ts"
+          ],
+          "extensionsOn": [
+            "sample.ts"
+          ],
+          "from": "/tmp/acme-pi",
+          "version": 2
+        }
+      },
+      {
+        "case": "pi-import-damaged",
+        "file": "pi/.shepherd-imports.json",
+        "fromRevision": "39b59678d",
+        "malformed": "{\"truncated\":"
+      }
+    ],
+    "writeTime": 1700000000
+  }
+}

@@ -15,7 +15,7 @@ struct StateStoreTests {
         return ShepherdState(spaces: [space], tabs: [tab], agents: [agent])
     }
 
-    private func quarantined(in dir: URL) throws -> [URL] {
+    func quarantined(in dir: URL) throws -> [URL] {
         try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
             .filter { $0.lastPathComponent.hasPrefix("state.json.corrupt-") }
     }
