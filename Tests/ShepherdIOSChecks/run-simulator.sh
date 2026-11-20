@@ -80,11 +80,29 @@ case "$schemes" in both) schemes=(light dark) ;; light|dark) schemes=("$schemes"
 simctl=(xcrun simctl)
 [[ -n "$simctl_set" ]] && simctl+=(--set "$simctl_set")
 
+work=$(mktemp -d "${TMPDIR:-/tmp}/shepherd-ios-fixture.XXXXXX")
+booted_by_us=false
+# One trap owns every exit: success, failure and Ctrl-C. It opens with set +e so a failing
+# shutdown (e.g. a device that never booted) can never abort the trap before delete and
+# the work-dir removal run. --platform owns its device: shut it down and delete it. A -d
+# device is yours: shut it down only when this run booted it.
+cleanup() {
+    set +e
+    if [[ -n "$platform" && -n "$device" ]]; then
+        "${simctl[@]}" shutdown "$device" >/dev/null 2>&1
+        "${simctl[@]}" delete "$device" >/dev/null 2>&1
+    elif [[ "$booted_by_us" == true && -n "$device" ]]; then
+        "${simctl[@]}" shutdown "$device" >/dev/null 2>&1
+    fi
+    rm -rf "$work"
+}
+trap cleanup EXIT
+
 # Poses drive the hinge through duopose and render fold-aware views, whose code compiles in only
 # with SwiftUI 8.0.85 or newer (Xcode 27.1). Refuse early so a pose run never silently renders
 # without the fold code. The probe compiles the same canImport check the app uses (Fold.swift).
 if [[ -n "$pose" ]]; then
-    probe=$(mktemp "${TMPDIR:-/tmp}/shepherd-swiftui-probe.XXXXXX.swift")
+    probe="$work/probe.swift"
     cat > "$probe" <<'EOF'
 #if canImport(SwiftUI, _version: 8.0.85)
 #else
@@ -101,19 +119,14 @@ EOF
             2>/dev/null | head -1 | awk '{print $2}' || true)
         echo "pose runs (-f) need SwiftUI 8.0.85 or newer; the active toolchain has SwiftUI ${swiftui_version:-unknown}." >&2
         echo "Set DEVELOPER_DIR to an Xcode 27.1 or newer toolchain (now DEVELOPER_DIR=${DEVELOPER_DIR:-$(xcode-select -p)})." >&2
-        rm -f "$probe" "$probe.log"
         exit 69 # EX_UNAVAILABLE: the toolchain cannot render poses
     fi
-    rm -f "$probe" "$probe.log"
 fi
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/shepherd-ios-fixture.XXXXXX")
-trap 'rm -rf "$work"' EXIT
-
-# --platform owns its device: create it in the custom set, then shut it down and delete it on
-# the way out, so success, failure and Ctrl-C leave no new booted devices behind.
+# --platform owns its device: create it in the custom set; the EXIT trap shuts it down
+# and deletes it, so success, failure and Ctrl-C leave no new booted devices behind.
 if [[ -n "$platform" ]]; then
     case "$platform" in
         iphone) device_type=com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro; runtime=com.apple.CoreSimulator.SimRuntime.iOS-27-0 ;;
@@ -126,7 +139,6 @@ if [[ -n "$platform" ]]; then
         echo "not run: $platform (${reason:-the device could not be created})"
         exit 0
     fi
-    trap '"${simctl[@]}" shutdown "$device" >/dev/null 2>&1; "${simctl[@]}" delete "$device" >/dev/null 2>&1; rm -rf "$work"' EXIT
 fi
 
 name=$("${simctl[@]}" list devices -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next((x['name'] for v in d.values() for x in v if x['udid']=='$device'), ''))")
@@ -191,6 +203,8 @@ if [[ -n "$pose" ]]; then
     [[ "$pose" == closed ]] && display=1 || display=3
 fi
 
+state=$("${simctl[@]}" list devices -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next((x.get('state','') for v in d.values() for x in v if x['udid']=='$device'), ''))")
+[[ "$state" == Booted ]] || booted_by_us=true
 "${simctl[@]}" bootstatus "$device" -b >/dev/null
 if [[ -n "$pose" ]]; then
     parse_status=0

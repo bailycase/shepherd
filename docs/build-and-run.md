@@ -38,7 +38,7 @@ the iPhone and iPad client from `App/iOS`. Simulator renders
 (`Tests/ShepherdIOSChecks/run-simulator.sh`, also see [testing](testing.md)) install per
 platform: iPhone 18 Pro and iPad Pro 13-inch on the iOS 27.0 runtime, iPhone Duo on
 iOS 27.1. Duo poses (`-f`) need Xcode 27.1 or newer (SwiftUI 8.0.85+ for the fold code), so
-prefix the render with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`; a pose
+prefix the render with `DEVELOPER_DIR` set to an Xcode 27.1 or later toolchain; a pose
 run under an older SwiftUI exits non-zero.
 
 **Shepherd Nightly** is the same code built as a second app, so it installs and runs beside

@@ -48,7 +48,7 @@ local run is needed solely to reproduce CI.
 
 ## Simulator renders
 
-`bash Tests/ShepherdIOSChecks/run-simulator.sh --platform <iphone|ipad|duo> -o <dir> <screen>...`
+`bash Tests/ShepherdIOSChecks/run-simulator.sh --platform <iphone|ipad|duo> --set <dir> -o <dir> <screen>...`
 renders fixture screens headless and saves light and dark PNGs (`--list` prints the screens).
 Devices are created in a custom simulator set (`--set <dir>` or `SHEPHERD_SIMULATOR_SET`)
 and deleted afterwards; `-d <udid>` reuses a device you own instead. iPhone and iPad render on
