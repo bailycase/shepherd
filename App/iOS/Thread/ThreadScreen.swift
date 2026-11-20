@@ -396,8 +396,8 @@ struct ThreadTranscript: View {
             }
             .onChange(of: store.sentCount) { _, _ in
                 // A send that goes in now re-attaches; a follow-up in Up next leaves the reader where they are. The
-                // lander goes with the ask: a screen popped over the thread leaves the pin without one (`stop()`), and no
-                // scroll reading follows to set it again.
+                // lander goes with the ask: a screen popped over the thread leaves the pin without one (`stop()`), and the
+                // send supplies its own, so it needn't wait for a scroll reading to set it again.
                 guard !store.lastSendQueued else { return }
                 presentation.sent(turnPresent: store.lastSendShownEarly)
                 tailPin.asked(lander(proxy))
