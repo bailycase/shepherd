@@ -336,8 +336,9 @@ public final class ChangesService: @unchecked Sendable {
                               comparison: .init(head: pull.head, base: base, baseName: pull.base, mergeBase: shortID(mergeBase)))
         case .lastTurn, .turn:
             guard let agentID else { throw ChangesError(ChangesError.unavailable, "Only an agent has turns.") }
+            let history = try turnStore.history(agentID).records
             let record: TurnRecord?
-            if case .turn(let id) = scope { record = turnStore.record(agentID, id) } else { record = turnStore.latest(agentID) }
+            if case .turn(let id) = scope { record = history.first { $0.turn.id == id } } else { record = history.last }
             guard let record else { throw ChangesError(ChangesError.unavailable, "No turn yet.") }
             guard let start = record.startTree, exists(start, in: repository) else {
                 throw ChangesError(ChangesError.unavailable, record.turn.reason ?? "The turn’s starting point is no longer available.")
@@ -353,7 +354,7 @@ public final class ChangesService: @unchecked Sendable {
             }
             return Resolution(revision: .init(old: start, new: end),
                               comparison: .init(head: record.endTree == nil ? "Working tree" : "End of turn", base: "Start of turn",
-                                                turn: turnStore.published(agentID).first { $0.id == record.turn.id } ?? record.turn),
+                                                turn: TurnStore.published(history).first { $0.id == record.turn.id } ?? record.turn),
                               skipped: skipped)
         }
     }

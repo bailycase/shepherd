@@ -6,10 +6,11 @@ import Testing
 @testable import ShepherdSessions
 
 extension StateStoreTests {
-    // Keep the reference golden frozen. StateRecoveryTests, YourPiImportEdgeTests and HookCatalogTests
-    // exercise the new policies for these damaged inputs instead of asserting the old rewrites.
+    // Keep the reference golden frozen. The affected stores' tests cover the new behavior for
+    // these damaged inputs instead of asserting the old rewrites.
     private static let damagedRows: Set<String> = [
         "instruction-history-bad-element", "instruction-history-damaged",
+        "turns-bad-element", "turns-damaged",
         "workspace-invalid-split", "workspace-dangling-tab", "workspace-unreadable-agent", "workspace-truncated",
         "pi-import-bad-element", "pi-import-damaged", "hook-settings-bad-element", "hook-settings-damaged",
     ]

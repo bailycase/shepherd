@@ -545,9 +545,40 @@ struct ChangesTurnTests {
 
         let client = try await remote.typed()
         #expect(client.capabilities.contains(RemoteProtocol.changesCapability))
+        // Damage after a good read must not allow a cached turn to mutate the worktree.
+        changes.turnStore.flush()
+        let url = changes.directory.appendingPathComponent("turns.json")
+        let backup = try Data(contentsOf: url)
+        let damaged = Data("{".utf8)
+        try damaged.write(to: url, options: .atomic)
+        let before = try repo.state()
+        let turnID = try #require(changes.turns(agentID: pi.agent.id).last?.id)
+        let undo = await #expect(throws: RemoteHostClientError.self) {
+            _ = try await client.agentQuery(agentID: pi.agent.id, query: .changesUndoTurn(turnID: turnID))
+        }
+        let redo = await #expect(throws: RemoteHostClientError.self) {
+            _ = try await client.agentQuery(agentID: pi.agent.id, query: .changesRedoTurn(turnID: turnID))
+        }
+        guard case .changesOverview(let damagedOverview) = try await client.agentQuery(agentID: pi.agent.id, query: .changesOverview()) else {
+            Issue.record("expected an overview for damaged history"); return
+        }
+        let problem = try #require(damagedOverview.turnHistoryProblem)
+        #expect(problem.contains("Undo/Redo history can't be read") && problem.contains(url.path))
+        #expect(problem.contains("dataCorrupted") && problem.contains("known-good backup"))
+        #expect(undo?.description.contains(problem) == true && redo?.description.contains(problem) == true)
+        #expect(damagedOverview.lastTurn == nil && damagedOverview.entries.first?.unavailable == problem)
+        guard case .changesList(let working) = try await client.agentQuery(agentID: pi.agent.id, query: .changesList(scope: .uncommitted, options: ChangesOptions())) else {
+            Issue.record("working-tree comparisons are still available"); return
+        }
+        #expect(working.summary == ["M a.txt"])
+        try repo.expectUnchanged(since: before)
+        #expect(try Data(contentsOf: url) == damaged)
+        try backup.write(to: url, options: .atomic)
+
         guard case .changesOverview(let overview) = try await client.agentQuery(agentID: pi.agent.id, query: .changesOverview()) else {
             Issue.record("expected an overview"); return
         }
+        #expect(overview.turnHistoryProblem == nil)
         #expect(overview.lastTurn?.fileCount == 1 && overview.entries.first?.files == 1)
         guard case .changesList(let list) = try await client.agentQuery(agentID: pi.agent.id, query: .changesList(scope: .lastTurn, options: ChangesOptions())) else {
             Issue.record("expected a list"); return
@@ -558,7 +589,7 @@ struct ChangesTurnTests {
             Issue.record("expected a file"); return
         }
         #expect(file.file.hunks.flatMap(\.lines).filter { $0.kind == .added }.map(\.text) == ["two"])
-        let turnID = try #require(list.comparison.turn?.id)
+        #expect(list.comparison.turn?.id == turnID)
         guard case .changesTurn(let undone) = try await client.agentQuery(agentID: pi.agent.id, query: .changesUndoTurn(turnID: turnID)) else {
             Issue.record("expected the undone turn"); return
         }
