@@ -73,6 +73,50 @@ struct WindowDragTests {
         #expect(after["deck.hiddenLayout", default: 0] == hidden.count, "once each: \(after)")
     }
 
+    /// The remote deck shares the local one's host and its catch-up (`DeckHost`, `DeckCatchUp`): its hidden pages hold their passes back
+    /// through a drag, the shown page follows it, and each hidden page takes the one it owes once the drag ends.
+    @Test func hiddenRemotePagesTakeNoPassInADragAndOneAfterIt() async throws {
+        let rig = try await RemoteDeckTests.Rig()
+        defer { rig.close() }
+        _ = try await rig.firstVisit(0)
+        _ = try await rig.firstVisit(1)
+        _ = try await rig.show(0)
+        try await rig.holdStill()
+        let deck = try rig.deck()
+        let shown = try #require(try rig.host(0))
+        let hidden = try #require(try rig.host(1))
+        #expect(!shown.isHidden && hidden.isHidden)
+
+        shown.viewWillStartLiveResize()
+        hidden.viewWillStartLiveResize()
+        let steps = 8
+        let dragged = ListPerf.counting {
+            for step in 1...steps {
+                rig.window.window.setContentSize(CGSize(width: 1200 - CGFloat(step) * 24, height: 800 - CGFloat(step) * 10))
+                hidden.needsLayout = true
+                hidden.layoutSubtreeIfNeeded()
+                ListPerf.settle(rig.window)
+            }
+        }
+        #expect(dragged["remoteDeck.layout", default: 0] >= steps, "the page on screen followed the drag: \(dragged)")
+        #expect(dragged["remoteDeck.hiddenLayout", default: 0] == 0, "the hidden page took no pass: \(dragged)")
+        #expect(dragged["remoteDeck.heldLayout", default: 0] >= steps, "it held each one back: \(dragged)")
+        #expect(hidden.frame.size != deck.bounds.size, "and was not resized")
+
+        SHRenderProbe.start()
+        shown.viewDidEndLiveResize()
+        hidden.viewDidEndLiveResize()
+        deck.viewDidEndLiveResize()
+        try await eventuallyOnMain("the hidden page to take the pass it owes") {
+            ListPerf.settle(rig.window)
+            return SHRenderProbe.count("remoteDeck.hiddenLayout") >= 1
+        }
+        ListPerf.settle(rig.window)
+        let after = SHRenderProbe.stop()
+        #expect(after["remoteDeck.hiddenLayout", default: 0] == 1, "once: \(after)")
+        #expect(!hidden.owesPass, "and owes none")
+    }
+
     /// A thread out of sight is not touched by the window's drag: its two changes (the drag's start and its end) would only rebuild
     /// every row of its eager tail, and nothing there is drawn. The drag reaches the thread on screen alone.
     @Test func hiddenThreadsDoNotHearOfTheDrag() async throws {
