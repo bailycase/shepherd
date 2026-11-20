@@ -519,32 +519,47 @@ final class AppSettings {
     /// in-progress work. The New Worktree sheet shows and lets the user
     /// override the resolved base either way.
     var worktreeBaseMode: WorktreeBaseMode {
-        didSet { store.set(worktreeBaseMode.rawValue, forKey: Key.worktreeBaseMode) }
+        didSet {
+            store.set(worktreeBaseMode.rawValue, forKey: Key.worktreeBaseMode)
+            hostPreferences?.update { $0.worktrees.baseMode = worktreeBaseMode }
+        }
     }
 
     /// Fetch the base branch from origin before creating a worktree, so
     /// "fresh" means the remote's latest, not a stale local snapshot. Off =
     /// no network at creation; the cached ref is used.
     var worktreeFetchBeforeCreate: Bool {
-        didSet { store.set(worktreeFetchBeforeCreate, forKey: Key.worktreeFetchBeforeCreate) }
+        didSet {
+            store.set(worktreeFetchBeforeCreate, forKey: Key.worktreeFetchBeforeCreate)
+            hostPreferences?.update { $0.worktrees.fetchBeforeCreate = worktreeFetchBeforeCreate }
+        }
     }
 
     /// Draft commit messages from review with a model. Off, or on a failure, the message is
     /// written from the file list. The key keeps its name from when it drafted PR descriptions.
     var worktreeGeneratePRDescription: Bool {
-        didSet { store.set(worktreeGeneratePRDescription, forKey: Key.worktreeGeneratePRDescription) }
+        didSet {
+            store.set(worktreeGeneratePRDescription, forKey: Key.worktreeGeneratePRDescription)
+            hostPreferences?.update { $0.worktrees.generatePRDescription = worktreeGeneratePRDescription }
+        }
     }
 
     /// Close threads when their pull request merges: a worktree thread whose pull request merges
     /// is deleted with its worktree, its local branch and its branch on GitHub. **Off by default**.
     var worktreeCloseOnMerge: Bool {
-        didSet { store.set(worktreeCloseOnMerge, forKey: Key.worktreeCloseOnMerge) }
+        didSet {
+            store.set(worktreeCloseOnMerge, forKey: Key.worktreeCloseOnMerge)
+            hostPreferences?.update { $0.worktrees.closeOnMerge = worktreeCloseOnMerge }
+        }
     }
 
     /// Settings ▸ Worktrees ▸ Deleting a worktree agent: ask, or the delete the dialog remembered.
     /// A remembered removal still asks when the checkout holds unreconciled work.
     var worktreeDeleteAction: WorktreeDeleteAction {
-        didSet { store.set(worktreeDeleteAction.rawValue, forKey: Key.worktreeDeleteAction) }
+        didSet {
+            store.set(worktreeDeleteAction.rawValue, forKey: Key.worktreeDeleteAction)
+            hostPreferences?.update { $0.worktrees.deleteAction = HostSettings.WorktreeDeleteAction(rawValue: worktreeDeleteAction.rawValue) ?? .ask }
+        }
     }
 
     /// Confirmations turned off by their "Don't ask again", each with the label of the action it
@@ -709,21 +724,34 @@ final class AppSettings {
 
     private let store: UserDefaults
 
-    /// The host's own copy of the Agents group (`HostSettingsStore`), set only in the host process:
-    /// each Agents change also goes there, beside its UserDefaults key, which stays current for the previous release.
+    /// The host's own copy of the Agents and Worktrees groups (`HostSettingsStore`), set only in the host process:
+    /// each change to either also goes there, beside its UserDefaults key, which stays current for the previous release.
     @ObservationIgnored private var hostPreferences: HostSettingsStore?
 
     /// Has the host keep `preferences` from now on, starting from what this object holds. The keys
     /// were read at init, so a change the previous release made to them since the file was written wins.
     func adoptHostPreferences(_ preferences: HostSettingsStore) {
         hostPreferences = preferences
-        let own = agentsGroup
-        preferences.update { $0.agents = own }
+        let agents = agentsGroup, worktrees = worktreesGroup
+        preferences.update { $0.agents = agents; $0.worktrees = worktrees }
     }
 
     /// The Agents group as the host's reply reads it: from the host's store once it is adopted (it is kept current by
     /// every setter and rebuilt from the keys at adoption), from this object's own values before that.
     var hostAgents: StoredHostPreferences.Agents { hostPreferences?.preferences.agents ?? agentsGroup }
+
+    /// The Worktrees group as the host's reply reads it, like `hostAgents`.
+    var hostWorktrees: StoredHostPreferences.Worktrees { hostPreferences?.preferences.worktrees ?? worktreesGroup }
+
+    private var worktreesGroup: StoredHostPreferences.Worktrees {
+        var worktrees = StoredHostPreferences.Worktrees()
+        worktrees.baseMode = worktreeBaseMode
+        worktrees.fetchBeforeCreate = worktreeFetchBeforeCreate
+        worktrees.generatePRDescription = worktreeGeneratePRDescription
+        worktrees.closeOnMerge = worktreeCloseOnMerge
+        worktrees.deleteAction = HostSettings.WorktreeDeleteAction(rawValue: worktreeDeleteAction.rawValue) ?? .ask
+        return worktrees
+    }
 
     private var agentsGroup: StoredHostPreferences.Agents {
         var agents = StoredHostPreferences.Agents()
