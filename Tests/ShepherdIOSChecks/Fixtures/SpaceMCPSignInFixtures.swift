@@ -31,7 +31,7 @@ import ShepherdRemote
             }
             return .projects(id: id, result: result)
         })
-        return FixtureScreen(name: fixture.name, hosts: [host], routes: [.settings(nil), .settings(.space(directory))],
+        return FixtureScreen(name: fixture.name, hosts: [host], routes: [.settings(.spaces), .settings(.space(directory))], tab: .settings,
                              setup: { SpaceMCP.fixtureServer = phase == .done ? nil : "acme-issues" })
     }
 }
