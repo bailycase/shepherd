@@ -96,8 +96,8 @@ struct NativeStartPresentationTests {
     // MARK: The banner a phone draws
 
     private func banner(_ problem: NativeStartProblem?, restart: NativeStartRestartState? = nil, offered: Bool = true,
-                        connected: Bool = true) -> NativeStartBanner? {
-        NativeStartBanner(problem: problem, restart: restart, offered: offered, connected: connected, host: "horizon")
+                        live: Bool = true) -> NativeStartBanner? {
+        NativeStartBanner(problem: problem, restart: restart, offered: offered, live: live, host: "horizon")
     }
 
     @Test func noProblemAndNoRestartDrawsNothing() {
@@ -113,10 +113,10 @@ struct NativeStartPresentationTests {
     }
 
     @Test func aDroppedConnectionOffersNoRetryAndSendsThePersonToTheHost() throws {
-        let shown = try #require(banner(NativeStartProblem(kind: .stopped, signal: 9), connected: false))
+        let shown = try #require(banner(NativeStartProblem(kind: .stopped, signal: 9), live: false))
         #expect(shown.actions.isEmpty)
         #expect(shown.message == "Retry on horizon to start it again. Its conversation is saved.")
-        let again = try #require(banner(NativeStartProblem(kind: .resumedAsNew), connected: false))
+        let again = try #require(banner(NativeStartProblem(kind: .resumedAsNew), live: false))
         #expect(again.actions.isEmpty && again.message.hasSuffix("Retry on horizon."))
     }
 
@@ -169,7 +169,7 @@ struct NativeStartRestartTests {
     }
 
     private func shown(_ store: NativeThreadStore) -> NativeStartBanner? {
-        NativeStartBanner(problem: store.startProblem, restart: store.startRestart, offered: true, connected: true, host: "horizon")
+        NativeStartBanner(store: store, offered: true, connected: true, host: "horizon")
     }
 
     @Test func retrySendsRestartPiAndTheThreadReadsAsStartingUntilPiIsUp() async {
@@ -178,7 +178,7 @@ struct NativeStartRestartTests {
         #expect(store.startProblem != nil)
         host.starting = true
         var sent: [RemoteAgentAction] = []
-        await NativeStartRestart.perform(.retry, store: store) { sent.append($0) }
+        await NativeStartRestart.perform(.retry, store: store, offered: true, connected: true) { sent.append($0) }
         #expect(sent == [.restartPi(newConversation: false)])
         #expect(store.startProblem == nil && store.starting)
         #expect(shown(store)?.inProgress == true, "a thread with its history cached still says it is restarting")
@@ -189,7 +189,7 @@ struct NativeStartRestartTests {
         defer { task.cancel() }
         var release: CheckedContinuation<Void, Never>?
         let asked = Task { @MainActor in
-            await NativeStartRestart.perform(.retry, store: store) { _ in await withCheckedContinuation { release = $0 } }
+            await NativeStartRestart.perform(.retry, store: store, offered: true, connected: true) { _ in await withCheckedContinuation { release = $0 } }
         }
         await until { store.startRestart == .asking }
         #expect(store.startProblem?.kind == .stopped, "the banner that owns the progress is still there")
@@ -204,7 +204,7 @@ struct NativeStartRestartTests {
         defer { task.cancel() }
         var release: CheckedContinuation<Void, Never>?
         let asked = Task { @MainActor in
-            await NativeStartRestart.perform(.retry, store: store) { _ in
+            await NativeStartRestart.perform(.retry, store: store, offered: true, connected: true) { _ in
                 await withCheckedContinuation { release = $0 }
                 throw Refused()
             }
@@ -219,7 +219,7 @@ struct NativeStartRestartTests {
         // The next Retry clears the old refusal while it asks.
         var again: CheckedContinuation<Void, Never>?
         let second = Task { @MainActor in
-            await NativeStartRestart.perform(.retry, store: store) { _ in await withCheckedContinuation { again = $0 } }
+            await NativeStartRestart.perform(.retry, store: store, offered: true, connected: true) { _ in await withCheckedContinuation { again = $0 } }
         }
         await until { store.startRestart == .asking }
         #expect(shown(store)?.inProgress == true && shown(store)?.message.contains("host said no") == false)
@@ -230,10 +230,10 @@ struct NativeStartRestartTests {
     @Test func aPiThatStopsAgainAfterTheHostAcceptedBringsTheProblemBack() async {
         let (store, host, task) = await stopped(NativeStartProblem(kind: .stopped, signal: 9))
         defer { task.cancel() }
-        await NativeStartRestart.perform(.retry, store: store) { _ in }
+        await NativeStartRestart.perform(.retry, store: store, offered: true, connected: true) { _ in }
         #expect(store.startProblem?.kind == .stopped && shown(store)?.inProgress == false, "the host still says stopped: not stuck on starting")
         host.starting = true
-        await NativeStartRestart.perform(.retry, store: store) { _ in }
+        await NativeStartRestart.perform(.retry, store: store, offered: true, connected: true) { _ in }
         #expect(shown(store)?.inProgress == true)
         host.starting = false
         await store.refresh(fresh: true)
@@ -244,7 +244,7 @@ struct NativeStartRestartTests {
         let (store, _, task) = await stopped(NativeStartProblem(kind: .resumedAsNew))
         defer { task.cancel() }
         var sent: [RemoteAgentAction] = []
-        await NativeStartRestart.perform(.startNewConversation, store: store) { sent.append($0) }
+        await NativeStartRestart.perform(.startNewConversation, store: store, offered: true, connected: true) { sent.append($0) }
         #expect(sent == [.restartPi(newConversation: true)])
         #expect(sent.first?.capability == RemoteProtocol.agentRestartCapability)
     }
@@ -252,7 +252,38 @@ struct NativeStartRestartTests {
     @Test func locateFolderIsNotARestart() async {
         let (store, _, task) = await stopped(NativeStartProblem(kind: .folderMissing))
         defer { task.cancel() }
-        await NativeStartRestart.perform(.locateFolder, store: store) { _ in Issue.record("nothing is sent") }
+        await NativeStartRestart.perform(.locateFolder, store: store, offered: true, connected: true) { _ in Issue.record("nothing is sent") }
         #expect(store.startProblem?.kind == .folderMissing && store.startRestart == nil)
+    }
+
+    @Test func aSuspendedThreadOnAConnectedHostOffersNoRetryAndSendsNothing() async {
+        let (store, _, task) = await stopped(NativeStartProblem(kind: .stopped, signal: 9))
+        defer { task.cancel() }
+        #expect(shown(store)?.actions == [.retry])
+        store.suspend()
+        #expect(store.startProblem != nil && !store.isLive, "a detached thread keeps its problem")
+        #expect(shown(store)?.actions.isEmpty == true, "the buttons follow the same check the tap does")
+        await NativeStartRestart.perform(.retry, store: store, offered: true, connected: true) { _ in Issue.record("nothing is sent") }
+        #expect(store.startRestart == nil)
+    }
+
+    @Test func aHostThatDoesNotOfferRestartSendsNothing() async {
+        let (store, _, task) = await stopped(NativeStartProblem(kind: .stopped, signal: 9))
+        defer { task.cancel() }
+        await NativeStartRestart.perform(.retry, store: store, offered: false, connected: true) { _ in Issue.record("nothing is sent") }
+        await NativeStartRestart.perform(.retry, store: store, offered: true, connected: false) { _ in Issue.record("nothing is sent") }
+        #expect(store.startRestart == nil)
+    }
+
+    @Test func detachingAfterTheHostAcceptedClearsStarting() async {
+        let (store, host, task) = await stopped(NativeStartProblem(kind: .stopped, signal: 9))
+        defer { task.cancel() }
+        host.starting = true
+        await NativeStartRestart.perform(.retry, store: store, offered: true, connected: true) { _ in }
+        #expect(store.startRestart == .starting)
+        store.suspend()
+        #expect(store.startRestart == nil)
+        #expect(NativeStartBanner(store: store, offered: true, connected: false, host: "horizon")?.inProgress != true,
+                "an offline thread does not say it is starting")
     }
 }

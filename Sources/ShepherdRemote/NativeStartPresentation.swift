@@ -20,10 +20,13 @@ public enum NativeStartRestart {
 
     /// The thread reads as restarting at once (`NativeStartRestartState`) while the problem stays, and `send` asks the host.
     /// A host that refuses or can't be reached leaves its reason beside the problem, which is fetched again now.
+    /// Sends only what the banner drawn from this same store, `offered` and `connected` offers (`NativeStartBanner.actions`).
     @MainActor
-    public static func perform(_ action: NativeStartAction, store: NativeThreadStore,
+    public static func perform(_ action: NativeStartAction, store: NativeThreadStore, offered: Bool, connected: Bool,
                                send: (RemoteAgentAction) async throws -> Void) async {
-        guard action != .locateFolder else { return }
+        guard action != .locateFolder,
+              NativeStartBanner(store: store, offered: offered, connected: connected, host: "")?.actions.contains(action) == true
+        else { return }
         store.restartRequested()
         do {
             try await send(.restartPi(newConversation: action == .startNewConversation))
@@ -46,7 +49,8 @@ public enum NativeStartRestartState: Equatable, Sendable {
 }
 
 /// The Can't start banner of a phone or tablet: what it says and offers, from the thread's problem and restart, whether the
-/// host takes `restartPi` (`NativeStartRestart.isOffered`) and whether it is connected now.
+/// host takes `restartPi` (`NativeStartRestart.isOffered`) and whether it is `live`: connected now and the thread still
+/// attached to it (a suspended thread keeps its problem but can't ask the host).
 public struct NativeStartBanner: Equatable, Sendable {
     public var title: String
     public var message: String
@@ -54,14 +58,20 @@ public struct NativeStartBanner: Equatable, Sendable {
     /// A restart is under way: progress instead of the problem and its buttons.
     public var inProgress: Bool
 
-    public init?(problem: NativeStartProblem?, restart: NativeStartRestartState?, offered: Bool, connected: Bool, host: String) {
+    /// The one eligibility check: the banner is drawn from it, and a tap is sent only if its buttons include the action.
+    @MainActor
+    public init?(store: NativeThreadStore, offered: Bool, connected: Bool, host: String) {
+        self.init(problem: store.startProblem, restart: store.startRestart, offered: offered, live: connected && store.isLive, host: host)
+    }
+
+    public init?(problem: NativeStartProblem?, restart: NativeStartRestartState?, offered: Bool, live: Bool, host: String) {
         switch restart {
         case .asking?, .starting?:
             self.init(title: "Starting the agent again…", message: "", actions: [], inProgress: true)
         case let restart:
             guard let problem else { return nil }
             // A phone has no sign-in card: the Mac shows it instead of Retry (`hidesNotSignedIn`), so the advice says to sign in on the host.
-            let retryHere = offered && connected && problem.kind != .notSignedIn
+            let retryHere = offered && live && problem.kind != .notSignedIn
             var message = problem.message(host: host, retryHere: retryHere)
             if case .failed(let why)? = restart { message += "\n\n" + why }
             self.init(title: problem.title, message: message, actions: problem.actions(canRestart: retryHere, canLocateFolder: false), inProgress: false)

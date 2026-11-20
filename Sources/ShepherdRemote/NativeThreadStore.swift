@@ -1589,6 +1589,8 @@ public final class NativeThreadStore {
             }
         }
         resumeStartWaiters(false)
+        // A Retry's progress needs the host; detached, the thread can't say it is starting.
+        if startRestart == .starting || startRestart == .asking { startRestart = nil }
         if settingPick != nil { settingPick = nil; deriveChrome() }
         epoch = UUID()
         // A loop resting ends too.
