@@ -1706,7 +1706,18 @@ public final class SessionServer: @unchecked Sendable {
                     } ?? continuation.resume(returning: .failure(RemoteCreateAgentError("host is shutting down")))
                 }
             },
-            stopThread: { [weak self] agentID in self?.rpcThread(forAgent: agentID)?.stop { _ in } },
+            stopThread: { [weak self] agentID in self?.stopFleetThread(agentID) },
+            closeThread: { [weak self] agent, dispatch in
+                guard let self else { throw FleetDispatchRefusal(code: "unreachable", message: "The receiving host is shutting down.") }
+                let sessions = try await self.deleteAgent(agent, closingDispatch: dispatch)
+                let clock = ContinuousClock()
+                let deadline = clock.now + .seconds(4)
+                repeat {
+                    if await self.enqueueValue({ sessions.allSatisfy { self.sessions[$0]?.isAlive != true } }) { return true }
+                    try await clock.sleep(for: .milliseconds(20))
+                } while clock.now < deadline
+                return false
+            },
             messageThread: { [weak self] agentID, text, delivery in
                 await withCheckedContinuation { continuation in
                     self?.queue.async {
@@ -1722,13 +1733,15 @@ public final class SessionServer: @unchecked Sendable {
             },
             threadFacts: { [weak self] agentID in
                 guard let self, let agent = self.store.state.agents.first(where: { $0.id == agentID }) else { return nil }
-                var lastText: String?
-                if let thread = self.rpcThread(forAgent: agentID) {
-                    let assistant = thread.live.last(where: { $0.value.role == "assistant" })?.value
-                        ?? thread.history.last(where: { $0.role == "assistant" })
-                    lastText = assistant?.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
-                }
-                return FleetThreadFacts(status: agent.status, waitingOn: agent.waitingOn, lastText: lastText, worktree: agent.worktreePath)
+                let thread = self.rpcThread(forAgent: agentID)
+                return FleetThreadFacts(status: agent.status, waitingOn: agent.waitingOn, lastThreadEventAt: thread?.lastTurnEventAt,
+                                        completedAt: agent.completedAt, worktree: agent.worktreePath, failure: thread?.turnFailure)
+            },
+            threadResult: { [weak self] agentID in
+                guard let thread = self?.rpcThread(forAgent: agentID) else { return nil }
+                let assistant = thread.live.last(where: { $0.value.role == "assistant" })?.value
+                    ?? thread.history.last(where: { $0.role == "assistant" })
+                return assistant?.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
             },
             repoPlaces: { [weak self] in self?.fleetRepoPlaces() ?? [] },
             bindSpace: { [weak self] binding in self?.bindFleetCheckout(binding) },
@@ -1746,7 +1759,7 @@ public final class SessionServer: @unchecked Sendable {
         let id: Int, agentID: AgentID
         switch message {
         case .fleetListHosts(let value, let agent), .fleetDispatch(let value, let agent, _, _, _, _, _, _), .fleetDispatchStatus(let value, let agent, _),
-             .fleetDispatchMessage(let value, let agent, _, _, _), .fleetDispatchCancel(let value, let agent, _):
+             .fleetDispatchMessage(let value, let agent, _, _, _), .fleetDispatchCancel(let value, let agent, _), .fleetDispatchClose(let value, let agent, _):
             (id, agentID) = (value, agent)
         default: return
         }
@@ -1775,6 +1788,8 @@ public final class SessionServer: @unchecked Sendable {
             fleet.dispatch.agentControl(from: agentID, key: key, .message(text: text, delivery: delivery), reply: answer)
         case .fleetDispatchCancel(_, _, let key):
             fleet.dispatch.agentControl(from: agentID, key: key, .cancel, reply: answer)
+        case .fleetDispatchClose(_, _, let key):
+            fleet.dispatch.agentControl(from: agentID, key: key, .close, reply: answer)
         default: break
         }
     }
@@ -5461,7 +5476,7 @@ public final class SessionServer: @unchecked Sendable {
         // The fleet tools answer for themselves, ahead of the scope lists below: a thread that may not send work
         // is told `fleet_scope`, whichever kind of thread it is (the lists below refuse them too, as a second wall).
         switch message {
-        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
             serveFleetTool(message, from: client)
             return
         default: break
@@ -5485,7 +5500,7 @@ public final class SessionServer: @unchecked Sendable {
         if assignedWorker {
             switch message {
             case .childScope, .spawnAgent, .moveAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation,
-                 .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
+                 .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
                 if let id = message.replyID { reply(.error(id: id, code: "project_scope", message: "Use Project threads through the coordinator; subagents and workflows are unavailable in Projects. Peer and automation admission is also unavailable."), to: client) }
                 return
             default: break
@@ -5701,7 +5716,7 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             routeAgentPeerRequest(.move(agentID: agentID, targetAgentID: targetAgentID, spaceID: spaceID), requestID: id, client: client)
-        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
             break // Served ahead of the scope lists above (`serveFleetTool`).
         case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking, let place, let branch):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -6830,7 +6845,7 @@ public final class SessionServer: @unchecked Sendable {
 
     private func replyID(_ message: ExtensionReply) -> Int {
         switch message {
-        case .parentInput: return 0
+        case .parentInput, .stopManagedBash: return 0
         case .projectPublish(let id, _), .childScope(let id, _, _), .projectChildren(let id, _, _), .projectRuntime(let id, _, _, _), .childStart(let id, _, _, _), .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
              .error(let id, _, _),
              .panes(let id, _),
@@ -8061,9 +8076,21 @@ public final class SessionServer: @unchecked Sendable {
     /// layout. The GUI never observes the invalid intermediate state where
     /// only one side of that relationship exists.
     public func deleteAgent(_ agentID: AgentID) async throws {
+        _ = try await deleteAgent(agentID, closingDispatch: nil)
+    }
+
+    private func deleteAgent(_ agentID: AgentID, closingDispatch: UUID?) async throws -> Set<SessionID> {
         try await enqueue {
             guard let agent = self.store.state.agents.first(where: { $0.id == agentID }) else {
                 throw SessionServerError.noSuchAgent(agentID)
+            }
+            if let closingDispatch {
+                let thread = self.rpcThread(forAgent: agentID)
+                guard agent.dispatchedFrom?.dispatchID == closingDispatch, agent.movedTo == nil,
+                      agent.status != .working, agent.status != .blocked,
+                      thread?.piBusy != true, thread?.items.isEmpty != false else {
+                    throw FleetDispatchRefusal(code: "not_settled", message: "The thread is active, has queued work, or has moved. It was not closed.")
+                }
             }
             guard let tab = self.store.state.tabs.first(where: { $0.id == agent.tabID }) else {
                 throw SessionServerError.noSuchTab(agent.tabID)
@@ -8102,7 +8129,11 @@ public final class SessionServer: @unchecked Sendable {
                 // prompt it holds) goes with the agent.
                 self.keptStarts.removeValue(forKey: sessionID)
                 self.killSessionOnQueue(sessionID)
+                if closingDispatch != nil, let session = self.sessions[sessionID], session.isAlive {
+                    session.signalProcessGroup(SIGKILL)
+                }
             }
+            return layoutSessions
         }
     }
 
@@ -9524,6 +9555,25 @@ public final class SessionServer: @unchecked Sendable {
         return true
     }
 
+    /// A cancelled dispatch is no longer runnable. Stop its session groups and any owned
+    /// descendants before returning to the receiver, but keep its layout and checkout for Close.
+    private func stopFleetThread(_ id: AgentID) {
+        guard let agent = store.state.agents.first(where: { $0.id == id && $0.dispatchedFrom != nil && $0.movedTo == nil }),
+              let tab = store.state.tabs.first(where: { $0.id == agent.tabID }) else { return }
+        fleet?.dispatch.cancelDispatches(ownedBy: id)
+        for sessionID in Set(tab.layout.leaves.compactMap(\.sessionID)) {
+            guard let session = sessions[sessionID], session.isAlive else { continue }
+            startRecords[sessionID]?.requestStop()
+            clearAgentRecovery(sessionID: sessionID)
+            session.thread?.pushRunArmed = false
+            // A pi abort and even SIGTERM can leave tools running. The session owns the
+            // group and captures descendants before signaling; no scan by cwd or name.
+            session.signalProcessGroup(SIGKILL)
+        }
+        applyAgentQuestion(agentID: id, question: nil)
+        applyAgentStatus(agentID: id, status: .idle)
+    }
+
     /// Stops an agent's pi without retiring its agent (`SessionExit.keepsAgent`).
     public func stopKeepingAgent(sessionID: SessionID) async {
         await enqueueValue {
@@ -9619,6 +9669,9 @@ public final class SessionServer: @unchecked Sendable {
             // Stop on a thread cancels the work it sent to other Macs, and nothing wakes it back up.
             thread.onStopRequested = { [weak serverWeak] in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                if let children = server.clients.values.first(where: { $0.childrenAgentID == agentID }) {
+                    server.reply(.stopManagedBash, to: children)
+                }
                 server.queue.async { server.fleet?.dispatch.cancelDispatches(ownedBy: agentID) }
             }
             thread.onIdleAfterQueue = { [weak serverWeak] in
@@ -10195,6 +10248,8 @@ public final class SessionServer: @unchecked Sendable {
                 ShepherdLog.warning("rpc session \(sessionID) stopped before it served; its agent stays: \(problem.map { "\($0.kind.rawValue) \($0.lines.last ?? "")" } ?? "requested")")
             }
             if let problem, let agent {
+                let diskFull = problem.lines.contains { $0.contains("ENOSPC:") || $0.localizedCaseInsensitiveContains("no space left on device") }
+                fleet?.dispatch.agentStopped(agent, message: diskFull ? "No space left on device (ENOSPC)." : problem.title)
                 recordAgentFailure(agentID: agent, problem.title)
                 sendToLocalApps(.agentStartProblem(agentID: agent, problem: problem))
             }

@@ -71,6 +71,41 @@ struct FleetDispatchPreviewTests {
         }
     }
 
+    @Test func aProviderErrorShowsTheFailedThreadAndItsError() async throws {
+        let id = try #require(FleetDispatchID.forToolCall(Self.toolCall, agent: Self.sender))
+        let fixture = ThreadFixture(Self.parentSnapshot(done: false))
+        defer { fixture.store.stop() }
+        let now = Date().timeIntervalSince1970 * 1000
+        var record = Self.record(.failed, failure: "turn_failed", id: id, at: now - 120_000)
+        record.remoteAgentID = AgentID(rawValue: "mini-1")
+        record.failureDetail = "Request timed out. The provider did not respond before the deadline."
+        record.updatedAt = now
+        let surface = Self.surface([record])
+        let card = try #require(surface.cards.first)
+        #expect(card.pill == "Failed" && card.actions == [.open])
+        #expect(card.detail.contains("Request timed out."))
+        try await Preview.render("fleet-dispatch-provider-error", size: CGSize(width: 1000, height: 820), ready: { fixture.store.ready }) {
+            fixture.thread(title: Self.senderTitle).environment(\.fleetThread, surface)
+        }
+        var snapshot = P.snapshot
+        snapshot.dispatches = [record]
+        let page = FleetPagePresentation.make(snapshot: snapshot, weight: { _ in .normal })
+        #expect(page.dispatches.first?.reason.contains("Request timed out.") == true)
+        try await Preview.render("fleet-dispatch-log-provider-error", size: CGSize(width: 760, height: 260)) {
+            FleetDispatchesCard(rows: page.dispatches)
+                .padding(SH.Space.xxl)
+                .background(Color.sh.bgWindow)
+        }
+        let source = SidebarSource(local: ShepherdState(), localFleetID: P.here, fleet: SidebarFleet(records: [record], macs: snapshot.macNames))
+        let row = try #require(SidebarDerivation.dispatchRows(source, threads: []).first?.row)
+        #expect(row.subtitle?.text == "model request failed")
+        try await Preview.render("fleet-sidebar-provider-error", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 100)) {
+            SHSidebarRow(row.title, leading: row.leading, accessory: row.accessory, subtitle: row.subtitle)
+                .padding(SH.Space.m)
+                .background(Color.sh.bgBase)
+        }
+    }
+
     /// The Mac lacks the command of an MCP server: the thread started anyway, and the card says without which server.
     @Test func aDispatchToAMacMissingAnMCPCommandSaysWhatItStartedWithout() async throws {
         let id = try #require(FleetDispatchID.forToolCall(Self.toolCall, agent: Self.sender))
