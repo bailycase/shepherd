@@ -107,30 +107,19 @@ struct ThreadRowMenuItems: View {
     /// item of the same name). Reads the thread's pages from its host like opening it would,
     /// then copies; a failure says why and copies nothing.
     private func copyTranscript() {
-        let (ref, hosts) = (thread, hosts)
+        let (ref, hosts, navigator) = (thread, hosts, navigator)
         AgentActions.run("Couldn’t copy the transcript", navigator: navigator) {
-            guard let host = hosts.host(ref.host), let client = host.connectedClient else { return }
-            guard case .snapshot(let page) = try await client.nativeThread(agentID: ref.agent, request: .snapshot()) else { return }
-            var messages = page.messages
-            var cursor = page.olderCursor
-            // Older pages, newest first onto the front, until the session's start.
-            for _ in 0..<Self.copyPageLimit {
-                guard let before = cursor else { break }
-                guard case .snapshot(let older) = try await client.nativeThread(
-                    agentID: ref.agent, request: .snapshot(expectedSessionID: page.piSessionID, beforeEntryID: before)),
-                    older.piSessionID == page.piSessionID, older.generation == page.generation else { break }
-                let seen = Set(messages.map(\.entryID))
-                messages = older.messages.filter { !seen.contains($0.entryID) } + messages
-                cursor = older.olderCursor
-            }
-            let text = nativeTranscriptText(messages)
-            guard !text.isEmpty else { return }
-            UIPasteboard.general.string = text
+            let host = hosts.host(ref.host)
+            let name = host?.agent(ref.agent).map { "“\($0.name)”" } ?? "This thread"
+            let empty = AgentActions.Failure("\(name) has no transcript yet. Nothing was copied.")
+            guard let client = host?.connectedClient else { throw empty }
+            let copied = try await ShepherdRemote.ThreadTranscript.copy(fetch: { request in
+                try await client.nativeThread(agentID: ref.agent, request: request)
+            }, to: { UIPasteboard.general.string = $0 })
+            guard copied else { throw empty }
+            navigator.present(.search(.problem(title: "Transcript copied", message: "The transcript is on the clipboard.")))
         }
     }
-
-    /// ponytail: a flat list stops here; a thread with more pages copies what was read.
-    private static let copyPageLimit = 512
 
     private func move(to space: SpaceID) {
         let ref = thread

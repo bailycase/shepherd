@@ -172,10 +172,12 @@ private struct SettingsSplit: View {
                                 .padding(.top, MobileLayout.settingsListGroupGap)
                                 .padding(.bottom, SH.Space.xs)
                             if rows.isEmpty {
-                                SettingsListItem(page: page, selected: selection.page == page) { selection.page = page }
+                                SettingsListItem(page: page, selected: selection.isSelected(page)) { selection.select(page) }
                             } else {
                                 ForEach(rows, id: \.self) { row in
-                                    SettingsListItem(page: page, selected: selection.page == page, label: row) { selection.page = page }
+                                    SettingsListItem(page: page, selected: selection.isSelected(page, row: row), label: row) {
+                                        selection.select(page, row: row)
+                                    }
                                 }
                             }
                         }

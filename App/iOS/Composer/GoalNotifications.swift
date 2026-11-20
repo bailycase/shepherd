@@ -4,7 +4,7 @@ import UserNotifications
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Local iPhone alerts from threads the client is already watching. This is not APNs:
+/// Local goal alerts from threads the iOS client is already watching. This is not APNs:
 /// disconnected, suspended, and never-opened threads have no live goal updates here.
 @MainActor
 final class GoalNotifications: NSObject {
@@ -14,27 +14,28 @@ final class GoalNotifications: NSObject {
     private var wasLive: [AgentRef: Bool] = [:]
     /// When push is enabled for a host, skip local goal alerts for its agents to avoid duplicates.
     var pushEnabledHosts: Set<UUID> = []
-    // The fixture app must never prompt for permission or post a real notification.
-    // Everywhere else, alerts gate on notification authorization at post time, not on idiom:
-    // iPad and iPhone Duo's inner display alert like the phone does.
-    private let available = Bundle.main.bundleIdentifier == "com.bailycase.shepherd.ios"
+    private let bundleID: String?
 
-    override init() {
+    init(bundleID: String? = Bundle.main.bundleIdentifier) {
+        self.bundleID = bundleID
         super.init()
         // The notification center delegate is set by PushAppDelegate,
         // which consolidates both push and local goal notification handling.
     }
 
     func watch(_ store: NativeThreadStore, hosts: MobileHosts, ref: AgentRef) {
-        guard available, watching.insert(ref).inserted else { return }
+        guard watching.insert(ref).inserted else { return }
         track(store, hosts: hosts, ref: ref)
     }
 
     /// Permission may suspend while another window enables push for this host.
     func authorizeLocalAlert(host: UUID, request: () async throws -> Bool) async throws -> Bool {
-        guard !pushEnabledHosts.contains(host) else { return false }
+        // Check the bundle before asking so fixtures never prompt for real permission.
+        guard GoalAlertPolicy.isAvailable(bundleID: bundleID, authorizationGranted: true),
+              !pushEnabledHosts.contains(host) else { return false }
         let granted = try await request()
-        return granted && !pushEnabledHosts.contains(host)
+        return GoalAlertPolicy.isAvailable(bundleID: bundleID, authorizationGranted: granted)
+            && !pushEnabledHosts.contains(host)
     }
 
     private func track(_ store: NativeThreadStore, hosts: MobileHosts, ref: AgentRef) {

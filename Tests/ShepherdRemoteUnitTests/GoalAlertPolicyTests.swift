@@ -5,6 +5,14 @@ import ShepherdRemote
 
 @Suite("Goal alert predicate")
 struct GoalAlertPolicyTests {
+    @Test func availabilityDependsOnlyOnBundleAndAuthorization() {
+        let available: (String?, Bool) -> Bool = GoalAlertPolicy.isAvailable
+        #expect(available("com.bailycase.shepherd.ios", true))
+        #expect(!available("com.bailycase.shepherd.ios", false))
+        #expect(!available("com.shepherd.ios-fixture", true))
+        #expect(!available(nil, true))
+    }
+
     private func goal(id: String = "goal-1", state: NativeGoalState) -> NativeGoal {
         NativeGoal(id: id, text: "Tidy the shed", state: state)
     }

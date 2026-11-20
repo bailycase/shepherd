@@ -4,13 +4,6 @@ import ShepherdUI
 // Settings search (MobileSettings): over page and row titles, like the Mac's. A hit opens its
 // page; row hits can't deep-link to the row, so they open the page too.
 
-/// One search hit: its page, and the row title that matched (nil when the page's own title did).
-struct SettingsSearchHit: Hashable, Identifiable {
-    let page: SettingsPage
-    let row: String?
-    var id: String { "\(page.rawValue)/\(row ?? "")" }
-}
-
 enum SettingsSearch {
     /// The row titles each page draws, as it draws them.
     static let rows: [SettingsPage: [String]] = [

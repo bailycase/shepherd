@@ -235,14 +235,16 @@ struct PushTests {
             } catch {}
         }
 
-        let alerts = GoalNotifications()
+        let alerts = GoalNotifications(bundleID: "com.bailycase.shepherd.ios")
+        let granted = try await alerts.authorizeLocalAlert(host: hostID) { true }
+        assert(granted, "local goal alerts must work on iPad as well as iPhone")
         let allowed = try await alerts.authorizeLocalAlert(host: hostID) {
             await Task.yield()
             alerts.pushEnabledHosts.insert(hostID)
             return true
         }
         assert(!allowed, "push enabled during permission must suppress the local post")
-        print("PUSH CHECK COMPLETE: payload, renewal, durable intent, failed revoke/forget, multiwindow taps, permission race")
+        print("PUSH CHECK COMPLETE: payload, renewal, durable intent, failed revoke/forget, multiwindow taps, local goal availability, permission race")
     }
 }
 
