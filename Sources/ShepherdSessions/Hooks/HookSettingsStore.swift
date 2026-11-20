@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
@@ -47,14 +48,32 @@ public final class HookSettingsStore: @unchecked Sendable {
         }
     }
 
+    /// The app and host can both write. Lock a separate inode because settings is replaced by rename.
+    func withMutation<T>(_ body: () throws -> T) throws -> T {
+        let directory = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let path = directory.appendingPathComponent("settings.lock").path
+        let fd = open(path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        defer { close(fd) }
+        while flock(fd, LOCK_EX) != 0 {
+            guard errno == EINTR else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        }
+        return try body()
+    }
+
     /// Applies `body` to the current file and writes the result whole; nothing when it changes nothing.
     public func change(_ body: (inout HookSettings) throws -> Void) throws {
+        try withMutation { try changeLocked(body) }
+    }
+
+    /// Call inside `withMutation`, including when the settings write must precede a hook publish.
+    func changeLocked(_ body: (inout HookSettings) throws -> Void) throws {
         try lock.withLock {
             var settings = try load()
             let before = settings
             try body(&settings)
             guard settings != before else { return }
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             var data = try encoder.encode(settings)

@@ -53,6 +53,31 @@ struct FleetContentUnitTests {
         #expect(source.read().contains { String(decoding: $0.value, as: UTF8.self).contains("./late.sh") })
     }
 
+    @Test(arguments: [false, true])
+    func aDisabledHookPublishedDuringTheSettingsReadIsNeverExportedOn(throughFleet: Bool) throws {
+        let f = try HookCatalogTests.Fixture(); defer { f.remove() }
+        var catalog = f.catalog
+        let path = f.home + "/.shepherd/hooks.json"
+        let draft = HookDraft(event: "Stop", handler: .command("true"))
+        catalog.readSettings = { store in
+            let settings = try store.read()
+            if !FileManager.default.fileExists(atPath: path) {
+                try HookFileWriter(settings: store).add(draft, to: path, on: false)
+            }
+            return settings
+        }
+        if throughFleet {
+            let source = FleetHooksSource(catalog: { catalog })
+            #expect(source.isReady)
+            let id = FleetHooksSource.id(event: draft.event, matcher: draft.matcher, handler: draft.handler.raw)
+            let value = try #require(source.read()[FleetHooksSource.kind + id])
+            #expect(try HookJSON.parse(String(decoding: value, as: UTF8.self))["on"]?.boolValue == false)
+        } else {
+            let entry = try #require(catalog.load().entries.first)
+            #expect(entry.file == path && !entry.on)
+        }
+    }
+
     /// An inbound disabled hook is recorded off before its file publishes it, so no event can run it in between.
     @Test func anInboundDisabledHookIsRecordedOffBeforeItsFilePublishes() throws {
         let f = try HookCatalogTests.Fixture(); defer { f.remove() }
