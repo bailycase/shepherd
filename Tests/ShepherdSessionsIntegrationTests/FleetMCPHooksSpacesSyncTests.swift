@@ -156,7 +156,7 @@ struct FleetMCPHooksSpacesSyncTests {
         // Removing it removes it there, and the off switch with it.
         try writer.delete(try #require(a.hooks().first))
         // The writer takes the hook out of the file first and forgets its off switch in a second write.
-        try await eventually("Mac mini to lose the hook and its off switch") { b.hooks().isEmpty && b.server.hooks.settingsStore.read().off.isEmpty }
+        try await eventually("Mac mini to lose the hook and its off switch") { b.hooks().isEmpty && (try? b.server.hooks.settingsStore.read())?.off.isEmpty == true }
     }
 
     @Test func theSourcesSwitchesSyncAndHooksOfOtherToolsDoNot() async throws {
@@ -166,8 +166,8 @@ struct FleetMCPHooksSpacesSyncTests {
         let claude = a.home.path + "/.claude/settings.json"
         _ = try HookFileWriter(settings: a.server.hooks.settingsStore).add(HookDraft(event: "Stop", handler: .command("say done")), to: claude)
         try a.server.hooks.settingsStore.setReader(.codex, false)
-        try await eventually("Mac mini's Codex reader to be off") { !b.server.hooks.settingsStore.read().readers.codex }
-        #expect(b.server.hooks.settingsStore.read().readers.claude)
+        try await eventually("Mac mini's Codex reader to be off") { (try? b.server.hooks.settingsStore.read())?.readers.codex == false }
+        #expect(try b.server.hooks.settingsStore.read().readers.claude)
         #expect(b.server.hooks.load().entries.filter { $0.format == .claude }.isEmpty)
         #expect(b.server.fleetSyncWinner(FleetUnit.setting("hooks.readers")) != nil)
     }

@@ -6,11 +6,11 @@ import Testing
 @testable import ShepherdSessions
 
 extension StateStoreTests {
-    // Keep the reference golden frozen. StateRecoveryTests and YourPiImportEdgeTests exercise
-    // the new policies for these damaged inputs instead of asserting the old rewrites.
+    // Keep the reference golden frozen. StateRecoveryTests, YourPiImportEdgeTests and HookCatalogTests
+    // exercise the new policies for these damaged inputs instead of asserting the old rewrites.
     private static let damagedRows: Set<String> = [
         "workspace-invalid-split", "workspace-dangling-tab", "workspace-unreadable-agent", "workspace-truncated",
-        "pi-import-bad-element", "pi-import-damaged",
+        "pi-import-bad-element", "pi-import-damaged", "hook-settings-bad-element", "hook-settings-damaged",
     ]
 
     @Test func historicalFilesLoadAndRewriteAsRecorded() async throws {
@@ -131,7 +131,7 @@ extension StateStoreTests {
             _ = try await store.removeThreadNote(design, noteID: writerID)
         case "hooks/settings.json":
             let store = HookSettingsStore(support: root)
-            let settings = store.read()
+            let settings = try store.read()
             loaded = try json(settings)
             try store.setReader(.claude, !settings.readers.claude)
             try store.setReader(.claude, settings.readers.claude)

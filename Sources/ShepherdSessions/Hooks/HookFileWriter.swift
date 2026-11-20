@@ -126,6 +126,8 @@ public struct HookFileWriter: Sendable {
     // MARK: Saving
 
     private func save(_ root: HookJSON, path: String, written draft: HookDraft?, replacing old: HookEntry?) throws -> String {
+        // An edit must carry an off switch over, which needs the file; refuse before touching a hooks file.
+        let off = try settings.read().off
         let target = PiHome.canonical(path)
         try FileManager.default.createDirectory(atPath: (target as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         var info = stat()
@@ -134,7 +136,7 @@ public struct HookFileWriter: Sendable {
 
         let hash = draft.map { HookCanonical.hash(file: path, event: $0.event, matcher: $0.matcher, canonical: $0.handler.raw.canonical) } ?? ""
         // Only an off switch carries over: an edit keeps a hook that was off, off; a removed one is forgotten.
-        guard let old, settings.read().off.contains(old.hash) else { return hash }
+        guard let old, off.contains(old.hash) else { return hash }
         let remaining = Set(((try? HookCatalog.entries(of: root, file: path, scope: .mac, format: .shepherd, editable: true)) ?? []).map(\.hash))
         try settings.change { settings in
             if !remaining.contains(old.hash) { settings.off.removeAll { $0 == old.hash } }

@@ -191,6 +191,47 @@ test("every configured hook runs unless switched off; settings apply on the next
   assert.deepEqual(ran(), ["claude", "space"]);
 });
 
+test("a damaged settings.json fails closed: no hook runs, and it is not rewritten", async () => {
+  const { project, hooksDir, macFile } = fixture();
+  const marker = path.join(project, "ran.txt");
+  writeJSON(macFile, { hooks: { PreToolUse: [{ matcher: "Edit", hooks: [{ type: "command", command: "echo mac >> ran.txt" }] }] } });
+  const pi = load(hooksDir);
+  const ctx = context(project);
+  const file = path.join(hooksDir, "settings.json");
+  const damaged = [
+    '{"version":1,"off":["abc"],', // truncated
+    "", // empty
+    '[]', '"off"', // wrong type
+    '{"version":1,"off":"abc"}', '{"version":1,"off":[1]}', '{"version":1,"readers":{"claude":"no"}}', '{"version":"1"}',
+    '{"version":2,"value":{}}',
+  ];
+  for (const text of damaged) {
+    fs.writeFileSync(file, text);
+    assert.ok(hooks.readSettings(hooksDir).damaged, `damaged: ${text}`);
+    await pi.emit("tool_call", editCall(), ctx);
+    assert.equal(fs.existsSync(marker), false, `no hook runs for ${text}`);
+    assert.equal(fs.readFileSync(file, "utf8"), text, "left as it was");
+  }
+  // Unreadable (a directory) and a dangling symlink are damage too, not a missing file.
+  fs.rmSync(file);
+  fs.mkdirSync(file);
+  assert.ok(hooks.readSettings(hooksDir).damaged);
+  fs.rmdirSync(file);
+  fs.symlinkSync(path.join(hooksDir, "nowhere"), file);
+  assert.ok(hooks.readSettings(hooksDir).damaged);
+  await pi.emit("tool_call", editCall(), ctx);
+  assert.equal(fs.existsSync(marker), false);
+  // Both shapes of a good file read, and a missing one reads as everything on.
+  fs.rmSync(file);
+  assert.equal(hooks.readSettings(hooksDir).damaged, undefined);
+  fs.writeFileSync(file, '{"version":1,"value":{"version":1,"off":["x"],"readers":{"codex":false}}}');
+  assert.deepEqual(hooks.readSettings(hooksDir), { off: ["x"], readers: { codex: false } });
+  fs.writeFileSync(file, '{"version":1,"off":["y"],"readers":{"claude":true,"codex":false}}');
+  assert.deepEqual(hooks.readSettings(hooksDir), { off: ["y"], readers: { claude: true, codex: false } });
+  await pi.emit("tool_call", editCall(), ctx);
+  assert.deepEqual(fs.readFileSync(marker, "utf8").trim().split("\n"), ["mac"], "a readable file runs the hook again");
+});
+
 test("the home folder is never a space", async () => {
   const { hooksDir } = fixture();
   const home = process.env.HOME;

@@ -250,19 +250,44 @@ function readCached(file, parse) {
   return value;
 }
 
-/** `<hooksDir>/settings.json`: the hashes switched off and the readers; missing or invalid reads as all on. */
+/**
+ * `<hooksDir>/settings.json`: the hashes switched off and the readers. Missing reads as all on.
+ * A file that can't be read or isn't in the shape the app writes (`HookSettings`, bare or as
+ * `{version: 1, value}`) is damaged: `damaged` is set and nothing runs, because the file holds the
+ * switches the person turned off.
+ */
 export function readSettings(hooksDir) {
-  const raw = readCached(path.join(hooksDir, "settings.json"), (bytes) => JSON.parse(bytes.toString("utf8")));
-  const valid = raw && typeof raw === "object" && !Array.isArray(raw);
-  return {
-    off: valid && Array.isArray(raw.off) ? raw.off : [],
-    readers: valid && raw.readers && typeof raw.readers === "object" ? raw.readers : {},
-  };
+  const file = path.join(hooksDir, "settings.json");
+  const damaged = (reason) => ({ off: [], readers: {}, damaged: `${file}: ${reason}` });
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    // A dangling symlink is not a missing file.
+    if (error?.code === "ENOENT") {
+      try { fs.lstatSync(file); } catch { return { off: [], readers: {} }; }
+    }
+    return damaged(String(error?.message ?? error));
+  }
+  const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+  if (isObject(raw) && Object.keys(raw).length === 2 && "version" in raw && "value" in raw) {
+    if (raw.version !== 1) return damaged("unsupported version");
+    raw = raw.value;
+  }
+  if (!isObject(raw)) return damaged("not a JSON object");
+  const { version = null, off = null, readers = null } = raw;
+  if (version !== null && !Number.isInteger(version)) return damaged("version isn't an integer");
+  if (off !== null && !(Array.isArray(off) && off.every((h) => typeof h === "string"))) return damaged("off isn't a list of strings");
+  if (readers !== null && !(isObject(readers) && ["claude", "codex"].every((k) => readers[k] == null || typeof readers[k] === "boolean"))) {
+    return damaged("readers isn't an object of booleans");
+  }
+  return { off: off ?? [], readers: readers ?? {} };
 }
 
 /** Every hook that would run for `root`: files found, readers on, not switched off. */
 export function runnableHooks(root, hooksDir) {
   const settings = readSettings(hooksDir);
+  if (settings.damaged) return [];
   const off = new Set(settings.off);
   const out = [];
   for (const file of hookFiles(root)) {

@@ -150,9 +150,13 @@ public struct HookCatalogSnapshot: Hashable, Codable, Sendable {
     public var settings: HookSettings
     /// The host's home folder, where This Mac's files live: for `~` in labels and This Mac's save target.
     public var home: String
+    /// Why `settings.json` couldn't be read, if it couldn't. While it is set every hook is off and
+    /// nothing can be changed.
+    public var settingsProblem: String?
 
-    public init(sources: [HookSource], entries: [HookEntry], settings: HookSettings, home: String = "") {
+    public init(sources: [HookSource], entries: [HookEntry], settings: HookSettings, home: String = "", settingsProblem: String? = nil) {
         self.sources = sources; self.entries = entries; self.settings = settings; self.home = home
+        self.settingsProblem = settingsProblem
     }
 
     public init(from decoder: Decoder) throws {
@@ -161,6 +165,7 @@ public struct HookCatalogSnapshot: Hashable, Codable, Sendable {
         entries = try c.decodeIfPresent([HookEntry].self, forKey: .entries) ?? []
         settings = try c.decodeIfPresent(HookSettings.self, forKey: .settings) ?? HookSettings()
         home = try c.decodeIfPresent(String.self, forKey: .home) ?? ""
+        settingsProblem = try c.decodeIfPresent(String.self, forKey: .settingsProblem)
     }
 
     /// This Mac's hooks plus those of `spaceRoot` (none for nil), as a thread there sees them.
@@ -190,8 +195,8 @@ public struct HookSettings: Hashable, Sendable, Codable {
         public init(claude: Bool = true, codex: Bool = true) { self.claude = claude; self.codex = codex }
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            claude = (try? c.decode(Bool.self, forKey: .claude)) ?? true
-            codex = (try? c.decode(Bool.self, forKey: .codex)) ?? true
+            claude = try c.decodeIfPresent(Bool.self, forKey: .claude) ?? true
+            codex = try c.decodeIfPresent(Bool.self, forKey: .codex) ?? true
         }
         /// Whether files of `format` are read.
         public func reads(_ format: HookFormat) -> Bool {
@@ -214,9 +219,9 @@ public struct HookSettings: Hashable, Sendable, Codable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        version = (try? c.decode(Int.self, forKey: .version)) ?? 1
-        off = (try? c.decode([String].self, forKey: .off)) ?? []
-        readers = (try? c.decode(Readers.self, forKey: .readers)) ?? Readers()
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        off = try c.decodeIfPresent([String].self, forKey: .off) ?? []
+        readers = try c.decodeIfPresent(Readers.self, forKey: .readers) ?? Readers()
     }
 
     /// Whether the hook with this hash is on.
