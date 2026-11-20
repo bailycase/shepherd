@@ -184,6 +184,14 @@ public struct HookCatalogSnapshot: Hashable, Codable, Sendable {
     }
 }
 
+private extension KeyedDecodingContainer {
+    /// Nil only when the key is absent. An explicit null throws: `"off": null` is damage, and reading it as
+    /// the default would switch every disabled hook back on.
+    func decodeAbsent<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T? {
+        contains(key) ? try decode(type, forKey: key) : nil
+    }
+}
+
 /// `<support>/hooks/settings.json`: which hooks the
 /// person switched off, by hash, and whether the Claude Code and Codex readers are on. Every
 /// configured hook not in `off` runs.
@@ -195,8 +203,8 @@ public struct HookSettings: Hashable, Sendable, Codable {
         public init(claude: Bool = true, codex: Bool = true) { self.claude = claude; self.codex = codex }
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            claude = try c.decodeIfPresent(Bool.self, forKey: .claude) ?? true
-            codex = try c.decodeIfPresent(Bool.self, forKey: .codex) ?? true
+            claude = try c.decodeAbsent(Bool.self, forKey: .claude) ?? true
+            codex = try c.decodeAbsent(Bool.self, forKey: .codex) ?? true
         }
         /// Whether files of `format` are read.
         public func reads(_ format: HookFormat) -> Bool {
@@ -219,9 +227,9 @@ public struct HookSettings: Hashable, Sendable, Codable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
-        off = try c.decodeIfPresent([String].self, forKey: .off) ?? []
-        readers = try c.decodeIfPresent(Readers.self, forKey: .readers) ?? Readers()
+        version = try c.decodeAbsent(Int.self, forKey: .version) ?? 1
+        off = try c.decodeAbsent([String].self, forKey: .off) ?? []
+        readers = try c.decodeAbsent(Readers.self, forKey: .readers) ?? Readers()
     }
 
     /// Whether the hook with this hash is on.

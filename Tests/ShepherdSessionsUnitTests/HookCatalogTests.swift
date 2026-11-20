@@ -168,6 +168,10 @@ struct HookCatalogTests {
         ("off has the wrong type", Data(#"{"version":1,"off":"h"}"#.utf8)),
         ("off holds a number", Data(#"{"version":1,"off":[1]}"#.utf8)),
         ("a reader has the wrong type", Data(#"{"version":1,"off":["h"],"readers":{"claude":"no"}}"#.utf8)),
+        ("off is null", Data(#"{"version":1,"off":null}"#.utf8)),
+        ("version is null", Data(#"{"version":null,"off":["h"]}"#.utf8)),
+        ("readers is null", Data(#"{"version":1,"off":["h"],"readers":null}"#.utf8)),
+        ("a reader switch is null", Data(#"{"version":1,"off":["h"],"readers":{"claude":null,"codex":false}}"#.utf8)),
         ("unsupported envelope version", Data(#"{"version":2,"value":{}}"#.utf8)),
         ("unreadable", nil),
     ]
@@ -390,6 +394,23 @@ struct HookFileWriterTests {
         text = try String(contentsOfFile: path, encoding: .utf8)
         #expect(text == "{\n  \"model\": \"opus\",\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(ls)\"\n    ]\n  },\n  \"hooks\": {},\n  \"zeta\": true\n}\n")
         #expect(try f.catalog.settingsStore.read().off.isEmpty)
+    }
+
+    /// The new hash must be off before the file publishes it: when the publish fails, it is already off.
+    @Test func editingADisabledHookRecordsTheNewOffSwitchBeforePublishing() throws {
+        let f = try HookCatalogTests.Fixture(); defer { f.remove() }
+        let path = f.home + "/.shepherd/hooks.json"
+        try f.write(path, HookCatalogTests.preToolUse)
+        let writer = HookFileWriter(settings: f.catalog.settingsStore)
+        let old = try #require(f.catalog.load().entries.first)
+        try f.catalog.settingsStore.setOn(old.hash, false)
+        let folder = (path as NSString).deletingLastPathComponent
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder) // the publish can't write
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder) }
+        let draft = HookDraft(event: "PreToolUse", matcher: "Bash", handler: .command("./other.sh"))
+        let newHash = HookCanonical.hash(file: path, event: draft.event, matcher: draft.matcher, canonical: draft.handler.raw.canonical)
+        #expect(throws: (any Error).self) { try writer.update(old, to: draft) }
+        #expect(try f.catalog.settingsStore.read().off.contains(newHash), "off before it was ever published")
     }
 
     @Test func aNewFileAndItsFoldersAreCreatedAndTomlIsRefused() throws {

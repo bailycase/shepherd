@@ -27,6 +27,17 @@ struct FleetContentUnitTests {
         #expect(FleetFileTree.files(under: tree.path, limits: .init(files: 10, bytes: 3)) == nil, "over the size limit: not synced")
     }
 
+    @Test func hookSyncWaitsWhileTheSettingsFileIsDamaged() throws {
+        let f = try HookCatalogTests.Fixture(); defer { f.remove() }
+        let catalog = f.catalog
+        let source = FleetHooksSource(catalog: { catalog })
+        #expect(source.isReady, "no settings file is the defaults")
+        try f.write(catalog.settingsStore.url.path, #"{"version":1,"off":null"#)
+        #expect(!source.isReady, "its fallback reader switches would sync as real edits")
+        try f.write(catalog.settingsStore.url.path, #"{"version":1,"off":[]}"#)
+        #expect(source.isReady)
+    }
+
     @Test func aWriteStaysInsideItsFolderAndKeepsAScriptRunnable() throws {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

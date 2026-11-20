@@ -261,7 +261,8 @@ export function readSettings(hooksDir) {
   const damaged = (reason) => ({ off: [], readers: {}, damaged: `${file}: ${reason}` });
   let raw;
   try {
-    raw = JSON.parse(fs.readFileSync(file, "utf8"));
+    // Fatal: a plain UTF-8 read swaps invalid bytes for U+FFFD, so a damaged hash could parse as a different string.
+    raw = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(fs.readFileSync(file)));
   } catch (error) {
     // A dangling symlink is not a missing file.
     if (error?.code === "ENOENT") {
@@ -275,13 +276,15 @@ export function readSettings(hooksDir) {
     raw = raw.value;
   }
   if (!isObject(raw)) return damaged("not a JSON object");
-  const { version = null, off = null, readers = null } = raw;
-  if (version !== null && !Number.isInteger(version)) return damaged("version isn't an integer");
-  if (off !== null && !(Array.isArray(off) && off.every((h) => typeof h === "string"))) return damaged("off isn't a list of strings");
-  if (readers !== null && !(isObject(readers) && ["claude", "codex"].every((k) => readers[k] == null || typeof readers[k] === "boolean"))) {
+  // Only an absent field defaults. An explicit null is damage: `"off": null` read as [] would switch every disabled hook back on.
+  const has = (key) => Object.hasOwn(raw, key);
+  const { version, off, readers } = raw;
+  if (has("version") && !Number.isInteger(version)) return damaged("version isn't an integer");
+  if (has("off") && !(Array.isArray(off) && off.every((h) => typeof h === "string"))) return damaged("off isn't a list of strings");
+  if (has("readers") && !(isObject(readers) && ["claude", "codex"].every((k) => !Object.hasOwn(readers, k) || typeof readers[k] === "boolean"))) {
     return damaged("readers isn't an object of booleans");
   }
-  return { off: off ?? [], readers: readers ?? {} };
+  return { off: has("off") ? off : [], readers: has("readers") ? readers : {} };
 }
 
 /** Every hook that would run for `root`: files found, readers on, not switched off. */
@@ -784,6 +787,13 @@ export default function shepherdHooks(pi) {
     const command = String(params?.command ?? "").trim();
     if (!EVENTS.includes(event) || !command) return reply("hook_propose needs a known event and a command.", true);
     if (!ctx.hasUI) return reply("No one can approve a hook here.", true);
+    // Damaged settings.json: the switches the person turned off can't be read, so nothing runs and nothing is added.
+    const refuseWhileDamaged = () => {
+      const damaged = readSettings(hooksDir).damaged;
+      return damaged ? reply(`Hook settings are damaged, so no hook was tested or added. ${damaged}. Restore the file from a backup or fix its JSON.`, true) : undefined;
+    };
+    const refused = refuseWhileDamaged();
+    if (refused) return refused;
     const matcher = typeof params.matcher === "string" ? params.matcher.trim() : "";
     const statusMessage = typeof params.statusMessage === "string" && params.statusMessage.trim() ? params.statusMessage.trim() : undefined;
     const timeout = Number.isFinite(params.timeout) && params.timeout > 0 ? Math.min(Math.round(params.timeout), MAX_TIMEOUT_S) : undefined;
@@ -825,6 +835,9 @@ export default function shepherdHooks(pi) {
       return reply("The person added an edited version of the hook in Settings; it may differ from your proposal (event, matcher or command).");
     }
     if (choice !== "Add to this space" && choice !== "Add to this Mac") return reply(`The person didn't add the hook (test: ${test.summary}).`);
+    // The file may have been damaged while the person decided.
+    const refusedNow = refuseWhileDamaged();
+    if (refusedNow) return refusedNow;
     const file = choice === "Add to this space" ? scopes.space : scopes.mac;
     let added;
     try {

@@ -132,16 +132,18 @@ public struct HookFileWriter: Sendable {
         try FileManager.default.createDirectory(atPath: (target as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         var info = stat()
         let mode = lstat(target, &info) == 0 ? info.st_mode & 0o7777 : 0o644
-        try PiHome.write(Data(root.pretty.utf8), to: URL(fileURLWithPath: target), mode: mode)
 
         let hash = draft.map { HookCanonical.hash(file: path, event: $0.event, matcher: $0.matcher, canonical: $0.handler.raw.canonical) } ?? ""
         // Only an off switch carries over: an edit keeps a hook that was off, off; a removed one is forgotten.
-        guard let old, off.contains(old.hash) else { return hash }
-        let remaining = Set(((try? HookCatalog.entries(of: root, file: path, scope: .mac, format: .shepherd, editable: true)) ?? []).map(\.hash))
-        try settings.change { settings in
-            if !remaining.contains(old.hash) { settings.off.removeAll { $0 == old.hash } }
-            if draft != nil, !settings.off.contains(hash) { settings.off.append(hash) }
+        let carriesOff = old.map { off.contains($0.hash) } ?? false
+        // Record the new hash as off before the file publishes it, or an event in between runs it.
+        if carriesOff, draft != nil {
+            try settings.change { if !$0.off.contains(hash) { $0.off.append(hash) } }
         }
+        try PiHome.write(Data(root.pretty.utf8), to: URL(fileURLWithPath: target), mode: mode)
+        guard let old, carriesOff else { return hash }
+        let remaining = Set(((try? HookCatalog.entries(of: root, file: path, scope: .mac, format: .shepherd, editable: true)) ?? []).map(\.hash))
+        if !remaining.contains(old.hash) { try settings.change { $0.off.removeAll { $0 == old.hash } } }
         return hash
     }
 }
