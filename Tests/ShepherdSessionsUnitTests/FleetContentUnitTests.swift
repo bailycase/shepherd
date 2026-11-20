@@ -129,6 +129,39 @@ struct FleetContentUnitTests {
         #expect(materializer.scan(name: "B").isEmpty, "nothing the materializer wrote is an edit")
     }
 
+    @Test(.timeLimit(.minutes(1))) func damagedInstructionHistoryPausesFleetUntilRepaired() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let receiver = try FleetStore(directory: dir.appendingPathComponent("receiver"), mac: UUID())
+        let materializer = FleetMaterializer(store: receiver, directory: receiver.directory)
+        let instructions = InstructionsStore(directory: dir.appendingPathComponent("instructions"))
+        try instructions.save(.agents, content: "local", now: .init(timeIntervalSince1970: 1))
+        materializer.add(FleetInstructionsSource(instructions))
+
+        let history = try Data(contentsOf: instructions.historyURL)
+        let damaged = Data(#"{"version":1,"revisions":["#.utf8)
+        try damaged.write(to: instructions.historyURL)
+        #expect(materializer.scan(name: "This Mac").isEmpty, "does not export an edit or seed while damaged")
+
+        let sender = try Sender(dir: dir)
+        let remote = "from the fleet"
+        let op = sender.blob(FleetUnit.instruction(.agents), remote)
+        _ = receiver.receive(op)
+        _ = receiver.putBlob(Data(remote.utf8), named: sender.hash(remote))
+        #expect(!materializer.materialize(name: "This Mac").failed, "defers instead of trying a doomed write")
+        #expect(instructions.content(.agents) == "local")
+        #expect(try Data(contentsOf: instructions.historyURL) == damaged)
+
+        try history.write(to: instructions.historyURL)
+        _ = materializer.scan(name: "This Mac")
+        #expect(!materializer.materialize(name: "This Mac").failed)
+        let repaired = instructions.snapshot()
+        #expect(repaired.historyProblem == nil)
+        #expect(repaired.agents == remote)
+        #expect(repaired.history.count == 2)
+        #expect(repaired.history.first?.summary == "Synced from Mac mini")
+    }
+
     // MARK: Whole or nothing
 
     /// A Mac as a receiver: its own store and pi home, with the extensions and skills sources.

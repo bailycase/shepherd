@@ -241,6 +241,10 @@ public final class ClientInstructions {
         hosts.first { files(of: $0).snapshot != nil }
     }
 
+    public func historyProblem(in hosts: [SettingsHost]) -> String? {
+        edited(in: hosts).flatMap { files(of: $0).snapshot?.historyProblem }
+    }
+
     /// Reads every connected host's files.
     public func refresh(_ hosts: [SettingsHost]) async {
         guard !busy else { return }

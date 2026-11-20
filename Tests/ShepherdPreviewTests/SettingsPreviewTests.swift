@@ -381,6 +381,25 @@ struct SettingsPreviewTests {
         }
     }
 
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    func settingsInstructionsDamagedHistory(editing: Bool) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let store = workspace.server.instructions
+        try store.save(.agents, content: Self.instructionsSample)
+        let url = store.directory.appendingPathComponent("history.json")
+        try Data(#"{"version":1,"revisions":["#.utf8).write(to: url, options: .atomic)
+        try await workspace.seed(workspace.server.state)
+        await workspace.vm.instructions.refresh()
+        #expect(workspace.vm.instructions.local?.historyProblem?.contains(url.path) == true)
+        workspace.vm.settingsSection = .instructions
+        workspace.vm.instructions.editing = editing
+        try await Preview.render(editing ? "settings-instructions-damaged-editor" : "settings-instructions-damaged-list",
+                                 size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
     /// Instructions right after the first launch: Shepherd's files are empty and the AGENTS.md
     /// that came over from your pi is named, with Use it here.
     @Test func settingsInstructionsImported() async throws {

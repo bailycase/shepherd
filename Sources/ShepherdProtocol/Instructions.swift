@@ -70,12 +70,16 @@ public struct InstructionsSnapshot: Codable, Hashable, Sendable {
     /// The host's instructions directory, with its home folder as `~`.
     public var directory: String
     public var history: [InstructionHistoryEntry]
+    /// Why the host cannot read or update history, if it needs repair.
+    public var historyProblem: String?
 
-    public init(agents: String = "", appendSystem: String = "", directory: String, history: [InstructionHistoryEntry] = []) {
+    public init(agents: String = "", appendSystem: String = "", directory: String,
+                history: [InstructionHistoryEntry] = [], historyProblem: String? = nil) {
         self.agents = agents
         self.appendSystem = appendSystem
         self.directory = directory
         self.history = history
+        self.historyProblem = historyProblem
     }
 
     public subscript(file: InstructionFile) -> String {

@@ -612,6 +612,7 @@ final class AppSettings {
     var fleetWeights: [String: FleetSendWeight] {
         didSet {
             store.set(fleetWeights.mapValues(\.rawValue), forKey: Key.fleetWeights)
+            hostPreferences?.update { $0.fleet.weights = fleetWeights }
             if fleetWeights != oldValue { onFleetWeightsChange?() }
         }
     }
@@ -620,7 +621,10 @@ final class AppSettings {
     /// Settings ▸ Fleet ▸ Threads can send work (`HostSettings.fleetThreadsCanSend`): a thread may
     /// dispatch work to another Mac on its own. Off until turned on. Synced across the fleet.
     var fleetThreadsCanSend: Bool {
-        didSet { store.set(fleetThreadsCanSend, forKey: Key.fleetThreadsCanSend) }
+        didSet {
+            store.set(fleetThreadsCanSend, forKey: Key.fleetThreadsCanSend)
+            hostPreferences?.update { $0.fleet.threadsCanSend = fleetThreadsCanSend }
+        }
     }
 
     /// How many dispatches one thread may have in flight (`HostSettings.fleetThreadCap`). Synced across the fleet.
@@ -629,18 +633,23 @@ final class AppSettings {
             let clamped = HostSettings.clampedThreadCap(fleetThreadCap)
             if clamped != fleetThreadCap { fleetThreadCap = clamped; return }
             store.set(fleetThreadCap, forKey: Key.fleetThreadCap)
+            hostPreferences?.update { $0.fleet.threadCap = fleetThreadCap }
         }
     }
 
     /// Settings ▸ Fleet ▸ Code ▸ Uncommitted changes (`HostSettings.fleetUncommitted`). Synced across the fleet.
     var fleetUncommitted: FleetUncommittedChanges {
-        didSet { store.set(fleetUncommitted.rawValue, forKey: Key.fleetUncommitted) }
+        didSet {
+            store.set(fleetUncommitted.rawValue, forKey: Key.fleetUncommitted)
+            hostPreferences?.update { $0.fleet.uncommitted = fleetUncommitted }
+        }
     }
 
     /// Settings ▸ Fleet ▸ Code ▸ Ignored files ▸ Per space, under the setting keys `fleet.snapshotExcludes.<spaceID>`. Synced across the fleet.
     var fleetSnapshotExcludes: [String: FleetSnapshotExcludes] {
         didSet {
             if let data = try? JSONEncoder().encode(fleetSnapshotExcludes) { store.set(data, forKey: Key.fleetSnapshotExcludes) }
+            hostPreferences?.update { $0.fleet.snapshotExcludes = fleetSnapshotExcludes }
         }
     }
 
@@ -657,6 +666,7 @@ final class AppSettings {
     var fleetCheckIgnores: [String: [String]] {
         didSet {
             store.set(fleetCheckIgnores, forKey: Key.fleetCheckIgnores)
+            hostPreferences?.update { $0.fleet.checkIgnores = fleetCheckIgnores }
             if fleetCheckIgnores != oldValue { onFleetWeightsChange?() }
         }
     }
@@ -676,6 +686,7 @@ final class AppSettings {
     var fleetAutoDispatch: Bool? {
         didSet {
             if let fleetAutoDispatch { store.set(fleetAutoDispatch, forKey: Key.fleetAutoDispatch) } else { store.removeObject(forKey: Key.fleetAutoDispatch) }
+            hostPreferences?.update { $0.fleet.autoDispatch = fleetAutoDispatch }
             if fleetAutoDispatch != oldValue { onFleetWeightsChange?() }
         }
     }
@@ -684,6 +695,7 @@ final class AppSettings {
     var fleetBatteryCountsHalf: Bool {
         didSet {
             store.set(fleetBatteryCountsHalf, forKey: Key.fleetBatteryCountsHalf)
+            hostPreferences?.update { $0.fleet.batteryCountsHalf = fleetBatteryCountsHalf }
             if fleetBatteryCountsHalf != oldValue { onFleetWeightsChange?() }
         }
     }
@@ -730,7 +742,7 @@ final class AppSettings {
 
     private let store: UserDefaults
 
-    /// The host's own copy of the Agents, Worktrees and Experiments groups (`HostSettingsStore`), set only in the host process:
+    /// The host's own copy of the Agents, Worktrees, Fleet and Experiments groups (`HostSettingsStore`), set only in the host process:
     /// each change to any of them also goes there, beside its UserDefaults key, which stays current for the previous release.
     @ObservationIgnored private var hostPreferences: HostSettingsStore?
 
@@ -738,8 +750,8 @@ final class AppSettings {
     /// were read at init, so a change the previous release made to them since the file was written wins.
     func adoptHostPreferences(_ preferences: HostSettingsStore) {
         hostPreferences = preferences
-        let agents = agentsGroup, worktrees = worktreesGroup, experiments = experimentsGroup
-        preferences.update { $0.agents = agents; $0.worktrees = worktrees; $0.experiments = experiments }
+        let agents = agentsGroup, worktrees = worktreesGroup, fleet = fleetGroup, experiments = experimentsGroup
+        preferences.update { $0.agents = agents; $0.worktrees = worktrees; $0.fleet = fleet; $0.experiments = experiments }
     }
 
     /// The Agents group as the host's reply reads it: from the host's store once it is adopted (it is kept current by
@@ -751,6 +763,22 @@ final class AppSettings {
 
     /// The Experiments group as the host's reply reads it, like `hostAgents`.
     var hostExperiments: StoredHostPreferences.Experiments { hostPreferences?.preferences.experiments ?? experimentsGroup }
+
+    /// The Fleet group as the host's reply reads it, like `hostAgents`.
+    var hostFleet: StoredHostPreferences.Fleet { hostPreferences?.preferences.fleet ?? fleetGroup }
+
+    private var fleetGroup: StoredHostPreferences.Fleet {
+        var fleet = StoredHostPreferences.Fleet()
+        fleet.weights = fleetWeights
+        fleet.threadsCanSend = fleetThreadsCanSend
+        fleet.threadCap = fleetThreadCap
+        fleet.uncommitted = fleetUncommitted
+        fleet.snapshotExcludes = fleetSnapshotExcludes
+        fleet.checkIgnores = fleetCheckIgnores
+        fleet.autoDispatch = fleetAutoDispatch
+        fleet.batteryCountsHalf = fleetBatteryCountsHalf
+        return fleet
+    }
 
     private var experimentsGroup: StoredHostPreferences.Experiments {
         var experiments = StoredHostPreferences.Experiments()

@@ -154,6 +154,8 @@ struct HostPreferencesMigrationTests {
             }
         }
         try await reported()
+        // The host's own ops so far. A synced setting is the fleet's value, so applying it must not come back out as one of ours.
+        let localOps = await onQueue(server.queue) { engine.store.vector[engine.store.mac] }
         let peer = try #require(UUID(uuidString: "00000000-0000-4000-8000-0000000000C3"))
         let base = UInt64(Date().timeIntervalSince1970 * 1000) + 3_600_000
         let synced: [(FleetHostSetting, String, Step)] = [
@@ -173,6 +175,10 @@ struct HostPreferencesMigrationTests {
             try await eventuallyOnMain("the host's copy to take the synced \(step.label)") { (try? Self.stored(file)) == expected }
             try check("fleet sync \(step.label)")
             try await reported()
+            // Scan again now that the setting is applied: an echo would be a new op of this Mac's, and so a loop between the Macs.
+            await onQueue(server.queue) { engine.localChanged() }
+            let after = await onQueue(server.queue) { engine.store.vector[engine.store.mac] }
+            #expect(after == localOps, "fleet sync \(step.label): the host appended no outgoing op of its own")
         }
     }
 
@@ -323,6 +329,8 @@ struct HostPreferencesWorktreesMigrationTests {
             }
         }
         try await reported()
+        // The host's own ops so far. A synced setting is the fleet's value, so applying it must not come back out as one of ours.
+        let localOps = await onQueue(server.queue) { engine.store.vector[engine.store.mac] }
         let peer = try #require(UUID(uuidString: "00000000-0000-4000-8000-0000000000C3"))
         let base = UInt64(Date().timeIntervalSince1970 * 1000) + 3_600_000
         let synced: [(FleetHostSetting, String, Step)] = [
@@ -340,6 +348,10 @@ struct HostPreferencesWorktreesMigrationTests {
             try await eventuallyOnMain("the host's copy to take the synced \(step.label)") { (try? Self.stored(file)) == expected }
             try check("fleet sync \(step.label)")
             try await reported()
+            // Scan again now that the setting is applied: an echo would be a new op of this Mac's, and so a loop between the Macs.
+            await onQueue(server.queue) { engine.localChanged() }
+            let after = await onQueue(server.queue) { engine.store.vector[engine.store.mac] }
+            #expect(after == localOps, "fleet sync \(step.label): the host appended no outgoing op of its own")
         }
     }
 
@@ -505,6 +517,221 @@ struct HostPreferencesExperimentsMigrationTests {
 
         second.computerUseEnabled = false
         expected.computerUse = false
+        #expect(try Self.stored(file) == expected && Self.previousRelease(defaults) == expected)
+    }
+}
+
+/// C-MIGRATE for the Fleet group (Settings ▸ Fleet, the eight `shepherd.fleet.*` keys), as for Agents. All eight have the
+/// three paths: (a) the Mac's own write followed by the host (`AppSettings.followed`, which this slice leaves as it is),
+/// (b) a client's `HostSettingChange`, also answered with the reply that must carry the value, (c) an incoming Fleet
+/// sync (no request, no reply).
+@Suite("Host preferences migration: Fleet", .mainActorExclusive)
+@MainActor
+struct HostPreferencesFleetMigrationTests {
+    typealias Fleet = StoredHostPreferences.Fleet
+
+    private static let macA = UUID(uuidString: "00000000-0000-4000-8000-0000000000A1")!
+    private static let macB = UUID(uuidString: "00000000-0000-4000-8000-0000000000B2")!
+    private static let space = "acme-web"
+
+    /// What the previous release read for the group: its own parsing of the old keys, kept as it was.
+    private static func previousRelease(_ d: UserDefaults) -> Fleet {
+        var f = Fleet()
+        f.weights = (d.dictionary(forKey: "shepherd.fleet.weights") as? [String: String] ?? [:]).compactMapValues(FleetSendWeight.init(rawValue:))
+        f.threadsCanSend = d.object(forKey: "shepherd.fleet.threadsCanSend") as? Bool ?? false
+        f.threadCap = HostSettings.clampedThreadCap(d.object(forKey: "shepherd.fleet.threadCap") as? Int ?? HostSettings.fleetThreadCapDefault)
+        f.uncommitted = d.string(forKey: "shepherd.fleet.uncommitted").flatMap(FleetUncommittedChanges.init(rawValue:)) ?? .sendThem
+        f.snapshotExcludes = d.data(forKey: "shepherd.fleet.snapshotExcludes").flatMap { try? JSONDecoder().decode([String: FleetSnapshotExcludes].self, from: $0) } ?? [:]
+        f.checkIgnores = d.dictionary(forKey: "shepherd.fleet.checkIgnores") as? [String: [String]] ?? [:]
+        f.autoDispatch = d.object(forKey: "shepherd.fleet.autoDispatch") as? Bool
+        f.batteryCountsHalf = d.object(forKey: "shepherd.fleet.batteryCountsHalf") as? Bool ?? true
+        return f
+    }
+
+    /// Every setting of the group away from its default, as the previous release left its keys.
+    private static func seed(_ d: UserDefaults) {
+        d.set([FleetSendWeight.settingKey(hostID: macA): "prefer"], forKey: "shepherd.fleet.weights")
+        d.set(true, forKey: "shepherd.fleet.threadsCanSend")
+        d.set(5, forKey: "shepherd.fleet.threadCap")
+        d.set("leaveBehind", forKey: "shepherd.fleet.uncommitted")
+        d.set(try? JSONEncoder().encode([FleetSnapshotExcludes.settingKey(spaceID: space): FleetSnapshotExcludes(excluded: ["dist"])]), forKey: "shepherd.fleet.snapshotExcludes")
+        d.set([FleetCheckIgnoreSetting.settingKey(hostID: macB): ["check-a"]], forKey: "shepherd.fleet.checkIgnores")
+        d.set(false, forKey: "shepherd.fleet.autoDispatch")
+        d.set(false, forKey: "shepherd.fleet.batteryCountsHalf")
+    }
+
+    private static func stored(_ file: URL) throws -> Fleet {
+        try StoredHostPreferences.decode(Data(contentsOf: file)).fleet
+    }
+
+    /// The reply's fields for the group, so a reply is compared to the store's copy field for field.
+    private static func reply(_ s: HostSettings) -> Fleet {
+        var f = Fleet()
+        f.weights = s.fleetWeights
+        f.threadsCanSend = s.fleetThreadsCanSend
+        f.threadCap = s.fleetThreadCap
+        f.uncommitted = s.fleetUncommitted
+        f.snapshotExcludes = s.fleetSnapshotExcludes
+        f.checkIgnores = s.fleetCheckIgnores
+        f.autoDispatch = s.fleetAutoDispatch
+        f.batteryCountsHalf = s.fleetBatteryCountsHalf
+        return f
+    }
+
+    private struct Step {
+        let label: String
+        let expect: (inout Fleet) -> Void
+    }
+
+    @Test func everyFleetSettingReachesTheFileAndTheOldKeysThroughEachPathItHas() async throws {
+        let harness = try AppHarness()
+        defer { harness.stop() }
+        Self.seed(harness.defaults)
+        try await harness.start()
+        let file = harness.server.supportDirectory.appendingPathComponent("host-preferences.json")
+        let weightKey = FleetSendWeight.settingKey(hostID: Self.macA)
+        let excludesKey = FleetSnapshotExcludes.settingKey(spaceID: Self.space)
+        let ignoresKey = FleetCheckIgnoreSetting.settingKey(hostID: Self.macA)
+
+        // Upgrade with old keys: the host's copy starts as the keys hold it.
+        var expected = Self.previousRelease(harness.defaults)
+        #expect(expected.weights == [weightKey: .prefer] && expected.threadsCanSend && expected.threadCap == 5 && expected.uncommitted == .leaveBehind)
+        #expect(expected.autoDispatch == false && !expected.batteryCountsHalf && expected.snapshotExcludes.count == 1 && expected.checkIgnores.count == 1)
+        #expect(try Self.stored(file) == expected)
+
+        func check(_ label: String) throws {
+            #expect(try Self.stored(file) == expected, "\(label): the host's copy")
+            #expect(Self.previousRelease(harness.defaults) == expected, "\(label): the old keys, as the previous release reads them")
+        }
+
+        // (a) The Mac's own write, followed by the host.
+        let app = harness.settings
+        let direct: [Step] = [
+            Step(label: "weights") { app.setFleetWeight(.lessOften, of: Self.macA); $0.weights[weightKey] = .lessOften },
+            Step(label: "threadsCanSend") { app.fleetThreadsCanSend = false; $0.threadsCanSend = false },
+            Step(label: "threadCap") { app.fleetThreadCap = 4; $0.threadCap = 4 },
+            Step(label: "uncommitted") { app.fleetUncommitted = .sendThem; $0.uncommitted = .sendThem },
+            Step(label: "snapshotExcludes") {
+                app.setFleetExcludes(FleetSnapshotExcludes(excluded: ["build"]), of: SpaceID(rawValue: Self.space))
+                $0.snapshotExcludes[excludesKey] = FleetSnapshotExcludes(excluded: ["build"])
+            },
+            Step(label: "checkIgnores") { app.setFleetCheckIgnored(["check-b"], on: Self.macA); $0.checkIgnores[ignoresKey] = ["check-b"] },
+            Step(label: "autoDispatch") { app.fleetAutoDispatch = true; $0.autoDispatch = true },
+            Step(label: "autoDispatch.cleared") { app.fleetAutoDispatch = nil; $0.autoDispatch = nil },
+            Step(label: "batteryCountsHalf") { app.fleetBatteryCountsHalf = true; $0.batteryCountsHalf = true },
+        ]
+        for step in direct {
+            let before = expected
+            step.expect(&expected) // also makes the write, once
+            #expect(expected != before, "\(step.label) changes something")
+            try await eventuallyOnMain("the host's copy to take \(step.label)") { (try? Self.stored(file)) == expected }
+            try check("direct \(step.label)")
+        }
+
+        // (b) A client's request over the host's socket, answered with the settings afterwards.
+        let client = RemoteHostClient(localSocket: harness.hostSocket)
+        _ = try await client.connect(host: "", port: 0, token: "", clientName: "migration")
+        defer { client.disconnect() }
+        let wire: [(HostSettingChange, Step)] = [
+            (.fleetWeight(hostID: Self.macA, weight: .manualOnly), Step(label: "weights") { $0.weights[weightKey] = .manualOnly }),
+            (.fleetThreadsCanSend(true), Step(label: "threadsCanSend") { $0.threadsCanSend = true }),
+            (.fleetThreadCap(6), Step(label: "threadCap") { $0.threadCap = 6 }),
+            (.fleetThreadCap(1000), Step(label: "threadCap.aboveRange") { $0.threadCap = HostSettings.clampedThreadCap(1000) }),
+            (.fleetUncommitted(.leaveBehind), Step(label: "uncommitted") { $0.uncommitted = .leaveBehind }),
+            (.fleetSnapshotExcludes(spaceID: Self.space, excludes: FleetSnapshotExcludes(excluded: ["out"], included: ["lib"])),
+             Step(label: "snapshotExcludes") { $0.snapshotExcludes[excludesKey] = FleetSnapshotExcludes(excluded: ["out"], included: ["lib"]) }),
+            (.fleetCheckIgnore(hostID: Self.macA, ids: ["y", "x"]), Step(label: "checkIgnores") { $0.checkIgnores[ignoresKey] = ["x", "y"] }),
+            (.fleetAutoDispatch(false), Step(label: "autoDispatch") { $0.autoDispatch = false }),
+            (.fleetBatteryCountsHalf(false), Step(label: "batteryCountsHalf") { $0.batteryCountsHalf = false }),
+        ]
+        for (change, step) in wire {
+            let before = expected
+            step.expect(&expected)
+            #expect(expected != before, "request \(step.label) changes something")
+            let reply = try await client.hostSettings(.change(change))
+            #expect(Self.reply(reply) == expected, "request \(step.label): the reply")
+            try check("request \(step.label)")
+        }
+
+        // (c) A peer's Fleet op, delivered to the host's own fleet: no request, no reply. All eight sync.
+        let server = harness.server
+        let engine = try #require(await onQueue(server.queue) { server.fleet?.syncEngine })
+        await onQueue(server.queue) { engine.start() }
+        let hostSettings = try #require(harness.hostSettings)
+        func reported() async throws {
+            try await eventuallyAsync("the host to report its settings to the fleet") {
+                await onQueue(server.queue) { server.fleetSettings } == HostSettingsMapping.settings(from: hostSettings, shepherdVersion: nil, piVersion: nil)
+            }
+        }
+        try await reported()
+        // The host's own ops so far. A synced setting is the fleet's value, so applying it must not come back out as one of ours.
+        let localOps = await onQueue(server.queue) { engine.store.vector[engine.store.mac] }
+        let peer = try #require(UUID(uuidString: "00000000-0000-4000-8000-0000000000C3"))
+        let base = UInt64(Date().timeIntervalSince1970 * 1000) + 3_600_000
+        let synced: [(unit: String, json: String, step: Step)] = [
+            (FleetWeightSetting.unit(hostID: Self.macA), "\"prefer\"", Step(label: "weights") { $0.weights[weightKey] = .prefer }),
+            (FleetHostSetting.fleetThreadsCanSend.unit, "false", Step(label: "threadsCanSend") { $0.threadsCanSend = false }),
+            (FleetHostSetting.fleetThreadCap.unit, "7", Step(label: "threadCap") { $0.threadCap = 7 }),
+            (FleetHostSetting.fleetUncommitted.unit, "\"sendThem\"", Step(label: "uncommitted") { $0.uncommitted = .sendThem }),
+            (FleetSnapshotExcludeSetting.unit(spaceID: Self.space), "{\"excluded\":[\"dist\"],\"included\":[]}",
+             Step(label: "snapshotExcludes") { $0.snapshotExcludes[excludesKey] = FleetSnapshotExcludes(excluded: ["dist"]) }),
+            (FleetCheckIgnoreSetting.unit(hostID: Self.macA), "[\"check-c\"]", Step(label: "checkIgnores") { $0.checkIgnores[ignoresKey] = ["check-c"] }),
+            (FleetHostSetting.fleetAutoDispatch.unit, "true", Step(label: "autoDispatch") { $0.autoDispatch = true }),
+            (FleetHostSetting.fleetBatteryCountsHalf.unit, "true", Step(label: "batteryCountsHalf") { $0.batteryCountsHalf = true }),
+        ]
+        for (index, (unit, json, step)) in synced.enumerated() {
+            let before = expected
+            step.expect(&expected)
+            #expect(expected != before, "fleet sync \(step.label) changes something")
+            let seq = UInt64(index + 1)
+            let op = FleetOp(mac: peer, seq: seq, hlc: FleetHLC(wallMs: base + seq), unit: unit, change: .value(json), macName: "Peer")
+            await onQueue(server.queue) { _ = engine.serve(.op(op), from: peer) }
+            try await eventuallyOnMain("the host's copy to take the synced \(step.label)") { (try? Self.stored(file)) == expected }
+            try check("fleet sync \(step.label)")
+            try await reported()
+            // Scan again now that the setting is applied: an echo would be a new op of this Mac's, and so a loop between the Macs.
+            await onQueue(server.queue) { engine.localChanged() }
+            let after = await onQueue(server.queue) { engine.store.vector[engine.store.mac] }
+            #expect(after == localOps, "fleet sync \(step.label): the host appended no outgoing op of its own")
+        }
+    }
+
+    @Test func aHostWithNoOldKeysStoresTheDefaults() throws {
+        let defaults = ScratchDefaults()
+        let file = try makeScratchDirectory("hpm").appendingPathComponent("host-preferences.json")
+        AppSettings(store: defaults).adoptHostPreferences(HostSettingsStore(file: file))
+        #expect(try Self.stored(file) == Fleet())
+        #expect(Self.previousRelease(defaults) == Fleet(), "and the keys the previous release reads still mean the defaults")
+    }
+
+    /// Upgrade, change, downgrade (the old release edits its keys), upgrade: the old release's edit is in effect,
+    /// and a change after that reaches both again.
+    @Test func downgradingAndUpgradingAgainKeepsTheLatestValue() throws {
+        let defaults = ScratchDefaults()
+        let file = try makeScratchDirectory("hpm").appendingPathComponent("host-preferences.json")
+        Self.seed(defaults)
+        let first = AppSettings(store: defaults)
+        first.adoptHostPreferences(HostSettingsStore(file: file))
+        first.fleetThreadCap = 8
+        #expect(try Self.stored(file).threadCap == 8 && Self.previousRelease(defaults).threadCap == 8,
+                "downgrading now leaves the new value in effect")
+
+        // The previous release runs and edits its keys; the file, which it does not know, stays behind.
+        defaults.set(2, forKey: "shepherd.fleet.threadCap")
+        defaults.set(false, forKey: "shepherd.fleet.threadsCanSend")
+        defaults.removeObject(forKey: "shepherd.fleet.autoDispatch")
+        defaults.set([FleetSendWeight.settingKey(hostID: Self.macB): "manualOnly"], forKey: "shepherd.fleet.weights")
+        #expect(try Self.stored(file).threadCap == 8)
+
+        let second = AppSettings(store: defaults)
+        second.adoptHostPreferences(HostSettingsStore(file: file))
+        var expected = Self.previousRelease(defaults)
+        #expect(expected.threadCap == 2 && !expected.threadsCanSend && expected.autoDispatch == nil
+                && expected.weights == [FleetSendWeight.settingKey(hostID: Self.macB): .manualOnly])
+        #expect(try Self.stored(file) == expected, "the old release's edits are what the host stores now")
+
+        second.fleetBatteryCountsHalf = true
+        expected.batteryCountsHalf = true
         #expect(try Self.stored(file) == expected && Self.previousRelease(defaults) == expected)
     }
 }
