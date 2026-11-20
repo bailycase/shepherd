@@ -284,7 +284,7 @@
     fields until the host restarts. A registration may carry `preferences` (Settings ▸ Notifications
     on the phone: which topics and away-only); the host sends that phone only
     what they allow, and an older phone's registration without them gets everything. Hosts without this capability cannot register destinations.
-  - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Agents, Worktrees and Pi set,
+  - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Agents, Git and Pi set,
     the pi packages its pi loads, and its Shepherd and pi versions; one change per request
     (`HostSettingChange`), applied as the Mac's own Settings would. `hostSettings.agentDefaults.v1`
     adds the speed for new threads and Compact at (missing from an older host: Standard, pi's

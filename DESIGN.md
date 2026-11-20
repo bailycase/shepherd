@@ -97,7 +97,8 @@ is the source of truth for every Settings page, on the Mac and on iPhone and iPa
 
 - **Navigation** is a 220pt list on `bgBase` with no icons, in groups: General, Appearance,
   Keyboard · Agents: Models, Agents, Instructions, Skills, Tools, Hooks · Work: Spaces, Git, Apps,
-  Fleet · Advanced, Experiments. Esc leaves a sub-page for its parent, else leaves Settings.
+  Fleet · Advanced, Experiments. Keyboard and Apps are on the Mac only; the iPhone and iPad list
+  has the rest. Esc leaves a sub-page for its parent, else leaves Settings.
 - **Pages** are one centered 620pt column: a 15/600 title, then groups. A group has a
   sentence-case caption label (optional links at its right), a card on `bgRaised` (radius `l`,
   1px `lineSubtle`) and an optional footnote. Rows are 44pt with a one-line hint.
