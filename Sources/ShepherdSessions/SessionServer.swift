@@ -656,8 +656,10 @@ public final class SessionServer: @unchecked Sendable {
                 handler(.install(offerID: offerID, authorized: true), { true }) { status in
                     self.queue.async {
                         guard answered.first() else { return }
-                        self.setInstallHandedOff(status.phase == .downloading || status.phase == .installing)
+                        // A superseded attempt's late answer settles nothing: the marker now belongs to whichever install came after it
+                        // (an "unsupported" from the older one would clear the newer one's unknown marker).
                         guard let wait = self.idleInstall, wait.offerID == offerID, wait.attempt == attempt else { return }
+                        self.setInstallHandedOff(status.phase == .downloading || status.phase == .installing)
                         if status.phase == .available { next() } else { self.idleInstall = nil }
                     }
                 }

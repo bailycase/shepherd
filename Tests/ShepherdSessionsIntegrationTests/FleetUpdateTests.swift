@@ -973,7 +973,7 @@ struct FleetUpdateTests {
         defer { a.stop() }
         let id = try await b.hostID()
         let pi = try await Self.busy(b)
-        b.server.queue.sync { b.server.installAnswerPatience = 0.2 }
+        b.server.queue.sync { b.server.installAnswerPatience = 0.05 }
         Self.quicken(a)
         try await Self.start(a, id, .idle)
         try await Self.waitForStage(.checking, on: a, of: id)
@@ -984,9 +984,13 @@ struct FleetUpdateTests {
         try await Self.settle(pi)
         try await FleetDispatchTests.wait("the updater to take the install") { updater.swallowedAnswers == 1 }
         updater.quitApp()
+        // A retry would be looked at with no delay at all once the host stops waiting, so the drain below runs after it would have.
+        b.server.queue.sync { b.server.idleInstallInterval = 0 }
         try await FleetDispatchTests.wait("the host to stop waiting for an answer") { b.server.queue.sync { !b.server.isWaitingForIdleInstall } }
-        // Well past where a retry would have gone out (the interval is 0.02 s), the app is still gone.
-        try await Task.sleep(for: .milliseconds(300))
+        for _ in 0..<3 {
+            b.server.queue.sync {}
+            await MainActor.run {}
+        }
         #expect(updater.asked.filter { if case .install = $0 { true } else { false } }.count == 1, "the install is sent once")
 
         let (dir, port) = (b.host.dir, b.port)
@@ -998,6 +1002,43 @@ struct FleetUpdateTests {
         try await Self.waitForStage(.relaunching, on: a, of: id)
         updater.relaunch(build: "675")
         try await Self.waitForStage(.updated, on: a, of: id)
+    }
+
+    /// A held install is superseded by a newer install and answered late: the answer says nothing of the marker, which now belongs to the
+    /// newer install (an "unsupported" from the older one would clear its unknown marker).
+    @Test func aSupersededInstallsLateAnswerDoesNotTouchTheNewerInstallsMarker() async throws {
+        let updater = FakeUpdater()
+        let (a, b, _) = try await Self.fleet(updaterB: updater)
+        defer { a.stop(); b.stop() }
+        // The updater takes every install and answers it only when the test says.
+        let held = Locked<[@Sendable (HostUpdateStatus) -> Void]>([])
+        b.server.onRemoteHostUpdate = { request, authorized, completion in
+            nonisolated(unsafe) let authorized = authorized, completion = completion
+            Task {
+                guard await authorized() else { return }
+                if case .install = request { held.withValue { list in list.append { status in completion(status) } }; return }
+                completion(updater.handle(request))
+            }
+        }
+        let pi = try await Self.busy(b)
+        _ = updater.handle(.check)
+        updater.advance()
+        _ = try await b.local.hostUpdate(.installWhenIdle(offerID: updater.offer, authorized: true))
+        try await Self.settle(pi)
+        try await FleetDispatchTests.wait("the held install to be sent") { held.current.count == 1 }
+        // A newer install supersedes it; the updater takes that one too, and the asker's call stays pending.
+        let offer = updater.offer
+        let newer = Task { try? await b.local.hostUpdate(.install(offerID: offer, authorized: true)) }
+        defer { newer.cancel() }
+        try await FleetDispatchTests.wait("the newer install to be sent") { held.current.count == 2 }
+        let marker = b.server.supportDirectory.appendingPathComponent("host-update-handoff")
+        #expect(try Data(contentsOf: marker) == Data("unknown".utf8))
+
+        var unsupported = updater.status
+        unsupported.phase = .unsupported
+        held.current[0](unsupported)
+        for _ in 0..<3 { b.server.queue.sync {} }
+        #expect(try Data(contentsOf: marker) == Data("unknown".utf8), "the newer install's marker is still unknown")
     }
 
     /// B's host relays to its own app (the test's connection to it), and can't open one.
