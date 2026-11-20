@@ -11,6 +11,11 @@ import ShepherdRemote
 @Observable
 final class SidebarThreads {
     private(set) var state: FleetSidebarState
+    var filters = SidebarThreadFilters()
+
+    func activeFilters(_ model: FleetModel) -> SidebarThreadFilters {
+        filters.available(on: model.filterHosts.map(\.id))
+    }
     @ObservationIgnored private let hosts: MobileHosts
     @ObservationIgnored private let defaults: UserDefaults
 
@@ -49,17 +54,17 @@ final class SidebarThreads {
 
     /// The groups for Home's model, derived once per change of either (as `PadDesigns.recents`), never per redraw.
     /// `unread` and `paused` roll up into the run groups (`AutomationsStore.unreadRuns`, `pausedTriggers`).
-    func groups(_ model: FleetModel, unread: Set<FleetRef> = [], paused: Set<AutomationKey> = []) -> FleetSidebarGroups {
-        if let cached = cache, cached.model == model, cached.state == state, cached.unread == unread, cached.paused == paused {
-            return cached.groups
-        }
-        let groups = state.groups(model, unread: unread, paused: paused)
-        cache = (model, state, unread, paused, groups)
+    func groups(_ model: FleetModel, unread: Set<FleetRef> = [], paused: Set<AutomationKey> = [],
+                filters: SidebarThreadFilters = .init()) -> FleetSidebarGroups {
+        if let cached = cache, cached.model == model, cached.state == state, cached.unread == unread,
+           cached.paused == paused, cached.filters == filters { return cached.groups }
+        let groups = state.groups(model, unread: unread, paused: paused, filters: filters)
+        cache = (model, state, unread, paused, filters, groups)
         return groups
     }
 
     @ObservationIgnored private var cache: (model: FleetModel, state: FleetSidebarState, unread: Set<FleetRef>,
-                                            paused: Set<AutomationKey>, groups: FleetSidebarGroups)?
+                                            paused: Set<AutomationKey>, filters: SidebarThreadFilters, groups: FleetSidebarGroups)?
 
     /// A run group's row was pressed.
     func toggleRunGroup(_ key: AutomationKey) { mutate { $0.toggleRunGroup(key) } }

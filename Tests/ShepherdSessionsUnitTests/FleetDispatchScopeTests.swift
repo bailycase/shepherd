@@ -70,6 +70,17 @@ struct FleetDispatchScopeTests {
         #expect(entry.expectsResult && entry.startedWorking && !entry.unsent)
         #expect(entry.worktree == "/tmp/acme-web" && entry.acceptedAt == 1200)
         #expect(!entry.madeRef)
+        #expect(entry.cleanupCandidates == nil)
+    }
+
+    @Test func inboundDispatchKeepsCleanupCandidatesAcrossARoundTrip() throws {
+        let record = FleetDispatchRecord(parentHostID: UUID(), parentHostName: "MacBook Pro", state: .done,
+                                         title: "Check receipts", task: "Run tests", repoKey: "github.com/acme/web", createdAt: 1)
+        let candidates = [".build", "DerivedData"]
+        let entry = FleetDispatch.Inbound(record: record, cleanupCandidates: candidates)
+        let data = try JSONEncoder().encode(entry)
+        let decoded = try JSONDecoder().decode(FleetDispatch.Inbound.self, from: data)
+        #expect(decoded.cleanupCandidates == candidates)
     }
 
     @Test func aToolCallKeyStandsForOneStableIdPerThread() {

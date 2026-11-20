@@ -268,14 +268,14 @@ The initial bundle-only engine was 135 MB. The SDK dependency tree is now shippe
 above. QuickJS's `extensions/*.so` side modules and Pi TUI's optional native addons remain excluded.
 
 **MCP, tool search and codemode use Pi's implementations.** Agents use pi's own MCP, with Settings ▸
-MCP servers on top of it.
+Tools on top of it.
 The home's `settings.json` still carries `-builtin:mcp`, `-builtin:codemode` and `-builtin:tool-search`
 (`PiHome.install`, under pi's lock, never replacing an entry that already names one in any form), so
 anything that starts pi without saying otherwise loads none of them: the model catalog, drafts, native
 children (`--no-extensions`) and a `pi` an agent types. **An agent's launch switches MCP on** with `-e
 builtin:mcp -e builtin:tool-search`, which pi lets win over the home's switch (checked:
 `Tests/Extensions/pi-mcp.test.mjs`, and through the real launcher in `EngineSmokeTests`), while Settings ▸
-Pi ▸ Bundled extensions ▸ MCP servers is on. Shepherd's derived `mcp.json` always names an exposure,
+Tools ▸ Built in ▸ MCP servers is on. Shepherd's derived `mcp.json` always names an exposure,
 so tools stay reachable through direct calls or tool search when codemode is off.
 
 Settings ▸ Agents ▸ Context ▸ Codemode defaults on. Before a primary agent launch, `PiHome.configureCodemode`
@@ -300,7 +300,7 @@ What pi's MCP adds to a launch is `/mcp` (over RPC it answers with this thread's
 (deferred)`), a server section in the system prompt, `tool_search`, and `<home>/mcp-auth.json` for
 sign-ins. A space's `.shepherd/mcp.json` and `.pi/mcp.json` are read too. `llama.cpp`, the
 fourth built-in, is a provider pi has always shipped and stays; `/llama` still does nothing over RPC and
-the thread's command menu leaves it out. `PiConfig.installedExtensions` (Settings ▸ Pi, a host's
+the thread's command menu leaves it out. `PiConfig.installedExtensions` (Settings ▸ Tools on the phone, a host's
 `hostSettings`) and the first copy from "your pi" ignore the `builtin:` entries.
 `Tests/Extensions/builtin-extensions.test.mjs` pins pi's side of the home's switch, so a pi that renames
 it or loads the built-ins anyway fails before a release, and

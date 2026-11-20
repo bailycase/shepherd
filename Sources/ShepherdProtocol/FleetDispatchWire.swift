@@ -81,6 +81,8 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
     public var subdir: String?
     /// The branch name asked for; nil lets the receiver derive `fleet/<title>`.
     public var branch: String?
+    /// Origin branch expected to receive this work. Used only to summarize its result.
+    public var comparisonBranch: String?
     public var model: String?
     public var thinking: String?
     public var from: FleetDispatchSender
@@ -99,7 +101,7 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
     public init(dispatchID: UUID, kind: FleetDispatchRecord.Kind = .agentDispatch, task: String, title: String, repoKey: String,
                 commitSHA: String? = nil, subdir: String? = nil, branch: String? = nil, model: String? = nil, thinking: String? = nil,
                 from: FleetDispatchSender, snapshot: FleetSnapshotHeader? = nil, repo: FleetRepoSource? = nil, start: FleetThreadStart? = nil,
-                move: FleetMoveHandoff? = nil) {
+                move: FleetMoveHandoff? = nil, comparisonBranch: String? = nil) {
         self.start = start
         self.move = move
         self.dispatchID = dispatchID
@@ -110,6 +112,7 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         self.commitSHA = commitSHA
         self.subdir = subdir
         self.branch = branch
+        self.comparisonBranch = comparisonBranch
         self.model = model
         self.thinking = thinking
         self.from = from
@@ -117,7 +120,7 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         self.repo = repo
     }
 
-    private enum CodingKeys: String, CodingKey { case dispatchID, kind, task, title, repoKey, commitSHA, subdir, branch, model, thinking, from, snapshot, repo, start, move }
+    private enum CodingKeys: String, CodingKey { case dispatchID, kind, task, title, repoKey, commitSHA, subdir, branch, model, thinking, from, snapshot, repo, start, move, comparisonBranch }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -129,6 +132,7 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         commitSHA = try c.decodeIfPresent(String.self, forKey: .commitSHA)
         subdir = try c.decodeIfPresent(String.self, forKey: .subdir)
         branch = try c.decodeIfPresent(String.self, forKey: .branch)
+        comparisonBranch = try c.decodeIfPresent(String.self, forKey: .comparisonBranch)
         model = try c.decodeIfPresent(String.self, forKey: .model)
         thinking = try c.decodeIfPresent(String.self, forKey: .thinking)
         from = try c.decode(FleetDispatchSender.self, forKey: .from)
@@ -148,6 +152,7 @@ public struct FleetDispatchCreate: Codable, Hashable, Sendable {
         try c.encodeIfPresent(commitSHA, forKey: .commitSHA)
         try c.encodeIfPresent(subdir, forKey: .subdir)
         try c.encodeIfPresent(branch, forKey: .branch)
+        try c.encodeIfPresent(comparisonBranch, forKey: .comparisonBranch)
         try c.encodeIfPresent(model, forKey: .model)
         try c.encodeIfPresent(thinking, forKey: .thinking)
         try c.encode(from, forKey: .from)
@@ -230,13 +235,15 @@ public enum FleetDispatchControl: Codable, Hashable, Sendable {
     case status
     /// Stop the thread there.
     case cancel
+    /// Close a settled dispatch, keeping its source and saved conversation.
+    case close
     /// Send the thread a message. A finished dispatch starts a new run on the same thread.
     case message(text: String, delivery: FleetMessageDelivery)
     /// A move: the sender has written its tombstone, and the thread starts here now. Repeating it answers the same record
     /// (`fleet.move.v1`; only ever sent to a Mac that offers it).
     case commit
 
-    private enum Kind: String, Codable { case status, cancel, message, commit }
+    private enum Kind: String, Codable { case status, cancel, close, message, commit }
     private enum CodingKeys: String, CodingKey { case type, text, delivery }
 
     public init(from decoder: Decoder) throws {
@@ -244,6 +251,7 @@ public enum FleetDispatchControl: Codable, Hashable, Sendable {
         switch try c.decode(Kind.self, forKey: .type) {
         case .status: self = .status
         case .cancel: self = .cancel
+        case .close: self = .close
         case .commit: self = .commit
         case .message:
             self = .message(text: try c.decode(String.self, forKey: .text),
@@ -256,6 +264,7 @@ public enum FleetDispatchControl: Codable, Hashable, Sendable {
         switch self {
         case .status: try c.encode(Kind.status, forKey: .type)
         case .cancel: try c.encode(Kind.cancel, forKey: .type)
+        case .close: try c.encode(Kind.close, forKey: .type)
         case .commit: try c.encode(Kind.commit, forKey: .type)
         case .message(let text, let delivery):
             try c.encode(Kind.message, forKey: .type)
@@ -328,11 +337,15 @@ public struct FleetDispatchInfo: Codable, Hashable, Sendable {
     public var title: String
     public var branch: String?
     public var activity: String?
+    public var lastThreadEventAt: Double?
+    /// Last reported count on a named Mac that declined admission; nil if unknown.
+    public var hostRunningDispatches: Int?
     public var resultText: String?
     public var branchFacts: FleetBranchFacts?
     /// A `FleetDispatchCode` when it failed or was refused.
     public var failure: String?
     public var detail: String?
+    public var closeReport: String?
     /// The MCP server commands the Mac lacked: the thread started without those servers. Nil when none.
     public var without: [String]?
 
@@ -354,8 +367,11 @@ public struct FleetDispatchInfo: Codable, Hashable, Sendable {
 
     public init(_ record: FleetDispatchRecord) {
         self.init(dispatchID: record.id.uuidString.lowercased(), state: record.state.rawValue, host: record.targetHostName, title: record.title,
-                  branch: record.branch, activity: record.activity, resultText: record.resultText, branchFacts: record.resultBranchFacts,
+                  branch: record.branch, activity: record.state == .running ? record.activity : nil, resultText: record.resultText, branchFacts: record.resultBranchFacts,
                   failure: record.failure, detail: record.failureDetail, without: record.without.isEmpty ? nil : record.without)
+        lastThreadEventAt = record.state == .running ? record.lastThreadEventAt : nil
+        hostRunningDispatches = record.state == .waitingRoom ? record.hostRunningDispatches : nil
+        closeReport = record.closeReport
     }
 }
 

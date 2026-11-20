@@ -1587,6 +1587,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         timeout: TimeInterval = RemoteHostClient.requestTimeout,
         connectionGeneration: UUID? = nil,
         cancellable: Bool = false,
+        keepConnectionOnTimeout: Bool = false,
         _ make: @escaping (Int) -> RemoteRequest
     ) async throws -> RemoteReply {
         let ticket = RequestTicket()
@@ -1618,14 +1619,13 @@ public final class RemoteHostClient: @unchecked Sendable {
                         guard let pending = self.pendingReplies.removeValue(forKey: id) else { return }
                         pending.resume(throwing: RemoteHostClientError.timeout)
                         self.notifyIdle()
-                        guard self.isLocal else {
+                        guard self.isLocal || keepConnectionOnTimeout else {
                             self.teardown(reason: "request \(id) timed out after \(timeout) s")
                             return
                         }
-                        // The host on this Mac is busy (a loaded machine, a slow git), not gone: its
-                        // socket would have closed. The late reply is dropped like a cancelled one's.
+                        // The host may just be busy. Drop the late reply like a cancelled one's.
                         self.cancelledReplies.insert(id)
-                        ShepherdLog.connection("local host slow: request \(id) unanswered after \(timeout) s; connection kept")
+                        ShepherdLog.connection("host slow: request \(id) unanswered after \(timeout) s; connection kept")
                     }
                 }
             }
