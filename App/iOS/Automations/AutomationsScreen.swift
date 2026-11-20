@@ -28,8 +28,8 @@ struct AutomationsScreen: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if sizeClass == .regular {
-                AutomationsSplit(store: store, model: model)
+            } else if sizeClass == .regular, let selection = store.selection {
+                AutomationsSplit(store: store, model: model, current: selection)
             } else {
                 ScrollView {
                     AutomationsList(store: store, model: model, chosen: nil) { key in AutomationsHooks.open(key, navigator: navigator) }
@@ -76,7 +76,7 @@ private struct AutomationsList: View {
     let open: (AutomationKey) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
+        LazyVStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
             if let failure = store.failure {
                 SHBanner(.failed, title: failure.message) {
                     Button("OK") { store.failure = nil }.buttonStyle(.sh(.secondary))
@@ -84,15 +84,15 @@ private struct AutomationsList: View {
             }
             if chosen != nil {
                 // iPad (iPadAutomations): one flat list, the live runs first, the chosen row filled.
-                VStack(spacing: SH.Space.xxs) {
-                    ForEach(model.live + model.quiet) { row in padRow(row) }
+                LazyVStack(spacing: SH.Space.xxs) {
+                    ForEach(store.liveFirst) { row in padRow(row) }
                 }
             } else {
                 if !model.live.isEmpty {
                     // iPhone (MobileAutomations): each live run is its own card.
                     VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
                         SHListHeader("Running now")
-                        VStack(spacing: MobileLayout.blockSpacing) {
+                        LazyVStack(spacing: MobileLayout.blockSpacing) {
                             ForEach(model.live) { row in
                                 AutomationRunCardView(row: row) { open(row.key) }.equatable()
                             }
@@ -153,13 +153,11 @@ private struct AutomationsList: View {
     private func section(_ title: String, count: Int, rows: [AutomationListRow]) -> some View {
         VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
             SHListHeader(title, count: count)
-            SHListCard {
-                ForEach(rows) { row in
-                    AutomationListRowView(row: row, isOn: store.isOn(row), busy: store.busy.contains(row.key),
-                                          selected: row.key == chosen, chevron: false,
-                                          toggle: { store.setEnabled(row.key, $0) }, open: { open(row.key) })
-                        .equatable()
-                }
+            SHLazyListCard(rows) { row in
+                AutomationListRowView(row: row, isOn: store.isOn(row), busy: store.busy.contains(row.key),
+                                      selected: false, chevron: false,
+                                      toggle: { store.setEnabled(row.key, $0) }, open: { open(row.key) })
+                    .equatable()
             }
         }
     }
@@ -180,6 +178,7 @@ struct AutomationListRowView: View, Equatable {
     }
 
     var body: some View {
+        let _ = SHRenderProbe.tick("ios.automation.row")
         let state = AgentState(row.tone)
         SHAutomationRow(row.name, when: ((row.unread > 0 ? ["\(row.unread) unread"] : []) + [row.when, row.hostTag ?? row.place]).joined(separator: " · "),
                         status: row.status,
@@ -207,6 +206,7 @@ struct AutomationRunCardView: View, Equatable {
     static func == (a: Self, b: Self) -> Bool { a.row == b.row }
 
     var body: some View {
+        let _ = SHRenderProbe.tick("ios.automation.runCard")
         let since: Date? = if case .elapsed(let start)? = row.clock { start } else { nil }
         SHAutomationRunCard(row.name, host: row.hostTag ?? row.hostName, status: row.status, asking: row.tone == .attention,
                             since: since, open: open)
@@ -217,10 +217,10 @@ struct AutomationRunCardView: View, Equatable {
 private struct AutomationsSplit: View {
     let store: AutomationsStore
     let model: AutomationsModel
+    let current: AutomationKey
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        let current = model.rows.first { $0.key == store.chosen }?.key ?? model.rows[0].key
         PadListDetail(listWidth: MobileLayout.automationsListWidth) {
             ScrollView {
                 AutomationsList(store: store, model: model, chosen: current) { store.chosen = $0 }

@@ -19,6 +19,8 @@ struct FixtureScreen {
     var prepare: (@MainActor (MobileApp) async -> Void)? = nil
     /// Runs before the routes open: seams a screen reads as it appears (the Macs Add a Mac finds).
     var setup: (@MainActor () -> Void)? = nil
+    /// Checks the rendered screen after the runner has let layout settle.
+    var verify: (@MainActor (MobileApp) -> Void)? = nil
 }
 
 /// A host the harness serves: its state, each agent's thread, and answers for anything else.
