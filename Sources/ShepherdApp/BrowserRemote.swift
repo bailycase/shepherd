@@ -86,7 +86,9 @@ final class BrowserRemote {
         if claimant.holds { claimClient?.browserRelease(agentID: ref.agentID) }
         claimClient = nil
         _ = claimant.connection(up: false)
-        ports.release(owner)
+        // Waits for the sockets to close: a page made again at once claims the port, and a claim
+        // that found the old socket still bound would read it as another program's.
+        ports.releaseAndWait(owner)
     }
 
     /// Whether `port` answers on the host, through the tunnel.
