@@ -233,6 +233,47 @@ struct RemoteListenerTests {
         try await eventually("both non-preview reads demand pi on main") { demanded.current == [idle.agent.id, idle.agent.id] }
     }
 
+    @MainActor
+    @Test func copiesEveryPageOfAnIdleCompactedBranchWithoutStartingPi() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let demanded = Locked<[AgentID]>([])
+        r.server.onNativeThreadDemand = { id in demanded.withValue { $0.append(id) } }
+        let space = Fixture.space(path: r.host.dir.appendingPathComponent("work").path)
+        try FileManager.default.createDirectory(atPath: space.path, withIntermediateDirectories: true)
+        let idle = Fixture.agent(in: space, name: "idle", sessionID: SessionID())
+        try await r.host.seed(Fixture.workspace([idle], space: space))
+        let sessionID = idle.agent.effectivePiSessionID
+        let folder = r.server.pi.sessionsRoot.appendingPathComponent(PiSessionFolder.name(forCwd: space.path), isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent("2026-09-24T00-00-00-000Z_\(sessionID).jsonl")
+        var lines = [#"{"type":"session","version":3,"id":"\#(sessionID)"}"#]
+        for index in 0..<120 {
+            if index == 60 {
+                lines.append(#"{"type":"message","id":"fork","parentId":"e0","message":{"role":"user","content":"other branch"}}"#)
+                lines.append(#"{"type":"compaction","id":"compact","parentId":"e59","firstKeptEntryId":"e55","summary":"omitted earlier context"}"#)
+            }
+            let parent = index == 0 ? "null" : index == 60 ? #""compact""# : #""e\#(index - 1)""#
+            lines.append(#"{"type":"message","id":"e\#(index)","parentId":\#(parent),"message":{"role":"user","content":"message \#(index)"}}"#)
+        }
+        try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: file)
+
+        let client = try await r.typed(capabilities: RemoteProtocol.clientCapabilities + [RemoteProtocol.nativeThreadPreviewCapability])
+        defer { client.disconnect() }
+        var pages: [[String]] = []
+        var copies: [String] = []
+        let copied = try await ThreadTranscript.copy(fetch: { request in
+            let result = try await client.nativeThread(agentID: idle.agent.id, request: request)
+            if case .snapshot(let page) = result { pages.append(page.messages.map(\.entryID)) }
+            return result
+        }, to: { copies.append($0) })
+        #expect(copied)
+        #expect(pages.map(\.count) == [50, 50, 20])
+        #expect(Set(pages.joined()).count == 120, "Pages must not repeat any entries")
+        #expect(copies == [(0..<120).map { "user: message \($0)" }.joined(separator: "\n\n")])
+        #expect(demanded.current.isEmpty, "Copying must not start pi")
+    }
+
     /// A client from before minimal, xhigh and max decodes only Off to High, so its fetched and
     /// pushed state carries each agent's level clamped to those; a current client's keeps them.
     @Test func anOlderClientGetsTheWorkspaceWithLevelsItCanDecode() async throws {

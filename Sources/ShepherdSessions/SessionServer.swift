@@ -2630,7 +2630,7 @@ public final class SessionServer: @unchecked Sendable {
         let unavailable = { (message: String) in completion(.failure(code: NativeThreadCode.unavailable, message: message)) }
         if hostUpdateReserved {
             switch request {
-            case .snapshot, .image, .subagentTranscript, .abort: break
+            case .snapshot, .transcriptSnapshot, .image, .subagentTranscript, .abort: break
             default:
                 completion(.result(.failure(code: "host_updating", message: "Host update in progress. Try again after reconnecting.")))
                 return
@@ -2662,6 +2662,11 @@ public final class SessionServer: @unchecked Sendable {
         guard let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
               let paneID = agent.paneID, let leaf = tab.layout.leaf(withID: paneID) else {
             unavailable("The agent has no thread.")
+            return
+        }
+        if case .transcriptSnapshot(let expectedSessionID, let beforeEntryID) = request {
+            serveTranscriptSnapshot(agent: agent, leaf: leaf, expectedSessionID: expectedSessionID,
+                                    beforeEntryID: beforeEntryID, authorized: transportAuthorization, completion: completion)
             return
         }
         // A pi that stopped, before it served or on its own after: its agent waits, and says why (or
@@ -2791,6 +2796,38 @@ public final class SessionServer: @unchecked Sendable {
             if case .retry = request, case .accepted = result { self?.noteAgentSend(agentID) }
             completion(.result(result))
             if case .queue = request, case .accepted = result { self?.projectRuntimeReady(agentID: agentID) }
+        }
+    }
+
+    /// A copy reads the saved branch, not the engine's compacted context. Resolve the source on
+    /// the server queue and keep file I/O off it, as for a preview.
+    private func serveTranscriptSnapshot(agent: Agent, leaf: LeafPane, expectedSessionID: String?, beforeEntryID: String?,
+                                         authorized: @escaping () -> Bool, completion: @escaping (NativeOutcome) -> Void) {
+        let thread = leaf.sessionID.flatMap { sessions[$0] }.flatMap { $0.isAlive ? $0.thread : nil }
+        if thread?.isServable == false {
+            completion(.result(.failure(code: NativeThreadCode.starting, message: "The thread is still loading. Try copying it again when it’s ready.")))
+            return
+        }
+        let sessionID = thread?.piSessionID ?? agent.effectivePiSessionID
+        let stale = NativeOutcome.result(.failure(code: "stale_session", message: "The transcript changed. Nothing was copied."))
+        guard expectedSessionID == nil || expectedSessionID == sessionID else { completion(stale); return }
+        let root = pi.sessionsRoot
+        DispatchQueue.global(qos: .userInitiated).async {
+            let file = PiSessionFile.file(sessionID: sessionID, cwd: AgentLaunch.resolvedCwd(leaf.cwd), sessionsRoot: root)
+            let result = PiSessionFile.transcriptSnapshot(file: file, sessionID: sessionID, beforeEntryID: beforeEntryID)
+            self.queue.async {
+                guard authorized(), !self.movingThreads.contains(agent.id),
+                      let current = self.store.state.agents.first(where: { $0.id == agent.id }),
+                      current.tabID == agent.tabID, current.paneID == agent.paneID,
+                      let paneID = current.paneID,
+                      self.store.state.tabs.first(where: { $0.id == current.tabID })?.layout.leaf(withID: paneID) == leaf,
+                      (leaf.sessionID.flatMap { self.sessions[$0] }.flatMap { $0.isAlive ? $0.thread?.piSessionID : nil }
+                        ?? current.effectivePiSessionID) == sessionID else {
+                    completion(stale)
+                    return
+                }
+                completion(.result(result))
+            }
         }
     }
 
@@ -3421,6 +3458,10 @@ public final class SessionServer: @unchecked Sendable {
             if case .retry = request, !client.clientCapabilities.contains(RemoteProtocol.checkpointRecoveryCapability) {
                 send(.nativeThread(id: id, result: .failure(code: "recovery_unsupported",
                     message: "Update the client to use message-free checkpoint recovery. Nothing was resent.")), to: client)
+                return
+            }
+            if case .transcriptSnapshot = request, !offeredCapabilities.contains(RemoteProtocol.nativeThreadTranscriptCapability) {
+                send(.error(id: id, code: "unsupported", message: "Update Shepherd on the host to copy the transcript."), to: client)
                 return
             }
             let olderClient = !client.clientCapabilities.contains(RemoteProtocol.nativeQueueCapability)
