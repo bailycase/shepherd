@@ -265,6 +265,105 @@ struct BrowserPortForwarderTests {
         #expect(page.ports.isEmpty)
     }
 
+    /// A plain TCP connection to the loopback at `port`, for a page's socket; -1 if it can't connect.
+    private func connectLoopback(_ port: Int) -> Int32 {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return -1 }
+        var timeout = timeval(tv_sec: 5, tv_usec: 0)
+        _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = UInt16(port).bigEndian
+        address.sin_addr = in_addr(s_addr: UInt32(0x7f00_0001).bigEndian)
+        let status = withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } }
+        if status != 0 { close(fd); return -1 }
+        return fd
+    }
+
+    /// Whether `fd`'s peer closed it: a read that ends (0 bytes, or a reset) and does not time out.
+    private func peerClosed(_ fd: Int32) async -> Bool {
+        await Task.detached {
+            var byte: UInt8 = 0
+            while true {
+                let n = read(fd, &byte, 1)
+                if n < 0, errno == EINTR { continue }
+                return n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+            }
+        }.value
+    }
+
+    /// The page is closed while the accept loop holds a connection it has taken: nothing is bridged
+    /// for it, and the socket is closed, not left open to a host the page no longer owns.
+    @Test func closingWhileAnAcceptIsInFlightBridgesNothingAndClosesTheSocket() async throws {
+        let host = try await TunnelHost()
+        defer { host.stop() }
+        let dev = try DevServerFixture()
+        defer { dev.stop() }
+        let client = try await host.client()
+        defer { client.disconnect() }
+        let forwarder = BrowserPortForwarder()
+        let port = Int(try unusedLoopbackPort())
+        #expect(forwarder.claim(port: port, hostPort: Int(dev.port), owner: owner, slot: slot(client), agent: host.agent) == nil)
+
+        let accepted = DispatchSemaphore(value: 0), proceed = DispatchSemaphore(value: 0)
+        forwarder.afterAccept = { accepted.signal(); proceed.wait() }
+        let fd = connectLoopback(port)
+        #expect(fd >= 0)
+        defer { close(fd) }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global().async { accepted.wait(); done.resume() }
+        }
+        forwarder.release(owner)
+        forwarder.afterAccept = nil
+        proceed.signal()
+
+        #expect(await peerClosed(fd), "the accepted socket is closed")
+        #expect(client.tunnels.openCount == 0, "no tunnel was opened for a page that is gone")
+    }
+
+    /// A connection already bridged when the page closes ends with it (the iOS client evicts a page
+    /// without disconnecting its host).
+    @Test func closingThePageEndsItsLiveBridges() async throws {
+        let host = try await TunnelHost()
+        defer { host.stop() }
+        let dev = try DevServerFixture()
+        defer { dev.stop() }
+        let client = try await host.client()
+        defer { client.disconnect() }
+        let forwarder = BrowserPortForwarder()
+        let port = Int(try unusedLoopbackPort())
+        #expect(forwarder.claim(port: port, hostPort: Int(dev.port), owner: owner, slot: slot(client), agent: host.agent) == nil)
+
+        let fd = connectLoopback(port)
+        #expect(fd >= 0)
+        defer { close(fd) }
+        try await eventually("the connection to be bridged") { client.tunnels.openCount == 1 }
+        forwarder.release(owner)
+        #expect(await peerClosed(fd), "the live bridge's socket is closed")
+        try await eventually("the tunnel to end") { client.tunnels.openCount == 0 }
+    }
+
+    /// The Mac closes a page's ports and waits for the sockets: made again at once, it gets them.
+    @Test func releaseAndWaitReturnsOnceTheSocketsAreClosed() async throws {
+        let queue = DispatchQueue(label: "test.browser.forward")
+        let forwarder = BrowserPortForwarder(queue: queue)
+        let port = Int(try unusedLoopbackPort())
+        #expect(forwarder.claim(port: port, owner: owner, slot: BrowserTunnelHubSlot(), agent: AgentID()) == nil)
+        queue.suspend()
+        let gate = Task.detached {
+            while forwarder.closeWaiterCount(of: port) == 0, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(10)) }
+            queue.resume()
+        }
+        forwarder.releaseAndWait(owner)
+        // Checked before the queue is let go if release did not wait for it.
+        let again = forwarder.claim(port: port, owner: owner, slot: BrowserTunnelHubSlot(), agent: AgentID())
+        gate.cancel()
+        await gate.value
+        #expect(again == nil)
+        forwarder.release(owner)
+    }
+
     /// The iOS client's page: its ports are held only while the host is connected and let go when it
     /// drops or the app leaves the foreground, then taken again; at most eight a page.
     @Test func aPagesPortsAreLetGoWhileSuspendedAndTakenAgainOnResume() async throws {

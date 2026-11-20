@@ -120,7 +120,9 @@ public final class BrowserPortForwarder: @unchecked Sendable {
     /// port is here still finds the old socket bound; `waitForClose(of:)` waits for it.
     private var closeRemaining: [Int: Int] = [:]
     /// Tasks waiting for a closing port's sockets to close (`waitForClose(of:)`).
-    private var closeWaiters: [Int: [CheckedContinuation<Void, Never>]] = [:]
+    private var closeWaiters: [Int: [() -> Void]] = [:]
+    /// Tests only: runs after a connection is accepted, before it is checked against the listener.
+    var afterAccept: (() -> Void)?
 
     /// `queue` runs the accept loops and closes the listening sockets; a test gives its own to hold a
     /// close late.
@@ -189,18 +191,47 @@ public final class BrowserPortForwarder: @unchecked Sendable {
     /// Lets go of every port `owner` holds, and returns at once: the listening sockets close on the
     /// forwarding queue shortly after, so this never blocks the caller (a page suspends on the iOS
     /// client's main actor). A port claimed again before its old sockets close still reads as in use
-    /// until the close lands; `waitForClose(of:)` waits for it. (On the Mac, a thread's page that is
-    /// closed and made again at once can meet that "in use" for a moment: nothing there retries.)
+    /// until the close lands; `waitForClose(of:)` waits for it. Connections already bridged for the
+    /// ports end with them, and one the accept loop has taken but not bridged yet is closed there:
+    /// a page that is gone forwards nothing.
     public func release(_ owner: Owner) {
+        _ = detach(owner)
+    }
+
+    /// `release`, then waits (up to `timeout`) for the sockets to close, so the ports can be claimed
+    /// again at once. For the Mac, where a thread's page may be closed and made again at once and
+    /// nothing retries a claim that finds the old socket bound.
+    public func releaseAndWait(_ owner: Owner, timeout: TimeInterval = 2) {
+        let deadline = DispatchTime.now() + timeout
+        for port in detach(owner) {
+            let closed = DispatchSemaphore(value: 0)
+            if addCloseWaiter(of: port, { closed.signal() }) { _ = closed.wait(timeout: deadline) }
+        }
+    }
+
+    /// Removes `owner`'s listeners and ends their bridges, and cancels their sockets. Returns the ports.
+    private func detach(_ owner: Owner) -> [Int] {
         lock.lock()
         let held = listeners.filter { $0.value.owner == owner }
         for port in held.keys { listeners.removeValue(forKey: port) }
         for (port, listener) in held {
             closeRemaining[port, default: 0] += listener.sources.count
+            // Under the lock, so it is queued after any bridge the accept loop made before it saw this.
+            listener.slot.hub?.closeTunnels(agentID: listener.agent, port: listener.hostPort)
         }
         let cancelled = Array(held.values)
         lock.unlock()
         for listener in cancelled { listener.sources.forEach { $0.cancel() } }
+        return Array(held.keys)
+    }
+
+    /// Runs `waiter` when a released port's sockets are closed. False, having run nothing, when none are closing.
+    private func addCloseWaiter(of port: Int, _ waiter: @escaping () -> Void) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard closeRemaining[port] != nil else { return false }
+        closeWaiters[port, default: []].append(waiter)
+        return true
     }
 
     /// Waits until a released port's listening sockets are closed (at once, when none are closing),
@@ -208,14 +239,7 @@ public final class BrowserPortForwarder: @unchecked Sendable {
     /// awaits this before trying its ports again.
     public func waitForClose(of port: Int) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            lock.lock()
-            if closeRemaining[port] == nil {
-                lock.unlock()
-                continuation.resume()
-            } else {
-                closeWaiters[port, default: []].append(continuation)
-                lock.unlock()
-            }
+            if !addCloseWaiter(of: port, { continuation.resume() }) { continuation.resume() }
         }
     }
 
@@ -223,7 +247,7 @@ public final class BrowserPortForwarder: @unchecked Sendable {
     private func closeDidLand(port: Int) {
         lock.lock()
         guard let remaining = closeRemaining[port] else { lock.unlock(); return }
-        let waiters: [CheckedContinuation<Void, Never>]
+        let waiters: [() -> Void]
         if remaining <= 1 {
             closeRemaining.removeValue(forKey: port)
             waiters = closeWaiters.removeValue(forKey: port) ?? []
@@ -232,7 +256,7 @@ public final class BrowserPortForwarder: @unchecked Sendable {
             waiters = []
         }
         lock.unlock()
-        for waiter in waiters { waiter.resume() }
+        for waiter in waiters { waiter() }
     }
 
     /// How many tasks wait for `port`'s sockets to close. Tests only.
@@ -262,11 +286,19 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         while true {
             let fd = Darwin.accept(listenFD, nil, nil)
             if fd < 0 { return }
+            afterAccept?()
             lock.lock()
+            // Released while this loop was running: the page is gone, so nothing is bridged for it.
+            // `bridge` only queues, so calling it here orders it before `release`'s teardown.
+            guard listeners[listener.port] === listener else {
+                lock.unlock()
+                Darwin.close(fd)
+                continue
+            }
             let hub = listener.slot.hub
             let agent = listener.agent
-            lock.unlock()
             guard let hub else {
+                lock.unlock()
                 // No connection to the host now: the page's connection resets, an ordinary load error.
                 var linger = linger(l_onoff: 1, l_linger: 0)
                 _ = setsockopt(fd, SOL_SOCKET, SO_LINGER, &linger, socklen_t(MemoryLayout<linger>.size))
@@ -274,6 +306,7 @@ public final class BrowserPortForwarder: @unchecked Sendable {
                 continue
             }
             hub.bridge(fd: fd, agentID: agent, port: listener.hostPort)
+            lock.unlock()
         }
     }
 
