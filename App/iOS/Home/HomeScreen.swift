@@ -71,6 +71,7 @@ private struct HomeSections: View {
         }
         MobileSidebarFilterBar(sidebar: sidebar, filters: filters, hosts: model.filterHosts)
         if groups.isFiltering {
+            HomeReviewQueueRow()
             filteredGroups(groups, sidebar: sidebar)
         } else {
             unfilteredGroups(groups, automations: automations)
@@ -94,6 +95,7 @@ private struct HomeSections: View {
                 }
             }
         }
+        HomeReviewQueueRow()
         HomeForgeSection()
         // The Mac's Working, Done and Pinned, in its order.
         // A card draws every row it holds, so each group shows its first few and lists the rest on

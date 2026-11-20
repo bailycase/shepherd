@@ -44,6 +44,8 @@ public enum SHGlyph: CaseIterable, Sendable {
     /// Mute a thread's notifications (the brief for the notification follow-ups; no board): the Mac's thread
     /// options menu, the iPhone's row menu and its Notifications settings.
     case mute
+    /// The two supervision queues: jump to a thread, or review changes.
+    case nextThread, reviewQueue
 
     /// The SF Symbol that draws it, fill variant included.
     public var symbolName: String {
@@ -62,6 +64,8 @@ public enum SHGlyph: CaseIterable, Sendable {
         case .hook: "point.topright.arrow.triangle.backward.to.point.bottomleft.scurvepath"
         case .skill: "book"
         case .mute: "bell.slash"
+        case .nextThread: "arrow.down.circle"
+        case .reviewQueue: "list.bullet.rectangle"
         }
     }
 

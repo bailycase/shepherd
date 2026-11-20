@@ -225,6 +225,8 @@ struct SidebarLists: Equatable {
     /// Every row once, Needs you's first and the rest most recently active first, pinned or
     /// not: what a launch shows and the New thread page's Continue card read. Unmarked, as derived.
     var activity: [SidebarListRow] = []
+    /// Next and Review Next use the whole sidebar, independent of display filters.
+    var supervisionQueues = SupervisionQueues<SidebarRowID>(blocked: [], unseenDone: [])
 
     var filterHosts: [SidebarThreadFilters.Host] = []
     var isFiltering = false
@@ -356,9 +358,9 @@ struct SidebarSource: Equatable {
     /// What this Mac sent to others: the dispatches that are on their way or going, and what sentences about them need.
     var fleet = SidebarFleet()
 
-    /// Child work affects sidebar presentation, never the parent's actual turn status. What no
-    /// row shows is dropped too. Keep only whether a checkout has changes so a pane divider
-    /// drag or a changed-files count that stays above zero leaves the cache key unchanged.
+    /// Child work affects sidebar presentation, never the parent's actual turn status. Ignore tab
+    /// layout and keep only whether each checkout has changes. Both the Changes filter and Review
+    /// Next need that flag, not the exact file count.
     static func presentationState(_ state: ShepherdState, children: [AgentID: [ChildRun]]) -> ShepherdState {
         var state = state
         state.tabs = []
@@ -621,7 +623,30 @@ enum SidebarDerivation {
         var grouped = [lists.needsYou, lists.working, lists.done, lists.pinned, lists.recents]
         SidebarSent.arrange(&grouped, by: sent)
         (lists.needsYou, lists.working, lists.done, lists.pinned, lists.recents) = (grouped[0], grouped[1], grouped[2], grouped[3], grouped[4])
+        lists.supervisionQueues = supervisionQueues(source, lists: lists, seen: seen)
         return lists
+    }
+
+    private static func supervisionQueues(_ source: SidebarSource, lists: SidebarLists,
+                                          seen: [SidebarRowID: Int]) -> SupervisionQueues<SidebarRowID> {
+        let blocked = lists.needsYou + lists.pinned.filter { $0.section == .needsYou }
+        let done = lists.done + lists.pinned.filter { $0.section == .done && seen[$0.id] != $0.completion }
+        guard !blocked.isEmpty || !done.isEmpty else { return SupervisionQueues(blocked: [], unseenDone: []) }
+        var agents: [SidebarRowID: Agent] = [:]
+        for agent in source.local.agents { agents[.local(agent.id)] = agent }
+        for host in source.hosts where !host.offline {
+            for agent in host.state.agents { agents[.remote(.init(hostID: host.id, agentID: agent.id))] = agent }
+        }
+        return SupervisionQueues(blocked: blocked.compactMap { row in
+            guard !row.offline, let agent = agents[row.id] else { return nil }
+            let since: Double? = if case .local(let id) = row.id {
+                source.statusSince[id].map { $0.timeIntervalSince1970 * 1000 }
+            } else { nil }
+            return .init(row.id, since: since ?? agent.lastActiveAt)
+        }, unseenDone: done.compactMap { row in
+            guard !row.offline, let agent = agents[row.id] else { return nil }
+            return .init(row.id, since: agent.completedAt ?? agent.lastActiveAt, changedFiles: agent.checkout?.changedFiles ?? 0)
+        })
     }
 
     /// The row of the thread that sent `agent` to another Mac (`Agent.dispatchedFrom`): This Mac's, or a connected host's. Nil for a

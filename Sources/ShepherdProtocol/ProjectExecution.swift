@@ -3,7 +3,7 @@ import ShepherdCore
 
 public extension RemoteProtocol {
     /// Owner-relative placement and pause-preserving native question controls.
-    static let projectPlacementCapability = "logicalProjects.placement.v1"
+    static let projectPlacementCapability = Capability.projectPlacement.rawValue
 }
 
 public enum ProjectExecutionRequest: Codable, Hashable, Sendable {

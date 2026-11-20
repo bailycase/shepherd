@@ -167,60 +167,60 @@ final class RemoteHostStore {
         /// The host serves designs now (observed: it can change while connected).
         var supportsDesigns: Bool { designs.available }
 
-        var supportsInspection: Bool { client?.capabilities.contains(RemoteProtocol.agentInspectionCapability) == true }
-        var supportsThreadMove: Bool { client?.capabilities.contains(RemoteProtocol.moveThreadCapability) == true }
-        var supportsPushMute: Bool { client?.capabilities.contains(RemoteProtocol.pushMuteCapability) == true }
+        var supportsInspection: Bool { client?.supports(.agentInspection) == true }
+        var supportsThreadMove: Bool { client?.supports(.moveThread) == true }
+        var supportsPushMute: Bool { client?.supports(.pushMute) == true }
         /// The host moves its threads to another Mac of its fleet when asked (`fleet.move.view.v1`).
-        var supportsFleetMove: Bool { client?.capabilities.contains(RemoteProtocol.fleetMoveViewCapability) == true }
+        var supportsFleetMove: Bool { client?.supports(.fleetMoveView) == true }
         /// The host deletes a design for this Mac, with Undo (`design.delete.v1`, while it serves
         /// designs).
         var supportsDesignDelete: Bool {
-            supportsDesigns && client?.capabilities.contains(RemoteProtocol.designDeleteCapability) == true
+            supportsDesigns && client?.supports(.designDelete) == true
         }
         /// The host offers `capability` beside its designs (`design.agent.v1`, `design.lifecycle.v1`,
         /// `design.systems.v1`).
         func supportsDesignCapability(_ capability: String) -> Bool {
             supportsDesigns && client?.capabilities.contains(capability) == true
         }
-        var supportsReviewCommit: Bool { client?.capabilities.contains(RemoteProtocol.reviewCommitCapability) == true }
+        var supportsReviewCommit: Bool { client?.supports(.reviewCommit) == true }
         /// The host carries Browser tunnels, lists its threads' dev servers and starts them
         /// (`browser.tunnel.v1`): its threads get a Browser tab here.
-        var supportsBrowser: Bool { client?.capabilities.contains(RemoteProtocol.browserTunnelCapability) == true }
+        var supportsBrowser: Bool { client?.supports(.browserTunnel) == true }
         /// The host lists and reads its threads' folders for this Mac (`files.v1`): their Files tab here.
-        var supportsFiles: Bool { client?.capabilities.contains(RemoteProtocol.filesCapability) == true }
+        var supportsFiles: Bool { client?.supports(.files) == true }
         var filesClient: RemoteHostClient? { phase == .connected && supportsFiles ? client : nil }
         /// This connection's client, for what a page asks of its host (Browser).
         var browserClient: RemoteHostClient? { phase == .connected ? client : nil }
         /// The host answers `changes*` queries: its reviews use the Changes engine.
-        var supportsChanges: Bool { client?.capabilities.contains(RemoteProtocol.changesCapability) == true }
+        var supportsChanges: Bool { client?.supports(.changes) == true }
         /// The host serves automations over the protocol; older hosts show them read-only.
-        var supportsAutomations: Bool { client?.capabilities.contains(RemoteProtocol.automationsCapability) == true }
+        var supportsAutomations: Bool { client?.supports(.automations) == true }
         /// The host serves automation triggers: their status, inbox and settings.
         var supportsAutomationTriggers: Bool {
-            supportsAutomations && client?.capabilities.contains(RemoteProtocol.automationTriggersCapability) == true
+            supportsAutomations && client?.supports(.automationTriggers) == true
         }
         /// The host serves its root instructions (Settings ▸ Instructions).
-        var supportsInstructions: Bool { client?.capabilities.contains(RemoteProtocol.instructionsCapability) == true }
+        var supportsInstructions: Bool { client?.supports(.instructions) == true }
         /// The host serves Settings ▸ Skills (`skills.v1`).
-        var supportsSkills: Bool { client?.capabilities.contains(RemoteProtocol.skillsCapability) == true }
+        var supportsSkills: Bool { client?.supports(.skills) == true }
         var supportsProjects: Bool {
-            client?.capabilities.contains(RemoteProtocol.projectsV2Capability) == true
-                || client?.capabilities.contains(RemoteProtocol.projectsCapability) == true
+            client?.supports(.projectsV2) == true
+                || client?.supports(.projects) == true
         }
         /// The host owns and serves Projects (`logicalProjects.v1`); an older host has none to show.
-        var supportsLogicalProjects: Bool { client?.capabilities.contains(RemoteProtocol.logicalProjectsCapability) == true }
+        var supportsLogicalProjects: Bool { client?.supports(.logicalProjects) == true }
         /// The host serves Project automation settings (`logicalProjectAutomations.v1`), apart from running them.
         /// The host carries images with a Project message (`logicalProjectRuntime.images.v1`).
-        var supportsProjectMessageImages: Bool { client?.capabilities.contains(RemoteProtocol.projectMessageImagesCapability) == true }
+        var supportsProjectMessageImages: Bool { client?.supports(.projectMessageImages) == true }
         /// The host keeps a Project's conversation reasoning level (`logicalProjects.conversationThinking.v1`).
-        var supportsProjectConversationThinking: Bool { client?.capabilities.contains(RemoteProtocol.projectConversationThinkingCapability) == true }
-        var supportsLogicalProjectAutomations: Bool { client?.capabilities.contains(RemoteProtocol.logicalProjectAutomationsCapability) == true }
-        var supportsProjectDetails: Bool { client?.capabilities.contains(RemoteProtocol.projectDetailsCapability) == true }
-        var supportsProjectMCP: Bool { client?.capabilities.contains(RemoteProtocol.projectMCPCapability) == true }
-        var supportsProjectResources: Bool { client?.capabilities.contains(RemoteProtocol.projectResourcesCapability) == true }
-        var supportsProjectInheritance: Bool { client?.capabilities.contains(RemoteProtocol.projectInheritanceCapability) == true }
-        var supportsProjectInheritedResources: Bool { client?.capabilities.contains(RemoteProtocol.projectInheritedResourcesCapability) == true }
-        var supportsProjectParent: Bool { client?.capabilities.contains(RemoteProtocol.projectParentCapability) == true }
+        var supportsProjectConversationThinking: Bool { client?.supports(.projectConversationThinking) == true }
+        var supportsLogicalProjectAutomations: Bool { client?.supports(.logicalProjectAutomations) == true }
+        var supportsProjectDetails: Bool { client?.supports(.projectDetails) == true }
+        var supportsProjectMCP: Bool { client?.supports(.projectMCP) == true }
+        var supportsProjectResources: Bool { client?.supports(.projectResources) == true }
+        var supportsProjectInheritance: Bool { client?.supports(.projectInheritance) == true }
+        var supportsProjectInheritedResources: Bool { client?.supports(.projectInheritedResources) == true }
+        var supportsProjectParent: Bool { client?.supports(.projectParent) == true }
         /// What Settings ▸ Skills reads and changes the host's skills through, while it's connected.
         var skillsClient: (any SkillsClient)? { phase == .connected ? client : nil }
         /// What Settings' host picker reads and changes the host's settings through, while it's connected.
@@ -228,18 +228,18 @@ final class RemoteHostStore {
         /// What the host told this Mac it can do, while connected.
         var capabilities: Set<String> { phase == .connected ? Set(client?.capabilities ?? []) : [] }
         /// The host takes every level pi has in `createAgent` (older hosts: Off to High).
-        var supportsAllThinkingLevels: Bool { client?.capabilities.contains(RemoteProtocol.thinkingLevelsCapability) == true }
-        var supportsCreateAgentServiceTier: Bool { client?.capabilities.contains(RemoteProtocol.createAgentServiceTierCapability) == true }
+        var supportsAllThinkingLevels: Bool { client?.supports(.thinkingLevels) == true }
+        var supportsCreateAgentServiceTier: Bool { client?.supports(.createAgentServiceTier) == true }
         /// The host takes the terminal panel's Rename tab and Kill process.
-        var supportsTerminalControl: Bool { client?.capabilities.contains(RemoteProtocol.terminalControlCapability) == true }
-        var supportsTerminalStart: Bool { client?.capabilities.contains(RemoteProtocol.terminalStartCapability) == true }
-        var supportsCheckoutRead: Bool { client?.capabilities.contains(RemoteProtocol.checkoutReadCapability) == true }
+        var supportsTerminalControl: Bool { client?.supports(.terminalControl) == true }
+        var supportsTerminalStart: Bool { client?.supports(.terminalStart) == true }
+        var supportsCheckoutRead: Bool { client?.supports(.checkoutRead) == true }
         /// This Mac's host takes what the app writes for the person (`changesWriteBegan`).
-        var supportsChangesWrites: Bool { client?.capabilities.contains(RemoteProtocol.changesWritesCapability) == true }
+        var supportsChangesWrites: Bool { client?.supports(.changesWrites) == true }
         /// The host takes a new thread's images with its opening prompt.
-        var supportsCreateAgentImages: Bool { client?.capabilities.contains(RemoteProtocol.createAgentImagesCapability) == true }
+        var supportsCreateAgentImages: Bool { client?.supports(.createAgentImages) == true }
         /// The host starts a thread with no space.
-        var supportsNoSpace: Bool { client?.capabilities.contains(RemoteProtocol.createAgentNoSpaceCapability) == true }
+        var supportsNoSpace: Bool { client?.supports(.createAgentNoSpace) == true }
         var supportsWorktreeCreation: Bool {
             client?.capabilities.isSuperset(of: [RemoteProtocol.creationOptionsCapability, RemoteProtocol.worktreeActionsCapability]) == true
         }
@@ -253,7 +253,7 @@ final class RemoteHostStore {
 
         func startChildRefresh(client: RemoteHostClient, every interval: Duration) {
             stopChildRefresh()
-            guard client.capabilities.contains(RemoteProtocol.agentInspectionCapability) else {
+            guard client.supports(.agentInspection) else {
                 if !children.isEmpty { children = [:] }
                 return
             }
@@ -416,7 +416,7 @@ final class RemoteHostStore {
 
     private func sendThreadHints() {
         let hinting = allConnections.filter { connection in
-            connection.phase == .connected && connection.client?.capabilities.contains(RemoteProtocol.nativeThreadRevisionsCapability) == true
+            connection.phase == .connected && connection.client?.supports(.nativeThreadRevisions) == true
         }
         let byID = Dictionary(uniqueKeysWithValues: hinting.map { ($0.id, $0) })
         let local = localHost.map { host in localLiveThreads.map { RemoteAgentRef(hostID: host.id, agentID: $0) } } ?? []
@@ -606,7 +606,7 @@ final class RemoteHostStore {
                 // A new connection holds no subscriptions: ask again for the threads on screen.
                 self.threadHints.forget(connection.id)
                 self.sendThreadHints()
-                connection.designs.connect(client, available: client.capabilities.contains(RemoteProtocol.designsCapability))
+                connection.designs.connect(client, available: client.supports(.designs))
                 connection.startChildRefresh(client: client, every: childRefreshInterval)
                 connection.reconnectDelay = .seconds(1)
                 if connection.isLocalHost, BackgroundHostClient.asksToDrain(appBuild: self.appBuild, hostBuild: client.hostBuild,
@@ -836,7 +836,7 @@ final class RemoteHostStore {
     func fleetRead(hostID: UUID) async throws -> FleetSnapshot {
         guard let connection = allConnections.first(where: { $0.id == hostID }),
               connection.phase == .connected, let client = connection.client,
-              client.capabilities.contains(RemoteProtocol.fleetViewCapability) else { throw RemoteHostClientError.disconnected }
+              client.supports(.fleetView) else { throw RemoteHostClientError.disconnected }
         return try await client.fleetRead().snapshot
     }
 

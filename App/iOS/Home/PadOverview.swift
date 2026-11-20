@@ -26,6 +26,7 @@ struct PadOverview: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
+                        HomeReviewQueueRow()
                         SpendToday(spend: model.spendToday)
                         // Side by side when three columns fit; stacked in a narrow window or at large text.
                         if !typeSize.isAccessibilitySize, width >= MobileLayout.overviewColumnMinWidth * 3 + MobileLayout.blockSpacing * 2 + MobileLayout.gutter * 2 {
