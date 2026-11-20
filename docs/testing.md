@@ -46,6 +46,15 @@ tests skipped; opt-in suites, including previews, remain gated. It is not ordina
 The existing [CI planner](#ci) provides required broader coverage before merge; no duplicate full
 local run is needed solely to reproduce CI.
 
+## Simulator renders
+
+`bash Tests/ShepherdIOSChecks/run-simulator.sh --platform <iphone|ipad|duo> --set <dir> -o <dir> <screen>...`
+renders fixture screens headless and saves light and dark PNGs (`--list` prints the screens).
+Devices are created in a custom simulator set (`--set <dir>` or `SHEPHERD_SIMULATOR_SET`)
+and deleted afterwards; `-d <udid>` reuses a device you own instead. iPhone and iPad render on
+the iOS 27.0 runtime, Duo on iOS 27.1, and Duo poses (`-f`) need Xcode 27.1 (`DEVELOPER_DIR=…`,
+SwiftUI 8.0.85+). A platform whose device cannot be created prints `not run` and is skipped.
+
 ## Helpers
 
 Unit targets may use `Tests/ShepherdTestKit` (no Shepherd dependency): `ScratchDefaults`,

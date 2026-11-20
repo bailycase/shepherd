@@ -23,6 +23,10 @@ public final class BrowserPagePorts {
     public private(set) var ports: [Int] = []
     /// The ports are held now (between `resume` and `suspend`).
     public private(set) var isActive = false
+    /// The ports `resume()` took again whose claim found a socket bound, for `finishResume()`.
+    public private(set) var pending: [Int] = []
+    /// Bumped by `suspend()` (and so `close()`): a `finishResume()` begun before it claims nothing.
+    private var generation = 0
     /// Tests only: the port on the host a port here reaches, where it is not the same one (a test's
     /// host is this very machine, whose loopback cannot hold a dev server and its forward at one port).
     public var hostPorts: [Int: Int] = [:]
@@ -47,23 +51,51 @@ public final class BrowserPagePorts {
         return nil
     }
 
-    /// The host is connected (again): every port the page held is taken again. The ones that can't
-    /// be (something else took one meanwhile) are let go and returned, so the page can say why.
+    /// The host is connected (again): every port the page held is taken again, at once. The ones
+    /// that can't be (something else took one meanwhile) are let go and returned, so the page can say
+    /// why. A port whose claim found a socket bound may be the old one still closing from `suspend`:
+    /// it stays remembered, and `finishResume()` decides it once the close has landed.
     @discardableResult
     public func resume() -> [BrowserPortForwarder.Refusal] {
         isActive = true
+        pending = []
         var refused: [BrowserPortForwarder.Refusal] = []
         for port in ports {
-            if let refusal = forwarder.claim(port: port, hostPort: hostPorts[port], owner: owner, slot: slot, agent: agent) { refused.append(refusal) }
+            switch forwarder.claim(port: port, hostPort: hostPorts[port], owner: owner, slot: slot, agent: agent) {
+            case nil: break
+            case .inUse: pending.append(port)
+            case let refusal?: refused.append(refusal)
+            }
         }
         ports.removeAll { port in refused.contains { $0.port == port } }
         return refused
     }
 
+    /// Takes the ports `resume()` left pending again once their old sockets have closed, and returns
+    /// the ones still refused (another program's, genuinely), which are let go. Runs on the caller's
+    /// actor, so the page's state is never touched from another thread. Gives up, returning nothing
+    /// and claiming nothing, if the page is suspended or closed while it waits.
+    public func finishResume(isolation: isolated (any Actor)? = #isolation) async -> [BrowserPortForwarder.Refusal] {
+        let mine = generation
+        var refused: [BrowserPortForwarder.Refusal] = []
+        for port in pending {
+            await forwarder.waitForClose(of: port)
+            guard isActive, generation == mine, ports.contains(port) else { return [] }
+            if let refusal = forwarder.claim(port: port, hostPort: hostPorts[port], owner: owner, slot: slot, agent: agent) {
+                refused.append(refusal)
+                ports.removeAll { $0 == port }
+            }
+        }
+        pending = []
+        return refused
+    }
+
     /// The host went away or the app is leaving the foreground: every port is let go now (the
-    /// listening sockets are closed when this returns) and remembered for `resume`.
+    /// listening sockets close shortly after, without blocking the caller) and remembered for `resume`.
     public func suspend() {
         isActive = false
+        generation += 1
+        pending = []
         forwarder.release(owner)
     }
 

@@ -35,6 +35,15 @@ public struct FleetSidebarGroups: Equatable, Sendable {
     public var recents: [FleetThreadRow] = []
     /// Triggered automations' unpinned run threads, one group per automation, the group with the newest run first.
     public var runs: [FleetRunGroup] = []
+    /// Watched run threads, minus those already in Needs you.
+    public var manualRuns: [FleetAutomationRow] = []
+    /// Triggered run threads displayed directly when filtering, without their disclosure group.
+    public var matchingRuns: [FleetThreadRow] = []
+    public var isFiltering = false
+    public var hasNoMatches: Bool {
+        isFiltering && needsYou.isEmpty && working.isEmpty && done.isEmpty && pinned.isEmpty && recents.isEmpty
+            && manualRuns.isEmpty && matchingRuns.isEmpty
+    }
 
     public init() {}
 }
@@ -204,11 +213,23 @@ public struct FleetSidebarState: Equatable, Sendable {
     /// design is never pinned, and a thread on a host that is offline is never Working or Done. A triggered automation's
     /// run threads (`FleetModel.runOrigins`) fold into its run group unless pinned; `unread` are the runs whose thread
     /// has not been opened, `paused` the automations whose trigger is paused (as their hosts last said).
-    public func groups(_ model: FleetModel, unread: Set<FleetRef> = [], paused: Set<AutomationKey> = []) -> FleetSidebarGroups {
+    public func groups(_ model: FleetModel, unread: Set<FleetRef> = [], paused: Set<AutomationKey> = [],
+                       filters: SidebarThreadFilters = .init()) -> FleetSidebarGroups {
         let pinned = Set(pins)
         var groups = FleetSidebarGroups()
+        groups.isFiltering = filters.isActive
+        let waitingRefs = Set(model.needsYou.map(\.ref))
+        groups.manualRuns = model.automations.filter { row in
+            guard let ref = row.run, !waitingRefs.contains(ref) else { return false }
+            return filters.matches(host: ref.host, running: !row.offline && row.runStatus == .working,
+                                   needsYou: false, hasChanges: row.hasChanges, worktree: row.worktree)
+        }
         var pinnedRows: [FleetRef: FleetPinnedRow] = [:]
         for item in model.needsYou {
+            // A project's ask opens the project or task, not a thread: filtering lists threads only (as the Mac does).
+            guard !(filters.isActive && item.origin == .project),
+                  filters.matches(host: item.ref.host, running: false, needsYou: true,
+                                  hasChanges: item.hasChanges, worktree: item.worktree) else { continue }
             if item.origin == .thread, pinned.contains(item.ref) {
                 if pinnedRows[item.ref] == nil { pinnedRows[item.ref] = .attention(item) }
             } else {
@@ -219,9 +240,17 @@ public struct FleetSidebarState: Equatable, Sendable {
         var runRows: [AutomationKey: [FleetThreadRow]] = [:]
         var runOrder: [AutomationKey] = []
         for row in model.recents {
+            if filters.isActive {
+                guard row.design == nil, filters.matches(host: row.ref.host, running: running.contains(row.ref), needsYou: false,
+                                                         hasChanges: row.hasChanges, worktree: row.worktree) else { continue }
+            }
             if row.design == nil, pinned.contains(row.ref) {
                 if pinnedRows[row.ref] == nil { pinnedRows[row.ref] = .thread(row) }
             } else if let automation = model.runOrigins[row.ref] {
+                if filters.isActive {
+                    groups.matchingRuns.append(row)
+                    continue
+                }
                 let key = AutomationKey(host: row.ref.host, automation: automation)
                 if runRows[key] == nil { runOrder.append(key) }
                 runRows[key, default: []].append(row)

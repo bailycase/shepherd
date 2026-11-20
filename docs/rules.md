@@ -293,7 +293,7 @@ the host as `branchUpdate` and `branchAbort`, each on the person's tap), Switch 
 copy), New branch from here (`switch -c`), Rename branch (`branch -m`, local only), and Fetch from
 origin (`fetch origin`, remote-tracking refs only); Change base rewrites only Shepherd's record. A
 new thread's worktree on an existing branch (`GitWorktree.addExisting`: `worktree add`, a remote
-branch with a tracking local copy) or a named new one. Close threads when their pull request merges (Settings ▸ Worktrees,
+branch with a tracking local copy) or a named new one. Close threads when their pull request merges (Settings ▸ Git,
 off by default; `ShepherdSessions/PullRequestLinks.swift`): once a thread's pull request is seen
 going from open to merged in this host's run, it deletes the thread, removes its worktree and local
 branch through Delete Worktree's path, and deletes the head branch on GitHub through the forge's
@@ -317,6 +317,7 @@ this Mac's own git sign-in and no prompt, or from a bundle the sender made when 
 it. It never writes into an existing checkout, and a clone that is stopped, fails or is cut off by a restart removes the
 folder it made and registers nothing. Binding a checkout this Mac already has (`FleetRepoFinder`, from places Shepherd
 already knows, never a walk of the disk) only reads it. Nothing else.
+An explicit sender-requested Fleet close (`fleet_close`) removes the settled receiver thread. Like ordinary delete, it stops every session in the tab, including any terminal the person opened. Fleet close sends `SIGKILL` to any of those session process groups still alive after the stop request. It may remove root `.build` or `DerivedData` only in that thread’s registered Shepherd worktree, if the folder was absent before the thread started, is ignored and untracked, and has the expected build marker; a symlink or unverified folder stays. It never removes the checkout, source, branches, or saved conversation. Fleet cancel stops the dispatched thread’s owned session processes, but neither cancel nor result delivery removes the thread or its files. Fleet never removes an external checkout it merely found or a temporary clone it did not create and register.
 Shepherd may remove or prune worktrees it created.
 
 ## Reviews dock; they don't split

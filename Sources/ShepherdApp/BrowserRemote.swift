@@ -28,6 +28,9 @@ final class BrowserRemote {
     /// Where an agent on the host may take this page (`BrowserViewerPolicy`); tests give it a
     /// resolver that never asks the network.
     var policy: BrowserViewerPolicy
+    /// The ports each open tab of the thread asked for. The tabs share the owner, so a port is let
+    /// go when the last tab that asked for it closes, not before.
+    private var tabPorts: [UUID: Set<Int>] = [:]
     /// The page this claim drives, set as the session is made.
     weak var session: BrowserSession?
 
@@ -70,13 +73,25 @@ final class BrowserRemote {
     /// Forwards the port `url` names on the host, when it names one there (a `localhost`,
     /// `127.0.0.1` or `[::1]` URL: any other is on the web and loads from this Mac as any page
     /// does). Nil when it is forwarded, or needs no forward; else why not, and nothing should load.
-    func forward(_ url: URL, limit: Int? = nil) -> BrowserPortForwarder.Refusal? {
+    func forward(_ url: URL, tab: UUID, limit: Int? = nil) -> BrowserPortForwarder.Refusal? {
         guard forwardsPorts, let port = BrowserTunnelTarget.port(of: url) else { return nil }
         if let limit {
             let held = ports.ports(of: owner)
             if !held.contains(port), held.count >= limit { return .tooMany(port: port, limit: limit) }
         }
-        return ports.claim(port: port, hostPort: hostPorts[port], owner: owner, slot: connection?.hubSlot ?? emptySlot, agent: ref.agentID)
+        if let refusal = ports.claim(port: port, hostPort: hostPorts[port], owner: owner, slot: connection?.hubSlot ?? emptySlot, agent: ref.agentID) {
+            return refusal
+        }
+        tabPorts[tab, default: []].insert(port)
+        return nil
+    }
+
+    /// A tab closed: the ports only it asked for are let go (new connections refused, bridges ended).
+    func release(tab: UUID) {
+        guard let mine = tabPorts.removeValue(forKey: tab) else { return }
+        let others = tabPorts.values.reduce(into: Set<Int>()) { $0.formUnion($1) }
+        let unused = mine.subtracting(others)
+        if !unused.isEmpty { ports.releaseAndWait(owner, ports: unused) }
     }
 
     /// The page is gone: its ports go with it, and the agent's browser goes back to the host.
@@ -85,8 +100,11 @@ final class BrowserRemote {
         releaseTask = nil
         if claimant.holds { claimClient?.browserRelease(agentID: ref.agentID) }
         claimClient = nil
+        tabPorts.removeAll()
         _ = claimant.connection(up: false)
-        ports.release(owner)
+        // Waits for the sockets to close: a page made again at once claims the port, and a claim
+        // that found the old socket still bound would read it as another program's.
+        ports.releaseAndWait(owner)
     }
 
     /// Whether `port` answers on the host, through the tunnel.

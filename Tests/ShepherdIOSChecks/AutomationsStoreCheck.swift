@@ -23,7 +23,7 @@ struct AutomationsStoreCheck {
         var b = Automation(name: "scheduled", prompt: "work", cwd: space.path)
         b.trigger = .schedule(AutomationSchedule(rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0"))
         b.destination = .thread(destination.id)
-        let host = MobileHost(state: ShepherdState(spaces: [space], agents: [runAgent, destination, unrelated], automations: [a, b]))
+        let host = MobileHost(state: ShepherdState(spaces: [space], agents: [runAgent, destination, unrelated], automations: [b, a]))
         let hosts = MobileHosts(host)
         let ka = AutomationKey(host: host.id, automation: a.id)
         let kb = AutomationKey(host: host.id, automation: b.id)
@@ -42,6 +42,10 @@ struct AutomationsStoreCheck {
             return status
         }, dates: { (now, locale, deviceZone) })
         await store.refresh()
+        check(store.liveFirst.map(\.key) == [ka, kb], "the live row leads even when the host lists it second")
+        check(store.selection == kb, "the default selection is the first host row, not the first live row")
+        store.chosen = ka
+        check(store.selection == ka, "an existing explicit selection wins")
         check(store.details[ka]?.lastRun?.started == "Today 02:00", "initial dates use the injected clock")
         check(store.details[kb]?.trigger?.next == "Today 03:00", "trigger dates use the same clock")
 
@@ -72,6 +76,7 @@ struct AutomationsStoreCheck {
         check(reads[a.id] == initialReads[a.id]! + 1 && reads[b.id] == initialReads[b.id], "only the changed run signature is read")
         check(store.detailDerivations[ka]! > counts[ka]! && store.detailDerivations[kb] == counts[kb], "a changed run leaves its peer detail cached")
         check(store.details[ka]?.row.status == "Finished", "agent status updates the row independently of the retained run")
+        check(store.liveFirst.map(\.key) == [kb, ka], "a finished live row returns to its place in host order")
 
         counts = store.detailDerivations
         revision = store.inputRevision
@@ -146,7 +151,14 @@ struct AutomationsStoreCheck {
         await fallback.refreshStatuses()
         check(fallback.detailDerivations[fallbackKey] == fallbackCount + 1, "unknown host zone invalidates with the device zone")
         check(fallback.details[fallbackKey]?.runs.first?.started.hasSuffix("11:00") == true, "fallback dates use the changed device zone")
-        print("PASS: AutomationsStore observation, per-detail reuse, watch run refresh, status, host-day, time-zone and locale invalidation")
+        host.state.automations.removeAll { $0.id == a.id }
+        await eventually("selected automation removed") { store.model.rows.map(\.key) == [kb] }
+        check(store.chosen == ka && store.selection == kb, "a removed selection falls back to the first remaining row")
+        check(store.liveFirst.map(\.key) == [kb], "the ordered list drops a removed row")
+        host.state.automations = []
+        await eventually("last automation removed") { store.model.rows.isEmpty }
+        check(store.selection == nil && store.liveFirst.isEmpty, "no selection or ordered rows remain when the host list is empty")
+        print("PASS: AutomationsStore selection fallback, live-first order, observation, detail reuse and date invalidation")
     }
 
     static func check(_ condition: @autoclosure () -> Bool, _ message: String) {

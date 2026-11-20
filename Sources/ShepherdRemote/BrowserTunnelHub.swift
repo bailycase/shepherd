@@ -54,6 +54,8 @@ public final class BrowserTunnelHub: @unchecked Sendable {
     private final class Tunnel {
         let id: Int
         var endpoint: TunnelEndpoint?
+        var agentID: AgentID?
+        var port = 0
         var probe: CheckedContinuation<BrowserTunnelProbe, Never>?
         init(id: Int) { self.id = id }
     }
@@ -94,6 +96,8 @@ public final class BrowserTunnelHub: @unchecked Sendable {
                 self.remove(tunnel)
             }
             tunnel.endpoint = endpoint
+            tunnel.agentID = agentID
+            tunnel.port = port
             tunnels[id] = tunnel
             send(.open(tunnel: id, agentID: agentID, port: port))
             endpoint.start()
@@ -147,6 +151,17 @@ public final class BrowserTunnelHub: @unchecked Sendable {
             remove(tunnel, probeResult: .failed(code ?? BrowserTunnelCode.aborted), abort: true)
         case .open, .keepalive:
             break
+        }
+    }
+
+    /// Ends the bridged tunnels to `port` on `agentID`'s host (their sockets reset), when the page
+    /// that forwarded it is gone. Any thread; runs on the hub's queue after anything already queued.
+    public func closeTunnels(agentID: AgentID, port: Int) {
+        queue.async { [self] in
+            for tunnel in Array(tunnels.values) where tunnel.endpoint != nil && tunnel.agentID == agentID && tunnel.port == port {
+                send(.close(tunnel: tunnel.id, code: BrowserTunnelCode.aborted))
+                remove(tunnel, abort: true)
+            }
         }
     }
 
