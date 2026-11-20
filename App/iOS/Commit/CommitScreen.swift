@@ -98,7 +98,8 @@ struct CommitScreen: View {
     /// what was committed leaves the list.
     private func close(_ store: ReviewCommitStore) {
         navigator.dismissPresented()
-        if store.closed() {
+        let succeeded = if case .succeeded = store.outcome { true } else { false }
+        if store.closed(), !succeeded || !navigator.finishQueuedReview(ref, hosts: hosts) {
             Task { await ReviewStores.shared.store(for: ref).load(hosts: hosts) }
         }
     }
@@ -108,6 +109,7 @@ struct CommitScreen: View {
         Task {
             if await review.commit(hosts: hosts) {
                 navigator.dismissPresented()
+                navigator.finishQueuedReview(ref, hosts: hosts)
             } else {
                 CommitStores.shared.store(for: ref, hosts: hosts).error = review.actionError
             }

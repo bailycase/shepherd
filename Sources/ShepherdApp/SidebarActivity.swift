@@ -295,6 +295,7 @@ extension ShepherdViewModel {
     /// Leaving for a page does not clear Done. Only opening another thread marks the current
     /// completion read; a later completion has a different generation.
     func willOpenSidebarThread(_ row: SidebarRowID) {
+        if queuedReview != row { queuedReview = nil }
         let previous = sidebarReadingThread ?? selectedSidebarRow
         if let previous, previous != row, let completion = sidebarReadingCompletion {
             markSidebarSeen(previous, completion)

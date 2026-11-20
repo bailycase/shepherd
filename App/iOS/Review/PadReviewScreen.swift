@@ -282,7 +282,11 @@ private struct PadCommitButton: View {
             .accessibilityHint("Choose the message and push options, then commit on the host")
             .commitPopover(ref: store.ref)
         } else {
-            Button { Task { _ = await store.commit(hosts: hosts) } } label: {
+            Button {
+                Task {
+                    if await store.commit(hosts: hosts) { navigator.finishQueuedReview(store.ref, hosts: hosts) }
+                }
+            } label: {
                 Text("Commit\u{2026}")
             }
             .buttonStyle(.sh(.secondary, size: .l))
@@ -519,6 +523,7 @@ private struct PadSendBar: View {
     let store: ReviewStore
     let close: () -> Void
     @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
         VStack(spacing: 0) {
@@ -553,7 +558,9 @@ private struct PadSendBar: View {
                         .disabled(store.submitting)
                         .accessibilityHint("Deletes the comments you haven't sent")
                     Button {
-                        Task { if await store.sendComments(hosts: hosts) { close() } }
+                        Task {
+                            if await store.sendComments(hosts: hosts), !navigator.finishQueuedReview(store.ref, hosts: hosts) { close() }
+                        }
                     } label: {
                         HStack(spacing: SH.Space.s) {
                             if store.submitting { ProgressView().progressViewStyle(SHSpinnerStyle()) }
