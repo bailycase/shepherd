@@ -322,7 +322,7 @@ struct ThreadComposer: View {
     private func field(store: NativeThreadStore, state: ComposerState, live: Bool, placeholder: String, command: Bool = false,
                        style: SHTextStyle = .body) -> some View {
         @Bindable var bindable = store
-        let paste: (([NSItemProvider]) -> Void)? = live && acceptsImages(store) ? { providers in Task { await state.attach(providers: providers) } } : nil
+        let paste: (([NSItemProvider]) -> Void)? = live && acceptsImages(store) ? { providers in state.attach(providers: providers) } : nil
         return ComposerTextView(text: $bindable.draft, placeholder: placeholder, focused: $focused, style: command ? .code : style,
                                 label: "Message to agent", pasteImages: paste)
     }

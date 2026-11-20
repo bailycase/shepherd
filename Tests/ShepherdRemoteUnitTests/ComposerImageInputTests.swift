@@ -64,4 +64,18 @@ struct ComposerImageInputTests {
         #expect(ComposerImageInput.plan([.init(fileName: "notes.pdf")], room: 4).message == "notes.pdf isn't an image. Only images can be attached here.")
         #expect(ComposerImageInput.plan([.init(fileName: "Makefile")], room: 4).accepted.isEmpty)
     }
+
+    /// A drop can offer only the file's URL; the file's own type decides.
+    @Test func aFileOfferedOnlyByURLIsTypedByTheFile() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("composer-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let photo = directory.appendingPathComponent("IMG_0001.JPG")
+        let report = directory.appendingPathComponent("Q3 report.pdf")
+        for url in [photo, report] { try Data("x".utf8).write(to: url) }
+        let taken = ComposerImageInput.plan([.init(fileURL: photo)], room: 4)
+        #expect(taken.accepted == [.init(index: 0, typeIdentifier: UTType.jpeg.identifier, name: "IMG_0001.JPG")])
+        #expect(taken.message == nil)
+        #expect(ComposerImageInput.plan([.init(fileURL: report)], room: 4).message == "Q3 report.pdf isn't an image. Only images can be attached here.")
+    }
 }

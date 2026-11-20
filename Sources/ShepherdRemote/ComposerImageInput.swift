@@ -17,6 +17,14 @@ public enum ComposerImageInput {
             self.name = name
         }
 
+        /// A file transferred by URL (a drop that offers only `public.file-url`), typed by what the file is,
+        /// else by its extension, and named for it.
+        public init(fileURL url: URL) {
+            let type = (try? url.resourceValues(forKeys: [.contentTypeKey]))?.contentType
+                ?? UTType(filenameExtension: url.pathExtension.lowercased())
+            self.init(typeIdentifiers: type.map { [$0.identifier] } ?? [], name: url.lastPathComponent)
+        }
+
         /// A file the Files picker returned, typed by its extension.
         public init(fileName: String) {
             self.init(typeIdentifiers: UTType(filenameExtension: (fileName as NSString).pathExtension.lowercased()).map { [$0.identifier] } ?? [],
@@ -71,7 +79,8 @@ public enum ComposerImageInput {
         return plan
     }
 
-    private static func name(_ suggested: String?, type: String, number: Int, of count: Int) -> String {
+    /// The name an accepted item gets: the one it suggests, else "Image" with the type's extension.
+    public static func name(_ suggested: String?, type: String, number: Int, of count: Int) -> String {
         if let suggested, !suggested.isEmpty { return suggested }
         let ext = UTType(type)?.preferredFilenameExtension ?? "png"
         return count == 1 ? "Image.\(ext)" : "Image \(number).\(ext)"
