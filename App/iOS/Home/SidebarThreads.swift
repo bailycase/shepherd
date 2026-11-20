@@ -14,7 +14,7 @@ final class SidebarThreads {
     var filters = SidebarThreadFilters()
 
     func activeFilters(_ model: FleetModel) -> SidebarThreadFilters {
-        filters.available(on: model.hosts.map(\.id))
+        filters.available(on: model.filterHosts.map(\.id))
     }
     @ObservationIgnored private let hosts: MobileHosts
     @ObservationIgnored private let defaults: UserDefaults

@@ -304,7 +304,7 @@ extension ShepherdViewModel {
     }
 
     func markAllSidebarDoneSeen() {
-        for row in presentedSidebarLists.done where row.id.dispatchID == nil {
+        for row in filteredSidebarLists.done where row.id.dispatchID == nil {
             if let completion = row.completion { markSidebarSeen(row.id, completion) }
         }
     }

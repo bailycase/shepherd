@@ -49,3 +49,10 @@ public struct SidebarThreadFilters: Equatable, Sendable {
         return (!chips.contains(.hasChanges) || hasChanges) && (!chips.contains(.worktree) || worktree)
     }
 }
+
+extension FleetModel {
+    /// The hosts the host picker offers: only those that are connected, so one connected host among offline ones has no picker.
+    public var filterHosts: [SidebarThreadFilters.Host] {
+        hosts.filter { $0.phase.isConnected }.map { .init(id: $0.id, name: $0.name) }
+    }
+}

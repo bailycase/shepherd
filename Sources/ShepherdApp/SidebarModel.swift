@@ -242,22 +242,39 @@ struct SidebarLists: Equatable {
 
     func presented(selected: SidebarRowID?, shortcuts: Bool, filters: SidebarThreadFilters = .init(),
                    collapsed: Set<SidebarActivitySection> = [], openFolds: Set<String> = []) -> SidebarLists {
+        filtered(by: filters, openFolds: openFolds).marked(selected: selected, shortcuts: shortcuts, collapsed: collapsed)
+    }
+
+    /// The rows `filters` leave and the senders' folds applied: what the view model caches by these lists and criteria, so a
+    /// change of selection or menu state doesn't filter again.
+    func filtered(by filters: SidebarThreadFilters, openFolds: Set<String> = []) -> SidebarLists {
         var lists = self
         lists.isFiltering = filters.isActive
         let threadPaths = [\SidebarLists.pinned, \.needsYou, \.working, \.done, \.recents, \.automations]
         if filters.isActive {
             // A match must not be hidden by a sender or automation that isn't a match itself.
             // Keep section and row order; show matching run threads and sent threads directly.
+            // A sent thread sits in its sender's group, so a match goes back to the group of its own status (Working).
+            var sent: [SidebarListRow] = []
             for path in threadPaths {
                 lists[keyPath: path] = lists[keyPath: path].compactMap { row in
                     guard !(row.fleetNested && row.section == .needsYou), row.matches(filters) else { return nil }
-                    var row = row
-                    row.fleetNested = false
-                    row.sentRoot = nil
-                    row.fold = nil
-                    row.foldedUnder = nil
-                    return row
+                    var flat = row
+                    flat.fleetNested = false
+                    flat.sentRoot = nil
+                    flat.fold = nil
+                    flat.foldedUnder = nil
+                    if row.fleetNested { sent.append(flat); return nil }
+                    return flat
                 }
+            }
+            if !sent.isEmpty {
+                // Working is most recently active first, which is the order of `activity`.
+                let order = Dictionary(activity.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+                lists.working = (lists.working + sent).enumerated().sorted { a, b in
+                    let left = order[a.element.id] ?? .max, right = order[b.element.id] ?? .max
+                    return left != right ? left < right : a.offset < b.offset
+                }.map(\.element)
             }
             lists.designs = []
             lists.automationRows = []
@@ -267,6 +284,12 @@ struct SidebarLists: Equatable {
                 lists[keyPath: path] = lists[keyPath: path].foldingSent(open: openFolds)
             }
         }
+        return lists
+    }
+
+    /// The row on screen marked, and ⌘-digits while ⌘ is held.
+    func marked(selected: SidebarRowID?, shortcuts: Bool, collapsed: Set<SidebarActivitySection> = []) -> SidebarLists {
+        var lists = self
         let digits = shortcuts ? Dictionary(uniqueKeysWithValues: lists.shortcutRows(collapsed: collapsed).prefix(9).enumerated()
             .map { ($0.element.id, "⌘\($0.offset + 1)") }) : [:]
         for path in [\SidebarLists.pinned, \.needsYou, \.working, \.done, \.recents, \.designs, \.automations] {
@@ -542,7 +565,9 @@ enum SidebarDerivation {
             return a.index > b.index
         }
         var lists = SidebarLists()
-        lists.filterHosts = [.init(id: PageHost.localID, name: "This Mac")] + source.hosts.map { .init(id: $0.id, name: $0.name) }
+        // The picker offers connected hosts only: an offline host's rows are still its last known state, but it isn't a choice.
+        lists.filterHosts = [.init(id: PageHost.localID, name: "This Mac")]
+            + source.hosts.filter { !$0.offline }.map { .init(id: $0.id, name: $0.name) }
         var pinnedRows: [PinnedThread: SidebarListRow] = [:]
         var calm: [SidebarListRow] = []
         for entry in entries {

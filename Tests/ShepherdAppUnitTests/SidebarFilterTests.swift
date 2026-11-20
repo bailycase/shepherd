@@ -46,6 +46,33 @@ struct SidebarFilterTests {
         #expect(!lists.presented(selected: nil, shortcuts: false).hasNoMatches)
     }
 
+    @Test func aSentThreadThatMatchesIsGroupedByItsOwnStatusNotItsSenders() {
+        let thisMac = UUID()
+        let sender = thread("acme-api", .done, at: 1)
+        var child = thread("acme-search", .working, at: 3)
+        child.dispatchedFrom = DispatchedFrom(hostID: thisMac, hostName: "acme-laptop", agentID: sender.id,
+                                              agentTitle: sender.name, dispatchID: UUID(), at: 3)
+        let other = thread("acme-web", .working, at: 4)
+        let lists = SidebarDerivation.lists(SidebarSource(local: ShepherdState(spaces: [space], agents: [sender, child, other]),
+                                                          localFleetID: thisMac))
+        #expect(lists.done.contains { $0.fleetNested }, "unfiltered, the child nests under its Done sender")
+        let running = lists.presented(selected: nil, shortcuts: false, filters: .init(chips: [.running]))
+        #expect(running.working.map(\.title) == ["acme-web", "acme-search"])
+        #expect(running.done.isEmpty)
+        // Collapsing Done must not hide a running match.
+        #expect(running.items(collapsed: [.done]).contains { if case .row(let row) = $0 { row.title == "acme-search" } else { false } })
+    }
+
+    @Test func theHostPickerOffersOnlyConnectedHosts() {
+        func names(_ hosts: [SidebarSource.Host]) -> [String] {
+            SidebarDerivation.lists(SidebarSource(local: ShepherdState(spaces: [space]), hosts: hosts)).filterHosts.map(\.name)
+        }
+        let connected = SidebarSource.Host(id: build, name: "acme-build", state: ShepherdState(spaces: [space]))
+        let spare = SidebarSource.Host(id: offline, name: "acme-spare", state: ShepherdState(spaces: [space]), offline: true)
+        #expect(names([spare]) == ["This Mac"], "one connected and one disconnected host: no picker")
+        #expect(names([connected, spare]) == ["This Mac", "acme-build"])
+    }
+
     @Test func digitsFollowTheSameDisplayedMatchesAndSkipCollapsedSections() {
         let ask = thread("acme-api", .blocked, at: 40, changed: 1)
         let unmatched = thread("acme-clean", .working, at: 39)

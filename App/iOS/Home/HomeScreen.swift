@@ -68,7 +68,7 @@ private struct HomeSections: View {
                 ForEach(model.offlineHosts) { card in HostNotice(card: card).equatable() }
             }
         }
-        MobileSidebarFilterBar(sidebar: sidebar, filters: filters, hosts: model.hosts)
+        MobileSidebarFilterBar(sidebar: sidebar, filters: filters, hosts: model.filterHosts)
         if groups.isFiltering {
             filteredGroups(groups, sidebar: sidebar)
         } else {
@@ -243,7 +243,7 @@ private struct HomeSections: View {
 struct MobileSidebarFilterBar: View {
     let sidebar: SidebarThreads
     let filters: SidebarThreadFilters
-    let hosts: [FleetHostCard]
+    let hosts: [SidebarThreadFilters.Host]
 
     var body: some View {
         SHSidebarFilterBar(chips: SidebarThreadFilters.Chip.allCases, selection: filters.chips,

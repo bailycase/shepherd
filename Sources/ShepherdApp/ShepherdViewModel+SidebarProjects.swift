@@ -62,13 +62,13 @@ extension ShepherdViewModel {
     /// threads in order.
     var sidebarWalkRows: [SidebarListRow] {
         sidebarStyle == .projects ? sidebarTree.visibleRows(collapsed: collapsedProjects)
-            : presentedSidebarLists.visibleRows(collapsed: collapsedActivitySections, openRunGroups: collapsedProjects)
+            : filteredSidebarLists.visibleRows(collapsed: collapsedActivitySections, openRunGroups: collapsedProjects)
     }
 
     /// The rows ⌘1–9 reach, in the style on screen.
     var sidebarShortcutRows: [SidebarListRow] {
         sidebarStyle == .projects ? sidebarTree.visibleRows(collapsed: collapsedProjects)
-            : presentedSidebarLists.shortcutRows(collapsed: collapsedActivitySections)
+            : filteredSidebarLists.shortcutRows(collapsed: collapsedActivitySections)
     }
 
     // MARK: Disclosure

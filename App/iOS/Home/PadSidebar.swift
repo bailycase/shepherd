@@ -63,7 +63,7 @@ struct PadSidebar: View {
                     .task(id: forge.sessionsKey) { await forge.loadRepos() }
                     if !groups.isFiltering { ForgePinnedSection() }
                 }
-                MobileSidebarFilterBar(sidebar: sidebar, filters: filters, hosts: model.hosts)
+                MobileSidebarFilterBar(sidebar: sidebar, filters: filters, hosts: model.filterHosts)
                     .padding(.vertical, SH.Space.s)
                 if groups.hasNoMatches {
                     SHSidebarFilterEmpty { sidebar.filters = .init() }

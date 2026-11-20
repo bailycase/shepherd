@@ -109,6 +109,25 @@ struct FleetSidebarTests {
         #expect(!state.groups(model).hasNoMatches)
     }
 
+    @Test func filteringNeedsYouLeavesOutAProjectsAsk() {
+        let ask = Self.agent("ask", .blocked)
+        var model = FleetModel(hosts: Self.hosts([ask]), digests: [:])
+        model.needsYou.append(FleetAttention(ref: F.ref("task"), origin: .project, thread: "task", question: "Ship it?",
+                                             reason: "asked you", reply: .open, hostName: "Studio"))
+        let state = FleetSidebarState()
+        #expect(state.groups(model).needsYou.map(\.ref) == [F.ref("ask"), F.ref("task")])
+        #expect(state.groups(model, filters: .init(chips: [.needsYou])).needsYou.map(\.ref) == [F.ref("ask")])
+        #expect(state.groups(model, filters: .init(host: F.studio)).needsYou.map(\.ref) == [F.ref("ask")])
+    }
+
+    @Test func theHostPickerOffersOnlyConnectedHosts() {
+        let agent = Self.agent("run", .working)
+        let spare = F.host(F.build, "acme-spare", .disconnected, agents: [agent])
+        #expect(FleetModel(hosts: Self.hosts([agent]) + [spare], digests: [:]).filterHosts.map(\.name) == ["Studio"])
+        let both = Self.hosts([agent]) + [F.host(F.build, "Build", .connected, agents: [agent]), spare]
+        #expect(FleetModel(hosts: both, digests: [:]).filterHosts.map(\.name) == ["Studio", "Build"])
+    }
+
     @Test func aRemovedHostDoesNotLeaveAHiddenFilterActive() {
         var filters = SidebarThreadFilters(chips: [.worktree], host: F.studio)
         #expect(filters.available(on: [F.studio, F.build]) == filters)

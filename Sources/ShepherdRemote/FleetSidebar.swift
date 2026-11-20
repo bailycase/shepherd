@@ -226,7 +226,9 @@ public struct FleetSidebarState: Equatable, Sendable {
         }
         var pinnedRows: [FleetRef: FleetPinnedRow] = [:]
         for item in model.needsYou {
-            guard filters.matches(host: item.ref.host, running: false, needsYou: true,
+            // A project's ask opens the project or task, not a thread: filtering lists threads only (as the Mac does).
+            guard !(filters.isActive && item.origin == .project),
+                  filters.matches(host: item.ref.host, running: false, needsYou: true,
                                   hasChanges: item.hasChanges, worktree: item.worktree) else { continue }
             if item.origin == .thread, pinned.contains(item.ref) {
                 if pinnedRows[item.ref] == nil { pinnedRows[item.ref] = .attention(item) }
