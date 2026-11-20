@@ -35,7 +35,7 @@ struct ProjectTaskList: View {
                     let now = Date()
                     LazyVStack(alignment: .leading, spacing: 0) {
                         status
-                        ForEach(items ?? []) { item in
+                        ForEach(items ?? history?.items ?? []) { item in
                             VStack(spacing: 0) {
                                 switch item {
                                 case .header(let group, let count):
