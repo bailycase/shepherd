@@ -1,0 +1,1625 @@
+{
+  "observations": [
+    {
+      "fields": {
+        "reply.id": 2,
+        "reply.state.agents[0].id": "<thread>",
+        "reply.state.agents[0].name": "acme thread",
+        "reply.state.agents[0].nameIsFinal": false,
+        "reply.state.agents[0].paneID": "<id 1>",
+        "reply.state.agents[0].runtime": "rpc",
+        "reply.state.agents[0].spaceID": "<space>",
+        "reply.state.agents[0].status": "idle",
+        "reply.state.agents[0].tabID": "<id 2>",
+        "reply.state.automations": [],
+        "reply.state.designs": [],
+        "reply.state.projectExecutions": [],
+        "reply.state.projects": [],
+        "reply.state.spaces[0].hidden": false,
+        "reply.state.spaces[0].id": "<space>",
+        "reply.state.spaces[0].name": "acme-web",
+        "reply.state.spaces[0].path": "<scratch>",
+        "reply.state.tabs[0].id": "<id 2>",
+        "reply.state.tabs[0].layout.pane.agentID": "<thread>",
+        "reply.state.tabs[0].layout.pane.cwd": "<scratch>",
+        "reply.state.tabs[0].layout.pane.id": "<id 1>",
+        "reply.state.tabs[0].layout.type": "leaf",
+        "reply.state.tabs[0].order": 0,
+        "reply.state.tabs[0].spaceID": "<space>",
+        "reply.type": "state"
+      },
+      "step": "seeded"
+    },
+    {
+      "fields": {
+        "state.json.agents[0].id": "<thread>",
+        "state.json.agents[0].name": "acme thread",
+        "state.json.agents[0].nameIsFinal": false,
+        "state.json.agents[0].paneID": "<id 1>",
+        "state.json.agents[0].runtime": "rpc",
+        "state.json.agents[0].spaceID": "<space>",
+        "state.json.agents[0].status": "idle",
+        "state.json.agents[0].tabID": "<id 2>",
+        "state.json.agents[1].coordinatorFor": "<id 3>",
+        "state.json.agents[1].id": "<coordinator>",
+        "state.json.agents[1].name": "acme coordinator",
+        "state.json.agents[1].nameIsFinal": false,
+        "state.json.agents[1].paneID": "<id 4>",
+        "state.json.agents[1].runtime": "rpc",
+        "state.json.agents[1].spaceID": "<id 5>",
+        "state.json.agents[1].status": "idle",
+        "state.json.agents[1].tabID": "<id 6>",
+        "state.json.automations": [],
+        "state.json.designs": [],
+        "state.json.projectExecutions": [],
+        "state.json.projects": [],
+        "state.json.spaces[0].hidden": false,
+        "state.json.spaces[0].id": "<space>",
+        "state.json.spaces[0].name": "acme-web",
+        "state.json.spaces[0].path": "<scratch>",
+        "state.json.spaces[1].hidden": true,
+        "state.json.spaces[1].holdsProjects": true,
+        "state.json.spaces[1].id": "<id 5>",
+        "state.json.spaces[1].name": "acme-projects",
+        "state.json.spaces[1].path": "<scratch>",
+        "state.json.tabs[0].id": "<id 2>",
+        "state.json.tabs[0].layout.pane.agentID": "<thread>",
+        "state.json.tabs[0].layout.pane.cwd": "<scratch>",
+        "state.json.tabs[0].layout.pane.id": "<id 1>",
+        "state.json.tabs[0].layout.type": "leaf",
+        "state.json.tabs[0].order": 0,
+        "state.json.tabs[0].spaceID": "<space>",
+        "state.json.tabs[1].id": "<id 6>",
+        "state.json.tabs[1].layout.pane.agentID": "<coordinator>",
+        "state.json.tabs[1].layout.pane.cwd": "<scratch>",
+        "state.json.tabs[1].layout.pane.id": "<id 4>",
+        "state.json.tabs[1].layout.type": "leaf",
+        "state.json.tabs[1].order": 0,
+        "state.json.tabs[1].spaceID": "<id 5>"
+      },
+      "step": "stored"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unauthenticated",
+        "reply.id": 0,
+        "reply.message": "hello required",
+        "reply.type": "error",
+        "request.id": 1,
+        "request.type": "stateFetch",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "before-hello/stateFetch"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unauthenticated",
+        "reply.id": 0,
+        "reply.message": "hello required",
+        "reply.type": "error",
+        "request.action.rename.name": "renamed before hello",
+        "request.agentID": "<thread>",
+        "request.id": 1,
+        "request.type": "agentAction",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "before-hello/agentAction"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unauthenticated",
+        "reply.id": 0,
+        "reply.message": "hello required",
+        "reply.type": "error",
+        "request.id": 1,
+        "request.request.change._0.closeOnMerge._0": true,
+        "request.type": "hostSettings",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "before-hello/hostSettings"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unauthenticated",
+        "reply.id": 0,
+        "reply.message": "hello required",
+        "reply.type": "error",
+        "request.id": 1,
+        "request.registration.id": "acme-phone",
+        "request.registration.sendToken": "acme-send-token",
+        "request.type": "pushRegistration",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "before-hello/pushRegistration"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unauthenticated",
+        "reply.id": 0,
+        "reply.message": "hello required",
+        "reply.type": "error",
+        "request.agentIDs": [
+          "<thread>"
+        ],
+        "request.id": 1,
+        "request.type": "nativeThreadSubscribe",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "before-hello/nativeThreadSubscribe"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unauthenticated",
+        "reply.id": 0,
+        "reply.message": "hello required",
+        "reply.type": "error",
+        "request.id": 1,
+        "request.thread.cwd": "<scratch>",
+        "request.thread.initialPrompt": "hello",
+        "request.thread.spaceID": "<space>",
+        "request.type": "startThread",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "before-hello/startThread"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unauthenticated",
+        "reply.id": 0,
+        "reply.message": "hello required",
+        "reply.type": "error",
+        "request.id": 1,
+        "request.reply.id": 1,
+        "request.reply.type": "ok",
+        "request.type": "fleetPeerAnswer",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "before-hello/fleetPeerAnswer"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply": "<closed>",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "before-hello/undecodable"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unauthenticated",
+        "reply.id": 0,
+        "reply.message": "hello required",
+        "reply.type": "error",
+        "request.id": 1,
+        "request.type": "stateFetch",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "before-hello/local-stateFetch"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "protocol_version",
+        "reply.id": 1,
+        "reply.message": "host speaks protocol 1",
+        "reply.type": "error",
+        "request.capabilities": [
+          "native.revisions.v1",
+          "native.fleetDigest.v1",
+          "files.v1",
+          "push.notifications.v1",
+          "native.checkpointRecovery.v1",
+          "logicalProjects.result.v1",
+          "browser.tabs.v1",
+          "logicalProjects.publications.v1",
+          "logicalProjects.worker.v1",
+          "logicalProjects.placement.v1",
+          "logicalProjectRuntime.v1",
+          "logicalProjects.execution.v1",
+          "native.queue.v1",
+          "native.startup-dialogs.v1",
+          "thinking.levels.v1",
+          "design.systems.v1",
+          "designs.v1",
+          "browser.tunnel.v1",
+          "browser.drive.v1",
+          "projects.v2",
+          "designRelay.v2",
+          "appRelay.v1",
+          "apps.v2",
+          "fleet.move.view.v1"
+        ],
+        "request.clientName": "acme-phone",
+        "request.id": 1,
+        "request.protocolVersion": 99,
+        "request.type": "hello",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "hello/wrong-version"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "protocol_version",
+        "reply.id": 1,
+        "reply.message": "host speaks protocol 1",
+        "reply.type": "error",
+        "request.capabilities": [
+          "native.revisions.v1",
+          "native.fleetDigest.v1",
+          "files.v1",
+          "push.notifications.v1",
+          "native.checkpointRecovery.v1",
+          "logicalProjects.result.v1",
+          "browser.tabs.v1",
+          "logicalProjects.publications.v1",
+          "logicalProjects.worker.v1",
+          "logicalProjects.placement.v1",
+          "logicalProjectRuntime.v1",
+          "logicalProjects.execution.v1",
+          "native.queue.v1",
+          "native.startup-dialogs.v1",
+          "thinking.levels.v1",
+          "design.systems.v1",
+          "designs.v1",
+          "browser.tunnel.v1",
+          "browser.drive.v1",
+          "projects.v2",
+          "designRelay.v2",
+          "appRelay.v1",
+          "apps.v2",
+          "fleet.move.view.v1"
+        ],
+        "request.clientName": "acme-phone",
+        "request.id": 1,
+        "request.protocolVersion": 99,
+        "request.type": "hello",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "hello/wrong-version-and-token"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "protocol_version",
+        "reply.id": 1,
+        "reply.message": "host speaks protocol 1",
+        "reply.type": "error",
+        "request.capabilities": [
+          "native.revisions.v1",
+          "native.fleetDigest.v1",
+          "files.v1",
+          "push.notifications.v1",
+          "native.checkpointRecovery.v1",
+          "logicalProjects.result.v1",
+          "browser.tabs.v1",
+          "logicalProjects.publications.v1",
+          "logicalProjects.worker.v1",
+          "logicalProjects.placement.v1",
+          "logicalProjectRuntime.v1",
+          "logicalProjects.execution.v1",
+          "native.queue.v1",
+          "native.startup-dialogs.v1",
+          "thinking.levels.v1",
+          "design.systems.v1",
+          "designs.v1",
+          "browser.tunnel.v1",
+          "browser.drive.v1",
+          "projects.v2",
+          "designRelay.v2",
+          "appRelay.v1",
+          "apps.v2",
+          "fleet.move.view.v1"
+        ],
+        "request.clientName": "acme-phone",
+        "request.id": 1,
+        "request.protocolVersion": 99,
+        "request.type": "hello",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "hello/wrong-version-local"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "shared_token_retired",
+        "reply.id": 1,
+        "reply.message": "This Mac no longer accepts the old shared token. Pair again with a code.",
+        "reply.type": "error",
+        "request.capabilities": [
+          "native.revisions.v1",
+          "native.fleetDigest.v1",
+          "files.v1",
+          "push.notifications.v1",
+          "native.checkpointRecovery.v1",
+          "logicalProjects.result.v1",
+          "browser.tabs.v1",
+          "logicalProjects.publications.v1",
+          "logicalProjects.worker.v1",
+          "logicalProjects.placement.v1",
+          "logicalProjectRuntime.v1",
+          "logicalProjects.execution.v1",
+          "native.queue.v1",
+          "native.startup-dialogs.v1",
+          "thinking.levels.v1",
+          "design.systems.v1",
+          "designs.v1",
+          "browser.tunnel.v1",
+          "browser.drive.v1",
+          "projects.v2",
+          "designRelay.v2",
+          "appRelay.v1",
+          "apps.v2",
+          "fleet.move.view.v1"
+        ],
+        "request.clientName": "acme-phone",
+        "request.id": 1,
+        "request.protocolVersion": 1,
+        "request.type": "hello",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "hello/wrong-token"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "protocol",
+        "reply.id": 2,
+        "reply.message": "already authenticated",
+        "reply.type": "error",
+        "request.capabilities": [
+          "native.revisions.v1",
+          "native.fleetDigest.v1",
+          "files.v1",
+          "push.notifications.v1",
+          "native.checkpointRecovery.v1",
+          "logicalProjects.result.v1",
+          "browser.tabs.v1",
+          "logicalProjects.publications.v1",
+          "logicalProjects.worker.v1",
+          "logicalProjects.placement.v1",
+          "logicalProjectRuntime.v1",
+          "logicalProjects.execution.v1",
+          "native.queue.v1",
+          "native.startup-dialogs.v1",
+          "thinking.levels.v1",
+          "design.systems.v1",
+          "designs.v1",
+          "browser.tunnel.v1",
+          "browser.drive.v1",
+          "projects.v2",
+          "designRelay.v2",
+          "appRelay.v1",
+          "apps.v2",
+          "fleet.move.view.v1"
+        ],
+        "request.clientName": "acme-phone",
+        "request.id": 2,
+        "request.protocolVersion": 1,
+        "request.type": "hello",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "hello/again"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 2,
+        "reply.message": "Push notifications are unavailable.",
+        "reply.type": "error",
+        "request.id": 2,
+        "request.registration.id": "acme-phone",
+        "request.registration.sendToken": "acme-send-token",
+        "request.type": "pushRegistration",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "capability/push-register-none"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 2,
+        "reply.message": "Push notifications are unavailable.",
+        "reply.type": "error",
+        "request.id": 2,
+        "request.registration.id": "acme-phone",
+        "request.registration.sendToken": "acme-send-token",
+        "request.type": "pushRegistration",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "capability/push-register-others"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 2,
+        "reply.message": "Push notifications are unavailable.",
+        "reply.type": "error",
+        "request.id": 2,
+        "request.registrationID": "acme-phone",
+        "request.type": "pushUnregister",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "capability/push-unregister-none"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 2,
+        "reply.message": "Watch at most 64 ordinary threads.",
+        "reply.type": "error",
+        "request.agentIDs": [
+          "<thread>"
+        ],
+        "request.id": 2,
+        "request.type": "nativeThreadSubscribe",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "capability/subscribe-none"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 2,
+        "reply.message": "Watch at most 64 ordinary threads.",
+        "reply.type": "error",
+        "request.agentIDs": [
+          "<thread>"
+        ],
+        "request.id": 2,
+        "request.type": "nativeThreadSubscribe",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "capability/subscribe-others"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 2,
+        "reply.message": "Fleet digests require an ordinary thread.",
+        "reply.type": "error",
+        "request.agentID": "<thread>",
+        "request.id": 2,
+        "request.type": "fleetDigest",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "capability/fleetDigest-none"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 2,
+        "reply.message": "Fleet digests require an ordinary thread.",
+        "reply.type": "error",
+        "request.agentID": "<thread>",
+        "request.id": 2,
+        "request.type": "fleetDigest",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "capability/fleetDigest-others"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.id": 2,
+        "reply.settings.closeOnMerge": false,
+        "reply.type": "hostSettings",
+        "request.id": 2,
+        "request.type": "hostSettings",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true,
+        "stored.closeOnMerge": false
+      },
+      "step": "hostSettings/fetch"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.id": 4,
+        "reply.settings.closeOnMerge": true,
+        "reply.type": "hostSettings",
+        "request.id": 4,
+        "request.request.change._0.closeOnMerge._0": true,
+        "request.type": "hostSettings",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true,
+        "stored.closeOnMerge": true
+      },
+      "step": "hostSettings/change-not-negotiated"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.id": 6,
+        "reply.settings.closeOnMerge": false,
+        "reply.type": "hostSettings",
+        "request.id": 6,
+        "request.request.change._0.closeOnMerge._0": false,
+        "request.type": "hostSettings",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true,
+        "stored.closeOnMerge": false
+      },
+      "step": "hostSettings/change-back"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.id": 8,
+        "reply.settings.closeOnMerge": false,
+        "reply.type": "hostSettings",
+        "request.id": 8,
+        "request.request.change._0.compactAtPercent._0": 37,
+        "request.type": "hostSettings",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true,
+        "stored.closeOnMerge": false
+      },
+      "step": "hostSettings/change-unoffered-share"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "settings_failed",
+        "reply.id": 10,
+        "reply.message": "Not a slash command.",
+        "reply.type": "error",
+        "request.id": 10,
+        "request.request.change._0.slashCommand.name": "",
+        "request.request.change._0.slashCommand.on": true,
+        "request.type": "hostSettings",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true,
+        "stored.closeOnMerge": false
+      },
+      "step": "hostSettings/change-refused"
+    },
+    {
+      "fields": {
+        "reply.fleetEnabled": true,
+        "reply.hostID": "<id 7>",
+        "reply.id": 1,
+        "reply.name": "acme-mac",
+        "reply.type": "fleetIdentity",
+        "request.id": 1,
+        "request.type": "fleetIdentify"
+      },
+      "step": "fleet-limit/fleetIdentify#1"
+    },
+    {
+      "fields": {
+        "reply.fleetEnabled": true,
+        "reply.hostID": "<id 7>",
+        "reply.id": 12,
+        "reply.name": "acme-mac",
+        "reply.type": "fleetIdentity",
+        "request.id": 12,
+        "request.type": "fleetIdentify"
+      },
+      "step": "fleet-limit/fleetIdentify#12"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "busy",
+        "reply.id": 13,
+        "reply.message": "Too many requests.",
+        "reply.type": "error",
+        "request.id": 13,
+        "request.type": "fleetIdentify",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "fleet-limit/fleetIdentify#13"
+    },
+    {
+      "fields": {
+        "answers": [
+          "fleetIdentify > fleetIdentity",
+          "fleetIdentify > fleetIdentity",
+          "fleetIdentify > fleetIdentity",
+          "fleetIdentify > fleetIdentity",
+          "fleetIdentify > fleetIdentity",
+          "fleetIdentify > fleetIdentity",
+          "fleetIdentify > fleetIdentity",
+          "fleetIdentify > fleetIdentity",
+          "fleetIdentify > fleetIdentity",
+          "fleetIdentify > fleetIdentity",
+          "fleetIdentify > fleetIdentity",
+          "fleetIdentify > fleetIdentity"
+        ],
+        "files.changed": [],
+        "limit": 12,
+        "new connection": "fleetIdentity",
+        "processes.started": 0,
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "fleet-limit/fleetIdentify/summary"
+    },
+    {
+      "fields": {
+        "reply.code": "not_joining",
+        "reply.id": 1,
+        "reply.message": "That Mac isn't waiting for a code. Open Join a fleet on it.",
+        "reply.type": "error",
+        "request.code": "000000",
+        "request.from.hostID": "<id 8>",
+        "request.from.myTokenHash": "acme-hash",
+        "request.from.name": "acme-peer",
+        "request.from.port": 1,
+        "request.id": 1,
+        "request.type": "fleetPair"
+      },
+      "step": "fleet-limit/fleetPair#1"
+    },
+    {
+      "fields": {
+        "reply.code": "not_joining",
+        "reply.id": 12,
+        "reply.message": "That Mac isn't waiting for a code. Open Join a fleet on it.",
+        "reply.type": "error",
+        "request.code": "000000",
+        "request.from.hostID": "<id 9>",
+        "request.from.myTokenHash": "acme-hash",
+        "request.from.name": "acme-peer",
+        "request.from.port": 1,
+        "request.id": 12,
+        "request.type": "fleetPair"
+      },
+      "step": "fleet-limit/fleetPair#12"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "busy",
+        "reply.id": 13,
+        "reply.message": "Too many requests.",
+        "reply.type": "error",
+        "request.code": "000000",
+        "request.from.hostID": "<id 10>",
+        "request.from.myTokenHash": "acme-hash",
+        "request.from.name": "acme-peer",
+        "request.from.port": 1,
+        "request.id": 13,
+        "request.type": "fleetPair",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "fleet-limit/fleetPair#13"
+    },
+    {
+      "fields": {
+        "answers": [
+          "fleetPair > error > not_joining",
+          "fleetPair > error > not_joining",
+          "fleetPair > error > not_joining",
+          "fleetPair > error > not_joining",
+          "fleetPair > error > not_joining",
+          "fleetPair > error > not_joining",
+          "fleetPair > error > not_joining",
+          "fleetPair > error > not_joining",
+          "fleetPair > error > not_joining",
+          "fleetPair > error > not_joining",
+          "fleetPair > error > not_joining",
+          "fleetPair > error > not_joining"
+        ],
+        "files.changed": [],
+        "limit": 12,
+        "new connection": "error > not_joining",
+        "processes.started": 0,
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "fleet-limit/fleetPair/summary"
+    },
+    {
+      "fields": {
+        "reply.code": "not_joining",
+        "reply.id": 1,
+        "reply.message": "That Mac isn't showing a code. Open Add a device on it.",
+        "reply.type": "error",
+        "request.code": "000000",
+        "request.device.deviceID": "<id 11>",
+        "request.device.kind": "iphone",
+        "request.device.name": "acme-phone",
+        "request.device.tokenHash": "acme-hash",
+        "request.id": 1,
+        "request.type": "fleetPairDevice"
+      },
+      "step": "fleet-limit/fleetPairDevice#1"
+    },
+    {
+      "fields": {
+        "reply.code": "not_joining",
+        "reply.id": 12,
+        "reply.message": "That Mac isn't showing a code. Open Add a device on it.",
+        "reply.type": "error",
+        "request.code": "000000",
+        "request.device.deviceID": "<id 12>",
+        "request.device.kind": "iphone",
+        "request.device.name": "acme-phone",
+        "request.device.tokenHash": "acme-hash",
+        "request.id": 12,
+        "request.type": "fleetPairDevice"
+      },
+      "step": "fleet-limit/fleetPairDevice#12"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "busy",
+        "reply.id": 13,
+        "reply.message": "Too many requests.",
+        "reply.type": "error",
+        "request.code": "000000",
+        "request.device.deviceID": "<id 13>",
+        "request.device.kind": "iphone",
+        "request.device.name": "acme-phone",
+        "request.device.tokenHash": "acme-hash",
+        "request.id": 13,
+        "request.type": "fleetPairDevice",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "fleet-limit/fleetPairDevice#13"
+    },
+    {
+      "fields": {
+        "answers": [
+          "fleetPairDevice > error > not_joining",
+          "fleetPairDevice > error > not_joining",
+          "fleetPairDevice > error > not_joining",
+          "fleetPairDevice > error > not_joining",
+          "fleetPairDevice > error > not_joining",
+          "fleetPairDevice > error > not_joining",
+          "fleetPairDevice > error > not_joining",
+          "fleetPairDevice > error > not_joining",
+          "fleetPairDevice > error > not_joining",
+          "fleetPairDevice > error > not_joining",
+          "fleetPairDevice > error > not_joining",
+          "fleetPairDevice > error > not_joining"
+        ],
+        "files.changed": [],
+        "limit": 12,
+        "new connection": "error > not_joining",
+        "processes.started": 0,
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "fleet-limit/fleetPairDevice/summary"
+    },
+    {
+      "fields": {
+        "reply.fleetEnabled": true,
+        "reply.hostID": "<id 7>",
+        "reply.id": 1,
+        "reply.name": "acme-mac",
+        "reply.type": "fleetIdentity",
+        "request.id": 1,
+        "request.type": "fleetIdentify"
+      },
+      "step": "fleet-limit/mixed#1"
+    },
+    {
+      "fields": {
+        "reply.code": "not_joining",
+        "reply.id": 12,
+        "reply.message": "That Mac isn't showing a code. Open Add a device on it.",
+        "reply.type": "error",
+        "request.code": "000000",
+        "request.device.deviceID": "<id 14>",
+        "request.device.kind": "iphone",
+        "request.device.name": "acme-phone",
+        "request.device.tokenHash": "acme-hash",
+        "request.id": 12,
+        "request.type": "fleetPairDevice"
+      },
+      "step": "fleet-limit/mixed#12"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "busy",
+        "reply.id": 13,
+        "reply.message": "Too many requests.",
+        "reply.type": "error",
+        "request.id": 13,
+        "request.type": "fleetIdentify",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "fleet-limit/mixed#13"
+    },
+    {
+      "fields": {
+        "answers": [
+          "fleetIdentify > fleetIdentity",
+          "fleetPair > error > not_joining",
+          "fleetPairDevice > error > not_joining",
+          "fleetIdentify > fleetIdentity",
+          "fleetPair > error > not_joining",
+          "fleetPairDevice > error > not_joining",
+          "fleetIdentify > fleetIdentity",
+          "fleetPair > error > not_joining",
+          "fleetPairDevice > error > not_joining",
+          "fleetIdentify > fleetIdentity",
+          "fleetPair > error > not_joining",
+          "fleetPairDevice > error > not_joining"
+        ],
+        "files.changed": [],
+        "limit": 12,
+        "new connection": "fleetIdentity",
+        "processes.started": 0,
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "fleet-limit/mixed/summary"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 2,
+        "reply.message": "This host doesn't drain on request.",
+        "reply.type": "error",
+        "request.id": 2,
+        "request.type": "drain",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "local-only/drain"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 4,
+        "reply.message": "Only this Mac's app installs this host's updates.",
+        "reply.type": "error",
+        "request.id": 4,
+        "request.step": "reserve",
+        "request.type": "hostUpdateGate",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "local-only/hostUpdateGate"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 6,
+        "reply.message": "Only this Mac's own app says what it shows.",
+        "reply.type": "error",
+        "request.agentID": "<thread>",
+        "request.id": 6,
+        "request.type": "focusThread",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "local-only/focusThread"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 8,
+        "reply.message": "Only this Mac's own app says which Macs it reaches.",
+        "reply.type": "error",
+        "request.id": 8,
+        "request.type": "projectExecutors",
+        "request.update.hosts._0": [],
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "local-only/projectExecutors"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 10,
+        "reply.message": "Only this Mac's own app starts threads this way.",
+        "reply.type": "error",
+        "request.id": 10,
+        "request.thread.cwd": "<scratch>",
+        "request.thread.initialPrompt": "hello",
+        "request.thread.spaceID": "<space>",
+        "request.type": "startThread",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "local-only/startThread"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 12,
+        "reply.message": "Only this Mac's own app changes its spaces.",
+        "reply.type": "error",
+        "request.id": 12,
+        "request.spaceID": "<space>",
+        "request.type": "spaceAction",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "local-only/spaceAction"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 14,
+        "reply.message": "Only this Mac's own app changes its spaces.",
+        "reply.type": "error",
+        "request.id": 14,
+        "request.request.register.name": "acme-lib",
+        "request.request.register.path": "<scratch>/acme-lib",
+        "request.type": "projectRequest",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "local-only/projectRequest"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 16,
+        "reply.message": "Only Shepherd on this Mac reports what it writes.",
+        "reply.type": "error",
+        "request.agentID": "<thread>",
+        "request.id": 16,
+        "request.query.changesWriteEnded.span": "<id 15>",
+        "request.type": "agentQuery",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "local-only/changesWriteEnded"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 18,
+        "reply.message": "Only Shepherd on this Mac reports what it writes.",
+        "reply.type": "error",
+        "request.agentID": "<thread>",
+        "request.id": 18,
+        "request.query.changesWriteBegan.paths": [
+          "<scratch>/notes.txt"
+        ],
+        "request.query.changesWriteBegan.span": "<id 16>",
+        "request.type": "agentQuery",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "local-only/changesWriteBegan"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "no_such_agent",
+        "reply.id": 2,
+        "reply.message": "Agent no longer exists on the host.",
+        "reply.type": "error",
+        "request.action.rename.name": "ghost",
+        "request.agentID": "<unknown agent>",
+        "request.id": 2,
+        "request.type": "agentAction",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "agent/action-unknown"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "no_such_agent",
+        "reply.id": 4,
+        "reply.message": "Agent no longer exists on the host.",
+        "reply.type": "error",
+        "request.agentID": "<unknown agent>",
+        "request.id": 4,
+        "request.type": "agentQuery",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "agent/changes-unknown"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "native_unavailable",
+        "reply.id": 6,
+        "reply.message": "The agent no longer exists.",
+        "reply.type": "error",
+        "request.agentID": "<unknown agent>",
+        "request.id": 6,
+        "request.type": "nativeThread",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "agent/nativeThread-unknown"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 8,
+        "reply.message": "Watch at most 64 ordinary threads.",
+        "reply.type": "error",
+        "request.agentIDs": [
+          "<unknown agent>"
+        ],
+        "request.id": 8,
+        "request.type": "nativeThreadSubscribe",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "agent/subscribe-unknown"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 10,
+        "reply.message": "Watch at most 64 ordinary threads.",
+        "reply.type": "error",
+        "request.agentIDs": [
+          "<coordinator>"
+        ],
+        "request.id": 10,
+        "request.type": "nativeThreadSubscribe",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "agent/subscribe-coordinator"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 12,
+        "reply.message": "Watch at most 64 ordinary threads.",
+        "reply.type": "error",
+        "request.agentIDs": [
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>",
+          "<thread>"
+        ],
+        "request.id": 12,
+        "request.type": "nativeThreadSubscribe",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "agent/subscribe-over-cap"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 14,
+        "reply.message": "Fleet digests require an ordinary thread.",
+        "reply.type": "error",
+        "request.agentID": "<unknown agent>",
+        "request.id": 14,
+        "request.type": "fleetDigest",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "agent/fleetDigest-unknown"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "unsupported",
+        "reply.id": 16,
+        "reply.message": "Fleet digests require an ordinary thread.",
+        "reply.type": "error",
+        "request.agentID": "<coordinator>",
+        "request.id": 16,
+        "request.type": "fleetDigest",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "agent/fleetDigest-coordinator"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "project_scope",
+        "reply.id": 2,
+        "reply.message": "Use a Project-capable client.",
+        "reply.type": "error",
+        "request.agentID": "<coordinator>",
+        "request.id": 2,
+        "request.type": "nativeThread",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "agent/nativeThread-coordinator"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "no_such_session",
+        "reply.id": 18,
+        "reply.message": "unknown session <id 17>",
+        "reply.type": "error",
+        "request.cols": 80,
+        "request.id": 18,
+        "request.rows": 24,
+        "request.sessionID": "<id 17>",
+        "request.type": "attach",
+        "request.viewportGeneration": 0,
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "agent/attach-unknown-session"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "upload_failed",
+        "reply.id": 20,
+        "reply.message": "RemoteCreateAgentError(message: \"Session is not running\")",
+        "reply.type": "error",
+        "request.action.begin.name": "notes.txt",
+        "request.action.begin.sessionID": "<id 18>",
+        "request.action.begin.size": 1,
+        "request.id": 20,
+        "request.type": "upload",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "agent/upload-unknown-session"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [
+          "/state.json"
+        ],
+        "processes.started": 0,
+        "reply.id": 22,
+        "reply.type": "ok",
+        "request.action.rename.name": "taken over",
+        "request.agentID": "<coordinator>",
+        "request.id": 22,
+        "request.type": "agentAction",
+        "state.json.unchanged": false,
+        "stateFetch.unchanged": true,
+        "stored.coordinatorName": "taken over"
+      },
+      "step": "agent/action-invisible-coordinator"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "forbidden",
+        "reply.id": 2,
+        "reply.message": "Only a Mac in the fleet answers a call.",
+        "reply.type": "error",
+        "request.id": 2,
+        "request.reply.id": 2,
+        "request.reply.type": "ok",
+        "request.type": "fleetPeerAnswer",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true
+      },
+      "step": "peer/fleetPeerAnswer-not-a-peer"
+    },
+    {
+      "fields": {
+        "files.changed": [],
+        "first.agentID": "<thread>",
+        "first.status": "working",
+        "first.type": "setAgentStatus",
+        "processes.started": 0,
+        "reply.code": "wrong_process",
+        "reply.id": 1,
+        "reply.message": "This connection is not from the pi process Shepherd started for that agent.",
+        "reply.type": "error",
+        "request.agentID": "<thread>",
+        "request.id": 1,
+        "request.type": "listPanes",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true,
+        "stored.name": "acme thread",
+        "stored.status": "idle"
+      },
+      "step": "extension/setAgentStatus"
+    },
+    {
+      "fields": {
+        "files.changed": [],
+        "first.agentID": "<thread>",
+        "first.name": "renamed by a bash tool",
+        "first.type": "setAgentName",
+        "processes.started": 0,
+        "reply.code": "wrong_process",
+        "reply.id": 2,
+        "reply.message": "This connection is not from the pi process Shepherd started for that agent.",
+        "reply.type": "error",
+        "request.agentID": "<thread>",
+        "request.id": 2,
+        "request.type": "listPanes",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true,
+        "stored.name": "acme thread",
+        "stored.status": "idle"
+      },
+      "step": "extension/setAgentName"
+    },
+    {
+      "fields": {
+        "files.changed": [],
+        "first.agentID": "<thread>",
+        "first.piSessionID": "acme-session",
+        "first.type": "setAgentSession",
+        "processes.started": 0,
+        "reply.code": "wrong_process",
+        "reply.id": 3,
+        "reply.message": "This connection is not from the pi process Shepherd started for that agent.",
+        "reply.type": "error",
+        "request.agentID": "<thread>",
+        "request.id": 3,
+        "request.type": "listPanes",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true,
+        "stored.name": "acme thread",
+        "stored.status": "idle"
+      },
+      "step": "extension/setAgentSession"
+    },
+    {
+      "fields": {
+        "files.changed": [],
+        "first.agentID": "<thread>",
+        "first.body": "from a bash tool",
+        "first.title": "acme",
+        "first.type": "notify",
+        "processes.started": 0,
+        "reply.code": "wrong_process",
+        "reply.id": 4,
+        "reply.message": "This connection is not from the pi process Shepherd started for that agent.",
+        "reply.type": "error",
+        "request.agentID": "<thread>",
+        "request.id": 4,
+        "request.type": "listPanes",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true,
+        "stored.name": "acme thread",
+        "stored.status": "idle"
+      },
+      "step": "extension/notify"
+    },
+    {
+      "fields": {
+        "files.changed": [],
+        "first.agentID": "<thread>",
+        "first.type": "helloAgent",
+        "processes.started": 0,
+        "reply.code": "wrong_process",
+        "reply.id": 5,
+        "reply.message": "This connection is not from the pi process Shepherd started for that agent.",
+        "reply.type": "error",
+        "request.agentID": "<thread>",
+        "request.id": 5,
+        "request.type": "listPanes",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true,
+        "stored.name": "acme thread",
+        "stored.status": "idle"
+      },
+      "step": "extension/helloAgent"
+    },
+    {
+      "fields": {
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "wrong_process",
+        "reply.id": 6,
+        "reply.message": "This connection is not from the pi process Shepherd started for that agent.",
+        "reply.type": "error",
+        "request.agentID": "<thread>",
+        "request.id": 6,
+        "request.type": "listPanes",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true,
+        "stored.name": "acme thread",
+        "stored.status": "idle"
+      },
+      "step": "extension/listPanes"
+    },
+    {
+      "fields": {
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "wrong_process",
+        "reply.id": 7,
+        "reply.message": "This connection is not from the pi process Shepherd started for that agent.",
+        "reply.type": "error",
+        "request.agentID": "<thread>",
+        "request.axis": "vertical",
+        "request.command": "echo hello",
+        "request.id": 7,
+        "request.type": "openPane",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true,
+        "stored.name": "acme thread",
+        "stored.status": "idle"
+      },
+      "step": "extension/openPane"
+    },
+    {
+      "fields": {
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "wrong_process",
+        "reply.id": 8,
+        "reply.message": "This connection is not from the pi process Shepherd started for that agent.",
+        "reply.type": "error",
+        "request.agentID": "<thread>",
+        "request.id": 8,
+        "request.paneID": "<id 1>",
+        "request.submit": true,
+        "request.text": "echo hello",
+        "request.type": "sendPaneInput",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true,
+        "stored.name": "acme thread",
+        "stored.status": "idle"
+      },
+      "step": "extension/sendPaneInput"
+    },
+    {
+      "fields": {
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "wrong_process",
+        "reply.id": 9,
+        "reply.message": "This connection is not from the pi process Shepherd started for that agent.",
+        "reply.type": "error",
+        "request.agentID": "<coordinator>",
+        "request.id": 9,
+        "request.type": "listPanes",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true,
+        "stored.name": "acme thread",
+        "stored.status": "idle"
+      },
+      "step": "extension/listPanes-coordinator"
+    },
+    {
+      "fields": {
+        "files.changed": [],
+        "processes.started": 0,
+        "reply.code": "wrong_process",
+        "reply.id": 10,
+        "reply.message": "This connection is not from the pi process Shepherd started for that agent.",
+        "reply.type": "error",
+        "request.agentID": "<unknown agent>",
+        "request.id": 10,
+        "request.type": "listPanes",
+        "state.json.unchanged": true,
+        "stateFetch.unchanged": true,
+        "stored.name": "acme thread",
+        "stored.status": "idle"
+      },
+      "step": "extension/listPanes-unknown"
+    }
+  ],
+  "referenceRevision": "39b59678d2597655b02c7e23a428b10278ddc33f",
+  "seed": {
+    "coordinator": "acme coordinator",
+    "fleetName": "acme-mac",
+    "path": "<scratch>",
+    "projectsSpace": "acme-projects",
+    "space": "acme-web",
+    "thread": "acme thread"
+  }
+}

@@ -42,6 +42,10 @@ CASES = {
         "ThreadRenameTests/seededThreadRenameSurvivesHostRestart",
         {("compare-golden", None)}, "rename, restart and sidebar matched the golden", "local host",
     ),
+    "c-auth": Case(
+        "RefusalCorpusTests/refusalCorpusMatchesGolden",
+        {("compare-golden", None)}, "refusal corpus matched the golden", "host sockets",
+    ),
 }
 
 
