@@ -31,7 +31,7 @@
   `local.threads.v1` in hello shows the host's threads as its own and posts their turn and question
   banners, so the host doesn't while it is connected. Agent queries over the local socket judge a
   worktree's loss by the same rule (`GitWorktree.checkedUnreconciledWork(otherBranchesKeep:)`).
-  `agent.restart.v1` hosts take `restartPi`, a stopped pi's Retry. A local client alone is offered
+  `agent.restart.v1` hosts take `restartPi`, a stopped pi's Retry (and Start new conversation); the iPhone and iPad client offers both while it also has `agent.actions.v1`, never for a missing folder (fixed on the host Mac). A local client alone is offered
   `changes.writes.v1` (never in `capabilities`) and may send the `changesWriteBegan` and
   `changesWriteEnded` agent queries: the app tells its host's Changes engine what it writes for
   the person (a Files-tab Save or pane Revert, naming the absolute paths; a branch action or a
