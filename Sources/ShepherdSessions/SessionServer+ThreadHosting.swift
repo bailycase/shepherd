@@ -442,21 +442,26 @@ extension SessionServer {
             throw SessionServerError.noSuchPane(paneID)
         }
         if let bound = leaf.sessionID, await sessionInfo(sessionID: bound)?.isAlive == true { return bound }
-        // ponytail: a second request while one starts is refused, not queued; the client retries on its next attach.
-        guard startingTerminals.insert(paneID).inserted else { throw RemoteCreateAgentError("That terminal is starting.") }
-        defer { startingTerminals.remove(paneID) }
-        // No view has measured it yet: start at the grid this Mac's terminals last reported.
-        let grid = await enqueueValue { self.lastLocalGrid } ?? (cols: 80, rows: 24)
-        let info = try await createSession(params: CreateSessionParams(
-            cwd: AgentLaunch.resolvedCwd(leaf.cwd), command: shell.argv, cols: grid.cols, rows: grid.rows,
-            env: shell.env.isEmpty ? nil : shell.env, runtime: .pty))
-        do {
-            try await updatePaneSession(tabID: tabID, paneID: paneID, sessionID: info.id)
-        } catch {
-            killSession(info.id)
-            throw error
+        // Two demands for one pane are routine (a view shown again, the Mac and a phone, an agent's
+        // terminal_open): a request while the shell starts waits for that start rather than failing.
+        if let starting = startingTerminals[paneID] { return try await starting.value }
+        let start = Task { @MainActor in
+            defer { self.startingTerminals[paneID] = nil }
+            // No view has measured it yet: start at the grid this Mac's terminals last reported.
+            let grid = await self.enqueueValue { self.lastLocalGrid } ?? (cols: 80, rows: 24)
+            let info = try await self.createSession(params: CreateSessionParams(
+                cwd: AgentLaunch.resolvedCwd(leaf.cwd), command: shell.argv, cols: grid.cols, rows: grid.rows,
+                env: shell.env.isEmpty ? nil : shell.env, runtime: .pty))
+            do {
+                try await self.updatePaneSession(tabID: tabID, paneID: paneID, sessionID: info.id)
+            } catch {
+                self.killSession(info.id)
+                throw error
+            }
+            return info.id
         }
-        return info.id
+        startingTerminals[paneID] = start
+        return try await start.value
     }
 
     @MainActor

@@ -470,6 +470,16 @@ struct ThreadHostingTests {
         try await client.agentAction(agentID: id, action: .startTerminal(paneID: opened))
         #expect(leaf(opened)?.sessionID == restarted, "a running shell is kept")
 
+        // Two demands while it starts (a view shown again, a phone) share the one start, neither fails.
+        h.server.killSession(restarted)
+        try await h.server.updatePaneSession(tabID: agent.tabID, paneID: opened, sessionID: nil)
+        async let first: Void = client.agentAction(agentID: id, action: .startTerminal(paneID: opened))
+        async let second: Void = client.agentAction(agentID: id, action: .startTerminal(paneID: opened))
+        _ = try await (first, second)
+        let shared = try #require(leaf(opened)?.sessionID)
+        #expect(shared != restarted)
+        #expect(await h.server.sessionInfo(sessionID: shared)?.isAlive == true)
+
         // The thread itself is never a terminal.
         await #expect(throws: RemoteHostClientError.self) {
             try await client.agentAction(agentID: id, action: .startTerminal(paneID: agent.paneID!))

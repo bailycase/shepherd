@@ -224,7 +224,7 @@ extension ComposerSubmissionTests {
         let (store, loop) = await ready(host)
         defer { loop.cancel() }
         let input = ThreadInput()
-        input.available = true
+        input.setAvailable(true, for: UUID())
         var held: CheckedContinuation<[(URL, ImageFile?)], Never>?
         input.prepareImages = { _ in await withCheckedContinuation { held = $0 } }
         store.draft = "with a screenshot"

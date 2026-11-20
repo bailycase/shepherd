@@ -117,6 +117,9 @@ struct HostModeSettingsTests {
         vm.settings.notifyOnTurnFinished = false
         vm.settings.piPanesExtension = false
         vm.settings.worktreeCloseOnMerge = true
+        vm.settings.fleetThreadsCanSend = true
+        vm.settings.fleetThreadCap = 7
+        vm.settings.fleetBatteryCountsHalf = false
         try await eventuallyOnMain("every on…Change to fire on the host") {
             fired == ["goals", "projects", "queue", "slash", "designs", "compact"]
         }
@@ -124,6 +127,16 @@ struct HostModeSettingsTests {
         #expect(hostSettings.hiddenSlashCommands == ["acme-deploy"] && hostSettings.compactAtPercent == 70)
         #expect(hostSettings.defaultModel == "acme/model-b" && !hostSettings.notifyOnTurnFinished)
         #expect(!hostSettings.agentLaunch.panes && hostSettings.worktreeCloseOnMerge)
+        // Settings ▸ Fleet in the app reaches the host, whose dispatch and thread starts read it.
+        try await eventuallyOnMain("the host to take the app's Fleet settings") {
+            hostSettings.fleetThreadsCanSend && hostSettings.fleetThreadCap == 7 && !hostSettings.fleetBatteryCountsHalf
+        }
+        // The host reports what it took to its server (`observeWrites`): dispatch's send check reads it there.
+        try await eventuallyOnMain("the host's server to take the app's Fleet settings") {
+            host.server.fleetSettingsForTests?.fleetThreadsCanSend == true
+                && host.server.fleetSettingsForTests?.fleetThreadCap == 7
+                && host.server.fleetSettingsForTests?.fleetBatteryCountsHalf == false
+        }
         try await eventuallyOnMain("the host's server to serve designs") { phone.capabilities.contains(RemoteProtocol.designsCapability) }
 
         // A paired device changes the host's settings: the app's Settings show it.
