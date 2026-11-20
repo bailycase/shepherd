@@ -13,7 +13,7 @@ import ShepherdRemote
 //   s3-overview  s3-files  s3-palette  s3-newthread  s3-addhost  s3-designs  s3-browser   the seven surfaces
 //   s3-palette-narrow, s3-files-narrow                                                    the palette's 420 pt list and
 //                                                                                         Files' 210 pt tree in a 680 pt window
-//   s3-header-<width>                                                                     the thread header's branch chip in
+//   s3-header-680, s3-header-720, s3-header-800                                           the thread header's branch chip in
 //                                                                                         a narrow window beside its pane
 //   s3-survive                                                                            editor, terminal and sheet open,
 //                                                                                         folded shut and open again (Duo, `-f open`)
@@ -46,7 +46,7 @@ extension FixtureCatalog {
             FixtureScreen(name: "s3-palette", hosts: ResizeFixtures.acme(SearchFixtures.hosts()), prepare: { app in await palette(app, "Search") }),
             FixtureScreen(name: "s3-newthread", hosts: ResizeFixtures.acme(NewThreadFixtures.hosts()), routes: NewThreadFixtures.behind,
                           presented: NewThreadFixtures.compose, prepare: { app in
-                              await NewThreadFixtures.form()
+                              await NewThreadFixtures.form { $0.prompt = ResizeFixtures.sheetText }
                               await ResizeFixtures.settled(app, "New thread")
                           }),
             FixtureScreen(name: "s3-addhost", hosts: ResizeFixtures.acme(FixtureData.hosts()), presented: .settings(.host(nil)),
@@ -63,7 +63,7 @@ extension FixtureCatalog {
                 }
                 await ResizeFixtures.settled(app, "Designs")
             }),
-            FixtureScreen(name: "s3-browser", hosts: ResizeFixtures.acme(BrowserFixture.hosts(running: true)),
+            FixtureScreen(name: "s3-browser", hosts: ResizeFixtures.acme(BrowserFixture.hosts(running: true, html: BrowserFixture.checkout)),
                           routes: [.thread(preview), .browser(.page(preview))], prepare: { app in
                               await FixtureCheck.wait("page loaded through the tunnel", seconds: 30) {
                                   guard let page = MobileBrowsers.shared.existing(preview) else { return false }
@@ -76,11 +76,16 @@ extension FixtureCatalog {
                           prepare: { app in await palette(app, "Search palette, 680 pt window") }, frameWidth: ResizeFixtures.narrow),
             FixtureScreen(name: "s3-files-narrow", hosts: FilesPadFixture.hosts(), routes: [.thread(FilesPadFixture.ref), .sidePane(.files(FilesPadFixture.ref))],
                           prepare: { app in await files(app, "Files, 680 pt window") }, frameWidth: ResizeFixtures.narrow),
-        ] + ResizeFixtures.headerWidths.map { width in
-            FixtureScreen(name: "s3-header-\(Int(width))", hosts: ResizeFixtures.longTitle(FilesPadFixture.hosts()),
+            // The thread header with a long title and branch, in windows 680, 720 and 800 pt wide. The names stay literal: `run-simulator.sh` reads them from this file.
+            FixtureScreen(name: "s3-header-680", hosts: ResizeFixtures.longTitle(FilesPadFixture.hosts()),
                           routes: [.thread(FilesPadFixture.ref), .sidePane(.files(FilesPadFixture.ref))],
-                          prepare: { app in await files(app, "Thread header, \(Int(width)) pt window") }, frameWidth: width)
-        } + [
+                          prepare: { app in await files(app, "Thread header, 680 pt window") }, frameWidth: 680),
+            FixtureScreen(name: "s3-header-720", hosts: ResizeFixtures.longTitle(FilesPadFixture.hosts()),
+                          routes: [.thread(FilesPadFixture.ref), .sidePane(.files(FilesPadFixture.ref))],
+                          prepare: { app in await files(app, "Thread header, 720 pt window") }, frameWidth: 720),
+            FixtureScreen(name: "s3-header-800", hosts: ResizeFixtures.longTitle(FilesPadFixture.hosts()),
+                          routes: [.thread(FilesPadFixture.ref), .sidePane(.files(FilesPadFixture.ref))],
+                          prepare: { app in await files(app, "Thread header, 800 pt window") }, frameWidth: 800),
             FixtureScreen(name: "s3-survive", hosts: ResizeFixtures.surviveHosts(), routes: [.thread(preview)],
                           prepare: { app in await ResizeFixtures.survive(app) }),
             // The same on an iPad, in a window dragged narrower than the compact line (640 pt) and wider again (760 pt).
@@ -93,9 +98,57 @@ extension FixtureCatalog {
 @MainActor
 enum ResizeFixtures {
     static let narrow: CGFloat = 680
-    static let headerWidths: [CGFloat] = [680, 720, 800]
 
-    /// The made-up names the report shows: every fixture host's repos are acme's.
+    /// What the shared fixtures say that belongs to the Shepherd repo or its own work, in the made-up acme-web's words.
+    nonisolated static let rewrites: [(String, String)] = [
+        ("Sources/ShepherdApp/DesktopNativeThreadView.swift", "src/pages/Cart.tsx"),
+        ("App/iOS/ThreadView.swift", "src/components/CartRow.tsx"),
+        ("/Users/dev/Shepherd", "/Users/dev/acme-web"), ("/Users/dev/code/shepherd", "/Users/dev/code/acme-web"),
+        ("/Users/dev/horizon", "/Users/dev/acme-api"), ("/Users/dev/.shepherd/worktrees", "/Users/dev/.acme/worktrees"),
+        ("Investigate SwiftUI live preview", "Investigate slow cart page"), ("Plan shepherd extensions", "Plan promo code rollout"),
+        ("Dock review pane", "Move order summary"), ("Fix remote subagent deletion", "Fix stale cart totals"),
+        ("Fix terminal output buffer", "Fix order export buffer"), ("Queue steering polish", "Polish the cart drawer"),
+        ("Restyle the native UI on the new tokens.", "Restyle the product page on the new tokens."), ("Restyle native UI", "Restyle product page"),
+        ("Dock the review pane beside the thread.", "Move the order summary beside the payment form."),
+        ("Where should review dock?", "Where should the order summary go?"),
+        ("Beside the thread", "Beside the form"), ("Over the thread", "Above the form"), ("In its own window", "On its own page"),
+        ("pi/swiftui-previews", "fix/slow-cart"), ("pi/shepherd-extensions", "feat/promo-rollout"), ("pi/refund-events", "feat/refund-events"),
+        ("chore/remove-homarr", "chore/remove-banner"),
+        ("Remove the visible speaker labels, and make tool rows show something useful instead of just \"complete\".",
+         "Remove the duplicate totals row, and make cart rows show something useful instead of just \"pending\"."),
+        ("Remove the visible speaker labels", "Remove the duplicate totals row"),
+        ("I'll finish removing the speaker labels and make tool rows show a useful command or path preview.",
+         "I'll finish removing the totals row and make cart rows show a useful status preview."),
+        ("The labels live in two views; the tool rows need a preview line.", "The totals live in two components; the cart rows need a status line."),
+        ("Plan the shepherd extensions and build the first one.", "Plan the promo code rollout and build the first step."),
+        ("Reading the extension points first.", "Reading the promo code module first."),
+        ("import SwiftUI", "import React"), ("swift test --filter ThreadRows", "pnpm test cart"), ("swift build", "pnpm build"),
+        ("Compiling ShepherdCore\nCompiling ShepherdProtocol", "Compiling cart\nCompiling checkout"),
+        ("✔ Test run with 1 test in 1 suite passed after 0.2 seconds.", "✓ 1 test passed in 0.2s"),
+        ("Removed the visible speaker labels and the desktop gutter. User-message fills still distinguish the conversation.\n\nFocused regression test and Mac Dev build passed.",
+         "Removed the duplicate totals row and the extra gutter. The remaining rows still show each item.\n\nFocused regression test and local build passed."),
+        ("fix/tool-rows-show-the-command-or-path-instead-of-complete", "fix/cart-rows-show-the-status-instead-of-pending"),
+        ("feat/mobile-new-thread-pickers", "feat/mobile-cart-pickers"), ("chore/bump-swift-term", "chore/bump-vite"),
+        ("spike/duo-fold-aware-composer-layout-experiments", "spike/two-column-cart-layout-experiments"),
+        ("docs/remote-protocol", "docs/api-reference"), ("fix/review-scope-menu", "fix/promo-scope-menu"),
+        ("open the review pane beside the thread once the preview settles, then", "open the review panel beside the cart once the totals settle, then"),
+        ("the review extension reads the diff before it asks you", "the review step reads the diff before it asks you"),
+        ("a review of the buffer flush found two copies of each", "a review of the export flush found two copies of each"),
+    ]
+
+    /// `value` with every `rewrites` entry applied to the text it encodes to (a snapshot, a state, a reply).
+    nonisolated static func rewritten<T: Codable>(_ value: T) -> T {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .withoutEscapingSlashes
+        func escaped(_ text: String) -> String {
+            (try? encoder.encode(text)).flatMap { String(data: $0, encoding: .utf8) }.map { String($0.dropFirst().dropLast()) } ?? text
+        }
+        guard let data = try? encoder.encode(value), var json = String(data: data, encoding: .utf8) else { return value }
+        for (from, to) in rewrites { json = json.replacingOccurrences(of: escaped(from), with: escaped(to)) }
+        return (try? JSONDecoder().decode(T.self, from: Data(json.utf8))) ?? value
+    }
+
+    /// The made-up names the report shows: every fixture host's repos, threads, paths and answers are acme's.
     static func acme(_ hosts: [FixtureHostData]) -> [FixtureHostData] {
         var hosts = hosts
         let names = [FixtureData.shepherdSpace.id: "acme-web", FixtureData.horizonSpace.id: "acme-api"]
@@ -105,11 +158,9 @@ enum ResizeFixtures {
                 hosts[index].state.spaces[spaceIndex].name = name
                 hosts[index].state.spaces[spaceIndex].path = "/Users/dev/\(name)"
             }
-            for (automationIndex, automation) in hosts[index].state.automations.enumerated() {
-                hosts[index].state.automations[automationIndex].cwd = automation.cwd
-                    .replacingOccurrences(of: "/Users/dev/Shepherd", with: "/Users/dev/acme-web")
-                    .replacingOccurrences(of: "/Users/dev/horizon", with: "/Users/dev/acme-api")
-            }
+            hosts[index].state = rewritten(hosts[index].state)
+            hosts[index].threads = rewritten(hosts[index].threads)
+            if let reply = hosts[index].reply { hosts[index].reply = { request in reply(request).map { rewritten($0) } } }
         }
         return hosts
     }
@@ -149,26 +200,26 @@ enum ResizeFixtures {
 
     // MARK: Survival
 
-    /// Studio's thread with a terminal tab, a readable Files tree and the answers New thread asks for.
+    /// Studio's thread with a terminal tab, acme-web's Files tree and the answers New thread asks for.
     static func surviveHosts() -> [FixtureHostData] {
-        var hosts = acme(TerminalFixture.hosts())
+        var hosts = TerminalFixture.hosts()
         let terminal = hosts[0].reply
-        let files = FilesFixture.hosts()[0].reply
+        let files = FilesPadFixture.hosts()[0].reply
         let creation = NewThreadFixtures.hosts()[0].reply
         hosts[0].models = NewThreadFixtures.models
         hosts[0].reply = { request in terminal?(request) ?? files?(request) ?? creation?(request) }
-        return hosts
+        return acme(hosts)
     }
 
     static let draftEdit = "// edited on the Duo, not saved yet\n"
-    static var sheetText: String { NewThreadFixtures.prompt }
+    static let sheetText = "Show the order total under the promo field instead of “pending”, and add a test for it."
 
     /// An unsaved edit in the Files editor, a terminal and a half-filled New thread sheet, then the Duo folds shut and opens
     /// again. One line per object and stage, `FIXTURE CHECK survival <object> (<stage>): kept|lost`; none of them fails the run.
     static func survive(_ app: MobileApp, widths: (shut: CGFloat, open: CGFloat)? = nil) async {
         let navigator = app.navigator
         let ref = FilesFixture.ref
-        let path = "Widgets/NeedsYouWidget.swift"
+        let path = FilesPadFixture.checkout
         guard navigator.layout == .pad else {
             FixtureCheck.report("FIXTURE CHECK ok: not run, this needs regular width: the Duo posed open (-f open) or s3-survive-window")
             return
@@ -182,13 +233,13 @@ enum ResizeFixtures {
         let model = ThreadFilesStores.shared.model(for: ref, hosts: app.hosts)
         navigator.open(.sidePane(.files(ref)))
         await FixtureCheck.wait("the Files tree", seconds: 20) { model.phase == .loaded }
-        await model.toggle("Widgets")
+        for folder in ["src", "src/components"] { await model.toggle(folder) }
         await model.open(path)
         guard let original = model.edits[path]?.text else { FixtureCheck.fail("The file did not open in the editor") }
         model.setText(draftEdit + original, for: path)
         await FixtureCheck.wait("the editor shows the edit", seconds: 10) { shows(draftEdit) }
         navigator.present(NewThreadFixtures.compose)
-        await NewThreadFixtures.form()
+        await NewThreadFixtures.form { $0.prompt = sheetText }
         await FixtureCheck.wait("the sheet shows its text", seconds: 10) { shows(sheetText) }
         FixtureCheck.report("FIXTURE CHECK ok: set up, editor, terminal and sheet open on \(layout(navigator))")
 
@@ -199,8 +250,10 @@ enum ResizeFixtures {
         func look(_ stage: String, editorVisible: Bool) async {
             try? await Task.sleep(for: .seconds(2))
             let edit = model.edits[path]
-            report("editor", stage, edit?.isDirty == true && edit?.text.hasPrefix(draftEdit) == true,
-                   "the unsaved edit \(edit?.isDirty == true ? "is" : "is not") in the file's model\(editorVisible ? ", editor text on screen: \(shows(draftEdit))" : "")")
+            // Once the editor is back on screen its own text counts too: a model that kept the edit is not enough if the editor lost it.
+            let onScreen = editorVisible ? shows(draftEdit) : true
+            report("editor", stage, edit?.isDirty == true && edit?.text.hasPrefix(draftEdit) == true && onScreen,
+                   "the unsaved edit \(edit?.isDirty == true ? "is" : "is not") in the file's model\(editorVisible ? ", editor text on screen: \(onScreen)" : "")")
             report("terminal", stage, session.surface.map(ObjectIdentifier.init) == terminalView,
                    "its session \(session.surface == nil ? "has no view" : session.surface.map(ObjectIdentifier.init) == terminalView ? "keeps the same view" : "got a new view")")
             let model = NewThreadModel.active
