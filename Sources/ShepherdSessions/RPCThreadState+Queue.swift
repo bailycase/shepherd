@@ -1341,3 +1341,17 @@ extension RPCThreadState {
         originOrder = []
     }
 }
+
+extension RPCThreadState.QueueItem {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        entry = try c.decode(NativeQueuedMessage.self, forKey: .entry)
+        images = try c.decode([NativeImage].self, forKey: .images)
+        piText = try c.decodeIfPresent(String.self, forKey: .piText)
+        holdUntil = try c.decodeIfPresent(Date.self, forKey: .holdUntil)
+        goesAlone = try c.decodeIfPresent(Bool.self, forKey: .goesAlone) ?? false
+        context = try c.decodeIfPresent(String.self, forKey: .context)
+        designPayloads = try c.decodeIfPresent([UUID].self, forKey: .designPayloads) ?? []
+        direct = try c.decodeIfPresent(Bool.self, forKey: .direct) ?? false
+    }
+}

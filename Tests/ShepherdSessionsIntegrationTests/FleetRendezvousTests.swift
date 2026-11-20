@@ -12,13 +12,14 @@ final class FakeCloud: FleetRendezvousStore, @unchecked Sendable {
     private let lock = NSLock()
     private var stored: [FleetRendezvousKey: FleetRendezvousRecord] = [:]
     private var failure: FleetRendezvousError?
-    private(set) var operations: [String] = []
+    private var operationLog: [String] = []
+    var operations: [String] { lock.withLock { operationLog } }
 
     init(failing: FleetRendezvousError? = nil) { failure = failing }
 
     func put(_ record: FleetRendezvousRecord) async throws {
         try lock.withLock {
-            operations.append("put \(record.key.kind.rawValue)")
+            operationLog.append("put \(record.key.kind.rawValue)")
             if let failure { throw failure }
             stored[record.key] = record
         }
@@ -33,7 +34,7 @@ final class FakeCloud: FleetRendezvousStore, @unchecked Sendable {
 
     func delete(_ key: FleetRendezvousKey) async throws {
         try lock.withLock {
-            operations.append("delete \(key.kind.rawValue)")
+            operationLog.append("delete \(key.kind.rawValue)")
             if let failure { throw failure }
             stored[key] = nil
         }
@@ -248,6 +249,46 @@ struct FleetRendezvousTests {
         let (aID, bID) = (try #require(try await a.read().hostID), try #require(try await b.read().hostID))
         _ = try await a.local.fleetAction(.remove(hostID: bID))
         try await eventually("a's presence record to go") { cloud.record(.presence(of: aID)) == nil }
+    }
+
+    @Test func removingTheLastPeerBeforeTheListenerOpensClearsOldPresence() async throws {
+        let directory = try makeScratchDirectory("fleet")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let hostID = try FleetIdentity.loadOrCreate(in: directory).hostID
+        let peerID = UUID()
+        try FleetPeers(peers: [FleetPeerRecord(hostID: peerID, name: "Mac mini", pairedAt: 0)]).save(to: directory)
+        let cloud = FakeCloud()
+        let key = FleetRendezvousKey.presence(of: hostID)
+        let route = FleetRoute(host: "127.0.0.1", port: 7434, kind: .lan, learned: false)
+        // The previous host left its presence record behind. This one has not opened a listener yet.
+        cloud.plant(FleetRendezvousRecord(key: key, hostID: hostID, routes: [route], updatedAt: 0))
+        let rendezvous = FleetRendezvous(store: cloud)
+        let queue = DispatchQueue(label: "fleet.presence.test")
+        let fleet = try FleetService(queue: queue, directory: directory, name: "MacBook Pro", build: nil,
+                                     advertises: false, rendezvous: rendezvous)
+        queue.sync {
+            fleet.routes = { _ in [route] }
+            fleet.start()
+        }
+        defer { queue.sync { fleet.stop() } }
+
+        let caller = FleetCaller(connection: 0, isLocal: true, authenticated: true)
+        let reply = await withCheckedContinuation { continuation in
+            queue.async {
+                fleet.serve(.fleetAction(id: 1, action: .remove(hostID: peerID)), from: caller) {
+                    continuation.resume(returning: $0)
+                }
+            }
+        }
+        guard case .fleetResult(_, let result) = reply else {
+            Issue.record("Expected a successful removal")
+            return
+        }
+        #expect(result.snapshot.peers.isEmpty)
+        queue.sync { fleet.listenerChanged(route.port) }
+        await rendezvous.settle()
+        #expect(cloud.record(key) == nil)
+        #expect(!cloud.operations.contains { $0.hasPrefix("put ") }, "the new host never published")
     }
 
     // MARK: No iCloud
