@@ -11,17 +11,18 @@ import Testing
 
 /// Spend on the sidebar's rows and the Fleet page's header: real derivations over agents that carry the spend pi reported.
 extension PreviewTests {
-    private static let spendDay = SpendDay.key()
+    private static let spendZone = TimeZone.current.identifier
+    private static let spendDay = SpendDay.key(Date(), zone: spendZone)
 
     private func spendWorkspace() async throws -> (PreviewWorkspace, [Agent]) {
         let workspace = try PreviewWorkspace()
         let space = Space(name: "acme-web", path: workspace.dir.path)
         let rows: [(String, AgentStatus, AgentSpend?)] = [
-            ("Speed up checkout CI", .working, AgentSpend(tokens: 3_100_000, cost: 4.2, day: Self.spendDay, today: [
+            ("Speed up checkout CI", .working, AgentSpend(tokens: 3_100_000, cost: 4.2, day: Self.spendDay, zone: Self.spendZone, today: [
                 ModelSpend(model: "anthropic/claude-sonnet-4", tokens: 2_400_000, cost: 3.1), ModelSpend(model: "openai/gpt-5-mini", tokens: 400_000, cost: 0.3)])),
-            ("Fix flaky payment test", .working, AgentSpend(tokens: 12_400, cost: nil, day: Self.spendDay, today: [
+            ("Fix flaky payment test", .working, AgentSpend(tokens: 12_400, cost: nil, day: Self.spendDay, zone: Self.spendZone, today: [
                 ModelSpend(model: "acme-subscription/pro", tokens: 12_400, cost: nil)])),
-            ("Migrate orders to Postgres 17", .done, AgentSpend(tokens: 640_000, cost: 8.9, day: Self.spendDay, today: [
+            ("Migrate orders to Postgres 17", .done, AgentSpend(tokens: 640_000, cost: 8.9, day: Self.spendDay, zone: Self.spendZone, today: [
                 ModelSpend(model: "anthropic/claude-opus-4", tokens: 640_000, cost: 8.9)])),
             ("Rename the settings page", .idle, nil),
         ]
@@ -55,8 +56,8 @@ extension PreviewTests {
     @Test func fleetPageSpendToday() async throws {
         let (workspace, _) = try await spendWorkspace()
         defer { workspace.stop() }
-        let spend = workspace.vm.spendToday
-        #expect(spend.models.map(\.model) == ["anthropic/claude-opus-4", "anthropic/claude-sonnet-4", "openai/gpt-5-mini", "acme-subscription/pro"])
+        let spend = try #require(workspace.vm.spendToday.summary)
+        #expect(spend.rows.map(\.name) == ["claude-opus-4", "claude-sonnet-4", "gpt-5-mini", "pro"])
         let page = FleetPagePreviewTests.page()
         try await Preview.renderMatrix("fleet-spend-page", size: CGSize(width: 1208, height: 900)) {
             FleetPageContent(page: page, actions: FleetPagePreviewTests.noActions, spend: spend).frame(width: 1208, height: 900)

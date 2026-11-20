@@ -376,7 +376,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
   fs.mkdirSync(process.env.PI_CODING_AGENT_DIR);
   fs.writeFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "models.json"), JSON.stringify({ providers: { fixture: {
     baseUrl: `http://127.0.0.1:${server.address().port}/v1`, api: "openai-completions", apiKey: "local-fixture-not-secret",
-    models: [{ id: "fixture", name: "fixture", reasoning: false, input: ["text"], contextWindow: 64000, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
+    models: [{ id: "fixture", name: "fixture", reasoning: false, input: ["text"], contextWindow: 64000, maxTokens: 1024, cost: { input: 1_000_000, output: 0, cacheRead: 0, cacheWrite: 0 } }],
   } } }));
   process.env.SHEPHERD_CHILD_CONCURRENCY = "4"; // Exercise the default cap, not the parent agent's launch setting.
   // User extensions are inherited through Pi's filters; project extensions stay isolated.
@@ -472,6 +472,8 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     const slashChild = (await h.call("result", {})).at(-1);
     const slashResult = await h.call("result", {id: slashChild.id});
     assert.equal(slashResult.context, "fork"); assert.equal(slashResult.state, "complete");
+    // A fork starts from the parent's history, which is not its usage: only its own reply counts, once.
+    assert.equal(slashResult.tokens, 2); assert.equal(slashResult.cost, 1);
     assert(Number.isFinite(slashResult.endedAt));
     const persisted = JSON.parse(fs.readFileSync(path.join(path.dirname(slashResult.sessionFile), "status.json")));
     assert.equal(persisted.endedAt, slashResult.endedAt);
@@ -494,6 +496,8 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     assert.equal(doneCard.state, "complete"); assert.equal(doneCard.role, "scout"); assert.equal(doneCard.context, "background");
     assert.equal(doneCard.model, "fixture/fixture"); assert.equal(doneCard.toolCallID, "call"); assert.equal(doneCard.step, undefined);
     assert.equal(doneCard.turns, 1); assert.equal(doneCard.toolCalls, 0); assert.equal(doneCard.tokens, 2);
+    // Its own usage, for the thread's spend: the one prompt token at $1 per token.
+    assert.equal(doneCard.cost, 1);
     assert.deepEqual(doneCard.result, { files: 0, added: 0, removed: 0, tools: 0, tokens: 2 });
     assert.match(doneCard.output, /reply:/); assert.equal(doneCard.task, "SLOW one"); assert.equal(doneCard.sessionFile, pair[0].sessionFile);
     assert.equal(doneCard.question, undefined); assert.equal(doneCard.exitReason, undefined);

@@ -780,7 +780,7 @@ struct ChildRunTests {
          {"runID":"run-2","label":"scout","state":"complete","needsAttention":false},
          {"runID":"native-1","label":"worker: restyle","state":"running","startedAt":1,"needsAttention":false,
           "role":"worker","name":"restyle-tokens","model":"p/m","thinking":"high","context":"background","step":{"index":1,"total":3},
-          "turns":78,"toolCalls":82,"tokens":922000,"contextPercent":62,
+          "turns":78,"toolCalls":82,"tokens":922000,"cost":3.25,"contextPercent":62,
           "lastActivity":{"kind":"tool","tool":"edit","preview":"Sources/A.swift","diff":{"added":31,"removed":0},"at":2},
           "toolCallID":"call_1","task":"Restyle","sessionFile":"/tmp/c/session.jsonl","paused":true},
          {"runID":"native-2","label":"reviewer","state":"running","needsAttention":true,"attentionText":"Two names collide",
@@ -799,6 +799,7 @@ struct ChildRunTests {
         #expect(rows[1].name == "restyle-tokens" && rows[0].name == nil, "a run from an older publisher decodes without a label")
         #expect(rows[1].step == ChildStep(index: 1, total: 3))
         #expect(rows[1].lastActivity == ChildActivity(tool: "edit", preview: "Sources/A.swift", diff: ChildDiff(added: 31, removed: 0), at: 2))
+        #expect(rows[1].cost == 3.25 && rows[0].cost == nil, "a child's cost estimate; an older publisher sends none")
         #expect(rows[1].contextPercent == 62 && rows[1].paused == true && rows[1].toolCallID == "call_1")
         #expect(rows[2].question == ChildQuestion(text: "Two names collide", options: ["Replace everywhere", "Rename new ones"],
                                                   short: "token names?"))

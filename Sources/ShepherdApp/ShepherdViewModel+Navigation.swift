@@ -64,13 +64,6 @@ extension ShepherdViewModel {
         return state.agents.first { $0.id == id }
     }
 
-    /// What every thread this Mac sees (its own and each connected host's) spent today, for the Fleet page. A host that is offline adds
-    /// what it last said; a thread whose day isn't today adds nothing.
-    var spendToday: SpendRollup {
-        let spends = state.agents.compactMap(\.spend) + remoteHosts.connections.flatMap { $0.state.agents.compactMap(\.spend) }
-        return SpendRollup.today(spends, day: SpendDay.key())
-    }
-
     // MARK: Sidebar lists
 
     /// The activity groups' inputs, including remote hosts and completion generations.

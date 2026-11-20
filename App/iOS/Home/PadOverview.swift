@@ -146,7 +146,7 @@ private struct OverviewColumns: View {
     private func runningButton(_ row: FleetThreadRow) -> some View {
         let time: SHOverviewRow.Time = if case .elapsed(let since)? = row.clock { .elapsed(since: Date(milliseconds: since)) } else { .none }
         return Button { navigator.open(.thread(row.ref.agentRef)) } label: {
-            SHOverviewRow(row.title, detail: row.now, leading: RunningGlyph.of(row), time: time, dimmed: row.offline)
+            SHOverviewRow(row.title, detail: row.running(withSpend: true), leading: RunningGlyph.of(row), time: time, dimmed: row.offline)
                 .equatable()
         }
         .buttonStyle(.shRow(radius: 0))
@@ -157,7 +157,7 @@ private struct OverviewColumns: View {
     /// and when it finished.
     private func finishedButton(_ row: FleetThreadRow, now: Date) -> some View {
         Button { navigator.open(.thread(row.ref.agentRef)) } label: {
-            SHOverviewRow(row.title, detail: row.failed ? "failed · \(row.hostName)" : row.detail, detailMono: false,
+            SHOverviewRow(row.title, detail: row.saying(spendAfter: row.failed ? "failed · \(row.hostName)" : row.detail), detailMono: false,
                           leading: row.failed ? .symbol("xmark", .failed) : .symbol("checkmark", .done),
                           time: row.lastMoved.map { .text(FleetFinishedDay.stamp($0, now: now)) } ?? .none, dimmed: row.offline)
                 .equatable()

@@ -96,11 +96,12 @@ struct ThreadRow: View, Equatable {
 
 extension FleetThreadRow {
     /// Home's line under the title: what a working thread does now ("Running python",
-    /// "Thinking"), else the repo it works in, else what the host says of it.
+    /// "Thinking"), else the repo it works in, else what the host says of it, then what it spent.
     var inboxLine: String {
         if design != nil { return detail }
-        if status == .working, !offline { return doing ?? place ?? detail }
-        return place ?? detail
+        // A running thread's line is the busy one: its spend is the cost alone.
+        if status == .working, !offline { return saying(spendAfter: doing ?? place ?? detail, brief: true) }
+        return saying(spendAfter: place ?? detail)
     }
 }
 

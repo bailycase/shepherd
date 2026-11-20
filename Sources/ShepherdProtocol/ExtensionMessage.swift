@@ -1154,6 +1154,8 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
     public var turns: Int?
     public var toolCalls: Int?
     public var tokens: Int?
+    /// The catalog's cost estimate of the child's own messages; nil from an older publisher or a provider that reports none.
+    public var cost: Double?
     /// Context-window fill of the child's own session, 0–100.
     public var contextPercent: Double?
     public var lastActivity: ChildActivity?
@@ -1210,6 +1212,7 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
         turns: Int? = nil,
         toolCalls: Int? = nil,
         tokens: Int? = nil,
+        cost: Double? = nil,
         contextPercent: Double? = nil,
         lastActivity: ChildActivity? = nil,
         question: ChildQuestion? = nil,
@@ -1247,6 +1250,7 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
         self.turns = turns
         self.toolCalls = toolCalls
         self.tokens = tokens
+        self.cost = cost
         self.contextPercent = contextPercent
         self.lastActivity = lastActivity
         self.question = question

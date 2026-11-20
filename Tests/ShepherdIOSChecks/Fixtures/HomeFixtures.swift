@@ -149,18 +149,21 @@ enum HomeFixtureData {
         return hosts
     }
 
-    /// `fleet` with what four of its threads spent today: two models with a cost estimate and one subscription model with none.
+    /// `fleet` with what six of its threads spent today (two of them finished): two models with a cost estimate and one subscription model with none.
     static func spending() -> [FixtureHostData] {
         var hosts = fleet()
-        let day = SpendDay.key()
+        let zone = TimeZone.current.identifier
+        let day = SpendDay.key(Date(), zone: zone)
         func spend(_ host: Int, _ id: AgentID, tokens: Int, cost: Double?, _ today: [ModelSpend]) {
             guard let index = hosts[host].state.agents.firstIndex(where: { $0.id == id }) else { return }
-            hosts[host].state.agents[index].spend = AgentSpend(tokens: tokens, cost: cost, day: day, today: today)
+            hosts[host].state.agents[index].spend = AgentSpend(tokens: tokens, cost: cost, day: day, zone: zone, today: today)
         }
         spend(0, FixtureData.preview, tokens: 3_100_000, cost: 4.2,
               [ModelSpend(model: "anthropic/claude-sonnet-4", tokens: 2_400_000, cost: 3.1), ModelSpend(model: "openai/gpt-5-mini", tokens: 400_000, cost: 0.3)])
         spend(0, FixtureData.extensions, tokens: 820_000, cost: 1.15, [ModelSpend(model: "anthropic/claude-sonnet-4", tokens: 820_000, cost: 1.15)])
         spend(1, restyle, tokens: 12_400, cost: nil, [ModelSpend(model: "acme-subscription/pro", tokens: 12_400, cost: nil)])
+        spend(0, FixtureData.deletion, tokens: 205_000, cost: 0.62, [ModelSpend(model: "openai/gpt-5-mini", tokens: 205_000, cost: 0.62)])
+        spend(1, migrations, tokens: 1_900_000, cost: nil, [ModelSpend(model: "acme-subscription/pro", tokens: 1_900_000, cost: nil)])
         spend(1, triage, tokens: 640_000, cost: 8.9, [ModelSpend(model: "anthropic/claude-opus-4", tokens: 640_000, cost: 8.9)])
         return hosts
     }

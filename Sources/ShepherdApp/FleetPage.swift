@@ -52,8 +52,8 @@ extension FleetTone {
 struct FleetPageContent: View {
     let page: FleetPage
     let actions: FleetPageActions
-    /// What the threads this Mac sees spent today, under the header (`ShepherdViewModel.spendToday`).
-    var spend = SpendRollup.empty
+    /// What the threads this Mac sees spent today, under the header (`ShepherdViewModel.spendToday`, derived once).
+    var spend: SpendSummary?
     var chrome = PageHeaderChrome()
     /// What the buttons on dispatch cards do (FleetStates).
     var cardActions: FleetThreadActions?
@@ -111,9 +111,8 @@ struct FleetPageContent: View {
     private var macsScroll: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: SH.Space.xl) {
-                if let total = SpendFormat.line(spend) {
-                    SHSpendSummary("Spent today", total: total,
-                                   rows: spend.models.map { .init(id: $0.id, name: $0.name, value: $0.text) })
+                if let spend {
+                    SHSpendSummary("Spent today", total: spend.total, rows: spend.rows, name: \.name, value: \.value).equatable()
                 }
                 FleetPlacementCard(autoDispatch: page.autoDispatch, nextGoesTo: page.nextGoesTo)
                 ForEach(page.limits) { strip in
@@ -627,7 +626,7 @@ struct FleetDestination: View {
                 adding = true
             },
             openCheck: { model.openCheck(for: $0) },
-            openUpdate: { model.openCheck(for: $0, row: "build") }), spend: vm.spendToday, chrome: chrome,
+            openUpdate: { model.openCheck(for: $0, row: "build") }), spend: vm.spendToday.summary, chrome: chrome,
             tab: Binding(get: { model.tab }, set: { model.tab = $0 }),
             check: FleetCheckState(row: model.checkRow, mac: model.checkMac, checking: model.checking, problem: model.checkProblem),
             checkActions: FleetCheckActions(
