@@ -21,6 +21,7 @@ public struct RemoteHostFailure: Hashable, Sendable {
         case tokenMissing
         /// The saved token cannot be read now (the iOS Keychain while the device is locked).
         case tokenUnreadable
+        case workspaceRepairRequired
         case other
 
         /// A status row's word ("Unreachable", "Token refused").
@@ -32,6 +33,7 @@ public struct RemoteHostFailure: Hashable, Sendable {
             case .versionMismatch: "Update needed"
             case .tokenMissing: "No token"
             case .tokenUnreadable: "Token locked"
+            case .workspaceRepairRequired: "Repair needed"
             }
         }
     }
@@ -63,6 +65,8 @@ public struct RemoteHostFailure: Hashable, Sendable {
             self.init(kind: .sharedTokenRetired, detail: detail)
         case .rejected(RemoteProtocol.versionMismatchCode, let message):
             self.init(kind: .versionMismatch(hostNewer: Self.hostVersion(message).map { $0 > RemoteProtocol.version }), detail: detail)
+        case .rejected(RemoteProtocol.workspaceRepairRequiredCode, _):
+            self.init(kind: .workspaceRepairRequired, detail: detail)
         case .disconnected:
             self.init(kind: .lost, detail: detail)
         case .rejected, .outcomeUnknown:
@@ -75,12 +79,12 @@ public struct RemoteHostFailure: Hashable, Sendable {
         self.init(kind: .lost, detail: reason)
     }
 
-    /// Whether reconnecting with backoff could help. A refused token or another protocol
-    /// version fails the same way every time, so those wait for the user (Edit, Retry).
+    /// Whether reconnecting with backoff could help. Refusals that need a person to fix them
+    /// wait for a manual retry.
     public var retries: Bool {
         switch kind {
         case .unreachable, .lost, .other: true
-        case .tokenRefused, .sharedTokenRetired, .versionMismatch, .tokenMissing, .tokenUnreadable: false
+        case .tokenRefused, .sharedTokenRetired, .versionMismatch, .tokenMissing, .tokenUnreadable, .workspaceRepairRequired: false
         }
     }
 
@@ -98,6 +102,7 @@ public struct RemoteHostFailure: Hashable, Sendable {
         case .versionMismatch(hostNewer: nil): "\(host) runs another version of Shepherd. Update both to connect."
         case .tokenMissing: "No token is saved for \(host). Pair it again with a code."
         case .tokenUnreadable: "The saved token can't be read until this device is unlocked."
+        case .workspaceRepairRequired: "Workspace state.json on \(host) needs repair. Workspace writes are disabled."
         case .other: "Couldn't connect to \(host)."
         }
     }
