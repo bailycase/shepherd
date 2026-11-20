@@ -161,6 +161,34 @@ struct RemoteAutomationTests {
         #expect(try await raw.next() == .automationResult(id: 4, result: .runs([])))
     }
 
+    /// A run history the host can't read is an error naming the file, never an empty list, and
+    /// the file stays as it was until someone repairs it.
+    @Test func aDamagedRunHistoryAnswersWithAnErrorNamingTheFileUntilItIsRepaired() async throws {
+        let h = try await Host()
+        defer { h.stop() }
+        let url = h.remote.host.dir.appendingPathComponent("automation-runs.json")
+        let damaged = Data("{".utf8)
+        try damaged.write(to: url)
+        let client = try await h.remote.typed()
+        defer { client.disconnect() }
+        // The next run to record is what finds the damage: a run opens, and the file is not written.
+        let run = Fixture.agent(in: h.runSpace, name: "watch CI", status: .working)
+        var started = h.automation
+        started.agentID = run.agent.id
+        try await h.remote.server.putState(ShepherdState(spaces: [h.runSpace], tabs: [run.tab], agents: [run.agent], automations: [started]))
+
+        let error = await #expect(throws: RemoteHostClientError.self) { try await client.automationRuns(h.automation.id) }
+        guard case .rejected(RemoteAutomationRequest.runHistoryDamagedCode, let message)? = error else {
+            Issue.record("expected the run history error, got \(String(describing: error))")
+            return
+        }
+        #expect(message.contains(url.path))
+        #expect(try Data(contentsOf: url) == damaged)
+
+        try Data(#"{"version":1,"runs":{}}"#.utf8).write(to: url)
+        #expect(try await client.automationRuns(h.automation.id) == [])
+    }
+
     @Test func aHandlerFailureReachesTheClient() async throws {
         let h = try await Host()
         defer { h.stop() }

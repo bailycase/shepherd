@@ -4377,6 +4377,8 @@ public final class SessionServer: @unchecked Sendable {
         }
         switch request {
         case .runs:
+            // A history that can't be read is an error, never an empty list: the page says why.
+            if let problem = runLog.recheck(reading: false) { return fail(RemoteAutomationRequest.runHistoryDamagedCode, problem) }
             send(.automationResult(id: id, result: .runs(runLog.runs(for: automationID, in: store.state))), to: client)
             return
         case .markRead(let runID):
@@ -8209,6 +8211,12 @@ public final class SessionServer: @unchecked Sendable {
     /// GUI reads whether a run is live (`AutomationRun.isLive`) from it.
     public var openAutomationRuns: [AutomationID: AutomationRun] {
         runLog.openRuns
+    }
+
+    /// Why the run history can't be read (the file, the reason, how to fix it), or nil. No
+    /// automation starts while it is set.
+    public func automationRunHistoryProblem() async -> String? {
+        await enqueueValue { self.runLog.recheck() }
     }
 
     /// The runs the host kept for an automation, oldest first; a run's agent only while it exists.

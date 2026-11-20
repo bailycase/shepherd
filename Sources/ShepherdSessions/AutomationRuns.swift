@@ -8,11 +8,15 @@ import ShepherdRemote
 /// newest `limit` per automation). A run opens when an automation gains an agent and closes
 /// when it loses it, or when its pi stops on its own (the agent stays); in between it follows the
 /// agent's status. Confined to the server queue,
-/// except `openRuns`; writes go to disk off it, in order.
+/// except `openRuns` and `problem`; writes go to disk off it, in order.
+///
+/// Only a missing file means no history. A file that can't be read (`damage`) is never rewritten:
+/// every change is refused and the host starts no run (a run couldn't be recorded, and the live
+/// count that gates the next one comes from here) until a re-read is clean again.
 final class AutomationRunLog: @unchecked Sendable {
     static let limit = 30
 
-    private struct File: Codable {
+    fileprivate struct File: Codable {
         var version = 1
         var runs: [String: [AutomationRun]] = [:]
     }
@@ -23,6 +27,12 @@ final class AutomationRunLog: @unchecked Sendable {
     private let writes = DispatchQueue(label: "shepherd.automation-runs", qos: .utility)
     private let openLock = NSLock()
     private var published: [AutomationID: AutomationRun] = [:]
+    private var publishedProblem: String?
+    /// Why the file can't be read; changes are refused while it is set.
+    private var damage: AutomationFileDamage?
+    /// The history when the file went bad, written back if the file is then removed. Nil when it
+    /// was bad from the start.
+    private var lastGood: [AutomationID: [AutomationRun]]?
     /// After every change, on the server queue (`startLocalListener`: this Mac's app reads the runs again).
     var changed: () -> Void = {}
 
@@ -34,10 +44,29 @@ final class AutomationRunLog: @unchecked Sendable {
     /// Startup rereads under workspace ownership, including a retry after another owner stopped.
     func reload() {
         runs = [:]
-        if let data = try? Data(contentsOf: url), let file = try? JSONDecoder().decode(File.self, from: data) {
-            runs = Dictionary(uniqueKeysWithValues: file.runs.map { (AutomationID(rawValue: $0.key), $0.value) })
+        damage = nil
+        lastGood = nil
+        switch PersistedFile<File>.load(from: url) {
+        case .loaded(let file): runs = file.history
+        case .missing: break
+        case .damaged(let original, let error): setDamage(AutomationFileDamage("run history", at: url, original: original, error: error))
         }
+        publishProblem()
         publish()
+    }
+
+    /// Why the file can't be read, in words to show a person, from any thread. It says the file is
+    /// untouched and how to fix it; the log re-reads the file on its own once that's done.
+    var problem: String? {
+        openLock.withLock { publishedProblem }
+    }
+
+    /// The same, after reading the file again (server queue): damage that came up while the host
+    /// ran shows here, and so does a repair. `reading: false` reads only while it is damaged, for
+    /// the page's frequent reads; a write, a start or a trigger check always reads.
+    func recheck(reading: Bool = true) -> String? {
+        _ = refresh(reading: reading)
+        return problem
     }
 
     /// Each automation's latest run while it is open, or ended unsettled with its agent kept (its
@@ -51,6 +80,7 @@ final class AutomationRunLog: @unchecked Sendable {
     /// The automation's runs, oldest first, as a client sees them: a run's agent only while
     /// that agent still exists in `state`.
     func runs(for automationID: AutomationID, in state: ShepherdState) -> [AutomationRun] {
+        _ = refresh(reading: false)
         let agents = Set(state.agents.map(\.id))
         return (runs[automationID] ?? []).map { run in
             var run = run
@@ -105,9 +135,7 @@ final class AutomationRunLog: @unchecked Sendable {
         for id in next.keys where !kept.contains(id) { next[id] = nil }
         next = next.filter { !$0.value.isEmpty }
         guard next != runs else { return }
-        runs = next
-        publish()
-        save()
+        commit(next)
     }
 
     /// Triggered runs: a thread an automation started (`Agent.automationOrigin`) opens a run
@@ -174,12 +202,12 @@ final class AutomationRunLog: @unchecked Sendable {
     /// A run delivered to an existing thread (a `.thread` destination) opens here; it closes when
     /// the thread's turn settles.
     func openThreadRun(_ automationID: AutomationID, agentID: AgentID, trigger: String?, triggerURL: String?, now: Date = Date()) {
-        var list = runs[automationID] ?? []
+        var next = runs
+        var list = next[automationID] ?? []
         list.append(AutomationRun(startedAt: now.timeIntervalSince1970, result: .running, agentID: agentID,
                                   trigger: trigger, triggerURL: triggerURL))
-        runs[automationID] = Array(list.suffix(Self.limit))
-        publish()
-        save()
+        next[automationID] = Array(list.suffix(Self.limit))
+        commit(next)
     }
 
     /// The agent's pi stopped on its own: each run of it that had not settled ends as failed with
@@ -190,8 +218,9 @@ final class AutomationRunLog: @unchecked Sendable {
     func agentStopped(_ agentID: AgentID, failure: String, now: Date = Date()) -> Bool {
         let time = now.timeIntervalSince1970
         var changed = false
-        for (id, list) in runs {
-            runs[id] = list.map { run in
+        var next = runs
+        for (id, list) in next {
+            next[id] = list.map { run in
                 guard run.agentID == agentID, run.endedAt == nil, run.settledAt == nil else { return run }
                 changed = true
                 var run = run
@@ -202,30 +231,27 @@ final class AutomationRunLog: @unchecked Sendable {
                 return run
             }
         }
-        if changed {
-            publish()
-            save()
-        }
-        return changed
+        return changed && commit(next)
     }
 
     /// A run that never started (its thread or worktree couldn't be made).
     func recordFailure(_ automationID: AutomationID, trigger: String?, triggerURL: String?, message: String, now: Date = Date()) {
         let time = now.timeIntervalSince1970
-        var list = runs[automationID] ?? []
+        var next = runs
+        var list = next[automationID] ?? []
         list.append(AutomationRun(startedAt: time, endedAt: time, result: .failed, trigger: trigger, triggerURL: triggerURL,
                                   unread: true, failure: String(message.prefix(500))))
-        runs[automationID] = Array(list.suffix(Self.limit))
-        publish()
-        save()
+        next[automationID] = Array(list.suffix(Self.limit))
+        commit(next)
     }
 
     /// Clears unread dots: one run, or every run of a thread the user opened. True when any changed.
     @discardableResult
     func markRead(runID: UUID? = nil, agentID: AgentID? = nil) -> Bool {
         var changed = false
-        for (id, list) in runs {
-            runs[id] = list.map { run in
+        var next = runs
+        for (id, list) in next {
+            next[id] = list.map { run in
                 guard run.unread, run.id == runID || (agentID != nil && run.agentID == agentID) else { return run }
                 changed = true
                 var run = run
@@ -233,15 +259,15 @@ final class AutomationRunLog: @unchecked Sendable {
                 return run
             }
         }
-        if changed { save() }
-        return changed
+        return changed && commit(next)
     }
 
     /// The pull request a run's thread opened.
     func setPullRequest(agentID: AgentID, url: String) {
         var changed = false
-        for (id, list) in runs {
-            runs[id] = list.map { run in
+        var next = runs
+        for (id, list) in next {
+            next[id] = list.map { run in
                 guard run.agentID == agentID, run.pullRequestURL != url else { return run }
                 changed = true
                 var run = run
@@ -249,7 +275,7 @@ final class AutomationRunLog: @unchecked Sendable {
                 return run
             }
         }
-        if changed { save() }
+        if changed { commit(next) }
     }
 
     /// Closes every run still open: the host is starting, and their agents died with the last
@@ -258,8 +284,9 @@ final class AutomationRunLog: @unchecked Sendable {
     func closeOpenRuns(keeping: Set<AgentID> = [], now: Date = Date()) {
         let time = now.timeIntervalSince1970
         var changed = false
-        for (id, list) in runs {
-            runs[id] = list.map { run in
+        var next = runs
+        for (id, list) in next {
+            next[id] = list.map { run in
                 guard run.endedAt == nil else { return run }
                 changed = true
                 var closed = Self.closed(run, status: nil, at: time, result: run.settledAt == nil ? .interrupted : .finished)
@@ -267,10 +294,7 @@ final class AutomationRunLog: @unchecked Sendable {
                 return closed
             }
         }
-        if changed {
-            publish()
-            save()
-        }
+        if changed { commit(next) }
     }
 
     /// Waits for every write queued so far (the server stopping, and tests).
@@ -319,8 +343,67 @@ final class AutomationRunLog: @unchecked Sendable {
         openLock.withLock { published = open }
     }
 
+    /// Takes `next` as the history and saves it. False, with nothing changed, while the file is
+    /// damaged: the disk is checked first because it can go bad while the host runs.
+    @discardableResult
+    private func commit(_ next: [AutomationID: [AutomationRun]]) -> Bool {
+        guard refresh(reading: true) else { return false }
+        runs = next
+        publish()
+        save()
+        return true
+    }
+
+    /// Whether the file is readable. While damaged, reads it again and recovers once it is clean:
+    /// a file that reads takes over, and a removed one gets the last good history back. When
+    /// healthy it reads only if `reading`, and otherwise trusts what is in memory (a save may not
+    /// have landed yet).
+    private func refresh(reading: Bool) -> Bool {
+        guard damage != nil || reading else { return true }
+        switch PersistedFile<File>.load(from: url) {
+        case .loaded(let file):
+            guard damage != nil else { return true }
+            runs = file.history
+        case .missing:
+            guard damage != nil else { return true }
+            runs = lastGood ?? [:]
+            if lastGood != nil { writeAll() }
+        case .damaged(let original, let error):
+            if damage == nil { lastGood = runs }
+            setDamage(AutomationFileDamage("run history", at: url, original: original, error: error))
+            return false
+        }
+        ShepherdLog.info("Automation run history recovered: \(url.path)")
+        damage = nil
+        lastGood = nil
+        publish()
+        publishProblem()
+        changed()
+        return true
+    }
+
+    private func setDamage(_ new: AutomationFileDamage) {
+        guard new != damage else { return }
+        ShepherdLog.error("Automation run history unreadable and left untouched: \(new)")
+        damage = new
+        publishProblem()
+        changed()
+    }
+
+    private func publishProblem() {
+        let text = damage.map {
+            "\($0). Shepherd left the file as it is, so nothing starts and no run is recorded until it reads cleanly. "
+                + "Fix the JSON, restore a backup, or move the file aside to start with no history; Shepherd checks again on its own."
+        }
+        openLock.withLock { publishedProblem = text }
+    }
+
     private func save() {
         changed()
+        writeAll()
+    }
+
+    private func writeAll() {
         let file = File(runs: Dictionary(uniqueKeysWithValues: runs.map { ($0.key.rawValue, $0.value) }))
         let url = url
         writes.async {
@@ -332,5 +415,18 @@ final class AutomationRunLog: @unchecked Sendable {
                 ShepherdLog.warning("automation runs not saved: \(error)")
             }
         }
+    }
+}
+
+extension AutomationRunLog.File {
+    var history: [AutomationID: [AutomationRun]] {
+        Dictionary(uniqueKeysWithValues: runs.map { (AutomationID(rawValue: $0.key), $0.value) })
+    }
+
+    /// Older files may omit a field; a present null is damage, not an omission.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.contains(.version) ? c.decode(Int.self, forKey: .version) : 1
+        runs = try c.contains(.runs) ? c.decode([String: [AutomationRun]].self, forKey: .runs) : [:]
     }
 }

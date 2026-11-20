@@ -465,6 +465,9 @@ final class ShepherdViewModel {
     /// This Mac's automations' runs as the run log kept them, oldest first (read for the
     /// Automations page).
     var localAutomationRuns: [AutomationID: [AutomationRun]] = [:]
+    /// Why a host could not give an automation's runs (its run history file is damaged), by
+    /// automation, This Mac's under `PageHost.localID`. The Automations page shows it.
+    var automationRunProblems: [AutomationKey: String] = [:]
     /// Each triggered automation's trigger state (paused, pending events, next run), and the
     /// host-wide Pause all triggers switch.
     var automationTriggerStatuses: [AutomationID: AutomationTriggerStatus] = [:]

@@ -206,6 +206,136 @@ struct AutomationRunLogTests {
     }
 }
 
+/// A run history file that can't be read is never replaced by an empty one: the log refuses every
+/// change, says why, and takes the file back once it reads cleanly.
+@Suite("Automation run log: damaged file")
+struct AutomationRunLogDamageTests {
+    static let run = #"{"id":"00000000-0000-4000-8000-000000000010","startedAt":12,"endedAt":13,"result":"finished"}"#
+    static let legacy = #"{"version":1,"runs":{"a":["# + run + "]}}"
+    static let newRun = Date(timeIntervalSince1970: 1_000)
+
+    private static func scratch() throws -> (dir: URL, url: URL) {
+        let dir = try makeTempDirectory()
+        return (dir, dir.appendingPathComponent("automation-runs.json"))
+    }
+
+    @Test(arguments: ["{", "", "null", "[]", #"{"runs":[]}"#, #"{"version":1,"runs":null}"#, #"{"runs":{"a":[null]}}"#,
+                      #"{"runs":{"a":[{"startedAt":1}]}}"#, #"{"version":1,"value":null}"#, #"{"version":2,"value":{"runs":{}}}"#,
+                      "unreadable"])
+    func aDamagedFileIsNeverRewrittenAndNothingIsRecorded(input: String) throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let target = dir.appendingPathComponent("missing-target")
+        if input == "unreadable" {
+            try FileManager.default.createSymbolicLink(at: url, withDestinationURL: target)
+        } else {
+            try Data(input.utf8).write(to: url)
+        }
+        let log = AutomationRunLog(url: url)
+        let problem = try #require(log.problem)
+        #expect(problem.contains(url.path) && problem.contains("left the file as it is") && problem.contains("move the file aside"))
+
+        log.recordFailure(AutomationRunLogTests.automation.id, trigger: nil, triggerURL: nil, message: "Sample", now: Self.newRun)
+        log.openThreadRun(AutomationRunLogTests.automation.id, agentID: AgentID(rawValue: "x"), trigger: nil, triggerURL: nil)
+        AutomationRunLogTests.replay([AutomationRunLogTests.state(agent: nil), AutomationRunLogTests.state(agent: .working)], log: log)
+        log.closeOpenRuns()
+        #expect(!log.markRead(runID: UUID()) && !log.agentStopped(AgentID(rawValue: "x"), failure: "stopped"))
+        log.flush()
+
+        #expect(log.runs.isEmpty)
+        if input == "unreadable" {
+            #expect(try FileManager.default.destinationOfSymbolicLink(atPath: url.path) == target.path)
+            #expect(!FileManager.default.fileExists(atPath: target.path))
+        } else {
+            #expect(try Data(contentsOf: url) == Data(input.utf8))
+        }
+    }
+
+    @Test func aMissingFileIsNoHistoryAndIsWritable() throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = AutomationRunLog(url: url)
+        #expect(log.problem == nil && log.runs.isEmpty)
+        log.recordFailure(AutomationRunLogTests.automation.id, trigger: nil, triggerURL: nil, message: "Sample", now: Self.newRun)
+        log.flush()
+        #expect(try Data(contentsOf: url).count > 0)
+    }
+
+    @Test(arguments: [false, true])
+    func readsEitherShapeAndWritesTheLegacyOne(enveloped: Bool) throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data((enveloped ? #"{"version":1,"value":"# + Self.legacy + "}" : Self.legacy).utf8).write(to: url)
+        let log = AutomationRunLog(url: url)
+        #expect(log.problem == nil)
+        #expect(log.runs[AutomationRunLogTests.automation.id]?.map(\.result) == [.finished])
+        log.recordFailure(AutomationRunLogTests.automation.id, trigger: nil, triggerURL: nil, message: "Sample", now: Self.newRun)
+        log.flush()
+        let written = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        #expect(written["version"] as? Int == 1 && written["value"] == nil)
+        #expect((written["runs"] as? [String: [Any]])?["a"]?.count == 2)
+    }
+
+    /// Fixing the file (by hand, or restoring a backup) is enough: the next access reads it again.
+    @Test func aRepairedFileIsPickedUpAndWritableAgain() throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data("{".utf8).write(to: url)
+        let log = AutomationRunLog(url: url)
+        var changes = 0
+        log.changed = { changes += 1 }
+        #expect(log.recheck() != nil)
+
+        try Data(Self.legacy.utf8).write(to: url)
+        #expect(log.recheck() == nil && log.problem == nil)
+        #expect(log.runs[AutomationRunLogTests.automation.id]?.count == 1)
+        #expect(changes > 0, "the app reads the runs again")
+        log.recordFailure(AutomationRunLogTests.automation.id, trigger: nil, triggerURL: nil, message: "Sample", now: Self.newRun)
+        log.flush()
+        #expect(log.runs[AutomationRunLogTests.automation.id]?.count == 2)
+    }
+
+    /// Damage that arrives while the host runs: the in-memory history is not saved over it, and
+    /// removing the file puts that history back.
+    @Test func damageWhileRunningRefusesTheWriteAndRemovingTheFileRestoresTheHistory() throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = AutomationRunLog(url: url)
+        let id = AutomationRunLogTests.automation.id
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "First", now: Self.newRun)
+        log.flush()
+        let healthy = try Data(contentsOf: url)
+
+        try Data("{".utf8).write(to: url)
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "Second", now: Self.newRun)
+        log.flush()
+        #expect(try Data(contentsOf: url) == Data("{".utf8))
+        #expect(log.problem?.contains(url.path) == true)
+        #expect(log.runs[id]?.count == 1, "memory keeps the last good history")
+
+        try FileManager.default.removeItem(at: url)
+        #expect(log.recheck() == nil)
+        log.flush()
+        #expect(try Data(contentsOf: url) == healthy)
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "Third", now: Self.newRun)
+        #expect(log.runs[id]?.count == 2)
+        log.flush()
+    }
+
+    @Test func removingAFileThatWasDamagedAtStartupMeansNoHistory() throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data("{".utf8).write(to: url)
+        let log = AutomationRunLog(url: url)
+        try FileManager.default.removeItem(at: url)
+        #expect(log.recheck() == nil && log.runs.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        log.recordFailure(AutomationRunLogTests.automation.id, trigger: nil, triggerURL: nil, message: "Sample", now: Self.newRun)
+        log.flush()
+        #expect(FileManager.default.fileExists(atPath: url.path))
+    }
+}
+
 /// A Project automation's run follows its Project task, whose worker may not exist yet.
 @Suite("Automation run log: Project runs")
 struct AutomationProjectRunLogTests {

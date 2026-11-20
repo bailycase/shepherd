@@ -35,7 +35,8 @@ extension ShepherdViewModel {
     func automationsPageModel(now: Date = Date()) -> AutomationsPageModel {
         AutomationsPageModel.make(hosts: automationHosts, runs: automationRunsByKey, selection: automationsPageSelection,
                                   filter: automationsPageFilter, pending: remoteAutomationsPending,
-                                  triggers: automationTriggersByKey, allPaused: automationTriggersAllPaused, now: now)
+                                  triggers: automationTriggersByKey, allPaused: automationTriggersAllPaused,
+                                  runProblems: automationRunProblems, now: now)
     }
 
     /// The page as its view draws it: derived again only when what it reads changed (a run's
@@ -46,11 +47,11 @@ extension ShepherdViewModel {
             hosts: automationHosts, runs: automationRunsByKey, selection: automationsPageSelection,
             filter: automationsPageFilter, pending: remoteAutomationsPending,
             triggers: automationTriggersByKey, allPaused: automationTriggersAllPaused,
-            minute: Int(now.timeIntervalSince1970 / 60))
+            runProblems: automationRunProblems, minute: Int(now.timeIntervalSince1970 / 60))
         if let cached = automationsPageCache, cached.inputs == inputs { return cached.model }
         let model = AutomationsPageModel.make(hosts: inputs.hosts, runs: inputs.runs, selection: inputs.selection,
                                               filter: inputs.filter, pending: inputs.pending, triggers: inputs.triggers,
-                                              allPaused: inputs.allPaused, now: now)
+                                              allPaused: inputs.allPaused, runProblems: inputs.runProblems, now: now)
         automationsPageCache = (inputs, model)
         return model
     }
@@ -203,6 +204,7 @@ struct AutomationsPageInputs: Equatable {
     var pending: Set<AutomationKey>
     var triggers: [AutomationKey: AutomationTriggerStatus]
     var allPaused: Bool
+    var runProblems: [AutomationKey: String]
     /// The minute its relative times were worded in.
     var minute: Int
 }

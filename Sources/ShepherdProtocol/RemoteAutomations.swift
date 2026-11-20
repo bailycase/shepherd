@@ -216,6 +216,12 @@ public struct AutomationTriggerStatus: Codable, Hashable, Sendable {
     }
 }
 
+extension RemoteAutomationRequest {
+    /// The error `.runs` answers with while the host can't read its run history file. Its message
+    /// names the file and the fix; a client shows it where the runs would be.
+    public static let runHistoryDamagedCode = "run_history_damaged"
+}
+
 public enum RemoteAutomationRequest: Codable, Hashable, Sendable {
     /// On or off: whether the host starts a run when Shepherd launches.
     case setEnabled(enabled: Bool)
