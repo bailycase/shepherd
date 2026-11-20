@@ -10,9 +10,13 @@ struct MobileCommandTarget {
     let navigator: MobileNavigator
 
     var available: Bool {
-        navigator.layout == .pad && navigator.presented == nil
-            && visibleThread.map { !navigator.composerPresentation.state(for: $0).choosingModel } != false
+        guard navigator.layout == .pad, navigator.presented == nil else { return false }
+        guard let ref = visibleThread else { return true }
+        let presentation = navigator.composerPresentation.state(for: ref)
+        return !presentation.choosingModel && !presentation.showingContext
     }
+
+    var canStart: Bool { available && !app.hosts.hosts.isEmpty }
 
     var visibleThread: AgentRef? {
         switch navigator.padPath.last {
@@ -116,34 +120,75 @@ struct MobileCommandTarget {
     }
 }
 
+/// A view observes the models and publishes changed enablement through the focused scene value.
+/// The target references alone don't change when a thread starts running or its host disconnects.
+struct MobileCommandFocus: ViewModifier {
+    let target: MobileCommandTarget
+
+    func body(content: Content) -> some View {
+        content.focusedSceneValue(\.mobileCommandFocus, Value(target: target, menu: target.menu))
+    }
+
+    struct Value {
+        let target: MobileCommandTarget
+        let menu: MenuState?
+    }
+
+    struct MenuState: Equatable {
+        let canStart: Bool
+        let canStop: Bool
+        let canRename: Bool
+        let canChooseModel: Bool
+    }
+}
+
+extension MobileCommandTarget {
+    var menu: MobileCommandFocus.MenuState? {
+        guard navigator.layout == .pad else { return nil }
+        return .init(canStart: canStart, canStop: stoppableThread != nil,
+                     canRename: canRename, canChooseModel: canChooseModel)
+    }
+}
+
 /// SwiftUI publishes these native menu commands to the hardware keyboard shortcuts overlay too.
 struct MobileCommands: Commands {
-    let target: MobileCommandTarget?
+    let focus: MobileCommandFocus.Value?
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
 
     var body: some Commands {
-        if let target, target.navigator.layout == .pad {
+        if let focus, let menu = focus.menu {
+            let target = focus.target
             let canWalk = target.canWalk
+            CommandGroup(replacing: .newItem) {
+                Button("New Thread…") {
+                    if target.canStart { NewThreadHooks.open(navigator: target.navigator) }
+                }
+                .keyboardShortcut(MobileShortcut.newThread.shortcut)
+                .disabled(!menu.canStart)
+                if supportsMultipleWindows {
+                    Button("New Window") { openWindow(value: MobileWindowSeed()) }
+                        .keyboardShortcut(MobileShortcut.newWindow.shortcut)
+                }
+            }
             CommandMenu("Thread") {
-                Button("New Thread…") { NewThreadHooks.open(navigator: target.navigator) }
-                    .keyboardShortcut(MobileShortcut.newThread.shortcut)
-                    .disabled(!target.available || target.app.hosts.hosts.isEmpty)
                 Button("Stop") {
                     if let store = target.stoppableThread { Task { await store.abort() } }
                 }
                 .keyboardShortcut(MobileShortcut.stop.shortcut)
-                .disabled(target.stoppableThread == nil)
+                .disabled(!menu.canStop)
                 Button("Rename…") {
-                    if let ref = target.visibleThread { target.navigator.present(.search(.rename(ref))) }
+                    if target.canRename, let ref = target.visibleThread { target.navigator.present(.search(.rename(ref))) }
                 }
                 .keyboardShortcut(MobileShortcut.rename.shortcut)
-                .disabled(!target.canRename)
+                .disabled(!menu.canRename)
                 Button("Choose Model…") {
-                    if let ref = target.visibleThread {
+                    if target.canChooseModel, let ref = target.visibleThread {
                         target.navigator.composerPresentation.state(for: ref).choosingModel = true
                     }
                 }
                 .keyboardShortcut(MobileShortcut.chooseModel.shortcut)
-                .disabled(!target.canChooseModel)
+                .disabled(!menu.canChooseModel)
                 Divider()
                 Button("Previous Thread") { target.walkThreads(forward: false) }
                     .keyboardShortcut(MobileShortcut.previousThread.shortcut)
@@ -152,7 +197,7 @@ struct MobileCommands: Commands {
                     .keyboardShortcut(MobileShortcut.nextThread.shortcut)
                     .disabled(!canWalk)
             }
-            CommandGroup(after: .sidebar) {
+            CommandGroup(replacing: .sidebar) {
                 Button("Show or Hide Sidebar") { target.toggleSidebar() }
                     .keyboardShortcut(MobileShortcut.toggleSidebar.shortcut)
                     .disabled(!target.canToggleSidebar)

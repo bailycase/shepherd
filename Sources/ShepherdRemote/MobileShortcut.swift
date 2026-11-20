@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The iOS client's shortcuts. macOS keeps its rebindable defaults in KeybindingsStore.
 public enum MobileShortcut: CaseIterable, Sendable {
-    case search, newThread, stop, rename, previousThread, nextThread
+    case search, newThread, newWindow, stop, rename, previousThread, nextThread
     case toggleSidebar, toggleSidePane, chooseModel, toggleTerminal
     case saveFile, alternateSend
 
@@ -10,6 +10,7 @@ public enum MobileShortcut: CaseIterable, Sendable {
         switch self {
         case .search: KeyboardShortcut("k")
         case .newThread: KeyboardShortcut("n")
+        case .newWindow: KeyboardShortcut("n", modifiers: [.command, .option])
         // iPadOS uses ⌘. to cancel and ⌘↑/↓ to move the insertion point.
         case .stop: KeyboardShortcut("x", modifiers: [.command, .shift])
         case .rename: KeyboardShortcut("r")

@@ -37,7 +37,7 @@ struct MobileRoot: View {
         }
         .mobileEnvironment(app, navigator: navigator, window: window)
         .background(DesignRenderAnchor().allowsHitTesting(false).accessibilityHidden(true))
-        .focusedSceneValue(\.mobileCommandTarget, MobileCommandTarget(app: app, navigator: navigator))
+        .modifier(MobileCommandFocus(target: MobileCommandTarget(app: app, navigator: navigator)))
         .tint(Color.sh.lantern)
         .preferredColorScheme(app.appearance.mode.colorScheme)
         .onChange(of: layout, initial: true) { _, layout in navigator.adopt(layout) }

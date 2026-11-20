@@ -103,5 +103,5 @@ extension EnvironmentValues {
 
 extension FocusedValues {
     /// The focused window's target for the menu bar and keyboard shortcuts.
-    @Entry var mobileCommandTarget: MobileCommandTarget?
+    @Entry var mobileCommandFocus: MobileCommandFocus.Value?
 }

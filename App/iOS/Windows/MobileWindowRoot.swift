@@ -45,10 +45,10 @@ struct MobileWindowRoot: View {
 
 /// The app's keyboard commands, for the focused window.
 struct MobileWindowCommands: Commands {
-    @FocusedValue(\.mobileCommandTarget) private var target
+    @FocusedValue(\.mobileCommandFocus) private var focus
 
     var body: some Commands {
-        SearchCommands(navigator: target?.navigator)
-        MobileCommands(target: target)
+        SearchCommands(navigator: focus?.target.navigator)
+        MobileCommands(focus: focus)
     }
 }

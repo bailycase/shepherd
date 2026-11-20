@@ -9,6 +9,8 @@ extension FixtureCatalog {
     static var clientState: [FixtureScreen] {
         [FixtureScreen(name: "client-state-regressions", hosts: ClientStateChecks.hosts(), prepare: { app in
             await ClientStateChecks.run(app)
+        }), FixtureScreen(name: "keyboard-command-regression", hosts: FixtureData.hosts(), prepare: { app in
+            await ClientStateChecks.keyboardCommands(app)
         }), FixtureScreen(name: "forgotten-design-regression", hosts: DesignsFixtures.hosts(updating: false), prepare: { app in
             await ClientStateChecks.forgottenDesign(app)
         }), FixtureScreen(name: "forgotten-automation-regression", hosts: AutomationsFixtureData.fleet(), prepare: { app in
@@ -46,6 +48,54 @@ enum ClientStateChecks {
         await creation(app)
         await review(app)
         await reviewColors(app)
+    }
+
+    static func keyboardCommands(_ app: MobileApp) async {
+        let nav = MobileNavigator()
+        let ref = FixtureData.ref(FixtureData.preview)
+        nav.adopt(.pad)
+        nav.open(.thread(ref))
+        let target = MobileCommandTarget(app: app, navigator: nav)
+        let store = app.threads.store(for: ref)
+        var snapshot = FixtureData.snapshot([])
+        snapshot.supportedActions.append("setModel")
+        let serving = Task { await store.run { _ in .snapshot(value: snapshot) } }
+        defer { serving.cancel(); store.stop() }
+        await FixtureWindows.wait(seconds: 5) { store.ready }
+
+        func observeMenu() -> ClientStateFlag {
+            let changed = ClientStateFlag()
+            withObservationTracking { _ = target.menu } onChange: { changed.raised = true }
+            return changed
+        }
+
+        check(target.menu?.canStop == false && target.menu?.canRename == true && target.menu?.canChooseModel == true,
+              "idle thread can rename and choose a model, but not stop")
+        let started = observeMenu()
+        snapshot.running = true
+        await store.refresh()
+        check(started.raised && target.menu?.canStop == true, "a running thread invalidates and enables Stop")
+
+        snapshot.running = false
+        await store.refresh()
+        await FixtureWindows.wait("Stop disabled after the run ends", seconds: 5) { target.menu?.canStop == false }
+        let asked = observeMenu()
+        snapshot.dialogs = FixtureData.questionThread().dialogs
+        await store.refresh()
+        check(asked.raised && target.menu?.canStop == true, "a pending question invalidates and enables Stop without a run")
+
+        let presentation = nav.composerPresentation.state(for: ref)
+        let presented = observeMenu()
+        presentation.showingContext = true
+        check(presented.raised && target.menu?.canStart == false && target.menu?.canRename == false
+              && target.menu?.canChooseModel == false, "context sheet invalidates and blocks other presentations")
+        presentation.showingContext = false
+        check(target.menu?.canRename == true && target.menu?.canChooseModel == true, "dismissing context restores commands")
+
+        let disconnected = observeMenu()
+        app.hosts.disconnect(ref.host)
+        check(disconnected.raised && target.menu?.canStop == false && target.menu?.canRename == false
+              && target.menu?.canChooseModel == false, "disconnect invalidates and disables host actions")
     }
 
     static func sentImagesKeepTheNextAttachment() async {
