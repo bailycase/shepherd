@@ -134,7 +134,7 @@ public final class NativeThreadStore {
     public private(set) var messages: [NativeThreadMessage] = []
     public private(set) var olderCursor: String? { didSet { threadVersion &+= 1 } }
     public private(set) var loadingOlder = false { didSet { threadVersion &+= 1 } }
-    public private(set) var ready = false { didSet { bothVersions() } }
+    public private(set) var ready = false { didSet { if ready { startRestart = nil }; bothVersions() } }
     /// The agent's pi is starting (`native_starting`): not ready, and not an error. The thread
     /// polls quickly, a send waits for it (see `acceptsSend`), and a slow start is said in the
     /// composer (`awaitingPi`). A pi that has not started within `startingLimit` becomes a
@@ -162,8 +162,11 @@ public final class NativeThreadStore {
     /// The agent's pi stopped, before it served or on its own after (`NativeThreadSnapshot.startProblem`), and why: the
     /// host keeps the agent, and the composer says so with Retry. Not ready, not starting, and not an error; the thread keeps what it drew.
     public private(set) var startProblem: NativeStartProblem? { didSet { bothVersions() } }
+    /// A phone's Retry of `startProblem` (`NativeStartRestart.perform`): progress and a refusal live here, not in a view, so they
+    /// outlive the banner and show over a transcript the thread already holds.
+    public private(set) var startRestart: NativeStartRestartState? { didSet { bothVersions() } }
     public private(set) var busy = false { didSet { bothVersions() } }
-    public private(set) var loadError: String? { didSet { bothVersions() } }
+    public private(set) var loadError: String? { didSet { if loadError != nil, startRestart == .starting { startRestart = nil }; bothVersions() } }
     public private(set) var notice: String? { didSet { modelUnavailable = false; chromeVersion &+= 1 } }
     public private(set) var modelUnavailable = false { didSet { chromeVersion &+= 1 } }
     public private(set) var sentCount = 0
@@ -2217,6 +2220,12 @@ public final class NativeThreadStore {
             derive()
         }
         resumeStartWaiters(false)
+        // pi stopped again after the host took a restart, or the problem is another one than the refusal was for.
+        switch startRestart {
+        case .starting?: startRestart = nil
+        case .failed? where startProblem != problem: startRestart = nil
+        default: break
+        }
         if startProblem != problem { startProblem = problem }
         caughtUp()
     }
@@ -2225,7 +2234,20 @@ public final class NativeThreadStore {
 
     private func clearStartProblem() {
         if startProblem != nil { startProblem = nil }
+        if case .failed? = startRestart { startRestart = nil }
     }
+
+    /// A phone's Retry: the host is being asked. The problem stays; the next snapshot says what became of it.
+    public func restartRequested() { startRestart = .asking }
+
+    /// The host took the restart; pi is starting.
+    public func restartAccepted() {
+        guard startRestart == .asking else { return }
+        startRestart = .starting
+    }
+
+    /// The host refused the restart or couldn't be reached.
+    public func restartRefused(_ why: String) { startRestart = .failed(why) }
 
     /// Retry: the host is starting the agent's pi again. The problem goes at once and the thread is
     /// starting, as the host will say on the next poll.

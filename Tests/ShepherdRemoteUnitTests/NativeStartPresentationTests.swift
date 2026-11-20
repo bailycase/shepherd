@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import ShepherdProtocol
 @testable import ShepherdRemote
@@ -91,9 +92,69 @@ struct NativeStartPresentationTests {
         #expect(!NativeStartRestart.isOffered(by: [restart]))
         #expect(!NativeStartRestart.isOffered(by: [String]()))
     }
+
+    // MARK: The banner a phone draws
+
+    private func banner(_ problem: NativeStartProblem?, restart: NativeStartRestartState? = nil, offered: Bool = true,
+                        connected: Bool = true) -> NativeStartBanner? {
+        NativeStartBanner(problem: problem, restart: restart, offered: offered, connected: connected, host: "horizon")
+    }
+
+    @Test func noProblemAndNoRestartDrawsNothing() {
+        #expect(banner(nil) == nil)
+        #expect(banner(nil, restart: .failed("no")) == nil, "a refusal needs the problem it refused")
+    }
+
+    @Test func aConnectedHostThatTakesRestartOffersRetry() throws {
+        let shown = try #require(banner(NativeStartProblem(kind: .stopped, signal: 9)))
+        #expect(shown.actions == [.retry])
+        #expect(shown.message == "Retry to start it again. Its conversation is saved.")
+        #expect(!shown.inProgress)
+    }
+
+    @Test func aDroppedConnectionOffersNoRetryAndSendsThePersonToTheHost() throws {
+        let shown = try #require(banner(NativeStartProblem(kind: .stopped, signal: 9), connected: false))
+        #expect(shown.actions.isEmpty)
+        #expect(shown.message == "Retry on horizon to start it again. Its conversation is saved.")
+        let again = try #require(banner(NativeStartProblem(kind: .resumedAsNew), connected: false))
+        #expect(again.actions.isEmpty && again.message.hasSuffix("Retry on horizon."))
+    }
+
+    @Test func aHostWithoutRestartOffersNoRetry() throws {
+        let shown = try #require(banner(NativeStartProblem(kind: .stopped), offered: false))
+        #expect(shown.actions.isEmpty)
+        #expect(shown.message.hasPrefix("Retry on horizon"))
+    }
+
+    @Test func notSignedInOffersNoRetryWhereTheMacShowsItsSignInCardInstead() throws {
+        let shown = try #require(banner(NativeStartProblem(kind: .notSignedIn)))
+        #expect(shown.actions.isEmpty)
+        #expect(shown.message == "Sign in to a provider for Shepherd's pi (Settings ▸ Pi), then Retry on horizon.")
+    }
+
+    @Test func aMissingFolderHasOnlyGuidance() throws {
+        let shown = try #require(banner(NativeStartProblem(kind: .folderMissing)))
+        #expect(shown.actions.isEmpty)
+        #expect(shown.message.hasSuffix("on horizon."))
+    }
+
+    @Test func aRestartInProgressReplacesTheButtonsWithProgressWithOrWithoutTheProblem() throws {
+        for restart in [NativeStartRestartState.asking, .starting] {
+            for problem in [NativeStartProblem(kind: .stopped, signal: 9), nil] {
+                let shown = try #require(banner(problem, restart: restart))
+                #expect(shown.inProgress && shown.actions.isEmpty)
+            }
+        }
+    }
+
+    @Test func aRefusalStaysBesideTheProblemAndRetryComesBack() throws {
+        let shown = try #require(banner(NativeStartProblem(kind: .stopped, signal: 9), restart: .failed("Couldn’t start the agent: no")))
+        #expect(shown.actions == [.retry] && !shown.inProgress)
+        #expect(shown.message == "Retry to start it again. Its conversation is saved.\n\nCouldn’t start the agent: no")
+    }
 }
 
-/// Retry sent from a phone: the banner goes at once, the host is asked, and a refusal comes back.
+/// Retry sent from a phone: the problem stays while the host is asked, and a refusal stays beside it.
 @Suite("Retry a stopped agent", .timeLimit(.minutes(1)))
 @MainActor
 struct NativeStartRestartTests {
@@ -107,39 +168,91 @@ struct NativeStartRestartTests {
         return (store, host, await start(store, host))
     }
 
-    @Test func retrySendsRestartPiAndTheThreadReadsAsStarting() async throws {
-        let (store, _, task) = await stopped(NativeStartProblem(kind: .stopped, signal: 9))
-        defer { task.cancel() }
-        #expect(store.startProblem != nil)
-        var sent: [RemoteAgentAction] = []
-        try await NativeStartRestart.perform(.retry, store: store) { sent.append($0) }
-        #expect(sent == [.restartPi(newConversation: false)])
-        #expect(store.startProblem == nil && store.starting)
+    private func shown(_ store: NativeThreadStore) -> NativeStartBanner? {
+        NativeStartBanner(problem: store.startProblem, restart: store.startRestart, offered: true, connected: true, host: "horizon")
     }
 
-    @Test func startNewConversationSendsRestartPiForANewOne() async throws {
+    @Test func retrySendsRestartPiAndTheThreadReadsAsStartingUntilPiIsUp() async {
+        let (store, host, task) = await stopped(NativeStartProblem(kind: .stopped, signal: 9))
+        defer { task.cancel() }
+        #expect(store.startProblem != nil)
+        host.starting = true
+        var sent: [RemoteAgentAction] = []
+        await NativeStartRestart.perform(.retry, store: store) { sent.append($0) }
+        #expect(sent == [.restartPi(newConversation: false)])
+        #expect(store.startProblem == nil && store.starting)
+        #expect(shown(store)?.inProgress == true, "a thread with its history cached still says it is restarting")
+    }
+
+    @Test func theProblemStaysWhileTheHostIsAsked() async {
+        let (store, _, task) = await stopped(NativeStartProblem(kind: .stopped, signal: 9))
+        defer { task.cancel() }
+        var release: CheckedContinuation<Void, Never>?
+        let asked = Task { @MainActor in
+            await NativeStartRestart.perform(.retry, store: store) { _ in await withCheckedContinuation { release = $0 } }
+        }
+        await until { store.startRestart == .asking }
+        #expect(store.startProblem?.kind == .stopped, "the banner that owns the progress is still there")
+        #expect(shown(store)?.inProgress == true)
+        release?.resume()
+        await asked.value
+    }
+
+    @Test func aDelayedRefusalStaysVisibleBesideRetry() async {
+        struct Refused: LocalizedError { var errorDescription: String? { "the host said no" } }
+        let (store, _, task) = await stopped(NativeStartProblem(kind: .stopped, signal: 9))
+        defer { task.cancel() }
+        var release: CheckedContinuation<Void, Never>?
+        let asked = Task { @MainActor in
+            await NativeStartRestart.perform(.retry, store: store) { _ in
+                await withCheckedContinuation { release = $0 }
+                throw Refused()
+            }
+        }
+        await until { store.startRestart == .asking }
+        #expect(shown(store)?.inProgress == true)
+        release?.resume()
+        await asked.value
+        let banner = shown(store)
+        #expect(banner?.inProgress == false && banner?.actions == [.retry], "the host still says pi is stopped, so Retry is back")
+        #expect(banner?.message.hasSuffix("Couldn’t start the agent: the host said no") == true)
+        // The next Retry clears the old refusal while it asks.
+        var again: CheckedContinuation<Void, Never>?
+        let second = Task { @MainActor in
+            await NativeStartRestart.perform(.retry, store: store) { _ in await withCheckedContinuation { again = $0 } }
+        }
+        await until { store.startRestart == .asking }
+        #expect(shown(store)?.inProgress == true && shown(store)?.message.contains("host said no") == false)
+        again?.resume()
+        await second.value
+    }
+
+    @Test func aPiThatStopsAgainAfterTheHostAcceptedBringsTheProblemBack() async {
+        let (store, host, task) = await stopped(NativeStartProblem(kind: .stopped, signal: 9))
+        defer { task.cancel() }
+        await NativeStartRestart.perform(.retry, store: store) { _ in }
+        #expect(store.startProblem?.kind == .stopped && shown(store)?.inProgress == false, "the host still says stopped: not stuck on starting")
+        host.starting = true
+        await NativeStartRestart.perform(.retry, store: store) { _ in }
+        #expect(shown(store)?.inProgress == true)
+        host.starting = false
+        await store.refresh(fresh: true)
+        #expect(shown(store)?.inProgress == false && shown(store)?.actions == [.retry], "pi stopped again")
+    }
+
+    @Test func startNewConversationSendsRestartPiForANewOne() async {
         let (store, _, task) = await stopped(NativeStartProblem(kind: .resumedAsNew))
         defer { task.cancel() }
         var sent: [RemoteAgentAction] = []
-        try await NativeStartRestart.perform(.startNewConversation, store: store) { sent.append($0) }
+        await NativeStartRestart.perform(.startNewConversation, store: store) { sent.append($0) }
         #expect(sent == [.restartPi(newConversation: true)])
         #expect(sent.first?.capability == RemoteProtocol.agentRestartCapability)
     }
 
-    @Test func aRefusedRestartBringsTheProblemBackAndThrows() async {
-        struct Refused: Error {}
-        let (store, _, task) = await stopped(NativeStartProblem(kind: .stopped, signal: 9))
-        defer { task.cancel() }
-        await #expect(throws: Refused.self) {
-            try await NativeStartRestart.perform(.retry, store: store) { _ in throw Refused() }
-        }
-        #expect(store.startProblem?.kind == .stopped, "the host still says pi is stopped")
-    }
-
-    @Test func locateFolderIsNotARestart() async throws {
+    @Test func locateFolderIsNotARestart() async {
         let (store, _, task) = await stopped(NativeStartProblem(kind: .folderMissing))
         defer { task.cancel() }
-        try await NativeStartRestart.perform(.locateFolder, store: store) { _ in Issue.record("nothing is sent") }
-        #expect(store.startProblem?.kind == .folderMissing)
+        await NativeStartRestart.perform(.locateFolder, store: store) { _ in Issue.record("nothing is sent") }
+        #expect(store.startProblem?.kind == .folderMissing && store.startRestart == nil)
     }
 }

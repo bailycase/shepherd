@@ -18,18 +18,61 @@ public enum NativeStartRestart {
         capabilities.contains(RemoteProtocol.agentActionsCapability) && capabilities.contains(RemoteProtocol.agentRestartCapability)
     }
 
-    /// The banner goes at once and the thread reads as starting; `send` asks the host. A host
-    /// that refuses or can't be reached leaves the problem to come back with the next snapshot,
-    /// which is fetched now, and the error is thrown for the caller to show.
+    /// The thread reads as restarting at once (`NativeStartRestartState`) while the problem stays, and `send` asks the host.
+    /// A host that refuses or can't be reached leaves its reason beside the problem, which is fetched again now.
     @MainActor
     public static func perform(_ action: NativeStartAction, store: NativeThreadStore,
-                               send: (RemoteAgentAction) async throws -> Void) async throws {
+                               send: (RemoteAgentAction) async throws -> Void) async {
         guard action != .locateFolder else { return }
-        store.restarting()
-        do { try await send(.restartPi(newConversation: action == .startNewConversation)) } catch {
-            await store.refresh(fresh: true)
-            throw error
+        store.restartRequested()
+        do {
+            try await send(.restartPi(newConversation: action == .startNewConversation))
+            store.restartAccepted()
+        } catch {
+            store.restartRefused("Couldn’t start the agent: \(error.localizedDescription)")
         }
+        await store.refresh(fresh: true)
+    }
+}
+
+/// Where a phone's Retry stands, kept by the thread's store so it outlives the banner's views.
+public enum NativeStartRestartState: Equatable, Sendable {
+    /// The host is being asked.
+    case asking
+    /// The host took it: pi is starting, until it serves or stops again.
+    case starting
+    /// The host refused or couldn't be reached; the problem it didn't fix is still there.
+    case failed(String)
+}
+
+/// The Can't start banner of a phone or tablet: what it says and offers, from the thread's problem and restart, whether the
+/// host takes `restartPi` (`NativeStartRestart.isOffered`) and whether it is connected now.
+public struct NativeStartBanner: Equatable, Sendable {
+    public var title: String
+    public var message: String
+    public var actions: [NativeStartAction]
+    /// A restart is under way: progress instead of the problem and its buttons.
+    public var inProgress: Bool
+
+    public init?(problem: NativeStartProblem?, restart: NativeStartRestartState?, offered: Bool, connected: Bool, host: String) {
+        switch restart {
+        case .asking?, .starting?:
+            self.init(title: "Starting the agent again…", message: "", actions: [], inProgress: true)
+        case let restart:
+            guard let problem else { return nil }
+            // A phone has no sign-in card: the Mac shows it instead of Retry (`hidesNotSignedIn`), so the advice says to sign in on the host.
+            let retryHere = offered && connected && problem.kind != .notSignedIn
+            var message = problem.message(host: host, retryHere: retryHere)
+            if case .failed(let why)? = restart { message += "\n\n" + why }
+            self.init(title: problem.title, message: message, actions: problem.actions(canRestart: retryHere, canLocateFolder: false), inProgress: false)
+        }
+    }
+
+    private init(title: String, message: String, actions: [NativeStartAction], inProgress: Bool) {
+        self.title = title
+        self.message = message
+        self.actions = actions
+        self.inProgress = inProgress
     }
 }
 
