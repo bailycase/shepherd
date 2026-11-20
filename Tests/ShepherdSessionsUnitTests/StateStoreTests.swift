@@ -3,7 +3,7 @@ import Testing
 import ShepherdCore
 @testable import ShepherdSessions
 
-/// state.json: atomic, validated writes; invalid files are moved aside rather than overwritten.
+/// state.json: atomic, validated writes.
 @Suite("State store")
 struct StateStoreTests {
     private static func validState() -> ShepherdState {
@@ -13,11 +13,6 @@ struct StateStoreTests {
         let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
         let agent = Agent(id: agentID, name: "pi-1", spaceID: space.id, tabID: tab.id, paneID: pane.id)
         return ShepherdState(spaces: [space], tabs: [tab], agents: [agent])
-    }
-
-    func quarantined(in dir: URL) throws -> [URL] {
-        try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
-            .filter { $0.lastPathComponent.hasPrefix("state.json.corrupt-") }
     }
 
     @Test func aWrittenStateReloadsIdentically() throws {
@@ -30,7 +25,7 @@ struct StateStoreTests {
         #expect(StateStore(url: url).state == expected)
     }
 
-    @Test func aMissingFileStartsEmptyAndQuarantinesNothing() throws {
+    @Test func aMissingFileStartsEmptyAndWritesNothing() throws {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = StateStore(url: dir.appendingPathComponent("state.json"))
@@ -38,55 +33,49 @@ struct StateStoreTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).isEmpty)
     }
 
-    @Test(arguments: ["undecodable", "structurally invalid"])
-    func anInvalidFileIsQuarantinedByteForByteAndTheStoreStartsEmpty(kind: String) throws {
+    @Test func anUnexplainedDanglingReferenceBlocksWrites() throws {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let url = dir.appendingPathComponent("state.json")
         var invalid = Self.validState()
         invalid.agents[0].tabID = TabID()
-        let original = kind == "undecodable" ? Data("not json{".utf8) : try JSONEncoder().encode(invalid)
+        let original = try JSONEncoder().encode(invalid)
         try original.write(to: url)
 
         let store = StateStore(url: url)
         #expect(store.state == ShepherdState())
-        #expect(!FileManager.default.fileExists(atPath: url.path))
-        let backups = try quarantined(in: dir)
-        #expect(backups.count == 1)
-        #expect(try Data(contentsOf: backups[0]) == original)
+        #expect(throws: StateStoreError.self) { try store.update { $0 = ShepherdState() } }
+        #expect(try Data(contentsOf: url) == original)
+        let files = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+        let copy = try #require(files.first { $0.lastPathComponent.hasPrefix("state.json.recovery-") })
+        #expect(try Data(contentsOf: copy) == original)
     }
 
-    @Test func aQuarantinedStoreAcceptsNewWritesAndKeepsTheEvidence() throws {
-        let dir = try makeTempDirectory()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let url = dir.appendingPathComponent("state.json")
-        try Data("{".utf8).write(to: url)
-
-        let store = StateStore(url: url)
-        let space = Space(name: "recovered", path: "/tmp/recovered")
-        try store.update { $0.spaces = [space] }
-        #expect(StateStore(url: url).state.spaces == [space])
-        #expect(try quarantined(in: dir).count == 1)
-    }
-
-    @Test func whenQuarantineFailsEveryWriteIsRefusedSoEvidenceSurvives() throws {
+    @Test func whenTheRecoveryCopyFailsEveryWriteIsRefused() throws {
         let dir = try makeTempDirectory()
         defer {
             chmod(dir.path, 0o700)
             try? FileManager.default.removeItem(at: dir)
         }
         let url = dir.appendingPathComponent("state.json")
-        let original = Data("not json{".utf8)
+        var originalFile = Self.validState()
+        // A valid second workspace survives dropping the corrupted record.
+        originalFile.spaces.append(Space(name: "Keep", path: "/tmp/keep"))
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(originalFile)) as? [String: Any])
+        var agents = try #require(json["agents"] as? [[String: Any]])
+        agents[0]["name"] = 123
+        json["agents"] = agents
+        let original = try JSONSerialization.data(withJSONObject: json)
         try original.write(to: url)
-        // A read-only directory makes the move-aside fail.
+        // This would be recoverable if the file's directory allowed the copy.
         #expect(chmod(dir.path, 0o500) == 0)
 
         let store = StateStore(url: url)
         #expect(store.state == ShepherdState())
+        chmod(dir.path, 0o700)
         #expect(throws: StateStoreError.self) {
             try store.update { $0.spaces = [Space(name: "x", path: "/tmp/x")] }
         }
-        chmod(dir.path, 0o700)
         #expect(try Data(contentsOf: url) == original)
     }
 
@@ -161,7 +150,7 @@ struct StateStoreTests {
     }
 
     /// Terminal-era files carry a per-agent `runtime` key; they load unchanged and relaunch over RPC.
-    @Test func aTerminalEraFileLoadsWithoutQuarantine() throws {
+    @Test func aTerminalEraFileLoadsWithoutRepair() throws {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let url = dir.appendingPathComponent("state.json")
@@ -178,7 +167,7 @@ struct StateStoreTests {
         try Data(json.utf8).write(to: url)
 
         let loaded = StateStore(url: url).state
-        #expect(try quarantined(in: dir).isEmpty)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path) == ["state.json"])
         #expect(loaded.agents.map(\.id) == [agent.id])
         #expect(loaded.agents.first?.piSessionID == "old-session")
     }

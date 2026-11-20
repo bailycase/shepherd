@@ -5,12 +5,15 @@ import ShepherdProtocol
 
 /// Errors that prevent a corrupt state file from being safely replaced.
 enum StateStoreError: Error, CustomStringConvertible, Sendable {
-    case quarantineFailed(path: String, reason: String)
+    case repairRequired(path: String, reason: String)
+    case readOnly
 
     var description: String {
         switch self {
-        case .quarantineFailed(let path, let reason):
-            return "could not quarantine invalid state at \(path): \(reason)"
+        case .repairRequired(let path, let reason):
+            return "Workspace needs repair. Writes to \(path) are disabled: \(reason)"
+        case .readOnly:
+            return "Workspace is open read-only."
         }
     }
 }
@@ -23,18 +26,19 @@ final class StateStore: @unchecked Sendable {
     private(set) var state: ShepherdState
     /// Moves with every committed state, so derived lookups know when to rebuild.
     private(set) var version: UInt64 = 0
-    private var historyPrepared = false
+    private(set) var historyPrepared = false
     /// The project-history connection `update` uses, opened once (schema and indexes included)
     /// rather than per mutation. Confined, like the rest of the store, to the server queue.
     private var history: ProjectHistoryStore?
-    private var recoveryError: StateStoreError?
+    private(set) var recoveryError: StateStoreError?
+    private(set) var didRecover = false
+    private var readOnly = false
     private let committedLock = NSLock()
     private var committedState = ShepherdState()
 
     init(url: URL, readOnly: Bool = false) {
         self.url = url
         self.state = ShepherdState()
-        self.recoveryError = nil
         load(readOnly: readOnly)
     }
 
@@ -44,11 +48,23 @@ final class StateStore: @unchecked Sendable {
         committedLock.withLock { committedState }
     }
 
-    func update(_ mutate: (inout ShepherdState) -> Void) throws {
-        if let recoveryError {
-            throw recoveryError
-        }
+    func requireWritable() throws {
+        if let recoveryError { throw recoveryError }
+        if readOnly { throw StateStoreError.readOnly }
+    }
 
+    /// Startup can settle stale process state in memory without replacing the recovered file.
+    func reconcileStartup(_ mutate: (inout ShepherdState) -> Void) throws {
+        guard didRecover else { try update(mutate); return }
+        try requireWritable()
+        var candidate = state
+        mutate(&candidate)
+        try candidate.validate()
+        commit(candidate)
+    }
+
+    func update(_ mutate: (inout ShepherdState) -> Void) throws {
+        try requireWritable()
         var candidate = state
         mutate(&candidate)
         let logicalChange = candidate.projects != state.projects || candidate.projectExecutions != state.projectExecutions
@@ -84,12 +100,13 @@ final class StateStore: @unchecked Sendable {
 
     /// Ordinary mutations retain their existing validation policy without opening project history
     /// for an unrelated layout/name change. The server has already prepared history at startup.
-    static func stageUpdate(_ proposed: ShepherdState, before: ShepherdState, at url: URL) throws -> LogicalProjectsStage {
+    static func stageUpdate(_ proposed: ShepherdState, before: ShepherdState, at url: URL, prepareHistory: Bool) throws -> LogicalProjectsStage {
         try stage(at: url) {
             var candidate = proposed
             let projectsChanged = candidate.projects != before.projects || candidate.projectExecutions != before.projectExecutions
-            if projectsChanged { candidate = try ProjectHistoryStore(beside: url).prepare(before: before, candidate: candidate) }
-            try candidate.validate(sizingProjects: projectsChanged)
+            let needsHistory = projectsChanged || (prepareHistory && (!before.projects.isEmpty || !before.projectExecutions.isEmpty))
+            if needsHistory { candidate = try ProjectHistoryStore(beside: url).prepare(before: before, candidate: candidate) }
+            try candidate.validate(sizingProjects: needsHistory)
             return candidate
         }
     }
@@ -114,7 +131,7 @@ final class StateStore: @unchecked Sendable {
     }
 
     func commitLogicalProjects(_ candidate: ShepherdState, version expected: UInt64, staged: LogicalProjectsStage) throws {
-        if let recoveryError { throw recoveryError }
+        try requireWritable()
         guard version == expected else {
             throw LogicalProjectsError("workspace_changed", "Workspace changed while saving. Refresh and retry.")
         }
@@ -141,53 +158,37 @@ final class StateStore: @unchecked Sendable {
         committedLock.withLock { committedState = next }
     }
 
-    /// Before exclusive startup the server may display state, but must not quarantine it.
+    /// The server calls with readOnly: false only after acquiring the workspace lock.
     func load(readOnly: Bool = false) {
+        self.readOnly = readOnly
         recoveryError = nil
+        didRecover = false
+        historyPrepared = false
         commit(ShepherdState())
-        let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: url.path) else { return }
-
-        do {
-            let data = try Data(contentsOf: url)
+        switch PersistedFile<ShepherdState>.load(from: url, validate: { try $0.validate() }) {
+        case .loaded(let loaded): commit(loaded)
+        case .missing: return
+        case .damaged(let original, let cause):
             do {
-                let loaded = try JSONDecoder().decode(ShepherdState.self, from: data)
-                try loaded.validate()
-                commit(loaded)
+                guard !readOnly, let original else { throw cause }
+                let id = UUID().uuidString.lowercased()
+                let backup = url.appendingPathExtension("recovery-\(id)")
+                let rejected = url.appendingPathExtension("rejected-\(id)")
+                try original.write(to: backup, options: .withoutOverwriting)
+                let candidate = try Self.recover(original, rejectedAt: rejected)
+                commit(candidate)
+                didRecover = true
+                ShepherdLog.warning("Recovered \(url.path); original at \(backup.path), rejected records at \(rejected.path)")
             } catch {
-                if !readOnly { quarantine(cause: error) }
+                let failure = StateStoreError.repairRequired(path: url.path, reason: String(describing: error))
+                recoveryError = failure
+                if !readOnly { ShepherdLog.error("\(failure); original error: \(cause)") }
             }
-        } catch {
-            if !readOnly { quarantine(cause: error) }
-        }
-    }
-
-    private func quarantine(cause: Error) {
-        let fileManager = FileManager.default
-        var backup = url.deletingLastPathComponent().appendingPathComponent(
-            "\(url.lastPathComponent).corrupt-\(UUID().uuidString.lowercased())"
-        )
-        while fileManager.fileExists(atPath: backup.path) {
-            backup = url.deletingLastPathComponent().appendingPathComponent(
-                "\(url.lastPathComponent).corrupt-\(UUID().uuidString.lowercased())"
-            )
-        }
-        do {
-            try fileManager.moveItem(at: url, to: backup)
-            ShepherdLog.warning(
-                "quarantined invalid state at \(url.path) to \(backup.path): \(cause)"
-            )
-        } catch {
-            let failure = StateStoreError.quarantineFailed(path: url.path, reason: String(describing: error))
-            recoveryError = failure
-            ShepherdLog.error("\(failure); original error: \(cause)")
         }
     }
 
     private func persist(_ candidate: ShepherdState) throws {
-        if let recoveryError {
-            throw recoveryError
-        }
+        try requireWritable()
 
         let data = try JSONEncoder().encode(candidate.persisted)
         try FileManager.default.createDirectory(
