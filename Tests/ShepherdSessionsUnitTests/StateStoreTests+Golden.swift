@@ -29,7 +29,7 @@ extension StateStoreTests {
             } else {
                 input = try JSONSerialization.data(withJSONObject: try #require(file["json"]), options: [.sortedKeys])
             }
-            let result = try await observeFile(at: url, path: path, root: dir, input: input, now: now)
+            let result = try await observeFile(at: url, path: path, root: dir, input: input, now: now, step: step)
             try observe(step, result)
         }
     }
@@ -38,7 +38,7 @@ extension StateStoreTests {
     private static let automation = AutomationID(rawValue: "00000000-0000-4000-8000-000000000002")
     private static let writerID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0x40, 0, 0x80, 0, 0, 0, 0, 0, 0, 9))
 
-    private static func observeFile(at url: URL, path: String, root: URL, input: Data, now: Date) async throws -> [String: Any] {
+    private static func observeFile(at url: URL, path: String, root: URL, input: Data, now: Date, step: String) async throws -> [String: Any] {
         let fm = FileManager.default
         func install() throws {
             try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -56,6 +56,10 @@ extension StateStoreTests {
             let store = StateStore(url: url)
             let backups = try StateStoreTests().quarantined(in: root)
             loaded = try json(store.state)
+            if step == "workspace-lenient-values" {
+                // The encoder omits the standard tier, so record its decoded value separately.
+                outcome["loadedServiceTier"] = store.state.agents.first?.serviceTier.rawValue
+            }
             outcome["fileStillPresentAfterLoad"] = fm.fileExists(atPath: url.path)
             outcome["quarantinedCopies"] = backups.count
             if !backups.isEmpty { outcome["quarantineMatchesInput"] = try backups.allSatisfy { try Data(contentsOf: $0) == input } }

@@ -38,6 +38,16 @@ struct FleetWireTests {
         #expect(Set(object.keys) == ["expiresAt", "attemptsLeft"])
     }
 
+    @Test func aSettledDispatchCloseAndItsReceiptRoundTrip() throws {
+        #expect(try Wire.roundTrip(FleetDispatchControl.close) == .close)
+        var record = FleetDispatchRecord(parentHostID: UUID(), parentHostName: "MacBook Pro", state: .done,
+                                         title: "Fix tests", task: "", repoKey: "fixture", createdAt: 1)
+        record.closeReport = "Thread removed. Kept its checkout."
+        #expect(try Wire.roundTrip(record) == record)
+        let toolReply = FleetDispatchInfo(record)
+        #expect(try Wire.roundTrip(toolReply).closeReport == record.closeReport)
+    }
+
     // MARK: Pressure
 
     @Test func aSnapshotFromAHostWithoutPressureDecodesWithNoMacs() throws {

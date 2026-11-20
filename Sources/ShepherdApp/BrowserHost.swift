@@ -479,7 +479,7 @@ final class BrowserSession {
         // A closed page holds no port: a late Start or navigation must not claim one for it.
         guard !tabClosed else { return false }
         // A host's agent may have this Mac forward only a handful of ports (each holds a listener).
-        guard let remote, let refusal = remote.forward(url, limit: activeHostGuard == nil ? nil : BrowserHostGuard.maxForwardedPorts) else {
+        guard let remote, let refusal = remote.forward(url, tab: tabID, limit: activeHostGuard == nil ? nil : BrowserHostGuard.maxForwardedPorts) else {
             forwardRefusal = nil
             return true
         }
@@ -581,6 +581,8 @@ final class BrowserSession {
 
     func closePage() {
         tabClosed = true
+        // The tab's ports go with it; a port another open tab asked for stays.
+        remote?.release(tab: tabID)
         operationEpoch &+= 1
         stopWaiting()
         expiry?.cancel()

@@ -9,40 +9,45 @@ import ShepherdRemote
 struct ProjectTaskList: View {
     let ref: LogicalProjectRef
     @Environment(MobileProjects.self) private var projects
-    @Environment(MobileNavigator.self) private var navigator
     @State private var query = ""
+    @State private var history: (input: ProjectHistoryInput, items: [ProjectHistoryInput.Item])?
 
     var body: some View {
         let page = projects.pages[ref]
-        let rows = page?.rows ?? []
+        let input = ProjectHistoryInput(rows: page?.rows ?? [], query: query)
+        let items = history?.input == input ? history?.items : nil
+        let status = page.map { Text($0.status).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary) }
         ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                if let page {
-                    Text(page.status).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
-                }
-                if rows.isEmpty {
-                    Text("Threads the project starts show here, grouped by what they need from you.")
-                        .font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    let shown = Self.matching(rows, query: query)
-                    if shown.isEmpty {
-                        Text("No thread matches.").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
+            Group {
+                if input.rows.isEmpty || items?.isEmpty == true {
+                    // Let the scroll view center the text block at its natural width.
+                    VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
+                        status
+                        if input.rows.isEmpty {
+                            Text("Threads the project starts show here, grouped by what they need from you.")
+                                .font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text("No thread matches.").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
+                        }
                     }
-                    ForEach(ProjectTaskGroup.allCases, id: \.self) { group in
-                        let members = shown.filter { $0.group == group }
-                        if !members.isEmpty {
-                            VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                                SHListHeader(group.rawValue, attention: group == .waiting, count: members.count)
-                                SHListCard {
-                                    ForEach(members) { row in
-                                        Button { navigator.open(.projects(.task(ref, row.id))) } label: {
-                                            SHListRow(row.title, subtitle: row.line, subtitleMono: false,
-                                                      leading: .state(row.mobileState),
-                                                      trailing: row.settledAt.map { .meta(ProjectAge.text($0)) } ?? .none)
-                                        }
-                                        .buttonStyle(.shRow(radius: 0))
+                } else {
+                    let now = Date()
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        status
+                        ForEach(items ?? history?.items ?? []) { item in
+                            VStack(spacing: 0) {
+                                switch item {
+                                case .header(let group, let count):
+                                    SHListHeader(group.rawValue, attention: group == .waiting, count: count)
+                                        .padding(.top, MobileLayout.sectionSpacing)
+                                case .row(let row, let first, let last):
+                                    SHListCardSegment(first: first, last: last) {
+                                        ProjectTaskHistoryRow(ref: ref, row: row,
+                                                              age: row.settledAt.map { ProjectAge.text($0, now: now) })
+                                            .equatable()
                                     }
+                                    .padding(.top, first ? MobileLayout.headerSpacing : 0)
                                 }
                             }
                         }
@@ -52,18 +57,31 @@ struct ProjectTaskList: View {
             .padding(.horizontal, MobileLayout.gutter)
             .padding(.vertical, MobileLayout.sectionSpacing)
         }
+        .onChange(of: input, initial: true) { _, input in
+            history = (input, input.items())
+        }
         .searchable(text: $query, prompt: "Search threads")
         .refreshable { await projects.model.refresh(ref.home) }
         .background(Color.sh.bgWindow)
     }
+}
 
-    /// Every word in the title, its lead or its detail.
-    static func matching(_ rows: [ProjectTaskRow], query: String) -> [ProjectTaskRow] {
-        let words = query.lowercased().split(separator: " ").map(String.init)
-        guard !words.isEmpty else { return rows }
-        return rows.filter { row in
-            words.allSatisfy { word in [row.title, row.detail ?? "", row.lead ?? ""].contains { $0.lowercased().contains(word) } }
+private struct ProjectTaskHistoryRow: View, Equatable {
+    let ref: LogicalProjectRef
+    let row: ProjectTaskRow
+    let age: String?
+    @Environment(MobileNavigator.self) private var navigator
+
+    static func == (a: Self, b: Self) -> Bool { a.ref == b.ref && a.row == b.row && a.age == b.age }
+
+    var body: some View {
+        let _ = SHRenderProbe.tick("ios.projectTask.row")
+        Button { navigator.open(.projects(.task(ref, row.id))) } label: {
+            SHListRow(row.title, subtitle: row.line, subtitleMono: false,
+                      leading: .state(row.mobileState),
+                      trailing: age.map { .meta($0) } ?? .none)
         }
+        .buttonStyle(.shRow(radius: 0))
     }
 }
 

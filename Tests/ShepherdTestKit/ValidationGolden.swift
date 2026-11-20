@@ -6,6 +6,7 @@ public final class ValidationGolden {
     private let observations: [[String: Any]]
     private var index = 0
 
+    /// Pass `#filePath` from a Swift file directly inside a test target directory under `Tests/`.
     public static func check(_ filename: String, from source: StaticString, completion: String,
                              isolation: isolated (any Actor)? = #isolation,
                              _ scenario: (ValidationGolden) async throws -> Void) async throws {
@@ -21,8 +22,8 @@ public final class ValidationGolden {
             }
         } catch {
             let diff = error as? Difference ?? Difference(expected: completion, actual: "Scenario threw: \(error)")
-            try ValidationEvidence.record(in: directory, step: "compare-golden", status: "failed",
-                                          expected: diff.expected, actual: diff.actual)
+            try? ValidationEvidence.record(in: directory, step: "compare-golden", status: "failed",
+                                           expected: diff.expected, actual: diff.actual)
             throw diff
         }
     }
