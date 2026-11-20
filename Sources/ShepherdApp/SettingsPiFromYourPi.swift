@@ -12,7 +12,7 @@ struct FromYourPiSettings: View {
     var body: some View {
         let survey = model.survey ?? YourPiSurvey()
         SettingsPage(title: "Your pi") {
-            if survey.folder != nil {
+            if survey.folder != nil, survey.stateProblem == nil {
                 SettingsGroup(title: "", footnote: survey.problems.first) {
                     SettingsRow(title: "Copy everything again", subtitle: Self.lastCopied(survey.copiedAt)) {
                         Button("Re-import all") { Task { await model.reimportAll() } }
@@ -51,8 +51,12 @@ struct FromYourPiSettings: View {
                     }
                 }
             } else {
-                SettingsGroup(title: "") {
-                    SettingsRow(title: "No pi found", subtitle: "Shepherd found no pi of yours to copy. Sign in on Models.") { EmptyView() }
+                SettingsGroup(title: "", footnote: survey.problems.first) {
+                    if survey.stateProblem != nil {
+                        SettingsRow(title: "Import history unavailable") { EmptyView() }
+                    } else {
+                        SettingsRow(title: "No pi found", subtitle: "Shepherd found no pi of yours to copy. Sign in on Models.") { EmptyView() }
+                    }
                 }
             }
         }

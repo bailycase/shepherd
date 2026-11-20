@@ -22,7 +22,8 @@ final class FleetInstructionsSource: FleetUnitSource {
     }
 
     func storesBlob(_ unit: String) -> Bool { true }
-    var watchedFiles: [URL] { InstructionFile.allCases.map { store.directory.appendingPathComponent($0.fileName) } }
+    var isReady: Bool { store.historyIsReadable }
+    var watchedFiles: [URL] { [store.historyURL] + InstructionFile.allCases.map { store.directory.appendingPathComponent($0.fileName) } }
 
     func read() -> [String: Data] {
         Dictionary(uniqueKeysWithValues: InstructionFile.allCases.map { (FleetUnit.instruction($0), Data(store.content($0).utf8)) })
@@ -387,6 +388,21 @@ final class FleetExtensionsSource: FleetUnitSource {
     func attach(fleetWinners: @escaping (String) -> [String: String]) { self.fleetWinners = fleetWinners }
     func storesBlob(_ unit: String) -> Bool { FleetUnit.kind(of: unit) == "extension" }
 
+    // An unreadable list of imports is not a deletion of the extensions it held.
+    private var wasReady = true
+    var isReady: Bool {
+        let error = imports.stateReadError
+        let ready = error == nil
+        if ready != wasReady {
+            wasReady = ready
+            if let error {
+                ShepherdLog.warning("fleet: extension sync paused. \(imports.damagedStateMessage(error))")
+            } else {
+                ShepherdLog.info("fleet: extension sync resumed. \(imports.stateURL.path) is readable again or absent.")
+            }
+        }
+        return ready
+    }
     var watchedFiles: [URL] { [imports.stateURL] }
     var watchedTrees: [URL] { [root] + links().map(\.source) }
 
