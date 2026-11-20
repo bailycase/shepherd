@@ -50,9 +50,6 @@ function settings(hooksDir, { off = [], readers } = {}) {
   const hashes = off.flatMap((file) => hooks.entriesOf(file, hooks.parseHookFile(file, fs.readFileSync(file, "utf8")).hooks).map((e) => e.hash));
   const file = path.join(hooksDir, "settings.json");
   writeJSON(file, { version: 1, off: hashes, ...(readers ? { readers } : {}) });
-  // A distinct mtime so the runtime's mtime cache sees the change.
-  const later = new Date(Date.now() + 1000 * ++counter);
-  fs.utimesSync(file, later, later);
 }
 
 function load(hooksDir, env = {}) {
@@ -512,6 +509,56 @@ test("a hook published between the settings read and the hook-file read is never
   assert.deepEqual(fs.readFileSync(marker, "utf8").trim().split("\n"), ["old", "old"], "the new hook never ran");
 });
 
+test("a snapshot retries on a same-size, same-mtime edit or deletion and keeps disabled hooks off", () => {
+  for (const remove of [false, true]) {
+    const { project, hooksDir, macFile } = fixture();
+    const settingsFile = path.join(hooksDir, "settings.json");
+    const handler = (command) => ({ type: "command", command });
+    const doc = (commands) => ({ hooks: { Stop: [{ hooks: commands.map(handler) }] } });
+    writeJSON(macFile, doc(["old-disabled", "old-active"]));
+    const disabled = (command) => hooks.hookHash(macFile, "Stop", "", handler(command));
+    const off = [disabled("old-disabled")];
+    writeJSON(settingsFile, { off });
+    const time = new Date(0);
+    fs.utimesSync(macFile, time, time);
+    afterRead = (file) => {
+      if (file !== settingsFile) return;
+      afterRead = undefined;
+      if (remove) fs.unlinkSync(macFile);
+      else {
+        writeJSON(settingsFile, { off: [...off, disabled("new-disabled")] });
+        writeJSON(macFile, doc(["new-disabled", "new-active"]));
+        fs.utimesSync(macFile, time, time);
+      }
+    };
+    try {
+      const found = hooks.runnableHooks(project, hooksDir);
+      assert.deepEqual(found.map((entry) => entry.handler.command), remove ? [] : ["new-active"]);
+    } finally {
+      afterRead = undefined;
+    }
+  }
+});
+
+test("a snapshot with continuing changes skips the event rather than using stale hook files", () => {
+  const { project, hooksDir, macFile } = fixture();
+  const settingsFile = path.join(hooksDir, "settings.json");
+  const publish = (command) => writeJSON(macFile, { hooks: { Stop: [{ hooks: [{ type: "command", command }] }] } });
+  publish("one");
+  writeJSON(settingsFile, { off: [] });
+  let reads = 0;
+  afterRead = (file) => {
+    if (file === settingsFile && ++reads <= 10) publish(reads % 2 ? "two" : "one");
+  };
+  try {
+    assert.deepEqual(hooks.runnableHooks(project, hooksDir), []);
+    assert.ok(reads > 1 && reads <= 10);
+  } finally {
+    afterRead = undefined;
+  }
+  assert.equal(hooks.runnableHooks(project, hooksDir).length, 1, "the next event can read stable files");
+});
+
 test("hook_propose rechecks damage right before it runs the sample command", async () => {
   const { project, hooksDir, macFile } = fixture();
   const settingsFile = path.join(hooksDir, "settings.json");
@@ -571,6 +618,17 @@ test("hook_propose tests the command, asks with the proposal marker, then writes
   assert.match(edited.content[0].text, /edited version .* in Settings; it may differ/);
   assert.equal(fs.readFileSync(spaceFile, "utf8"), before, "nothing written");
   assert.deepEqual(pi.sent.at(-1).details, { kind: "added", event: "PostToolUse", name: "Formatting", detail: "edited in Settings", meta: pi.sent.at(-1).details.meta });
+});
+
+test("hook_propose says when the added hook is switched off by an earlier off record", async () => {
+  const { project, hooksDir, macFile } = fixture();
+  const handler = { type: "command", command: "echo again" };
+  writeJSON(path.join(hooksDir, "settings.json"), { version: 1, off: [hooks.hookHash(macFile, "Stop", "", handler)] });
+  const tool = load(hooksDir).tools.get("hook_propose");
+  const result = await tool.execute("p0", { name: "Again", event: "Stop", command: "echo again", scope: "mac" }, undefined, undefined, context(project, async () => "Add to this Mac"));
+  assert.match(result.content[0].text, /^Added/);
+  assert.match(result.content[0].text, /switched off/);
+  assert.equal(hooks.runnableHooks(project, hooksDir).length, 0, "the off record is kept");
 });
 
 test("hook_propose's test run is the agent's bash call: the person's PreToolUse Bash hooks can deny or ask first", async () => {

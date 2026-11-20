@@ -161,6 +161,7 @@ struct PadSidebar: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
             }
+            ToolbarItem(placement: .topBarTrailing) { StopAllWorkingMenu() }
         }
     }
 

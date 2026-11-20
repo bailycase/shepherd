@@ -236,18 +236,28 @@ export function hookFiles(root) {
   return files;
 }
 
-// Re-read a file only when its mtime or size changes, so the app's edits apply to the next event.
-const fileCache = new Map();
-function readCached(file, parse) {
-  let stat;
-  try { stat = fs.statSync(file); } catch { fileCache.delete(file); return undefined; }
-  const key = `${stat.mtimeMs}:${stat.size}`;
-  const hit = fileCache.get(file);
-  if (hit?.key === key) return hit.value;
-  let value;
-  try { value = parse(fs.readFileSync(file)); } catch { value = undefined; }
-  fileCache.set(file, { key, value });
-  return value;
+function readHookFile(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file.path, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) return { ...file, identity: "unreadable" };
+    if (stat.size > FILE_LIMIT) return { ...file, identity: "too large" };
+    const buffer = Buffer.allocUnsafe(FILE_LIMIT + 1);
+    let size = 0;
+    while (size < buffer.length) {
+      const count = fs.readSync(fd, buffer, size, buffer.length - size);
+      if (!count) break;
+      size += count;
+    }
+    if (size > FILE_LIMIT) return { ...file, identity: "too large" };
+    const bytes = buffer.subarray(0, size);
+    return { ...file, bytes, identity: crypto.createHash("sha256").update(bytes).digest("hex") };
+  } catch (error) {
+    return { ...file, identity: error?.code === "ENOENT" ? "missing" : "unreadable" };
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch {} }
+  }
 }
 
 /**
@@ -266,7 +276,9 @@ export function readSettings(hooksDir) {
   } catch (error) {
     // A dangling symlink is not a missing file.
     if (error?.code === "ENOENT") {
-      try { fs.lstatSync(file); } catch { return { off: [], readers: {} }; }
+      try { fs.lstatSync(file); } catch (statError) {
+        if (statError?.code === "ENOENT") return { off: [], readers: {} };
+      }
     }
     return damaged(String(error?.message ?? error));
   }
@@ -290,25 +302,27 @@ export function readSettings(hooksDir) {
 
 /** Every hook that would run for `root`: files found, readers on, not switched off. */
 export function runnableHooks(root, hooksDir) {
-  // Hook files first, settings second: the app records a new hook's off hash before it publishes the file,
-  // so any hook seen here is covered by the settings read after it. The other order can pair a stale off-list with a new file.
-  const files = [];
-  for (const file of hookFiles(root)) {
-    const parsed = readCached(file.path, (bytes) => parseHookBytes(file.path, bytes));
-    if (!parsed || parsed.error) continue;
-    files.push({ file, parsed });
-  }
-  const settings = readSettings(hooksDir);
-  if (settings.damaged) return [];
-  const off = new Set(settings.off);
-  const out = [];
-  for (const { file, parsed } of files) {
-    if (file.reader && settings.readers[file.reader] === false) continue;
-    for (const entry of entriesOf(file.path, parsed.hooks, file.scope)) {
-      if (!off.has(entry.hash)) out.push(entry);
+  // Writers publish new off hashes first and keep old ones even after an edit or delete.
+  // Check file paths and bytes on both sides of the settings read, never mtime or size alone.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const files = hookFiles(root).map(readHookFile);
+    const settings = readSettings(hooksDir);
+    if (settings.damaged) return [];
+    const verified = hookFiles(root).map(readHookFile);
+    if (files.length !== verified.length || files.some(({ path, identity }, i) => path !== verified[i].path || identity !== verified[i].identity)) continue;
+    const off = new Set(settings.off);
+    const out = [];
+    for (const file of files) {
+      if (!file.bytes || (file.reader && settings.readers[file.reader] === false)) continue;
+      const parsed = parseHookBytes(file.path, file.bytes);
+      if (parsed.error) continue;
+      for (const entry of entriesOf(file.path, parsed.hooks, file.scope)) {
+        if (!off.has(entry.hash)) out.push(entry);
+      }
     }
+    return out;
   }
-  return out;
+  return []; // Files wouldn't settle. Try again on the next event.
 }
 
 function writeAtomic(file, text) {
@@ -856,7 +870,9 @@ export default function shepherdHooks(pi) {
       return reply(`Couldn't add the hook to ${file}: ${error?.message ?? error}`, true);
     }
     post([message("added", event, { handler, hash: added.hash, file }, { content: `Hook added: ${hookName(handler)} (${event}) in ${file}`, detail: matcher || undefined, meta: clip(command, 80) })]);
-    return reply(`Added to ${file}; it runs on ${event}${matcher ? ` for ${matcher}` : ""} from now on.`);
+    // A hook the person once turned off keeps its off record, so the same bytes added again stay off. Say so.
+    const off = readSettings(hooksDir).off.includes(added.hash);
+    return reply(`Added to ${file} for ${event}${matcher ? ` (matcher: ${matcher})` : ""}.${off ? " It is switched off: the person turned this exact hook off earlier, so it won't run until they turn it on in Settings > Hooks." : ""}`);
   }
 
   /** Appends one group to the file (other content kept, written whole and atomically); returns its hash. */
@@ -869,6 +885,7 @@ export default function shepherdHooks(pi) {
     if (!doc.hooks || typeof doc.hooks !== "object" || Array.isArray(doc.hooks)) doc.hooks = {};
     if (!Array.isArray(doc.hooks[event])) doc.hooks[event] = [];
     doc.hooks[event].push({ ...(matcher ? { matcher } : {}), hooks: [handler] });
+    // Proposals only add new hooks. If this hash was disabled before, leave its off hash alone.
     writeAtomic(file, JSON.stringify(doc, null, 2) + "\n");
     return { hash: hookHash(file, event, matcher, handler) };
   }

@@ -34,7 +34,7 @@ extension SettingsStore {
         case .hooks: hooksValue
         case .experiments: experimentsValue
         case .fleet: if case .value(let text) = fleetValue { text } else { nil }
-        case .general, .agents, .spaces, .git, .advanced: nil
+        case .general, .agents, .spaces, .git, .apps, .advanced: nil
         }
     }
 

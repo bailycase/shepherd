@@ -22,8 +22,11 @@ public struct RemoteQuickApps: Equatable, Sendable {
     /// What a menu row's tap does to it.
     public enum Action: Equatable, Sendable { case run, stop, restart }
 
-    public static func action(_ app: RemoteApp) -> Action {
-        switch app.run?.status {
+    public static func action(_ app: RemoteApp) -> Action { action(app.run) }
+
+    /// Stop while the run lives, Restart once it exited, else Run.
+    public static func action(_ run: RemoteAppRun?) -> Action {
+        switch run?.status {
         case .starting?, .running?: .stop
         case .exited?: .restart
         case .failed?, nil: .run
@@ -31,7 +34,9 @@ public struct RemoteQuickApps: Equatable, Sendable {
     }
 
     /// ":3000" beside a running app's name.
-    public static func portLabel(_ app: RemoteApp) -> String? { app.run?.port.map { ":\($0)" } }
+    public static func portLabel(_ app: RemoteApp) -> String? { app.run.flatMap(portLabel) }
+
+    public static func portLabel(_ run: RemoteAppRun) -> String? { run.port.map { ":\($0)" } }
 
     /// "Browser tab", "Terminal", "Its own window".
     public static func place(_ app: AppDefinition) -> String {
