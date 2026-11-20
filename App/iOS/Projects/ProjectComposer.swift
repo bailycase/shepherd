@@ -12,6 +12,7 @@ struct ProjectComposer: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @FocusState private var focused: Bool
     @State private var sending = false
+    @State private var dropTargeted = false
 
     private var target: MobileProjectThread { projects.thread(ref, task: task) }
     private var state: ComposerState { target.composer }
@@ -58,6 +59,7 @@ struct ProjectComposer: View {
         .padding(.top, SH.Space.m)
         .padding(.bottom, MobileLayout.composerBottom)
         .background(Color.sh.bgWindow)
+        .modifier(ComposerImageDrop(state: state, enabled: canAttach, targeted: $dropTargeted))
         .accessibilityIdentifier("project-composer")
     }
 

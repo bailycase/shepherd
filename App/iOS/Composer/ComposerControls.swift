@@ -5,17 +5,23 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The paperclip: picks up to the images a message still has room for from Photos, resized for
-/// the send as they arrive (`ComposerState.attach`).
+/// The paperclip: a menu of the places images come from, Photos and Files. Up to the images a
+/// message still has room for are taken, resized for the send as they arrive (`ComposerState.attach`).
+/// Pasting into the field and dropping on the composer reach the same place (`ComposerImageInput`).
 struct AttachButton: View {
     let state: ComposerState
     let enabled: Bool
     /// Drawn as the phone's round button beside the capsule, or as a chip in the iPad's row.
     var chip = false
     @State private var items: [PhotosPickerItem] = []
+    @State private var choosingPhotos = false
+    @State private var choosingFiles = false
 
     var body: some View {
-        PhotosPicker(selection: $items, maxSelectionCount: max(1, state.room), matching: .images, photoLibrary: .shared()) {
+        Menu {
+            Button("Photos", systemImage: "photo.on.rectangle") { choosingPhotos = true }
+            Button("Files", systemImage: "folder") { choosingFiles = true }
+        } label: {
             Image(systemName: "paperclip")
                 .font(.sh(chip ? .ui : .headline, weight: .medium))
                 .foregroundStyle(Color.sh.textSecondary)
@@ -27,6 +33,11 @@ struct AttachButton: View {
         }
         .disabled(!enabled || state.room == 0 || state.pendingImports > 0)
         .accessibilityLabel("Attach images")
+        .photosPicker(isPresented: $choosingPhotos, selection: $items, maxSelectionCount: max(1, state.room), matching: .images, photoLibrary: .shared())
+        .fileImporter(isPresented: $choosingFiles, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result, !urls.isEmpty else { return }
+            Task { await state.attach(files: urls) }
+        }
         .onChange(of: items) { _, picked in
             guard !picked.isEmpty else { return }
             items = []
