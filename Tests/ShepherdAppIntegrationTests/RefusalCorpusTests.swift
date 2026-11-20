@@ -772,8 +772,8 @@ struct RefusedSettingsChangeTests {
         let impostor = try Wire(port: port)
         guard case .line(let rejected) = try await send(impostor, .hello(id: impostor.nextID(), token: "wrong", clientName: "acme-phone",
                                                                          protocolVersion: RemoteProtocol.version, capabilities: [])),
-              try #require(JSONSerialization.jsonObject(with: rejected) as? [String: Any])["type"] as? String == "error" else {
-            Issue.record("a hello with an unknown token was not answered with an error")
+              try #require(JSONSerialization.jsonObject(with: rejected) as? [String: Any])["code"] as? String == RemoteProtocol.sharedTokenRetiredCode else {
+            Issue.record("a hello with an unknown token was not answered `shared_token_retired`")
             return
         }
         guard case .closed = await impostor.next() else {
