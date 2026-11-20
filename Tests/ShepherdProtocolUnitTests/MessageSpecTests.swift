@@ -26,6 +26,15 @@ struct MessageSpecTests {
         #expect(seen == Set(RemoteRequest.Kind.allCases))
     }
 
+    @Test func transcriptSnapshotUsesTheAuthenticatedNativeThreadRow() throws {
+        let request = RemoteRequest.nativeThread(id: 1, agentID: .init(rawValue: "agent"), request: .transcriptSnapshot())
+        #expect(request.kind == .nativeThread)
+        let spec = try #require(MessageSpec.spec(for: request.kind))
+        #expect(spec.access == .authenticated)
+        // The route checks the host's transcript offer only for this payload, not for all nativeThread requests.
+        #expect(spec.requires == nil)
+    }
+
     @Test func authorizationClassOfTheRefusalFamilies() {
         func access(_ kind: RemoteRequest.Kind) -> MessageSpec.Access? { MessageSpec.spec(for: kind)?.access }
         for kind in [RemoteRequest.Kind.fleetIdentify, .fleetPair, .fleetPairDevice] { #expect(access(kind) == .beforeHello) }
