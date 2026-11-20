@@ -88,6 +88,23 @@ public final class SpaceLifecycleDialogs {
         if removal?.host != host { removal = nil }
     }
 
+    /// Organize shows the first of `hosts` it would show: as `keep(for:)`, for when the hosts change (one forgotten, one gone).
+    public func keep(shownIn hosts: [SettingsHost]) {
+        keep(for: SettingsHost.shown(in: hosts)?.id)
+    }
+
+    /// The target of Remove Space… to send, when `presented` is still the pending confirmation and on the host Organize shows. The store is
+    /// shared by every window, so a confirmation another Mac replaced, or a host since changed, answers nothing.
+    public func confirmRemoval(_ presented: SpaceLifecycleTarget, shown host: UUID?) -> SpaceLifecycleTarget? {
+        removal == presented && presented.host == host ? presented : nil
+    }
+
+    /// The rename to send, on the same terms, with the name typed so far.
+    public func confirmRename(_ presented: SpaceLifecycleTarget, shown host: UUID?) -> Rename? {
+        guard let rename, rename.target == presented, presented.host == host else { return nil }
+        return rename
+    }
+
     /// The host `target` is on, whatever Organize shows now; nil once the device no longer holds it. Its `client` is nil while it is offline.
     public static func host(of target: SpaceLifecycleTarget, in hosts: [SettingsHost]) -> SettingsHost? {
         hosts.first { $0.id == target.host }

@@ -85,6 +85,8 @@ final class SettingsStore {
         store.apps.forget(host: host)
         store.inputs.removeAll { $0.id == host }
         store.hosts.removeAll { $0.id == host }
+        // track() sees no change after this, so a confirmation opened on the forgotten host ends here.
+        store.spaceDialogs.keep(shownIn: store.hosts)
     }
 
     // MARK: Reading
@@ -92,7 +94,7 @@ final class SettingsStore {
     /// The host Models, Agents, Tools and Git show: the first that serves its settings, else the
     /// first. A fleet keeps these the same on every Mac, so which one is only which the phone asks.
     var settingsHost: SettingsHost? {
-        hosts.first { $0.serves(RemoteProtocol.hostSettingsCapability) } ?? hosts.first
+        SettingsHost.shown(in: hosts)
     }
 
     /// The settings host's settings, once read.
@@ -247,7 +249,7 @@ final class SettingsStore {
             SettingsHost(id: host.id, name: host.name, client: host.connectedClient, capabilities: host.capabilities)
         }
         hooks.use(hosts)
-        spaceDialogs.keep(for: settingsHost?.id)
+        spaceDialogs.keep(shownIn: hosts)
         if watchers > 0, connected { Task { await refresh() } }
     }
 }

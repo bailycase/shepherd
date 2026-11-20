@@ -54,6 +54,11 @@ public struct SettingsHost: Identifiable, Sendable {
 
     public var isConnected: Bool { client != nil }
 
+    /// The host Models, Agents, Tools, Git and Organize show: the first that serves its settings, else the first.
+    public static func shown(in hosts: [SettingsHost]) -> SettingsHost? {
+        hosts.first { $0.serves(RemoteProtocol.hostSettingsCapability) } ?? hosts.first
+    }
+
     /// Whether the host offers `capability`, connected or not.
     public func supports(_ capability: Capability) -> Bool { capabilities.contains(capability.rawValue) }
 

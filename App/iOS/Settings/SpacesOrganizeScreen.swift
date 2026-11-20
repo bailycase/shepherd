@@ -58,10 +58,13 @@ struct SpacesOrganizeScreen: View {
         .navigationTitle("Organize spaces")
         .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
         .alert("Rename \(renaming(in: spaces, store)?.name ?? "space")",
-               isPresented: Binding(get: { renaming(in: spaces, store) != nil }, set: { if !$0 { store.spaceDialogs.rename = nil } })) {
+               isPresented: Binding(get: { renaming(in: spaces, store) != nil }, set: { if !$0 { store.spaceDialogs.rename = nil } }),
+               presenting: renaming(in: spaces, store).map { SpaceLifecycleTarget(host: host?.id ?? UUID(), space: $0.id) }) { presented in
             TextField("Name", text: Binding(get: { store.spaceDialogs.rename?.name ?? "" }, set: { store.spaceDialogs.rename?.name = $0 }))
             Button("Rename") {
-                if let rename = store.spaceDialogs.rename, let space = renaming(in: spaces, store),
+                // The confirmation as it was presented, still pending and on the host shown now; else nothing is sent.
+                if let rename = store.spaceDialogs.confirmRename(presented, shown: store.settingsHost?.id),
+                   let space = spaces.first(where: { $0.id == presented.space }),
                    let new = SpaceLifecyclePresentation.renamed(rename.name, from: space.name) {
                     send(.rename(name: new), to: rename.target, store: store)
                 }
@@ -72,7 +75,9 @@ struct SpacesOrganizeScreen: View {
                             isPresented: Binding(get: { removal(in: spaces, store) != nil }, set: { if !$0 { store.spaceDialogs.removal = nil } }),
                             titleVisibility: .visible, presenting: removal(in: spaces, store)) { space in
             Button(SpaceLifecyclePresentation.removeButton, role: .destructive) {
-                if let target = store.spaceDialogs.removal { send(.remove, to: target, store: store) }
+                // The confirmation as it was presented, still pending and on the host shown now; else nothing is sent.
+                let presented = SpaceLifecycleTarget(host: host?.id ?? UUID(), space: space.id)
+                if let target = store.spaceDialogs.confirmRemoval(presented, shown: store.settingsHost?.id) { send(.remove, to: target, store: store) }
             }
         } message: { space in
             Text(SpaceLifecyclePresentation.removeMessage(name: space.name, threads: mobile.map { SpaceLifecyclePresentation.threads(in: $0.state, of: space) } ?? 0))

@@ -76,4 +76,43 @@ struct SpaceLifecyclePresentationTests {
         #expect(asked?.id == macA && asked?.client == nil, "never Mac B's client")
         #expect(SpaceLifecycleDialogs.host(of: SpaceLifecycleTarget(host: UUID(), space: web.id), in: hosts) == nil)
     }
+
+    /// The store is shared by every iPad window. A's captured Remove or Rename answers nothing once B's confirmation for the same space ID
+    /// replaced it, and B's answers only on B.
+    @MainActor @Test func aStaleConfirmationSendsNothingToEitherMac() {
+        let macA = UUID(), macB = UUID()
+        let a = SpaceLifecycleTarget(host: macA, space: web.id), b = SpaceLifecycleTarget(host: macB, space: web.id)
+        let dialogs = SpaceLifecycleDialogs()
+
+        dialogs.removal = a
+        dialogs.rename = .init(target: a, name: "acme-site")
+        #expect(dialogs.confirmRemoval(a, shown: macA) == a && dialogs.confirmRename(a, shown: macA)?.name == "acme-site")
+        #expect(dialogs.confirmRemoval(a, shown: macB) == nil, "A's confirmation while B is shown")
+
+        dialogs.removal = b
+        dialogs.rename = .init(target: b, name: "acme-shop")
+        #expect(dialogs.confirmRemoval(a, shown: macA) == nil && dialogs.confirmRemoval(a, shown: macB) == nil)
+        #expect(dialogs.confirmRename(a, shown: macA) == nil && dialogs.confirmRename(a, shown: macB) == nil)
+        #expect(dialogs.confirmRemoval(b, shown: macA) == nil, "B's confirmation while A is shown")
+        #expect(dialogs.confirmRemoval(b, shown: macB) == b && dialogs.confirmRename(b, shown: macB)?.target == b)
+
+        dialogs.removal = nil
+        #expect(dialogs.confirmRemoval(b, shown: macB) == nil, "already answered or dismissed")
+    }
+
+    /// Forgetting the shown host while another remains: the hosts change, the dialog opened on the forgotten one ends.
+    @MainActor @Test func forgettingTheShownHostEndsItsConfirmations() {
+        let macA = UUID(), macB = UUID()
+        func host(_ id: UUID) -> SettingsHost {
+            SettingsHost(id: id, name: "Mac", client: FakeSettingsClient(), capabilities: [RemoteProtocol.hostSettingsCapability])
+        }
+        let dialogs = SpaceLifecycleDialogs()
+        dialogs.removal = SpaceLifecycleTarget(host: macA, space: web.id)
+        dialogs.rename = .init(target: SpaceLifecycleTarget(host: macA, space: web.id), name: "acme-site")
+
+        dialogs.keep(shownIn: [host(macA), host(macB)])
+        #expect(dialogs.removal != nil && dialogs.rename != nil, "A is still the host shown")
+        dialogs.keep(shownIn: [host(macB)])
+        #expect(dialogs.removal == nil && dialogs.rename == nil)
+    }
 }
