@@ -33,6 +33,7 @@ struct SentRowID: Hashable { let row: SidebarRowID }
 enum SidebarActivityItem: Identifiable, Equatable {
     case header(SidebarActivitySection, count: Int, collapsed: Bool)
     case row(SidebarListRow)
+    case noMatches
     /// An active automation in Automations; `expanded` is nil while it has no runs to fold.
     case automation(SidebarAutomation, expanded: Bool?)
     case project(SidebarLogicalProject)
@@ -43,6 +44,7 @@ enum SidebarActivityItem: Identifiable, Equatable {
         switch self {
         case .header(let section, _, _): AnyHashable("header.\(section.rawValue)")
         case .row(let row): row.fleetNested ? AnyHashable(SentRowID(row: row.id)) : AnyHashable(row.id)
+        case .noMatches: AnyHashable("filters.empty")
         case .automation(let automation, _): AnyHashable(automation.key)
         case .project(let project): AnyHashable(project.ref)
         case .forgePin(let pin): AnyHashable(pin.ref)
@@ -74,6 +76,7 @@ extension SidebarLists {
     func items(collapsed: Set<SidebarActivitySection>, openRunGroups: Set<String> = [], projects: [SidebarLogicalProject] = [],
                showsProjects: Bool = true,
                selectedAutomation: AutomationKey? = nil, forgePins: [SidebarForgePin] = []) -> [SidebarActivityItem] {
+        if hasNoMatches { return [.noMatches] }
         func block(_ section: SidebarActivitySection, _ rows: [SidebarListRow]) -> [SidebarActivityItem] {
             guard !rows.isEmpty else { return [] }
             let folded = collapsed.contains(section)
@@ -82,7 +85,7 @@ extension SidebarLists {
         }
         var items: [SidebarActivityItem] = []
         for (section, rows) in sections {
-            if section == .automations {
+            if section == .automations, !isFiltering {
                 items += automationBlock(collapsed: collapsed, openRunGroups: openRunGroups, selected: selectedAutomation)
                 continue
             }
@@ -177,10 +180,12 @@ struct ActivityPacing {
 @MainActor
 extension ShepherdViewModel {
     var sidebarActivityItems: [SidebarActivityItem] {
-        presentedSidebarLists.items(collapsed: collapsedActivitySections, openRunGroups: collapsedProjects,
-                                    projects: sidebarLogicalProjects, showsProjects: projectsEnabled,
-                                    selectedAutomation: shownDestination == .automations ? automationsPageSelection : nil,
-                                    forgePins: sidebarForgePins)
+        let lists = presentedSidebarLists
+        return lists.items(collapsed: collapsedActivitySections, openRunGroups: collapsedProjects,
+                           projects: lists.isFiltering ? [] : sidebarLogicalProjects,
+                           showsProjects: !lists.isFiltering && projectsEnabled,
+                           selectedAutomation: shownDestination == .automations ? automationsPageSelection : nil,
+                           forgePins: lists.isFiltering ? [] : sidebarForgePins)
     }
 
     /// Issues & PRs' pins as Pinned draws them, newest first.
@@ -299,7 +304,7 @@ extension ShepherdViewModel {
     }
 
     func markAllSidebarDoneSeen() {
-        for row in sidebarLists.done where row.id.dispatchID == nil {
+        for row in presentedSidebarLists.done where row.id.dispatchID == nil {
             if let completion = row.completion { markSidebarSeen(row.id, completion) }
         }
     }

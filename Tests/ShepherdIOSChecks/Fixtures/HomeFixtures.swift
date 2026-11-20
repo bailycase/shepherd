@@ -13,6 +13,16 @@ extension FixtureCatalog {
         return [
             FixtureScreen(name: "home", prepare: settle),
             FixtureScreen(name: "home-fleet", hosts: fleet, prepare: settle),
+            FixtureScreen(name: "sidebar-filters-off", hosts: HomeFixtureData.filterHosts(), prepare: settle),
+            FixtureScreen(name: "sidebar-filters-on", hosts: HomeFixtureData.filterHosts(), prepare: { app in
+                await settle(app)
+                let sidebar = SidebarThreads.of(app.hosts)
+                sidebar.filters = .init(chips: [.hasChanges, .worktree], host: FixtureData.buildBox)
+            }),
+            FixtureScreen(name: "sidebar-filters-empty", hosts: HomeFixtureData.filterHosts(), prepare: { app in
+                await settle(app)
+                SidebarThreads.of(app.hosts).filters = .init(chips: [.needsYou, .worktree], host: FixtureData.buildBox)
+            }),
             FixtureScreen(name: "home-empty", hosts: []),
             // iPad: hosts with no threads, so the overview is its empty state.
             FixtureScreen(name: "home-nothreads", hosts: [FixtureHostData(id: FixtureData.studio, name: "Studio", state: ShepherdState())],
@@ -194,6 +204,24 @@ enum HomeFixtureData {
                     migrations: finished(at: started - 43_200_000),
                 ]),
             FixtureHostData(id: FixtureData.laptop, name: "MacBook Air", state: ShepherdState(), online: false),
+        ]
+    }
+
+    static func filterHosts() -> [FixtureHostData] {
+        let space = Space(id: SpaceID(rawValue: "space-acme"), name: "acme-web", path: "/tmp/acme-web")
+        let now = Date().timeIntervalSince1970 * 1000
+        return [
+            FixtureHostData(id: FixtureData.studio, name: "acme-studio", state: ShepherdState(spaces: [space], agents: [
+                FixtureData.agent(FixtureData.preview, "Refresh checkout", .working, space: space, worktree: "feat/checkout", changed: 2),
+                FixtureData.agent(FixtureData.dock, "Review sign-in copy", .blocked, space: space),
+                FixtureData.agent(FixtureData.deletion, "Index the changelog", .done, space: space),
+                FixtureData.agent(FixtureData.extensions, "Tidy test fixtures", .idle, space: space),
+            ]), threads: [FixtureData.preview: command("swift test", startedAgo: 48_000, at: now),
+                          FixtureData.dock: question(at: now), FixtureData.deletion: finished(at: now - 600_000)]),
+            FixtureHostData(id: FixtureData.buildBox, name: "acme-build", state: ShepherdState(spaces: [space], agents: [
+                FixtureData.agent(restyle, "Update search index", .working, space: space),
+                FixtureData.agent(FixtureData.buffer, "Polish error states", .idle, space: space, worktree: "feat/errors", changed: 1),
+            ]), threads: [restyle: command("swift build", startedAgo: 120_000, at: now)]),
         ]
     }
 

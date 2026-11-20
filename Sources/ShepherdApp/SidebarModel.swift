@@ -90,6 +90,10 @@ struct SidebarListRow: Identifiable, Equatable {
     var accessibilityLabel: String
     /// A worktree agent: its menu offers Delete Worktree Agent.
     let worktree: Bool
+    /// The checkout has uncommitted files, from the host's existing checkout monitor.
+    var hasChanges = false
+    /// Running is independent of display grouping (pinned, nested, automation run).
+    var running = false
     /// A run of one of This Mac's automations: its menu offers Stop or Run Now.
     let automation: AutomationID?
     /// That run is going (its menu offers Stop).
@@ -108,6 +112,20 @@ struct SidebarListRow: Identifiable, Equatable {
     var subtitle: SHSidebarRow.Subtitle? = nil
     /// A sender of more than two threads folds them under its chevron (`SidebarSent`).
     var fold: SidebarFold? = nil
+}
+
+private extension SidebarListRow {
+    func matches(_ filters: SidebarThreadFilters) -> Bool {
+        guard section != .designs else { return false }
+        let host: UUID
+        switch id {
+        case .local: host = PageHost.localID
+        case .remote(let ref): host = ref.hostID
+        case .design, .remoteDesign, .dispatch: return false
+        }
+        return filters.matches(host: host, running: !offline && running, needsYou: section == .needsYou,
+                               hasChanges: hasChanges, worktree: worktree)
+    }
 }
 
 /// A sender's chevron, on a sender of more than two sent threads: where its open state is remembered (`ShepherdViewModel.collapsedProjects`, with
@@ -208,21 +226,46 @@ struct SidebarLists: Equatable {
     /// not: what a launch shows and the New thread page's Continue card read. Unmarked, as derived.
     var activity: [SidebarListRow] = []
 
+    var filterHosts: [SidebarThreadFilters.Host] = []
+    var isFiltering = false
     var all: [SidebarListRow] { sections.flatMap(\.rows) }
+    var hasNoMatches: Bool { isFiltering && sections.allSatisfy { $0.rows.isEmpty } }
 
-    /// Needs you, Designs and Automations have no digit; folded groups have no visible hint or target.
+    /// Unfiltered, Needs you, Designs and Automations have no digit. In filtered Activity,
+    /// every visible matching thread is eligible. Collapsed sections have no hint or target.
     var shortcutRows: [SidebarListRow] { shortcutRows(collapsed: []) }
 
     func shortcutRows(collapsed: Set<SidebarActivitySection>) -> [SidebarListRow] {
-        sections.filter { ![.needsYou, .designs, .automations].contains($0.section) && !collapsed.contains($0.section) }
+        sections.filter { !collapsed.contains($0.section) && (isFiltering || ![.needsYou, .designs, .automations].contains($0.section)) }
             .flatMap(\.rows).filter { $0.id.dispatchID == nil }
     }
 
-    func presented(selected: SidebarRowID?, shortcuts: Bool,
+    func presented(selected: SidebarRowID?, shortcuts: Bool, filters: SidebarThreadFilters = .init(),
                    collapsed: Set<SidebarActivitySection> = [], openFolds: Set<String> = []) -> SidebarLists {
         var lists = self
-        for path in [\SidebarLists.pinned, \.needsYou, \.working, \.done, \.recents] {
-            lists[keyPath: path] = lists[keyPath: path].foldingSent(open: openFolds)
+        lists.isFiltering = filters.isActive
+        let threadPaths = [\SidebarLists.pinned, \.needsYou, \.working, \.done, \.recents, \.automations]
+        if filters.isActive {
+            // A match must not be hidden by a sender or automation that isn't a match itself.
+            // Keep section and row order; show matching run threads and sent threads directly.
+            for path in threadPaths {
+                lists[keyPath: path] = lists[keyPath: path].compactMap { row in
+                    guard !(row.fleetNested && row.section == .needsYou), row.matches(filters) else { return nil }
+                    var row = row
+                    row.fleetNested = false
+                    row.sentRoot = nil
+                    row.fold = nil
+                    row.foldedUnder = nil
+                    return row
+                }
+            }
+            lists.designs = []
+            lists.automationRows = []
+            lists.activity = lists.activity.filter { $0.matches(filters) }
+        } else {
+            for path in threadPaths.dropLast() {
+                lists[keyPath: path] = lists[keyPath: path].foldingSent(open: openFolds)
+            }
         }
         let digits = shortcuts ? Dictionary(uniqueKeysWithValues: lists.shortcutRows(collapsed: collapsed).prefix(9).enumerated()
             .map { ($0.element.id, "⌘\($0.offset + 1)") }) : [:]
@@ -291,14 +334,16 @@ struct SidebarSource: Equatable {
     var fleet = SidebarFleet()
 
     /// Child work affects sidebar presentation, never the parent's actual turn status. What no
-    /// row shows is dropped too (layouts, checkouts), so a pane divider drag or a changed-files
-    /// count leaves the derivation's cache key unchanged.
+    /// row shows is dropped too. Keep only whether a checkout has changes so a pane divider
+    /// drag or a changed-files count that stays above zero leaves the cache key unchanged.
     static func presentationState(_ state: ShepherdState, children: [AgentID: [ChildRun]]) -> ShepherdState {
         var state = state
         state.tabs = []
         for index in state.agents.indices {
             let agent = state.agents[index]
-            if agent.checkout != nil { state.agents[index].checkout = nil }
+            if let checkout = agent.checkout {
+                state.agents[index].checkout = checkout.changedFiles > 0 ? AgentCheckout(branch: "", changedFiles: 1) : nil
+            }
             if (agent.status == .idle || agent.status == .done),
                children[agent.id]?.contains(where: { !$0.isTerminal && $0.paused != true }) == true {
                 state.agents[index].status = .working
@@ -497,6 +542,7 @@ enum SidebarDerivation {
             return a.index > b.index
         }
         var lists = SidebarLists()
+        lists.filterHosts = [.init(id: PageHost.localID, name: "This Mac")] + source.hosts.map { .init(id: $0.id, name: $0.name) }
         var pinnedRows: [PinnedThread: SidebarListRow] = [:]
         var calm: [SidebarListRow] = []
         for entry in entries {
@@ -633,7 +679,9 @@ enum SidebarDerivation {
             help: agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name,
             accessibilityLabel: label(agent, word: word, automation: automation != nil, host: nil)
                 + (agent.goalState != nil ? ", goal" : ""),
-            worktree: agent.worktreeBranch != nil, automation: automation?.id, automationLive: live)
+            worktree: agent.worktreeBranch != nil, hasChanges: (agent.checkout?.changedFiles ?? 0) > 0,
+            running: !needsYou && !waiting && !cannotStart && (live || agent.status == .working),
+            automation: automation?.id, automationLive: live)
     }
 
     /// An active automation's row: its bolt, name and one word, from what its runs add up to and its trigger's status.
@@ -708,7 +756,8 @@ enum SidebarDerivation {
             offline: host.offline, help: host.offline ? "\(help) · \(host.name) is offline" : help,
             accessibilityLabel: label(agent, word: word, automation: automation, host: host.name)
                 + (host.offline ? ", host offline" : "") + (agent.goalState != nil ? ", goal" : ""),
-            worktree: agent.worktreeBranch != nil, automation: nil, automationLive: false)
+            worktree: agent.worktreeBranch != nil, hasChanges: (agent.checkout?.changedFiles ?? 0) > 0,
+            running: !needsYou && agent.status == .working, automation: nil, automationLive: false)
     }
 
     private static func label(_ agent: Agent, word: String, automation: Bool, host: String?) -> String {

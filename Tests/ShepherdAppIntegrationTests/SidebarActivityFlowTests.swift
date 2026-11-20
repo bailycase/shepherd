@@ -96,6 +96,25 @@ struct SidebarActivityFlowTests {
         #expect(vm.sidebarWalkRows.map(\.id) == [.local(done.agent.id)])
     }
 
+    @Test func digitSelectionUsesFilteredRowsWithoutPersistingTheFilter() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space("acme-web", path: app.dir.path)
+        let recent = Fixture.agent("Index the changelog", in: space)
+        var matching = Fixture.agent("Refresh checkout", in: space, order: 1)
+        matching.agent.worktreeBranch = "feat/checkout"
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [recent, matching]))
+        vm.selectAgent(recent.agent.id)
+        vm.sidebarThreadFilters.toggle(.worktree)
+        #expect(vm.selectedAgentID == recent.agent.id, "changing the filter must not switch threads")
+        #expect(vm.sidebarShortcutRows.map(\.id) == [.local(matching.agent.id)])
+        vm.selectAgentDigit(1)
+        #expect(vm.selectedAgentID == matching.agent.id)
+        let relaunched = ShepherdViewModel(pi: app.server.pi, settings: app.settings, keybindings: app.keybindings, themeManager: app.themeManager,
+                                         remoteHosts: app.remoteHosts, sidebarDefaults: app.defaults, themeInstaller: { _ in })
+        #expect(!relaunched.sidebarThreadFilters.isActive)
+    }
+
     @Test func deletingASpaceBehindAPageKeepsThePageAndDoesNotReadTheFallbackThread() async throws {
         let app = try AppHarness()
         defer { app.stop() }

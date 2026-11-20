@@ -120,11 +120,15 @@ extension ShepherdViewModel {
         return lists
     }
 
-    /// The lists as the sidebar draws them: the row on screen marked, and ⌘-digits while ⌘ is
-    /// held.
+    var activeSidebarThreadFilters: SidebarThreadFilters {
+        sidebarThreadFilters.available(on: sidebarLists.filterHosts.map(\.id))
+    }
+
+    /// The same filtered, unfolded rows feed the sidebar, the menu and both keyboard paths.
     var presentedSidebarLists: SidebarLists {
         sidebarLists.presented(selected: selectedSidebarRow, shortcuts: showAgentShortcutBadges,
-                               collapsed: collapsedActivitySections, openFolds: collapsedProjects)
+                               filters: activeSidebarThreadFilters, collapsed: collapsedActivitySections,
+                               openFolds: collapsedProjects)
     }
 
     /// The row whose thread is on screen; none while a page is.

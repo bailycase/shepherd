@@ -265,6 +265,7 @@ final class ShepherdViewModel {
     }
     static let dismissedDispatchesKey = "shepherd.sidebar.dismissedDispatches"
     static let designJumpRecentsKey = "shepherd.designs.jumpRecents"
+    var sidebarThreadFilters = SidebarThreadFilters()
     var collapsedActivitySections: Set<SidebarActivitySection> = [] {
         didSet { sidebarDefaults.set(collapsedActivitySections.map(\.rawValue).sorted(), forKey: Self.collapsedActivitySectionsKey) }
     }
