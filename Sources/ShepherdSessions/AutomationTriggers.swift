@@ -588,6 +588,15 @@ public actor AutomationTriggers {
     }
 }
 
+extension AutomationTriggers.File {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        allPaused = try c.decodeIfPresent(Bool.self, forKey: .allPaused) ?? false
+        records = try c.decodeIfPresent([String: AutomationTriggers.Record].self, forKey: .records) ?? [:]
+    }
+}
+
 extension AutomationTriggers.Pending {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)

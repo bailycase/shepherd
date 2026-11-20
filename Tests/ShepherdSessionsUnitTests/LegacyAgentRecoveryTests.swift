@@ -4,17 +4,19 @@ import Testing
 
 @Suite("Legacy agent recovery decoding")
 struct LegacyAgentRecoveryTests {
-    @Test func legacyCheckpointKeepsItsQueueWithoutAnAttemptCount() throws {
+    @Test func legacyCheckpointKeepsLegacyQueueItems() throws {
         let json = """
         {"sessionID":"acme-session","active":true,"pending":[],"paused":true,"mode":"all",
          "items":[{"entry":{"id":"F94561E6-7623-4BB2-8FB2-217B427A948C","text":"Keep queued"},
-                   "images":[],"goesAlone":false,"designPayloads":[],"direct":false}]}
+                   "images":[]}]}
         """
         let checkpoint = try JSONDecoder().decode(AgentRecoveryStore.Checkpoint.self, from: Data(json.utf8))
         #expect(checkpoint.sessionID == "acme-session")
         #expect(checkpoint.active && checkpoint.paused)
         #expect(checkpoint.mode == .all)
-        #expect(checkpoint.items.map(\.entry.text) == ["Keep queued"])
+        let item = try #require(checkpoint.items.first)
+        #expect(item.entry.text == "Keep queued")
+        #expect(!item.goesAlone && item.designPayloads.isEmpty && !item.direct)
         #expect(checkpoint.attempts == 0)
     }
 
