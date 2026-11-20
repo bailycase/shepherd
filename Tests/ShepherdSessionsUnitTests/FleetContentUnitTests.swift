@@ -228,6 +228,34 @@ struct FleetContentUnitTests {
         #expect(receiver.materializer.scan(name: "Mac studio").contains { $0.unit == meta && $0.change == .deletion })
     }
 
+    @Test func incomingExtensionWaitsForDamagedImportMarkerToBeRepaired() throws {
+        let receiver = try Receiver()
+        defer { try? FileManager.default.removeItem(at: receiver.dir) }
+        try receiver.imports.updateState { $0.copied = true }
+        let url = receiver.imports.stateURL
+        let original = try Data(contentsOf: url)
+        let damaged = Data(#"{"copies":42}"#.utf8)
+        try damaged.write(to: url)
+
+        let sender = try Sender(dir: receiver.dir)
+        let file = receiver.file("paths/acme/index.ts")
+        let text = "export default 1\n"
+        sender.blob(FleetUnit.extensionFile("paths/acme/index.ts"), text)
+        sender.value(FleetUnit.extensionMeta("paths/acme"), Self.extensionMeta(["index.ts": text]))
+        sender.deliver(to: receiver, blobs: [sender.hash(text)])
+
+        _ = receiver.materializer.materialize(name: "Mac studio")
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(receiver.listed().isEmpty)
+        #expect(try Data(contentsOf: url) == damaged)
+
+        try original.write(to: url)
+        let result = receiver.materializer.materialize(name: "Mac studio")
+        #expect(!result.failed)
+        #expect(try String(contentsOf: file, encoding: .utf8) == text)
+        #expect(receiver.listed() == [file.standardizedFileURL.path])
+    }
+
     @Test func anExtensionThatIsOnIsTakenOutWhileASyncRewritesItAndPutBackWhole() throws {
         let receiver = try Receiver()
         defer { try? FileManager.default.removeItem(at: receiver.dir) }

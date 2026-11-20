@@ -185,6 +185,24 @@ struct YourPiImportEdgeTests {
         #expect(try Data(contentsOf: setup.home.settings) == settings)
     }
 
+    @Test func surveyReportsADamagedMarkerInsteadOfANeverRunImport() throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        let importer = setup.importer()
+        #expect(!importer.survey().copied)
+        try Self.write(#"{"copies":42}"#, to: importer.stateURL)
+
+        let survey = importer.survey()
+        #expect(survey.problems.first?.contains(".shepherd-imports.json") == true)
+        #expect(survey.copied && survey.copiedAt == nil)
+        #expect(survey.stateProblem == survey.problems.first)
+
+        _ = importer.copyOnce()
+        let diagnostic = try #require(setup.logged.current.last)
+        #expect(diagnostic.contains(importer.stateURL.path))
+        #expect(diagnostic.contains("typeMismatch") && diagnostic.contains("copies"))
+    }
+
     @Test func anEnvelopedImportStateIsReadAndWrittenAsLegacyJSON() throws {
         let setup = try Setup()
         defer { setup.remove() }

@@ -230,11 +230,13 @@ public struct YourPiSurvey: Equatable, Sendable {
     public var instructionLines: Int?
     /// Their extensions, as copied: each off until switched on.
     public var extensions: [YourPiExtensionRow] = []
-    /// Their files that couldn't be read.
+    /// Files that couldn't be read on either side.
     public var problems: [String] = []
-    /// The first copy has happened.
+    /// The repair message when the import history can't be read. Also the first problem.
+    public fileprivate(set) var stateProblem: String?
+    /// The first copy has happened or is blocked by a damaged marker.
     public var copied = false
-    /// When it did.
+    /// When it happened, if known.
     public var copiedAt: Date?
     /// Shepherd's keys, and theirs, as Settings shows them (a mask, a variable, a command), by
     /// provider.
@@ -378,9 +380,14 @@ public struct YourPiImport: Sendable {
         switch loadState() {
         case .loaded(let state): return state
         case .missing: return nil
-        case .damaged:
-            throw YourPiFileError("\(Self.stateName) needs repair before Shepherd can change its pi imports.")
+        case .damaged(_, let error): throw YourPiFileError(damagedStateMessage(error))
         }
+    }
+
+    private var stateRepairGuidance: String { "Restore the file from a backup or fix its JSON." }
+
+    func damagedStateMessage(_ error: any Error) -> String {
+        "Couldn't read \(stateURL.path): \(error). \(stateRepairGuidance)"
     }
 
     private func save(_ state: YourPiImportState) throws {
@@ -652,9 +659,9 @@ public struct YourPiImport: Sendable {
 
     // MARK: Fleet sync
 
-    var hasDamagedState: Bool {
-        if case .damaged = loadState() { return true }
-        return false
+    var stateReadError: (any Error)? {
+        if case .damaged(_, let error) = loadState() { return error }
+        return nil
     }
 
     /// The extensions as copied here, each with whether it is on: what a fleet syncs (`FleetExtensionsSource`).
@@ -919,8 +926,20 @@ public struct YourPiImport: Sendable {
     /// `environmentKeys` are the provider variables their login shell sets (names only).
     public func survey(environmentKeys: Set<String> = []) -> YourPiSurvey {
         var survey = YourPiSurvey(folder: yourPi?.agentDirectory.path)
-        let state = self.state()
-        survey.copied = state?.copied == true
+        let state: YourPiImportState?
+        switch loadState() {
+        case .loaded(let saved):
+            state = saved
+            survey.copied = saved.copied
+        case .missing:
+            state = nil
+        case .damaged:
+            state = nil
+            survey.copied = true
+            let problem = "Shepherd couldn't read \(Self.stateName). \(stateRepairGuidance)"
+            survey.stateProblem = problem
+            survey.problems.append(problem)
+        }
         survey.copies = state?.copies ?? []
         if let context = survey.copies(.instructions).first(where: { YourPiFiles.contextFileNames.contains($0.name) }),
            let data = try? YourPiFiles.read(home.directory.appendingPathComponent(context.destination)) {
