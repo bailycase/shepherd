@@ -11153,8 +11153,11 @@ extension SessionServer {
         changes.agentName = { [weak self] agentID in
             self?.state.agents.first { $0.id == agentID }?.name
         }
-        changes.onTurnsChanged = { [weak self] agentID, turns in
-            self?.queue.async { self?.setTurnChanges(turns, for: agentID) }
+        changes.onTurnsChanged = { [weak self] agentID, _ in
+            self?.queue.async { [weak self] in
+                guard let self else { return }
+                self.setTurnChanges(self.changes.turns(agentID: agentID), for: agentID)
+            }
         }
     }
 

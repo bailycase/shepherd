@@ -81,6 +81,9 @@ public final class ChangesService: @unchecked Sendable {
         self.trash = trash
         recents = ChangesRecents(url: directory.appendingPathComponent("bases.json"))
         turnStore = TurnStore(url: directory.appendingPathComponent("turns.json"))
+        turnStore.onAvailabilityChanged = { [weak self] agents in
+            for agent in agents { self?.publish(agent) }
+        }
     }
 
     var indexDirectory: URL { directory.appendingPathComponent("index", isDirectory: true) }

@@ -47,13 +47,8 @@ struct TurnStoreTests {
         }
         #expect(try Data(contentsOf: url) == damaged)
 
-        if !unreadable {
-            try FileManager.default.removeItem(at: url)
-            #expect(throws: (any Error).self) { try store.updateAndCheckpoint(Self.agent) { _ in } }
-            #expect(!FileManager.default.fileExists(atPath: url.path), "deletion is not a repair")
-            try good.write(to: url, options: .atomic)
-        }
-        #expect(store.latest(Self.agent)?.recovery?.inFlight == "README.md")
+        if !unreadable { try good.write(to: url, options: .atomic) }
+        #expect(try store.history(Self.agent).records.last?.recovery?.inFlight == "README.md")
         try #require(store.published(Self.agent).last?.canUndo == true)
         try store.updateAndCheckpoint(Self.agent) { $0[0].recovery = nil }
         #expect(TurnStore(url: url).latest(Self.agent)?.turn.state == .ready)
@@ -82,10 +77,59 @@ struct TurnStoreTests {
         let store = TurnStore(url: url)
         // Damage lands after staging but before the atomic replacement.
         store.beforeWrite = { _ in try damaged.write(to: url, options: .atomic) }
-        store.update(Self.agent) { $0.removeAll() }
+        store.update(Self.agent) { $0[0].turn.prompt = "unflushed prompt" }
         store.flush()
         #expect(try Data(contentsOf: url) == damaged)
+    }
+
+    @Test func turnUpdatesStageWithoutCheckingDisk() throws {
+        let root = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("turns.json")
+        try Data(Self.legacy.utf8).write(to: url)
+        let store = TurnStore(url: url)
+        try #require(store.latest(Self.agent) != nil)
+        let damaged = Data("{".utf8)
+        try damaged.write(to: url, options: .atomic)
+        #expect(store.update(Self.agent) { _ in true } == true, "only write and history recheck the warm file")
+        store.flush()
+        #expect(try Data(contentsOf: url) == damaged)
+    }
+
+    @Test func repairKeepsUnflushedTurnsRunningInTheLiveHost() throws {
+        let root = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("turns.json")
+        let good = Data(Self.legacy.replacingOccurrences(of: "\"ready\"", with: "\"running\"").utf8)
+        let store = TurnStore(url: url)
+        let live = TurnRecord(turn: .init(startedAt: 2000, state: .running), cwd: root.path)
+        let damaged = Data("{".utf8)
+        store.beforeWrite = { _ in
+            if (try? Data(contentsOf: url)) != good { try damaged.write(to: url, options: .atomic) }
+        }
+        store.update(Self.agent) { $0 = [live] }
+        store.flush()
+        try #require(throws: (any Error).self) { try store.history(Self.agent) }
         try good.write(to: url, options: .atomic)
-        #expect(store.latest(Self.agent)?.recovery?.inFlight == "README.md")
+        #expect(try store.history(Self.agent).records.last == live)
+        store.flush()
+        let persisted = try JSONDecoder().decode([String: [TurnRecord]].self, from: Data(contentsOf: url))
+        #expect(persisted[Self.agent.rawValue]?.last == live)
+        #expect(TurnStore(url: url).latest(Self.agent)?.turn.state == .unavailable, "only cold startup relabels running turns")
+    }
+
+    @Test func deletionRepairsDamageAndDropsPastHistory() throws {
+        let root = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("turns.json")
+        try Data(Self.legacy.utf8).write(to: url)
+        let store = TurnStore(url: url)
+        try #require(store.latest(Self.agent) != nil)
+        try Data("{".utf8).write(to: url, options: .atomic)
+        try #require(throws: (any Error).self) { try store.history(Self.agent) }
+        try FileManager.default.removeItem(at: url)
+        #expect(try store.history(Self.agent).records.isEmpty)
+        #expect(store.published(Self.agent).isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: url.path))
     }
 }

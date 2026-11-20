@@ -34,96 +34,158 @@ struct TurnRecord: Codable, Hashable, Sendable {
 /// Every agent's recent turns, in memory and in `turns.json` in the changes directory, so the
 /// cards and their Undo survive a relaunch.
 final class TurnStore: @unchecked Sendable {
+    private typealias Records = [String: [TurnRecord]]
+    private typealias Snapshot = (records: Records, dirty: [String: Int])
     private let url: URL
     private let lock = NSLock()
-    private typealias Records = [String: [TurnRecord]]
     private var records: Records?
+    private var dirty: [String: Int] = [:]
+    private var revision = 0
     private var damage: ChangesError?
     // A snapshot taken before damage was detected must not overwrite a later repair.
     private var generation = 0
     private let io = DispatchQueue(label: "shepherd.changes.turns", qos: .utility)
     private var writeScheduled = false
+    /// Installed before serving threads. Called on `io`, outside the record lock.
+    var onAvailabilityChanged: (@Sendable (Set<AgentID>) -> Void)?
     /// Per-instance test seam, installed before use. Runs on `io`, outside the record lock.
     var beforeWrite: (@Sendable ([String: [TurnRecord]]) throws -> Void)?
 
-    init(url: URL) { self.url = url }
-
-    /// Caller holds `lock`. Recheck before staging and writing, and on each access while damaged.
-    private func loaded(checkDisk: Bool = false) throws -> Records {
-        if !checkDisk, let records { return records }
-        var loaded: Records
+    init(url: URL) {
+        self.url = url
+        // Host construction, before the server queue serves turn events or thread snapshots.
         switch PersistedFile<Records>.load(from: url) {
-        case .loaded(let restored):
-            if let records { return records }
-            loaded = restored
-        case .missing:
-            // Removing a damaged file does not restore the journal.
-            if let damage { throw damage }
-            if let records { return records }
-            loaded = [:]
+        case .loaded(var restored):
+            // Only startup can say a running turn was interrupted by a quit.
+            for key in restored.keys {
+                for i in restored[key]!.indices where restored[key]![i].turn.state == .running {
+                    restored[key]![i].turn.state = .unavailable
+                    restored[key]![i].turn.reason = "Shepherd quit before this turn ended."
+                }
+            }
+            records = restored
+        case .missing: records = [:]
         case .damaged(_, let error):
-            let problem = ChangesError(ChangesError.unavailable, "Undo/Redo history can't be read.\n\(url.path)\n\(error)\nOn the host Mac, fix the file's permissions if access was denied, or restore a known-good backup. Then refresh Changes.")
-            if damage == nil {
-                ShepherdLog.error(problem.message)
+            let problem = readProblem(error)
+            damage = problem
+            ShepherdLog.error(problem.message)
+        }
+    }
+
+    private func readProblem(_ error: any Error) -> ChangesError {
+        let detail: String
+        switch error {
+        case DecodingError.dataCorrupted(let context), DecodingError.typeMismatch(_, let context),
+             DecodingError.valueNotFound(_, let context), DecodingError.keyNotFound(_, let context):
+            detail = context.debugDescription
+        default:
+            detail = error.localizedDescription
+        }
+        return ChangesError(ChangesError.unavailable, "Undo/Redo history can't be read.\n\(url.path)\n\(detail)\nOn the host Mac, fix the file's permissions if access was denied, or restore a known-good backup. As a last resort, delete this file to drop Undo/Redo history for past turns. This leaves the working tree untouched. Then refresh Changes; no restart is needed.")
+    }
+
+    /// Only `io` reads or replaces the file after startup. Turn events never wait for disk.
+    private func recheck() throws {
+        let restored: Records?
+        switch PersistedFile<Records>.load(from: url) {
+        case .loaded(let value): restored = value
+        case .missing: restored = nil
+        case .damaged(_, let error):
+            let problem = readProblem(error)
+            let affected = lock.withLock { () -> Records? in
+                defer { damage = problem }
+                guard damage == nil else { return nil }
                 generation += 1
                 writeScheduled = false
-                records = nil
+                return records ?? [:]
             }
-            damage = problem
+            if let affected {
+                ShepherdLog.error(problem.message)
+                onAvailabilityChanged?(Set(affected.keys.map(AgentID.init(rawValue:))))
+            }
             throw problem
         }
-        damage = nil
-        // A turn still running when Shepherd quit never saw its end.
-        for key in loaded.keys {
-            for i in loaded[key]!.indices where loaded[key]![i].turn.state == .running {
-                loaded[key]![i].turn.state = .unavailable
-                loaded[key]![i].turn.reason = "Shepherd quit before this turn ended."
+        let changed = lock.withLock { () -> (Records, Records)? in
+            guard damage != nil else { return nil }
+            let previous = records
+            damage = nil
+            if var restored {
+                // Use the repaired file except where this host owns newer, live state. A backup
+                // may predate an interrupted Undo even when its checkpoints reached disk.
+                var retain = Set(dirty.keys)
+                for (key, list) in previous ?? [:] where list.last?.turn.state == .running || list.last?.recovery != nil {
+                    retain.insert(key)
+                }
+                for key in retain where restored[key] != previous?[key] {
+                    restored[key] = previous?[key]
+                    markDirty(key)
+                }
+                records = restored
+                if !dirty.isEmpty { scheduleWrite() }
+            } else {
+                // Deleting damaged history is an explicit repair, not a request to restore it.
+                records = [:]
+                dirty = [:]
             }
+            return (previous ?? [:], records ?? [:])
         }
-        records = loaded
-        return loaded
+        if let (previous, current) = changed {
+            onAvailabilityChanged?(Set(previous.keys.map(AgentID.init(rawValue:))).union(current.keys.map(AgentID.init(rawValue:))))
+        }
     }
 
     func all(_ agentID: AgentID) -> [TurnRecord] {
-        lock.lock()
-        defer { lock.unlock() }
-        return (try? loaded()[agentID.rawValue]) ?? []
+        lock.withLock { records?[agentID.rawValue] ?? [] }
     }
 
     /// A review or Undo/Redo needs to distinguish no turns from unreadable history.
     func history(_ agentID: AgentID) throws -> (records: [TurnRecord], generation: Int) {
-        try lock.withLock { (try loaded(checkDisk: true)[agentID.rawValue] ?? [], generation) }
+        try io.sync {
+            try recheck()
+            return lock.withLock { (records?[agentID.rawValue] ?? [], generation) }
+        }
     }
 
     func latest(_ agentID: AgentID) -> TurnRecord? { all(agentID).last }
 
     func record(_ agentID: AgentID, _ id: UUID) -> TurnRecord? { all(agentID).first { $0.turn.id == id } }
 
-    /// Changes an agent's records in one step and schedules a save.
+    /// Keep staging captures in a live cache even during damage, but never save over it.
     @discardableResult
     func update<T>(_ agentID: AgentID, _ body: (inout [TurnRecord]) -> T) -> T? {
         lock.withLock {
-            guard let result = try? updateLocked(agentID, body) else { return nil }
+            guard records != nil else { return nil }
+            let result = updateLocked(agentID, body)
             scheduleWrite()
             return result
         }
     }
 
-    /// Caller holds `lock`; both asynchronous captures and synchronous checkpoints mutate here.
-    private func updateLocked<T>(_ agentID: AgentID, _ body: (inout [TurnRecord]) -> T) throws -> T {
-        var all = try loaded(checkDisk: true)
-        var list = all[agentID.rawValue] ?? []
+    /// Caller holds `lock` and has records.
+    private func updateLocked<T>(_ agentID: AgentID, _ body: (inout [TurnRecord]) -> T) -> T {
+        let key = agentID.rawValue
+        var list = records?[key] ?? []
         let result = body(&list)
-        all[agentID.rawValue] = list.isEmpty ? nil : list
-        records = all
+        if list != (records?[key] ?? []) {
+            records?[key] = list.isEmpty ? nil : list
+            markDirty(key)
+        }
         return result
     }
+
+    /// A save clears only the mutations it actually captured; a turn can advance during I/O.
+    private func markDirty(_ key: String) {
+        revision += 1
+        dirty[key] = revision
+    }
+
+    private func snapshot() -> Snapshot { (records ?? [:], dirty) }
 
     /// Drops a deleted agent's records, and saves only when it had any.
     func remove(_ agentID: AgentID) {
         lock.withLock {
-            guard var all = try? loaded(checkDisk: true), all.removeValue(forKey: agentID.rawValue) != nil else { return }
-            records = all
+            guard records?.removeValue(forKey: agentID.rawValue) != nil else { return }
+            markDirty(agentID.rawValue)
             scheduleWrite()
         }
     }
@@ -132,61 +194,95 @@ final class TurnStore: @unchecked Sendable {
     func prune(keeping agents: Set<AgentID>) {
         let keep = Set(agents.map(\.rawValue))
         lock.withLock {
-            guard let all = try? loaded(checkDisk: true) else { return }
-            let kept = all.filter { keep.contains($0.key) }
-            guard kept.count != all.count else { return }
-            records = kept
+            guard let records else { return }
+            let removed = records.keys.filter { !keep.contains($0) }
+            guard !removed.isEmpty else { return }
+            for key in removed {
+                self.records?[key] = nil
+                markDirty(key)
+            }
             scheduleWrite()
         }
     }
 
     /// Caller holds `lock`. All physical writes run on `io`.
     private func scheduleWrite() {
-        guard !writeScheduled else { return }
+        guard damage == nil, !writeScheduled else { return }
         writeScheduled = true
         let generation = self.generation
         io.async {
-            let snapshot = self.lock.withLock {
-                guard generation == self.generation else { return nil as Records? }
+            let snapshot = self.lock.withLock { () -> Snapshot? in
+                guard generation == self.generation else { return nil }
                 self.writeScheduled = false
-                return self.records
+                return self.snapshot()
             }
             if let snapshot { try? self.write(snapshot, generation: generation) }
         }
     }
 
-    private func write(_ snapshot: Records, generation: Int) throws {
-        try beforeWrite?(snapshot)
-        let data = try JSONEncoder().encode(snapshot)
-        try lock.withLock {
-            _ = try loaded(checkDisk: true)
-            try checkGeneration(generation)
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try data.write(to: url, options: .atomic)
+    private func write(_ snapshot: Snapshot, generation: Int) throws {
+        try beforeWrite?(snapshot.records)
+        let data = try JSONEncoder().encode(snapshot.records)
+        try recheck()
+        try lock.withLock { try checkGeneration(generation) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: url, options: .atomic)
+        lock.withLock {
+            for (key, written) in snapshot.dirty where dirty[key] == written { dirty[key] = nil }
         }
     }
 
+    /// Caller holds `lock`.
     private func checkGeneration(_ expected: Int) throws {
+        if let damage { throw damage }
         guard generation == expected else {
-            throw damage ?? ChangesError(ChangesError.unavailable, "Undo/Redo history changed on disk. Refresh Changes and try again.")
+            throw ChangesError(ChangesError.unavailable, "Undo/Redo history changed on disk. Refresh Changes and try again.")
         }
     }
 
-    /// A recovery mutation and its synchronous checkpoint, without also scheduling a background
-    /// save. Earlier saves still finish first; no record lock is held while waiting for `io`.
-    /// Called on a capture queue, before the next working-tree mutation.
+    /// Stage the journal before the next working-tree mutation. Earlier saves still finish first;
+    /// no record lock is held while waiting for `io`.
     func updateAndCheckpoint(_ agentID: AgentID, generation expected: Int? = nil, _ body: (inout [TurnRecord]) -> Void) throws {
         let generation = try lock.withLock {
-            if let expected { try checkGeneration(expected) }
-            try updateLocked(agentID, body)
+            try checkGeneration(expected ?? self.generation)
+            updateLocked(agentID, body)
             return self.generation
         }
         try io.sync {
             let snapshot = try lock.withLock {
                 try checkGeneration(generation)
-                return try loaded()
+                return self.snapshot()
             }
             try write(snapshot, generation: generation)
+        }
+    }
+
+    /// Drop the journal only after the final state is durable. A failed write leaves it retryable.
+    func finishOperation(_ agentID: AgentID, turnID: UUID, generation: Int, state: ChangesTurn.State) throws {
+        try io.sync {
+            func finish(_ records: inout [TurnRecord]) {
+                guard let i = records.firstIndex(where: { $0.turn.id == turnID }) else { return }
+                records[i].turn.state = state
+                records[i].turn.reason = nil
+                records[i].recovery = nil
+            }
+            var snapshot = try lock.withLock {
+                try checkGeneration(generation)
+                return self.snapshot()
+            }
+            let key = agentID.rawValue
+            if var list = snapshot.records[key] {
+                finish(&list)
+                snapshot.records[key] = list
+            }
+            try write(snapshot, generation: generation)
+            lock.withLock {
+                // Other captures may have staged changes while the final write was in flight.
+                if var list = records?[key] {
+                    finish(&list)
+                    records?[key] = list
+                }
+            }
         }
     }
 
@@ -194,17 +290,18 @@ final class TurnStore: @unchecked Sendable {
     func flush() { io.sync {} }
 
     /// The turns as clients see them: Undo only on the last turn, once it has ended and changed
-    /// something; Redo only on the last turn, once undone.
+    /// something; Redo only on the last turn, once undone. Damage leaves the cards in place.
     func published(_ agentID: AgentID) -> [ChangesTurn] {
-        Self.published(all(agentID))
+        let (list, available) = lock.withLock { (records?[agentID.rawValue] ?? [], damage == nil) }
+        return Self.published(list, available: available)
     }
 
-    static func published(_ records: [TurnRecord]) -> [ChangesTurn] {
+    static func published(_ records: [TurnRecord], available: Bool = true) -> [ChangesTurn] {
         records.enumerated().map { index, record in
             var turn = record.turn
             let last = index == records.count - 1
-            turn.canUndo = last && turn.state == .ready && turn.fileCount > 0
-            turn.canRedo = last && turn.state == .undone
+            turn.canUndo = available && last && turn.state == .ready && turn.fileCount > 0
+            turn.canRedo = available && last && turn.state == .undone
             return turn
         }
     }
@@ -283,12 +380,17 @@ extension ChangesService {
             records.append(TurnRecord(turn: ChangesTurn(id: id, startedAt: time, state: .running), cwd: context.cwd))
             return true
         }
+        guard started != false else { return }
+        // Even a turn we can't record can write into another turn's working tree.
+        let window = writers.withValue { log -> TurnAttribution.Interval? in
+            if started == nil, log.windows.contains(where: { $0.agent == agentID && $0.interval.end == nil }) { return nil }
+            return log.openWindow(agent: agentID, turn: id, cwd: context.cwd, receivedAt: time)
+        }
+        if let window { reclassifyAffected(by: window, excluding: agentID, now: time) }
         guard started == true else {
-            if started == nil { preparedTurns.withValue { $0[agentID] = nil } }
+            preparedTurns.withValue { $0[agentID] = nil }
             return
         }
-        let window = writers.withValue { $0.openWindow(agent: agentID, turn: id, cwd: context.cwd, receivedAt: time) }
-        reclassifyAffected(by: window, excluding: agentID, now: time)
         captureQueue(agentID).async { [self] in
             do {
                 let repository = try repository(context.cwd)
@@ -334,10 +436,15 @@ extension ChangesService {
             records[i].turn.endedAt = time
             return records[i].turn.id
         }
+        let recordedID = id ?? nil
+        let windowID = recordedID ?? writers.withValue { $0.windows.last { $0.agent == agentID && $0.interval.end == nil }?.turn }
         // Even a duplicate settle waits behind the original capture before releasing delivery.
         captureQueue(agentID).async { [self] in
             defer { completion() }
-            guard let id = id ?? nil, let record = turnStore.record(agentID, id) else { return }
+            guard let id = recordedID, let record = turnStore.record(agentID, id) else {
+                if let windowID { writers.withValue { $0.closeWindow(turn: windowID, at: Self.nowMs()) } }
+                return
+            }
             do {
                 guard let start = record.startTree else {
                     throw ChangesError(ChangesError.unavailable, record.turn.reason ?? "Shepherd couldn’t record where this turn started.")
@@ -626,11 +733,13 @@ extension ChangesService {
         // Another turn that began while these files are being written must not take them for its own.
         let span = beginWrite(repository, paths: paths)
         defer { endWrite(span) }
+        var mayHaveApplied = !completed.isEmpty || recovery.inFlight.map { !targetChanges.contains($0) } == true
         do {
             for entry in entries where !completed.contains(entry.path) {
                 recovery.inFlight = entry.path
                 try checkpoint("\(action) was interrupted. Retry \(action.lowercased()) to finish; files may be partially changed.")
                 if targetChanges.contains(entry.path) {
+                    mayHaveApplied = true
                     if entry.status == absent {
                         try trash(root.appendingPathComponent(entry.path))
                     } else {
@@ -641,20 +750,16 @@ extension ChangesService {
                 recovery.inFlight = nil
                 try checkpoint("\(action) was interrupted. Retry \(action.lowercased()) to finish; files may be partially changed.")
             }
+            try turnStore.finishOperation(agentID, turnID: turnID, generation: history.generation, state: redo ? .ready : .undone)
         } catch let error as ChangesError where error.code == ChangesError.unavailable {
             publish(agentID)
-            throw error
+            guard mayHaveApplied else { throw error }
+            throw ChangesError(error.code, "\(action) partially applied. Repair or refresh Changes, then retry \(action.lowercased()) to finish.\n\(error.message)")
         } catch {
             let reason = "\(action) partially applied. Retry \(action.lowercased()) to finish: \(error)"
             try? checkpoint(reason)
             publish(agentID)
             throw ChangesError(ChangesError.gitFailed, reason)
-        }
-        try turnStore.updateAndCheckpoint(agentID, generation: history.generation) { records in
-            guard let i = records.firstIndex(where: { $0.turn.id == turnID }) else { return }
-            records[i].turn.state = redo ? .ready : .undone
-            records[i].turn.reason = nil
-            records[i].recovery = nil
         }
         publish(agentID)
         guard let turn = turnStore.published(agentID).last else { throw ChangesError(ChangesError.unavailable, "The turn is gone.") }
