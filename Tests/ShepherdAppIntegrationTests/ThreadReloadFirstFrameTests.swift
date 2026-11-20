@@ -235,6 +235,69 @@ struct ThreadReloadFirstFrameTests {
         #expect(try abs(distanceFromTail(thread)) < 2, "the end of the thread stayed where it was")
     }
 
+    /// The window is dragged while the pull that catches a thread that kept only its tail up is still on its way. The history above the
+    /// tail stands down for the drag (`ThreadView.parksHistory`) and the lazy stack waits for the pull (`ThreadView.restoreRows`), each
+    /// on its own: the stack stays out while the pull is held, drag or none, and is in the document again once both are over, whichever
+    /// ends first, with the end of the thread where it was.
+    @Test(arguments: [true, false])
+    func aDragThroughAHeldPullLeavesTheStackToComeOnceBothAreOver(dragEndsFirst: Bool) async throws {
+        let (thread, tail) = try await openHeavyOffTheDeck()
+        defer { thread.close() }
+        let store = thread.store
+        let scroll = try #require(thread.scrollView)
+        let window = thread.window.window
+        let size = try #require(window.contentView).bounds.size
+
+        let requests = thread.snapshotRequests
+        thread.holdingSnapshots = true
+        thread.visibility.active = true
+        thread.visibility.motionPaused = false
+        ListPerf.settle(thread.window)
+        defer { thread.releaseSnapshots() }
+        try await eventuallyOnMain("the pull to be on its way") { thread.snapshotRequests > requests }
+        let tailOnly = scroll.documentView?.frame.height ?? 0
+
+        thread.visibility.liveResizing = true
+        ListPerf.settle(thread.window)
+        for step in 1...4 {
+            window.setContentSize(NSSize(width: size.width - CGFloat(step) * 30, height: size.height))
+            ListPerf.settle(thread.window)
+        }
+        func endDrag() {
+            window.setContentSize(size)
+            thread.visibility.liveResizing = false
+        }
+        func landThePull() async throws {
+            thread.releaseSnapshots()
+            try await eventuallyOnMain("the pull to land") { store.catchUp != nil }
+        }
+        var held = [ThreadRowMemory.built(in: store)]
+        func watchTheStackStayOut(_ what: String) async throws {
+            try await watch(what, polls: Self.polls(looks: 3)) {
+                ListPerf.settle(thread.window)
+                held.append(ThreadRowMemory.built(in: store))
+            }
+        }
+        if dragEndsFirst {
+            endDrag()
+            try await watchTheStackStayOut("the held pull to be watched after the drag")
+            #expect(store.catchUp == nil && held.allSatisfy { $0 <= tail }, "the stack stayed out while the pull was held: \(held), tail \(tail)")
+            try await landThePull()
+        } else {
+            try await landThePull()
+            try await watchTheStackStayOut("the drag to be watched after the pull landed")
+            #expect(held.allSatisfy { $0 <= tail }, "the history stood down for the drag: \(held), tail \(tail)")
+            endDrag()
+        }
+        var joined = tailOnly
+        try await eventuallyOnMain("the history back in the document, many tails tall", timeout: .seconds(30)) {
+            ListPerf.settle(thread.window)
+            joined = scroll.documentView?.frame.height ?? 0
+            return joined > tailOnly * 4
+        }
+        #expect(try abs(distanceFromTail(thread)) < 2, "the end of the thread stayed where it was, after a document of \(tailOnly) became \(joined)")
+    }
+
     /// A thread of heavy rows that kept only its tail and is off the deck: the thread, and the rows its eager tail draws.
     private func openHeavyOffTheDeck() async throws -> (FakeThread, tail: Int) {
         let messages = ThreadEagerTailTests.messages(turns: 40, cycles: ThreadEagerTailTests.cycles)
