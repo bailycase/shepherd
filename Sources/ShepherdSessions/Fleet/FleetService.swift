@@ -899,7 +899,8 @@ final class FleetService: @unchecked Sendable {
         guard updated.revoke(hostID, at: at) else { return false }
         do { try updated.save(to: directory) } catch { ShepherdLog.error("fleet: could not save a removal: \(error)") }
         peers = updated
-        // The previous host process may have published even if this one hasn't opened its listener yet.
+        // The previous host process may have published before this listener opened. Send an idempotent
+        // delete even if this process never published a record.
         if peers.members.isEmpty { retractPresence() }
         let notified = links.filter { $0.key != hostID && $0.key != from }.compactMap(\.value.active)
         let leaving = links[hostID]?.active

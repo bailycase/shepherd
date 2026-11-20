@@ -12,13 +12,14 @@ final class FakeCloud: FleetRendezvousStore, @unchecked Sendable {
     private let lock = NSLock()
     private var stored: [FleetRendezvousKey: FleetRendezvousRecord] = [:]
     private var failure: FleetRendezvousError?
-    private(set) var operations: [String] = []
+    private var operationLog: [String] = []
+    var operations: [String] { lock.withLock { operationLog } }
 
     init(failing: FleetRendezvousError? = nil) { failure = failing }
 
     func put(_ record: FleetRendezvousRecord) async throws {
         try lock.withLock {
-            operations.append("put \(record.key.kind.rawValue)")
+            operationLog.append("put \(record.key.kind.rawValue)")
             if let failure { throw failure }
             stored[record.key] = record
         }
@@ -33,7 +34,7 @@ final class FakeCloud: FleetRendezvousStore, @unchecked Sendable {
 
     func delete(_ key: FleetRendezvousKey) async throws {
         try lock.withLock {
-            operations.append("delete \(key.kind.rawValue)")
+            operationLog.append("delete \(key.kind.rawValue)")
             if let failure { throw failure }
             stored[key] = nil
         }
@@ -287,6 +288,7 @@ struct FleetRendezvousTests {
         queue.sync { fleet.listenerChanged(route.port) }
         await rendezvous.settle()
         #expect(cloud.record(key) == nil)
+        #expect(!cloud.operations.contains { $0.hasPrefix("put ") }, "the new host never published")
     }
 
     // MARK: No iCloud
