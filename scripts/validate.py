@@ -118,22 +118,30 @@ def run_case():
     elif (result["exit_status"] != 0 or missing or problems or completion.get("actual") != COMPLETE
           or completion.get("expected") != COMPLETE):
         status, reason = "incomplete", "no valid completion evidence (requires all checks in light and dark and a zero Swift exit)"
+        result.update(missing_steps=missing, log_diagnostic=log_diagnostic(run / LOG))
     else:
         status, reason = "passed", None
 
     result.update(status=status, reason=reason, steps=list(records.values()), evidence_errors=problems)
     report = run / "result.json"
     report.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    def evidence_path(path):
+        return str((run / path).relative_to(ROOT))
+
     for step in failed:
         print(f"FAIL mac/{CASE}/{step['step']} [narrow, {step['appearance']}]")
         print(f"- Expected: {step['expected']}\n+ Actual:   {step['actual']}")
         print(f"Look first: {step['look_first']}.")
-        print(f"Evidence: {', '.join([LOG, *step['evidence']])}")
+        print(f"Evidence: {', '.join(evidence_path(path) for path in [LOG, *step['evidence']])}")
     if status == "passed":
         print(f"PASS mac/{CASE} [narrow, light and dark] ({result['build_test_seconds']:.2f}s build/test)")
     elif reason:
         print(f"{'NOT RUN' if status == 'not_run' else 'FAIL'} mac/{CASE} [{status}]: {reason}")
-        print(f"Evidence: {LOG}")
+        if status == "incomplete":
+            if missing:
+                print("Missing steps: " + ", ".join(f"{name} [{appearance}]" for name, appearance in missing))
+            print(result["log_diagnostic"])
+        print(f"Evidence: {evidence_path(LOG)}")
     print(f"Report: {report.relative_to(ROOT)}")
     return 0 if status == "passed" else 1
 

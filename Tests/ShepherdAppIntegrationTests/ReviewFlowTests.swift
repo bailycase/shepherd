@@ -39,7 +39,7 @@ struct ReviewFlowTests {
                 try await checkingCommitSheet(dark: dark, directory: directory)
             } catch {
                 failure = failure ?? error
-                print("\(dark ? "dark" : "light"): \(error)")
+                Issue.record("\(dark ? "dark" : "light"): \(error)")
             }
         }
         if let failure { throw failure }
@@ -128,8 +128,8 @@ struct ReviewFlowTests {
                 let image = directory.flatMap { directory in
                     capture.flatMap { Self.screenshot(of: $0(), in: directory, name: "\(step)-actual-\(appearance).png") }
                 }
-                try Self.record(in: directory, step: step, appearance: appearance, status: "failed",
-                                expected: expected, actual: String(describing: error), evidence: image.map { [$0] } ?? [])
+                try? Self.record(in: directory, step: step, appearance: appearance, status: "failed",
+                                 expected: expected, actual: String(describing: error), evidence: image.map { [$0] } ?? [])
                 throw error
             }
             try Self.record(in: directory, step: step, appearance: appearance, status: "passed", expected: expected, actual: actual)

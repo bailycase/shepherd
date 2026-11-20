@@ -70,7 +70,9 @@ class ValidateTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("FAIL mac/changes-review/open-commit-sheet [narrow, dark]", output)
         self.assertIn("- Expected: enabled Commit… action\n+ Actual:   no Commit… action in the accessibility tree", output)
-        self.assertIn("Evidence: mac/run.log, mac/open-commit-sheet-actual-dark.png", output)
+        report_path = next(line.removeprefix("Report: ") for line in output.splitlines() if line.startswith("Report: "))
+        run = Path(report_path).parent
+        self.assertIn(f"Evidence: {run}/mac/run.log, {run}/mac/open-commit-sheet-actual-dark.png", output)
         self.assertEqual(result["status"], "assertion_failed")
         [step] = result["steps"]
         self.assertEqual(step["actual"], record["actual"])
@@ -84,3 +86,19 @@ class ValidateTests(unittest.TestCase):
                 self.assertNotEqual(code, 0)
                 self.assertEqual(result["status"], "incomplete")
                 self.assertIn("no valid completion evidence", output)
+                self.assertIn("open-commit-sheet [dark]", output)
+                self.assertIn("swift test fixture output", output)
+                self.assertIn(["open-commit-sheet", "dark"], result["missing_steps"])
+                self.assertEqual(len(result["missing_steps"]), 10)
+                self.assertEqual(result["log_diagnostic"], "swift test fixture output")
+
+    def test_all_steps_and_completion_with_zero_exit_pass(self):
+        records = [{"step": step, "appearance": appearance, "status": "passed",
+                    "expected": "expected", "actual": "actual", "evidence": []}
+                   for step in sorted(validate.STEPS) for appearance in validate.APPEARANCES]
+        records.append({"step": "complete", "status": "passed", "evidence": [],
+                        "expected": "light and dark scenarios finished", "actual": "light and dark scenarios finished"})
+        code, output, result = self.run_case(records)
+        self.assertEqual(code, 0)
+        self.assertEqual(result["status"], "passed")
+        self.assertIn("PASS mac/changes-review", output)
