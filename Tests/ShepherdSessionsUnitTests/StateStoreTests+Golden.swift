@@ -6,12 +6,13 @@ import Testing
 @testable import ShepherdSessions
 
 extension StateStoreTests {
-    // Keep the reference golden frozen. StateRecoveryTests, YourPiImportEdgeTests and HookCatalogTests
-    // exercise the new policies for these damaged inputs instead of asserting the old rewrites.
+    // Keep the reference golden frozen. The recovery tests exercise the new policies for these
+    // damaged inputs instead of asserting the old rewrites.
     private static let damagedRows: Set<String> = [
         "instruction-history-bad-element", "instruction-history-damaged",
         "workspace-invalid-split", "workspace-dangling-tab", "workspace-unreadable-agent", "workspace-truncated",
         "pi-import-bad-element", "pi-import-damaged", "hook-settings-bad-element", "hook-settings-damaged",
+        "automation-triggers-bad-element", "automation-triggers-damaged",
     ]
 
     @Test func historicalFilesLoadAndRewriteAsRecorded() async throws {
@@ -86,8 +87,8 @@ extension StateStoreTests {
             let store = AutomationTriggers(url: url, clock: { now }, calendar: calendar)
             let status = await store.status(of: Automation(id: automation, name: "Sample", prompt: "Check", cwd: "/tmp/acme"))
             loaded = try json(status)
-            await store.setAllPaused(!status.allPaused)
-            await store.setAllPaused(status.allPaused)
+            try await store.setAllPaused(!status.allPaused)
+            try await store.setAllPaused(status.allPaused)
         case "changes/turns.json":
             let store = TurnStore(url: url)
             loaded = try json(store.all(agent))

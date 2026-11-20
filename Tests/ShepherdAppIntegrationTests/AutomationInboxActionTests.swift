@@ -70,7 +70,7 @@ struct AutomationInboxActionTests {
         let vm = try await app.start(with: state)
         let id = automation.id
         items.withValue { $0 = labeledIssues(at: Date().addingTimeInterval(5)) }
-        await app.server.automationTriggers.resume(id)
+        try await app.server.automationTriggers.resume(id)
         await app.server.automationTriggers.tick()
         func runs() -> [Agent] { vm.state.agents.filter { $0.automationOrigin?.automationID == id } }
         try await eventuallyOnMain("one run and two waiting", timeout: .seconds(20)) {
@@ -151,7 +151,7 @@ struct AutomationInboxActionTests {
         let key = AutomationKey(host: connection.id, automation: automation.id)
 
         items.withValue { $0 = Self.labeledIssues(at: Date().addingTimeInterval(5)) }
-        await host.automationTriggers.resume(automation.id)
+        try await host.automationTriggers.resume(automation.id)
         await host.automationTriggers.tick()
         func runs() -> [Agent] { host.state.agents.filter { $0.automationOrigin?.automationID == automation.id } }
         try await eventuallyAsync("one run and two waiting on the host", timeout: .seconds(20)) {
