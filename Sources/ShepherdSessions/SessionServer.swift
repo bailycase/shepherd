@@ -511,14 +511,23 @@ public final class SessionServer: @unchecked Sendable {
     private var idleInstall: (offerID: UUID, since: Date, attempt: UUID)?
     /// The updater took the last install this host sent it (it answered downloading or installing): from there the app quits and relaunches, which is
     /// no sign that a person closed it (`HostUpdateStatus.installHandedOff`). A marker file, because this host may restart before anyone looks:
-    /// the app quitting to install is what restarts it. Cleared by the next request that isn't a status. Server queue.
-    private var installHandedOff: Bool {
-        get { FileManager.default.fileExists(atPath: installHandoffMarker.path) }
+    /// the app quitting to install is what restarts it. Cleared by the next request that isn't a status. Nil is "an install was dispatched and
+    /// its outcome isn't known": written before the updater is called, so a restart between the updater taking it and the answer being
+    /// recorded reports unknown, not "no". An empty marker (from before) is a handoff. Server queue.
+    private var installHandedOff: Bool? {
+        get {
+            guard let marker = try? Data(contentsOf: installHandoffMarker) else { return false }
+            return marker == Self.installUnknownMarker ? nil : true
+        }
         set {
-            if newValue { FileManager.default.createFile(atPath: installHandoffMarker.path, contents: nil) }
-            else { try? FileManager.default.removeItem(at: installHandoffMarker) }
+            switch newValue {
+            case true?: FileManager.default.createFile(atPath: installHandoffMarker.path, contents: nil)
+            case nil: FileManager.default.createFile(atPath: installHandoffMarker.path, contents: Self.installUnknownMarker)
+            case false?: try? FileManager.default.removeItem(at: installHandoffMarker)
+            }
         }
     }
+    private static let installUnknownMarker = Data("unknown".utf8)
     private var installHandoffMarker: URL { supportDirectory.appendingPathComponent("host-update-handoff") }
     /// Tests: answer as a host from before `installHandedOff` did, which says nothing of it.
     var omitsInstallHandoff = false
@@ -561,11 +570,14 @@ public final class SessionServer: @unchecked Sendable {
             idleInstall = nil
         case .status: break
         }
+        if case .install = forwarded { installHandedOff = nil }
         let finish: (HostUpdateStatus?) -> Void = { [weak self] status in
             guard let self else { return }
             self.queue.async {
                 guard self.hostUpdateRequests[requester] == generation else { return }
                 self.hostUpdateRequests[requester] = nil
+                // The updater's answer settles the marker written before the install was sent, even for a requester that left. No answer leaves it unknown.
+                if case .install = forwarded, let status { self.installHandedOff = status.phase == .downloading || status.phase == .installing }
                 guard alive() else { return }
                 guard var status else { return reply(nil) }
                 // The updater says it holds the offer: from here the host waits for the threads.
@@ -573,7 +585,6 @@ public final class SessionServer: @unchecked Sendable {
                     self.idleInstall = (waits, Date(), UUID())
                     self.pollIdleInstall(waits, attempt: self.idleInstall?.attempt)
                 }
-                if case .install = forwarded, status.phase == .downloading || status.phase == .installing { self.installHandedOff = true }
                 status.busyThreads = self.busyThreadCount
                 status.waitingForIdle = self.idleInstall != nil && status.phase == .available
                 status.installHandedOff = self.omitsInstallHandoff ? nil : self.installHandedOff
@@ -585,7 +596,11 @@ public final class SessionServer: @unchecked Sendable {
         hopToMain { [weak self] in
             guard let self else { return }
             self.queue.async {
-                guard alive(), self.hostUpdateRequests[requester] == generation else { return }
+                guard alive(), self.hostUpdateRequests[requester] == generation else {
+                    // Nothing was sent to the updater for a requester that left.
+                    if case .install = toUpdater, self.hostUpdateRequests[requester] == generation { self.installHandedOff = false }
+                    return
+                }
                 let authorized: () async -> Bool = { [weak self] in
                     guard let self else { return false }
                     return (try? await self.enqueue { alive() && self.hostUpdateRequests[requester] == generation }) ?? false
@@ -613,11 +628,12 @@ public final class SessionServer: @unchecked Sendable {
             // Idle: the held offer is installed, as an install asked for now would be. An answer that is still an offer (the host
             // refused to reserve: a question waits, a Project runs) leaves it held and the wait goes on; one that never comes is looked at again.
             let answered = OneShot()
+            self.installHandedOff = nil
             self.hopToMain {
                 handler(.install(offerID: offerID, authorized: true), { true }) { status in
                     self.queue.async {
                         guard answered.first() else { return }
-                        if status.phase == .downloading || status.phase == .installing { self.installHandedOff = true }
+                        self.installHandedOff = status.phase == .downloading || status.phase == .installing
                         guard let wait = self.idleInstall, wait.offerID == offerID, wait.attempt == attempt else { return }
                         if status.phase == .available { next() } else { self.idleInstall = nil }
                     }

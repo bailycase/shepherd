@@ -568,6 +568,49 @@ struct FleetUpdateTests {
         try await Self.waitForStage(.updated, on: a, of: id)
     }
 
+    /// The updater takes the host's install and the app quits, but the host restarts before the updater's answer is recorded: the host
+    /// can't know whether the install was taken. It says nothing (unknown) rather than "no", or the job would send the Mac's person to open
+    /// an app that is installing.
+    @Test func aHostThatRestartsBeforeTheUpdatersAnswerWasRecordedIsNotReadAsNotHandedOver() async throws {
+        let updater = FakeUpdater()
+        let (a, b, origin) = try await Self.fleet(updaterB: updater)
+        defer { a.stop() }
+        let id = try await b.hostID()
+        let pi = try await Self.busy(b)
+        b.server.queue.sync { b.server.idleInstallInterval = 0.02 }
+        updater.quitOnInstall()
+        Self.quicken(a)
+        try await Self.start(a, id, .idle)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.waitingForThreads, on: a, of: id)
+        a.server.queue.sync { a.server.fleet?.updates.interval = .seconds(3) }
+        let looks = updater.asked.filter { $0 == .status }.count
+        try await FleetDispatchTests.wait("a look after the pause") { updater.asked.filter { $0 == .status }.count > looks }
+        updater.swallowAnswer { if case .install = $0 { true } else { false } }   // the updater takes it and quits; the host never hears
+        try await Self.settle(pi)
+        try await FleetDispatchTests.wait("the updater to take the install") { updater.swallowedAnswers == 1 }
+
+        let (dir, port) = (b.host.dir, b.port)
+        b.stop(keepFiles: true)
+        let b2 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, prepare: { updater.install(on: $0) })
+        defer { b2.stop() }
+        #expect(try await b2.local.hostUpdate(.status).installHandedOff == nil, "the restarted host doesn't know, which isn't \"no\"")
+        try await Self.waitForStage(.relaunching, on: a, of: id)
+        updater.relaunch(build: "675")
+        try await Self.waitForStage(.updated, on: a, of: id)
+    }
+
+    /// A marker written before the host could say "unknown" is empty, and it was only ever written for a handoff.
+    @Test func aHandoffMarkerFromBeforeUnknownWasWrittenStillSaysHandedOver() async throws {
+        let updater = FakeUpdater()
+        let (a, b, _) = try await Self.fleet(updaterB: updater)
+        defer { a.stop(); b.stop() }
+        #expect(try await b.local.hostUpdate(.status).installHandedOff == false)
+        #expect(FileManager.default.createFile(atPath: b.server.supportDirectory.appendingPathComponent("host-update-handoff").path, contents: nil))
+        #expect(try await b.local.hostUpdate(.status).installHandedOff == true)
+    }
+
     /// No thread works any more but the host hasn't sent its install yet: an app that quits now handed nothing to an installer. Zero busy threads
     /// is not a handoff, so the person is told to open the app, and the wait that is left on its host is let go.
     @Test func anAppThatQuitsBeforeTheHostSentItsInstallNeedsToBeOpened() async throws {
