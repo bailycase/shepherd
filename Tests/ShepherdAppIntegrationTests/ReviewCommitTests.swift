@@ -301,7 +301,7 @@ struct ReviewCommitTests {
     // MARK: Through the host
 
     @Test func aRemoteClientCommitsThroughTheHostAndPollsTheOperation() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         let sandbox = try WorktreeSandbox(origin: true)
         defer { local.stop(); remote.stop(); sandbox.remove() }
         try write("changed\n", "README.md", in: sandbox)
@@ -339,7 +339,7 @@ struct ReviewCommitTests {
     }
 
     @Test func theHostRefusesACommitWhileItsAgentWorksUntilConfirmed() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         let sandbox = try WorktreeSandbox(origin: true)
         defer { local.stop(); remote.stop(); sandbox.remove() }
         try write("changed\n", "README.md", in: sandbox)

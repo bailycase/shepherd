@@ -78,7 +78,7 @@ extension PreviewTests {
                                                            agents: [work, run, bumpRun],
                                                            automations: [merge, nightly, bump, cleanup]))
             let tokenURL = dir.appendingPathComponent("remote-token")
-            port = try await server.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+            port = try server.server.startRemoteListener(port: 0, tokenURL: tokenURL)
             token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         }
 

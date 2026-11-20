@@ -41,7 +41,7 @@ struct ProjectWorkerOpenThreadTests {
             _ = try await owner.start(); _ = try await executor.start()
             try await owner.server.addSpace(local); try await executor.server.addSpace(remote)
             let tokenURL = executor.dir.appendingPathComponent("open-thread-token")
-            let port = try await executor.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+            let port = try executor.server.startRemoteListener(port: 0, tokenURL: tokenURL)
             let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             owner.remoteHosts.addHost(name: "Fixture executor", host: "127.0.0.1", port: port, token: token, fleetManaged: true)
             try await eventuallyOnMain("loopback executor connected") { self.owner.remoteHosts.connections.first?.phase == .connected }
@@ -103,7 +103,7 @@ struct ProjectWorkerOpenThreadTests {
     }
 
     @Test func theHeaderButtonOpensAnOwnerLocalResolvedWorker() async throws {
-        let r = try await Rig(); defer { r.stop() }
+        let r = try Rig(); defer { r.stop() }
         try await r.start()
         let task = try await r.resolvedTask(remote: false)
         let window = try Self.detail(r.owner.vm, .init(home: .local, id: r.projectID), task.id); defer { window.close() }
@@ -117,7 +117,7 @@ struct ProjectWorkerOpenThreadTests {
 
     /// The executor's worker, by the task's own binding. A local agent with the worker's ID is a collision, never a fallback.
     @Test func theHeaderButtonOpensTheExecutorsResolvedWorkerAndNeverALocalAgentWithItsID() async throws {
-        let r = try await Rig(); defer { r.stop() }
+        let r = try Rig(); defer { r.stop() }
         try await r.start()
         let task = try await r.resolvedTask(remote: true)
         #expect(!r.owner.server.state.agents.contains { $0.id == task.workerAgentID } && r.executor.server.state.agents.contains { $0.id == task.workerAgentID })
@@ -138,7 +138,7 @@ struct ProjectWorkerOpenThreadTests {
     /// The task's exact binding is gone (the host was re-pointed, then removed). Each press says so; nothing is selected, not even the
     /// local agent with the worker's ID, and the Project page stays.
     @Test func aChangedOrRemovedExecutorBindingSaysSoAndSelectsNothing() async throws {
-        let r = try await Rig(); defer { r.stop() }
+        let r = try Rig(); defer { r.stop() }
         try await r.start()
         let task = try await r.resolvedTask(remote: true)
         let config = try #require(r.owner.remoteHosts.connections.first?.config)
@@ -166,7 +166,7 @@ struct ProjectWorkerOpenThreadTests {
     /// A viewer of a remotely owned Project: the owner's own worker is that host's agent, opened through the viewer's connection to the
     /// owner. A worker the owner placed on its executor has a host ID only the owner can read, so the viewer says so instead of guessing.
     @Test func aViewerOpensTheRemoteOwnersWorkerAndSaysWhenTheOwnerPlacedItElsewhere() async throws {
-        let r = try await Rig(); defer { r.stop() }
+        let r = try Rig(); defer { r.stop() }
         try await r.start()
         let ownerWorker = try await r.resolvedTask(remote: false)
         let placed = try await r.resolvedTask(remote: true)
@@ -175,7 +175,7 @@ struct ProjectWorkerOpenThreadTests {
         viewer.settings.projectsEnabled = true
         _ = try await viewer.start()
         let tokenURL = r.owner.dir.appendingPathComponent("viewer-token")
-        let port = try await r.owner.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let port = try r.owner.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         viewer.remoteHosts.addHost(name: "Owner Mac", host: "127.0.0.1", port: port, token: token, fleetManaged: true)
         let ownerHost = try #require(viewer.remoteHosts.connections.first?.config).id
@@ -206,7 +206,7 @@ struct ProjectWorkerOpenThreadTests {
     }
 
     private static func moreMenu() async throws {
-        let r = try await Rig(); defer { r.stop() }
+        let r = try Rig(); defer { r.stop() }
         try await r.start()
         let task = try await r.resolvedTask(remote: true)
         try await eventuallyOnMain("the app sees the task resolved") {

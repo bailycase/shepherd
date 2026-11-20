@@ -9,7 +9,7 @@ import ShepherdTestSupport
 @Suite("Remote native metadata", .integrationTimeLimit)
 struct RemoteNativeMetadataTests {
     @Test func oversizedQuestionsRefuseTheDigestWithoutTruncatingSnapshotAnswers() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let options = [String(repeating: "a", count: 36 * 1024), "No"]
         let script: [String: Any] = ["prompts": ["digest oversized fixture": [["ask": ["title": "Choose", "options": options]]]]]
@@ -67,7 +67,7 @@ struct RemoteNativeMetadataTests {
     }
 
     @Test func theDefaultDigestRateBudgetRefusesExcessReads() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let pi = try await PiAgent.launch(on: r.host)
         let snapshot = try await pi.ready()
@@ -87,7 +87,7 @@ struct RemoteNativeMetadataTests {
     }
 
     @Test func subscriptionsAreScopedAndReplaceable() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let pi = try await PiAgent.launch(on: r.host)
         let ready = try await pi.ready()

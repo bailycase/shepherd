@@ -84,7 +84,7 @@ struct ProjectSettingsTests {
         let host = try ScratchServer(dir: support, pi: pi)
         defer { host.stop() }
         let tokenURL = support.appendingPathComponent("token")
-        let port = try await host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let port = try host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8)
         let old = try RawRemote(port: port)
         defer { old.closeConnection() }
@@ -133,7 +133,7 @@ struct ProjectSettingsTests {
     @Test func aRemoteClientEditsOnlyTheNamedHostProjectAndOldHostsRequireAnUpdate() async throws {
         // Startup imports old pi sessions before this test adds its named project.
         let pi = PiSetup(engine: PiSetup.app.engine, home: try makeScratchDirectory("rpi"))
-        let host = try await RemoteHost(pi: pi)
+        let host = try RemoteHost(pi: pi)
         defer { host.stop() }
         let directory = host.host.dir.appendingPathComponent("remote-project")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -145,7 +145,7 @@ struct ProjectSettingsTests {
         #expect(listing.projects.first?.name == "remote")
         _ = try await client.projects(.save(directory: directory.path, file: "AGENTS.md", text: "remote only", expected: nil))
         #expect(try String(contentsOf: directory.appendingPathComponent("AGENTS.md"), encoding: .utf8) == "remote only")
-        let old = try await RemoteHost()
+        let old = try RemoteHost()
         defer { old.stop() }
         old.server.advertisedCapabilities = []
         let oldClient = try await old.typed()

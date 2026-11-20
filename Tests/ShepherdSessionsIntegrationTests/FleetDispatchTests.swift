@@ -110,7 +110,7 @@ struct FleetDispatchTests {
             }
             let tokenURL = scratch.appendingPathComponent("remote-token")
             let socket = scratch.appendingPathComponent("h.sock").path
-            let port = try await RestartablePort.listen(port) { try await server.startRemoteListener(port: $0, tokenURL: tokenURL) }
+            let port = try await RestartablePort.listen(port) { try server.startRemoteListener(port: $0, tokenURL: tokenURL) }
             token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             try server.startLocalListener(path: socket, tokenURL: tokenURL)
             await MainActor.run {

@@ -18,7 +18,7 @@ struct RemoteHostTests {
     /// Both machines hold an identical workspace, so every id matches across them: nothing
     /// done to the remote agent may land on the local one.
     @Test func remoteNavigationAndActionsNeverTouchTheLocalAgentWithTheSameID() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: local.dir.path)
         let agents = (0..<2).map { Fixture.agent("agent\($0)", in: space, order: $0) }
@@ -50,7 +50,7 @@ struct RemoteHostTests {
     /// its dialog with it, and Delete agent's "Don't ask again" acts at once.
     @Test(arguments: [false, true])
     func aRemoteAgentsDeleteAsksFirstAndTheHostKeepsItUntilConfirmed(fromSelection: Bool) async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         let agents = (0..<3).map { Fixture.agent("agent\($0)", in: space, order: $0) }
@@ -109,7 +109,7 @@ struct RemoteHostTests {
     /// "Don't ask again" (as on This Mac).
     @Test(arguments: WorktreeDeleteAction.allCases)
     func aRemoteWorktreeAgentsDeleteFollowsTheWorktreeSetting(_ action: WorktreeDeleteAction) async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         var agent = Fixture.agent("tree", in: space)
@@ -143,7 +143,7 @@ struct RemoteHostTests {
     /// (`terminalControlCapability`); the host refuses its thread's pane, and Kill process on a
     /// shell at its prompt.
     @Test func renamingAHostsTerminalTabNamesItOnTheHost() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: local.dir.path)
         let agent = Fixture.agent(in: space, auxiliary: 1)
@@ -175,7 +175,7 @@ struct RemoteHostTests {
 
     @Test func selectedVisibleRemoteTerminalDemandsOnlyItsOwnProcess() async throws {
         try StubPi.installAsEngine()
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         let agent = Fixture.agent(in: space, auxiliary: 2)
@@ -214,7 +214,7 @@ struct RemoteHostTests {
 
     @Test(arguments: [false, true], [false, true])
     func remoteTerminalDemandStartsOnlyTheRequestedRestoredShell(staleBinding: Bool, olderHost: Bool) async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         var agent = Fixture.agent(in: space, auxiliary: 4)
@@ -278,7 +278,7 @@ struct RemoteHostTests {
 
     @Test(arguments: ["available", "hostRemoved", "agentGone"])
     func agentCommandsWhileARemoteAgentIsSelectedLeaveTheLocalWorkspaceAlone(remoteState: String) async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: local.dir.path)
         let agent = Fixture.agent(in: space, auxiliary: 1)
@@ -308,7 +308,7 @@ struct RemoteHostTests {
     }
 
     @Test func aRemoteAgentsReviewShowsTheHostsDiff() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let repo = try makeScratchRepo(files: ["host.txt": "before\n"])
         defer { try? FileManager.default.removeItem(at: repo) }
@@ -334,7 +334,7 @@ struct RemoteHostTests {
     }
 
     @Test func remoteSubagentsFollowTheHostAndClearWhenTheAgentOrHostGoes() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         let agent = Fixture.agent("parent", in: space)
@@ -361,7 +361,7 @@ struct RemoteHostTests {
     /// A subagent asks its parent, never the user. A live child keeps its idle parent working
     /// locally and remotely, without putting it in Needs you; the tray shows the child's question.
     @Test func aSubagentThatAskedItsParentNeverPutsItsAgentInNeedsYouOnTheHostOrItsClients() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         let fixture = Fixture.agent("parent", in: space)
@@ -389,7 +389,7 @@ struct RemoteHostTests {
     /// ⌘N over a remote thread opens New thread in that thread's project on its host, and
     /// sending creates the agent there with the prompt as its opening message.
     @Test func newThreadOverARemoteThreadCreatesOnTheHostOnly() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space("remote", path: "/remote/project")
         let agent = Fixture.agent("remote worker", in: space)
@@ -423,7 +423,7 @@ struct RemoteHostTests {
     }
 
     @Test func aRemoteWorktreeRequestForAnotherRepositoryIsRefusedBeforeAnythingChanges() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let first = try WorktreeSandbox(), second = try WorktreeSandbox()
         defer { first.remove(); second.remove() }
@@ -447,7 +447,7 @@ struct RemoteHostTests {
     /// A refused token fails the same way every time: the host says why and waits for the
     /// token to be edited (or Reconnect) instead of retrying it with backoff.
     @Test func aHostThatRefusesTheTokenSaysSoAndWaitsForAnEdit() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         try await remote.host.start()
         try await local.start()
@@ -464,7 +464,7 @@ struct RemoteHostTests {
     /// A remote Project's reasoning level is its owner's to keep: offered against an owner that advertises it, never against an older one
     /// (which would drop the field and leave a control that changes nothing).
     @Test func aRemoteProjectsReasoningLevelIsOfferedOnlyByAnOwnerThatKeepsIt() async throws {
-        let local = try AppHarness(), current = try await RemoteHostHarness(), older = try await RemoteHostHarness()
+        let local = try AppHarness(), current = try RemoteHostHarness(), older = try RemoteHostHarness()
         defer { local.stop(); current.stop(); older.stop() }
         older.host.server.advertisedCapabilities.removeAll { $0 == RemoteProtocol.projectConversationThinkingCapability }
         try await current.host.start()
@@ -478,10 +478,10 @@ struct RemoteHostTests {
     }
 
     @Test func aHostWithNothingListeningKeepsRetrying() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         try await local.start()
-        await remote.host.server.stopRemoteListener()
+        remote.host.server.stopRemoteListener()
         local.remoteHosts.addHost(name: "studio", host: "127.0.0.1", port: remote.port, token: remote.token)
         let connection = try #require(local.remoteHosts.connections.last)
 
@@ -491,7 +491,7 @@ struct RemoteHostTests {
     }
 
     @Test func aDisconnectedOrReplacedHostRejectsActionsApprovedAgainstTheOldConnection() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         try await remote.host.start()
         try await local.start()
@@ -532,7 +532,7 @@ struct RemoteWorktreeTests {
 
     /// A host worktree agent on `worktree/remote` with one commit beyond main.
     private func setUp() async throws -> Setup {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         let sandbox = try WorktreeSandbox(origin: true)
         let checkout = try GitWorktree.add(repo: sandbox.repo.path, branch: "worktree/remote", from: "origin/main")
         try git(["commit", "-q", "--allow-empty", "-m", "feature"], in: URL(fileURLWithPath: checkout))
@@ -610,7 +610,7 @@ struct RemoteWorktreeTests {
 @MainActor
 struct RemotePaneStreamTests {
     @Test func theFirstAttachUsesTheViewersSettledGrid() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let info = try await remote.host.server.createSession(params: CreateSessionParams(cwd: remote.host.dir.path, command: ["/bin/cat"], cols: 80, rows: 24))
         try await local.start()
@@ -629,7 +629,7 @@ struct RemotePaneStreamTests {
     }
 
     @Test func closingARemotePaneReleasesItsViewportAndKeepsTheHostProcess() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let server = remote.host.server
         let info = try await server.createSession(params: CreateSessionParams(cwd: remote.host.dir.path, command: ["/bin/cat"], cols: 120, rows: 40))

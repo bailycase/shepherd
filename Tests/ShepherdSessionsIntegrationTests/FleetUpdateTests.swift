@@ -394,7 +394,7 @@ struct FleetUpdateTests {
     /// With no Shepherd app open, the host opens its own to run Sparkle for a request that needs it, and waits for it to connect; a status is
     /// answered without that. A host that can't open the app says so, and the job tells the person to open it.
     @Test func aHostWithNoAppOpensItForARequestThatNeedsItAndSaysSoWhenItCant() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         await MainActor.run { host.server.relayWindowRequestsToApp() }
         let opened = Locked(0)

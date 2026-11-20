@@ -231,7 +231,7 @@ struct RetryTests {
 
     @Test(arguments: ["current", "missing-capability", "disconnected"])
     func remoteRecoveryIsBoundToItsExactClientAndCapability(boundary: String) async throws {
-        let remote = try await RemoteHost()
+        let remote = try RemoteHost()
         defer { remote.stop() }
         let h = try await PiAgent.launch(on: remote.host)
         let s = try await failedCheckpoint(h)
@@ -251,7 +251,7 @@ struct RetryTests {
             try await remote.server.enqueue { remote.server.rpcThread(forAgent: h.agent.id)?.beforePrompt = { gate.pending = $0 } }
             let action = Task { try await client.nativeThread(agentID: h.agent.id, request: request) }
             try await eventually("the remote recovery preparation") { try await remote.server.enqueue { gate.pending != nil } }
-            if boundary == "disconnected" { await remote.server.stopRemoteListener() }
+            if boundary == "disconnected" { remote.server.stopRemoteListener() }
             try await remote.server.enqueue { gate.pending?(); gate.pending = nil }
             if boundary == "disconnected" {
                 do {

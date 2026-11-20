@@ -67,7 +67,7 @@ struct RemoteDesignTests {
     // MARK: The experiment
 
     @Test func designsAreOfferedAndServedOnlyWhileTheExperimentIsOn() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         _ = try await design(host)
 
@@ -100,7 +100,7 @@ struct RemoteDesignTests {
 
     /// A host from before designs (or one that stands in for it) never offers them.
     @Test func aHostWithoutTheCapabilityRefusesDesignRequests() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.designsCapability }
         host.server.setDesignsServed(true)
@@ -113,7 +113,7 @@ struct RemoteDesignTests {
     /// Markup and the agent's proposals go through the host's own checks: a client that sends
     /// markup the design can't hold is refused, and one the host doesn't offer markup to is too.
     @Test func markupAndItsProposalsGoThroughTheHostsChecks() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let id = try await design(host)
@@ -141,7 +141,7 @@ struct RemoteDesignTests {
     }
 
     @Test func aHostThatDoesntOfferMarkupRefusesItAndOffersItOnlyWithDesigns() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         let off = try await host.raw(authenticated: false)
         #expect(try await off.hello(token: host.token, capabilities: RemoteProtocol.clientCapabilities)
@@ -159,7 +159,7 @@ struct RemoteDesignTests {
     // MARK: Files
 
     @Test func boardsComeByHashAndOnlyChangedFilesTravel() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let id = try await design(host)
@@ -197,7 +197,7 @@ struct RemoteDesignTests {
     }
 
     @Test func aWatchedDesignPushesOneChangePerWrite() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let id = try await design(host)
@@ -219,7 +219,7 @@ struct RemoteDesignTests {
     /// A client that doesn't list `designs.v1` asked for nothing pushed: it can't watch a design,
     /// and a change to one is never sent to it.
     @Test func aClientWithoutTheCapabilityIsNeverPushedDesignFrames() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let id = try await design(host)
@@ -248,7 +248,7 @@ struct RemoteDesignTests {
     }
 
     @Test func anUploadDownloadsInPiecesAndResumesWhereItStopped() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let size = RemoteProtocol.designChunkBytes * 2 + 1_000
@@ -282,7 +282,7 @@ struct RemoteDesignTests {
     }
 
     @Test func aFileTooLargeForOneReplyIsListedAndFetchedInPieces() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let id = try await design(host)
@@ -312,7 +312,7 @@ struct RemoteDesignTests {
     /// The typed client end to end: a design's files synced into the cache by hash, an upload
     /// fetched in pieces, and a watched design's change delivered as a hint to pull.
     @Test func aClientSyncsADesignAndHearsItChange() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let id = try await design(host, assetBytes: RemoteProtocol.designChunkBytes + 7)
@@ -338,7 +338,7 @@ struct RemoteDesignTests {
     // MARK: Security
 
     @Test func nothingOutsideADesignsProjectIsServedOrWritten() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let id = try await design(host)
@@ -393,7 +393,7 @@ struct RemoteDesignTests {
     }
 
     @Test func aRemoteMoveIsTheHostsOwnIndexUpdate() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let id = try await design(host)
@@ -411,7 +411,7 @@ struct RemoteDesignTests {
     // MARK: Comments
 
     @Test func aRemoteCommentReachesTheDesignAgentFenced() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let pi = try await PiAgent.launch(on: host.host)
@@ -464,7 +464,7 @@ struct RemoteDesignTests {
     /// Another device's New design is made by the host's app, with the brief trimmed and the
     /// system's name checked first; a host without the app to make it refuses.
     @Test func aRemoteNewDesignIsMadeByTheHostsApp() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let raw = try await designClient(host)
@@ -501,7 +501,7 @@ struct RemoteDesignTests {
     }
 
     @Test func aDesignSystemIsReadWhole() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let raw = try await host.raw()
@@ -517,7 +517,7 @@ extension RemoteDesignTests {
     /// host's workspace at once, back with Undo within the window. A host that doesn't offer
     /// Delete refuses both.
     @Test func aRemoteDeleteGoesThroughTheHostsDeleteWithUndo() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.designUndoWindow = 60
         host.server.setDesignsServed(true)
@@ -538,7 +538,7 @@ extension RemoteDesignTests {
     }
 
     @Test func aHostWithoutDeleteRefusesIt() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.designDeleteCapability }
         host.server.setDesignsServed(true)
@@ -555,7 +555,7 @@ extension RemoteDesignTests {
     /// A design with no agent gets one from the host's app; a host without the app, or without
     /// the capability, refuses. A system build never opens remotely.
     @Test func aDesignWithoutAnAgentGetsOneFromTheHostsApp() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let id = try await design(host)
@@ -580,7 +580,7 @@ extension RemoteDesignTests {
 
     /// Duplicate and Remove from Recents go through the host's own.
     @Test func duplicateAndRemoveFromRecentsAreTheHostsOwn() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let id = try await design(host)
@@ -600,7 +600,7 @@ extension RemoteDesignTests {
     /// A host's systems are read file by file, renamed, duplicated and deleted for another
     /// device, and each change is pushed to a client that reads it. A built-in stays read-only.
     @Test func designSystemsChangeRemotelyAndArePushed() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         let tokens = Data(#"{"format":"shepherd-tokens/1"}"#.utf8)
         host.server.designSystems.register(DesignSystemStore.BuiltIn(
@@ -645,7 +645,7 @@ extension RemoteDesignTests {
 
     /// A client that doesn't list `design.systems.v1` is never pushed a systems change.
     @Test func anOlderClientIsNotPushedSystemChanges() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.designSystems.register(DesignSystemStore.BuiltIn(
             info: DesignSystemInfo(namespace: "shepherd-design", title: "Shepherd Design", createdAt: 0), files: ["tokens.json": Data("{}".utf8)]))
@@ -663,7 +663,7 @@ extension RemoteDesignTests {
     /// "Build one from a repo" from another device: the host's app starts the build in one of its
     /// spaces (never the designs space); a host without the app, or an unknown space, refuses.
     @Test func aSystemBuildIsStartedByTheHostsApp() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let web = Space(name: "dashboard-web", path: host.host.dir.path)
@@ -698,7 +698,7 @@ extension RemoteDesignTests {
     /// a finish before the last piece, a non-ZIP or an oversized one is refused, and the file
     /// goes once the import is done either way.
     @Test func anImportIsUploadedInOrderAndImportedByTheHostsApp() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let raw = try await designClient(host)

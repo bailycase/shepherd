@@ -26,10 +26,10 @@ public enum RestartablePort {
     /// Starts a listener with `start` and returns the port it bound. `port` 0 chooses a number
     /// nobody else in this process has; a restart passes the number it had, which stays reserved.
     /// A number another process already holds is skipped (a new one) or waited for (a restart).
-    public static func listen(_ port: UInt16 = 0, _ start: (UInt16) async throws -> UInt16) async throws -> UInt16 {
+    public static func listen(_ port: UInt16 = 0, _ start: (UInt16) throws -> UInt16) async throws -> UInt16 {
         if port != 0 {
             try await eventually("port \(port) to be free to bind again") {
-                do { _ = try await start(port); return true } catch where inUse(error) { return false }
+                do { _ = try start(port); return true } catch where inUse(error) { return false }
             }
             return port
         }
@@ -41,7 +41,7 @@ public enum RestartablePort {
                 used.insert(number)
                 return number
             }
-            do { return try await start(candidate) } catch where inUse(error) { lastError = error }
+            do { return try start(candidate) } catch where inUse(error) { lastError = error }
         }
         throw lastError
     }

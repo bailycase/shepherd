@@ -11,7 +11,7 @@ import Testing
 @MainActor
 struct RemoteThreadMountTests {
     @Test func maximizingARemoteTerminalKeepsTheThreadAndItsImageDraftMounted() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         let agent = Fixture.agent("remote", in: space, auxiliary: 1)

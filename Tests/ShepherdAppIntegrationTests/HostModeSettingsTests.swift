@@ -45,7 +45,7 @@ struct HostModeSettingsTests {
         let settings = AppSettings(store: defaults)
         let notice = Self.notice()
         settings.followOtherProcesses(notice: notice)
-        await ShepherdHost.serveSettings(settings, on: host.server).value
+        ShepherdHost.serveSettings(settings, on: host.server)
         var goals: [Bool] = []
         settings.onGoalsChange = { goals.append($0) }
 
@@ -86,7 +86,7 @@ struct HostModeSettingsTests {
         let hostSettings = AppSettings(store: defaults)
         hostSettings.followOtherProcesses(notice: notice)
         HostSettingsMapping.serve(on: host.server, settings: hostSettings)
-        await ShepherdHost.serveSettings(hostSettings, on: host.server).value
+        ShepherdHost.serveSettings(hostSettings, on: host.server)
         var fired: Set<String> = []
         func record<T>(_ name: String, _ callback: ((T) -> Void)?) -> (T) -> Void { { fired.insert(name); callback?($0) } }
         hostSettings.onGoalsChange = record("goals", hostSettings.onGoalsChange)
@@ -156,7 +156,7 @@ struct HostModeSettingsTests {
         hostSettings.followOtherProcesses(notice: notice)
         var listener: (port: UInt16?, failure: RemoteListenerFailure?) = (nil, nil)
         HostSettingsMapping.serve(on: host.server, settings: hostSettings) { nil } listener: { listener }
-        #expect(await ShepherdHost.serveSettings(hostSettings, on: host.server) { port, _ in listener.port = port }.value == nil)
+        ShepherdHost.serveSettings(hostSettings, on: host.server) { port, _ in listener.port = port }
 
         let (socket, token, phone) = try await Self.listen(host)
         phone.disconnect()

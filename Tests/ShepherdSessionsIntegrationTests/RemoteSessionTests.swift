@@ -11,7 +11,7 @@ import ShepherdTestSupport
 @Suite("Remote sessions", .integrationTimeLimit)
 struct RemoteSessionTests {
     @Test func aNonreadingSocketOverrunsExplicitlyAndReconnectReplaysTheFinalScreen() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let info = try await r.host.shell("stty -echo -opost; printf READY; IFS= read -r _; awk 'BEGIN{for(i=0;i<120000;i++)print \"01234567890123456789012345678901234567890123456789\"}'; printf FINAL; IFS= read -r _")
         try await r.host.waitForScreen(info.id, toContain: "READY")
@@ -35,7 +35,7 @@ struct RemoteSessionTests {
     }
 
     @Test func viewersReceiveIdenticalLiveBytesAndDetachIndependently() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let lines = SessionServer.remoteOutputChunkBytes / Data("é🐑:00000\n".utf8).count + 1
         let info = try await r.host.shell(
@@ -73,7 +73,7 @@ struct RemoteSessionTests {
     }
 
     @Test func attachReplaysTheScreenThenStreamsLiveOutput() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let info = try await r.host.shell("echo REPLAY_MARKER; cat")
         try await r.host.waitForScreen(info.id, toContain: "REPLAY_MARKER")
@@ -90,7 +90,7 @@ struct RemoteSessionTests {
     }
 
     @Test func detachStopsTheStreamButInputStillWorks() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let info = try await r.host.shell("stty -echo; cat")
         let client = try await r.raw()
@@ -108,7 +108,7 @@ struct RemoteSessionTests {
     }
 
     @Test func attachedClientsHearTheExit() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let info = try await r.host.shell("sleep 30")
         let client = try await r.typed()
@@ -122,7 +122,7 @@ struct RemoteSessionTests {
     }
 
     @Test func attachingADeadSessionReplaysItAndReportsTheExit() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let info = try await r.host.shell("printf final-words")
         try await r.host.waitForScreen(info.id, toContain: "final-words")
@@ -135,7 +135,7 @@ struct RemoteSessionTests {
     }
 
     @Test func attachFailsForUnknownAndRPCSessions() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let pi = try await PiAgent.launch(on: r.host)
         let client = try await r.raw()
@@ -150,7 +150,7 @@ struct RemoteSessionTests {
     /// replay is the newest `remoteReplayScrollbackLines` of scrollback, not the whole buffer,
     /// which styled and wide could pass the client's reply queue and drop it.
     @Test func aLargeReplayIsChunkedUnderTheFrameLimit() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let lines = SessionScreen.defaultScrollbackLines + 60
         // Every other character changes colour, so each line's styled replay runs to several hundred bytes.
@@ -178,7 +178,7 @@ struct RemoteSessionTests {
     }
 
     @Test func pasteDeliversOneBracketedBlockThenSubmitAndIsAcknowledged() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let info = try await r.host.shell("stty -echo; cat -v")
         let client = try await r.typed()
@@ -192,7 +192,7 @@ struct RemoteSessionTests {
     }
 
     @Test func aPasteRefusedByTheInputQueueIsNotAcknowledgedAsDelivered() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let info = try await r.host.shell("stty raw -echo; printf READY; sleep 30")
         try await r.host.waitForScreen(info.id, toContain: "READY")
@@ -213,7 +213,7 @@ struct RemoteSessionTests {
     }
 
     @Test func pasteToADeadSessionIsARejection() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let info = try await r.host.shell("exit 0")
         try await r.host.waitForExit(info.id)
@@ -229,7 +229,7 @@ struct RemoteSessionTests {
     @Test func aStalledRemoteUIReceivesMergedCompleteOutput() async {
         await #expect(processExitsWith: .success) {
             await recordingErrors {
-                let r = try await RemoteHost()
+                let r = try RemoteHost()
                 defer { r.stop() }
                 let lines = 20_000
                 let info = try await r.host.shell(
@@ -270,7 +270,7 @@ struct RemoteSessionTests {
     }
 
     @Test func hostShutdownDisconnectsTheClient() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         let client = try await r.typed()
         let dropped = Locked(false)
         client.onDisconnected = { _ in dropped.withValue { $0 = true } }

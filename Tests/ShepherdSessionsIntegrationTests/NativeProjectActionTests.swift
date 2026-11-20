@@ -9,7 +9,7 @@ import ShepherdTestSupport
 @Suite("Native typed Project action producer", .integrationTimeLimit)
 struct NativeProjectActionTests {
     @Test func realToolResultRetainsOnlyTypedIdentityLiveSettledReconnectedAndReplayed() async throws {
-        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let created = try await rig.create()
         let operation = UUID()
         let project = try await rig.perform(created.id, .assign(operationID: operation, spaceID: try #require(created.linkedSpaces.first?.spaceID), title: "Not an identity", prompt: "hang"))
@@ -35,7 +35,7 @@ struct NativeProjectActionTests {
         #expect(settled.messages.first { $0.projectAction != nil }?.projectAction == expected)
         _ = try await pi.waitForStdin("get_messages", count: 2)
         let tokenURL = rig.host.dir.appendingPathComponent("token")
-        let port = try await rig.host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let port = try rig.host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let client = RemoteHostClient(); defer { client.disconnect() }
         for _ in 0..<2 {

@@ -33,7 +33,7 @@ struct RemoteFilesTests {
             try fm.createSymbolicLink(atPath: folder.appendingPathComponent("escape.txt").path,
                                       withDestinationPath: outside.appendingPathComponent("secret.txt").path)
             try fm.createSymbolicLink(atPath: folder.appendingPathComponent("Sources/loop").path, withDestinationPath: "..")
-            remote = try await RemoteHost()
+            remote = try RemoteHost()
             let space = Fixture.space("web", path: folder.path)
             let seeded = Fixture.agent(in: space)
             try await remote.host.seed(Fixture.workspace([seeded], space: space))

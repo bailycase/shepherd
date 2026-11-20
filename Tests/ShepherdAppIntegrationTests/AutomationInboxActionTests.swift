@@ -136,7 +136,7 @@ struct AutomationInboxActionTests {
         try StubPi.installAsEngine()
         let items = Locked<[GitHubItem]>([])
         let local = try AppHarness()
-        let remote = try await RemoteHostHarness(triggerSource: AutomationTriggers.Source(activity: { _ in items.current },
+        let remote = try RemoteHostHarness(triggerSource: AutomationTriggers.Source(activity: { _ in items.current },
                                                                                   originRepo: { _ in "acme/app" }))
         defer { local.stop(); remote.stop() }
         let vm = try await local.start()

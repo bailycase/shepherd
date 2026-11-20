@@ -340,7 +340,7 @@ final class ProjectsPreviewWorld {
         let tokenURL = remote.dir.appendingPathComponent("token")
         if legacy { remote.server.advertisedCapabilities = [] }
         if let remoteCapabilities { remote.server.advertisedCapabilities = remoteCapabilities }
-        let port = try await remote.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let port = try remote.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         hosts.addHost(name: detail ? "Build-01" : "build-01", host: "127.0.0.1", port: port, token: token)
         try await eventuallyOnMain("the project host to connect") { hosts.connections.first?.phase == .connected && (empty || hosts.connections.first?.state.spaces.count == 3) }

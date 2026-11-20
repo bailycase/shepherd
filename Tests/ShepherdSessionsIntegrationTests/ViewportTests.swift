@@ -20,7 +20,7 @@ struct ViewportTests {
     }
 
     @Test func theSmallestAttachedViewerWins() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let info = try await r.host.shell("cat")
         r.server.reportLocalViewport(sessionID: info.id, cols: 200, rows: 60)
@@ -46,7 +46,7 @@ struct ViewportTests {
 
     /// Remote viewers are sized among themselves; a small host window does not clamp them.
     @Test func theHostSurfaceOnlyRulesWithoutRemoteViewers() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let info = try await r.host.shell("cat")
         r.server.reportLocalViewport(sessionID: info.id, cols: 80, rows: 24)
@@ -59,7 +59,7 @@ struct ViewportTests {
     }
 
     @Test func resizeReportsFromUnattachedOrEmptyViewportsAreIgnored() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let info = try await r.host.shell("cat")
         let bystander = try await r.raw()
@@ -72,7 +72,7 @@ struct ViewportTests {
     }
 
     @Test func oversizedViewportsCannotReplaceAValidGrid() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let info = try await r.host.shell("cat")
         let client = try await r.raw()
@@ -114,7 +114,7 @@ struct ViewportTests {
     }
 
     @Test func unchangedReportsDoNotSignalTheChild() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let counter = """
         import signal, sys

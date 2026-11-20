@@ -179,7 +179,7 @@ struct CommandNoticeTests {
     /// The whole way: a send to the server, the stub's command, the same row for the host's own
     /// client and a remote one (no new request or field: an older client draws it as a note).
     @Test func everyClientSeesTheSameRow() async throws {
-        let remote = try await RemoteHost()
+        let remote = try RemoteHost()
         defer { remote.stop() }
         let pi = try await PiAgent.launch(on: remote.host)
         _ = try await pi.ready()

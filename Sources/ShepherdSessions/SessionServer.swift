@@ -965,9 +965,12 @@ public final class SessionServer: @unchecked Sendable {
     private var remoteListenFD: Int32 = -1
     private var remoteAcceptSource: DispatchSourceRead?
     /// Marks when the remote listener's descriptor is really closed: until then its port is still taken.
-    /// `Closed` belongs to the listener that is open, `Closing` to one that was stopped and is awaited.
+    /// `Closed` belongs to the listener that is open, `Closing` to one that was stopped, kept until its descriptor closes.
     private var remoteListenerClosed: ListenerClose?
     private var remoteListenerClosing: ListenerClose?
+    /// Changes `setRemoteListener` was asked for and has not finished, and whether one is running.
+    private var listenerChanges: [(port: UInt16?, completion: @Sendable (Result<UInt16?, Error>) -> Void)] = []
+    private var changingListener = false
     /// The local socket (`host.sock`) the app connects to a background host through.
     private var localAcceptSource: DispatchSourceRead?
     private var localSocketPath: String?
@@ -2876,12 +2879,10 @@ public final class SessionServer: @unchecked Sendable {
 
     // MARK: - Remote listener (server queue)
 
-    /// Whether a stopped remote listener's descriptor is closed yet, and who waits for that. Touched only on the server queue.
+    /// Whoever waits for a stopped remote listener's descriptor to close. Touched only on the server queue.
     private final class ListenerClose {
-        private(set) var isClosed = false
         var waiters: [() -> Void] = []
         func markClosed() {
-            isClosed = true
             let pending = waiters
             waiters = []
             pending.forEach { $0() }
@@ -2894,48 +2895,55 @@ public final class SessionServer: @unchecked Sendable {
     /// after pairing with a code; there is no token shared by every client. The
     /// listener binds all interfaces — the user's VPN is the reachability and
     /// security boundary; the tokens keep other devices on that network honest.
-    /// Runs on the server queue and suspends the caller, never blocking its thread (the main actor calls this).
-    public func startRemoteListener(port: UInt16) async throws -> UInt16 {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async { continuation.resume(with: Result { try self.startRemoteListenerOnQueue(port: port) }) }
-        }
+    /// Blocks on the server queue: for setup and tests, never the main actor (`setRemoteListener`).
+    public func startRemoteListener(port: UInt16) throws -> UInt16 {
+        try queue.sync { try startRemoteListenerOnQueue(port: port) }
     }
 
     /// Close the TCP listener and every remote client connection. Extension
-    /// connections and sessions are unaffected. Returns once the port is free again (or after 5 s),
-    /// suspending the caller meanwhile rather than blocking its thread.
-    public func stopRemoteListener() async {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            queue.async {
-                self.stopRemoteListenerOnQueue()
-                self.whenRemoteListenerClosedOnQueue { continuation.resume() }
-            }
+    /// connections and sessions are unaffected. Blocks like `startRemoteListener`.
+    public func stopRemoteListener() {
+        queue.sync { stopRemoteListenerOnQueue() }
+        awaitRemoteListenerClosed()
+    }
+
+    /// Makes the remote listener `port` (0 for an ephemeral one) or, with nil, closed, without blocking the caller. Changes run one
+    /// at a time in the order asked, each closing the listener and waiting for its port to be free before it binds, so the last
+    /// one asked is the state that stays. `completion` runs on the main queue with the bound port (nil when closed), or why the
+    /// bind failed.
+    public func setRemoteListener(port: UInt16?, completion: @escaping @Sendable (Result<UInt16?, Error>) -> Void) {
+        queue.async {
+            self.listenerChanges.append((port, completion))
+            self.runListenerChangeOnQueue()
+        }
+    }
+
+    private func runListenerChangeOnQueue() {
+        guard !changingListener, !listenerChanges.isEmpty else { return }
+        changingListener = true
+        let (port, completion) = listenerChanges.removeFirst()
+        stopRemoteListenerOnQueue()
+        whenRemoteListenerClosedOnQueue {
+            let result = Result { try port.map { try self.startRemoteListenerOnQueue(port: $0) } }
+            DispatchQueue.main.async { completion(result) }
+            self.changingListener = false
+            self.runListenerChangeOnQueue()
         }
     }
 
     /// A cancelled dispatch source closes its descriptor later, on the queue, so a port is free again only
     /// once that has happened: a stop is not finished (a relisten on the same port would find it busy) before it.
-    /// Calls `body` once on the queue when the stopped listener's descriptor is closed (at once when none is
-    /// pending), or after 5 s at the latest.
-    private func whenRemoteListenerClosedOnQueue(_ body: @escaping () -> Void) {
-        guard let closing = remoteListenerClosing else { body(); return }
-        remoteListenerClosing = nil
-        guard !closing.isClosed else { body(); return }
-        var finished = false
-        let finish = {
-            guard !finished else { return }
-            finished = true
-            body()
-        }
-        closing.waiters.append(finish)
-        queue.asyncAfter(deadline: .now() + 5, execute: finish)
+    /// Calls `body` on the queue once the stopped listener's descriptor is closed (at once when none is pending).
+    /// Every caller waiting on the same listener is called.
+    func whenRemoteListenerClosedOnQueue(_ body: @escaping () -> Void) {
+        if let closing = remoteListenerClosing { closing.waiters.append(body) } else { body() }
     }
 
-    /// Shutdown's blocking wait for the same (`stop`, off the main actor).
+    /// The blocking wait for the same, for `stop` and `stopRemoteListener` (never the main thread).
     private func awaitRemoteListenerClosed() {
         let closed = DispatchSemaphore(value: 0)
         queue.sync { whenRemoteListenerClosedOnQueue { closed.signal() } }
-        _ = closed.wait(timeout: .now() + 6)
+        _ = closed.wait(timeout: .now() + 5)
     }
 
     private func startRemoteListenerOnQueue(port: UInt16) throws -> UInt16 {
@@ -2991,7 +2999,11 @@ public final class SessionServer: @unchecked Sendable {
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
         source.setEventHandler { [weak self] in self?.acceptRemotePending(on: fd) }
         let closed = ListenerClose()
-        source.setCancelHandler { close(fd); closed.markClosed() }
+        source.setCancelHandler { [weak self] in
+            close(fd)
+            if self?.remoteListenerClosing === closed { self?.remoteListenerClosing = nil }
+            closed.markClosed()
+        }
         remoteAcceptSource = source
         remoteListenerClosed = closed
         source.activate()
@@ -3001,7 +3013,7 @@ public final class SessionServer: @unchecked Sendable {
         return boundPort
     }
 
-    private func stopRemoteListenerOnQueue() {
+    func stopRemoteListenerOnQueue() {
         for client in Array(clients.values) where client.isRemote && !client.isLocal {
             disconnect(client, reason: "remote listener stopped")
         }

@@ -49,7 +49,7 @@ struct AutomationsPageActionTests {
     }
 
     @Test func aHostsAutomationIsCreatedEditedSwitchedAndDeletedOnTheHost() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let vm = try await local.start()
         try await remote.host.start(with: ShepherdState())

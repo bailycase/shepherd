@@ -20,7 +20,7 @@ struct TunnelHost {
 
     /// `folder` is the agent's directory (its dev servers are read from there).
     init(folder: String? = nil) async throws {
-        remote = try await RemoteHost()
+        remote = try RemoteHost()
         let space = Fixture.space("web", path: folder)
         let seeded = Fixture.agent(in: space)
         try await remote.host.seed(Fixture.workspace([seeded], space: space))

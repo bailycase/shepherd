@@ -582,7 +582,7 @@ struct ThreadImagesTests {
         let pi = try await PiAgent.launch(on: host)
         let idle = try await pi.ready()
         let tokenURL = host.dir.appendingPathComponent("remote-token")
-        let port = try await host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let port = try host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let client = RemoteHostClient(); defer { client.disconnect() }
         _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "images")
@@ -617,7 +617,7 @@ struct ThreadImagesTests {
         _ = try await pi.snapshot("the image") { s in !s.running && s.messages.contains { $0.blocks.contains { $0.imageID != nil } } }
 
         let tokenURL = h.dir.appendingPathComponent("token")
-        let port = try await h.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let port = try h.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let client = RemoteHostClient(); defer { client.disconnect() }
         _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "viewer")

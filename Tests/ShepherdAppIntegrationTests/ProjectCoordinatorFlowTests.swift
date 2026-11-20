@@ -16,7 +16,7 @@ struct ProjectCoordinatorFlowTests {
         app.settings.projectsEnabled = true  // Projects is an opt-in experiment; set before start so the view model's binding applies it
         _ = try await app.start()
         let tokenURL = app.dir.appendingPathComponent("project-viewer-token")
-        let port = try await app.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let port = try app.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let viewer = RemoteHostClient(); defer { viewer.disconnect() }
         _ = try await viewer.connect(host: "127.0.0.1", port: port, token: token, clientName: "Project viewer")

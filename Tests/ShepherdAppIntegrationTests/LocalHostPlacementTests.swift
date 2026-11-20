@@ -24,7 +24,7 @@ struct LocalHostPlacementTests {
         let remoteSpace = Space(name: "acme-web on build-01", path: executor.dir.path)
         try await executor.server.addSpace(remoteSpace)
         let tokenURL = executor.dir.appendingPathComponent("placement-token")
-        let port = try await executor.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let port = try executor.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
 
         // The app pairs with build-01; the host hears of it and lists it with its Space.

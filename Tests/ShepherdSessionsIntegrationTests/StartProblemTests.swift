@@ -47,7 +47,7 @@ struct StartProblemTests {
 
     @Test(arguments: cases)
     func aPiThatStopsBeforeItServesKeepsItsAgentAndSaysWhy(_ c: Case) async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let callbacks = Callbacks(r.server)
         let pi = try await PiAgent.launch(on: r.host, env: c.env, resuming: c.resuming)
@@ -104,7 +104,7 @@ struct StartProblemTests {
     /// pi's last words, to this host and to a remote viewer, before and after the app retires the
     /// dead session.
     @Test func aPiThatExitsAfterItServedKeepsItsAgentAndSaysItStopped() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let callbacks = Callbacks(r.server)
         let pi = try await PiAgent.launch(on: r.host)
@@ -134,7 +134,7 @@ struct StartProblemTests {
     /// actions; a viewer that does not read previews gets the problem alone, as before. Before and
     /// after the app retires the dead session, and without asking for pi to be started.
     @Test func aStoppedAgentsHistoryGoesToAViewerThatReadsPreviews() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let demanded = Locked<[AgentID]>([])
         r.server.onNativeThreadDemand = { id in demanded.withValue { $0.append(id) } }

@@ -36,7 +36,7 @@ struct RemoteDesignFlowTests {
     }
 
     @Test func aHostsDesignOpensOnTheCanvasAndChangesThroughTheHost() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let (vm, connection, design, agentID) = try await host(local, remote)
         #expect(connection.supportsDesigns)
@@ -104,7 +104,7 @@ struct RemoteDesignFlowTests {
     /// A host that doesn't serve designs (its Design tool off) shows none, and turning it on
     /// there brings them without reconnecting.
     @Test func aHostsDesignsFollowItsExperiment() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let (vm, connection, design, _) = try await host(local, remote)
 
@@ -125,7 +125,7 @@ struct RemoteDesignFlowTests {
     /// (`design.agent.v1`). Duplicate, Export's files and the host's New design go through it too.
     @Test func aHostsDesignWithoutAnAgentOpensAndChangesThroughTheHost() async throws {
         try StubPi.installAsEngine()
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let (vm, connection, _, _) = try await host(local, remote)
         let hostServer = remote.host.server
@@ -167,7 +167,7 @@ struct RemoteDesignFlowTests {
     /// Implement in a thread… from a host's design sends the piece to one of that host's threads
     /// (`design.references.v1`): the host pins it, resolves and fences it, and its pi reads it.
     @Test func aHostsDesignPieceGoesToTheHostsOwnThread() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         local.settings.designToolEnabled = true
         remote.host.settings.designToolEnabled = true
@@ -250,7 +250,7 @@ struct RemoteDesignFlowTests {
     /// agent's thread opens here, and the host's section shows it building until it writes one.
     @Test func aHostsSystemIsBuiltFromHere() async throws {
         try StubPi.installAsEngine()
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let (vm, connection, _, _) = try await host(local, remote)
         let hostServer = remote.host.server
@@ -305,7 +305,7 @@ struct RemoteDesignFlowTests {
     /// design, its agent started there; the same project again comes in as a copy.
     @Test func aProjectIsImportedOnTheHost() async throws {
         try StubPi.installAsEngine()
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let (_, connection, _, _) = try await host(local, remote)
         let hostServer = remote.host.server

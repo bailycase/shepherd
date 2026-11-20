@@ -128,7 +128,7 @@ struct ServiceTierEngineTests {
 
     @Test @MainActor func fastAndStandardReachTheWireAndSurviveARelaunchAndARestartedPi() async throws {
         let engine = try #require(EngineSmoke.engine)
-        let rig = try await Rig(engine: engine)
+        let rig = try Rig(engine: engine)
         defer { rig.stop() }
         var host = try ScratchServer(pi: rig.setup)
         defer { host.stop() }
@@ -197,7 +197,7 @@ struct ServiceTierEngineTests {
 
     @Test @MainActor func aModelThatTakesNoTierNeverGetsOneWhateverTheAgentsTierIs() async throws {
         let engine = try #require(EngineSmoke.engine)
-        let rig = try await Rig(engine: engine)
+        let rig = try Rig(engine: engine)
         defer { rig.stop() }
         let host = try ScratchServer(pi: rig.setup)
         defer { host.stop() }

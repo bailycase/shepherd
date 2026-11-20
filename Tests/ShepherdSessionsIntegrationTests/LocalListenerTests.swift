@@ -71,7 +71,7 @@ struct LocalListenerTests {
         let local = try Local()
         defer { local.host.stop() }
         let remoteTokenURL = local.host.dir.appendingPathComponent("remote-token")
-        let port = try await local.host.server.startRemoteListener(port: 0, tokenURL: remoteTokenURL)
+        let port = try local.host.server.startRemoteListener(port: 0, tokenURL: remoteTokenURL)
         let remote = RemoteHostClient()
         _ = try await remote.connect(host: "127.0.0.1", port: port, token: try String(contentsOf: remoteTokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), clientName: "iPhone")
         defer { remote.disconnect() }
@@ -79,7 +79,7 @@ struct LocalListenerTests {
 
         let (client, _) = try await local.client()
         defer { client.disconnect() }
-        await local.host.server.stopRemoteListener()
+        local.host.server.stopRemoteListener()
         // Still served after the TCP listener closed: the host answers, here that there is no such agent.
         do {
             _ = try await client.nativeThread(agentID: AgentID(), request: .snapshot())

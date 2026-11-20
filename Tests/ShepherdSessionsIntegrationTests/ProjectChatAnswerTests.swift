@@ -16,7 +16,7 @@ struct ProjectChatAnswerTests {
     }
 
     @Test func onlyTheCurrentConsumedHumanReplyAfterTheOriginalQuestionCanRelayAnAnswer() async throws {
-        let r = try await Rig(); defer { r.stop() }
+        let r = try Rig(); defer { r.stop() }
         let p = try await r.create(), space = try #require(p.linkedSpaces.first?.spaceID)
         let dir = r.host.dir.appendingPathComponent("logical-projects/\(p.id)")
         try JSONSerialization.data(withJSONObject: ["prompts": [
@@ -129,7 +129,7 @@ struct ProjectChatAnswerTests {
     /// A hook's consent prompt in a worker (here a PreToolUse ask) is the person's alone: neither the
     /// Project's answer path nor a coordinator relaying a human reply may answer it; the thread may.
     @Test func aProjectNeverAnswersAHookPrompt() async throws {
-        let r = try await Rig(); defer { r.stop() }
+        let r = try Rig(); defer { r.stop() }
         let p = try await r.create(), space = try #require(p.linkedSpaces.first?.spaceID)
         let dir = r.host.dir.appendingPathComponent("logical-projects/\(p.id)")
         try JSONSerialization.data(withJSONObject: ["prompts": ["hello": [], "Allow it please": [["wait": "reply-done"]]]])
@@ -171,7 +171,7 @@ struct ProjectChatAnswerTests {
 
     @Test(arguments: [false, true])
     func aDefinitelyUnsentAnswerDoesNotBlockAFreshToolCallOrLaterHumanReply(laterHuman: Bool) async throws {
-        let r = try await Rig(); defer { r.stop() }
+        let r = try Rig(); defer { r.stop() }
         let p = try await r.create(), space = try #require(p.linkedSpaces.first?.spaceID)
         let dir = r.host.dir.appendingPathComponent("logical-projects/\(p.id)")
         try JSONSerialization.data(withJSONObject: ["prompts": ["hello": [],
@@ -262,7 +262,7 @@ struct ProjectChatAnswerTests {
 
     @Test(arguments: [false, true])
     func aButtonAnsweredOrExpiredQuestionCannotBorrowAChatReplyForTheNextDialog(expired: Bool) async throws {
-        let r = try await Rig(); defer { r.stop() }
+        let r = try Rig(); defer { r.stop() }
         let p = try await r.create(), space = try #require(p.linkedSpaces.first?.spaceID)
         let dir = r.host.dir.appendingPathComponent("logical-projects/\(p.id)")
         try JSONSerialization.data(withJSONObject: ["prompts": ["hello": [], "Allow it please": [["wait": "reply-done"]]]])

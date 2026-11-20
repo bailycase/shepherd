@@ -314,10 +314,10 @@ struct RemoteHost {
     var server: SessionServer { host.server }
 
     init(modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }, pi: PiSetup = .app,
-         forgeRunner: @escaping ForgeService.Runner = ScratchServer.noForge) async throws {
+         forgeRunner: @escaping ForgeService.Runner = ScratchServer.noForge) throws {
         host = try ScratchServer(modelCatalog: modelCatalog, pi: pi, forgeRunner: forgeRunner)
         let tokenURL = host.dir.appendingPathComponent("remote-token")
-        port = try await host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        port = try host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 

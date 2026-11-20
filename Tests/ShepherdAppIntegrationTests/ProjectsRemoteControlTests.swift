@@ -39,7 +39,7 @@ struct ProjectsRemoteControlTests {
         try await eventuallyOnMain("the app to adopt the space") { vm.state.spaces.contains { $0.name == "Local project" } }
         try await remote.server.addSpace(Space(name: "Remote project", path: remoteRoot.path), first: false)
         let tokenURL = remote.dir.appendingPathComponent("token")
-        let port = try await remote.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let port = try remote.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let hosts = app.remoteHosts
         hosts.addHost(name: "mac-mini", host: "127.0.0.1", port: port, token: token, fleetManaged: true)

@@ -78,7 +78,7 @@ struct SuggestionsTests {
     }
 
     @Test func aRemoteClientActsOnTheHostsSuggestions() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         let heard = Locked<Int>(0)
         host.server.onInstructionsChanged = { _ in heard.withValue { $0 += 1 } }
@@ -105,7 +105,7 @@ struct SuggestionsTests {
     }
 
     @Test func actingOnASuggestionNoLongerWaitingIsRefused() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         let raw = try await host.raw()
 

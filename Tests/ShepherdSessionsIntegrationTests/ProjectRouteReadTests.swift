@@ -10,7 +10,7 @@ import ShepherdTestSupport
 struct ProjectRouteReadTests {
     @Test(arguments: ["remove", "restore", "binding", "path", "hidden", "noop", "unrelated", "rename"])
     func realExecutorContinuationRechecksRouteTransitions(change: String) async throws {
-        let rig = try await ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
         var assignment = try await rig.assignment("tools:0 long:100")
         guard case .project(let project) = try await rig.owner.server.logicalProjects(.create(projectID: assignment.key.projectID, name: "Read grant", goal: "")) else { throw WireError("owner") }
         assignment.key.ownerID = project.ownerID

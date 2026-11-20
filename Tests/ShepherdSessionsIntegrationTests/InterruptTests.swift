@@ -512,7 +512,7 @@ struct InterruptTests {
 struct InterruptStoreTests {
     @Test(arguments: [true, false])
     func aRemoteThreadInterruptsOnlyOnAHostThatCan(interrupts: Bool) async throws {
-        let remote = try await RemoteHost()
+        let remote = try RemoteHost()
         defer { remote.stop() }
         if !interrupts {
             remote.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.nativeInterruptCapability }

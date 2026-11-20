@@ -47,7 +47,7 @@ extension DesignPreviewTests {
             host.designSystems.register(ShepherdDesignSystem.builtIn())
             host.setDesignsServed(true)
             let tokenURL = server.dir.appendingPathComponent("remote-token")
-            port = try await host.startRemoteListener(port: 0, tokenURL: tokenURL)
+            port = try host.startRemoteListener(port: 0, tokenURL: tokenURL)
             token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             self.design = design
             self.agent = agent

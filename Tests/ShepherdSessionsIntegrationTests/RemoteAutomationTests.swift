@@ -23,7 +23,7 @@ struct RemoteAutomationTests {
         let seen = Locked<[AutomationRequest]>([])
 
         init() async throws {
-            remote = try await RemoteHost()
+            remote = try RemoteHost()
             folder = try makeScratchDirectory("repo")
             runSpace = Space(name: "Automations", path: "~", hidden: true)
             automation = Automation(name: "watch CI", prompt: "watch", cwd: folder.path, enabled: true)

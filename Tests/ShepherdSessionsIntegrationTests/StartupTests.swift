@@ -126,7 +126,7 @@ struct StartupTests {
         let h = try await relaunch(with: ShepherdState(spaces: [space], tabs: [tab], agents: [worker.agent]))
         defer { h.stop() }
         let tokenURL = h.dir.appendingPathComponent("remote-token")
-        let port = try await h.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let port = try h.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let client = RemoteHostClient()
         let sent = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "typed")
@@ -228,8 +228,8 @@ struct StartupTests {
                     cwd: h.dir.path, command: ["/bin/sh", "-c", "touch should-not-run"], runtime: runtime))
             }
         }
-        await #expect(throws: SessionServerError.self) {
-            _ = try await second.startRemoteListener(port: 0, tokenURL: h.dir.appendingPathComponent("rejected-token"))
+        #expect(throws: SessionServerError.self) {
+            _ = try second.startRemoteListener(port: 0, tokenURL: h.dir.appendingPathComponent("rejected-token"))
         }
         second.stop() // Flushes any accidental deferred writes too.
         #expect(try Data(contentsOf: h.stateURL) == stateBytes)

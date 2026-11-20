@@ -134,7 +134,7 @@ struct RemoteBrowserDriveTests {
         let local = try AppHarness()
         diagnostic?("setup.local-fixture.after")
         diagnostic?("setup.remote-fixture.before")
-        let remote = try await RemoteHostHarness()
+        let remote = try RemoteHostHarness()
         diagnostic?("setup.remote-fixture.after")
         if let capabilities { remote.host.server.advertisedCapabilities = capabilities }
         let space = Fixture.space(path: local.dir.path)

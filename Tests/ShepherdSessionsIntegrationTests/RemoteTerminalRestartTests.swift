@@ -104,7 +104,7 @@ struct RemoteTerminalRestartTests {
     }
 
     @Test func aHeldPaneReattachesToItsNewShellAfterTheHostRestarts() async throws {
-        let first = try await RemoteHost()
+        let first = try RemoteHost()
         var firstRunning = true
         defer { if firstRunning { first.stop() } }
         let dir = first.host.dir
@@ -130,7 +130,7 @@ struct RemoteTerminalRestartTests {
         try await eventually("the client to see the host go") { disconnected.current }
         let second = try ScratchServer(dir: dir)
         defer { second.stop() }
-        _ = try await second.server.startRemoteListener(port: first.port, tokenURL: tokenURL)
+        _ = try second.server.startRemoteListener(port: first.port, tokenURL: tokenURL)
         // The relaunched host holds its clients' tokens in memory only (a test's), so its client presents the one it was just given.
         let secondToken = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -167,7 +167,7 @@ struct RemoteTerminalRestartTests {
     }
 
     @Test func aHeldPaneReattachesToTheSameShellWhenOnlyTheListenerRestarts() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let shell = try await r.host.shell("echo READY; cat")
         try await r.host.waitForScreen(shell.id, toContain: "READY")
@@ -180,9 +180,9 @@ struct RemoteTerminalRestartTests {
         await held.hold(firstClient)
         try await eventually("the pane to attach") { await held.phase == .live }
 
-        await r.server.stopRemoteListener()
+        r.server.stopRemoteListener()
         try await eventually("the client to see the listener go") { disconnected.current }
-        _ = try await r.server.startRemoteListener(port: r.port, tokenURL: r.host.dir.appendingPathComponent("remote-token"))
+        _ = try r.server.startRemoteListener(port: r.port, tokenURL: r.host.dir.appendingPathComponent("remote-token"))
 
         let client = try await Self.connect(port: r.port, token: r.token, output: output, states: states)
         defer { client.disconnect() }

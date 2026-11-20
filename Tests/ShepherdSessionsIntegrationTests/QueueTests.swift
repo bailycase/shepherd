@@ -32,7 +32,7 @@ struct QueueTests {
 
     @Test(arguments: [NativeQueueMode.oneAtATime, .all])
     func normalQueueDeliversAtTheNextBoundaryAndKeepsHostEdits(mode: NativeQueueMode) async throws {
-        let remote = try await RemoteHost()
+        let remote = try RemoteHost()
         defer { remote.stop() }
         let pi = try await PiAgent.launch(on: remote.host)
         let client = try await remote.typed()
@@ -453,7 +453,7 @@ struct QueueTests {
     /// An older Mac finds its sends in the thread by the text it sent, so its queued messages go
     /// to pi one per turn, each as sent, even all at once; a current client's still go together.
     @Test func anOlderClientsQueuedMessagesGoOnePerTurnAsSent() async throws {
-        let remote = try await RemoteHost()
+        let remote = try RemoteHost()
         defer { remote.stop() }
         let pi = try await PiAgent.launch(on: remote.host)
         let running = try await startRun(pi)
@@ -490,7 +490,7 @@ struct QueueTests {
     /// and were accepted once it freed: each still keeps what its own hello said, so an older
     /// one's queued messages go alone while a current one's go together.
     @Test func clientsAcceptedFromTheBacklogKeepTheQueueTheirHelloAskedFor() async throws {
-        let remote = try await RemoteHost()
+        let remote = try RemoteHost()
         defer { remote.stop() }
         let pi = try await PiAgent.launch(on: remote.host)
         let running = try await startRun(pi)
@@ -893,7 +893,7 @@ struct QueueTests {
 
     /// Another client (a remote Mac) sees and changes the same queue.
     @Test func aRemoteClientEditsTheSameQueue() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let pi = try await PiAgent.launch(on: r.host)
         let s = try await startRun(pi)
@@ -1171,7 +1171,7 @@ struct QueueStoreTests {
 
     @Test(arguments: [true, false])
     func remoteQueuedSubagentsAreCapabilityGatedAndWaitForHostAcceptance(supported: Bool) async throws {
-        let remote = try await RemoteHost()
+        let remote = try RemoteHost()
         defer { remote.stop() }
         if !supported {
             remote.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.nativeQueueSubagentCapability }

@@ -118,7 +118,7 @@ struct SidebarActivityFlowTests {
     }
 
     @Test func remoteDoneKeepsItsPlaceAcrossPagesThenMovesWhenALocalThreadOpens() async throws {
-        let app = try AppHarness(), remote = try await RemoteHostHarness()
+        let app = try AppHarness(), remote = try RemoteHostHarness()
         defer { app.stop(); remote.stop() }
         let localSpace = Fixture.space("local", path: app.dir.path)
         let local = Fixture.agent("local", in: localSpace)
@@ -203,7 +203,7 @@ struct SidebarActivityFlowTests {
     }
 
     @Test func remoteChildRefreshKeepsADoneParentWorkingAndThenCreatesAnUnseenCompletion() async throws {
-        let app = try AppHarness(), remote = try await RemoteHostHarness()
+        let app = try AppHarness(), remote = try RemoteHostHarness()
         defer { app.stop(); remote.stop() }
         let space = Fixture.space("remote", path: remote.host.dir.path)
         let parent = Fixture.agent("remote parent", in: space, status: .done)
@@ -227,7 +227,7 @@ struct SidebarActivityFlowTests {
         remote.host.publishChildren(parent.agent.id, [])
         try await eventuallyOnMain("remote removal to create another unseen completion") { vm.sidebarLists.done.map(\.id) == [id] }
         #expect(vm.sidebarLists.done.first?.completion != first)
-        await remote.host.server.stopRemoteListener()
+        remote.host.server.stopRemoteListener()
         try await eventuallyOnMain("the host to disconnect") { connection.phase != .connected }
         #expect(vm.sidebarLists.working.isEmpty && vm.sidebarLists.done.isEmpty)
         #expect(vm.sidebarLists.recents.first?.id == id && vm.sidebarLists.recents.first?.offline == true)
@@ -235,7 +235,7 @@ struct SidebarActivityFlowTests {
 
     @Test(arguments: [(false, "running"), (true, "running"), (true, "complete"), (true, "removed"), (true, "deleted")])
     func disconnectingOrReconnectingDuringRemoteChildWorkDoesNotInventACompletion(disconnect: Bool, childState: String) async throws {
-        let app = try AppHarness(), remote = try await RemoteHostHarness()
+        let app = try AppHarness(), remote = try RemoteHostHarness()
         defer { app.stop(); remote.stop() }
         let space = Fixture.space("remote", path: remote.host.dir.path)
         let parent = Fixture.agent("remote parent", in: space, status: .done)
@@ -252,7 +252,7 @@ struct SidebarActivityFlowTests {
         #expect(!before.finished)
 
         if disconnect {
-            await remote.host.server.stopRemoteListener()
+            remote.host.server.stopRemoteListener()
             try await eventuallyOnMain("the host to disconnect") { connection.phase != .connected }
         } else {
             app.remoteHosts.reconnect(id: connection.id)
@@ -269,7 +269,7 @@ struct SidebarActivityFlowTests {
                 [ChildRun(runID: "child", label: "worker", state: childState)])
         }
         if disconnect {
-            _ = try await remote.host.server.startRemoteListener(port: remote.port,
+            _ = try remote.host.server.startRemoteListener(port: remote.port,
                 tokenURL: remote.host.dir.appendingPathComponent("remote-token"))
             app.remoteHosts.reconnect(id: connection.id)
         }

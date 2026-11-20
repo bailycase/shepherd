@@ -12,7 +12,7 @@ import ShepherdTestSupport
 @Suite("Remote listener", .integrationTimeLimit)
 struct RemoteListenerTests {
     @Test func aValidHelloIsAnsweredWithTheProtocolAndCapabilities() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let client = try await r.raw(authenticated: false)
         try client.send(.hello(id: 7, token: r.token, clientName: "test", protocolVersion: RemoteProtocol.version))
@@ -32,7 +32,7 @@ struct RemoteListenerTests {
 
     @Test(arguments: ["127.0.0.1", "localhost"])
     func aSystemHostNameConnectsAndFetchesTheWorkspace(host: String) async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let space = Fixture.space()
         try await r.host.seed(ShepherdState(spaces: [space]))
@@ -43,7 +43,7 @@ struct RemoteListenerTests {
     }
 
     @Test func stateFetchReturnsTheHostsWorkspace() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let space = Fixture.space()
         try await r.host.seed(ShepherdState(spaces: [space]))
@@ -59,7 +59,7 @@ struct RemoteListenerTests {
         ("no hello", "unauthenticated"),
     ])
     func unauthenticatedClientsAreRejectedAndDisconnected(scenario: String, code: String) async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let client = try await r.raw(authenticated: false)
         switch scenario {
@@ -77,7 +77,7 @@ struct RemoteListenerTests {
     /// `connect` alone: the close must not reach `onDisconnected`, where an owner would read it
     /// as a dropped connection and retry it forever.
     @Test func aRefusedTokenIsThrownByConnectAndNeverReportedAsADisconnect() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let client = RemoteHostClient()
         let drops = Locked<[String]>([])
@@ -98,12 +98,12 @@ struct RemoteListenerTests {
     }
 
     @Test func anEstablishedConnectionReportsItsDropOnce() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let client = try await r.typed()
         let drops = Locked<[String]>([])
         client.onDisconnected = { reason in drops.withValue { $0.append(reason) } }
-        await r.server.stopRemoteListener()
+        r.server.stopRemoteListener()
         try await eventually("the dropped connection to be reported") { !drops.current.isEmpty }
         client.disconnect()
         await drainMainQueue()
@@ -111,7 +111,7 @@ struct RemoteListenerTests {
     }
 
     @Test func anUndecodableFrameDisconnects() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let client = try await r.raw()
         try client.sendRaw(Data("{\"not\":\"a request\"}\n".utf8))
@@ -121,7 +121,7 @@ struct RemoteListenerTests {
     /// A request of a kind this host does not know (a client from another version) is refused
     /// like any unsupported one, and the connection carries on.
     @Test func anUnknownRequestIsRefusedAndKeepsTheConnection() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let client = try await r.raw()
         try client.sendRaw(Data("{\"type\":\"noSuchRequest\",\"id\":9}\n".utf8))
@@ -134,7 +134,7 @@ struct RemoteListenerTests {
     /// request the host does not know, not a dropped connection. Its agent does not exist here, so
     /// an action the host still knew would be refused `no_such_agent` instead.
     @Test func anOlderClientsRunInTerminalIsRefusedAndKeepsTheConnection() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let client = try await r.raw()
         let frame = #"{"type":"agentAction","id":11,"agentID":"gone","action":{"typeInTerminal":{"paneID":"p","text":"ls"}}}"#
@@ -145,7 +145,7 @@ struct RemoteListenerTests {
     }
 
     @Test func aSecondHelloIsAnErrorButKeepsTheConnection() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let client = try await r.raw()
         try client.send(.hello(id: 5, token: r.token, clientName: "again", protocolVersion: RemoteProtocol.version))
@@ -155,7 +155,7 @@ struct RemoteListenerTests {
     }
 
     @Test func hostMutationsArePushedToAuthenticatedClients() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let client = try await r.raw()
         let space = Fixture.space()
@@ -167,7 +167,7 @@ struct RemoteListenerTests {
     /// `native.preview.v1` gets what pi's session file holds, marked as a preview with no actions,
     /// and pi stays down; any other request, and any older client, starts pi as before.
     @Test func aPreviewCapableClientReadsAnIdleThreadWithoutStartingPi() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let demanded = Locked<[AgentID]>([])
         r.server.onNativeThreadDemand = { id in demanded.withValue { $0.append(id) } }
@@ -234,7 +234,7 @@ struct RemoteListenerTests {
     /// A client from before minimal, xhigh and max decodes only Off to High, so its fetched and
     /// pushed state carries each agent's level clamped to those; a current client's keeps them.
     @Test func anOlderClientGetsTheWorkspaceWithLevelsItCanDecode() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let space = Fixture.space()
         var deep = Fixture.agent(in: space, name: "deep")
@@ -264,7 +264,7 @@ struct RemoteListenerTests {
     /// A connection that never authenticated gets no broadcasts: its first frame after a late
     /// hello is the hello reply, not a push it was never entitled to.
     @Test func unauthenticatedClientsReceiveNoPushes() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let lurker = try await r.raw(authenticated: false)
         let witness = try await r.raw()
@@ -276,7 +276,7 @@ struct RemoteListenerTests {
     }
 
     @Test func extensionReportsArePushedToRemoteClientsToo() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let space = Fixture.space()
         let worker = Fixture.agent(in: space)
@@ -289,14 +289,14 @@ struct RemoteListenerTests {
     }
 
     @Test func stoppingTheListenerDropsRemoteClientsButNotExtensions() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let space = Fixture.space()
         let worker = Fixture.agent(in: space)
         try await r.host.seed(Fixture.workspace([worker], space: space))
         let client = try await r.raw()
 
-        await r.server.stopRemoteListener()
+        r.server.stopRemoteListener()
         #expect(try await client.disconnected())
         try await eventually("the port to close") { (try? RawRemote(port: r.port)) == nil }
         let ext = try ExtensionClient(path: r.host.socketPath)
@@ -308,7 +308,7 @@ struct RemoteListenerTests {
     /// handshake there, and the queue accepts them all once it is free. Past a backlog the SYN is
     /// dropped and the connect stays in progress.
     @Test func remoteClientsConnectingWhileTheQueueIsBusyAreAllAccepted() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let connections = 64
         let release = DispatchSemaphore(value: 0)
@@ -329,28 +329,52 @@ struct RemoteListenerTests {
         #expect(authenticated == connections)
     }
 
-    /// Stopping the listener waits for the server queue and for the port to close; the main actor does neither.
-    /// A stop that finishes means the port is free, so a relisten on the same port opens at once.
-    @Test func stoppingTheListenerNeverBlocksTheMainActorAndFreesThePortForARelisten() async throws {
-        let r = try await RemoteHost()
-        defer { r.stop() }
+    /// Changes asked while the server queue is busy (a start-up, a switch toggled twice) run in the order asked: the last one
+    /// is what stays, in what the callbacks report and on the real socket. The listener starts open, so each change waits for
+    /// its port to close before the next.
+    @Test(arguments: [[true, false], [true, false, true], [false, true, false]])
+    func listenerChangesAskedWhileTheQueueIsBusyEndInTheLastOne(asked: [Bool]) async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
         let release = DispatchSemaphore(value: 0)
-        await r.server.holdQueue(until: release)
+        await host.server.holdQueue(until: release)
         defer { release.signal() }
-        let stopped = Locked(false)
-        let stopping = Task { @MainActor in
-            await r.server.stopRemoteListener()
-            stopped.withValue { $0 = true }
+        let outcomes = Locked<[UInt16?]>([])
+        for on in asked {
+            host.server.setRemoteListener(port: on ? 0 : nil) { result in
+                outcomes.withValue { $0.append((try? result.get()) ?? nil) }
+            }
         }
-        // The queue is parked, so the stop cannot finish; the main actor still runs other work.
-        for _ in 0..<3 { await MainActor.run {} }
-        #expect(!stopped.current, "the stop finished while the server queue was parked")
         release.signal()
-        await stopping.value
-        #expect(stopped.current)
-        _ = try await r.server.startRemoteListener(port: r.port)
-        let client = try await r.raw()
-        client.closeConnection()
+        try await eventually("every change to be answered") { outcomes.current.count == asked.count }
+
+        #expect(outcomes.current.map { $0 != nil } == asked, "each change is answered in the order asked")
+        let final = outcomes.current.last ?? nil
+        for port in Set(outcomes.current.compactMap { $0 } + [host.port]) where port != final {
+            #expect((try? RawRemote(port: port)) == nil, "port \(port) is closed")
+        }
+        if let final {
+            let client = try RawRemote(port: final)
+            client.closeConnection()
+        }
+    }
+
+    /// Stops that overlap each finish only once the port is closed, not just the first: the descriptor closes on the queue
+    /// after the stop's own turn, so within that turn no waiter, the second included, may be told it is closed.
+    @Test func everyStopThatOverlapsWaitsForThePortToClose() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let server = r.server
+        let told = Locked<[String]>([])
+        server.queue.sync {
+            server.stopRemoteListenerOnQueue()
+            for name in ["first", "second"] {
+                server.whenRemoteListenerClosedOnQueue { told.withValue { $0.append(name) } }
+            }
+            #expect(told.current.isEmpty, "a waiter was told the port is closed before its descriptor closed")
+        }
+        try await eventually("both waiters to be told") { told.current.count == 2 }
+        #expect((try? RawRemote(port: r.port)) == nil)
     }
 
     /// A non-blocking connect to the listener on the loopback address.
@@ -396,22 +420,22 @@ struct RemoteListenerTests {
         return done
     }
 
-    @Test func theListenerCanOnlyStartOnce() async throws {
-        let r = try await RemoteHost()
+    @Test func theListenerCanOnlyStartOnce() throws {
+        let r = try RemoteHost()
         defer { r.stop() }
-        let error = await #expect(throws: SessionServerError.self) {
-            _ = try await r.server.startRemoteListener(port: 0, tokenURL: r.host.dir.appendingPathComponent("remote-token"))
+        let error = #expect(throws: SessionServerError.self) {
+            _ = try r.server.startRemoteListener(port: 0, tokenURL: r.host.dir.appendingPathComponent("remote-token"))
         }
         #expect(error?.description == "remote listener already running")
     }
 
-    @Test func aBusyPortIsReportedNotSwallowed() async throws {
-        let r = try await RemoteHost()
+    @Test func aBusyPortIsReportedNotSwallowed() throws {
+        let r = try RemoteHost()
         defer { r.stop() }
         let other = try ScratchServer.fresh()
         defer { other.stop() }
-        let error = await #expect(throws: SessionServerError.self) {
-            _ = try await other.server.startRemoteListener(port: r.port, tokenURL: other.dir.appendingPathComponent("remote-token"))
+        let error = #expect(throws: SessionServerError.self) {
+            _ = try other.server.startRemoteListener(port: r.port, tokenURL: other.dir.appendingPathComponent("remote-token"))
         }
         guard case .system("bind", _)? = error else { Issue.record("expected a bind failure, got \(String(describing: error))"); return }
     }
@@ -421,7 +445,7 @@ struct RemoteListenerTests {
     /// the queue would never let that reply through.
     @Test func aModelListingDoesNotBlockOtherRequests() async throws {
         let stateArrived = DispatchSemaphore(value: 0)
-        let r = try await RemoteHost(modelCatalog: {
+        let r = try RemoteHost(modelCatalog: {
             _ = stateArrived.wait(timeout: .now() + 30)
             return ModelListing(models: ["stand-in/model"], defaultModel: "stand-in/model")
         })
@@ -440,7 +464,7 @@ struct RemoteListenerTests {
     /// A listing says which of the host's models take no thinking level, so a client offers the
     /// thinking control only where pi uses it, and its default is one of its own models.
     @Test func aModelListingSaysWhichModelsTakeNoThinkingLevel() async throws {
-        let r = try await RemoteHost(modelCatalog: {
+        let r = try RemoteHost(modelCatalog: {
             ModelListing(entries: [PiModelCatalog.Entry(id: "qa/plain", reasoning: false),
                                    PiModelCatalog.Entry(id: "qa/deep", context: "400K", reasoning: true)],
                          defaultModel: "qa/plain")

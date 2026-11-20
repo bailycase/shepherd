@@ -13,7 +13,7 @@ struct PushNotificationsTests {
     }
 
     @Test func authenticatedRegistrationPersistsPrivatelyAndRevocationCancels() async throws {
-        let host = try await RemoteHost()
+        let host = try RemoteHost()
         defer { host.stop() }
         let registration = registration()
         let anonymous = try await host.raw(authenticated: false)

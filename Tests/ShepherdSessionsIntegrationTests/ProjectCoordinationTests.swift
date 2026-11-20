@@ -11,7 +11,7 @@ struct ProjectCoordinationTests {
     typealias Rig = ProjectRuntimeTests.Rig
 
     @Test func invalidNativeTextNeverCommitsAReceiptOrReservesAWorker() async throws {
-        let rig = try await Rig(); defer { rig.stop() }
+        let rig = try Rig(); defer { rig.stop() }
         let p = try await rig.create(), space = try #require(p.linkedSpaces.first?.spaceID)
         for text in [" \n\t", String(repeating: "😀", count: 6000)] {
             await #expect(throws: ProjectValidationError.self) { try await rig.perform(p.id, .message(operationID: UUID(), text: text)) }
@@ -23,7 +23,7 @@ struct ProjectCoordinationTests {
     }
 
     @Test func aFailedHeldLaunchAcknowledgesPauseAndDoesNotStrandResume() async throws {
-        let rig = try await Rig(); defer { rig.stop() }
+        let rig = try Rig(); defer { rig.stop() }
         let pending = Locked<(@Sendable (Result<AgentID, Error>) -> Void)?>(nil)
         rig.host.server.onProjectRuntimeLaunch = { _, done in pending.withValue { $0 = done } }
         let p = try await rig.create(), space = try #require(p.linkedSpaces.first?.spaceID)
@@ -39,7 +39,7 @@ struct ProjectCoordinationTests {
     }
 
     @Test func pauseDuringSecondPromptPreparationRetainsItAndRestartNeverReplaysUnknownDelivery() async throws {
-        let rig = try await Rig()
+        let rig = try Rig()
         let p = try await rig.create()
         let first = try await rig.perform(p.id, .message(operationID: UUID(), text: "first"))
         let coordinator = try #require(first.coordinatorAgentID)
@@ -74,7 +74,7 @@ struct ProjectCoordinationTests {
         _ = try await rig.perform(p.id, .message(operationID: UUID(), text: "third outcome unknown"))
         try await eventually("third preparation held") { preparation.current != nil }
         rig.host.server.onProjectRuntimeLaunch = nil; rig.host.stop(keepFiles: true)
-        let restarted = try await Rig(dir: rig.host.dir); defer { restarted.stop() }
+        let restarted = try Rig(dir: rig.host.dir); defer { restarted.stop() }
         #expect(restarted.host.server.state.projects.first?.messages.last?.phase == .unknown)
         #expect(restarted.host.server.state.projects.first?.messages.last?.failureDetail == nil)
         #expect(restarted.host.server.state.projects.first?.paused == false)
@@ -82,7 +82,7 @@ struct ProjectCoordinationTests {
     }
 
     @Test func authenticatedCoordinatorToolsDispatchThreeQueueFourAndWakeFromActualResultsOnce() async throws {
-        let rig = try await Rig(); defer { rig.stop() }
+        let rig = try Rig(); defer { rig.stop() }
         rig.host.useRealPeerCheck()
         let p = try await rig.create()
         let commands: [[String: Any]] = (0..<4).map { i in ["assign": ["operationID": UUID().uuidString, "spaceID": "$linked", "title": "Task \(i)", "prompt": "slow"]] }
@@ -108,7 +108,7 @@ struct ProjectCoordinationTests {
     }
 
     @Test func nativeQuestionAndSettledReceiptsReachTheCoordinatorAndTypedFollowupReusesItsWorker() async throws {
-        let rig = try await Rig(); defer { rig.stop() }
+        let rig = try Rig(); defer { rig.stop() }
         rig.host.useRealPeerCheck()
         let p = try await rig.create()
         func tool(_ action: [String: Any]) async throws {
@@ -138,7 +138,7 @@ struct ProjectCoordinationTests {
     }
 
     @Test func pauseKeepsTheNativeQuestionAndBothAnswerViewsWaitForExplicitResume() async throws {
-        let rig = try await Rig(); defer { rig.stop() }
+        let rig = try Rig(); defer { rig.stop() }
         let p = try await rig.create(), space = try #require(p.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(p.id, .assign(operationID: UUID(), spaceID: space, title: "Question", prompt: "ask"))
         try await eventually("question persisted") { rig.host.server.state.projects.first?.tasks.first?.phase == .waiting }
@@ -165,7 +165,7 @@ struct ProjectCoordinationTests {
     }
 
     @Test func aQueuedPausedAnswerBecomesUnknownOnRestartAndNeverAutoResumes() async throws {
-        let rig = try await Rig()
+        let rig = try Rig()
         let p = try await rig.create(), space = try #require(p.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(p.id, .assign(operationID: UUID(), spaceID: space, title: "Question", prompt: "ask"))
         try await eventually("question persisted") { rig.host.server.state.projects.first?.tasks.first?.phase == .waiting }
@@ -176,14 +176,14 @@ struct ProjectCoordinationTests {
         #expect(try await worker.request(answer).failureCode == nil)
         #expect(worker.stdin("extension_ui_response").isEmpty)
         rig.host.server.onProjectRuntimeLaunch = nil; rig.host.stop(keepFiles: true)
-        let restarted = try await Rig(dir: rig.host.dir); defer { restarted.stop() }
+        let restarted = try Rig(dir: rig.host.dir); defer { restarted.stop() }
         #expect(restarted.host.server.state.projects.first?.tasks.first?.pendingAnswer?.phase == .unknown)
         #expect(restarted.host.server.state.projects.first?.paused == true)
         #expect(await restarted.host.server.listSessions().isEmpty)
     }
 
     @Test func aStaleQueuedAnswerIsRefusedRatherThanCreatingAReplacementDialog() async throws {
-        let rig = try await Rig(); defer { rig.stop() }
+        let rig = try Rig(); defer { rig.stop() }
         let p = try await rig.create(), space = try #require(p.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(p.id, .assign(operationID: UUID(), spaceID: space, title: "Question", prompt: "ask"))
         try await eventually("question persisted") { rig.host.server.state.projects.first?.tasks.first?.phase == .waiting }
@@ -202,7 +202,7 @@ struct ProjectCoordinationTests {
     }
 
     @Test func coordinatorRetryAndCompactionCannotBypassAdmissionAndOrdinaryWorkerSteerStillWorks() async throws {
-        let rig = try await Rig(); defer { rig.stop() }
+        let rig = try Rig(); defer { rig.stop() }
         let p = try await rig.create(), space = try #require(p.linkedSpaces.first?.spaceID)
         let sent = try await rig.perform(p.id, .message(operationID: UUID(), text: "hello")), id = try #require(sent.coordinatorAgentID)
         try await eventually("coordinator ready") { rig.agents.current[id] != nil }
@@ -227,7 +227,7 @@ struct ProjectCoordinationTests {
     }
 
     @Test func missingOwnerRuntimeCapabilityRefusesBeforeAnyExecution() async throws {
-        let host = try await RemoteHost(); defer { host.stop() }
+        let host = try RemoteHost(); defer { host.stop() }
         let client = try await host.typed(); defer { client.disconnect() }
         #expect(!client.capabilities.contains(RemoteProtocol.logicalProjectRuntimeCapability))
         await #expect(throws: RemoteHostClientError.self) { try await client.projectRuntime(.action(projectID: ProjectID(), expectedRevision: 1, request: .resume)) }
@@ -238,7 +238,7 @@ struct ProjectCoordinationTests {
     }
 
     @Test func coordinatorDiscoversAndLinksSpacesWithoutApprovalOrQueuedMessages() async throws {
-        let rig = try await Rig(); defer { rig.stop() }
+        let rig = try Rig(); defer { rig.stop() }
         let project = try await rig.create()
         let sent = try await rig.perform(project.id, .message(operationID: UUID(), text: "hello"))
         let coordinator = try #require(sent.coordinatorAgentID)
@@ -296,7 +296,7 @@ struct ProjectCoordinationTests {
     }
 
     @Test func proposalsAreExplicitConsumedApprovalsWithProjectProvenanceAndOwnerHostValidation() async throws {
-        let rig = try await Rig(); defer { rig.stop() }
+        let rig = try Rig(); defer { rig.stop() }
         let p = try await rig.create()
         let directory = rig.host.dir.appendingPathComponent("approved-space")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)

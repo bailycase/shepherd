@@ -16,7 +16,7 @@ struct AutomationHostingTests {
     /// with no app: create, run, read its runs, stop, turn off, delete.
     @Test func aRemoteClientManagesAutomationsWithoutTheApp() async throws {
         try StubPi.installAsEngine()
-        let remote = try await RemoteHost()
+        let remote = try RemoteHost()
         defer { remote.stop() }
         serve(remote.host)
         let client = try await remote.typed()

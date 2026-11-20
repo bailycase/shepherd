@@ -268,10 +268,10 @@ final class RemoteHostHarness {
     let token: String
 
     init(modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels },
-         triggerSource: AutomationTriggers.Source = ScratchServer.noGitHub) async throws {
+         triggerSource: AutomationTriggers.Source = ScratchServer.noGitHub) throws {
         host = try AppHarness(modelCatalog: modelCatalog, triggerSource: triggerSource)
         let tokenURL = host.dir.appendingPathComponent("remote-token")
-        port = try await host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        port = try host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 

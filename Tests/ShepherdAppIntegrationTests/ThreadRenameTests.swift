@@ -89,7 +89,7 @@ struct ThreadRenameTests {
     }
 
     @Test func aPairedHostsRenameShowsAtOnceAndReconcilesWithItsSnapshots() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         let agent = Fixture.agent("old name", in: space)
@@ -114,7 +114,7 @@ struct ThreadRenameTests {
     }
 
     @Test func aPairedHostsRefusedRenameRestoresItsNameWithTheReason() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
         let agent = Fixture.agent("old name", in: space)

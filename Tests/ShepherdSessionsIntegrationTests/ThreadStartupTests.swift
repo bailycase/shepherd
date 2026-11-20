@@ -180,7 +180,7 @@ struct ThreadStartupTests {
 
     /// Over TCP the host answers the same codes, and advertises that it does.
     @Test func aRemoteClientSeesStartingFromTheHost() async throws {
-        let r = try await RemoteHost()
+        let r = try RemoteHost()
         defer { r.stop() }
         let pi = try await PiAgent.launch(on: r.host, env: ["STUB_PI_STARTUP_GATE": Self.gate])
         let space = try #require(r.server.state.spaces.first)

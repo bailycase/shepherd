@@ -10,7 +10,7 @@ import ShepherdTestSupport
 struct ProjectPublicationCommitTests {
     @Test(arguments: ["pause", "disable", "disableEnable", "manual", "delete", "restart", "replacement"])
     func revocationAfterHashPreventsLocalRename(_ action: String) async throws {
-        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let source = try makeScratchDirectory()
         let (project, task) = try await ProjectPublicationTests().worker(rig, cwd: source)
         let pi = try #require(rig.agents.current[task.workerAgentID])
@@ -51,7 +51,7 @@ struct ProjectPublicationCommitTests {
 
     @Test(arguments: ["pause", "disable", "disableEnable", "delete", "restart", "binding", "newRun"])
     func revocationAfterHashPreventsOwnerPullRename(_ action: String) async throws {
-        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let project = try await rig.create(), bytes = Data("retained remote bytes".utf8)
         let host = ProjectHostReference.remote(hostID: UUID(), bindingID: UUID())
         let space = Space(name: "Executor", path: "/unused")
@@ -150,7 +150,7 @@ struct ProjectPublicationCommitTests {
     }
 
     @Test func rejectedSourcesDoNotAllocateLedgerIdentitiesAndAValidPublishStillWorks() async throws {
-        let rig = try await ProjectRuntimeTests.Rig(); defer { rig.stop() }
+        let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
         let source = try makeScratchDirectory()
         let (_, task) = try await ProjectPublicationTests().worker(rig, cwd: source)
         try Data("api_key = sk-12345678901234567890123456".utf8).write(to: source.appendingPathComponent("secret.txt"))

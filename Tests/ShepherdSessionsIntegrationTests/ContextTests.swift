@@ -133,7 +133,7 @@ struct ContextTests {
     /// Over the remote listener: the snapshot's context and Compact now, gated by the host's
     /// `native.context.v1`.
     @Test func remoteClientsSeeTheContextAndCompact() async throws {
-        let remote = try await RemoteHost()
+        let remote = try RemoteHost()
         defer { remote.stop() }
         let pi = try await PiAgent.launch(on: remote.host)
         _ = try await pi.ready()

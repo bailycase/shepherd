@@ -426,7 +426,7 @@ struct ListPerformanceTests {
     /// A host's 120 designs (`designs.v1`) under its name: the page builds the cards on screen,
     /// as it does for this Mac's.
     @Test func openingTheDesignsPageBuildsOnlyTheHostsCardsOnScreen() async throws {
-        let app = try AppHarness(), remote = try await RemoteHostHarness()
+        let app = try AppHarness(), remote = try RemoteHostHarness()
         defer { app.stop(); remote.stop() }
         app.settings.designToolEnabled = true
         remote.host.settings.designToolEnabled = true
@@ -2047,7 +2047,7 @@ struct ListPerformanceTests {
     /// (`RemoteLayoutModel`): not the layout, its panel, the thread or the composer. With design
     /// references on, the thread pane once read the connection for them, so every push rebuilt it.
     @Test func aHostPushForAnotherThreadRedrawsNoRemoteLayout() async throws {
-        let local = try AppHarness(), remote = try await RemoteHostHarness()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         local.settings.designToolEnabled = true
         remote.host.settings.designToolEnabled = true

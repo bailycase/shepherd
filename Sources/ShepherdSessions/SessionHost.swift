@@ -46,10 +46,15 @@ public enum SessionHost {
                            ready: () -> Void = {}) -> Never {
         // Signals arrive through dispatch sources, so the default action (die without
         // stopping pi processes) is turned off before anything starts.
+        // `server.stop()` waits for the server queue and the listener's port (up to 6 s): not on the main queue, whose
+        // handlers and drain call this. A second call queues behind the first, which exits.
+        let shutdown = DispatchQueue(label: "shepherd.host.shutdown")
         let stop = {
-            BoundedCommand.stopForAppTermination()
-            server.stop()
-            exit(EXIT_SUCCESS)
+            shutdown.async {
+                BoundedCommand.stopForAppTermination()
+                server.stop()
+                exit(EXIT_SUCCESS)
+            }
         }
         let sources = [SIGTERM, SIGINT].map { number -> DispatchSourceSignal in
             signal(number, SIG_IGN)

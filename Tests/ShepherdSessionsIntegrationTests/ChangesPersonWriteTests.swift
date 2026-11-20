@@ -153,7 +153,7 @@ struct ChangesPersonWriteTests {
     }
 
     @Test func aPairedDeviceCannotReportWhatItWrites() async throws {
-        let remote = try await RemoteHost()
+        let remote = try RemoteHost()
         defer { remote.stop() }
         let pi = try await PiAgent.launch(on: remote.host)
         let client = try await remote.typed()

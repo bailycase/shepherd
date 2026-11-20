@@ -30,7 +30,7 @@ struct RemoteForgeTests {
 
     @Test func aDeviceAndTheMacReadTheSameLinkedList() async throws {
         let seen = Locked<[ForgeCommand]>([])
-        let remote = try await RemoteHost(forgeRunner: Self.runner(seen))
+        let remote = try RemoteHost(forgeRunner: Self.runner(seen))
         defer { remote.stop() }
         let (state, agentID) = Self.state()
         try await remote.host.seed(state)
@@ -50,7 +50,7 @@ struct RemoteForgeTests {
 
     @Test func aCommentReachesGhOnStdinAndFailuresReadAsWords() async throws {
         let seen = Locked<[ForgeCommand]>([])
-        let remote = try await RemoteHost(forgeRunner: Self.runner(seen))
+        let remote = try RemoteHost(forgeRunner: Self.runner(seen))
         defer { remote.stop() }
         let client = try await remote.typed()
         defer { client.disconnect() }

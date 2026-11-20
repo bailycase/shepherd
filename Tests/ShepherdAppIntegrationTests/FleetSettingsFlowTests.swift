@@ -50,7 +50,7 @@ struct FleetSettingsFlowTests {
             settings.remoteListenerPort = 0
             settings.remoteListenerEnabled = serving
             HostSettingsMapping.serve(on: host.server, settings: settings)
-            await ShepherdHost.serveSettings(settings, on: host.server).value
+            ShepherdHost.serveSettings(settings, on: host.server)
             let tokenURL = host.dir.appendingPathComponent("remote-token")
             let socket = host.dir.appendingPathComponent("h.sock").path
             try host.server.startLocalListener(path: socket, tokenURL: tokenURL)

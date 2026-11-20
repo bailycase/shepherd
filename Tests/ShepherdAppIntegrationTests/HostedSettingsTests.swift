@@ -23,7 +23,10 @@ struct HostedSettingsTests {
         settings.remoteListenerPort = 0
         var service: BackgroundService.Status? = .enabled
         HostSettingsMapping.serve(on: host.server, settings: settings) { service?.keepsAgentsRunning }
-        let port = try #require(await ShepherdHost.serveSettings(settings, on: host.server).value, "Serve this Mac listens in the host")
+        var opened: UInt16?
+        ShepherdHost.serveSettings(settings, on: host.server) { port, _ in opened = port }
+        try await eventuallyOnMain("Serve this Mac to listen in the host") { opened != nil }
+        let port = try #require(opened)
 
         let socket = host.dir.appendingPathComponent("h.sock").path
         let tokenURL = host.dir.appendingPathComponent("remote-token")
