@@ -63,39 +63,54 @@ enum ClientStateChecks {
         defer { serving.cancel(); store.stop() }
         await FixtureWindows.wait(seconds: 5) { store.ready }
 
+        func menu() -> MobileCommandFocus.MenuState? { target.menu(supportsMultipleWindows: true) }
+
         func observeMenu() -> ClientStateFlag {
             let changed = ClientStateFlag()
-            withObservationTracking { _ = target.menu } onChange: { changed.raised = true }
+            withObservationTracking { _ = menu() } onChange: { changed.raised = true }
             return changed
         }
 
-        check(target.menu?.canStop == false && target.menu?.canRename == true && target.menu?.canChooseModel == true,
+        check(menu()?.canStop == false && menu()?.canRename == true && menu()?.canChooseModel == true,
               "idle thread can rename and choose a model, but not stop")
         let started = observeMenu()
         snapshot.running = true
         await store.refresh()
-        check(started.raised && target.menu?.canStop == true, "a running thread invalidates and enables Stop")
+        check(started.raised && menu()?.canStop == true, "a running thread invalidates and enables Stop")
 
         snapshot.running = false
         await store.refresh()
-        await FixtureWindows.wait("Stop disabled after the run ends", seconds: 5) { target.menu?.canStop == false }
+        await FixtureWindows.wait("Stop disabled after the run ends", seconds: 5) { menu()?.canStop == false }
         let asked = observeMenu()
         snapshot.dialogs = FixtureData.questionThread().dialogs
         await store.refresh()
-        check(asked.raised && target.menu?.canStop == true, "a pending question invalidates and enables Stop without a run")
+        check(asked.raised && menu()?.canStop == true, "a pending question invalidates and enables Stop without a run")
 
         let presentation = nav.composerPresentation.state(for: ref)
         let presented = observeMenu()
         presentation.showingContext = true
-        check(presented.raised && target.menu?.canStart == false && target.menu?.canRename == false
-              && target.menu?.canChooseModel == false, "context sheet invalidates and blocks other presentations")
+        check(presented.raised && menu()?.canStart == false && menu()?.canRename == false
+              && menu()?.canChooseModel == false, "context sheet invalidates and blocks other presentations")
         presentation.showingContext = false
-        check(target.menu?.canRename == true && target.menu?.canChooseModel == true, "dismissing context restores commands")
+        check(menu()?.canRename == true && menu()?.canChooseModel == true, "dismissing context restores commands")
+
+        nav.hingeClosed = false
+        check(menu()?.canOpenWindows == true, "Duo held upright offers New Window")
+        let rotated = observeMenu()
+        nav.padSidebarOverlays = true
+        check(rotated.raised && menu()?.canOpenWindows == false, "turning Duo sideways invalidates and hides New Window")
 
         let disconnected = observeMenu()
         app.hosts.disconnect(ref.host)
-        check(disconnected.raised && target.menu?.canStop == false && target.menu?.canRename == false
-              && target.menu?.canChooseModel == false, "disconnect invalidates and disables host actions")
+        check(disconnected.raised && menu()?.canStop == false && menu()?.canRename == false
+              && menu()?.canChooseModel == false, "disconnect invalidates and disables host actions")
+
+        nav.open(.forge(.list))
+        check(menu()?.canToggleSidebar == true, "Issues & PRs list allows toggling the sidebar")
+        let wideForge = observeMenu()
+        nav.padForgeDiff = true
+        check(wideForge.raised && menu()?.canToggleSidebar == false,
+              "a diff beside Issues & PRs invalidates and disables the sidebar command")
     }
 
     static func sentImagesKeepTheNextAttachment() async {

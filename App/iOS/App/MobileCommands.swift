@@ -30,7 +30,7 @@ struct MobileCommandTarget {
         available && !navigator.padShowsDesign && !navigator.padShowsForgeWide
     }
 
-    var canToggleSidePane: Bool {
+    var canToggleThreadPanes: Bool {
         available && visibleThread != nil
     }
 
@@ -96,7 +96,7 @@ struct MobileCommandTarget {
     }
 
     func toggleSidePane() {
-        guard canToggleSidePane else { return }
+        guard canToggleThreadPanes else { return }
         let pane = navigator.sidePane
         withSHAnimation(.pane) {
             let show = pane.arranged != nil || !pane.isOpen
@@ -124,9 +124,11 @@ struct MobileCommandTarget {
 /// The target references alone don't change when a thread starts running or its host disconnects.
 struct MobileCommandFocus: ViewModifier {
     let target: MobileCommandTarget
+    @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
 
     func body(content: Content) -> some View {
-        content.focusedSceneValue(\.mobileCommandFocus, Value(target: target, menu: target.menu))
+        let menu = target.menu(supportsMultipleWindows: supportsMultipleWindows)
+        content.focusedSceneValue(\.mobileCommandFocus, Value(target: target, menu: menu))
     }
 
     struct Value {
@@ -139,14 +141,23 @@ struct MobileCommandFocus: ViewModifier {
         let canStop: Bool
         let canRename: Bool
         let canChooseModel: Bool
+        let canOpenWindows: Bool
+        let canWalk: Bool
+        let canToggleSidebar: Bool
+        let canToggleThreadPanes: Bool
     }
 }
 
 extension MobileCommandTarget {
-    var menu: MobileCommandFocus.MenuState? {
+    func menu(supportsMultipleWindows: Bool) -> MobileCommandFocus.MenuState? {
         guard navigator.layout == .pad else { return nil }
+        let canOpenWindows = WindowAvailability.canOpenWindows(supportsMultipleWindows: supportsMultipleWindows,
+                                                               hinge: navigator.hingeClosed != nil,
+                                                               regularWidth: true,
+                                                               tallWindow: navigator.padSidebarOverlays)
         return .init(canStart: canStart, canStop: stoppableThread != nil,
-                     canRename: canRename, canChooseModel: canChooseModel)
+                     canRename: canRename, canChooseModel: canChooseModel, canOpenWindows: canOpenWindows,
+                     canWalk: canWalk, canToggleSidebar: canToggleSidebar, canToggleThreadPanes: canToggleThreadPanes)
     }
 }
 
@@ -154,19 +165,17 @@ extension MobileCommandTarget {
 struct MobileCommands: Commands {
     let focus: MobileCommandFocus.Value?
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
 
     var body: some Commands {
         if let focus, let menu = focus.menu {
             let target = focus.target
-            let canWalk = target.canWalk
             CommandGroup(replacing: .newItem) {
                 Button("New Thread…") {
                     if target.canStart { NewThreadHooks.open(navigator: target.navigator) }
                 }
                 .keyboardShortcut(MobileShortcut.newThread.shortcut)
                 .disabled(!menu.canStart)
-                if supportsMultipleWindows {
+                if menu.canOpenWindows {
                     Button("New Window") { openWindow(value: MobileWindowSeed()) }
                         .keyboardShortcut(MobileShortcut.newWindow.shortcut)
                 }
@@ -192,21 +201,21 @@ struct MobileCommands: Commands {
                 Divider()
                 Button("Previous Thread") { target.walkThreads(forward: false) }
                     .keyboardShortcut(MobileShortcut.previousThread.shortcut)
-                    .disabled(!canWalk)
+                    .disabled(!menu.canWalk)
                 Button("Next Thread") { target.walkThreads(forward: true) }
                     .keyboardShortcut(MobileShortcut.nextThread.shortcut)
-                    .disabled(!canWalk)
+                    .disabled(!menu.canWalk)
             }
             CommandGroup(replacing: .sidebar) {
                 Button("Show or Hide Sidebar") { target.toggleSidebar() }
                     .keyboardShortcut(MobileShortcut.toggleSidebar.shortcut)
-                    .disabled(!target.canToggleSidebar)
+                    .disabled(!menu.canToggleSidebar)
                 Button("Show or Hide Side Pane") { target.toggleSidePane() }
                     .keyboardShortcut(MobileShortcut.toggleSidePane.shortcut)
-                    .disabled(!target.canToggleSidePane)
+                    .disabled(!menu.canToggleThreadPanes)
                 Button("Show or Hide Terminal") { target.toggleTerminal() }
                     .keyboardShortcut(MobileShortcut.toggleTerminal.shortcut)
-                    .disabled(!target.available || target.visibleThread == nil)
+                    .disabled(!menu.canToggleThreadPanes)
             }
         }
     }
