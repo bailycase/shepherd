@@ -7,6 +7,15 @@ import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
+/// Runs `body` on the server queue and awaits it: the main actor never blocks on the queue (AGENTS.md, Server concurrency).
+@MainActor
+private func onQueue<T>(_ queue: DispatchQueue, _ body: @escaping () -> T) async -> T {
+    nonisolated(unsafe) let work = body
+    return await withCheckedContinuation { continuation in
+        queue.async { continuation.resume(returning: work()) }
+    }
+}
+
 /// C-MIGRATE for the Agents group (docs/plans/foundation-audit.md R3): the host keeps its copy of the
 /// group in `host-preferences.json` and still writes the old UserDefaults keys, so the previous release,
 /// reading only those keys, sees every change made through any path that setting has. Paths per setting
@@ -135,12 +144,13 @@ struct HostPreferencesMigrationTests {
         }
 
         // (c) A peer's Fleet op, delivered to the host's own fleet: no request, no reply. Seven of the group sync.
-        let engine = try #require(harness.server.queue.sync { harness.server.fleet?.syncEngine })
-        harness.server.queue.sync { engine.start() }
+        let server = harness.server
+        let engine = try #require(await onQueue(server.queue) { server.fleet?.syncEngine })
+        await onQueue(server.queue) { engine.start() }
         let hostSettings = try #require(harness.hostSettings)
         func reported() async throws {
-            try await eventuallyOnMain("the host to report its settings to the fleet") {
-                harness.server.fleetSettingsForTests == HostSettingsMapping.settings(from: hostSettings, shepherdVersion: nil, piVersion: nil)
+            try await eventuallyAsync("the host to report its settings to the fleet") {
+                await onQueue(server.queue) { server.fleetSettings } == HostSettingsMapping.settings(from: hostSettings, shepherdVersion: nil, piVersion: nil)
             }
         }
         try await reported()
@@ -159,7 +169,7 @@ struct HostPreferencesMigrationTests {
             step.expect(&expected)
             let seq = UInt64(index + 1)
             let op = FleetOp(mac: peer, seq: seq, hlc: FleetHLC(wallMs: base + seq), unit: setting.unit, change: .value(json), macName: "Peer")
-            _ = harness.server.queue.sync { engine.serve(.op(op), from: peer) }
+            await onQueue(server.queue) { _ = engine.serve(.op(op), from: peer) }
             try await eventuallyOnMain("the host's copy to take the synced \(step.label)") { (try? Self.stored(file)) == expected }
             try check("fleet sync \(step.label)")
             try await reported()

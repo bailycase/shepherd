@@ -47,4 +47,25 @@ struct HostSettingsStoreTests {
         store.update { $0.agents.codemode = false }
         #expect(HostSettingsStore(file: url).preferences.agents.codemode == false)
     }
+
+    /// A damaged file whose old keys were all at their defaults: nothing differs from the defaults, and the file is still repaired.
+    @Test func aDamagedFileIsRepairedEvenWhenNothingChanged() throws {
+        let url = try file()
+        try Data("not json".utf8).write(to: url)
+        let store = HostSettingsStore(file: url)
+        store.update { $0 = StoredHostPreferences() }
+        #expect(try StoredHostPreferences.decode(Data(contentsOf: url)) == StoredHostPreferences())
+    }
+
+    /// A write that fails is not remembered as done: the next update tries again, changed or not.
+    @Test func aFailedWriteIsRetriedAtTheNextUpdate() throws {
+        let folder = try makeScratchDirectory("hps")
+        let url = folder.appendingPathComponent("later").appendingPathComponent("host-preferences.json")
+        let store = HostSettingsStore(file: url)
+        store.update { $0.agents.codemode = false } // the folder is not there: the write fails
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        store.update { _ in }
+        #expect(try StoredHostPreferences.decode(Data(contentsOf: url)).agents.codemode == false)
+    }
 }

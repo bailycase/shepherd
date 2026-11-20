@@ -717,21 +717,30 @@ final class AppSettings {
     /// were read at init, so a change the previous release made to them since the file was written wins.
     func adoptHostPreferences(_ preferences: HostSettingsStore) {
         hostPreferences = preferences
-        preferences.update {
-            $0.agents.defaultModel = defaultModel
-            $0.agents.defaultThinking = defaultThinking
-            $0.agents.defaultServiceTier = defaultServiceTier
-            $0.agents.textGenerationModel = textGenerationModel
-            $0.agents.visionModel = visionModel
-            $0.agents.queueDelivery = queueDelivery
-            $0.agents.trimToolOutput = trimToolOutput
-            $0.agents.notifyOnTurnFinished = notifyOnTurnFinished
-            $0.agents.deferTools = deferTools
-            $0.agents.threadsStartThreads = threadsStartThreads
-            $0.agents.subThreadPlace = subThreadPlace
-            $0.agents.codemode = codemode
-            $0.agents.compactAtPercent = compactAtPercent
-        }
+        let own = agentsGroup
+        preferences.update { $0.agents = own }
+    }
+
+    /// The Agents group as the host's reply reads it: from the host's store once it is adopted (it is kept current by
+    /// every setter and rebuilt from the keys at adoption), from this object's own values before that.
+    var hostAgents: StoredHostPreferences.Agents { hostPreferences?.preferences.agents ?? agentsGroup }
+
+    private var agentsGroup: StoredHostPreferences.Agents {
+        var agents = StoredHostPreferences.Agents()
+        agents.defaultModel = defaultModel
+        agents.defaultThinking = defaultThinking
+        agents.defaultServiceTier = defaultServiceTier
+        agents.textGenerationModel = textGenerationModel
+        agents.visionModel = visionModel
+        agents.queueDelivery = queueDelivery
+        agents.trimToolOutput = trimToolOutput
+        agents.notifyOnTurnFinished = notifyOnTurnFinished
+        agents.deferTools = deferTools
+        agents.threadsStartThreads = threadsStartThreads
+        agents.subThreadPlace = subThreadPlace
+        agents.codemode = codemode
+        agents.compactAtPercent = compactAtPercent
+        return agents
     }
 
     /// `edition` picks defaults that differ between Shepherd and Shepherd Nightly (the

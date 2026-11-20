@@ -170,9 +170,44 @@ struct HostSettingsMappingTests {
         for change in samples {
             let app = AppSettings(store: Fixture.defaults())
             let before = HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil)
+            var expected = before
+            if !inert(change) {
+                expected.apply(change) // the field the protocol says it names, and no other
+                #expect(expected != before, "\(change) moves no field")
+            }
             #expect(HostSettingsMapping.apply(change, to: app) == nil)
-            let moved = HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil) != before
-            #expect(moved == !inert(change), "\(change) \(inert(change) ? "moved a field though it is inert" : "moved no field")")
+            let reply = HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil)
+            #expect(reply == expected, "\(change) \(inert(change) ? "changed the reply though it is inert" : "did not change exactly the field it names")")
+        }
+    }
+
+    /// The Agents fields of the reply are read from the host's store, not from `AppSettings`: a value only the store
+    /// holds shows up, in every field the group moved (the three bundled switches included).
+    @Test func theReplyReadsTheAgentsGroupFromTheHostsStore() throws {
+        let app = AppSettings(store: Fixture.defaults())
+        let store = HostSettingsStore(file: try makeScratchDirectory("hps").appendingPathComponent("host-preferences.json"))
+        app.adoptHostPreferences(store)
+        store.update {
+            $0.agents.defaultModel = "acme/store-model"
+            $0.agents.defaultThinking = .high
+            $0.agents.defaultServiceTier = .fast
+            $0.agents.textGenerationModel = "acme/store-text"
+            $0.agents.visionModel = "acme/store-vision"
+            $0.agents.compactAtPercent = 80
+            $0.agents.queueDelivery = .oneAtATime
+            $0.agents.threadsStartThreads = true
+            $0.agents.subThreadPlace = .worktree
+            $0.agents.trimToolOutput = false
+            $0.agents.deferTools = false
+            $0.agents.codemode = false
+        }
+        #expect(app.defaultModel.isEmpty && app.codemode, "AppSettings still holds its own values")
+        let reply = HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil)
+        #expect(reply.defaultModel == "acme/store-model" && reply.defaultThinking == .high && reply.defaultServiceTier == .fast)
+        #expect(reply.textGenerationModel == "acme/store-text" && reply.visionModel == "acme/store-vision" && reply.compactAtPercent == 80)
+        #expect(reply.queueDelivery == .oneAtATime && reply.threadsStartThreads && reply.subThreadPlace == .worktree)
+        for id in ["context", "deferTools", "codemode"] {
+            #expect(reply.bundledExtensions.first { $0.id == id }?.on == false, Comment(rawValue: id))
         }
     }
 
