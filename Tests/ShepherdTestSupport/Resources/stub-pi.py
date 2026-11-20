@@ -820,8 +820,18 @@ def flaky_turn(message):
     STATE["messageCount"] = len(MESSAGES)
     emit({"type": "message_start", "message": {"role": "assistant", "content": []}})
     text = text_of(message)
+    if "fleet-close-background" in text:
+        import subprocess
+        child = subprocess.Popen(["/usr/bin/nohup", "/bin/sleep", "120"], stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 start_new_session="fleet-detached" in text)
+        with open("fleet-child-pid", "w") as pid_file:
+            pid_file.write(str(child.pid))
     if "flaky-hold" in text:
         wait_for_file("flaky-go")
+    if "fleet-disk-failure" in text:
+        emit({"type": "extension_error", "event": "turn_end", "error": "ENOSPC: no space left on device, write"})
+        FLAKY["failed"] = True
     if not FLAKY["failed"]:
         FLAKY["failed"] = True
         final = {"role": "assistant", "content": [], "stopReason": "error", "errorMessage": "529 overloaded",

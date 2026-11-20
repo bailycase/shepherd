@@ -18,6 +18,12 @@ extension FixtureCatalog {
             // The same new turn for a reader who scrolled up into the thread and dragged back down to the end.
             FixtureScreen(name: "thread-new-turn-from-above", hosts: NewTurnFixture.hosts(), routes: [.thread(thread)],
                           prepare: { await NewTurnFixture.run($0, reader: .backFromAbove) }),
+            // The jump pill takes a reader from history to the tail without sending them back on a streaming update.
+            FixtureScreen(name: "thread-jump-while-working", hosts: NewTurnFixture.hosts(), routes: [.thread(thread)],
+                          prepare: { await NewTurnFixture.returnToTail($0, sending: false) }),
+            // An immediate send from history also lands on the tail and follows the reply.
+            FixtureScreen(name: "thread-send-from-history", hosts: NewTurnFixture.hosts(acceptingSend: true), routes: [.thread(thread)],
+                          prepare: { await NewTurnFixture.returnToTail($0, sending: true) }),
         ]
     }
 }
@@ -50,8 +56,17 @@ enum NewTurnFixture {
         case backFromAbove
     }
 
-    static func hosts() -> [FixtureHostData] {
+    private nonisolated static let promptText = "Now tighten that up: keep the lease and the retry rules, drop the rest."
+
+    static func hosts(acceptingSend: Bool = false) -> [FixtureHostData] {
         var hosts = ThreadFixtures.hosts(preview: Host.shared.snapshot())
+        if acceptingSend {
+            hosts[0].accepts = { request in
+                guard case .nativeThread(let id, let agent, .send(_, _, let operation, let text, .followUp, _, _, _, _)) = request,
+                      agent == FixtureData.preview, text == promptText else { return nil }
+                return .nativeThread(id: id, result: .accepted(operationID: operation))
+            }
+        }
         let earlier = hosts[0].reply
         hosts[0].reply = { request in
             guard case .nativeThread(let id, let agentID, .snapshot(_, _, let after)) = request, agentID == FixtureData.preview else {
@@ -120,6 +135,72 @@ enum NewTurnFixture {
         FixtureCheck.report("FIXTURE CHECK \(shown.ink >= TailFixture.inkFloor ? "ok" : "FAILED"): the transcript draws after the new turn")
     }
 
+    /// Return to the tail with the jump pill or Send, then watch for a trip back to history.
+    static func returnToTail(_ app: MobileApp, sending: Bool) async {
+        let ref = FixtureData.ref(FixtureData.preview)
+        let store = app.threads.store(for: ref)
+        let place = app.navigator.composerPresentation.state(for: ref)
+        await FixtureWindows.wait("the long thread", seconds: 20) { store.rows.count > 150 && FollowFixture.threadScrollView() != nil }
+        guard let scroll = FollowFixture.threadScrollView() else { FixtureCheck.fail("no transcript") }
+        let gutter = TailFixture.gutter(of: scroll)
+        let rest = gutter + NativeScrollFollower.repinSlack
+        await FixtureWindows.wait("the initial tail landing", seconds: 10) {
+            (-NativeScrollFollower.repinSlack...rest).contains(distance(scroll))
+        }
+        let finger = TailFixture.Finger(scroll: scroll)
+        func detachedInHistory() -> Bool { !place.follows && place.visibleTurn != nil && distance(scroll) > 2_000 }
+        await finger.drag(by: -14_000, frame: 350)
+        // If SwiftUI is still measuring after the long drag it can write a nil anchor. Let it report a row on a short drag.
+        for _ in 0..<3 where !detachedInHistory() { await finger.drag(by: 600, frame: 60) }
+        await FixtureCheck.wait("a detached history anchor after the drag ends", seconds: 5) {
+            detachedInHistory() && !place.scrollFollower.userScrolling
+        }
+        SidebarAutomationsCheck.enableAccessibility()
+        let action = sending ? "Send" : "Jump to latest"
+        func control() -> NSObject? { TriggerFlowCheck.element(action) }
+        if sending {
+            store.draft = promptText
+            await FixtureCheck.wait("an idle composer ready to send", seconds: 6) {
+                store.isLive && !store.running && store.acceptsSend && store.hasDraft && !store.busy
+            }
+        } else {
+            Host.shared.start(length: replyLength, rate: 360, stepsPerSecond: 20)
+            await FixtureCheck.wait("the Jump to latest pill on a streaming thread", seconds: 6) { store.running && control() != nil }
+        }
+        guard detachedInHistory() else { FixtureCheck.fail("\(action) did not start in detached history") }
+        let before = store.snapshot?.revision ?? 0
+        let sentBefore = store.sentCount
+        let frames = Frames(scroll: scroll, gutter: gutter)
+        SHRenderProbe.start()
+        frames.start()
+        if sending {
+            await ThreadComposer.send(.followUp, store: store, state: ComposerStates.shared.state(for: ref)).value
+            guard store.sentCount == sentBefore + 1, !store.lastSendQueued else {
+                FixtureCheck.fail("the host did not accept an immediate send")
+            }
+            Host.shared.start(length: replyLength, rate: 360, stepsPerSecond: 20)
+        } else {
+            guard control()?.accessibilityActivate() == true else { FixtureCheck.fail("\(action) did not activate") }
+        }
+        await FixtureCheck.wait("revisions to keep streaming after \(action)", seconds: 6) {
+            (store.snapshot?.revision ?? before) >= before + 60
+        }
+        // A chunk can grow several lines before the next pin. Require the reply to reach the composer and rule out
+        // jolts back into history with the same limit as the new-turn check.
+        let shown = await TailFixture.shown(within: .seconds(2)) { $0.atTail }
+        let result = frames.stop()
+        let counts = SHRenderProbe.stop()
+        let landings = counts["thread.tailLanding", default: 0] + counts["thread.tailLandingResized", default: 0]
+        let revisions = (store.snapshot?.revision ?? before) - before
+        FixtureCheck.report("FIXTURE CHECK ok: \(action), \(result.frames) frames, \(revisions) revisions since press, "
+            + "farthest \(Int(result.farthest))pt, \(result.backJumps) back jumps (\(result.backJumpsAfterLanding) after first landing), "
+            + "\(landings) landings, \(Int(result.awayAfterLanding))pt off after landing, \(shown.distance)pt at rest, follows \(place.follows)")
+        guard store.running, result.landed, result.backJumpsAfterLanding == 0, result.awayAfterLanding < jolt,
+              shown.atTail, shown.ink >= TailFixture.inkFloor else {
+            FixtureCheck.fail("\(action) did not land and stay on the streaming tail")
+        }
+    }
+
     /// Points the thread's visible bottom sits above the end of its content.
     private static func distance(_ scroll: UIScrollView) -> CGFloat {
         scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.contentOffset.y - scroll.bounds.height
@@ -134,7 +215,10 @@ enum NewTurnFixture {
             var lastMs: Int
             var farthest: CGFloat
             var backJumps: Int
+            var backJumpsAfterLanding: Int
             var shrinks: Int
+            var landed: Bool
+            var awayAfterLanding: CGFloat
         }
 
         private let gutter: CGFloat
@@ -149,7 +233,10 @@ enum NewTurnFixture {
         private var offset: CGFloat
         private var content: CGFloat
         private var backJumps = 0
+        private var backJumpsAfterLanding = 0
         private var shrinks = 0
+        private var landed = false
+        private var awayAfterLanding: CGFloat = 0
 
         init(scroll: UIScrollView, gutter: CGFloat) {
             self.scroll = scroll
@@ -171,6 +258,12 @@ enum NewTurnFixture {
             guard let scroll else { return }
             frames += 1
             let away = NewTurnFixture.distance(scroll) - gutter
+            if scroll.contentOffset.y < offset - 100 {
+                backJumps += 1
+                if landed { backJumpsAfterLanding += 1 }
+            }
+            if landed { awayAfterLanding = max(awayAfterLanding, away) }
+            if abs(away) <= gutter + NativeScrollFollower.repinSlack { landed = true }
             let at = (now - began) * 1000
             farthest = max(farthest, away)
             if away > NewTurnFixture.jolt {
@@ -178,7 +271,6 @@ enum NewTurnFixture {
                 if first < 0 { first = at }
                 last = at
             }
-            if scroll.contentOffset.y < offset - 100 { backJumps += 1 }
             if scroll.contentSize.height < content - 100 { shrinks += 1 }
             offset = scroll.contentOffset.y
             content = scroll.contentSize.height
@@ -188,7 +280,8 @@ enum NewTurnFixture {
             link?.invalidate()
             link = nil
             return Result(frames: frames, over: over, firstMs: Int(max(first, 0).rounded()), lastMs: Int(max(last, 0).rounded()),
-                          farthest: farthest, backJumps: backJumps, shrinks: shrinks)
+                          farthest: farthest, backJumps: backJumps, backJumpsAfterLanding: backJumpsAfterLanding,
+                          shrinks: shrinks, landed: landed, awayAfterLanding: awayAfterLanding)
         }
     }
 
@@ -217,7 +310,7 @@ enum NewTurnFixture {
         var isFinished: Bool { lock.withLock { finished } }
 
         private func prompt() -> NativeThreadMessage {
-            FixtureData.user("nt-u", "Now tighten that up: keep the lease and the retry rules, drop the rest.", at: 9_000_000)
+            FixtureData.user("nt-u", NewTurnFixture.promptText, at: 9_000_000)
         }
 
         private func reply(status: String?) -> NativeThreadMessage {

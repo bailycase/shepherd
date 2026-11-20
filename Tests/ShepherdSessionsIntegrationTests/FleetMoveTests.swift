@@ -167,15 +167,27 @@ struct FleetMoveTests {
     @Test func stopAndMoveStopsARunningTurnAndItsPiAndMovesTheThread() async throws {
         let (a, b, _) = try await Self.pair()
         defer { a.stop(); b.stop() }
-        _ = Self.engineOf(a) { $0.moveStopGrace = 0.2 }
         let (agent, worktree) = try await Self.thread(on: a)
-        // The thread's pi is live and its turn is running.
         let spawned = try #require(try await a.server.respawnAgent(AgentSpawn(agent: agent, cwd: "", settings: AgentLaunchSettings())))
-        try await FleetDispatchTests.wait("pi to start") { await a.server.sessionInfo(sessionID: spawned.id)?.isAlive == true }
+        try await FleetDispatchTests.wait("pi to serve") {
+            await a.server.enqueueValue { @Sendable in a.server.rpcThread(forAgent: agent.id)?.isServable == true }
+        }
+        await a.server.enqueueValue { @Sendable in
+            a.server.rpcThread(forAgent: agent.id)?.send(id: UUID(), text: "slow", delivery: .followUp, images: []) { _ in }
+        }
         try a.report(agent.id, .working)
-        try await FleetDispatchTests.wait("the thread to be working") { Self.copy(of: agent.id, on: a)?.status == .working }
+        try await FleetDispatchTests.wait("the held turn to start") {
+            let running = await a.server.enqueueValue { @Sendable in a.server.rpcThread(forAgent: agent.id)?.running == true }
+            return running && Self.copy(of: agent.id, on: a)?.status == .working
+        }
 
         let started = try await Self.move(agent.id, from: a, to: "Mac mini", when: .now)
+        try await FleetDispatchTests.wait("the turn to abort before the move grace expires", timeout: .seconds(5)) {
+            await a.server.enqueueValue { @Sendable in
+                guard let thread = a.server.rpcThread(forAgent: agent.id) else { return false }
+                return thread.stopRequested && !thread.running
+            }
+        }
         try await Self.finish(started.id, from: a)
         // It didn't wait for the turn, its pi on this Mac is gone, and the thread runs on the other.
         let alive = await a.server.sessionInfo(sessionID: spawned.id)?.isAlive

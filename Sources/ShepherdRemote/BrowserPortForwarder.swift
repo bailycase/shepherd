@@ -113,11 +113,22 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         }
     }
 
-    private let queue = DispatchQueue(label: "shepherd.browser.forward")
+    private let queue: DispatchQueue
     private let lock = NSLock()
     private var listeners: [Int: Listener] = [:]
+    /// How many listening sockets of each released port have not closed yet. A claim made while a
+    /// port is here still finds the old socket bound; `waitForClose(of:)` waits for it.
+    private var closeRemaining: [Int: Int] = [:]
+    /// Tasks waiting for a closing port's sockets to close (`waitForClose(of:)`).
+    private var closeWaiters: [Int: [() -> Void]] = [:]
+    /// Tests only: runs after a connection is accepted, before it is checked against the listener.
+    var afterAccept: (() -> Void)?
 
-    public init() {}
+    /// `queue` runs the accept loops and closes the listening sockets; a test gives its own to hold a
+    /// close late.
+    public init(queue: DispatchQueue = DispatchQueue(label: "shepherd.browser.forward")) {
+        self.queue = queue
+    }
 
     private final class Listener {
         let port: Int
@@ -125,9 +136,10 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         let owner: Owner
         var slot: BrowserTunnelHubSlot
         var agent: AgentID
+        /// Every hub and agent a connection was bridged to, for the listener's whole life: a claim
+        /// can retarget `slot` and `agent`, but the bridges made before it stay on their old ones.
+        var bridged: [(hub: BrowserTunnelHub, agent: AgentID)] = []
         var sources: [DispatchSourceRead] = []
-        /// Signalled when a source's listening socket is closed (its cancel handler has run).
-        var closed: [DispatchSemaphore] = []
 
         init(port: Int, hostPort: Int, owner: Owner, slot: BrowserTunnelHubSlot, agent: AgentID) {
             self.port = port
@@ -167,13 +179,11 @@ public final class BrowserPortForwarder: @unchecked Sendable {
                     guard let self, let listener else { return }
                     self.accept(on: fd, for: listener)
                 }
-                let closed = DispatchSemaphore(value: 0)
-                source.setCancelHandler {
+                source.setCancelHandler { [weak self, port] in
                     Darwin.close(fd)
-                    closed.signal()
+                    self?.closeDidLand(port: port)
                 }
                 listener.sources.append(source)
-                listener.closed.append(closed)
                 source.activate()
             }
             listeners[port] = listener
@@ -181,18 +191,82 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         }
     }
 
-    /// Lets go of every port `owner` holds. The listening sockets are closed when it returns, so the
-    /// port can be claimed again at once (a claim that found a socket still open would read it as
-    /// another program's).
+    /// Lets go of every port `owner` holds, and returns at once: the listening sockets close on the
+    /// forwarding queue shortly after, so this never blocks the caller (a page suspends on the iOS
+    /// client's main actor). A port claimed again before its old sockets close still reads as in use
+    /// until the close lands; `waitForClose(of:)` waits for it. Connections already bridged for the
+    /// ports end with them, and one the accept loop has taken but not bridged yet is closed there:
+    /// a page that is gone forwards nothing.
     public func release(_ owner: Owner) {
+        _ = detach(owner)
+    }
+
+    /// `release`, then waits (up to `timeout`) for the sockets to close, so the ports can be claimed
+    /// again at once. For the Mac, where a thread's page may be closed and made again at once and
+    /// nothing retries a claim that finds the old socket bound.
+    public func releaseAndWait(_ owner: Owner, timeout: TimeInterval = 2) {
+        let deadline = DispatchTime.now() + timeout
+        for port in detach(owner) {
+            let closed = DispatchSemaphore(value: 0)
+            if addCloseWaiter(of: port, { closed.signal() }) { _ = closed.wait(timeout: deadline) }
+        }
+    }
+
+    /// Removes `owner`'s listeners and ends their bridges, and cancels their sockets. Returns the ports.
+    private func detach(_ owner: Owner) -> [Int] {
         lock.lock()
         let held = listeners.filter { $0.value.owner == owner }
         for port in held.keys { listeners.removeValue(forKey: port) }
-        lock.unlock()
-        for listener in held.values { listener.sources.forEach { $0.cancel() } }
-        for listener in held.values {
-            for closed in listener.closed { _ = closed.wait(timeout: .now() + 2) }
+        for (port, listener) in held {
+            closeRemaining[port, default: 0] += listener.sources.count
+            // Under the lock, so it is queued after any bridge the accept loop made before it saw this.
+            for (hub, agent) in listener.bridged { hub.closeTunnels(agentID: agent, port: listener.hostPort) }
         }
+        let cancelled = Array(held.values)
+        lock.unlock()
+        for listener in cancelled { listener.sources.forEach { $0.cancel() } }
+        return Array(held.keys)
+    }
+
+    /// Runs `waiter` when a released port's sockets are closed. False, having run nothing, when none are closing.
+    private func addCloseWaiter(of port: Int, _ waiter: @escaping () -> Void) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard closeRemaining[port] != nil else { return false }
+        closeWaiters[port, default: []].append(waiter)
+        return true
+    }
+
+    /// Waits until a released port's listening sockets are closed (at once, when none are closing),
+    /// so claiming it again does not read the old sockets as another program's. A page coming back
+    /// awaits this before trying its ports again.
+    public func waitForClose(of port: Int) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            if !addCloseWaiter(of: port, { continuation.resume() }) { continuation.resume() }
+        }
+    }
+
+    /// A closing port's socket closed: when its last one has, the port is free and its waiters run.
+    private func closeDidLand(port: Int) {
+        lock.lock()
+        guard let remaining = closeRemaining[port] else { lock.unlock(); return }
+        let waiters: [() -> Void]
+        if remaining <= 1 {
+            closeRemaining.removeValue(forKey: port)
+            waiters = closeWaiters.removeValue(forKey: port) ?? []
+        } else {
+            closeRemaining[port] = remaining - 1
+            waiters = []
+        }
+        lock.unlock()
+        for waiter in waiters { waiter() }
+    }
+
+    /// How many tasks wait for `port`'s sockets to close. Tests only.
+    func closeWaiterCount(of port: Int) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return closeWaiters[port]?.count ?? 0
     }
 
     /// The ports `owner` holds.
@@ -215,18 +289,28 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         while true {
             let fd = Darwin.accept(listenFD, nil, nil)
             if fd < 0 { return }
+            afterAccept?()
             lock.lock()
+            // Released while this loop was running: the page is gone, so nothing is bridged for it.
+            // `bridge` only queues, so calling it here orders it before `release`'s teardown.
+            guard listeners[listener.port] === listener else {
+                lock.unlock()
+                Darwin.close(fd)
+                continue
+            }
             let hub = listener.slot.hub
             let agent = listener.agent
-            lock.unlock()
             guard let hub else {
+                lock.unlock()
                 // No connection to the host now: the page's connection resets, an ordinary load error.
                 var linger = linger(l_onoff: 1, l_linger: 0)
                 _ = setsockopt(fd, SOL_SOCKET, SO_LINGER, &linger, socklen_t(MemoryLayout<linger>.size))
                 Darwin.close(fd)
                 continue
             }
+            if !listener.bridged.contains(where: { $0.hub === hub && $0.agent == agent }) { listener.bridged.append((hub, agent)) }
             hub.bridge(fd: fd, agentID: agent, port: listener.hostPort)
+            lock.unlock()
         }
     }
 
