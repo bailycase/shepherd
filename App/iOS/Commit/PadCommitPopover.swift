@@ -31,7 +31,9 @@ private struct PadCommitPopoverPresenter: ViewModifier {
     private func close() {
         guard navigator.commitPopover == ref else { return }
         navigator.commitPopover = nil
-        if CommitStores.shared.store(for: ref, hosts: hosts).closed() {
+        let store = CommitStores.shared.store(for: ref, hosts: hosts)
+        let succeeded = if case .succeeded = store.outcome { true } else { false }
+        if store.closed(), !succeeded || !navigator.finishQueuedReview(ref, hosts: hosts) {
             Task { await ReviewStores.shared.store(for: ref).load(hosts: hosts) }
         }
     }
@@ -45,6 +47,7 @@ struct PadCommitPopover: View {
     let ref: AgentRef
     let close: () -> Void
     @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
         let store = CommitStores.shared.store(for: ref, hosts: hosts)
@@ -121,6 +124,7 @@ struct PadCommitPopover: View {
         Task {
             if await review.commit(hosts: hosts) {
                 close()
+                navigator.finishQueuedReview(ref, hosts: hosts)
             } else {
                 CommitStores.shared.store(for: ref, hosts: hosts).error = review.actionError
             }
