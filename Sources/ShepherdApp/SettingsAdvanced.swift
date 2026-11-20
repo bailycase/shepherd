@@ -93,8 +93,8 @@ struct GeneralSettings: View {
                     }
                     .shTransition(.disclosure)
                 }
-                SettingsRow(title: "Version \(version)", subtitle: vm.pi.engine.version.map { "agent \($0)" }) {
-                    if updater.available {
+                if updater.available {
+                    SettingsRow(title: "Version \(version)", subtitle: vm.pi.engine.version.map { "agent \($0)" }) {
                         Button("Check now") { updater.checkForUpdates() }
                             .buttonStyle(.sh(.secondary, size: .s))
                     }

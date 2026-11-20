@@ -416,7 +416,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .worktrees: ["Branch from", "Fetch first", "Draft commit messages", "Close the thread when its PR merges", "Worktree"]
         case .subagents: ["New profile", "Restore defaults", "Where they live"]
         case .projects: ["Add space", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
-        case .fromYourPi: ["Source", "Last brought over", "Re-import all", "Logins", "Custom providers", "Default model",
+        case .fromYourPi: ["Last brought over", "Re-import all", "Logins", "Custom providers", "Default model",
                            "Instructions", "Skills", "Prompts", "Themes", "Imported extensions"]
         case .tools: ["Add server", "Import…", "Also use a repo’s .mcp.json",
                       "Terminals and agent tools", "Diff review", "MCP servers", "Browser", "Design references",
@@ -475,7 +475,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                           "Worktree": ["deleting", "keep", "remove", "ask", "delete"]]
         case .subagents: ["New profile": ["children", "helpers", "profiles", "agents", "Markdown", "subagent"], "Restore defaults": ["scout", "reviewer", "planner", "worker"]]
         case .projects: ["Add space": ["folders", "directory", "space settings"], "Instructions": ["AGENTS.md", "APPEND_SYSTEM.md"], "Pi settings": [".shepherd", "settings.json"]]
-        case .fromYourPi: ["Source": ["~/.pi/agent", "terminal pi", "your pi", "from pi"], "Re-import all": ["import", "re-import", "copy"],
+        case .fromYourPi: ["Re-import all": ["import", "re-import", "copy", "~/.pi/agent", "terminal pi", "your pi", "from pi"],
                            "Logins": ["re-import", "auth.json", "sign-ins"],
                            "Custom providers": ["models.json", "re-import"], "Default model": ["re-import", "provider"],
                            "Instructions": ["AGENTS.md", "CLAUDE.md", "SYSTEM.md", "APPEND_SYSTEM.md", "context", "re-import"],

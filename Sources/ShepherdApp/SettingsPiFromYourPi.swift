@@ -12,11 +12,8 @@ struct FromYourPiSettings: View {
     var body: some View {
         let survey = model.survey ?? YourPiSurvey()
         SettingsPage(title: "Your pi") {
-            if let folder = survey.folder {
-                SettingsGroup(title: "") {
-                    SettingsRow(title: "Source", subtitle: survey.problems.first ?? "Shepherd never changes your pi") {
-                        SettingsValue(text: (folder as NSString).abbreviatingWithTildeInPath, mono: true).help(folder)
-                    }
+            if survey.folder != nil {
+                SettingsGroup(title: "", footnote: survey.problems.first) {
                     SettingsRow(title: "Copy everything again", subtitle: Self.lastCopied(survey.copiedAt)) {
                         Button("Re-import all") { Task { await model.reimportAll() } }
                             .buttonStyle(.sh(.secondary, size: .s))

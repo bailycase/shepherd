@@ -46,23 +46,10 @@ struct KeyboardSettings: View {
         .shAnimation(.disclosure, value: errorText)
     }
 
-    /// The keys for sending while pi works and for the queue, as the Queue & steer boards'
-    /// Keyboard card lists them: ↩ queues, the alternate send steers now, and only the alternate
-    /// send can be rebound.
+    /// While pi works: the one key that can be rebound, the alternate send that steers now.
     private var whileWorking: some View {
         SettingsGroup(title: "While the agent is working") {
-            ForEach(WhileWorkingKey.all) { key in
-                switch key {
-                case .send:
-                    SettingsRow(title: key.title) { SHKeycap(keys.sendDisplay) }
-                case .alternateSend:
-                    shortcutRow(.alternateSend, title: key.title)
-                case .fixed(let chord):
-                    SettingsRow(title: key.title) { SHKeycap(keys: chord.keys) }
-                case .steerFocused:
-                    SettingsRow(title: key.title) { SHKeycap(keys.display(.alternateSend)) }
-                }
-            }
+            shortcutRow(.alternateSend, title: "Send and steer now")
         }
     }
 
