@@ -99,6 +99,18 @@ extension FixtureCatalog {
                 await ThreadMenuFixture.present(app)
             }),
             FixtureScreen(name: "copy-confirmation", hosts: ThreadMenuFixture.copyHosts(), prepare: ThreadMenuFixture.copy),
+            // Stop all working threads (the overflow menu's item): the confirm names the three working threads of the fleet
+            // (an automation's run is left out), and the result it ends in. The fixture host refuses a real stop, so the
+            // result is set as `StopAllWorking.run` would leave it.
+            FixtureScreen(name: "stop-all-confirm", hosts: fleet, prepare: { app in
+                await settle(app)
+                app.navigator.stopAll.confirming = app.hosts.workingThreads
+            }),
+            FixtureScreen(name: "stop-all-result", hosts: fleet, prepare: { app in
+                await settle(app)
+                app.navigator.stopAll.outcome = StopAllWorking.Outcome(
+                    stopped: 2, failures: [.init(name: "Restyle native UI", message: "The session changed. Refresh the thread and try again.")])
+            }),
         ]
     }
 }
