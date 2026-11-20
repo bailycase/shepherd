@@ -44,6 +44,8 @@ extension SessionServer {
         do {
             try requireStarted()
             if requiresEnabled { try requireProjectsEnabled() }
+            // The history connection can create its database even on a read.
+            try store.requireWritable()
         } catch { completion(.failure(error)); return }
         if history == nil {
             if store.state.projectExecutions.contains(where: { $0.key == request.key }) {
@@ -661,6 +663,7 @@ extension SessionServer {
         }
         do {
             try requireStarted()
+            try store.requireWritable()
             let before = store.state, version = store.version, epoch = logicalProjectEpoch
             let previous = before.projectExecutions.first { $0.key == key }
             var receipt = try change(previous)

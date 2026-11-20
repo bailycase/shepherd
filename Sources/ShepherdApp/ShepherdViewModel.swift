@@ -374,6 +374,11 @@ final class ShepherdViewModel {
     let fleet = FleetSettingsModel()
     /// The Fleet page and the sidebar's Fleet corner: the cards derived from `fleet`'s snapshot.
     let fleetPage = FleetPageModel()
+    /// What every thread this Mac sees (its own and each connected host's) spent today, for the Fleet page. A host that is offline adds
+    /// what it last said; a thread whose day isn't today adds nothing.
+    @ObservationIgnored lazy var spendToday = SpendTodayModel { [unowned self] in
+        state.agents.compactMap(\.spend) + remoteHosts.connections.flatMap { $0.state.agents.compactMap(\.spend) }
+    }
     /// What the buttons on dispatch cards do (`configureFleetThreadActions`).
     let fleetThreadActions = FleetThreadActions()
     /// This app's connections to the Macs of the fleet (`FleetConnections`).

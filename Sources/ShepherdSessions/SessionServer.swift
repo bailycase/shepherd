@@ -1451,8 +1451,8 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// The host settings as the app last reported them: the fleet's policy (Threads can send work, the cap, the
-    /// weights) is read from here. Server queue.
-    private var fleetSettings: HostSettings?
+    /// weights) is read from here. Server queue (tests read it there, off the main actor).
+    private(set) var fleetSettings: HostSettings?
     /// Tests: the host settings the app last reported (`fleetHostSettingsChanged`), read synchronously.
     var fleetSettingsForTests: HostSettings? { queue.sync { fleetSettings } }
     /// Places promised to dispatches that haven't started (`FleetPressureSample.reserved`), for any thread.
@@ -2047,21 +2047,25 @@ public final class SessionServer: @unchecked Sendable {
         defer { lifecycleLock.unlock() }
         if queue.sync(execute: { isStarted }) { return }
         do {
-            try queue.sync {
+            let (repair, recovered) = try queue.sync {
                 try acquireOwnershipOnQueue()
                 try bindOnQueue()
                 store.load()
-                projects.migrateExistingProjectConfiguration(in: store.state)
-                projects.remember(store.state)
-                runLog.reload()
+                let repair = store.recoveryError != nil, recovered = store.didRecover
+                if !repair && !recovered {
+                    projects.migrateExistingProjectConfiguration(in: store.state)
+                    projects.remember(store.state)
+                }
+                if !repair { runLog.reload() }
+                return (repair, recovered)
             }
-            try finishStart()
+            if !repair { try finishStart(recovered: recovered) }
             queue.sync {
                 isStarted = true
                 acceptOnQueue()
-                recoverCommittedProjectPublications()
+                if !repair && !recovered { recoverCommittedProjectPublications() }
             }
-            if refreshesModelCatalog { pi.catalog.refreshDaily() }
+            if !repair && refreshesModelCatalog { pi.catalog.refreshDaily() }
         } catch {
             queue.sync {
                 stopOnQueue()
@@ -2071,16 +2075,17 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    private func finishStart() throws {
+    private func finishStart(recovered: Bool) throws {
         // Which designs lost their folders is read on the store's queue, not the server's.
         let missingDesigns = designs.missingDesigns(among: store.committed.designs.map(\.id))
-        // A design deleted in its undo window before a crash (state.json no longer lists it), and
-        // an import a crash left staged.
-        designs.removeLeftovers()
-        // A Git merge copy is never resumed after a restart.
-        DesignGit.dropLeftoverMergeCopies(in: designs.directory)
+        // Do not prune files on the strength of a partially recovered workspace.
+        if !recovered {
+            designs.removeLeftovers()
+            DesignGit.dropLeftoverMergeCopies(in: designs.directory)
+        }
         try queue.sync { try startOnQueue(missingDesigns: missingDesigns) }
         countDesignBoards()
+        guard !recovered else { return }
         // Copies of design references whose agent or grant is gone (a send the app quit during).
         var kept: [AgentID: Set<UUID>] = [:]
         for agent in store.committed.agents { kept[agent.id] = Set(agent.designGrants.compactMap(\.payload)) }
@@ -2096,7 +2101,7 @@ public final class SessionServer: @unchecked Sendable {
         lifecycleLock.lock()
         defer { lifecycleLock.unlock() }
         let owned = queue.sync { () -> Bool in
-            let owned = isStarted
+            let owned = isStarted && store.recoveryError == nil && !store.didRecover
             stopOnQueue()
             return owned
         }
@@ -2264,7 +2269,7 @@ public final class SessionServer: @unchecked Sendable {
             || !runAgents.isEmpty || staleDesigns || !store.state.projects.isEmpty || !store.state.projectExecutions.isEmpty
             || store.state.agents.contains(where: { $0.coordinatorFor != nil }) {
             do {
-                try store.update { state in
+                try store.reconcileStartup { state in
                     for id in stale {
                         if let i = state.agents.firstIndex(where: { $0.id == id }) {
                             state.agents[i].status = .idle
@@ -2355,6 +2360,7 @@ public final class SessionServer: @unchecked Sendable {
                 throw SessionServerError.persistFailed(String(describing: error))
             }
         }
+        guard !store.didRecover else { return }
         // Runs still open died with the previous launch, their agents with them.
         runLog.closeOpenRuns(keeping: Set(store.state.agents.filter { $0.automationOrigin != nil }.map(\.id)))
         do { try agentRecovery.prune(keeping: Set(store.state.agents.map(\.id))) }
@@ -3899,6 +3905,10 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .stateFetch(let id):
+            if store.recoveryError != nil {
+                send(.error(id: id, code: RemoteProtocol.workspaceRepairRequiredCode, message: "Workspace state.json on this Mac needs repair. Workspace writes are disabled."), to: client)
+                return
+            }
             let state = remoteState(store.state, for: client)
             send(.state(id: id, state: client.knowsLegacyThinkingOnly ? state.legacyThinkingLevels() : state), to: client)
         case .attach(let id, let sessionID, let cols, let rows, let viewportGeneration):
@@ -5695,6 +5705,7 @@ public final class SessionServer: @unchecked Sendable {
             // Ahead of the rows: a run anyone can see is one the Changes engine has heard of.
             changes.noteChildren(agentID: agentID, runs: children)
             rpcThread(forAgent: agentID)?.setSubagents(children)
+            recordChildSpend(agentID: agentID, runs: children)
             if wasActive, !active(children) { noteChildrenSettled(agentID) }
             let touchedFiles = CheckoutMonitor.childrenTouchedFiles(from: before, to: children)
             hopToMain { [weak self] in
@@ -7164,6 +7175,35 @@ public final class SessionServer: @unchecked Sendable {
             $0.agents[index].waitingOn = question
             $0.agents[index].waitingReason = reason
         }
+        let committedState = store.state
+        scheduleRemoteState()
+        hopToMain { [weak self] in self?.onStateChanged?(committedState) }
+    }
+
+    /// Server queue: pi reported a thread's session totals. Keeps the agent's spend (`AgentSpend`) and, when it moved, broadcasts it
+    /// like a status: live state, written along with the next change. The model is the one the thread runs, which the growth is for;
+    /// the day is this host's, stamped with its zone so every viewer agrees which day is today.
+    func recordSpend(agentID: AgentID, stats: NativeThreadStats, model: String?, sessionID: String? = nil, now: Date = Date(),
+                     zone: TimeZone = .current) {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else { return }
+        let next = AgentSpend.updated(agent.spend, tokens: stats.totalTokens, cost: stats.cost, model: model ?? agent.model,
+                                      day: SpendDay.key(now, zone: zone.identifier), zone: zone.identifier, sessionID: sessionID)
+        applySpend(next, to: agentID)
+    }
+
+    /// Server queue: the agent's background subagents published their rows. Each runs in its own pi process, so its usage (tokens and
+    /// cost of its own messages, not the history a fork inherited) joins the thread's spend once, by what each run grew by.
+    func recordChildSpend(agentID: AgentID, runs: [ChildRun], now: Date = Date(), zone: TimeZone = .current) {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else { return }
+        let usage = runs.map { ChildUsage(id: $0.id, model: $0.model, tokens: $0.tokens, cost: $0.cost, finished: $0.isTerminal,
+                                          startedAt: $0.startedAt.map { Date(timeIntervalSince1970: $0 / 1000) }) }
+        let next = AgentSpend.addingChildren(agent.spend, usage, day: SpendDay.key(now, zone: zone.identifier), zone: zone.identifier)
+        applySpend(next, to: agentID)
+    }
+
+    private func applySpend(_ next: AgentSpend?, to agentID: AgentID) {
+        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }), next != store.state.agents[index].spend else { return }
+        store.updateLive { $0.agents[index].spend = next }
         let committedState = store.state
         scheduleRemoteState()
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
@@ -9808,6 +9848,10 @@ public final class SessionServer: @unchecked Sendable {
                         server?.onNotify?(agentID, goal.state == .met ? "Goal met" : "Goal needs you", goal.notificationLabel)
                     }
                 }
+            }
+            thread.onStatsChanged = { [weak serverWeak, weak thread] stats, piSessionID in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                server.recordSpend(agentID: agentID, stats: stats, model: thread?.model, sessionID: piSessionID)
             }
             thread.onRecoveryChanged = { [weak serverWeak, weak thread] in
                 guard let server = serverWeak, let thread, server.isStarted else { return true }

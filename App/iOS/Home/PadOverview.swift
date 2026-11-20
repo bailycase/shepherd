@@ -27,6 +27,7 @@ struct PadOverview: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                         HomeReviewQueueRow()
+                        SpendToday(spend: model.spendToday)
                         // Side by side when three columns fit; stacked in a narrow window or at large text.
                         if !typeSize.isAccessibilitySize, width >= MobileLayout.overviewColumnMinWidth * 3 + MobileLayout.blockSpacing * 2 + MobileLayout.gutter * 2 {
                             HStack(alignment: .top, spacing: MobileLayout.blockSpacing) {
@@ -146,7 +147,7 @@ private struct OverviewColumns: View {
     private func runningButton(_ row: FleetThreadRow) -> some View {
         let time: SHOverviewRow.Time = if case .elapsed(let since)? = row.clock { .elapsed(since: Date(milliseconds: since)) } else { .none }
         return Button { navigator.open(.thread(row.ref.agentRef)) } label: {
-            SHOverviewRow(row.title, detail: row.now, leading: RunningGlyph.of(row), time: time, dimmed: row.offline)
+            SHOverviewRow(row.title, detail: row.now, spend: row.spend, leading: RunningGlyph.of(row), time: time, dimmed: row.offline)
                 .equatable()
         }
         .buttonStyle(.shRow(radius: 0))
@@ -157,7 +158,7 @@ private struct OverviewColumns: View {
     /// and when it finished.
     private func finishedButton(_ row: FleetThreadRow, now: Date) -> some View {
         Button { navigator.open(.thread(row.ref.agentRef)) } label: {
-            SHOverviewRow(row.title, detail: row.failed ? "failed · \(row.hostName)" : row.detail, detailMono: false,
+            SHOverviewRow(row.title, detail: row.saying(spendAfter: row.failed ? "failed · \(row.hostName)" : row.detail), detailMono: false,
                           leading: row.failed ? .symbol("xmark", .failed) : .symbol("checkmark", .done),
                           time: row.lastMoved.map { .text(FleetFinishedDay.stamp($0, now: now)) } ?? .none, dimmed: row.offline)
                 .equatable()

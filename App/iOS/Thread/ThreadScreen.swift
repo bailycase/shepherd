@@ -401,6 +401,14 @@ struct ThreadTranscript: View {
                 }
                 tailPin.reader(scrolling: phase != .idle, touching: phase == .tracking || phase == .interacting)
             }
+            .onChange(of: store.sentCount) { _, _ in
+                // A send that goes in now re-attaches; a follow-up in Up next leaves the reader where they are. The
+                // lander goes with the ask: a screen popped over the thread leaves the pin without one (`stop()`), and the
+                // send supplies its own, so it needn't wait for a scroll reading to set it again.
+                guard !store.lastSendQueued else { return }
+                presentation.sent(turnPresent: store.lastSendShownEarly)
+                tailPin.asked(lander(proxy))
+            }
             .onChange(of: rows.last(where: \.isUser)?.id) { _, id in
                 // The echoed turn joins once pi takes it: land on it, unless the reader dragged
                 // away meanwhile.
@@ -443,12 +451,6 @@ struct ThreadTranscript: View {
                 tailGuard.stop()
                 presentation.leave()
             }
-        }
-        .onChange(of: store.sentCount) { _, _ in
-            // A send that goes in now re-attaches; a follow-up in Up next leaves the reader where they are.
-            guard !store.lastSendQueued else { return }
-            presentation.sent(turnPresent: store.lastSendShownEarly)
-            tailPin.asked()
         }
     }
 

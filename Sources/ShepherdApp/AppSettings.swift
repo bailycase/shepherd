@@ -197,17 +197,26 @@ final class AppSettings {
 
     /// Empty means "whatever pi picks" — Shepherd never invents a model id.
     var defaultModel: String {
-        didSet { store.set(defaultModel, forKey: Key.defaultModel) }
+        didSet {
+            store.set(defaultModel, forKey: Key.defaultModel)
+            hostPreferences?.update { $0.agents.defaultModel = defaultModel }
+        }
     }
 
     var defaultThinking: ThinkingLevel {
-        didSet { store.set(defaultThinking.rawValue, forKey: Key.defaultThinking) }
+        didSet {
+            store.set(defaultThinking.rawValue, forKey: Key.defaultThinking)
+            hostPreferences?.update { $0.agents.defaultThinking = defaultThinking }
+        }
     }
 
     /// The speed a new thread starts on (Settings ▸ Agents ▸ Speed for new threads); each thread
     /// keeps its own after that, and one whose model offers no tier ignores it.
     var defaultServiceTier: ServiceTier {
-        didSet { store.set(defaultServiceTier.rawValue, forKey: Key.defaultServiceTier) }
+        didSet {
+            store.set(defaultServiceTier.rawValue, forKey: Key.defaultServiceTier)
+            hostPreferences?.update { $0.agents.defaultServiceTier = defaultServiceTier }
+        }
     }
 
 
@@ -216,7 +225,10 @@ final class AppSettings {
     /// diff), or "" for Automatic (a cheapest-first list). Either way the namer falls back to the
     /// agent's own model; a draft falls back to Haiku.
     var textGenerationModel: String {
-        didSet { store.set(textGenerationModel, forKey: Key.textGenerationModel) }
+        didSet {
+            store.set(textGenerationModel, forKey: Key.textGenerationModel)
+            hostPreferences?.update { $0.agents.textGenerationModel = textGenerationModel }
+        }
     }
 
     /// Settings ▸ Agents ▸ Image reading model: "provider/id" for the model that describes
@@ -224,7 +236,10 @@ final class AppSettings {
     /// cheapest signed-in model that takes images). New agents follow a change; running ones
     /// at their next launch.
     var visionModel: String {
-        didSet { store.set(visionModel, forKey: Key.visionModel) }
+        didSet {
+            store.set(visionModel, forKey: Key.visionModel)
+            hostPreferences?.update { $0.agents.visionModel = visionModel }
+        }
     }
 
     /// Settings ▸ Skills ▸ Skills in the / menu: the composer lists pi's `/skill:name` commands.
@@ -245,6 +260,7 @@ final class AppSettings {
     var queueDelivery: NativeQueueMode {
         didSet {
             store.set(queueDelivery.rawValue, forKey: Key.queueDelivery)
+            hostPreferences?.update { $0.agents.queueDelivery = queueDelivery }
             if queueDelivery != oldValue { onQueueDeliveryChange?(queueDelivery) }
         }
     }
@@ -277,13 +293,19 @@ final class AppSettings {
     /// reasoning payloads and screenshots (docs/context-budget.md). The thread keeps all of it.
     /// Agents launched after a change follow it.
     var trimToolOutput: Bool {
-        didSet { store.set(trimToolOutput, forKey: Key.trimToolOutput) }
+        didSet {
+            store.set(trimToolOutput, forKey: Key.trimToolOutput)
+            hostPreferences?.update { $0.agents.trimToolOutput = trimToolOutput }
+        }
     }
 
     /// Settings ▸ Agents ▸ Notify when a turn finishes: the one notification that can be muted.
     /// Questions, failures and waiting stay on.
     var notifyOnTurnFinished: Bool {
-        didSet { store.set(notifyOnTurnFinished, forKey: Key.notifyOnTurnFinished) }
+        didSet {
+            store.set(notifyOnTurnFinished, forKey: Key.notifyOnTurnFinished)
+            hostPreferences?.update { $0.agents.notifyOnTurnFinished = notifyOnTurnFinished }
+        }
     }
 
     /// Settings ▸ Agents ▸ Defer rarely used tools: agents get `SHEPHERD_DEFER_TOOLS=1` and pi's
@@ -291,24 +313,36 @@ final class AppSettings {
     /// request until the model loads them with a search (docs/context-budget.md, Deferred tools).
     /// Off sends them all, as before. Agents launched after a change follow it.
     var deferTools: Bool {
-        didSet { store.set(deferTools, forKey: Key.deferTools) }
+        didSet {
+            store.set(deferTools, forKey: Key.deferTools)
+            hostPreferences?.update { $0.agents.deferTools = deferTools }
+        }
     }
 
     /// Settings ▸ Agents ▸ Threads can start threads: agents get `SHEPHERD_THREADS_START_THREADS=1`, and agent_spawn says they may start a
     /// thread for separate work without being asked. Off keeps it to when the person asks. Agents launched after a change follow it.
     var threadsStartThreads: Bool {
-        didSet { store.set(threadsStartThreads, forKey: Key.threadsStartThreads) }
+        didSet {
+            store.set(threadsStartThreads, forKey: Key.threadsStartThreads)
+            hostPreferences?.update { $0.agents.threadsStartThreads = threadsStartThreads }
+        }
     }
 
     /// Settings ▸ Agents ▸ Threads a thread starts work in: where agent_spawn puts a thread when the call doesn't say.
     var subThreadPlace: SpawnPlace {
-        didSet { store.set(subThreadPlace.rawValue, forKey: Key.subThreadPlace) }
+        didSet {
+            store.set(subThreadPlace.rawValue, forKey: Key.subThreadPlace)
+            hostPreferences?.update { $0.agents.subThreadPlace = subThreadPlace }
+        }
     }
 
     /// Pi's native codemode is enabled by default. Project settings can override it.
     /// A running agent keeps its choice until it starts again.
     var codemode: Bool {
-        didSet { store.set(codemode, forKey: Key.codemode) }
+        didSet {
+            store.set(codemode, forKey: Key.codemode)
+            hostPreferences?.update { $0.agents.codemode = codemode }
+        }
     }
 
     /// Settings ▸ Agents ▸ Compact at: the share of a model's window past which pi compacts on its
@@ -317,6 +351,7 @@ final class AppSettings {
     var compactAtPercent: Int? {
         didSet {
             if let compactAtPercent { store.set(compactAtPercent, forKey: Key.compactAtPercent) } else { store.removeObject(forKey: Key.compactAtPercent) }
+            hostPreferences?.update { $0.agents.compactAtPercent = compactAtPercent }
             if compactAtPercent != oldValue { onCompactAtChange?(compactAtPercent) }
         }
     }
@@ -673,6 +708,40 @@ final class AppSettings {
     @ObservationIgnored var onDesignToolChange: ((Bool) -> Void)?
 
     private let store: UserDefaults
+
+    /// The host's own copy of the Agents group (`HostSettingsStore`), set only in the host process:
+    /// each Agents change also goes there, beside its UserDefaults key, which stays current for the previous release.
+    @ObservationIgnored private var hostPreferences: HostSettingsStore?
+
+    /// Has the host keep `preferences` from now on, starting from what this object holds. The keys
+    /// were read at init, so a change the previous release made to them since the file was written wins.
+    func adoptHostPreferences(_ preferences: HostSettingsStore) {
+        hostPreferences = preferences
+        let own = agentsGroup
+        preferences.update { $0.agents = own }
+    }
+
+    /// The Agents group as the host's reply reads it: from the host's store once it is adopted (it is kept current by
+    /// every setter and rebuilt from the keys at adoption), from this object's own values before that.
+    var hostAgents: StoredHostPreferences.Agents { hostPreferences?.preferences.agents ?? agentsGroup }
+
+    private var agentsGroup: StoredHostPreferences.Agents {
+        var agents = StoredHostPreferences.Agents()
+        agents.defaultModel = defaultModel
+        agents.defaultThinking = defaultThinking
+        agents.defaultServiceTier = defaultServiceTier
+        agents.textGenerationModel = textGenerationModel
+        agents.visionModel = visionModel
+        agents.queueDelivery = queueDelivery
+        agents.trimToolOutput = trimToolOutput
+        agents.notifyOnTurnFinished = notifyOnTurnFinished
+        agents.deferTools = deferTools
+        agents.threadsStartThreads = threadsStartThreads
+        agents.subThreadPlace = subThreadPlace
+        agents.codemode = codemode
+        agents.compactAtPercent = compactAtPercent
+        return agents
+    }
 
     /// `edition` picks defaults that differ between Shepherd and Shepherd Nightly (the
     /// listener port); each app already has its own preferences domain.
