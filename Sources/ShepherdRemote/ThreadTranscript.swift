@@ -3,11 +3,11 @@ import ShepherdProtocol
 
 public enum ThreadTranscript {
     /// Copy the current session's user and assistant text, oldest first, only after the last page.
-    /// Returns false when there is no snapshot or nothing was said.
+    /// Returns false only when the host confirms there is no text to copy.
     @MainActor
     public static func copy(fetch: (NativeThreadRequest) async throws -> NativeThreadResult,
                             to paste: (String) -> Void) async throws -> Bool {
-        guard case .snapshot(let first) = try await fetch(.snapshot()) else { return false }
+        let first = try snapshot(try await fetch(.transcriptSnapshot()))
         var seenEntries: Set<String> = []
         var seenCursors: Set<String> = []
         var pages: [[String]] = []
@@ -24,18 +24,28 @@ public enum ThreadTranscript {
             guard seenCursors.count < 512, seenCursors.insert(cursor).inserted else {
                 throw RemoteHostClientError.rejected(code: "protocol", message: "Couldn't read the full transcript. Nothing was copied.")
             }
-            switch try await fetch(.snapshot(expectedSessionID: first.piSessionID, beforeEntryID: cursor)) {
-            case .snapshot(let older) where older.piSessionID == first.piSessionID && older.generation == first.generation:
-                page = older
-            case .failure(let code, let message):
-                throw RemoteHostClientError.rejected(code: code, message: message)
-            default:
-                throw RemoteHostClientError.rejected(code: "protocol", message: "The transcript changed or is unavailable. Nothing was copied.")
+            let older = try snapshot(try await fetch(.transcriptSnapshot(expectedSessionID: first.piSessionID, beforeEntryID: cursor)))
+            guard older.piSessionID == first.piSessionID, older.generation == first.generation else {
+                throw RemoteHostClientError.rejected(code: "stale_cursor", message: "The transcript changed. Nothing was copied.")
             }
+            page = older
         }
         let text = pages.reversed().joined().joined(separator: "\n\n")
         guard !text.isEmpty else { return false }
         paste(text)
         return true
+    }
+
+    private static func snapshot(_ result: NativeThreadResult) throws -> NativeThreadSnapshot {
+        switch result {
+        case .failure(let code, let message):
+            throw RemoteHostClientError.rejected(code: code, message: message)
+        case .snapshot(let page) where page.initializing == true:
+            throw RemoteHostClientError.rejected(code: NativeThreadCode.starting, message: "The thread is still loading. Try copying it again when it’s ready.")
+        case .snapshot(let page) where page.clips?.history != true:
+            return page
+        default:
+            throw RemoteHostClientError.rejected(code: "protocol", message: "Couldn't read the full transcript. Nothing was copied.")
+        }
     }
 }

@@ -98,6 +98,7 @@ extension FixtureCatalog {
                 await settle(app)
                 await ThreadMenuFixture.present(app)
             }),
+            FixtureScreen(name: "copy-confirmation", hosts: ThreadMenuFixture.copyHosts(), prepare: ThreadMenuFixture.copy),
         ]
     }
 }
@@ -105,6 +106,26 @@ extension FixtureCatalog {
 /// Presents a thread's long-press menu rows for the headless render (S5). Aired as a sheet: the
 /// harness can't long-press, and the rows it shows are the menu's own `ThreadRowMenuItems`.
 @MainActor enum ThreadMenuFixture {
+    static func copyHosts() -> [FixtureHostData] {
+        var hosts = FixtureData.hosts()
+        hosts[0].reply = { request in
+            guard case .nativeThread(let id, FixtureData.preview, .transcriptSnapshot(nil, nil)) = request else { return nil }
+            let page = FixtureData.snapshot([FixtureData.user("0", "Check the acme-web sidebar.", at: 0)])
+            return .nativeThread(id: id, result: .snapshot(value: page))
+        }
+        return hosts
+    }
+
+    static func copy(_ app: MobileApp) async {
+        AgentActions.copyTranscript(FixtureData.ref(FixtureData.preview), hosts: app.hosts, navigator: app.navigator)
+        await FixtureCheck.wait("transcript copy result", seconds: 8) { app.navigator.presented != nil }
+        guard case .search(.problem(title: "Transcript copied", message: _))? = app.navigator.presented?.route,
+              UIPasteboard.general.string == "user: Check the acme-web sidebar." else {
+            FixtureCheck.fail("Copy Transcript did not set the pasteboard and present its confirmation")
+        }
+        FixtureCheck.report("FIXTURE CHECK ok: copied transcript and presented confirmation")
+    }
+
     static func present(_ app: MobileApp) async {
         let ref = FixtureData.ref(FixtureData.preview)
         await FixtureCheck.wait("preview thread listed", seconds: 10) {

@@ -104,11 +104,14 @@
   - `native.preview.v1`, listed by a client: a `snapshot` for an agent whose pi is not running
     is answered from pi's saved session file (`NativeThreadSnapshot.preview == true`, no
     `supportedActions`, a `generation` no request can name) without starting pi; a client that
-    reads many threads at once (a Home screen) then starts no pi per idle agent. Any other
-    request (send, abort, images…) starts pi as before, whose own snapshot replaces the preview.
-    A client that does not list it has every request start pi. For an agent whose pi stopped, the
-    preview carries `startProblem` and the client wakes nothing; a client that does not list the
-    capability gets the problem alone.
+    reads many threads at once (a Home screen) then starts no pi per idle agent. Requests like
+    send, abort and images start pi as before, whose own snapshot replaces the preview.
+    A client that does not list it can wake pi with an ordinary snapshot. For an agent whose pi
+    stopped, the preview carries `startProblem` and the client wakes nothing; a client that does
+    not list the capability gets the problem alone.
+  - `native.transcript.v1`: `transcriptSnapshot` pages through the saved branch's user and
+    assistant text, including turns before compaction. It never starts pi. Follow `olderCursor`
+    with the first page's `piSessionID`, and discard the copy if the session or file generation changes.
   - `native.revisions.v1`: `nativeThreadSubscribe` replaces a connection's watch set (at most
     64 visible ordinary agents; empty unsubscribes). `nativeThreadChanged(agentID:)` is a
     coalesced invalidation, at most one per watched agent per 250 ms batch, never a snapshot

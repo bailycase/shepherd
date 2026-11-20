@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
@@ -64,8 +63,10 @@ struct ThreadRowMenuItems: View {
                 Button("Notifications for background alerts") { navigator.open(.settings(.notifications)) }
             }
             Section {
-                if hosts.host(thread.host)?.supports(RemoteProtocol.nativeThreadCapability) == true {
-                    Button("Copy Transcript", systemImage: "doc.on.doc") { copyTranscript() }
+                if hosts.host(thread.host)?.supports(RemoteProtocol.nativeThreadTranscriptCapability) == true {
+                    Button("Copy Transcript", systemImage: "doc.on.doc") {
+                        AgentActions.copyTranscript(thread, hosts: hosts, navigator: navigator)
+                    }
                 }
                 if abilities.rename {
                     Button("Rename…", systemImage: "pencil") { navigator.present(.search(.rename(thread))) }
@@ -100,24 +101,6 @@ struct ThreadRowMenuItems: View {
                     navigator.present(.search(.delete(thread)))
                 }
             }
-        }
-    }
-
-    /// Copy Transcript: the whole conversation as text, on the pasteboard (the Mac's row menu
-    /// item of the same name). Reads the thread's pages from its host like opening it would,
-    /// then copies; a failure says why and copies nothing.
-    private func copyTranscript() {
-        let (ref, hosts, navigator) = (thread, hosts, navigator)
-        AgentActions.run("Couldn’t copy the transcript", navigator: navigator) {
-            let host = hosts.host(ref.host)
-            let name = host?.agent(ref.agent).map { "“\($0.name)”" } ?? "This thread"
-            let empty = AgentActions.Failure("\(name) has no transcript yet. Nothing was copied.")
-            guard let client = host?.connectedClient else { throw empty }
-            let copied = try await ShepherdRemote.ThreadTranscript.copy(fetch: { request in
-                try await client.nativeThread(agentID: ref.agent, request: request)
-            }, to: { UIPasteboard.general.string = $0 })
-            guard copied else { throw empty }
-            navigator.present(.search(.problem(title: "Transcript copied", message: "The transcript is on the clipboard.")))
         }
     }
 
