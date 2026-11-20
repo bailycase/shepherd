@@ -9,8 +9,9 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-/// Move a thread to another Mac (FleetMove board), in light and dark, through the real derivations and views: the menu, the confirmation, the
-/// queued line, the progress card and the moved thread. Fixture Macs and made-up names only.
+/// Move a thread to another Mac (FleetMove board), in light and dark, through the real derivations and views: the header with no host chip
+/// (where it runs and Move to are in its native options menu, which a preview can't open), the confirmation, the queued line, the progress
+/// card and the moved thread. Fixture Macs and made-up names only.
 @Suite("Fleet move previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL)"))
 @MainActor
 struct FleetMovePreviewTests {
@@ -61,12 +62,12 @@ struct FleetMovePreviewTests {
         return record
     }
 
-    /// The thread as the board draws it: header with the chip, the card, the conversation.
-    func thread(_ fixture: ThreadFixture, header: FleetMoveHeader, card: FleetMoveCard? = nil, working: Bool = false) -> some View {
+    /// The thread as the board draws it: the header, the card, the conversation.
+    func thread(_ fixture: ThreadFixture, header: FleetMoveHeader, card: FleetMoveCard? = nil) -> some View {
         var surface = FleetThreadSurface(cards: [], parent: Self.agent, actions: FleetThreadActions())
         surface.move = card
         return VStack(spacing: 0) {
-            ThreadHeader(store: fixture.store, project: "acme-web", title: "Speed up checkout CI", move: header, moveWorking: working, moveTo: { _, _ in })
+            ThreadHeader(store: fixture.store, project: "acme-web", title: "Speed up checkout CI", move: header, moveTo: { _ in })
             ThreadView(store: fixture.store, active: true, isFocused: false, request: fixture.request, commandKey: "preview", agentName: "Speed up checkout CI",
                        workingDirectory: "~/Developer/acme-web", inspectSubagent: nil, review: { _ in })
         }
@@ -75,18 +76,13 @@ struct FleetMovePreviewTests {
         .environment(\.fleetThread, surface)
     }
 
-    func popover<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        content().shPopover().padding(.top, SH.Space.xl + SH.Space.xxl).padding(.leading, SH.Space.xxxl * 4)
-    }
-
-    @Test func theMenuListsTheMacsWithRoomAndANote() async throws {
+    @Test func theHeaderIsTheBreadcrumbAloneAndTheMenuNotesEachMac() async throws {
         let header = Self.header()
         #expect(header.menu.targets[0].note == "Most room · has acme-web · 3 working" && header.menu.targets[1].note.hasPrefix("Asleep since "))
         let fixture = ThreadFixture(Self.snapshot(moved: false, running: true))
         defer { fixture.store.stop() }
-        try await Preview.renderMatrix("fleet-move-menu", size: Self.size, ready: { fixture.store.ready }) {
-            thread(fixture, header: header, working: true)
-                .overlay(alignment: .topLeading) { popover { FleetMoveMenuView(menu: header.menu) { _ in } } }
+        try await Preview.renderMatrix("fleet-move-header", size: Self.size, ready: { fixture.store.ready }) {
+            thread(fixture, header: header)
         }
     }
 
@@ -100,8 +96,15 @@ struct FleetMovePreviewTests {
         let facts = FleetMoveConfirm.make(running: call, host: "Mac mini")
         #expect(facts.title == "It’s running a command" && facts.message.contains("for 2 minutes"))
         try await Preview.renderMatrix("fleet-move-confirm", size: Self.size, ready: { fixture.store.ready }) {
-            thread(fixture, header: header, working: true)
-                .overlay(alignment: .topLeading) { popover { FleetMoveConfirmView(host: "Mac mini", facts: facts, whenDone: {}, now: {}) } }
+            // The sheet AppDialogs puts up for `moveAsk`.
+            thread(fixture, header: header)
+                .overlay {
+                    DialogSheet(title: facts.title, subtitle: facts.message, actions: [
+                        DialogAction("Cancel", kind: .cancel) {}, DialogAction("Move when it’s done", kind: .normal) {},
+                        DialogAction("Stop and move", kind: .prominent) {},
+                    ])
+                    .shPopover()
+                }
         }
     }
 
@@ -110,7 +113,7 @@ struct FleetMovePreviewTests {
         let fixture = ThreadFixture(Self.snapshot(moved: false, running: true))
         defer { fixture.store.stop() }
         try await Preview.renderMatrix("fleet-move-queued", size: Self.size, ready: { fixture.store.ready }) {
-            thread(fixture, header: Self.header(busy: true), card: card, working: true)
+            thread(fixture, header: Self.header(busy: true), card: card)
         }
     }
 
@@ -138,7 +141,7 @@ struct FleetMovePreviewTests {
     @Test func theMovedThreadSaysWhereItCameFromAndDrawsTheDivider() async throws {
         let from = MovedFrom(hostID: P.here, hostName: "MacBook Pro", at: 1_789_999_320_000, moveID: UUID(), branch: "perf/checkout-ci", uncommittedFiles: 3)
         let header = Self.header(host: P.mini, movedFrom: from)
-        #expect(header.chip.text == "Mac mini" && header.chip.movedFrom?.hasPrefix("moved from This Mac · ") == true)
+        #expect(header.chip.text == "Mac mini" && header.chip.movedFrom?.hasPrefix("Moved from This Mac · ") == true)
         let fixture = ThreadFixture(Self.snapshot(moved: true, running: false))
         defer { fixture.store.stop() }
         try await Preview.renderMatrix("fleet-move-moved", size: Self.size, ready: { fixture.store.ready }) {
