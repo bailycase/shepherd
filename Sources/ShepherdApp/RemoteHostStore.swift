@@ -321,6 +321,7 @@ final class RemoteHostStore {
     /// Each workspace the background host on this Mac pushes, after its connection holds it, and whether a
     /// newer push is already queued behind it.
     @ObservationIgnored var onLocalHostState: ((ShepherdState, _ newerQueued: Bool) -> Void)?
+    @ObservationIgnored var onLocalHostRepairRequired: ((String) -> Void)?
     /// An agent's notify tool on the background host on this Mac, for the app to post.
     @ObservationIgnored var onLocalAgentNotify: ((AgentID, String, String) -> Void)?
     /// What a Settings page shows changed on the background host on this Mac.
@@ -623,6 +624,9 @@ final class RemoteHostStore {
                 guard !Task.isCancelled else { return }
                 let failure = RemoteHostFailure(error)
                 connection.phase = .failed(failure)
+                if connection.isLocalHost, failure.kind == .workspaceRepairRequired {
+                    self.onLocalHostRepairRequired?(failure.message(host: connection.config.name))
+                }
                 if failure.retries { self.scheduleReconnect(connection) }
                 if connection.config.fleetManaged, connection.tokenRefused { self.onFleetTokenRefused?() }
             }

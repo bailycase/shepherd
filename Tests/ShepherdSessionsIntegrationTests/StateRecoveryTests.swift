@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdSessions
@@ -96,6 +97,46 @@ struct StateRecoveryTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path) == ["state.json"])
     }
 
+    @Test(arguments: [true, false])
+    func stateFetchPreservesTheRepairRefusal(local: Bool) async throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data(#"{"spaces":[],"tabs":["#.utf8).write(to: dir.appendingPathComponent("state.json"))
+        let host = try ScratchServer(dir: dir)
+        defer { host.stop() }
+        let client: RemoteHostClient
+        let port: UInt16
+        let token: String
+        if local {
+            let socket = dir.appendingPathComponent("host.sock").path
+            try await host.server.listenLocal(path: socket)
+            client = RemoteHostClient(localSocket: socket)
+            port = 0
+            token = ""
+        } else {
+            let tokenURL = dir.appendingPathComponent("scratch-token")
+            port = try host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+            token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+            client = RemoteHostClient()
+        }
+        defer { client.disconnect() }
+        do {
+            _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "recovery test")
+            Issue.record("Expected a repair refusal")
+        } catch let error as RemoteHostClientError {
+            guard case .rejected(let code, let message) = error else {
+                Issue.record("Expected a repair refusal, got \(error)")
+                return
+            }
+            #expect(code == "workspace_repair_required")
+            #expect(message.contains("state.json"))
+            let failure = RemoteHostFailure(error)
+            #expect(failure.headline == "Repair needed")
+            #expect(failure.message(host: "acme-mac").contains("state.json on acme-mac needs repair"))
+            #expect(!failure.retries)
+        }
+    }
+
     @Test func truncatedStateRefusesOrdinaryAndProjectWritesBeforeStaging() async throws {
         let host = try ScratchServer.fresh()
         defer { host.stop() }
@@ -112,6 +153,9 @@ struct StateRecoveryTests {
         let prepared = Locked(false)
         try await restarted.server.enqueue { restarted.server.stateWritePrepared = { prepared.withValue { $0 = true } } }
         let fm = FileManager.default
+        let files = try fm.contentsOfDirectory(at: host.dir, includingPropertiesForKeys: nil)
+        let copy = try #require(files.first { $0.lastPathComponent.hasPrefix("state.json.recovery-") })
+        #expect(try Data(contentsOf: copy) == original)
         func history() throws -> [String: Data] {
             let files = try fm.contentsOfDirectory(at: host.dir, includingPropertiesForKeys: nil)
                 .filter { $0.lastPathComponent.hasPrefix("project-history") }
@@ -144,6 +188,9 @@ struct StateRecoveryTests {
         #expect(try history() == historyBefore)
         await #expect(throws: (any Error).self) {
             _ = try await restarted.server.logicalProjects(.create(projectID: ProjectID(), name: "Refused", goal: ""))
+        }
+        await #expect(throws: StateStoreError.self) {
+            try await restarted.server.projectHistoryRead { _ in }
         }
         #expect(restarted.server.state == before)
         #expect(try Data(contentsOf: host.stateURL) == original)

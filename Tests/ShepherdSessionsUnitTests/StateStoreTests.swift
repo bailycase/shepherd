@@ -51,6 +51,29 @@ struct StateStoreTests {
         #expect(try Data(contentsOf: copy) == original)
     }
 
+    @Test func repeatedLoadsReuseOnlyByteIdenticalRecoveryCopies() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("state.json")
+        func copies() throws -> [URL] {
+            try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+                .filter { $0.lastPathComponent.hasPrefix("state.json.recovery-") }
+        }
+        let first = Data(#"{"spaces":["#.utf8)
+        try first.write(to: url)
+        let store = StateStore(url: url)
+        let copy = try #require(copies().first)
+        store.load()
+        #expect(try copies() == [copy])
+
+        let second = Data(#"{"spaces":]"#.utf8)
+        try second.write(to: url)
+        store.load()
+        let both = try copies()
+        #expect(both.count == 2)
+        #expect(try Set(both.map { try Data(contentsOf: $0) }) == [first, second])
+    }
+
     @Test func whenTheRecoveryCopyFailsEveryWriteIsRefused() throws {
         let dir = try makeTempDirectory()
         defer {

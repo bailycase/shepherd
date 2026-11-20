@@ -94,7 +94,10 @@ extension SessionServer {
     }
 
     func projectHistoryRead<T: Sendable>(_ read: @escaping @Sendable (ProjectHistoryStore) throws -> T) async throws -> T {
-        let url = try await enqueue { self.store.url }
+        let url = try await enqueue {
+            try self.store.requireWritable()
+            return self.store.url
+        }
         return try await withCheckedThrowingContinuation { continuation in
             projectHistoryReads.async {
                 continuation.resume(with: Result { try read(ProjectHistoryStore(beside: url)) })

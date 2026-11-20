@@ -66,6 +66,7 @@ public enum RemoteProtocol {
     /// A host's final reply to a `hello` with another `version`; the message ends with the
     /// host's own ("host speaks protocol 1").
     public static let versionMismatchCode = "protocol_version"
+    public static let workspaceRepairRequiredCode = "workspace_repair_required"
     public static let pasteCapability = "session.paste.v1"
     public static let paneControlCapability = "pane.control.v1"
     public static let agentActionsCapability = "agent.actions.v1"

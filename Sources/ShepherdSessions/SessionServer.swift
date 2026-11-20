@@ -3871,7 +3871,7 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .stateFetch(let id):
             if store.recoveryError != nil {
-                send(.error(id: id, code: "workspace_repair_required", message: "Workspace state.json on this Mac needs repair. Workspace writes are disabled."), to: client)
+                send(.error(id: id, code: RemoteProtocol.workspaceRepairRequiredCode, message: "Workspace state.json on this Mac needs repair. Workspace writes are disabled."), to: client)
                 return
             }
             let state = remoteState(store.state, for: client)

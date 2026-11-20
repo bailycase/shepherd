@@ -172,9 +172,14 @@ final class StateStore: @unchecked Sendable {
             do {
                 guard !readOnly, let original else { throw cause }
                 let id = UUID().uuidString.lowercased()
-                let backup = url.appendingPathExtension("recovery-\(id)")
+                let backup: URL
+                if let existing = recoveryCopy(matching: original) {
+                    backup = existing
+                } else {
+                    backup = url.appendingPathExtension("recovery-\(id)")
+                    try original.write(to: backup, options: .withoutOverwriting)
+                }
                 let rejected = url.appendingPathExtension("rejected-\(id)")
-                try original.write(to: backup, options: .withoutOverwriting)
                 let candidate = try Self.recover(original, rejectedAt: rejected)
                 commit(candidate)
                 didRecover = true
@@ -184,6 +189,18 @@ final class StateStore: @unchecked Sendable {
                 recoveryError = failure
                 if !readOnly { ShepherdLog.error("\(failure); original error: \(cause)") }
             }
+        }
+    }
+
+    private func recoveryCopy(matching original: Data) -> URL? {
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
+        let files = try? FileManager.default.contentsOfDirectory(at: url.deletingLastPathComponent(),
+                                                                 includingPropertiesForKeys: Array(keys))
+        return files?.first { file in
+            guard file.lastPathComponent.hasPrefix("\(url.lastPathComponent).recovery-"),
+                  let info = try? file.resourceValues(forKeys: keys),
+                  info.isRegularFile == true, info.isSymbolicLink == false, info.fileSize == original.count else { return false }
+            return (try? Data(contentsOf: file)) == original
         }
     }
 
