@@ -72,6 +72,11 @@ struct RemoteAutomationTriggerTests {
         #expect(status.storageDamaged == true)
         #expect(status.state == .paused)
         #expect(status.reason?.contains("restore the file from a backup") == true)
+        guard case .ok = await remote.server.handleAutomationRequest(.delete(automationID: automation.id)) else {
+            Issue.record("Damaged trigger state should not block deleting the automation definition")
+            return
+        }
+        #expect(remote.server.state.automations.isEmpty)
         #expect(try Data(contentsOf: url) == damaged)
     }
 

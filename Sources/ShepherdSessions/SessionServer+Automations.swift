@@ -248,7 +248,11 @@ extension SessionServer {
                 }
                 // Stop the run too: a skill deleting an automation means
                 // "make it gone", not "orphan its agent".
-                try await stopAutomation(automationID)
+                do {
+                    try await stopAutomation(automationID)
+                } catch is AutomationTriggers.Damaged {
+                    // The trigger already cannot fire. Deleting its definition doesn't need to rewrite its state.
+                }
                 try await removeAutomation(automationID)
                 await automationTriggers.forget(automationID)
                 automationHosting?.stateChanged()

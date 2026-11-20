@@ -89,6 +89,10 @@ public actor AutomationTriggers {
         }
     }
 
+    struct Damaged: Error, CustomStringConvertible {
+        let description: String
+    }
+
     struct Pending: Codable, Hashable {
         var event: AutomationEvent
         var attempts = 0
@@ -137,7 +141,7 @@ public actor AutomationTriggers {
     private var host: Host?
     private var file = File()
     /// Sticky until the host restarts so its cached cursors cannot overwrite a repaired file.
-    private var damage: SourceError?
+    private var damage: Damaged?
     /// Notes to post once the tick's state is saved.
     private var outbox: [(String, String)] = []
     private var loop: Task<Void, Never>?
@@ -591,11 +595,11 @@ public actor AutomationTriggers {
         return [trigger, automation.authorGate.rawValue, automation.cwd, automation.enabled ? "on" : "off"].joined(separator: "|")
     }
 
-    private static func reportDamage(at url: URL, error: any Error) -> SourceError {
+    private static func reportDamage(at url: URL, error: any Error) -> Damaged {
         let message = "Couldn't read \(url.path): \(error). Automatic runs are paused. "
             + "On the host Mac, restore the file from a backup or repair its JSON or permissions, then restart the Shepherd host."
         ShepherdLog.error(message)
-        return SourceError(message, permanent: true)
+        return Damaged(description: message)
     }
 
     /// The actor owns the in-memory records. Check the disk before writing or firing in case
