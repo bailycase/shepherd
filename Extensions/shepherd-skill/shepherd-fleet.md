@@ -32,7 +32,8 @@ being asked. The other Mac starts a new thread on a fresh branch at your commit,
 - `fleet_hosts`: the Macs, whether each is reachable and how busy.
 - `fleet_dispatch`: send a task. Give it everything it needs; it doesn't see your conversation.
 - `fleet_read`, `fleet_wait` (120 seconds by default, 600 at most): progress and result.
-- `fleet_send`: a follow-up or steer to the dispatched thread. `fleet_cancel`: stop it.
+- `fleet_send`: a follow-up or steer to the dispatched thread. `fleet_cancel`: stop it without deleting it.
+- `fleet_close`: when the user asks, close a settled dispatch, stop its processes, and remove verified build output. Keeps the checkout, branches, and saved conversation; returns a cleanup report.
 - Limits: 3 in flight per thread by default (1 to 10), 8 running on a receiving Mac. A thread three below one the user started
   can't dispatch further. The host refuses when the setting is off; a named Mac is never swapped for another.
 

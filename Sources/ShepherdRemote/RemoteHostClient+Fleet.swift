@@ -174,7 +174,17 @@ extension RemoteHostClient {
     /// Asks the Mac a dispatch runs on about it, stops it, or messages its thread. Throws `unknown_dispatch`
     /// when that Mac holds no such dispatch.
     public func fleetDispatchControl(_ dispatchID: UUID, _ control: FleetDispatchControl) async throws -> FleetDispatchRecord {
-        try Self.dispatchRecord(from: try await request { .fleetDispatchControl(id: $0, dispatchID: dispatchID, control: control) })
+        let closing = control == .close
+        return try Self.dispatchRecord(from: try await request(timeout: closing ? 120 : Self.requestTimeout, keepConnectionOnTimeout: closing) {
+            .fleetDispatchControl(id: $0, dispatchID: dispatchID, control: control)
+        })
+    }
+
+    /// A tool's live status read falls back to last-known data if a peer is slow, without dropping the Fleet link.
+    public func fleetDispatchStatus(_ dispatchID: UUID) async throws -> FleetDispatchRecord {
+        try Self.dispatchRecord(from: try await request(timeout: 2, keepConnectionOnTimeout: true) {
+            .fleetDispatchControl(id: $0, dispatchID: dispatchID, control: .status)
+        })
     }
 
     /// Tells the Mac that sent a dispatch how it stands.

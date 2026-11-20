@@ -19,6 +19,25 @@ extension FixtureCatalog {
                 await settle(app)
                 await OverviewOpenCheck.hideSidebar(app)
             }),
+            FixtureScreen(name: "sidebar-filters-off", hosts: HomeFixtureData.filterHosts(), prepare: settle),
+            FixtureScreen(name: "sidebar-filters-on", hosts: HomeFixtureData.filterHosts(), prepare: { app in
+                await settle(app)
+                let sidebar = SidebarThreads.of(app.hosts)
+                sidebar.filters = .init(chips: [.hasChanges, .worktree], host: FixtureData.buildBox)
+            }),
+            FixtureScreen(name: "sidebar-filters-empty", hosts: HomeFixtureData.filterHosts(), prepare: { app in
+                await settle(app)
+                SidebarThreads.of(app.hosts).filters = .init(chips: [.needsYou, .worktree], host: FixtureData.buildBox)
+            }),
+            // Needs you leaves out a Project's ask; the host picker offers the two connected hosts, not the offline laptop.
+            FixtureScreen(name: "sidebar-filters-needsyou", hosts: HomeFixtureData.filterHostsWithProjectAsk(), prepare: { app in
+                await settle(app)
+                SidebarThreads.of(app.hosts).filters = .init(chips: [.needsYou])
+            }),
+            FixtureScreen(name: "sidebar-filters-running", hosts: HomeFixtureData.filterHostsWithProjectAsk(), prepare: { app in
+                await settle(app)
+                SidebarThreads.of(app.hosts).filters = .init(chips: [.running])
+            }),
             FixtureScreen(name: "home-empty", hosts: []),
             // iPad: hosts with no threads, so the overview is its empty state.
             FixtureScreen(name: "home-nothreads", hosts: [FixtureHostData(id: FixtureData.studio, name: "Studio", state: ShepherdState())],
@@ -220,6 +239,38 @@ enum HomeFixtureData {
                 ]),
             FixtureHostData(id: FixtureData.laptop, name: "MacBook Air", state: ShepherdState(), online: false),
         ]
+    }
+
+    static func filterHosts() -> [FixtureHostData] {
+        let space = Space(id: SpaceID(rawValue: "space-acme"), name: "acme-web", path: "/tmp/acme-web")
+        let now = Date().timeIntervalSince1970 * 1000
+        return [
+            FixtureHostData(id: FixtureData.studio, name: "acme-studio", state: ShepherdState(spaces: [space], agents: [
+                FixtureData.agent(FixtureData.preview, "Refresh checkout", .working, space: space, worktree: "feat/checkout", changed: 2),
+                FixtureData.agent(FixtureData.dock, "Review sign-in copy", .blocked, space: space),
+                FixtureData.agent(FixtureData.deletion, "Index the changelog", .done, space: space),
+                FixtureData.agent(FixtureData.extensions, "Tidy test fixtures", .idle, space: space),
+            ]), threads: [FixtureData.preview: command("swift test", startedAgo: 48_000, at: now),
+                          FixtureData.dock: question(at: now), FixtureData.deletion: finished(at: now - 600_000)]),
+            FixtureHostData(id: FixtureData.buildBox, name: "acme-build", state: ShepherdState(spaces: [space], agents: [
+                FixtureData.agent(restyle, "Update search index", .working, space: space),
+                FixtureData.agent(FixtureData.buffer, "Polish error states", .idle, space: space, worktree: "feat/errors", changed: 1),
+            ]), threads: [restyle: command("swift build", startedAgo: 120_000, at: now)]),
+        ]
+    }
+
+    /// `filterHosts` with a Project worker asking a question on Studio and a disconnected laptop with a thread of its own.
+    static func filterHostsWithProjectAsk() -> [FixtureHostData] {
+        var hosts = filterHosts()
+        let space = hosts[0].state.spaces[0]
+        let now = Date().timeIntervalSince1970 * 1000
+        let worker = AgentID(rawValue: "agent-project-worker")
+        var ask = FixtureData.agent(worker, "Migrate billing tables", .blocked, space: space)
+        ask.executionFor = ProjectExecutionKey(ownerID: FixtureData.studio, projectID: ProjectID(rawValue: "acme-billing"), operationID: UUID())
+        hosts[0].state.agents.append(ask)
+        hosts[0].threads[worker] = question(at: now)
+        hosts.append(FixtureHostData(id: FixtureData.laptop, name: "acme-laptop", state: ShepherdState(), online: false))
+        return hosts
     }
 
     /// The fleet with a second live run on build-01 (and, with `longName`, a very long name on Studio's), so the group lists

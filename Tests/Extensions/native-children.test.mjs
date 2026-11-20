@@ -168,7 +168,7 @@ test("bash operations preserve cwd/env/output, timeouts and abort kill normal de
   assert.equal(Buffer.concat(burst).length, 200000);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-abort-")), pidfile = path.join(dir, "pid");
   const controller = new AbortController();
-  const promise = ops.exec(`sleep 30 >/dev/null 2>&1 & echo $! > '${pidfile}'`, dir, { onData() {}, signal: controller.signal });
+  const promise = ops.exec(`sleep 30 >/dev/null 2>&1 & echo $! > '${pidfile}'; wait`, dir, { onData() {}, signal: controller.signal });
   try { await until(() => fs.existsSync(pidfile)); const pid = Number(fs.readFileSync(pidfile)); controller.abort(); await assert.rejects(promise); await until(() => !live(pid)); }
   finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

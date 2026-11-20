@@ -51,6 +51,12 @@ final class FleetUpdates: @unchecked Sendable {
     /// An ended job stays in the snapshot this long, so the panel can say how it ended.
     var keepEnded: TimeInterval = 30 * 60
     var keepUpdated: TimeInterval = 30
+    /// A Mac is asked to install this many times, once per look, before the job says nothing started.
+    static let installAttempts = 3
+    /// A Mac that lost what it was asked (the app that held it quit, or its host restarted) is asked again from the check this many times.
+    static let restartAttempts = 2
+    /// More than this between two looks means this host was suspended (asleep): what the Mac did meanwhile wasn't seen, so it isn't lack of progress.
+    static let suspension: TimeInterval = 60
 
     init(queue: DispatchQueue, clock: @escaping @Sendable () -> Date = { Date() }) {
         self.queue = queue
@@ -121,6 +127,21 @@ final class FleetUpdates: @unchecked Sendable {
         var restarts = 0
         var failures = 0
         var wentAwayAt: Date?
+        /// The install waits for the Mac's threads, and no installer has it yet (an app that quits now was closed, not installing).
+        var waitingForThreads = false
+        var lastLook: Date?
+
+        /// A look at the Mac: more than `suspension` since the last one means this host slept, and that time wasn't seen.
+        mutating func look(at now: Date) {
+            if let last = lastLook, now.timeIntervalSince(last) > FleetUpdates.suspension {
+                phaseSince = now
+                if wentAwayAt != nil { wentAwayAt = now }
+            }
+            lastLook = now
+        }
+        /// What the Mac last said it was doing, and since when: a Mac that began to install and says the same for `relaunchPatience` is stuck.
+        var phase: HostUpdateStatus.Phase?
+        var phaseSince = Date.distantFuture
     }
 
     private func onQueue<T: Sendable>(_ body: @escaping @Sendable () -> T) async -> T {
@@ -135,6 +156,7 @@ final class FleetUpdates: @unchecked Sendable {
             if clock().timeIntervalSince(began) > maxAge {
                 return await end(job, .failed, "Gave up after \(Int(maxAge / 3600)) hours. Start it again to try once more.")
             }
+            progress.look(at: clock())
             let reached = await onQueue { self.reach?(hostID) ?? .notInFleet }
             switch reached {
             case .notInFleet:
@@ -162,15 +184,19 @@ final class FleetUpdates: @unchecked Sendable {
                 } catch RemoteHostClientError.rejected(let code, let message) where code == "unsupported" {
                     return await end(job, .failed, message)
                 } catch {
-                    // The link dropped, or the Mac was busy or slow: look again. A Mac that went away after it was asked to install is relaunching.
+                    // The link dropped, or the Mac was busy or slow: look again. A Mac that went away after it was asked to install is relaunching,
+                    // unless the install is still held for its threads: no installer has it, so that is a Mac to look at again, not one that left.
+                    // This host may have slept during the request, so its clock is read first, or the time asleep counts against the Mac.
+                    progress.look(at: clock())
                     progress.failures += 1
-                    if Self.droppedLink(error), progress.installAsked {
+                    if Self.droppedLink(error), progress.installAsked, !progress.waitingForThreads {
                         progress.leaving = true
                         progress.wentAwayAt = progress.wentAwayAt ?? clock()
                         await set(job, .relaunching)
                     } else if progress.failures > 8, !progress.leaving {
                         return await end(job, .failed, "\(Self.words(error)) Check that it is awake and try again.")
                     }
+                    if await stalledOut(job, progress) { return }
                 }
             }
             try? await Task.sleep(for: interval)
@@ -181,6 +207,8 @@ final class FleetUpdates: @unchecked Sendable {
     private func advance(_ job: Job, _ first: HostUpdateStatus, _ progress: inout Progress, send: @escaping @Sendable (RemoteHostUpdateRequest) async throws -> HostUpdateStatus) async throws -> Bool {
         var status = first
         let hostID = job.status.hostID
+        progress.look(at: clock())
+        if status.phase != progress.phase { (progress.phase, progress.phaseSince) = (status.phase, clock()) }
         let build = status.build
         if job.status.fromBuild == nil, !build.isEmpty { await mutate(job) { $0.fromBuild = build } }
         let from = job.status.fromBuild
@@ -195,29 +223,36 @@ final class FleetUpdates: @unchecked Sendable {
             await mutate(job) { $0.threads = threads; $0.offered = offered ?? $0.offered }
         }
         let when = job.status.when
+        // Read just now: a Mac that finished while this host slept is caught above, before it is called stuck.
+        if await stalledOut(job, progress) { return true }
         let who = await onQueue { self.name?(hostID) ?? "That Mac" }
         switch status.phase {
         case .unsupported:
-            if progress.leaving {
-                // The host is up before its app is: the app comes back with it, or after a look at the build above.
+            let message = status.error == SessionServer.hostUpdateWindowClosed ? "Open Shepherd on \(who) to update it." : (status.error ?? "\(who) can't update itself.")
+            // Seen handed over: the wait is over for good, so a host that restarts after this (and forgets) can't turn it into a closed app.
+            if status.installHandedOff == true { progress.waitingForThreads = false }
+            if progress.waitingForThreads, status.installHandedOff == false {
+                // The host says it sent no install to the updater (it holds it for threads that work, or its wait is gone): the app that held the
+                // offer was closed, not installing. Let the wait go. A host that says nothing (an older one) isn't asked: the build is looked at.
+                _ = try? await send(.cancel)
+                await end(job, .needsApp, message)
+                return true
+            }
+            if progress.leaving || progress.installAsked {
+                // The host is up before its app is (or while it quits to install, once it sent the install it was given or held for idle
+                // threads): the app comes back with it, or after a look at the build above.
+                progress.leaving = true
                 await set(job, .relaunching)
                 return false
             }
-            let message = status.error == SessionServer.hostUpdateWindowClosed ? "Open Shepherd on \(who) to update it." : (status.error ?? "\(who) can't update itself.")
             await end(job, .needsApp, message)
             return true
         case .checking:
             await set(job, .checking)
         case .idle, .upToDate:
             if progress.installAsked {
-                // It came back on the same build with nothing under way: what was asked was lost with the app that held it. Ask again, a few times.
-                progress.restarts += 1
-                guard progress.restarts <= 2 else {
-                    await end(job, .failed, "\(who) came back on the same build.")
-                    return true
-                }
-                progress = Progress(restarts: progress.restarts)
-                await set(job, .checking)
+                // It came back on the same build with nothing under way: what was asked was lost with the app that held it.
+                return await askAgain(job, &progress, "\(who) came back on the same build.")
             } else if status.phase == .upToDate {
                 await end(job, .upToDate, "\(who)'s update feed offers nothing newer than it runs.")
                 return true
@@ -234,26 +269,40 @@ final class FleetUpdates: @unchecked Sendable {
         case .available:
             if status.waitingForIdle {
                 progress.installAsked = true
+                progress.waitingForThreads = true
                 await set(job, .waitingForThreads)
-            } else if status.canInstall, let offer = status.offerID, progress.installRequests < 3 {
+            } else if status.canInstall, let offer = status.offerID, progress.installRequests < Self.installAttempts {
                 // Asked, or asked again: a Mac that lost what it held (its host restarted) still has the offer.
                 progress.installRequests += 1
                 progress.installAsked = true
+                // Asked to wait: until a status says the install is under way, the host may or may not have the offer held, so the link dropping is not a relaunch.
+                if when == .idle { progress.waitingForThreads = true }
                 status = try await send(when == .idle ? .installWhenIdle(offerID: offer, authorized: true) : .install(offerID: offer, authorized: true))
+                // The same offer, still open to install: the Mac may not have begun yet. Look again at the next poll, not at once.
+                if status.phase == .available, status.canInstall, status.offerID == offer { return false }
                 return try await advance(job, status, &progress, send: send)
             } else if let error = status.error {
                 // The Mac can't install now (a question waits for an answer, a Project runs) and said why.
                 await end(job, .failed, error)
                 return true
+            } else if progress.installRequests >= Self.installAttempts {
+                // It took the install each time and the offer is still there: nothing started.
+                await end(job, .failed, "\(who) didn't start installing the update. Try again.")
+                return true
+            } else if progress.waitingForThreads {
+                // The app holds the offer but this host's wait for the threads is gone (its host restarted): look at the offer again.
+                return await askAgain(job, &progress, "\(who) restarted while waiting for its threads and lost the update. Try again.")
             } else {
                 await set(job, .checking)
             }
         case .downloading:
             progress.installAsked = true
+            progress.waitingForThreads = false
             progress.leaving = true
             await set(job, .downloading)
         case .installing:
             progress.installAsked = true
+            progress.waitingForThreads = false
             progress.leaving = true
             await set(job, .installing)
         case .failed:
@@ -261,6 +310,26 @@ final class FleetUpdates: @unchecked Sendable {
             return true
         }
         return false
+    }
+
+    /// What was asked was lost with the app or host that held it: ask again from the check, a few times, then say so.
+    private func askAgain(_ job: Job, _ progress: inout Progress, _ lost: String) async -> Bool {
+        progress.restarts += 1
+        guard progress.restarts <= Self.restartAttempts else {
+            await end(job, .failed, lost)
+            return true
+        }
+        progress = Progress(restarts: progress.restarts)
+        await set(job, .checking)
+        return false
+    }
+
+    /// A Mac that began to install and, as last seen, says the same thing for `relaunchPatience` is stuck. Called after it was asked just now.
+    private func stalledOut(_ job: Job, _ progress: Progress) async -> Bool {
+        guard progress.leaving, clock().timeIntervalSince(progress.phaseSince) > relaunchPatience else { return false }
+        let who = await onQueue { self.name?(job.status.hostID) ?? "That Mac" }
+        await end(job, .failed, "\(who) didn't finish updating. Open Shepherd there and try again.")
+        return true
     }
 
     // MARK: Status changes

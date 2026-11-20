@@ -475,6 +475,7 @@ final class RPCThreadState {
     private(set) var liveLeftOut = 0
     /// The last assistant message of the current run ended in a provider error.
     var runFailed = false
+    private var turnDiskFailure: String?
     /// That error's message, when pi gave one.
     private var runError: String?
     // Ephemeral push eligibility: restored history/recovery never replays notifications.
@@ -494,6 +495,13 @@ final class RPCThreadState {
     /// The stall watch (`RPCThreadState+Stall.swift`): when pi last said anything, the tool calls
     /// running now, whether a check is scheduled, and the failure a stalled run ends with.
     var lastEventAt = ContinuousClock.now
+    /// Project the stall watchdog's monotonic reading to wall time on demand. Before the first
+    /// turn there is no event time to report to the sender of a Fleet dispatch.
+    var lastTurnEventAt: Double? {
+        guard turnSequence > 0 else { return nil }
+        let age = lastEventAt.duration(to: .now).components
+        return (Date().timeIntervalSince1970 * 1000 - (Double(age.seconds) * 1000 + Double(age.attoseconds) / 1e15)).rounded()
+    }
     var runningTools: Set<String> = []
     var stallWatching = false
     var stallMessage: String?
@@ -828,6 +836,7 @@ final class RPCThreadState {
             running = true
             runFailed = false
             runError = nil
+            turnDiskFailure = nil
             watchForStall()
             // A buffered start can arrive after Stop. Only newly authorized input clears it.
             settleAwaitingSteers = false
@@ -1029,6 +1038,9 @@ final class RPCThreadState {
         case .extensionUIRequest(let request):
             handleUIRequest(request)
         case .extensionError(let path, let event, let error):
+            // The engine can report a failed session write separately from the assistant stop
+            // reason. Never classify assistant text (or arbitrary tool output) as a host failure.
+            if running, error.contains("ENOSPC:") { turnDiskFailure = "No space left on device (ENOSPC)." }
             diagnosticActivity("extension.failed")
             ShepherdLog.warning("rpc session \(session.id) extension error in \(path ?? "?") (\(event ?? "?")): \(error)")
             recordCommandFailure(path: path, event: event, error: error)
@@ -1110,7 +1122,9 @@ final class RPCThreadState {
 
     /// The run ended in a provider error the user did not cause by stopping it.
     var turnFailure: TurnFailure? {
-        runFailed && !stopRequested ? TurnFailure(message: runError) : nil
+        guard !stopRequested else { return nil }
+        if let turnDiskFailure { return TurnFailure(message: turnDiskFailure) }
+        return runFailed ? TurnFailure(message: runError) : nil
     }
 
     /// Server queue: full replacement from a setAgentChildren publish.

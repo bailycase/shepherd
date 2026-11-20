@@ -3,6 +3,7 @@
 import { spawn, execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as net from "node:net";
+import { managedBash } from "./shepherd-bash.mjs";
 import { textLines } from "./shepherd-lines.mjs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -82,16 +83,22 @@ export function summarize(text, limit = 240) {
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code !== "ESRCH"; } };
 const signalPID = (pid, signal) => { try { process.kill(pid, signal); } catch (e) { if (e.code !== "ESRCH") throw e; } };
 
-// Only descendants of the supplied live process, never its shared PTY group.
-export function descendants(pid) {
-  const rows = execFileSync("/bin/ps", ["-axo", "pid=,ppid="], { encoding: "utf8", timeout: 2000, maxBuffer: 4 * 1024 * 1024 })
+// A descendant that leads its own group is enough to identify that group, even if Bash
+// already returned and its jobs were reparented. Never signal the child's shared PTY group.
+function descendantTargets(pid) {
+  const rows = execFileSync("/bin/ps", ["-axo", "pid=,ppid=,pgid="], { encoding: "utf8", timeout: 2000, maxBuffer: 4 * 1024 * 1024 })
     .trim().split("\n").map((line) => line.trim().split(/\s+/).map(Number));
-  const owned = new Set([pid]);
+  const owned = new Map([[pid, pid]]);
   for (let changed = true; changed;) {
     changed = false;
-    for (const [child, parent] of rows) if (owned.has(parent) && !owned.has(child)) { owned.add(child); changed = true; }
+    for (const [child, parent, group] of rows) {
+      if (!owned.has(parent) || owned.has(child)) continue;
+      owned.set(child, child === group ? -child : child);
+      changed = true;
+    }
   }
-  return [...owned].reverse();
+  owned.delete(pid);
+  return [...owned.values()].reverse();
 }
 
 export function jsonLines(onEvent, onError) {
@@ -149,39 +156,7 @@ export function forkSession(manager, cwd, file) {
   return { omittedInFlight: branch.length - cut };
 }
 
-// Pi's default bash backend detaches its process group. Keep normal commands in
-// Shepherd's PTY group so hard app shutdown also kills shell-tool descendants.
-// createBashTool still owns schema, rendering, output truncation, and diagnostics.
-export function childBashOperations() {
-  return {
-    async exec(command, cwd, { onData, signal, timeout, env }) {
-      signal?.throwIfAborted();
-      if (timeout !== undefined && (!Number.isFinite(timeout) || timeout <= 0 || timeout > 2147483.647)) throw new Error("Invalid bash timeout");
-      const proc = spawn("/bin/bash", ["-c", 'trap \'wait\' EXIT\neval "$1"', "shepherd-bash", command], { cwd, env, detached: false, stdio: ["ignore", "pipe", "pipe"] });
-      let timedOut = false;
-      const stop = () => {
-        if (proc.exitCode !== null || proc.signalCode !== null || !proc.pid) return;
-        try { for (const pid of descendants(proc.pid)) signalPID(pid, "SIGKILL"); }
-        catch { proc.kill("SIGKILL"); }
-      };
-      const timer = timeout === undefined ? undefined : setTimeout(() => { timedOut = true; stop(); }, timeout * 1000);
-      signal?.addEventListener("abort", stop, { once: true });
-      proc.stdout.on("data", onData); proc.stderr.on("data", onData);
-      try {
-        const exitCode = await new Promise((resolve, reject) => {
-          proc.once("error", reject);
-          proc.once("close", resolve);
-        });
-        signal?.throwIfAborted();
-        if (timedOut) throw new Error(`timeout:${timeout}`);
-        return { exitCode };
-      } finally {
-        clearTimeout(timer); signal?.removeEventListener("abort", stop);
-        proc.stdout.destroy(); proc.stderr.destroy();
-      }
-    },
-  };
-}
+export const childBashOperations = managedBash;
 
 const textSchema = Type.String({ minLength: 1, maxLength: MAX_TEXT });
 const idSchema = Type.String({ minLength: 1, maxLength: 80 });
@@ -513,6 +488,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   const runs = new Map(), workflows = new Map(), cliRuns = new Map(), dropped = new Map();
   const admission = lifecycleWaiters(), savedStates = new WeakMap();
   let cancelCli;
+  const bash = managedBash();
   const projectWorker = !!process.env.SHEPHERD_PROJECT_CONTEXT;
   const closedScopes = new Set(), scopeStops = new Map(), scopeRequests = new Map(), scopeTimers = new Map();
   const continuationScopes = new Set(), settleWaiters = new Set();
@@ -777,14 +753,14 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     run.stopping = (async () => {
       try { await command(run, "clear_queue", {}, 500); await command(run, "abort", {}, 1000); } catch { /* Escalate below. */ }
       if (!run.exited) {
-        // Snapshot while the parent PID is still owned; never signal a process group.
+        // Snapshot while the child engine is still ours.
         let owned = [];
-        try { owned = descendants(run.proc.pid); } catch (error) { run.error += `; descendant cleanup unavailable: ${clip(error.message, 200)}`; }
-        for (const pid of owned) if (pid !== run.proc.pid) { try { signalPID(pid, "SIGKILL"); } catch {} }
+        try { owned = descendantTargets(run.proc.pid); } catch (error) { run.error += `; descendant cleanup unavailable: ${clip(error.message, 200)}`; }
+        for (const target of owned) { try { signalPID(target, "SIGKILL"); } catch {} }
         run.proc.kill("SIGTERM");
         await Promise.race([run.closed, new Promise((r) => setTimeout(r, 500))]);
         if (!run.exited) {
-          try { for (const pid of descendants(run.proc.pid)) signalPID(pid, "SIGKILL"); } catch {}
+          try { for (const target of descendantTargets(run.proc.pid)) signalPID(target, "SIGKILL"); } catch {}
           run.proc.kill("SIGKILL");
         }
       }
@@ -1145,6 +1121,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       control = s; s.unref();
       s.on("connect", () => { try { s.write(JSON.stringify({ type: "helloChildren", agentID: process.env.SHEPHERD_AGENT_ID, projectScopes: true }) + "\n"); } catch { s.destroy(); } });
       s.on("data", jsonLines((frame) => {
+        if (frame?.type === "stopManagedBash") { bash.stopAll(); return; }
         if (frame?.type === "parentInput") { parentInput(); return; }
         if (["childScope", "error"].includes(frame?.type) && scopeRequests.has(frame.id)) {
           const request = scopeRequests.get(frame.id); scopeRequests.delete(frame.id); clearTimeout(request.timer);
@@ -1219,6 +1196,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   });
   pi.on("session_shutdown", async () => {
     cancelCli?.();
+    bash.stopAll();
     active = false; pendingNotices.clear(); parentWorking = false; continuationScopes.clear(); wakeSettlements(); clearTimeout(noticeTimer); noticeTimer = undefined; syncTick(); clearTimeout(controlRetry);
     const socket = control; control = undefined; socket?.destroy();
     for (const { timer } of scopeTimers.values()) clearTimeout(timer);
@@ -1346,7 +1324,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         return startNote ? { ...receipt, note: startNote } : receipt;
       } catch (error) { if (!run.proc) { run.state = "failed"; run.endedAt = Date.now(); run.error = clip(error.message); save(run); } throw error; }
   }
-  cancelCli = registerCliBash(pi, { bridge, bashOperations: childBashOperations,
+  cancelCli = registerCliBash(pi, { bridge, bashOperations: () => bash,
     async dispatch(request, ctx, signal, budget, emit, toolCallID) {
       const prompt = await expandCliPrompt(request.prompt, ctx);
       const model = request.provider ? `${request.provider}/${request.model ?? ctx.model.id}` : request.model;

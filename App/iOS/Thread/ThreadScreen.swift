@@ -218,7 +218,7 @@ struct ThreadScreen: View {
         if agent == nil { return "This agent is no longer on \(host.name)." }
         if !supported { return "Update Shepherd on \(host.name) to open threads here." }
         if let error = store.loadError { return error }
-        if let problem = store.startProblem { return "\(problem.title) \(problem.advice(host: host.name))" }
+        // A stopped pi's problem is the composer's banner (`StartProblemBanner`), with Retry where the host takes it.
         if let notice = store.clipNotice { return notice.text }
         return nil
     }
@@ -394,13 +394,6 @@ struct ThreadTranscript: View {
                 }
                 tailPin.reader(scrolling: phase != .idle, touching: phase == .tracking || phase == .interacting)
             }
-            .onChange(of: store.sentCount) { _, _ in
-                // A send that goes in now re-attaches; a follow-up that waits in Up next leaves
-                // the reader where they are, now and when it goes.
-                guard !store.lastSendQueued else { return }
-                follow { $0.sent(queued: false, turnPresent: store.lastSendShownEarly); return false }
-                tailPin.asked(lander(proxy))
-            }
             .onChange(of: rows.last(where: \.isUser)?.id) { _, id in
                 // The echoed turn joins once pi takes it: land on it, unless the reader dragged
                 // away meanwhile.
@@ -426,7 +419,7 @@ struct ThreadTranscript: View {
             // 44pt hit area draws the capsule 8pt above it.
             .overlay(alignment: .bottom) {
                 SHJumpToLatest(action: NativeScrollFollower.showsJump(sticky: presentation.follows, unseen: presentation.unseen, running: running) ? {
-                    follow { $0.jumpToLatest(); return false }
+                    presentation.jumpToLatest()
                     tailPin.asked(lander(proxy))
                 } : nil)
             }
@@ -443,6 +436,12 @@ struct ThreadTranscript: View {
                 tailGuard.stop()
                 presentation.leave()
             }
+        }
+        .onChange(of: store.sentCount) { _, _ in
+            // A send that goes in now re-attaches; a follow-up in Up next leaves the reader where they are.
+            guard !store.lastSendQueued else { return }
+            presentation.sent(turnPresent: store.lastSendShownEarly)
+            tailPin.asked()
         }
     }
 

@@ -66,7 +66,7 @@ and the workspace comes back, with each agent resumed in its pi session.
   runs it in its own folder, with its own sign-ins. A pi you
   installed yourself stays yours: Shepherd never runs it or changes its files. At its first launch
   Shepherd copies that pi's logins and settings into its own once; otherwise, sign in once in
-  Settings ▸ Pi.
+  Settings ▸ Models.
 
 - To build from source: Xcode with the macOS 26 SDK.
 

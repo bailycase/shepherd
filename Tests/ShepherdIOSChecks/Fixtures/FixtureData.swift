@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 /// One screen the harness can render: `FIXTURE_SCREEN=<name>`. The hosts it serves, and where
 /// the app goes once they are connected. Each track lists its screens in its own file
@@ -18,6 +19,8 @@ struct FixtureScreen {
     var prepare: (@MainActor (MobileApp) async -> Void)? = nil
     /// Runs before the routes open: seams a screen reads as it appears (the Macs Add a Mac finds).
     var setup: (@MainActor () -> Void)? = nil
+    /// Checks the rendered screen after the runner has let layout settle.
+    var verify: (@MainActor (MobileApp) -> Void)? = nil
 }
 
 /// A host the harness serves: its state, each agent's thread, and answers for anything else.
@@ -211,7 +214,7 @@ enum FixtureData {
 @MainActor enum FixtureCatalog {
     static var all: [FixtureScreen] {
         home + thread + context + newThread + subagents + review + changes + commit + search + settings + hooks + automations + automationFlow + windows + terminal + clientState + duo + fleetScreens
-            + designs + designPad + designPadMarkup + designPages + browser + files + ProjectFixtures.screens + hostConfig + freshness + forge + tailFrames + tail + tailFollowUps + newTurn + historyRead + composerField + subThreads
+            + designs + designPad + designPadMarkup + designPages + browser + files + ProjectFixtures.screens + hostConfig + freshness + forge + tailFrames + tail + tailFollowUps + newTurn + historyRead + composerField + subThreads + startProblems
     }
 
     static func screen(named name: String) -> FixtureScreen? {

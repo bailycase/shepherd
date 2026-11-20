@@ -1,27 +1,7 @@
 import SwiftUI
 import ShepherdUI
 import ShepherdProtocol
-
-/// Issues & PRs' screens (MobileIPList, MobileIssueList, MobilePRDetail, MobileIssue; iPadIPReview,
-/// iPadIssue; DuoBookPR, DuoClosedIPList). iPhone pushes the list from Home and each item over it;
-/// iPad pushes the list over the detail and shows the chosen item beside it.
-enum ForgeRoute: Hashable, Codable {
-    /// Every host's repositories, one at a time: Issues | Pull requests, search, sections.
-    case list
-    /// One pull request (iPhone; the iPad shows it beside the list).
-    case pullRequest(host: UUID, ref: ForgeItemRef)
-    /// One issue (iPhone; the iPad shows it beside the list).
-    case issue(host: UUID, ref: ForgeItemRef)
-    /// One file of a pull request's diff (iPhone; the iPad shows it beside the pull request).
-    case file(host: UUID, ref: ForgeItemRef, path: String)
-
-    var host: UUID? {
-        switch self {
-        case .list: nil
-        case .pullRequest(let host, _), .issue(let host, _), .file(let host, _, _): host
-        }
-    }
-}
+import ShepherdRemote
 
 struct ForgeDestination: View {
     let route: ForgeRoute

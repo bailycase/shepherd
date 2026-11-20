@@ -19,7 +19,7 @@ const BROWSER = ["browser_open", "browser_read", "browser_click", "browser_type"
   "browser_screenshot", "browser_console", "browser_eval", "browser_back", "browser_forward", "browser_reload",
   "browser_tabs", "browser_new_tab", "browser_select_tab", "browser_close_tab"];
 const PEERS = ["agent_list", "agent_send", "agent_read", "agent_steer", "agent_interrupt", "agent_wait", "agent_delete", "agent_spawn", "agent_move"];
-const FLEET = ["fleet_hosts", "fleet_dispatch", "fleet_read", "fleet_wait", "fleet_send", "fleet_cancel"];
+const FLEET = ["fleet_hosts", "fleet_dispatch", "fleet_read", "fleet_wait", "fleet_send", "fleet_cancel", "fleet_close"];
 const AUTOMATIONS = ["automation_create", "automation_list", "automation_update", "automation_delete", "automation_start", "automation_stop"];
 const CHILDREN_EXTRAS = ["shepherd_child_agents", "shepherd_child_cancel", "shepherd_workflow"];
 const DEFERRED = [...BROWSER, ...PEERS, ...FLEET, ...AUTOMATIONS, "review_diff", ...CHILDREN_EXTRAS, "codemode"];
