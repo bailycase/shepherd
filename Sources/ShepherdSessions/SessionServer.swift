@@ -515,18 +515,21 @@ public final class SessionServer: @unchecked Sendable {
     /// its outcome isn't known": written before the updater is called, so a restart between the updater taking it and the answer being
     /// recorded reports unknown, not "no". An empty marker (from before) is a handoff. Server queue.
     private var installHandedOff: Bool? {
-        get {
-            guard let marker = try? Data(contentsOf: installHandoffMarker) else { return false }
-            return marker == Self.installUnknownMarker ? nil : true
-        }
-        set {
-            switch newValue {
-            case true?: FileManager.default.createFile(atPath: installHandoffMarker.path, contents: nil)
-            case nil: FileManager.default.createFile(atPath: installHandoffMarker.path, contents: Self.installUnknownMarker)
-            case false?: try? FileManager.default.removeItem(at: installHandoffMarker)
-            }
+        guard let marker = try? Data(contentsOf: installHandoffMarker) else { return false }
+        return marker == Self.installUnknownMarker ? nil : true
+    }
+    /// Records `value` in the marker. False when it couldn't be written: an install is never dispatched then, or a restart would read "no".
+    @discardableResult
+    private func setInstallHandedOff(_ value: Bool?) -> Bool {
+        switch value {
+        case true?: return FileManager.default.createFile(atPath: installHandoffMarker.path, contents: nil)
+        case nil: return FileManager.default.createFile(atPath: installHandoffMarker.path, contents: Self.installUnknownMarker)
+        case false?:
+            try? FileManager.default.removeItem(at: installHandoffMarker)
+            return !FileManager.default.fileExists(atPath: installHandoffMarker.path)
         }
     }
+    static let installMarkerUnwritable = "Shepherd couldn't record the update before starting it, so it did not start. Try again."
     private static let installUnknownMarker = Data("unknown".utf8)
     private var installHandoffMarker: URL { supportDirectory.appendingPathComponent("host-update-handoff") }
     /// Tests: answer as a host from before `installHandedOff` did, which says nothing of it.
@@ -555,29 +558,33 @@ public final class SessionServer: @unchecked Sendable {
         case .status, .check, .install: break
         }
         guard hostUpdateRequests[requester] == nil else { return ("busy", "An update request is pending.") }
-        let generation = UUID()
-        hostUpdateRequests[requester] = generation
         // With nothing working there is nothing to wait for: it is an install. Otherwise the updater holds the offer, and this host sends
         // `install` when the threads have settled. Another install, a cancel or a new look ends the wait.
         var forwarded = request
         var waits: UUID?
-        if request != .status { installHandedOff = false }
-        switch request {
-        case .installWhenIdle(let offerID, let consent):
-            if consent, busyThreadCount == 0 { forwarded = .install(offerID: offerID, authorized: true) }
-            else if consent { waits = offerID }
-        case .install, .cancel, .check:
-            idleInstall = nil
-        case .status: break
+        if case .installWhenIdle(let offerID, let consent) = request, consent {
+            if busyThreadCount == 0 { forwarded = .install(offerID: offerID, authorized: true) } else { waits = offerID }
         }
-        if case .install = forwarded { installHandedOff = nil }
+        // The marker is written before the updater is called: unknown until its answer. No marker, no install.
+        if case .install = forwarded {
+            guard setInstallHandedOff(nil) else {
+                setInstallHandedOff(false)
+                return ("failed", Self.installMarkerUnwritable)
+            }
+        } else if request != .status { setInstallHandedOff(false) }
+        switch request {
+        case .install, .cancel, .check: idleInstall = nil
+        case .installWhenIdle, .status: break
+        }
+        let generation = UUID()
+        hostUpdateRequests[requester] = generation
         let finish: (HostUpdateStatus?) -> Void = { [weak self] status in
             guard let self else { return }
             self.queue.async {
                 guard self.hostUpdateRequests[requester] == generation else { return }
                 self.hostUpdateRequests[requester] = nil
                 // The updater's answer settles the marker written before the install was sent, even for a requester that left. No answer leaves it unknown.
-                if case .install = forwarded, let status { self.installHandedOff = status.phase == .downloading || status.phase == .installing }
+                if case .install = forwarded, let status { self.setInstallHandedOff(status.phase == .downloading || status.phase == .installing) }
                 guard alive() else { return }
                 guard var status else { return reply(nil) }
                 // The updater says it holds the offer: from here the host waits for the threads.
@@ -598,7 +605,7 @@ public final class SessionServer: @unchecked Sendable {
             self.queue.async {
                 guard alive(), self.hostUpdateRequests[requester] == generation else {
                     // Nothing was sent to the updater for a requester that left.
-                    if case .install = toUpdater, self.hostUpdateRequests[requester] == generation { self.installHandedOff = false }
+                    if case .install = toUpdater, self.hostUpdateRequests[requester] == generation { self.setInstallHandedOff(false) }
                     return
                 }
                 let authorized: () async -> Bool = { [weak self] in
@@ -627,13 +634,18 @@ public final class SessionServer: @unchecked Sendable {
             guard self.busyThreadCount == 0 else { return next() }
             // Idle: the held offer is installed, as an install asked for now would be. An answer that is still an offer (the host
             // refused to reserve: a question waits, a Project runs) leaves it held and the wait goes on; one that never comes is looked at again.
+            guard self.setInstallHandedOff(nil) else {
+                // Nothing was sent: the updater lets go of the offer, and the next look says the wait is over.
+                self.setInstallHandedOff(false)
+                self.idleInstall = nil
+                return self.hopToMain { handler(.cancel, { true }) { _ in } }
+            }
             let answered = OneShot()
-            self.installHandedOff = nil
             self.hopToMain {
                 handler(.install(offerID: offerID, authorized: true), { true }) { status in
                     self.queue.async {
                         guard answered.first() else { return }
-                        self.installHandedOff = status.phase == .downloading || status.phase == .installing
+                        self.setInstallHandedOff(status.phase == .downloading || status.phase == .installing)
                         guard let wait = self.idleInstall, wait.offerID == offerID, wait.attempt == attempt else { return }
                         if status.phase == .available { next() } else { self.idleInstall = nil }
                     }
@@ -8859,12 +8871,25 @@ public final class SessionServer: @unchecked Sendable {
     /// `answer` gets the app's result, or nil when no such app is connected or it went away
     /// first. Any thread; `answer` is called on the server queue.
     public func relayToApp(_ job: AppRelayJob, answer: @escaping (AppRelayResult?) -> Void) {
+        relayToApp(job) { delivery in
+            if case .answered(let result) = delivery { answer(result) } else { answer(nil) }
+        }
+    }
+
+    /// What became of a job handed to the app: `notSent` proves it never reached an app; `unanswered` says it was sent and the app left
+    /// before answering, so whether it was carried out is unknown.
+    enum AppRelayDelivery {
+        case answered(AppRelayResult), notSent, unanswered
+    }
+
+    /// `relayToApp` that tells "never sent" from "sent, never answered". Any thread; `delivery` is called on the server queue.
+    func relayToApp(_ job: AppRelayJob, delivery: @escaping (AppRelayDelivery) -> Void) {
         queue.async { [self] in
             guard let app = clients.values.first(where: {
                 $0.isLocal && $0.authenticated && $0.clientCapabilities.contains(RemoteProtocol.appRelayCapability)
-            }) else { return answer(nil) }
+            }) else { return delivery(.notSent) }
             nextAppRelayToken += 1
-            appRelays[nextAppRelayToken] = (app.fd, answer)
+            appRelays[nextAppRelayToken] = (app.fd, { result in delivery(result.map { .answered($0) } ?? .unanswered) })
             send(.appRelay(token: nextAppRelayToken, job: job), to: app)
         }
     }

@@ -894,6 +894,85 @@ struct FleetUpdateTests {
         #expect(try await Self.job(a, id)?.message == "Open Shepherd on Mac mini to update it.")
     }
 
+    /// The Mac's own app takes the install over `host.sock` and quits before it answers, then the host restarts: the request was sent, so nothing says
+    /// it was refused. The host reports unknown, not "open Shepherd", and the job waits for the relaunch.
+    @Test func anAppThatQuitsAfterTheInstallWasSentButBeforeAnsweringIsNotReadAsClosed() async throws {
+        let updater = FakeUpdater()
+        let (a, b, origin) = try await Self.fleetWithAppRelay(updater: updater)
+        defer { a.stop() }
+        let id = try await b.hostID()
+        // The fixture's own connection to the mini is the app: it answers everything but the install, which it takes and quits on.
+        b.local.onAppRelay = { [weak local = b.local] token, job in
+            guard case .hostUpdate(let request) = job else { return }
+            let status = updater.handle(request)
+            if case .install = request { Task { local?.disconnect() }; return }
+            local?.appRelayAnswer(token: token, result: .hostUpdate(status: status))
+        }
+        Self.quicken(a)
+        try await Self.start(a, id, .now)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await updater.waitFor("install") { if case .install = $0 { true } else { false } }
+        try await FleetDispatchTests.wait("the app to be gone") { b.server.queue.sync { !b.server.appRelayConnected } }
+
+        let (dir, port) = (b.host.dir, b.port)
+        b.stop(keepFiles: true)
+        let b2 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, prepare: { updater.install(on: $0) })
+        defer { b2.stop() }
+        #expect(try await b2.local.hostUpdate(.status).installHandedOff == nil, "sent and never answered is unknown, which isn't \"no\"")
+        try await Self.waitForStage(.relaunching, on: a, of: id)
+        updater.relaunch(build: "675")
+        try await Self.waitForStage(.updated, on: a, of: id)
+    }
+
+    /// The host couldn't record the install before sending it (a folder stands where the marker goes): nothing is sent to the updater, and the
+    /// asker is told why.
+    @Test func anInstallIsNotSentWhenTheHostCannotRecordItFirst() async throws {
+        let updater = FakeUpdater()
+        let (a, b, _) = try await Self.fleet(updaterB: updater)
+        defer { a.stop(); b.stop() }
+        try FileManager.default.createDirectory(at: b.server.supportDirectory.appendingPathComponent("host-update-handoff"), withIntermediateDirectories: true)
+        let error = await #expect(throws: RemoteHostClientError.self) {
+            try await b.local.hostUpdate(.install(offerID: updater.offer, authorized: true))
+        }
+        guard case .rejected(_, let message)? = error else { Issue.record("not rejected: \(String(describing: error))"); return }
+        #expect(message == SessionServer.installMarkerUnwritable)
+        #expect(!updater.sawInstallNow)
+    }
+
+    /// The same for an install the host sends once the threads have settled: it isn't sent, and the held offer is let go.
+    @Test func aWaitingInstallIsNotSentWhenTheHostCannotRecordItFirst() async throws {
+        let updater = FakeUpdater()
+        let (a, b, _) = try await Self.fleet(updaterB: updater)
+        defer { a.stop(); b.stop() }
+        let id = try await b.hostID()
+        let pi = try await Self.busy(b)
+        b.server.queue.sync { b.server.idleInstallInterval = 0.02 }
+        Self.quicken(a)
+        try await Self.start(a, id, .idle)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.waitingForThreads, on: a, of: id)
+        try FileManager.default.createDirectory(at: b.server.supportDirectory.appendingPathComponent("host-update-handoff"), withIntermediateDirectories: true)
+        try await Self.settle(pi)
+        try await FleetDispatchTests.wait("the host to let go of its wait") { b.server.queue.sync { !b.server.isWaitingForIdleInstall } }
+        #expect(!updater.sawInstallNow)
+    }
+
+    /// B's host relays to its own app (the test's connection to it), and can't open one.
+    static func fleetWithAppRelay(updater: FakeUpdater) async throws -> (a: Mac, b: Mac, origin: FleetDispatchTests.Origin) {
+        try StubPi.installAsEngine()
+        let origin = try FleetDispatchTests.makeOrigin(extra: [:])
+        let a = try await Mac("MacBook Pro", origin: origin, prepare: { _ in })
+        let b = try await Mac("Mac mini", origin: origin, prepare: { server in
+            server.openAppForUpdate = { false }
+            await MainActor.run { server.relayWindowRequestsToApp() }
+        })
+        try await a.pair(with: b)
+        try await FleetDispatchTests.waitForReports(a, b)
+        return (a, b, origin)
+    }
+
     /// B's host has no app and no way to open one; A has an updater of its own.
     static func fleetWithoutApp(updaterA: FakeUpdater) async throws -> (a: Mac, b: Mac) {
         try StubPi.installAsEngine()

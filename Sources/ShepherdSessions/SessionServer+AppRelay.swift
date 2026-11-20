@@ -47,7 +47,8 @@ extension SessionServer {
             guard let self else { return }
             Task {
                 guard await authorized() else { return }
-                completion(await self.relayHostUpdate(request))
+                // No completion when an install was sent and never answered: the host's own deadline leaves the marker unknown.
+                if let status = await self.relayHostUpdate(request) { completion(status) }
             }
         }
         onProjectRequest = { [weak self] request, respond in
@@ -91,22 +92,34 @@ extension SessionServer {
 
     /// The app's answer to `request`. A request that needs the updater to run (a check, an install) with no app connected opens this Mac's own
     /// Shepherd and waits a few seconds for it to connect; a status or a cancel is answered at once. With no app, or one that doesn't
-    /// answer, the status says to open Shepherd on this Mac.
-    func relayHostUpdate(_ request: RemoteHostUpdateRequest) async -> HostUpdateStatus {
-        func relay() async -> HostUpdateStatus? {
+    /// answer, the status says to open Shepherd on this Mac. Nil for an install that was sent to an app that left without answering: the
+    /// updater may have taken it (the app quits to install), so nothing here says it was refused, and it is not sent again.
+    func relayHostUpdate(_ request: RemoteHostUpdateRequest) async -> HostUpdateStatus? {
+        /// The updater's answer, or whether the request had been sent when there was none.
+        func relay() async -> (status: HostUpdateStatus?, sent: Bool) {
             await withCheckedContinuation { continuation in
-                relayToApp(.hostUpdate(request: request)) { result in
-                    if case .hostUpdate(let status)? = result { continuation.resume(returning: status) } else { continuation.resume(returning: nil) }
+                relayToApp(.hostUpdate(request: request)) { delivery in
+                    switch delivery {
+                    case .answered(.hostUpdate(let status)): continuation.resume(returning: (status, true))
+                    case .answered, .unanswered: continuation.resume(returning: (nil, true))
+                    case .notSent: continuation.resume(returning: (nil, false))
+                    }
                 }
             }
         }
-        if let status = await relay() { return status }
+        var isInstall = false
+        if case .install = request { isInstall = true }
+        let first = await relay()
+        if let status = first.status { return status }
+        if isInstall, first.sent { return nil }
         switch request {
         case .status, .cancel: return hostUpdateWithoutApp
         case .check, .install, .installWhenIdle: break
         }
         guard await openApp() else { return hostUpdateWithoutApp }
-        return await relay() ?? hostUpdateWithoutApp
+        let second = await relay()
+        if let status = second.status { return status }
+        return isInstall && second.sent ? nil : hostUpdateWithoutApp
     }
 
     /// Opens this Mac's own Shepherd (once in a while) and waits for it to connect over `host.sock`. False when it can't be opened or doesn't connect in time.
