@@ -509,6 +509,19 @@ public final class SessionServer: @unchecked Sendable {
     /// An install waiting for the threads that work here to settle (`RemoteHostUpdateRequest.installWhenIdle`): the updater holds the offer, and the
     /// host sends `install` once none is busy. Memory only: a restart of the host drops it, and nothing resumes it. Server queue.
     private var idleInstall: (offerID: UUID, since: Date, attempt: UUID)?
+    /// The updater took the last install this host sent it (it answered downloading or installing): from there the app quits and relaunches, which is
+    /// no sign that a person closed it (`HostUpdateStatus.installHandedOff`). A marker file, because this host may restart before anyone looks:
+    /// the app quitting to install is what restarts it. Cleared by the next request that isn't a status. Server queue.
+    private var installHandedOff: Bool {
+        get { FileManager.default.fileExists(atPath: installHandoffMarker.path) }
+        set {
+            if newValue { FileManager.default.createFile(atPath: installHandoffMarker.path, contents: nil) }
+            else { try? FileManager.default.removeItem(at: installHandoffMarker) }
+        }
+    }
+    private var installHandoffMarker: URL { supportDirectory.appendingPathComponent("host-update-handoff") }
+    /// Tests: answer as a host from before `installHandedOff` did, which says nothing of it.
+    var omitsInstallHandoff = false
     /// Server queue: an install waits for the threads to settle.
     var isWaitingForIdleInstall: Bool { idleInstall != nil }
     /// How often the host looks at its threads while an install waits for them, and the longest it waits.
@@ -539,6 +552,7 @@ public final class SessionServer: @unchecked Sendable {
         // `install` when the threads have settled. Another install, a cancel or a new look ends the wait.
         var forwarded = request
         var waits: UUID?
+        if request != .status { installHandedOff = false }
         switch request {
         case .installWhenIdle(let offerID, let consent):
             if consent, busyThreadCount == 0 { forwarded = .install(offerID: offerID, authorized: true) }
@@ -559,12 +573,14 @@ public final class SessionServer: @unchecked Sendable {
                     self.idleInstall = (waits, Date(), UUID())
                     self.pollIdleInstall(waits, attempt: self.idleInstall?.attempt)
                 }
+                if case .install = forwarded, status.phase == .downloading || status.phase == .installing { self.installHandedOff = true }
                 status.busyThreads = self.busyThreadCount
                 status.waitingForIdle = self.idleInstall != nil && status.phase == .available
+                status.installHandedOff = self.omitsInstallHandoff ? nil : self.installHandedOff
                 reply(status)
             }
         }
-        queue.asyncAfter(deadline: .now() + 10) { finish(nil) }
+        queue.asyncAfter(deadline: .now() + RemoteHostUpdateRequest.hostReplyDeadline) { finish(nil) }
         let toUpdater = forwarded
         hopToMain { [weak self] in
             guard let self else { return }
@@ -601,6 +617,7 @@ public final class SessionServer: @unchecked Sendable {
                 handler(.install(offerID: offerID, authorized: true), { true }) { status in
                     self.queue.async {
                         guard answered.first() else { return }
+                        if status.phase == .downloading || status.phase == .installing { self.installHandedOff = true }
                         guard let wait = self.idleInstall, wait.offerID == offerID, wait.attempt == attempt else { return }
                         if status.phase == .available { next() } else { self.idleInstall = nil }
                     }
