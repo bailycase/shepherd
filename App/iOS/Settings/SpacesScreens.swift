@@ -112,10 +112,11 @@ struct SpaceScreen: View {
     @State private var files: [ProjectFile]?
     @State private var context: ProjectContext?
     @State private var problem: String?
+    @State private var hostID: UUID?
 
     var body: some View {
         let store = SettingsStore.of(hosts)
-        let host = store.settingsHost
+        let host = hostID == nil ? store.settingsHost : store.hosts.first { $0.id == hostID }
         let sh = Color.sh
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
@@ -155,6 +156,9 @@ struct SpaceScreen: View {
                             }
                         }
                     }
+                    if let hostID, host?.supports(.projectMCP) == true {
+                        SpaceMCP(hostID: hostID, directory: directory, files: files)
+                    }
                     if let host {
                         SettingsFootnote(HostInventoryPresentation.spacesGuidance(host: host.name))
                     }
@@ -170,7 +174,10 @@ struct SpaceScreen: View {
         .background(Color.sh.bgWindow)
         .navigationTitle((directory as NSString).lastPathComponent)
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: host?.id) { await load(host) }
+        .task(id: host?.isConnected == true ? host?.id : nil) {
+            if hostID == nil { hostID = host?.id }
+            if files == nil { await load(host) }
+        }
     }
 
     private func load(_ host: SettingsHost?) async {
@@ -181,6 +188,7 @@ struct SpaceScreen: View {
         do {
             guard case .files(let inventory) = try await client.projects(.files(directory: directory)) else { return }
             files = inventory
+            problem = nil
             if host.serves(RemoteProtocol.projectDetailsCapability), case .context(let found) = try await client.projects(.context(directory: directory)) {
                 context = found
             }

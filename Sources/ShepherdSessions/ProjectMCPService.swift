@@ -15,6 +15,7 @@ actor ProjectMCPService {
         var file: String
         var bridge: PiSignInBridge
         var result: ProjectMCPResult
+        var submittedRedirect = false
         var task: Task<Void, Never>?
         var expiry: Task<Void, Never>?
     }
@@ -32,8 +33,10 @@ actor ProjectMCPService {
                 throw ProjectFileError("expired", "This sign-in is no longer available. Try again.")
             }
             if case .cancel = action { finish(id, message: "Cancelled."); runs[id] = nil; return .init() }
-            if case .complete(_, let redirect) = action {
+            if case .complete(_, let redirect) = action, run.result.phase == .waiting, !run.submittedRedirect {
                 guard redirect.utf8.count <= 8192 else { throw ProjectFileError("invalid", "The redirect URL is too long.") }
+                // A device can retry after losing the reply; the bridge receives the callback once.
+                runs[id]?.submittedRedirect = true
                 run.bridge.send(.answer(id: "redirect", value: redirect))
             }
             return runs[id]?.result ?? run.result

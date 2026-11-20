@@ -1623,6 +1623,7 @@ public final class SessionServer: @unchecked Sendable {
                 service.onDeviceRevoked = { [weak self] deviceID in
                     guard let self else { return }
                     for client in Array(self.clients.values) where client.fleetDeviceID == deviceID { self.disconnect(client, reason: "device revoked") }
+                    Task { await self.projects.cancelMCP(owner: deviceID) }
                 }
                 fleet = service
                 fleetRepoFinder.value = service.dispatch.finder
@@ -3863,14 +3864,19 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to sign in to project MCP servers."), to: client)
                 return
             }
+            guard !request.requiresMCP || client.fleetPeerID == nil else {
+                send(.error(id: id, code: FleetProtocol.Code.forbidden, message: "Use a paired device to manage space MCP sign-in."), to: client)
+                return
+            }
             guard !request.requiresMCP || client.projectMCPRequests.count < 16 else {
                 send(.error(id: id, code: "busy", message: "Too many MCP requests are pending."), to: client)
                 return
             }
             let state = store.state, projects = projects
+            let owner = client.fleetDeviceID ?? client.projectMCPOwner
             let task = Task { [weak self] in
                 let result: Result<RemoteProjectsResult, Error>
-                do { result = .success(try await projects.request(request, state: state, owner: client.projectMCPOwner)) }
+                do { result = .success(try await projects.request(request, state: state, owner: owner)) }
                 catch { result = .failure(error) }
                 self?.queue.async { [weak self] in
                     guard let self, self.clients[client.fd] === client else { return }
@@ -5560,7 +5566,8 @@ public final class SessionServer: @unchecked Sendable {
         client.projectMCPRequests.removeAll()
         for read in client.directoryReads.values { read.task.cancel() }
         client.directoryReads.removeAll()
-        Task { await projects.cancelMCP(owner: client.projectMCPOwner) }
+        // Device runs are still bounded by their original deadline, not by one socket.
+        if client.fleetDeviceID == nil { Task { await projects.cancelMCP(owner: client.projectMCPOwner) } }
         client.tunnels = nil
         browserDriveConnectionClosed(client)
         if client.isLocal, client.authenticated {

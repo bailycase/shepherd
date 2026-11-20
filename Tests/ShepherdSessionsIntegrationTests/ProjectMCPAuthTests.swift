@@ -35,6 +35,9 @@ struct ProjectMCPAuthTests {
         }
         let failed = try await service.request(directory: dir.path, file: ".shepherd/mcp.json", text: "", action: .poll(id: ids[0]), owner: owner)
         #expect(failed.message?.contains("300 seconds") == true)
+        let expired = try await service.request(directory: dir.path, file: ".shepherd/mcp.json", text: "",
+                                                action: .complete(id: ids[0], redirectURL: "http://localhost:1234/callback?code=late"), owner: owner)
+        #expect(expired.phase == .failed)
         await service.cancel(owner: owner)
         await #expect(throws: ProjectFileError.self) {
             _ = try await service.request(directory: dir.path, file: ".shepherd/mcp.json", text: "", action: .poll(id: ids[0]), owner: owner)
@@ -105,8 +108,12 @@ struct ProjectMCPAuthTests {
         try await host.server.putState(ShepherdState(spaces: [Space(name: "project", path: project.path)]))
         let port = try host.server.startRemoteListener(port: 0, tokenURL: directory.appendingPathComponent("remote-token"))
         let token = try String(contentsOf: directory.appendingPathComponent("remote-token"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-        let client = RemoteHostClient()
-        _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "oauth-test")
+        @Sendable func connect(_ token: String) async throws -> RemoteHostClient {
+            let client = RemoteHostClient()
+            _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "oauth-test")
+            return client
+        }
+        var client = try await connect(token)
         defer { client.disconnect() }
         let text = String(decoding: try JSONSerialization.data(withJSONObject: ["mcpServers": ["issues": ["url": url]]]), as: UTF8.self)
         _ = try await client.projects(.save(directory: project.path, file: file, text: text, expected: nil))
@@ -129,6 +136,17 @@ struct ProjectMCPAuthTests {
         defer { session.invalidateAndCancel() }
         let (_, response) = try await session.data(from: URL(string: try #require(authorization))!)
         let redirect = try #require((response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Location"))
+        let completion = RemoteProjectsRequest.mcp(directory: project.path, file: file, action: .complete(id: id, redirectURL: redirect))
+        client.disconnect()
+        let other = try await connect(host.server.clientTokenForTests())
+        defer { other.disconnect() }
+        await #expect {
+            try await other.projects(completion)
+        } throws: { error in
+            if case RemoteHostClientError.rejected(let code, _) = error { return code == "expired" }
+            return false
+        }
+        client = try await connect(token)
         _ = try await action(.complete(id: id, redirectURL: redirect))
         try await eventually("host token exchange") { try await action(.poll(id: id)).phase != .waiting }
         #expect(try await action(.poll(id: id)).phase == .done)
