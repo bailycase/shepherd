@@ -7,7 +7,8 @@ public enum PersistedFile<Value: Decodable> {
     case missing
     case damaged(original: Data?, error: any Error)
 
-    public static func load(from url: URL, validate: (Value) throws -> Void = { _ in }) -> Self {
+    public static func load(from url: URL, dateDecodingStrategy: JSONDecoder.DateDecodingStrategy = .deferredToDate,
+                            validate: (Value) throws -> Void = { _ in }) -> Self {
         let data: Data
         do {
             data = try Data(contentsOf: url)
@@ -18,7 +19,9 @@ public enum PersistedFile<Value: Decodable> {
             return .damaged(original: nil, error: error)
         }
         do {
-            let document = try JSONDecoder().decode(Document.self, from: data)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = dateDecodingStrategy
+            let document = try decoder.decode(Document.self, from: data)
             try validate(document.value)
             return .loaded(document.value)
         } catch {
