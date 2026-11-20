@@ -2,18 +2,6 @@ import SwiftUI
 import ShepherdUI
 import ShepherdRemote
 
-/// Subagents' screens (subagents track): a thread's runs, and one run's transcript.
-enum SubagentsRoute: Hashable, Codable {
-    case list(AgentRef)
-    case run(AgentRef, runID: String)
-
-    var thread: AgentRef {
-        switch self {
-        case .list(let ref), .run(let ref, _): ref
-        }
-    }
-}
-
 /// Routes into subagents, for the thread's footer link and options menu.
 enum SubagentHooks {
     static func list(thread: AgentRef) -> MobileRoute { .subagents(.list(thread)) }
