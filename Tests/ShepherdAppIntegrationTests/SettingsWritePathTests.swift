@@ -8,11 +8,11 @@ import Testing
 @testable import ShepherdApp
 
 /// Every persisting setting and every way a write reaches it today, pinned as a golden
-/// (`Tests/Fixtures/settings-write-paths.json`): (a) the Mac's own write, followed by the other process
-/// through the store, (b) a client's `hostSettings` change over the host socket, (c) a Fleet sync of a
-/// host setting, and what none of them reach. Characterization only: the golden records today's
-/// outcome, known oddities included. `SHEPHERD_GOLDEN_CAPTURE=<file>` writes the observations there
-/// instead of comparing.
+/// (`Tests/Fixtures/settings-write-paths.json`): (a) the Mac's own write, taken by the host through the
+/// real change notice and read back in the host's reply, (b) a client's `hostSettings` change over the
+/// host socket, (c) a Fleet op delivered to the host's registered settings source, and what none of them
+/// reach. Characterization only: the golden records today's outcome, known oddities included.
+/// `SHEPHERD_GOLDEN_CAPTURE=<file>` writes the observations there instead of comparing.
 @Suite("Settings write paths", .mainActorExclusive)
 @MainActor
 struct SettingsWritePathTests {
@@ -25,111 +25,87 @@ struct SettingsWritePathTests {
 
     private static let seed = [
         "hostID": "00000000-0000-4000-8000-0000000000A1", "otherHostID": "00000000-0000-4000-8000-0000000000B2",
-        "spaceID": "acme-web-space", "otherSpaceID": "acme-docs-space",
+        "peerID": "00000000-0000-4000-8000-0000000000C3", "spaceID": "acme-web-space", "otherSpaceID": "acme-docs-space",
     ]
 
     private static func checkingWritePaths() async throws {
-        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Fixtures/settings-write-paths.json")
-        let capture = ProcessInfo.processInfo.environment["SHEPHERD_GOLDEN_CAPTURE"]
-        let golden = capture == nil ? try jsonObject(Data(contentsOf: fixture)) : [:]
-        if capture == nil { try #require(golden["seed"] as? [String: String] == seed, "the golden was captured with other seed inputs") }
-        let run = GoldenRun(expected: golden["observations"] as? [[String: Any]], directory: ValidationEvidence.directory)
-
-        try await observeWritePaths { step, fields in try run.observe(step, fields) }
-
-        if let capture {
-            let data = try JSONSerialization.data(withJSONObject: ["seed": seed, "observations": run.captured],
+        if let capture = ProcessInfo.processInfo.environment["SHEPHERD_GOLDEN_CAPTURE"] {
+            var captured: [[String: Any]] = []
+            try await observeWritePaths { captured.append(["step": $0, "fields": $1]) }
+            let data = try JSONSerialization.data(withJSONObject: ["seed": seed, "observations": captured],
                                                   options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
             try data.write(to: URL(fileURLWithPath: capture))
             return
         }
-        try #require(run.index == run.expected?.count, "not all golden observations were checked")
-        let completed = "every settings write path matched the golden"
-        for step in ["compare-golden", "complete"] {
-            try ValidationEvidence.record(in: run.directory, step: step, status: "passed", expected: completed, actual: completed)
+        try await ValidationGolden.check("settings-write-paths.json", from: #filePath,
+                                         completion: "every settings write path matched the golden") { golden in
+            try #require(golden.seed as? [String: String] == seed, "the golden was captured with other seed inputs")
+            try await observeWritePaths(golden.observe)
         }
     }
 
-    // MARK: Golden comparison (the seeded rename case's way, field by field)
+    // MARK: The settings, read from what production declares and writes
 
-    private final class GoldenRun {
-        let expected: [[String: Any]]?
-        let directory: URL?
-        var index = 0
-        var captured: [[String: Any]] = []
+    /// Declared in `AppSettings.Key` but no longer a setting: read once at load to move its choice to the text
+    /// generation model, then removed.
+    private static let retired: Set<String> = ["legacyNamingModel"]
 
-        init(expected: [[String: Any]]?, directory: URL?) { (self.expected, self.directory) = (expected, directory) }
+    private static var sources: URL {
+        URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources")
+    }
 
-        func observe(_ step: String, _ fields: [String: String]) throws {
-            guard let expected else { captured.append(["step": step, "fields": fields]); return }
-            let previous = try #require(expected.indices.contains(index) ? expected[index] : nil, "unexpected observation: \(step)")
-            let expectedStep = try #require(previous["step"] as? String)
-            try #require(expectedStep == step, "observation \(index) out of order: expected \(expectedStep), got \(step)")
-            let recorded = try #require(previous["fields"] as? [String: String])
-            index += 1
-            var before: [String] = [], after: [String] = []
-            for field in Set(recorded.keys).union(fields.keys).sorted() {
-                let old = recorded[field] ?? "<missing>", new = fields[field] ?? "<missing>"
-                if old != new {
-                    before.append("\(step).\(field) = \(old)")
-                    after.append("\(step).\(field) = \(new)")
-                }
-            }
-            if !before.isEmpty {
-                let expected = before.joined(separator: "\n"), actual = after.joined(separator: "\n")
-                try? ValidationEvidence.record(in: directory, step: "compare-golden", status: "failed", expected: expected, actual: actual)
-                try #require(before.isEmpty, "Expected: \(expected)\nActual:   \(actual)")
-            }
+    /// The persisting settings, from `AppSettings.swift` itself: the keys declared in `enum Key` and the keys its `store.set` calls
+    /// write, never `Key.all` (which only has to agree). `tracked` adds the retired keys, so a write to one still shows.
+    private static func inventory() throws -> (settings: [String], tracked: [String]) {
+        let source = try String(contentsOf: sources.appendingPathComponent("ShepherdApp/AppSettings.swift"), encoding: .utf8)
+        let declarations = try #require(source.range(of: "enum Key {").flatMap { start in
+            source.range(of: "static let all = [", range: start.upperBound..<source.endIndex).map { source[start.upperBound..<$0.lowerBound] }
+        })
+        var declared: [String: String] = [:]
+        for match in declarations.matches(of: /static let (\w+) = "(shepherd\.[^"]+)"/) { declared[String(match.1)] = String(match.2) }
+        var written: Set<String> = [], literals: Set<String> = []
+        for match in source.matches(of: /store\.set\([^\n]*forKey: (?:Key\.(\w+)|("[^"]*"))/) {
+            if let name = match.1 { written.insert(String(name)) } else if let literal = match.2 { literals.insert(String(literal)) }
         }
+        try #require(literals.isEmpty, "settings written to a key that is not declared in AppSettings.Key: \(literals.sorted())")
+        let names = Set(declared.keys).subtracting(retired)
+        try #require(written == names, "AppSettings.Key declares and `store.set` writes differ: declared only \(names.subtracting(written).sorted()), written only \(written.subtracting(names).sorted())")
+        let settings = names.map { declared[$0]! }.sorted()
+        try #require(Set(AppSettings.Key.all) == Set(settings),
+                     "settings declared and written by AppSettings but missing from AppSettings.Key.all: \(Set(settings).subtracting(AppSettings.Key.all).sorted()); listed there but not declared: \(Set(AppSettings.Key.all).subtracting(settings).sorted())")
+        return (settings, (settings + retired.map { declared[$0]! }).sorted())
+    }
+
+    /// Where production assigns `remoteListenerPort`: file name and count, outside the declaration of its key.
+    private static func portWriters() throws -> String {
+        var writers: [String: Int] = [:]
+        let files = try #require(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
+        for case let url as URL in files where url.pathExtension == "swift" {
+            let count = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
+                .filter { $0.contains(/remoteListenerPort\s*=[^=]/) && !$0.contains("static let") }.count
+            if count > 0 { writers[url.lastPathComponent] = count }
+        }
+        return text(writers)
     }
 
     // MARK: The observations
 
-    private static func observeWritePaths(_ observe: (String, [String: String]) throws -> Void) async throws {
+    private static func observeWritePaths(_ observe: (String, [String: Any]) throws -> Void) async throws {
         let hostID = try #require(UUID(uuidString: seed["hostID"]!)), otherHostID = try #require(UUID(uuidString: seed["otherHostID"]!))
+        let peerID = try #require(UUID(uuidString: seed["peerID"]!))
         let spaceID = seed["spaceID"]!, otherSpaceID = seed["otherSpaceID"]!
 
-        // (a) The Mac's own write, and whether the other process on the same preferences takes it.
+        let (keys, tracked) = try inventory()
         let probes = Dictionary(uniqueKeysWithValues: Self.probes(hostID: hostID, spaceID: spaceID).map { ($0.key, $0) })
-        let keys = AppSettings.Key.all
-        try #require(Set(probes.keys) == Set(keys), "settings without a write-path probe: \(Set(keys).subtracting(probes.keys).sorted())")
-        var followed: [String: Bool] = [:]
-        for key in keys {
-            let probe = probes[key]!
-            let store = ScratchDefaults()
-            let app = AppSettings(store: store), other = AppSettings(store: store)
-            let before = snapshot(store), otherBefore = probe.read(other)
-            let written = probe.write(app)
-            let after = snapshot(store)
-            other.reload()
-            let taken = probe.read(other) != otherBefore
-            followed[key] = taken
-            try observe("direct.\(key)", [
-                "write": written, "stored": after[key] ?? "<missing>",
-                "storedKeysChanged": changedKeys(before, after).joined(separator: ","),
-                "otherProcess.before": otherBefore, "otherProcess.afterReload": probe.read(other), "followed": taken ? "yes" : "no",
-            ])
-        }
-
-        // The same through the Darwin notice a real write posts, for the two kinds of follower.
-        do {
-            let store = ScratchDefaults(), notice = "shepherd-test-settings-\(UUID().uuidString)"
-            let app = AppSettings(store: store), other = AppSettings(store: store)
-            app.followOtherProcesses(notice: notice)
-            other.followOtherProcesses(notice: notice)
-            var listener: [Bool] = []
-            other.onRemoteListenerChange = { listener.append($0) }
-            app.sidebarWidth = 300
-            try await eventuallyOnMain("the other process to take the width") { other.sidebarWidth == 300 }
-            app.remoteListenerEnabled = true
-            try await eventuallyOnMain("the other process to take Serve this Mac") { other.remoteListenerEnabled }
-            try observe("notice", ["sidebarWidth": "\(other.sidebarWidth)", "remoteListenerEnabled": "\(other.remoteListenerEnabled)",
-                                   "remoteListenerCallbacks": "\(listener)"])
-        }
-
-        // (b) and (c) run against the host the app serves, over its socket.
+        try #require(Set(probes.keys) == Set(keys), "settings without a write-path probe: \(Set(keys).subtracting(probes.keys).sorted()); probes for no setting: \(Set(probes.keys).subtracting(keys).sorted())")
         AccessibilityNode.enable()
+
+        // (a) The Mac's own write, taken by the host and read back in its reply.
+        let direct = try await observeDirectWrites(keys: keys, tracked: tracked, probes: probes, observe)
+        try observe("remoteListenerPort.writers", ["assignmentsInSources": try portWriters()])
+
+        // (b) and (c) run against a fresh host the app serves, over its socket.
         let app = try AppHarness()
         defer { app.stop() }
         try await app.start()
@@ -139,7 +115,7 @@ struct SettingsWritePathTests {
         let hello = try await session.send { .hello(id: $0, token: "", clientName: "validation", protocolVersion: RemoteProtocol.version) }
         try observe("wire.hello", correlation(hello))
         var settings = flatten(try await session.fetch()["settings"] as? [String: Any] ?? [:])
-        var stored = snapshot(app.defaults)
+        var stored = snapshot(app.defaults, tracked)
 
         /// The reply's HostSettings fields that moved, and the stored keys that moved, since the last look.
         func movement(_ reply: [String: Any]) throws -> (fields: [String: String], keys: [String]) {
@@ -152,7 +128,7 @@ struct SettingsWritePathTests {
                 }
                 settings = now
             }
-            let after = snapshot(app.defaults)
+            let after = snapshot(app.defaults, tracked)
             let keys = changedKeys(stored, after)
             for key in keys { fields["stored.\(key)"] = after[key] ?? "<missing>" }
             stored = after
@@ -173,44 +149,119 @@ struct SettingsWritePathTests {
             }
         }
 
-        // (c) A Fleet sync applies the same change in the host with no request and no capability check.
-        let (applied, signal) = AsyncStream<Void>.makeStream()
-        let source = FleetHostSettingsSource(apply: { change in
-            Task { @MainActor in
-                HostSettingsMapping.apply(change, to: hostSettings)
-                signal.yield()
+        // (c) A peer's op reaches the host's own fleet, which hands it to the settings source the app registered
+        // (`ShepherdHost.serveSettings`): no request, no capability check.
+        /// The host's settings reach the fleet a moment after they change; the next op waits for that, so it never meets a
+        /// change the fleet has not yet seen as the host's own.
+        func reported() async throws {
+            try await eventuallyOnMain("the host to report its settings to the fleet") {
+                app.server.fleetSettingsForTests == HostSettingsMapping.settings(from: hostSettings, shepherdVersion: nil, piVersion: nil)
             }
-        })
+        }
+        try await reported()
+        let engine = try #require(app.server.queue.sync { app.server.fleet?.syncEngine })
+        // Sync runs only while a Mac is paired (`FleetService.updateEngines`); this host has none, so start the engine as that would.
+        app.server.queue.sync { engine.start() }
+        try await reported()
+        let base = UInt64(Date().timeIntervalSince1970 * 1000) + 3_600_000
         var fleetKeys: [String: [String]] = [:]
-        var synced = applied.makeAsyncIterator()
-        for (label, unit, value) in fleetWrites(hostID: otherHostID, spaceID: otherSpaceID) {
+        for (index, (label, unit, value)) in fleetWrites(hostID: otherHostID, spaceID: otherSpaceID).enumerated() {
+            let seq = UInt64(index + 1)
+            let op = FleetOp(mac: peerID, seq: seq, hlc: FleetHLC(wallMs: base + seq), unit: unit,
+                             change: value.map { .value($0) } ?? .deletion, macName: "Peer")
+            let reply = app.server.queue.sync { engine.serve(.op(op), from: peerID) }
+            // The app applies it on the main actor.
+            await Task { @MainActor in }.value
             var fields = ["unit": unit, "value": value ?? "<deleted>"]
-            do {
-                try source.write(unit, value.map { Data($0.utf8) }, origin: "peer")
-                _ = await synced.next()
-                let moved = try movement(try await session.fetch())
-                fields.merge(moved.fields) { $1 }
-                for key in moved.keys { fleetKeys[key, default: []].append(label) }
-                for field in moved.fields.keys where field.hasPrefix("reply.settings.") {
-                    for key in moved.keys { wireFields[key, default: []].insert(String(field.dropFirst("reply.settings.".count))) }
-                }
-            } catch {
-                fields["refused"] = "\(error)"
+            if case .success = reply { fields["accepted"] = "yes" } else { fields["accepted"] = "no" }
+            let moved = try movement(try await session.fetch())
+            fields.merge(moved.fields) { $1 }
+            for key in moved.keys { fleetKeys[key, default: []].append(label) }
+            for field in moved.fields.keys where field.hasPrefix("reply.settings.") {
+                for key in moved.keys { wireFields[key, default: []].insert(String(field.dropFirst("reply.settings.".count))) }
             }
             try observe("sync.\(label)", fields)
+            try await reported()
         }
 
         // Each setting's write paths, from what was seen above.
         var summary: [String: String] = [:]
         for key in keys {
+            let reaches = direct[key]!
+            let hostFields = Set(reaches.fields).union(wireFields[key] ?? [])
             let paths: [String: Any] = [
-                "a": followed[key] == true ? "followed" : "own process only",
+                "a": reaches.followed ? "followed" : "not followed",
+                "aHostReplyFields": reaches.fields,
                 "b": wireKeys[key] ?? [], "c": fleetKeys[key] ?? [],
-                "hostSettingsFields": (wireFields[key] ?? []).sorted(),
+                "hostSettingsFields": hostFields.sorted(),
+                "deviceOnly": hostFields.isEmpty && wireKeys[key] == nil && fleetKeys[key] == nil ? "yes" : "no",
             ]
             summary[key] = text(paths)
         }
         try observe("summary", summary)
+    }
+
+    /// (a) One write per setting on the app's `AppSettings`, with the host's own `AppSettings` following the same preferences through
+    /// the Darwin change notice, as the background host does. A notice has no reply to wait on, so each write is followed by one the
+    /// host is known to take (a sentinel setting, the terminal font family or, for that one, the editor): the host reads the whole store on each notice, so by the time it
+    /// has the sentinel it has had its chance at the setting. Records whether it took it and which HostSettings fields its reply moved.
+    private static func observeDirectWrites(keys: [String], tracked: [String], probes: [String: Probe],
+                                            _ observe: (String, [String: Any]) throws -> Void) async throws -> [String: (followed: Bool, fields: [String])] {
+        typealias K = AppSettings.Key
+        let harness = try AppHarness()
+        defer { harness.stop() }
+        try await harness.start()
+        let app = harness.settings, host = try #require(harness.hostSettings)
+        // Nothing in production writes the port (`remoteListenerPort.writers`): the host would listen on the stored one, the
+        // edition's. Aim it at 0 so Serve this Mac opens on a free port.
+        host.remoteListenerPort = 0
+        let session = Session(wire: try Wire(path: harness.hostSocket))
+        _ = try await session.send { .hello(id: $0, token: "", clientName: "validation", protocolVersion: RemoteProtocol.version) }
+        var seen = flatten(try await session.fetch()["settings"] as? [String: Any] ?? [:])
+        var sentinels = 0
+
+        func reachHost(from probe: Probe) async throws {
+            sentinels += 1
+            let value = "sentinel-\(sentinels)"
+            if probe.key == K.terminalFontFamily {
+                app.editor = value
+                try await eventuallyOnMain("the host to take the sentinel after \(probe.key)") { host.editor == value }
+            } else {
+                app.terminalFontFamily = value
+                try await eventuallyOnMain("the host to take the sentinel after \(probe.key)") { host.terminalFontFamily == value }
+            }
+        }
+        /// The HostSettings fields of the host's reply that moved since the last look.
+        func hostReplyMoved() async throws -> [String: String] {
+            let now = flatten(try await session.fetch()["settings"] as? [String: Any] ?? [:])
+            defer { seen = now }
+            return Dictionary(uniqueKeysWithValues: Set(seen.keys).union(now.keys).sorted().filter { seen[$0] != now[$0] }.map { ("hostReply.\($0)", now[$0] ?? "<missing>") })
+        }
+
+        var reaches: [String: (followed: Bool, fields: [String])] = [:]
+        for key in keys {
+            let probe = probes[key]!
+            let before = snapshot(harness.defaults, tracked), hostBefore = probe.read(host)
+            let written = probe.write(app)
+            let after = snapshot(harness.defaults, tracked)
+            try await reachHost(from: probe)
+            let followed = probe.read(host) != hostBefore
+            var fields: [String: Any] = [
+                "write": written, "stored": after[key] ?? "<missing>",
+                "storedKeysChanged": changedKeys(before, after).joined(separator: ","),
+                "hostProcess.before": hostBefore, "hostProcess.afterNotice": probe.read(host), "followed": followed ? "yes" : "no",
+            ]
+            let moved = try await hostReplyMoved()
+            fields.merge(moved) { $1 }
+            try observe("direct.\(key)", fields)
+            reaches[key] = (followed, moved.keys.map { String($0.dropFirst("hostReply.".count)) }.sorted())
+        }
+
+        // Serve this Mac's switch opens the listener in the host; turning it off closes it.
+        app.remoteListenerEnabled = false
+        try await reachHost(from: probes[K.remoteListenerEnabled]!)
+        try observe("direct.\(K.remoteListenerEnabled).off", try await hostReplyMoved())
+        return reaches
     }
 
     // MARK: Probes for the Mac's own write
@@ -384,7 +435,7 @@ struct SettingsWritePathTests {
         return list
     }
 
-    /// Host settings a peer's sync writes (`FleetHostSetting`, then a weight, a space's excludes and a Mac's ignores), each with a value
+    /// Host settings a peer's ops write (`FleetHostSetting`, then a weight, a space's excludes and a Mac's ignores), each with a value
     /// the wire changes above left otherwise, so a change shows. `nil` is a deletion.
     private static func fleetWrites(hostID: UUID, spaceID: String) -> [(label: String, unit: String, value: String?)] {
         let hostValues: [String: String] = [
@@ -427,7 +478,7 @@ struct SettingsWritePathTests {
     }
 
     /// The requests of one connection, numbered from 1.
-    private final class Session {
+    @MainActor private final class Session {
         let wire: Wire
         var nextID = 1
         init(wire: Wire) { self.wire = wire }
@@ -458,6 +509,9 @@ struct SettingsWritePathTests {
         for (field, value) in settings {
             if field == "bundledExtensions", let list = value as? [[String: Any]] {
                 for item in list { out["bundledExtensions[\(item["id"] ?? "?")].on"] = text(item["on"]) }
+            } else if field == "listenerPort" {
+                // The port is whatever the system gave.
+                out[field] = "<open>"
             } else {
                 out[field] = text(value)
             }
@@ -466,9 +520,9 @@ struct SettingsWritePathTests {
     }
 
     /// Every persisting key's stored value, as the same JSON text however the store holds it.
-    private static func snapshot(_ store: UserDefaults) -> [String: String] {
+    private static func snapshot(_ store: UserDefaults, _ keys: [String]) -> [String: String] {
         var out: [String: String] = [:]
-        for key in AppSettings.Key.all {
+        for key in keys {
             guard var value = store.object(forKey: key) else { continue }
             if let data = value as? Data, let parsed = try? JSONSerialization.jsonObject(with: data) { value = parsed }
             out[key] = text(value)

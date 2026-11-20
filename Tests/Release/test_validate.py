@@ -160,7 +160,7 @@ class ValidateTests(unittest.TestCase):
         code, output, result = self.run_case([failed], case="c-settings")
         self.assertEqual(code, 1)
         self.assertIn("FAIL mac/c-settings/compare-golden [local host]", output)
-        self.assertIn("SettingsWritePathTests.swift", result["steps"][0]["look_first"])
+        self.assertIn("Tests/Fixtures/settings-write-paths.json", result["steps"][0]["look_first"])
         code, output, result = self.run_case([{**record, "step": "compare-golden"}, complete], case="c-settings")
         self.assertEqual(code, 0)
         self.assertIn("PASS mac/c-settings", output)
