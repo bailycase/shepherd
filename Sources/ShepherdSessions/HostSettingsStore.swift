@@ -8,13 +8,14 @@ import ShepherdRemote
 ///
 /// Each field is declared once, with its default as the property's initial value. A file that lacks a
 /// field (an older release's, or a group not moved here yet) reads that field as its default
-/// (`decode`). Groups move here one at a time; `agents`, `worktrees` and `experiments` have so far.
+/// (`decode`). Groups move here one at a time; `agents`, `worktrees`, `fleet` and `experiments` have so far.
 public struct StoredHostPreferences: Codable, Equatable, Sendable {
     public static let currentVersion = 1
 
     public var version = currentVersion
     public var agents = Agents()
     public var worktrees = Worktrees()
+    public var fleet = Fleet()
     public var experiments = Experiments()
 
     public init() {}
@@ -48,6 +49,22 @@ public struct StoredHostPreferences: Codable, Equatable, Sendable {
         public var generatePRDescription = true
         public var closeOnMerge = false
         public var deleteAction = HostSettings.WorktreeDeleteAction.ask
+
+        public init() {}
+    }
+
+    /// Settings ▸ Fleet: the `shepherd.fleet.*` keys, kept in the file and the keys like Agents. The dictionaries are keyed by the
+    /// setting keys a fleet syncs (`fleet.weight.<hostID>`, `fleet.snapshotExcludes.<spaceID>`, `fleet.checkIgnore.<hostID>`).
+    public struct Fleet: Codable, Equatable, Sendable {
+        public var weights: [String: FleetSendWeight] = [:]
+        public var threadsCanSend = false
+        public var threadCap = HostSettings.fleetThreadCapDefault
+        public var uncommitted = FleetUncommittedChanges.sendThem
+        public var snapshotExcludes: [String: FleetSnapshotExcludes] = [:]
+        public var checkIgnores: [String: [String]] = [:]
+        /// nil until the person chooses (`AppSettings.autoDispatch(pairedMacs:)`).
+        public var autoDispatch: Bool?
+        public var batteryCountsHalf = true
 
         public init() {}
     }
