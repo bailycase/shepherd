@@ -21,47 +21,11 @@ struct ThreadRenameTests {
     }
 
     private static func checkingSeededRename() async throws {
-        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Fixtures/seeded-thread-rename.json")
-        let golden = try jsonObject(Data(contentsOf: fixture))
-        let seed = try #require(golden["seed"] as? [String: String])
-        let observations = try #require(golden["observations"] as? [[String: Any]])
-        let directory = ValidationEvidence.directory
-        var index = 0
-
-        try await observeSeededRename(spaceName: try #require(seed["space"]), oldName: try #require(seed["name"]),
-                                     newName: try #require(seed["renameTo"])) { step, actual in
-            let previous = try #require(observations.indices.contains(index) ? observations[index] : nil,
-                                        "unexpected observation: \(step)")
-            let expectedStep = try #require(previous["step"] as? String)
-            try #require(expectedStep == step, "observation \(index) out of order")
-            let expected = try #require(previous["fields"] as? [String: Any])
-            index += 1
-
-            func display(_ value: Any?) throws -> String {
-                guard let value else { return "<missing>" }
-                let json = try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .sortedKeys])
-                return String(decoding: json, as: UTF8.self)
-            }
-            var before: [String] = [], after: [String] = []
-            for field in Set(expected.keys).union(actual.keys).sorted() {
-                let old = try display(expected[field]), new = try display(actual[field])
-                if old != new {
-                    before.append("\(step).\(field) = \(old)")
-                    after.append("\(step).\(field) = \(new)")
-                }
-            }
-            if !before.isEmpty {
-                let expected = before.joined(separator: "\n"), actual = after.joined(separator: "\n")
-                try? ValidationEvidence.record(in: directory, step: "compare-golden", status: "failed",
-                                               expected: expected, actual: actual)
-                try #require(before.isEmpty, "Expected: \(expected)\nActual:   \(actual)")
-            }
-        }
-        try #require(index == observations.count, "not all golden observations were checked")
-        let completed = "rename, restart and sidebar matched the golden"
-        for step in ["compare-golden", "complete"] {
-            try ValidationEvidence.record(in: directory, step: step, status: "passed", expected: completed, actual: completed)
+        try await ValidationGolden.check("seeded-thread-rename.json", from: #filePath,
+                                         completion: "rename, restart and sidebar matched the golden") { golden in
+            let seed = try #require(golden.seed as? [String: String])
+            try await observeSeededRename(spaceName: try #require(seed["space"]), oldName: try #require(seed["name"]),
+                                         newName: try #require(seed["renameTo"]), observe: golden.observe)
         }
     }
 
@@ -85,31 +49,39 @@ struct ThreadRenameTests {
         }
 
         func exchange(_ socket: String, _ requests: [(String, RemoteRequest)]) async throws -> String? {
-            let frames = try await Task.detached {
-                let client = try ExtensionClient(path: socket)
-                return try requests.map { step, request in
-                    let sent = try NDJSON.encode(request)
-                    try client.sendRaw(sent)
-                    while true {
-                        let received = try client.readLine()
-                        let reply = try jsonObject(received)
-                        // A pushed notification has no request ID. Keep the actual reply ID even
-                        // if it is wrong so the golden can show the broken correlation.
-                        if reply["id"] != nil { return (step, sent, received) }
+            let (frames, failure) = await Task.detached { () -> ([(String, Data, Data)], (any Error)?) in
+                var frames: [(String, Data, Data)] = []
+                do {
+                    let client = try ExtensionClient(path: socket)
+                    for (step, request) in requests {
+                        let sent = try NDJSON.encode(request)
+                        try client.sendRaw(sent)
+                        while true {
+                            let received = try client.readLine()
+                            let reply = try ValidationGolden.object(received)
+                            // Ignore pushes. Keep the actual reply ID so the golden can show broken correlation.
+                            if reply["id"] != nil {
+                                frames.append((step, sent, received))
+                                break
+                            }
+                        }
                     }
+                    return (frames, nil)
+                } catch {
+                    return (frames, error)
                 }
             }.value
             var name: String?
             for (step, sent, received) in frames {
-                let request = try jsonObject(sent), reply = try jsonObject(received)
+                let request = try ValidationGolden.object(sent), reply = try ValidationGolden.object(received)
                 var fields: [String: Any] = [:]
                 for key in ["id", "type", "protocolVersion"] {
                     fields["request.\(key)"] = request[key]
                     fields["reply.\(key)"] = reply[key]
                 }
                 fields["reply.code"] = reply["code"]
-                if let target = request["agentID"] as? String {
-                    fields["request.agentID"] = target == id.rawValue ? "<thread>" : "<unexpected thread>"
+                if let target = request["agentID"] {
+                    fields["request.agentID"] = ValidationGolden.normalize(target, ids: [id.rawValue: "<thread>"])
                 }
                 fields["request.action"] = request["action"]
                 let thread = threadFields(reply["state"] as? [String: Any])
@@ -117,6 +89,8 @@ struct ThreadRenameTests {
                 name = thread["agents[thread].name"] as? String
                 try observe(step, fields)
             }
+            // Compare replies already received before a later socket error can hide their field diff.
+            if let failure { throw failure }
             return name
         }
 
@@ -132,7 +106,7 @@ struct ThreadRenameTests {
                 ("rename", .agentAction(id: 3, agentID: id, action: .rename(name: newName))),
                 ("renamed", .stateFetch(id: 4)),
             ])
-            try observe("stored", threadFields(try jsonObject(Data(contentsOf: app.scratch.stateURL))))
+            try observe("stored", threadFields(try ValidationGolden.object(Data(contentsOf: app.scratch.stateURL))))
         }
 
         let restarted = try AppHarness(directory: directory)
@@ -141,19 +115,14 @@ struct ThreadRenameTests {
         let name = try await exchange(restarted.hostSocket, [("restart-hello", hello(5)), ("reloaded", .stateFetch(id: 6))])
         let window = OffscreenWindow(size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 650), dark: true, SidebarView(vm: vm))
         defer { window.close() }
-        var label: String?
-        if let name {
-            try? await eventuallyOnMain("the reloaded thread's accessibility label", timeout: .seconds(2)) {
-                window.layout()
-                label = AccessibilityNode.all(under: window.host).compactMap(\.label).first { $0.hasPrefix(name + ", ") }
-                return label != nil
-            }
+        var label: String?, labels: [String] = []
+        try? await eventuallyOnMain("the reloaded thread's accessibility label", timeout: .seconds(2)) {
+            window.layout()
+            labels = AccessibilityNode.all(under: window.host).compactMap(\.label)
+            label = name.flatMap { name in labels.first { $0.hasPrefix(name + ", ") } }
+            return label != nil
         }
-        try observe("sidebar", ["accessibilityLabel": label].compactMapValues { $0 })
-    }
-
-    nonisolated private static func jsonObject(_ data: Data) throws -> [String: Any] {
-        try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        try observe("sidebar", ["accessibilityLabel": label.map { $0 as Any } ?? labels])
     }
 
     private func sidebarTitle(_ vm: ShepherdViewModel, _ row: SidebarRowID) -> String? {
