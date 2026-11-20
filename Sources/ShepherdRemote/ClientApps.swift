@@ -264,10 +264,19 @@ public final class ClientApps {
         }
     }
 
-    /// Reads every run again, and the host's own apps with them; a host that can't answer keeps what it showed.
+    /// Reads every run again, and the host's own apps with them, and the definitions of each space that has
+    /// a run: the Mac can remove or edit a running app while the page is open, and Stop and Restart read the
+    /// definition. A host that can't answer keeps what it showed, and so does a space it can't read.
     public func poll(_ host: SettingsHost) async {
-        guard let client = host.client as? AppsClient, host.serves(RemoteProtocol.appsV2Capability), let spaces = loaded[host.id]?.spaces,
+        guard let client = host.client as? AppsClient, host.serves(RemoteProtocol.appsV2Capability), let cached = loaded[host.id]?.spaces,
               let result = try? await client.apps(.processes) else { return }
+        let running = Set((result.processes ?? []).compactMap(\.spaceID))
+        var spaces = cached
+        for (index, space) in cached.enumerated() where running.contains(space.space) {
+            if let fresh = try? await client.apps(.list(spaceID: space.space)) {
+                spaces[index].apps = fresh.apps.filter { !$0.mac }.map(\.app)
+            }
+        }
         set(host, own: result.apps.map(\.app), spaces: spaces, runs: result.processes ?? [])
     }
 

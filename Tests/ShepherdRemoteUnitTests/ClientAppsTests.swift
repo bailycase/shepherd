@@ -11,13 +11,14 @@ final class FakeAppsHost: SettingsClient, AppsClient, @unchecked Sendable {
     private var log: [RemoteAppsRequest] = []
     private var runs: [RemoteAppProcess]
     let own: [AppDefinition]
-    let spaces: [SpaceID: [AppDefinition]]
+    var spaces: [SpaceID: [AppDefinition]] { get { lock.withLock { definitions } } set { lock.withLock { definitions = newValue } } }
+    private var definitions: [SpaceID: [AppDefinition]]
     var refusesRun = false
     var unreadable: Set<SpaceID> = []
 
     init(own: [AppDefinition], spaces: [SpaceID: [AppDefinition]], runs: [RemoteAppProcess] = []) {
         self.own = own
-        self.spaces = spaces
+        self.definitions = spaces
         self.runs = runs
     }
 
@@ -43,7 +44,7 @@ final class FakeAppsHost: SettingsClient, AppsClient, @unchecked Sendable {
             case .list, .processes: break
             }
             let space = request.spaceID
-            let definitions = (space.flatMap { spaces[$0] } ?? []).map { RemoteApp(app: $0, mac: false) } + own.map { RemoteApp(app: $0, mac: true) }
+            let definitions = (space.flatMap { definitions[$0] } ?? []).map { RemoteApp(app: $0, mac: false) } + own.map { RemoteApp(app: $0, mac: true) }
             return RemoteAppsResult(space: "", apps: space == nil ? own.map { RemoteApp(app: $0, mac: true) } : definitions,
                                     processes: request == .processes ? runs : nil, lines: lines)
         }
@@ -135,6 +136,47 @@ struct ClientAppsTests {
         await model.perform(row, on: host)
         #expect(fake.requests.count == before, "no stop request goes out")
         #expect(model.problems[host.id] == nil)
+    }
+
+    @Test func anAppRemovedOnTheMacWhileTheRunIsLiveCantBeStoppedFromTheOpenPage() async throws {
+        let live = RemoteAppProcess(spaceID: Self.web, name: "Storybook", run: RemoteAppRun(status: .running, command: "pnpm storybook"))
+        let fake = Self.fake(runs: [live])
+        let model = ClientApps()
+        let host = Self.host(fake)
+        await model.load(host, spaces: Self.spaces)
+        #expect(model.state(of: host).page?.row("acme-web/Storybook")?.actionBlocked == nil)
+
+        fake.spaces = [Self.web: [Self.webApp], Self.api: []]
+        await model.poll(host)
+        let row = try #require(model.state(of: host).page?.row("acme-web/Storybook"))
+        #expect(row.defined == false && row.actionBlocked != nil)
+        let before = fake.requests.count
+        await model.perform(row, on: host)
+        #expect(!fake.requests.dropFirst(before).contains { if case .stop = $0 { true } else { false } }, "no stop request goes out")
+    }
+
+    @Test func anAppEditedOnTheMacAfterItsRunEndedWarnsRestartOnTheOpenPage() async throws {
+        let ended = RemoteAppProcess(spaceID: Self.web, name: "Storybook", run: RemoteAppRun(status: .exited(code: 1), command: "pnpm storybook"))
+        let fake = Self.fake(runs: [ended])
+        let model = ClientApps()
+        let host = Self.host(fake)
+        await model.load(host, spaces: Self.spaces)
+        #expect(model.state(of: host).page?.row("acme-web/Storybook")?.restartCommand == nil)
+
+        fake.spaces = [Self.web: [Self.webApp, AppDefinition(name: "Storybook", command: "pnpm storybook --ci")], Self.api: []]
+        await model.poll(host)
+        #expect(model.state(of: host).page?.row("acme-web/Storybook")?.restartCommand == "pnpm storybook")
+    }
+
+    @Test func aSpaceThatCantBeReadAgainWhilePollingKeepsItsDefinitions() async throws {
+        let live = RemoteAppProcess(spaceID: Self.web, name: "Storybook", run: RemoteAppRun(status: .running, command: "pnpm storybook"))
+        let fake = Self.fake(runs: [live])
+        let model = ClientApps()
+        let host = Self.host(fake)
+        await model.load(host, spaces: Self.spaces)
+        fake.unreadable = [Self.web]
+        await model.poll(host)
+        #expect(model.state(of: host).page?.row("acme-web/Storybook")?.defined == true)
     }
 
     @Test func restartShowsTheCommandItRunsWhenTheDefinitionChangedSinceTheRun() throws {
