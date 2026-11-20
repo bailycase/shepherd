@@ -17,12 +17,13 @@ public struct HookFileWriter: Sendable {
     public init(settings: HookSettingsStore) { self.settings = settings }
 
     /// Adds `draft` to `path` (creating the file and its folders): into the event's first group
-    /// with the same matcher, else a new group at the end. Returns the new hook's hash.
+    /// with the same matcher, else a new group at the end. Returns the new hook's hash. `on: false`
+    /// records the hash as off before the file publishes it.
     @discardableResult
-    public func add(_ draft: HookDraft, to path: String) throws -> String {
+    public func add(_ draft: HookDraft, to path: String, on: Bool = true) throws -> String {
         var root = try document(path)
         try Self.insert(draft, into: &root)
-        return try save(root, path: path, written: draft, replacing: nil)
+        return try save(root, path: path, written: draft, replacing: nil, startsOff: !on)
     }
 
     /// Replaces `entry` with `draft`: in place when the event and matcher are the same, else moved
@@ -125,7 +126,7 @@ public struct HookFileWriter: Sendable {
 
     // MARK: Saving
 
-    private func save(_ root: HookJSON, path: String, written draft: HookDraft?, replacing old: HookEntry?) throws -> String {
+    private func save(_ root: HookJSON, path: String, written draft: HookDraft?, replacing old: HookEntry?, startsOff: Bool = false) throws -> String {
         // An edit must carry an off switch over, which needs the file; refuse before touching a hooks file.
         let off = try settings.read().off
         let target = PiHome.canonical(path)
@@ -137,7 +138,7 @@ public struct HookFileWriter: Sendable {
         // Only an off switch carries over: an edit keeps a hook that was off, off; a removed one is forgotten.
         let carriesOff = old.map { off.contains($0.hash) } ?? false
         // Record the new hash as off before the file publishes it, or an event in between runs it.
-        if carriesOff, draft != nil {
+        if carriesOff || startsOff, draft != nil {
             try settings.change { if !$0.off.contains(hash) { $0.off.append(hash) } }
         }
         try PiHome.write(Data(root.pretty.utf8), to: URL(fileURLWithPath: target), mode: mode)

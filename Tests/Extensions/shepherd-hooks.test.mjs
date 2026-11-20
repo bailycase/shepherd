@@ -462,6 +462,67 @@ test("hook_propose refuses while settings.json is damaged: no test run, and no w
   assert.equal(fs.existsSync(spaceFile), false, "nothing written");
 });
 
+test("an envelope with an extra key is still an envelope, and never defaults to everything on", async () => {
+  const { project, hooksDir, macFile } = fixture();
+  const marker = path.join(project, "ran.txt");
+  writeJSON(macFile, { hooks: { PreToolUse: [{ matcher: "Edit", hooks: [{ type: "command", command: "echo mac >> ran.txt" }] }] } });
+  const file = path.join(hooksDir, "settings.json");
+  fs.writeFileSync(file, '{"version":1,"value":{"version":1,"off":["x"]},"extra":true}');
+  assert.deepEqual(hooks.readSettings(hooksDir), { off: ["x"], readers: {} }, "read through the envelope, not as a bare file with no `off`");
+  for (const text of ['{"value":{"off":["x"]}}', '{"value":{"off":["x"]},"extra":1}', '{"version":2,"value":{"off":["x"]},"extra":1}', '{"version":"1","value":{}}']) {
+    fs.writeFileSync(file, text);
+    assert.ok(hooks.readSettings(hooksDir).damaged, `damaged: ${text}`);
+    await load(hooksDir).emit("tool_call", editCall(), context(project));
+    assert.equal(fs.existsSync(marker), false, `no hook runs for ${text}`);
+  }
+});
+
+test("a hook published between the settings read and the hook-file read is never run while disabled", async () => {
+  const { project, hooksDir, macFile } = fixture();
+  const marker = path.join(project, "ran.txt");
+  const hook = (name) => ({ type: "command", command: `echo ${name} >> ran.txt` });
+  writeJSON(macFile, { hooks: { PreToolUse: [{ matcher: "Edit", hooks: [hook("old")] }] } });
+  settings(hooksDir, { off: [] });
+  const pi = load(hooksDir);
+  // The app publishes a disabled hook (off hash first, then the file) right after an event reads settings.json.
+  const nodeFs = createRequire(import.meta.url)("node:fs");
+  const real = nodeFs.readFileSync;
+  let published = false;
+  nodeFs.readFileSync = function (file, ...rest) {
+    const bytes = real.call(this, file, ...rest);
+    if (!published && String(file).endsWith("settings.json")) {
+      published = true;
+      const doc = { hooks: { PreToolUse: [{ matcher: "Edit", hooks: [hook("old"), hook("new")] }] } };
+      fs.writeFileSync(file, JSON.stringify({ version: 1, off: [hooks.hookHash(macFile, "PreToolUse", "Edit", hook("new"))] }));
+      writeJSON(macFile, doc);
+    }
+    return bytes;
+  };
+  try {
+    await pi.emit("tool_call", editCall(), context(project));
+  } finally {
+    nodeFs.readFileSync = real;
+  }
+  assert.ok(published, "the race was staged");
+  await pi.emit("tool_call", editCall(), context(project));
+  assert.deepEqual(fs.readFileSync(marker, "utf8").trim().split("\n"), ["old", "old"], "the new hook never ran");
+});
+
+test("hook_propose rechecks damage right before it runs the sample command", async () => {
+  const { project, hooksDir, macFile } = fixture();
+  const settingsFile = path.join(hooksDir, "settings.json");
+  const ran = path.join(project, "tested.txt");
+  // A PreToolUse Bash hook (the test run is the agent's own bash call) that damages settings.json while it is awaited.
+  writeJSON(macFile, { hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: `echo '{"off":null}' > ${JSON.stringify(settingsFile)}` }] }] } });
+  const tool = load(hooksDir).tools.get("hook_propose");
+  const ctx = context(project, async () => "Not now");
+  const result = await tool.execute("p0", { name: "Mark", event: "Stop", command: `echo x >> ${JSON.stringify(ran)}`, scope: "space" }, undefined, undefined, ctx);
+  assert.equal(result.isError, true);
+  assert.ok(result.content[0].text.includes(settingsFile), "names the damaged file");
+  assert.equal(fs.existsSync(ran), false, "the sample command never ran");
+  assert.equal(ctx.prompts.length, 0, "never asks");
+});
+
 test("hook_propose tests the command, asks with the proposal marker, then writes the file", async () => {
   const { project, hooksDir } = fixture();
   const spaceFile = path.join(project, ".shepherd/hooks.json");

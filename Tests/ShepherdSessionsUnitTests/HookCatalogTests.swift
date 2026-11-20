@@ -149,6 +149,8 @@ struct HookCatalogTests {
         #expect(try store.read() == expected)
         try f.write(store.url.path, #"{"version":1,"value":\#(legacy)}"#)
         #expect(try store.read() == expected)
+        try f.write(store.url.path, #"{"version":1,"value":\#(legacy),"extra":true}"#)
+        #expect(try store.read() == expected, "an unknown key in the envelope is tolerated, not read as a bare file")
     }
 
     @Test(.timeLimit(.minutes(1))) func writingKeepsTheLegacyShape() throws {
@@ -173,6 +175,9 @@ struct HookCatalogTests {
         ("readers is null", Data(#"{"version":1,"off":["h"],"readers":null}"#.utf8)),
         ("a reader switch is null", Data(#"{"version":1,"off":["h"],"readers":{"claude":null,"codex":false}}"#.utf8)),
         ("unsupported envelope version", Data(#"{"version":2,"value":{}}"#.utf8)),
+        // An envelope with an extra key must not read as a bare file, whose missing `off` is every hook on.
+        ("envelope with an extra key and a bad version", Data(#"{"version":2,"value":{"off":["h"]},"extra":1}"#.utf8)),
+        ("envelope with an extra key and no version", Data(#"{"value":{"off":["h"]},"extra":1}"#.utf8)),
         ("unreadable", nil),
     ]
 
@@ -411,6 +416,21 @@ struct HookFileWriterTests {
         let newHash = HookCanonical.hash(file: path, event: draft.event, matcher: draft.matcher, canonical: draft.handler.raw.canonical)
         #expect(throws: (any Error).self) { try writer.update(old, to: draft) }
         #expect(try f.catalog.settingsStore.read().off.contains(newHash), "off before it was ever published")
+    }
+
+    /// A hook added as off (Fleet's inbound publish) is off before the file publishes it: when the publish fails, it is already off.
+    @Test func addingADisabledHookRecordsItOffBeforePublishing() throws {
+        let f = try HookCatalogTests.Fixture(); defer { f.remove() }
+        let path = f.home + "/.shepherd/hooks.json"
+        try f.write(path, HookCatalogTests.preToolUse)
+        let writer = HookFileWriter(settings: f.catalog.settingsStore)
+        let folder = (path as NSString).deletingLastPathComponent
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder) // the publish can't write
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder) }
+        let draft = HookDraft(event: "Stop", handler: .command("./other.sh"))
+        let hash = HookCanonical.hash(file: path, event: draft.event, matcher: draft.matcher, canonical: draft.handler.raw.canonical)
+        #expect(throws: (any Error).self) { try writer.add(draft, to: path, on: false) }
+        #expect(try f.catalog.settingsStore.read().off.contains(hash), "off before it was ever published")
     }
 
     @Test func aNewFileAndItsFoldersAreCreatedAndTomlIsRefused() throws {
