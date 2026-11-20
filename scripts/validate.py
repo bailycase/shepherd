@@ -44,6 +44,11 @@ CASES = {
         {("compare-golden", None)}, "rename, restart and sidebar matched the golden", "local host",
         golden="Tests/Fixtures/seeded-thread-rename.json",
     ),
+    "c-state": Case(
+        "StateStoreTests/historicalFilesLoadAndRewriteAsRecorded",
+        {("compare-golden", None)}, "persisted file shapes matched the golden", "scratch files",
+        golden="Tests/Fixtures/c-state.json",
+    ),
 }
 
 
