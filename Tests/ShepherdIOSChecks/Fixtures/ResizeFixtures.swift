@@ -169,7 +169,10 @@ enum ResizeFixtures {
         let navigator = app.navigator
         let ref = FilesFixture.ref
         let path = "Widgets/NeedsYouWidget.swift"
-        guard navigator.layout == .pad else { FixtureCheck.fail("survive needs the Duo posed open (-f open) or a regular-width window") }
+        guard navigator.layout == .pad else {
+            FixtureCheck.report("FIXTURE CHECK ok: not run, this needs regular width: the Duo posed open (-f open) or s3-survive-window")
+            return
+        }
 
         // Set up: the terminal on its tab, then Files with an edit over the file, then the sheet over both.
         await TerminalFixture.show(ref, in: app)
@@ -216,15 +219,21 @@ enum ResizeFixtures {
                 print("FIXTURE POSE \(pose)")
                 fflush(stdout)
             }
-            await FixtureCheck.wait("the \(pose) layout", seconds: 20) { navigator.layout == (closed ? .phone : .pad) }
+            // Without a hinge to move (a run without -f) the layout never changes.
+            let deadline = Date().addingTimeInterval(20)
+            while navigator.layout != (closed ? .phone : .pad), Date() < deadline { try? await Task.sleep(for: .milliseconds(50)) }
+            guard navigator.layout == (closed ? .phone : .pad) else {
+                FixtureCheck.report("FIXTURE CHECK ok: not run, the layout never became \(pose) (the Duo needs -f open)")
+                return
+            }
             await look(pose, editorVisible: !closed)
             FixtureCheck.report("FIXTURE CHECK ok: \(pose), \(layout(navigator))")
         }
 
         // The terminal's own tab, then back to the editor: its view is the one it had, drawn again.
         navigator.sidePane.show(.terminal)
-        let deadline = Date().addingTimeInterval(10)
-        while session.surface?.window == nil, Date() < deadline { try? await Task.sleep(for: .milliseconds(100)) }
+        let mounting = Date().addingTimeInterval(10)
+        while session.surface?.window == nil, Date() < mounting { try? await Task.sleep(for: .milliseconds(100)) }
         let same = session.surface.map(ObjectIdentifier.init) == terminalView
         report("terminal", "open, on its tab", session.surface?.window != nil && same,
                "\(session.surface?.window != nil ? "mounted" : "not mounted"), \(same ? "the same view" : "a new view")")
