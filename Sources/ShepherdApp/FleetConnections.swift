@@ -21,6 +21,10 @@ final class FleetConnections {
     init(hosts: RemoteHostStore, fleet: FleetSettingsModel) {
         self.hosts = hosts
         self.fleet = fleet
+        hosts.onFleetTokenRefused = { [weak self] in
+            guard let self else { return }
+            self.snapshotChanged(self.fleet.snapshot)
+        }
     }
 
     /// The host's fleet changed: the connections follow it, one pass at a time.
@@ -64,14 +68,15 @@ final class FleetConnections {
         }
         defer { if members != hosts.fleetMembers { hosts.fleetMembers = members } }
         var owed = false
-        var token = hosts.pairedConnections.first { $0.config.ownToken }?.config.token
+        var token = hosts.pairedConnections.first { $0.config.ownToken && !$0.tokenRefused }?.config.token
         for peer in snapshot.peers where peer.kind == .mac {
             guard let host = peer.host, let port = peer.port else { continue }
             let held = connection(of: peer)
             // A connection the fleet didn't make is not the fleet's to follow.
             if let held, !held.config.fleetManaged { continue }
             if let held { members.insert(held.id) }
-            if let held, held.config.ownToken {
+            // A token the Mac refused (its device was revoked) is replaced as a missing one is; following it would never connect.
+            if let held, held.config.ownToken, !held.tokenRefused {
                 if held.config.host != host || held.config.port != port || held.config.name != peer.name {
                     hosts.follow(id: held.id, name: peer.name, host: host, port: port)
                 }

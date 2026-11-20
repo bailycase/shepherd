@@ -20,7 +20,6 @@ struct AppearanceSettings: View {
                         set: { vm.selectAppearance($0, systemColorScheme: systemColorScheme) }
                     ), options: AppearanceMode.allCases.map { ($0, $0.title) })
                 }
-                SettingsRow(title: "Theme") { SettingsValue(text: ThemeStore.shared.theme.name) }
             }
             SettingsGroup(title: "Size") {
                 SettingsRow(title: "Sidebar rows") {

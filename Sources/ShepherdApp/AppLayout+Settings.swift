@@ -1,13 +1,14 @@
 import SwiftUI
 import ShepherdUI
 
-/// Settings and the sheets: the in-window Settings surface (a 220pt nav beside one 620pt column;
-/// Spaces fills the area) and the size of every modal.
+/// Settings and the sheets: the Settings modal (a 220pt nav beside one 620pt column; Spaces
+/// fills the area) and the size of every modal.
 extension AppLayout {
     // Settings
-    /// The strip at the top of the nav and the page that holds the window controls and drags
-    /// the window.
-    static let settingsWindowStripHeight: CGFloat = 44
+    /// The modal (SettingsModal): 980 × 680, at least 32pt inside a smaller window.
+    static let settingsModalWidth: CGFloat = 980
+    static let settingsModalHeight: CGFloat = 680
+    static let settingsModalMargin: CGFloat = SH.Space.xxxl
     /// The page's one column, 56pt under the top.
     static let settingsColumnWidth: CGFloat = 620
     static let settingsTop: CGFloat = 56

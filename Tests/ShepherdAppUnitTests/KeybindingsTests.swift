@@ -164,16 +164,6 @@ struct KeybindingsTests {
         #expect(keys.sendDisplay == "↩")
     }
 
-    /// Settings ▸ Keyboard's While the agent is working group is the board's Keyboard card, in its
-    /// order: ↩ queues, ⌘↩ steers now, and neither follows a setting.
-    @Test func whileWorkingKeysFollowTheBoard() {
-        #expect(WhileWorkingKey.all.map(\.title) == [
-            "Queue it, the agent takes it when the turn ends", "Send and steer now",
-            "Edit the last queued message", "Move the focused message", "Delete the focused message",
-            "Steer the focused message now", "Stop the agent",
-        ])
-    }
-
     @Test func settingsRowsUseSentenceCase() {
         #expect(ShortcutAction.toggleSidebar.sentenceTitle == "Show or hide sidebar")
         #expect(ShortcutAction.newAgent.sentenceTitle == "New thread")

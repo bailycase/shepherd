@@ -267,7 +267,7 @@ private struct PiSkillListRow: View, Equatable {
 
 // MARK: A skill's detail
 
-/// An open skill: whether it is on and how the agent may use it, its version, its files, and Remove.
+/// An open skill: whether it is on and how the agent may use it, an update, its SKILL.md, and Remove.
 private struct SkillDetailPage: View {
     var vm: ShepherdViewModel
     var model: ClientSkills
@@ -289,11 +289,6 @@ private struct SkillDetailPage: View {
                                   options: [(.automatic, "Automatically"), (.slashOnly, SkillsPresentation.slashOption(skill.name))])
             }
             if let source = skill.source {
-                SettingsRow(title: "Source") { SettingsValue(text: source.repo + (source.path.isEmpty ? "" : "/" + source.path), mono: true) }
-                let installed = SkillsPresentation.installed(source)
-                SettingsRow(title: "Installed") {
-                    SettingsValue(text: installed.commit + (installed.date.map { " · " + $0 } ?? ""), mono: true)
-                }
                 if let update = skill.update {
                     let newer = SkillsPresentation.newer(update)
                     SettingsRow(title: "New \(newer.commit)", subtitle: newer.detail) {
@@ -306,10 +301,6 @@ private struct SkillDetailPage: View {
                                 .disabled(row.isUpdating)
                         }
                     }
-                }
-            } else {
-                SettingsRow(title: "Source", subtitle: SkillsPresentation.unmanagedNote(skill)) {
-                    SettingsValue(text: SkillsPresentation.source(skill))
                 }
             }
         }
@@ -325,10 +316,6 @@ private struct SkillDetailPage: View {
                             Button("Open") { vm.openSkillFile(skill.name) }.buttonStyle(.sh(.secondary, size: .s)).disabled(!here)
                             Button("Show folder") { vm.showSkillFolder(skill.name) }.buttonStyle(.sh(.secondary, size: .s)).disabled(!here)
                         }
-                    }
-                } else {
-                    SettingsRow(title: entry.isDirectory ? entry.name + "/" : entry.name, mono: true) {
-                        SettingsValue(text: entry.isDirectory ? "\(entry.fileCount) files" : "")
                     }
                 }
             }

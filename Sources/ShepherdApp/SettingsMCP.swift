@@ -66,9 +66,6 @@ struct MCPSettings<Extras: View>: View {
                         }
                     }
                     SettingsGroup(title: "How the agent uses them", trailing: store.configPath) {
-                        SettingsRow(title: "In every prompt", subtitle: store.budget.note) {
-                            SettingsValue(text: store.budget.tokens)
-                        }
                         SettingsRow(title: "Also use a repo’s .mcp.json", subtitle: "Off: only these servers, in every repo") {
                             SettingsSwitch(label: "Also use a repo’s .mcp.json", isOn: projectConfig)
                         }
@@ -151,7 +148,7 @@ struct MCPSettings<Extras: View>: View {
         return parts.joined(separator: " · ")
     }
 
-    /// A server's page: on, kind, sign-in, tool exposure, its config, and Remove.
+    /// A server's page: on, sign-in, tool exposure, its config, and Remove.
     @ViewBuilder private func serverPage(_ row: MCPServerRowModel) -> some View {
         let detail = store.details[row.name]
         let actions = detailActions(row.name)
@@ -159,9 +156,6 @@ struct MCPSettings<Extras: View>: View {
         SettingsGroup(title: "") {
             SettingsRow(title: "On") {
                 SettingsSwitch(label: "On", isOn: Binding(get: { row.enabled }, set: { rowActions.toggle($0) }))
-            }
-            SettingsRow(title: "Kind") {
-                SettingsValue(text: (row.kind == .remote ? "Remote · " : "Local · ") + row.endpoint, mono: true)
             }
             if let detail {
                 signInRow(detail, actions: actions)
@@ -198,29 +192,19 @@ struct MCPSettings<Extras: View>: View {
 
     @ViewBuilder private func signInRow(_ detail: MCPServerDetailModel, actions: MCPServerDetail.Actions) -> some View {
         switch detail.signIn {
-        case .signedIn(let account, let scopes, let note, let title):
+        case .signedIn(let account, _, let note, let title):
             SettingsRow(title: "Sign-in", subtitle: [title, account, note].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "), dot: .on) {
                 HStack(spacing: SH.Space.s) {
                     Button("Sign in again", action: actions.signIn).buttonStyle(.sh(.secondary, size: .s))
                     Button("Sign out", action: actions.signOut).buttonStyle(.sh(.secondary, size: .s))
                 }
             }
-            if !scopes.isEmpty {
-                SettingsRow(title: "OAuth scopes") { SettingsValue(text: scopes.joined(separator: " "), mono: true) }
-            }
         case .needsSignIn(let title, let note, let again):
             SettingsRow(title: "Sign-in", subtitle: [title, note].filter { !$0.isEmpty }.joined(separator: " · "), dot: .warn) {
                 Button(again ? "Sign in again" : "Sign in", action: actions.signIn).buttonStyle(.sh(.primary, size: .s))
             }
-        case .header(let name, let variable):
-            SettingsRow(title: "Sign-in", subtitle: name) { SettingsValue(text: "$" + variable, mono: true) }
-        case .secrets(let names, let missing):
-            SettingsRow(title: "Sign-in", subtitle: missing.isEmpty ? nil : "Missing: " + missing.joined(separator: ", ")) {
-                SettingsValue(text: names.joined(separator: ", "), mono: true)
-            }
-        case .unverified(let text):
-            SettingsRow(title: "Sign-in", subtitle: text) { EmptyView() }
-        case .none:
+        // A header, secrets or an unverified sign-in: nothing to do here.
+        case .header, .secrets, .unverified, .none:
             EmptyView()
         }
     }

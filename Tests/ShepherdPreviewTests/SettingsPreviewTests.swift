@@ -35,14 +35,14 @@ struct SettingsPreviewTests {
         }
     }
 
-    /// The user's full-width Settings requirement, rendered through the real window root.
+    /// Settings as a modal over the window (SettingsModal), rendered through the real window root.
     @Test(arguments: SettingsSection.allCases)
-    func settingsFullWidth(section: SettingsSection) async throws {
+    func settingsModal(section: SettingsSection) async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
         workspace.vm.settingsSection = section
         workspace.vm.showSettings = true
-        try await Preview.renderMatrix("settings-full-width-\(section.rawValue)", size: CGSize(width: 2400, height: 1100)) {
+        try await Preview.renderMatrix("settings-modal-\(section.rawValue)", size: CGSize(width: 1440, height: 900)) {
             RootView(vm: workspace.vm)
         }
     }
