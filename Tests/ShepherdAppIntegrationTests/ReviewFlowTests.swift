@@ -88,7 +88,7 @@ struct ReviewFlowTests {
         }
         let sheet = try #require(window.window.attachedSheet?.contentView)
         try await evidence.check("commit-sheet-files", expected: "Commit sheet offers file.txt", capture: { sheet }) {
-            func labels() -> [String] { AccessibilityNode.all(under: sheet).compactMap(\.label) }
+            @MainActor func labels() -> [String] { AccessibilityNode.all(under: sheet).compactMap(\.label) }
             do {
                 try await eventuallyOnMain("file.txt in the Commit sheet") {
                     labels().contains { $0 == "file.txt" || $0.hasPrefix("file.txt, ") }
