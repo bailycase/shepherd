@@ -1,9 +1,9 @@
 """Guards that keep AGENTS.md and DESIGN.md short, and the docs they point at in one piece.
 
 AGENTS.md is loaded into every agent thread and DESIGN.md is read before every UI change, so
-both are a short sheet of rules and pointers. The few reference docs live in docs/; there are no
-per-feature or per-surface docs, since the code is the spec. These tests fail when either file
-regrows, or when a link or an anchor in the kept docs breaks.
+both are a short sheet of rules and pointers. The docs guard keeps the reference docs, saved
+design boards, and the temporary plans in KEPT_PLANS. These tests fail when either rules
+file gets too long, a kept link or anchor breaks, or another Markdown file appears in docs/.
 
 Run: python3 -m unittest discover -s Tests/Release -v
 """
@@ -20,6 +20,13 @@ DESIGN_MAX_LINES = 280
 # Reference docs AGENTS.md points at, each with a one-line "Read when" header.
 REFERENCE_DOCS = ["build-and-run", "environment", "testing", "remote-protocol", "rules",
                   "releases", "gotchas", "pi-engine", "context-budget"]
+
+# Plans kept in docs/plans, one explicit entry each (no glob). Retire the file and its entry together
+# with its plan.
+VALIDATION_PLAN = "docs/plans/validation-tools.md"
+FOUNDATION_AUDIT_PLAN = "docs/plans/foundation-audit.md"
+PARITY_PLAN = "docs/plans/platform-parity.md"
+KEPT_PLANS = [VALIDATION_PLAN, FOUNDATION_AUDIT_PLAN, PARITY_PLAN]
 
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
@@ -107,17 +114,19 @@ class LinkTests(unittest.TestCase):
         files = [ROOT / n for n in ("AGENTS.md", "DESIGN.md", "ARCHITECTURE.md", "README.md", "CONTRIBUTING.md", "SECURITY.md")]
         files += [ROOT / "docs" / f"{n}.md" for n in REFERENCE_DOCS]
         files.append(ROOT / "docs" / "design" / "boards" / "README.md")
+        files += [ROOT / plan for plan in KEPT_PLANS]
         problems = []
         for f in files:
             problems += broken_links(f)
         self.assertEqual(problems, [])
 
-    def test_docs_holds_only_the_reference_docs_and_the_saved_boards(self):
+    def test_docs_holds_only_the_kept_docs(self):
         docs = ROOT / "docs"
+        allowed_nested = {docs / "design" / "boards" / "README.md", *(ROOT / plan for plan in KEPT_PLANS)}
         extra = sorted(str(p.relative_to(docs)) for p in docs.rglob("*.md")
                        if p.parent == docs and p.stem not in REFERENCE_DOCS
-                       or p.parent != docs and p != docs / "design" / "boards" / "README.md")
-        self.assertEqual(extra, [], "docs/ is only the reference docs: put the detail in code and tests")
+                       or p.parent != docs and p not in allowed_nested)
+        self.assertEqual(extra, [], "docs/ is only for kept reference docs, saved boards, and the plans in KEPT_PLANS")
 
 
 if __name__ == "__main__":
