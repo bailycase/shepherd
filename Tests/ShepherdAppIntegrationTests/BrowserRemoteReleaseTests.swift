@@ -20,7 +20,7 @@ struct BrowserRemoteReleaseTests {
         let port = Int(server.port)
         server.stop()
         let url = try #require(URL(string: "http://localhost:\(port)/"))
-        #expect(page.forward(url) == nil)
+        #expect(page.forward(url, tab: UUID()) == nil)
 
         // Hold the socket's close until the page's release is waiting for it; the gate opens when the
         // waiter shows, or when the test cancels it because release did not wait.
@@ -31,7 +31,7 @@ struct BrowserRemoteReleaseTests {
         }
         page.release()
         let again = BrowserRemote(ref: ref, hosts: nil, ports: forwarder)
-        let refusal = again.forward(url)
+        let refusal = again.forward(url, tab: UUID())
         gate.cancel()
         await gate.value
         #expect(refusal == nil, "the old socket was closed by the time the page was gone")

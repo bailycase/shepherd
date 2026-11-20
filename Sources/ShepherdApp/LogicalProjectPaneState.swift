@@ -26,19 +26,6 @@ struct AssignProjectTaskDraft: Identifiable, Equatable {
     }
 }
 
-extension ProjectPagePresentation {
-    /// The rows the pane shows: the person's text filter over title, question and detail, then the chosen groups.
-    func visibleRows(query: String, groups: Set<ProjectTaskGroup>) -> [ProjectTaskRow] {
-        let words = query.lowercased().split(separator: " ").map(String.init)
-        return rows.filter { row in
-            (groups.isEmpty || groups.contains(row.group))
-                && words.allSatisfy { word in
-                    [row.title, row.detail ?? "", row.lead ?? ""].contains { $0.lowercased().contains(word) }
-                }
-        }
-    }
-}
-
 /// One line of the pane's task list, flattened so the list is one lazy stack: a group's header, or a task under an open one.
 enum ProjectPaneItem: Identifiable, Equatable {
     case header(ProjectTaskGroup, count: Int, open: Bool)
@@ -60,11 +47,9 @@ enum ProjectPaneItem: Identifiable, Equatable {
 extension ProjectPagePresentation {
     /// The visible rows in group order, each non-empty group led by its header; a folded group keeps only its header.
     func paneItems(query: String, groups: Set<ProjectTaskGroup>, folded: Set<ProjectTaskGroup>) -> [ProjectPaneItem] {
-        let grouped = Dictionary(grouping: visibleRows(query: query, groups: groups), by: \.group)
-        return ProjectTaskGroup.allCases.flatMap { group -> [ProjectPaneItem] in
-            guard let rows = grouped[group], !rows.isEmpty else { return [] }
-            let open = !folded.contains(group)
-            return [.header(group, count: rows.count, open: open)] + (open ? rows.map(ProjectPaneItem.row) : [])
+        ProjectTaskHistory(rows: rows, query: query, groups: groups).sections.flatMap { section -> [ProjectPaneItem] in
+            let open = !folded.contains(section.group)
+            return [.header(section.group, count: section.rows.count, open: open)] + (open ? section.rows.map(ProjectPaneItem.row) : [])
         }
     }
 }
