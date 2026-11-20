@@ -66,8 +66,8 @@ enum HostSettingsMapping {
 
     static func settings(from app: AppSettings, shepherdVersion: String?, piVersion: String?,
                          slashCommands: [NativeCommand] = []) -> HostSettings {
-        // The Agents and Worktrees groups come from the host's store (`AppSettings.hostAgents`, `hostWorktrees`); the rest still from `app`.
-        let agents = app.hostAgents, worktrees = app.hostWorktrees
+        // The Agents, Worktrees and Experiments groups come from the host's store (`AppSettings.hostAgents`, `hostWorktrees`, `hostExperiments`); the rest still from `app`.
+        let agents = app.hostAgents, worktrees = app.hostWorktrees, experiments = app.hostExperiments
         return HostSettings(
             shepherdVersion: shepherdVersion,
             piVersion: piVersion,
@@ -78,16 +78,16 @@ enum HostSettingsMapping {
             visionModel: agents.visionModel.isEmpty ? nil : agents.visionModel,
             compactAtPercent: agents.compactAtPercent,
             queueDelivery: agents.queueDelivery,
-            goalsEnabled: app.goalsEnabled,
-            projectsEnabled: app.projectsEnabled,
+            goalsEnabled: experiments.goals,
+            projectsEnabled: experiments.projects,
             worktreeBase: worktrees.baseMode == .head ? .head : .fresh,
             fetchBeforeCreating: worktrees.fetchBeforeCreate,
             generatePRDescriptions: worktrees.generatePRDescription,
             closeOnMerge: worktrees.closeOnMerge,
-            designToolEnabled: app.designToolEnabled,
+            designToolEnabled: experiments.designTool,
             threadsStartThreads: agents.threadsStartThreads,
             subThreadPlace: agents.subThreadPlace,
-            computerUseEnabled: app.computerUseEnabled,
+            computerUseEnabled: experiments.computerUse,
             subagentDefaults: HostSettings.SubagentDefaults(
                 concurrency: app.childConcurrency,
                 model: app.childModel.isEmpty ? nil : app.childModel,
