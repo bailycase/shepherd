@@ -206,6 +206,28 @@ struct FleetContentUnitTests {
         #expect(receiver.materializer.scan(name: "Mac studio").isEmpty)
     }
 
+    @Test func aDamagedImportMarkerDoesNotSyncExtensionDeletions() throws {
+        let receiver = try Receiver()
+        defer { try? FileManager.default.removeItem(at: receiver.dir) }
+        let file = receiver.file("paths/acme/index.ts")
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("export default 1\n".utf8).write(to: file)
+        try receiver.imports.applySyncedExtension(destination: "your-extensions/paths/acme", name: "acme", entries: ["index.ts"], on: true)
+        let meta = FleetUnit.extensionMeta("paths/acme")
+        try #require(receiver.materializer.scan(name: "Mac studio").contains { $0.unit == meta })
+
+        let url = receiver.imports.stateURL
+        let original = try Data(contentsOf: url)
+        var damaged = try #require(JSONSerialization.jsonObject(with: original) as? [String: Any])
+        damaged["digests"] = "not a dictionary"
+        try JSONSerialization.data(withJSONObject: damaged).write(to: url)
+        #expect(receiver.materializer.scan(name: "Mac studio").isEmpty)
+
+        try original.write(to: url)
+        try receiver.imports.removeSyncedExtension(destination: "your-extensions/paths/acme")
+        #expect(receiver.materializer.scan(name: "Mac studio").contains { $0.unit == meta && $0.change == .deletion })
+    }
+
     @Test func anExtensionThatIsOnIsTakenOutWhileASyncRewritesItAndPutBackWhole() throws {
         let receiver = try Receiver()
         defer { try? FileManager.default.removeItem(at: receiver.dir) }

@@ -387,6 +387,8 @@ final class FleetExtensionsSource: FleetUnitSource {
     func attach(fleetWinners: @escaping (String) -> [String: String]) { self.fleetWinners = fleetWinners }
     func storesBlob(_ unit: String) -> Bool { FleetUnit.kind(of: unit) == "extension" }
 
+    // An unreadable list of imports is not a deletion of the extensions it held.
+    var isReady: Bool { !imports.hasDamagedState }
     var watchedFiles: [URL] { [imports.stateURL] }
     var watchedTrees: [URL] { [root] + links().map(\.source) }
 
