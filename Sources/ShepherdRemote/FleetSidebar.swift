@@ -209,6 +209,29 @@ public struct FleetSidebarState: Equatable, Sendable {
         return seen[ref] != record.generation
     }
 
+    /// The same eligible threads regardless of whether they are shown under Pinned.
+    public func supervisionQueues(_ model: FleetModel) -> SupervisionQueues<FleetRef> {
+        let groups = groups(model)
+        let connected = Set(model.hosts.filter(\.phase.isConnected).map(\.id))
+        let pinnedAttention = groups.pinned.compactMap { row -> FleetAttention? in
+            if case .attention(let item) = row { return item }
+            return nil
+        }
+        let pinnedDone = groups.pinned.compactMap { row -> FleetThreadRow? in
+            guard case .thread(let thread) = row, !thread.offline, thread.status == .done,
+                  unseenCompletion(thread.ref) else { return nil }
+            return thread
+        }
+        return SupervisionQueues(
+            blocked: (groups.needsYou + pinnedAttention).compactMap {
+                guard $0.origin != .project, connected.contains($0.ref.host) else { return nil }
+                return .init($0.ref, since: $0.since)
+            },
+            unseenDone: (groups.done + pinnedDone).map {
+                .init($0.ref, since: $0.completedAt ?? $0.lastMoved, changedFiles: $0.checkoutChangedFiles)
+            })
+    }
+
     /// Every thread in one group. Automation runs stay with the automations (`FleetModel` never makes them thread rows), a
     /// design is never pinned, and a thread on a host that is offline is never Working or Done. A triggered automation's
     /// run threads (`FleetModel.runOrigins`) fold into its run group unless pinned; `unread` are the runs whose thread

@@ -123,3 +123,51 @@ struct FleetOverviewTests {
         #expect(model.recents.map(\.failed) == [failed])
     }
 }
+
+@Suite("Fleet spend today")
+struct FleetSpendTodayTests {
+    static let now = Date(timeIntervalSince1970: 1_778_500_800) // 2026-05-11 12:00 UTC
+
+    private func hosts() -> [FleetHost] {
+        let day = "2026-05-11"
+        var one = FleetTests.agent("one", .working)
+        one.spend = AgentSpend(tokens: 5_000, cost: 2, day: day, zone: "UTC", today: [ModelSpend(model: "a/one", tokens: 1_000, cost: 0.5)])
+        var two = FleetTests.agent("two", .done)
+        two.spend = AgentSpend(tokens: 9, cost: nil, day: day, zone: "UTC", today: [ModelSpend(model: "a/one", tokens: 2_000, cost: nil)])
+        var stale = FleetTests.agent("stale", .idle)
+        stale.spend = AgentSpend(tokens: 9, cost: 9, day: "2001-01-01", zone: "UTC", today: [ModelSpend(model: "a/one", tokens: 7_000, cost: 7)])
+        return [
+            FleetTests.host(FleetTests.studio, "Studio", agents: [one, stale]),
+            FleetTests.host(UUID(), "Mini", agents: [two, FleetTests.agent("none", .idle)]),
+        ]
+    }
+
+    @Test func homeAddsEveryHostsThreadsForToday() {
+        let model = FleetModel(hosts: hosts(), digests: [:], now: Self.now)
+        #expect(model.spendToday?.total == "est. $0.50 · 3k tok")
+        #expect(model.spendToday?.rows.map(\.name) == ["one"])
+        #expect(FleetModel(hosts: [], digests: [:], now: Self.now).spendToday == nil)
+    }
+
+    @Test func theTotalIsGoneOnceTheDayChangesWithNoNewState() {
+        let tomorrow = Self.now.addingTimeInterval(86_400)
+        #expect(FleetModel(hosts: hosts(), digests: [:], now: Self.now).spendToday != nil)
+        #expect(FleetModel(hosts: hosts(), digests: [:], now: tomorrow).spendToday == nil)
+    }
+
+    @Test func aThreadsRowSaysWhatItSpentAfterItsLine() {
+        var agent = FleetTests.agent("one", .done)
+        agent.spend = AgentSpend(tokens: 3_100_000, cost: 4.2, day: "2026-05-11")
+        let model = FleetModel(hosts: [FleetTests.host(FleetTests.studio, "Studio", agents: [agent, FleetTests.agent("none", .done)])], digests: [:], now: Self.now)
+        let rows = model.recents
+        let spent = rows.first { $0.ref.agent.rawValue == "one" }
+        let unspent = rows.first { $0.ref.agent.rawValue == "none" }
+        #expect(spent?.spend == "est. $4.20 · 3.1M tok")
+        #expect(spent?.saying(spendAfter: "done · acme-web") == "done · acme-web · est. $4.20 · 3.1M tok")
+        #expect(unspent != nil && unspent?.spend == nil)
+        #expect(unspent?.saying(spendAfter: "done") == "done")
+        var running = FleetOverviewTests.row("one", activity: "swift build", host: "Studio")
+        running.spend = "12.4k tok"
+        #expect(running.now == "swift build · Studio", "a running row's spend is its own line, not part of this one")
+    }
+}

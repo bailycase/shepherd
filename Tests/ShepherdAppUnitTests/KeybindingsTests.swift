@@ -13,6 +13,7 @@ struct KeybindingsTests {
         (ShortcutAction.newAgent, "⌘N"), (.newSpace, "⇧⌘N"),
         (.renameAgent, "⌘R"), (.deleteAgent, "⇧⌘W"), (.commandPalette, "⌘K"),
         (.nextAgent, "⌘↓"), (.previousAgent, "⌘↑"),
+        (.nextNeedingYou, "⇧⌘↓"), (.reviewNext, "⌥⇧⌘R"),
         (.newTerminal, "⌘D"), (.closeTerminal, "⌘W"),
         (.nextTerminal, "⇧⌘]"), (.previousTerminal, "⇧⌘["),
         (.toggleTerminal, "⌘J"), (.maximizeTerminal, "⇧⌘↩"),
@@ -37,6 +38,14 @@ struct KeybindingsTests {
                 #expect(other.defaultChord != action.defaultChord, "\(action) and \(other)")
             }
         }
+    }
+
+    @Test(arguments: [ShortcutAction.nextNeedingYou, .reviewNext])
+    func supervisionDefaultDoesNotCollideWithAnyOtherAction(_ action: ShortcutAction) {
+        let keys = KeybindingsStore(store: Fixture.defaults())
+        #expect(keys.validate(action.defaultChord, for: action) == nil)
+        #expect(action.reachesPastTerminals)
+        #expect(ShortcutAction.allCases.filter { $0.defaultChord == action.defaultChord } == [action])
     }
 
     /// The canvas's ⌘↩ (Implement in a thread…) and the composer's (send the other way) never
@@ -451,6 +460,9 @@ struct NavigationKeyTests {
         let down = KeyChord(key: "down", command: true)
         #expect(ShepherdViewModel.draftTakesVerticalChord(up, draft: "first\nsecond"))
         #expect(ShepherdViewModel.draftTakesVerticalChord(down, draft: "first\nsecond"))
+        let next = ShortcutAction.nextNeedingYou.defaultChord
+        #expect(ShepherdViewModel.draftTakesVerticalChord(next, draft: "first\nsecond"))
+        #expect(!ShepherdViewModel.draftTakesVerticalChord(next, draft: "one line"))
         #expect(!ShepherdViewModel.draftTakesVerticalChord(up, draft: "one line"))
         #expect(!ShepherdViewModel.draftTakesVerticalChord(up, draft: ""))
         #expect(!ShepherdViewModel.draftTakesVerticalChord(KeyChord(key: "up", command: true, option: true), draft: "a\nb"))

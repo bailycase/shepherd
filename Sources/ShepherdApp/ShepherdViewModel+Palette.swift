@@ -23,6 +23,7 @@ extension ShepherdViewModel {
         items.append(PaletteItem(id: "action.newAgent", kind: .action("newAgent"), section: .commands,
                                  title: "New thread", subtitle: newThreadPlaceName.map(Self.newThreadContext),
                                  shortcut: keys.display(.newAgent), icon: "plus"))
+        items += supervisionPaletteItems(keys: keys)
         // The New thread page's project: what the sidebar's space rows offered.
         if shownDestination == .newThread, let place = newThread.place, place.host == nil,
            let space = state.spaces.first(where: { $0.id == place.space }) {
@@ -371,6 +372,8 @@ extension ShepherdViewModel {
                 mcpOpenServer = nil
                 settingsSection = .tools
                 showSettings = true
+            case "nextNeedingYou": openNextNeedingYou()
+            case "reviewNext": openReviewNext()
             case "reviewDiff": openUserReview()
             case "reviewPR": openUserPRReview()
             case "toggleTerminal": toggleTerminalPanel()

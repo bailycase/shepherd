@@ -28,6 +28,7 @@ extension SessionServer {
         for attempt in 0..<8 {
             let staged = try await enqueue { () -> (ShepherdState, UInt64, UInt64, URL, Project, ShepherdState) in
                 try self.requireStarted()
+                try self.store.requireWritable()
                 guard expectedEpoch == nil || expectedEpoch == self.logicalProjectEpoch else { throw LogicalProjectsError("conflict", "Project owner restarted.") }
                 guard self.logicalProjectSaveCount < 8, !self.projectFolderOperation else {
                     throw LogicalProjectsError("project_busy", "Project storage is busy. Retry with the same operation identity.")

@@ -443,7 +443,10 @@ public final class NativeThreadStore {
     }
 
     @ObservationIgnored private var request: Request? {
-        didSet { publishLive() }
+        didSet {
+            isLive = request != nil
+            publishLive()
+        }
     }
     /// Told when the thread starts or stops wanting revisions (`wantsRevisions`): its poll loop starts or ends,
     /// or rests (`rest`), so the host pushes revisions only for threads on screen that can be seen.
@@ -454,7 +457,7 @@ public final class NativeThreadStore {
     /// (`DesignViewRecord`), sent with it where the host takes one (`designContext`).
     @ObservationIgnored public var designContext: (() -> DesignViewRecord?)?
     /// The poll loop runs: the thread is on screen. A resting loop (`rest`) still runs.
-    public var isLive: Bool { request != nil }
+    public private(set) var isLive = false
     /// The thread is on screen and its loop pulls: it wants the host's pushed revisions. False once the loop ends,
     /// and while it rests.
     public var wantsRevisions: Bool { request != nil && !resting }

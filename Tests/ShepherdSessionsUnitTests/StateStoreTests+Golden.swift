@@ -6,9 +6,14 @@ import Testing
 @testable import ShepherdSessions
 
 extension StateStoreTests {
+    // Keep the reference golden frozen. C-RECOVER replaces only its known damaged rows.
+    private static let damagedRows: Set<String> = [
+        "workspace-invalid-split", "workspace-dangling-tab", "workspace-unreadable-agent", "workspace-truncated",
+    ]
+
     @Test func historicalFilesLoadAndRewriteAsRecorded() async throws {
         try await ValidationGolden.check("c-state.json", from: #filePath,
-                                         completion: "persisted file shapes matched the golden") { golden in
+                                         completion: "persisted file shapes matched the golden", excluding: Self.damagedRows) { golden in
             try await Self.observeFiles(seed: golden.seed, observe: golden.observe)
         }
     }
@@ -19,6 +24,7 @@ extension StateStoreTests {
         let now = Date(timeIntervalSince1970: try #require(seed["writeTime"] as? Double))
         for file in files {
             let step = try #require(file["case"] as? String)
+            guard !damagedRows.contains(step) else { continue }
             let path = try #require(file["file"] as? String)
             let dir = try makeScratchDirectory()
             defer { try? FileManager.default.removeItem(at: dir) }
@@ -54,7 +60,8 @@ extension StateStoreTests {
         switch path {
         case "state.json":
             let store = StateStore(url: url)
-            let backups = try StateStoreTests().quarantined(in: root)
+            let backups = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+                .filter { $0.lastPathComponent.hasPrefix("state.json.") }
             loaded = try json(store.state)
             if step == "workspace-lenient-values" {
                 // The encoder omits the standard tier, so record its decoded value separately.

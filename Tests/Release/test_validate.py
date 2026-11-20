@@ -26,6 +26,7 @@ class ValidateTests(unittest.TestCase):
         test = {"changes-review": "ReviewFlowTests/opensCommitSheetWithoutChangingGit",
                 "seeded-thread-rename": "ThreadRenameTests/seededThreadRenameSurvivesHostRestart",
                 "c-state": "StateStoreTests/historicalFilesLoadAndRewriteAsRecorded",
+                "c-auth": "RefusalCorpusTests/refusalCorpusMatchesGolden",
                 "c-settings": "SettingsWritePathTests/everySettingsWritePathMatchesTheGolden"}[case]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
@@ -146,6 +147,18 @@ class ValidateTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(result["status"], "passed")
         self.assertIn("PASS mac/seeded-thread-rename", output)
+
+    def test_refusal_corpus_requires_the_golden_comparison_and_completion(self):
+        matched = "refusal corpus matched the golden"
+        record = {"status": "passed", "expected": matched, "actual": matched, "evidence": []}
+        complete = {**record, "step": "complete"}
+        code, _, result = self.run_case([complete], case="c-auth")
+        self.assertEqual(code, 1)
+        self.assertEqual(result["missing_steps"], [["compare-golden", None]])
+        code, output, result = self.run_case([{**record, "step": "compare-golden"}, complete], case="c-auth")
+        self.assertEqual(code, 0)
+        self.assertEqual(result["status"], "passed")
+        self.assertIn("PASS mac/c-auth", output)
 
     def test_settings_write_path_checks_require_the_golden_comparison_and_completion(self):
         matched = "every settings write path matched the golden"

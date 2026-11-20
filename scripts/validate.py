@@ -49,6 +49,12 @@ CASES = {
         golden="Tests/Fixtures/c-state.json",
         scenario="Tests/ShepherdSessionsUnitTests/StateStoreTests+Golden.swift",
     ),
+    "c-auth": Case(
+        "RefusalCorpusTests/refusalCorpusMatchesGolden",
+        {("compare-golden", None)}, "refusal corpus matched the golden", "host sockets",
+        golden="Tests/Fixtures/c-auth.json",
+        scenario="Tests/ShepherdAppIntegrationTests/RefusalCorpusTests.swift",
+    ),
     "c-settings": Case(
         "SettingsWritePathTests/everySettingsWritePathMatchesTheGolden",
         {("compare-golden", None)}, "every settings write path matched the golden", "local host",
