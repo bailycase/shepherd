@@ -296,7 +296,7 @@ struct DesignGitTests {
                                                        baseRevision: nil)
         _ = try await coworker.server.commitDesign(opened.id, message: "Clarify phone step labels", push: true)
         let ours = try await author.server.designBoard(design.id, path: phone).source
-        let mine = ours.replacingOccurrences(of: "</x-dc>", with: "<!-- Baily --></x-dc>")
+        let mine = ours.replacingOccurrences(of: "</x-dc>", with: "<!-- Alex --></x-dc>")
         _ = try await author.server.writeDesignBoard(design.id, path: phone, source: mine, baseRevision: nil)
         _ = try await author.server.commitDesign(design.id, message: "Show absolute counts in the checkout funnel", push: false)
 
@@ -326,7 +326,7 @@ struct DesignGitTests {
         _ = try await coworker.server.writeDesignBoard(opened.id, path: phone, source: base.replacingOccurrences(of: "</x-dc>", with: "<!-- Sam --></x-dc>"),
                                                        baseRevision: nil)
         _ = try await coworker.server.commitDesign(opened.id, message: "Clarify phone step labels", push: true)
-        _ = try await author.server.writeDesignBoard(design.id, path: phone, source: base.replacingOccurrences(of: "</x-dc>", with: "<!-- Baily --></x-dc>"),
+        _ = try await author.server.writeDesignBoard(design.id, path: phone, source: base.replacingOccurrences(of: "</x-dc>", with: "<!-- Alex --></x-dc>"),
                                                      baseRevision: nil)
         _ = try await author.server.commitDesign(design.id, message: "Counts", push: false)
         guard case .needsMerge(let merge) = try await author.server.pullDesign(design.id) else { Issue.record("no merge"); return }
@@ -338,7 +338,7 @@ struct DesignGitTests {
         #expect(DesignGit.checkMergeCopy(copy).contains { $0.contains("conflict markers") })
 
         // Resolved by hand (as the agent would): both kept.
-        let resolved = base.replacingOccurrences(of: "</x-dc>", with: "<!-- Baily --><!-- Sam --></x-dc>")
+        let resolved = base.replacingOccurrences(of: "</x-dc>", with: "<!-- Alex --><!-- Sam --></x-dc>")
         try Data(resolved.utf8).write(to: copy.appendingPathComponent("project/A-phone.dc.html"))
         #expect(DesignGit.checkMergeCopy(copy).isEmpty)
         await author.server.markDesignMergeReadyForTests(design.id)
