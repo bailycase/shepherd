@@ -43,9 +43,10 @@ public struct MessageSpec: Hashable, Sendable {
         self.requires = requires
     }
 
-    /// A kind without a row is served like any authenticated request; a test requires a row for every kind.
-    public static func spec(for kind: RemoteRequest.Kind) -> MessageSpec {
-        table[kind] ?? MessageSpec(.authenticated)
+    /// A kind without a row has no spec: the host refuses it and never routes it (fail closed). A test
+    /// requires a row for every kind; `rows` is a parameter only so a test can look up a missing row.
+    public static func spec(for kind: RemoteRequest.Kind, in rows: [RemoteRequest.Kind: MessageSpec]? = nil) -> MessageSpec? {
+        (rows ?? table)[kind]
     }
 
     static let table: [RemoteRequest.Kind: MessageSpec] = [

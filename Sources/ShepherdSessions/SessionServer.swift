@@ -3228,7 +3228,14 @@ public final class SessionServer: @unchecked Sendable {
             }
             return .close(reason: "undecodable request before hello")
         }
-        let spec = MessageSpec.spec(for: request.kind)
+        // A kind with no row is never routed: refused `unsupported` like an unknown kind (`unauthenticated` before hello).
+        guard let spec = MessageSpec.spec(for: request.kind) else {
+            ShepherdLog.warning("remote request kind without a MessageSpec row on fd \(client.fd)")
+            if client.authenticated, let id = (try? NDJSON.decode(RemoteRequestID.self, from: line))?.id {
+                return .refuse(.error(id: id, code: "unsupported", message: "The host does not take this request."), final: false)
+            }
+            return .refuse(.error(id: 0, code: "unauthenticated", message: "hello required"), final: true)
+        }
 
         guard client.authenticated else {
             switch (spec.access, request) {

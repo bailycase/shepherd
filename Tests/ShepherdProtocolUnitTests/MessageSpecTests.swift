@@ -9,6 +9,12 @@ struct MessageSpecTests {
         }
     }
 
+    /// A kind with no row has no spec, so the host refuses it instead of serving it as `authenticated`.
+    @Test func missingRowFailsClosed() {
+        #expect(MessageSpec.spec(for: .stateFetch, in: [:]) == nil)
+        #expect(MessageSpec.spec(for: .stateFetch) != nil)
+    }
+
     /// `kind` is what the codec writes as `type`, so a spec row reaches the request it names.
     @Test func kindIsTheWireType() throws {
         var seen: Set<RemoteRequest.Kind> = []
@@ -21,7 +27,7 @@ struct MessageSpecTests {
     }
 
     @Test func authorizationClassOfTheRefusalFamilies() {
-        func access(_ kind: RemoteRequest.Kind) -> MessageSpec.Access { MessageSpec.spec(for: kind).access }
+        func access(_ kind: RemoteRequest.Kind) -> MessageSpec.Access? { MessageSpec.spec(for: kind)?.access }
         for kind in [RemoteRequest.Kind.fleetIdentify, .fleetPair, .fleetPairDevice] { #expect(access(kind) == .beforeHello) }
         #expect(access(.hello) == .hello)
         #expect(access(.fleetPeerAnswer) == .fleetPeer(refusal: "Only a Mac in the fleet answers a call."))
@@ -37,7 +43,7 @@ struct MessageSpecTests {
     /// The host's own capability refusals today: push, thread subscribe, fleet digest, and logical projects.
     /// Host settings are not here: the host does not check `HostSettingChange.capability`.
     @Test func capabilityRequirementsOfTheRefusalFamilies() {
-        func requirement(_ kind: RemoteRequest.Kind) -> MessageSpec.Requirement? { MessageSpec.spec(for: kind).requires }
+        func requirement(_ kind: RemoteRequest.Kind) -> MessageSpec.Requirement? { MessageSpec.spec(for: kind)?.requires }
         #expect(requirement(.pushRegistration)?.capability.rawValue == "push.notifications.v1")
         #expect(requirement(.pushUnregister)?.capability.rawValue == "push.notifications.v1")
         #expect(requirement(.nativeThreadSubscribe)?.capability.rawValue == "native.revisions.v1")
