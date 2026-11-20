@@ -3,35 +3,6 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdRemote
 
-/// Projects' screens (the Mac's ProjectLead behavior on iPhone, iPad and iPhone Duo). A Project is
-/// always owned by a paired host: every route names it through `LogicalProjectRef.home`.
-enum ProjectsRoute: Hashable, Codable {
-    case list
-    /// The Project's conversation; on a wide window its tasks beside it.
-    case project(LogicalProjectRef)
-    /// The task list (pushed where the conversation has no room beside it).
-    case tasks(LogicalProjectRef)
-    /// One task's worker thread, read and steered through the owner.
-    case task(LogicalProjectRef, ProjectTaskID)
-    case files(LogicalProjectRef, path: String)
-    case settings(LogicalProjectRef)
-    /// Presented: New project on `host` (nil: the first owner that takes one).
-    case create(host: UUID?)
-    /// Presented: a new task for the Project's coordinator-free assignment.
-    case assign(LogicalProjectRef)
-
-    var host: UUID? {
-        let ref: LogicalProjectRef?
-        switch self {
-        case .list: return nil
-        case .create(let host): return host
-        case .project(let r), .tasks(let r), .task(let r, _), .files(let r, _), .settings(let r), .assign(let r): ref = r
-        }
-        if case .host(let id)? = ref?.home { return id }
-        return nil
-    }
-}
-
 struct ProjectsDestination: View {
     let route: ProjectsRoute
 

@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdRemote
 
 /// The `shepherd` key inside an APNs push payload:
 /// `{ "aps": { ... }, "shepherd": { "hostID": "...", "agentID": "...", "eventID": "...", "kind": "..." } }`

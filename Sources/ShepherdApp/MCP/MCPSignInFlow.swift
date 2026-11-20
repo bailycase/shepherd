@@ -89,6 +89,11 @@ final class MCPSignInFlow: Identifiable {
         task?.cancel()
     }
 
+    /// Tests: suspends until this sign-in's task finishes, whatever the outcome.
+    func completion() async {
+        await task?.value
+    }
+
     func openBrowserAgain() {
         if let authorizationURL { openURL(authorizationURL) }
     }

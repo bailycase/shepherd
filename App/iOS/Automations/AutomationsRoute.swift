@@ -2,23 +2,6 @@ import SwiftUI
 import ShepherdCore
 import ShepherdRemote
 
-/// The automations track's screens, pushed from the list (`.home(.automations)`) or presented.
-enum AutomationsRoute: Hashable, Codable {
-    /// One automation: its details, its runs, Run now and Stop (iPhone; the iPad shows it beside
-    /// the list).
-    case detail(host: UUID, automation: AutomationID)
-    /// The form: a new automation (`automation` nil, on `host` or the first host that takes
-    /// one), or an existing one's name, prompt, folder and switch. Presented.
-    case edit(host: UUID?, automation: AutomationID?)
-
-    var host: UUID? {
-        switch self {
-        case .detail(let host, _): host
-        case .edit(let host, _): host
-        }
-    }
-}
-
 struct AutomationsDestination: View {
     let route: AutomationsRoute
 
