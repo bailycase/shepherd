@@ -25,7 +25,8 @@ class ValidateTests(unittest.TestCase):
     def run_case(self, records, swift_exit=0, case="changes-review"):
         test = {"changes-review": "ReviewFlowTests/opensCommitSheetWithoutChangingGit",
                 "seeded-thread-rename": "ThreadRenameTests/seededThreadRenameSurvivesHostRestart",
-                "c-state": "StateStoreTests/historicalFilesLoadAndRewriteAsRecorded"}[case]
+                "c-state": "StateStoreTests/historicalFilesLoadAndRewriteAsRecorded",
+                "c-settings": "SettingsWritePathTests/everySettingsWritePathMatchesTheGolden"}[case]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             source = {"revision": "test-revision", "dirty_paths": []}
@@ -145,3 +146,21 @@ class ValidateTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(result["status"], "passed")
         self.assertIn("PASS mac/seeded-thread-rename", output)
+
+    def test_settings_write_path_checks_require_the_golden_comparison_and_completion(self):
+        matched = "every settings write path matched the golden"
+        record = {"status": "passed", "expected": matched, "actual": matched, "evidence": []}
+        complete = {**record, "step": "complete"}
+        code, _, result = self.run_case([complete], case="c-settings")
+        self.assertEqual(code, 1)
+        self.assertEqual(result["missing_steps"], [["compare-golden", None]])
+        failed = {**record, "step": "compare-golden", "status": "failed",
+                  "expected": "sync.host.defaultThinking.reply.settings.defaultThinking = \"low\"",
+                  "actual": "sync.host.defaultThinking.reply.settings.defaultThinking = \"high\""}
+        code, output, result = self.run_case([failed], case="c-settings")
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL mac/c-settings/compare-golden [local host]", output)
+        self.assertIn("Tests/Fixtures/settings-write-paths.json", result["steps"][0]["look_first"])
+        code, output, result = self.run_case([{**record, "step": "compare-golden"}, complete], case="c-settings")
+        self.assertEqual(code, 0)
+        self.assertIn("PASS mac/c-settings", output)

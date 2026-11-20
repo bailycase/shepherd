@@ -49,6 +49,12 @@ CASES = {
         golden="Tests/Fixtures/c-state.json",
         scenario="Tests/ShepherdSessionsUnitTests/StateStoreTests+Golden.swift",
     ),
+    "c-settings": Case(
+        "SettingsWritePathTests/everySettingsWritePathMatchesTheGolden",
+        {("compare-golden", None)}, "every settings write path matched the golden", "local host",
+        golden="Tests/Fixtures/settings-write-paths.json",
+        scenario="Tests/ShepherdAppIntegrationTests/SettingsWritePathTests.swift",
+    ),
     "c-wire": Case(
         "WireRequestSequenceTests/wireMatchesGolden|WireCodecTests/wireMatchesGolden",
         {("codec-golden", None), ("compare-golden", None)}, "scratch-host request sequences matched the golden", "wire",
