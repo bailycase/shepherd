@@ -168,9 +168,13 @@ struct SidebarAutomationsTests {
         #expect(manualLists(AutomationRun(startedAt: 0, settledAt: 1, result: .finished, agentID: watcher.id)).automationRows.isEmpty)
         // Running counts the starting watcher, as the local path does, and not the settled one.
         let running = SidebarThreadFilters(chips: [.running])
-        #expect(manualLists(nil).filtered(by: running).automations.map(\.title) == ["deps run"])
-        #expect(manualLists(AutomationRun(startedAt: 0, settledAt: 1, result: .finished, agentID: watcher.id))
-            .filtered(by: running).automations.isEmpty)
+        // A settled watcher sits in Recents, not Automations, so look at every filtered row rather than one section.
+        let starting = manualLists(nil).filtered(by: running)
+        #expect(starting.all.map(\.title) == ["deps run"] && starting.activity.map(\.title) == ["deps run"])
+        let settled = manualLists(AutomationRun(startedAt: 0, settledAt: 1, result: .finished, agentID: watcher.id))
+        #expect(settled.recents.map(\.title) == ["deps run"], "the settled watcher is a Recents thread")
+        let settledRunning = settled.filtered(by: running)
+        #expect(settledRunning.all.isEmpty && settledRunning.activity.isEmpty && settledRunning.hasNoMatches)
 
         // The same name on This Mac and a host: rows from more than one host name theirs.
         var localTwin = remote
