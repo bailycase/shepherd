@@ -76,6 +76,8 @@ final class FakeThread {
     static let pageSize = 50
     /// While true, snapshot requests answer that pi is still starting.
     var starting = false
+    /// While true, snapshot requests fail, as when the host cannot serve the thread.
+    var failing = false
     /// While true, a snapshot request is on its way and does not return until `releaseSnapshots()`.
     var holdingSnapshots = false
     private var heldSnapshots: [CheckedContinuation<Void, Never>] = []
@@ -110,6 +112,7 @@ final class FakeThread {
                 self.snapshotRequests += 1
                 if self.holdingSnapshots { await withCheckedContinuation { self.heldSnapshots.append($0) } }
                 if self.starting { return .failure(code: NativeThreadCode.starting, message: "pi is starting.") }
+                if self.failing { return .failure(code: "unavailable", message: "The host cannot serve this thread.") }
                 guard let history = self.history else { return .snapshot(value: self.snapshot) }
                 let end = before.flatMap { cursor in history.firstIndex { $0.entryID == cursor } } ?? history.count
                 let start = max(0, end - Self.pageSize)

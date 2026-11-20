@@ -99,11 +99,101 @@ struct ThreadReleasedTailTests {
         #expect(store.rows.count == store.messages.count + 2 && !store.running)
     }
 
+    /// A thread that holds no question (a page that starts inside one long reply, or a thread an automation opened) holds one agent turn
+    /// (`nativeTurns` merges what is not a question), the last answer, which the rule keeps whatever it holds, as it keeps a question's.
     @Test func aThreadWithNoQuestionIsLeftAsItIs() async {
         let (store, _) = await hidden((0..<20).map { F.assistant("Note \($0)", id: "a\($0)") })
         let rows = store.rows
         store.releaseToTail(rows: 2, maxBytes: 1)
         #expect(store.keepsOnlyTail && store.rows == rows && store.messages.count == 20, "nothing to cut at")
+
+        let (page, _) = await hidden((0..<NativeThreadStore.releasedTailMessages).map { F.assistant(String(repeating: "word ", count: 400) + "\($0)", id: "a\($0)") })
+        page.releaseToTail(rows: 2, maxBytes: 1)
+        #expect(page.keepsOnlyTail && page.holdsHistory && page.messages.count == NativeThreadStore.releasedTailMessages, "one page is never cut or released")
+    }
+
+    /// Only what older pages added above the host's newest page (the first pull lands over it) is cut from a thread with no question, and
+    /// only when it is over the cap.
+    @Test func aThreadWithNoQuestionThatPagedOlderHistoryInKeepsItsNewestPageOverTheCap() async {
+        let notes = (0..<120).map { F.assistant(String(repeating: "word ", count: 400) + "\($0)", id: "a\($0)") }
+        let (store, _) = await hidden(notes)
+        let whole = store.retainedHistoryBytes
+        store.releaseToTail(rows: 2, maxBytes: whole / 2)
+        #expect(store.keepsOnlyTail && store.messages == Array(notes.suffix(NativeThreadStore.releasedTailMessages)), "the host's newest page")
+        #expect(store.olderCursor == "a70" && store.snapshot?.olderCursor == "a70", "older history pages in from where it starts")
+        #expect(store.retainedHistoryBytes <= whole / 2, "\(store.retainedHistoryBytes) of \(whole / 2)")
+
+        let (within, _) = await hidden(notes)
+        within.releaseToTail(rows: 2, maxBytes: .max)
+        #expect(within.keepsOnlyTail && within.messages == notes, "within the cap it holds all it held")
+    }
+
+    /// The last question and its answer stay whatever they hold, even when the thread is nothing but them.
+    @Test func aThreadOfOneQuestionKeepsItAndItsAnswerWhateverTheCap() async {
+        let (store, _) = await hidden([F.user("Question", id: "u0"), F.assistant(String(repeating: "word ", count: 4_000), id: "a0")])
+        store.releaseToTail(rows: 2, maxBytes: 1)
+        #expect(store.keepsOnlyTail && store.messages.map(\.entryID) == ["u0", "a0"])
+    }
+
+    /// A release that cut nothing (the thread held no more than a tail) is still a release to the tail: the thread leaves the count of
+    /// threads that hold their history, is bounded with the other tails, and comes back as a tail does, its eager tail alone and the
+    /// lazy stack after its pull (`ThreadRestoreTests`). A thread of a few heavy replies is one, and that is the restore its first
+    /// frame was measured with.
+    @Test func aReleaseThatCutNothingStillLeavesTheThreadAsATail() async {
+        let all = session(turns: 6)
+        let (store, _) = await hidden(all)
+        let rows = store.rows, cursor = store.olderCursor
+        store.releaseToTail(rows: 30, maxBytes: .max)
+        #expect(store.keepsOnlyTail && store.messages == all && store.rows == rows && store.olderCursor == cursor, "nothing was cut")
+    }
+
+    /// The first lazy stack of a thread that kept only its tail waits for the pull that catches it up (`ThreadRestore.waitsForPull`),
+    /// and has no reason to wait for one that is not coming: it failed, pi is held off or did not start in time. A pi that is starting
+    /// will answer, usually within seconds, so that is not a pull missed.
+    @Test func aPullThatIsNotComingIsMarkedAsOneThatDoesNotCatchTheThreadUp() async {
+        let (store, host) = await hidden(session(turns: 5))
+        store.releaseToTail(rows: 30, maxBytes: .max)
+        #expect(store.catchUp == nil && !store.catchUpFailed, "nothing has been asked yet")
+
+        let failing = Task { await store.run(request: { _ in .failure(code: "unavailable", message: "The host cannot serve this thread.") }) }
+        await until { store.loadError != nil }
+        #expect(store.catchUp == nil && store.catchUpFailed && store.keepsOnlyTail)
+        failing.cancel()
+        store.suspend()
+        #expect(!store.catchUpFailed, "the next run has not failed yet")
+
+        host.starting = true
+        var task = await start(store, host)
+        #expect(store.starting && store.catchUp == nil && !store.catchUpFailed, "pi is starting: its snapshot is on its way")
+        host.starting = false
+        await store.refresh()
+        #expect(store.catchUp != nil && !store.catchUpFailed && !store.starting, "the pull that lands catches it up")
+        task.cancel()
+
+        store.suspend()
+        store.offline = true
+        host.starting = true
+        task = await start(store, host)
+        #expect(store.catchUpFailed && !store.starting, "pi is held off: nothing is coming")
+        store.suspend()
+        #expect(!store.catchUpFailed && store.catchUp == nil)
+        store.offline = false
+        task.cancel()
+        store.stop()
+    }
+
+    @Test func aPiThatDoesNotStartInTimeIsAPullThatDoesNotCatchTheThreadUp() async {
+        let host = FakeHost(F.snapshot(messages: session(turns: 5)))
+        let store = manualStore(startingLimit: .zero)
+        var task = await start(store, host)
+        task.cancel()
+        store.suspend()
+        store.releaseToTail(rows: 30, maxBytes: .max)
+
+        host.starting = true
+        task = await start(store, host)
+        defer { task.cancel(); store.stop() }
+        #expect(store.loadError != nil && store.catchUp == nil && store.catchUpFailed, "past the limit pi is not starting, it is in trouble")
     }
 
     @Test func aThreadOnScreenKeepsEverything() async {

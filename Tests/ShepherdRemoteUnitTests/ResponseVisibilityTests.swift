@@ -86,7 +86,7 @@ struct ResponseVisibilityTests {
         let finished = nativeTurnPresentation([call, F.tool("read", args: #"{"path":"a"}"#), reply], live: false)
         #expect(finished.timing?.total == "45.0s")
         #expect(finished.timing?.note.hasPrefix("The last of 2 model requests") == true)
-        #expect(nativeTurnPresentation([reply], live: false, errors: NativeTurnErrorContext(host: "horizon")).timing?.note.contains("the agent’s host") == true)
+        #expect(nativeTurnPresentation([reply], live: false, errors: NativeTurnErrorContext(host: "orbit")).timing?.note.contains("the agent’s host") == true)
         #expect(nativeTurnPresentation([reply], live: true).timing == nil)
         var stopped = reply
         stopped.status = "aborted"

@@ -269,8 +269,8 @@ struct WriterLog {
     /// Drops what ended over an hour ago and before every open and undoable turn began.
     mutating func prune(now: Double) {
         let protected = protected()
-        let horizon = min(now - Self.keep, protected.map(\.start).min() ?? .greatestFiniteMagnitude)
-        func stale(_ interval: TurnAttribution.Interval) -> Bool { interval.end.map { $0 < horizon } ?? false }
+        let cutoff = min(now - Self.keep, protected.map(\.start).min() ?? .greatestFiniteMagnitude)
+        func stale(_ interval: TurnAttribution.Interval) -> Bool { interval.end.map { $0 < cutoff } ?? false }
         windows.removeAll { stale($0.interval) }
         calls.removeAll { stale($0.interval) }
         spans.removeAll { stale($0.interval) }

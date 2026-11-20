@@ -219,9 +219,9 @@ struct RemoteBrowserDriveTests {
         #expect(snapshot.contains("- heading \"Checkout\" [level=1]") && snapshot.contains("button \"Pay $148.00\""))
         let email = try ref(in: snapshot, "textbox \"Email\""), apply = try ref(in: snapshot, "button \"Apply promo\"")
 
-        let typed = try await agent.text(.type(ref: email, text: "baily@acme.dev", clear: true, submit: false, note: nil))
-        #expect(typed.contains("Typed 14 characters"))
-        #expect(try await pageText(session, "document.getElementById('echo').textContent") == "typed: baily@acme.dev")
+        let typed = try await agent.text(.type(ref: email, text: "alex@acme.dev", clear: true, submit: false, note: nil))
+        #expect(typed.contains("Typed 13 characters"))
+        #expect(try await pageText(session, "document.getElementById('echo').textContent") == "typed: alex@acme.dev")
         #expect(session.agentOverlay?.note == "typing in “Email”")
 
         let clicked = try await agent.text(.click(ref: apply, double: false, note: nil))

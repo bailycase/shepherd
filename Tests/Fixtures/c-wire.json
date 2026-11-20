@@ -495,7 +495,7 @@
         "{\"push\":{\"agentID\":\"agent\",\"request\":{\"action\":\"click\",\"note\":\"paying\",\"ref\":\"e4\"},\"token\":12,\"type\":\"request\"},\"type\":\"browserDrive\"}\n",
         "{\"push\":{\"agentID\":\"agent\",\"type\":\"opened\",\"url\":\"http://localhost:5173/checkout\"},\"type\":\"browserDrive\"}\n",
         "{\"push\":{\"agentID\":\"agent\",\"request\":{\"action\":\"open\",\"note\":\"opening the app\",\"url\":\"http://localhost:5173/\"},\"token\":1,\"type\":\"request\"},\"type\":\"browserDrive\"}\n",
-        "{\"push\":{\"agentID\":\"agent\",\"request\":{\"action\":\"type\",\"clear\":true,\"ref\":\"e2\",\"text\":\"baily@acme.dev\"},\"token\":2,\"type\":\"request\"},\"type\":\"browserDrive\"}\n",
+        "{\"push\":{\"agentID\":\"agent\",\"request\":{\"action\":\"type\",\"clear\":true,\"ref\":\"e2\",\"text\":\"alex@acme.dev\"},\"token\":2,\"type\":\"request\"},\"type\":\"browserDrive\"}\n",
         "{\"push\":{\"agentID\":\"agent\",\"request\":{\"action\":\"screenshot\"},\"token\":3,\"type\":\"request\"},\"type\":\"browserDrive\"}\n",
         "{\"push\":{\"agentID\":\"agent\",\"type\":\"abandoned\"},\"type\":\"browserDrive\"}\n",
         "{\"push\":{\"agentID\":\"agent\",\"reason\":\"superseded\",\"type\":\"ended\"},\"type\":\"browserDrive\"}\n",

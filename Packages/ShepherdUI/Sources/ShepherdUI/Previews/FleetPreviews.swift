@@ -18,7 +18,7 @@ import SwiftUI
                           clock: .elapsed(since: Date().addingTimeInterval(-130)), leading: .state(.running),
                           trailing: .host("build-01"))
                 SHListRow("Fix remote subagent deletion", subtitle: "idle",
-                          clock: .ago(Date().addingTimeInterval(-3_700)), leading: .state(.idle), trailing: .host("horizon"))
+                          clock: .ago(Date().addingTimeInterval(-3_700)), leading: .state(.idle), trailing: .host("orbit"))
                 SHListRow("Investigate SwiftUI live preview", subtitle: "done · Shepherd", leading: .state(.done),
                           selected: true)
                 SHListRow("Fix terminal output buffer", subtitle: "idle · Shepherd", leading: .state(.idle), dimmed: true)
@@ -51,7 +51,7 @@ import SwiftUI
     SHPreviewBoth {
         VStack(spacing: SH.Space.l) {
             SHHostCard(name: "Studio", address: "studio.local:7433", state: .done, status: "Connected",
-                       summary: "2 threads running · Shepherd, horizon", openLabel: "Edit Studio", open: {}) { EmptyView() }
+                       summary: "2 threads running · Shepherd, orbit", openLabel: "Edit Studio", open: {}) { EmptyView() }
             SHHostCard(name: "MacBook Air", address: "10.0.0.24:7433", state: .failed, status: "Offline",
                        summary: "Connection refused", summaryTone: .failed, detail: "Last seen today 07:12") {
                 Button("Retry", systemImage: "arrow.clockwise") {}.buttonStyle(.sh(.secondary))
@@ -117,7 +117,7 @@ import SwiftUI
         VStack(spacing: SH.Space.xxs) {
             SHHostRow(name: "Studio", detail: "3 threads · 2 running", state: .done, selected: true)
             SHHostRow(name: "build-01", detail: "1 thread", state: .done)
-            SHHostRow(name: "horizon", detail: "Offline · last seen 7:12 AM", state: .failed)
+            SHHostRow(name: "orbit", detail: "Offline · last seen 7:12 AM", state: .failed)
         }
         .frame(width: 320)
     }

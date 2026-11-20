@@ -17,7 +17,7 @@ import SwiftUI
             VStack(alignment: .leading, spacing: 0) {
                 SHHostStateRow("This Mac", detail: "installed · ready in new threads", mark: .done)
                 SHHostStateRow("build-01", detail: "copying files", mark: .working)
-                SHHostStateRow("horizon", detail: "offline · installs when it's back", mark: .offline)
+                SHHostStateRow("orbit", detail: "offline · installs when it's back", mark: .offline)
             }
             SHBudgetBar([true, true, true, true, true, true, false]).frame(width: 240)
             VStack(alignment: .leading, spacing: SH.Space.m) {

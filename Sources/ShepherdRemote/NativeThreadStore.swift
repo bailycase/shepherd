@@ -405,6 +405,10 @@ public final class NativeThreadStore {
     /// after moves as usual (`CatchUpGate`). Not observed: it changes no pixel itself, so
     /// catching up costs no pass of its own.
     @ObservationIgnored public private(set) var catchUp: CatchUp?
+    /// The first pull since `run` started has ended without catching the thread up and none is on its way: it failed (`loadError`), pi is
+    /// held off (`offline`) or has not started within `startingLimit`. A pi that is merely starting does not set it: its snapshot usually
+    /// lands within seconds. Cleared with `catchUp`, and by the pull that lands. Not observed.
+    @ObservationIgnored public private(set) var catchUpFailed = false
     /// Bumped whenever what the thread's rows show changes (rows, the live "Thinking…", the
     /// notices, readiness), and what the composer and the toolbar show (`chromeVersion`). Not
     /// observed: views read them as they render.
@@ -418,7 +422,14 @@ public final class NativeThreadStore {
 
     /// The first pull since `run` started has landed.
     private func caughtUp() {
+        catchUpFailed = false
         if catchUp == nil { catchUp = CatchUp(thread: threadVersion, chrome: chromeVersion) }
+    }
+
+    /// A pull ended without landing (`catchUpFailed`). A failed page of older history reaches it too (`setLoadError`), harmless since
+    /// nothing asks for older pages before the first pull has landed.
+    private func catchUpMissed() {
+        if catchUp == nil { catchUpFailed = true }
     }
 
     /// How long `starting` may last before it is reported as an error. Polling continues, so
@@ -1572,6 +1583,7 @@ public final class NativeThreadStore {
         guard resting != was else { return }
         if !resting {
             catchUp = nil
+            catchUpFailed = false
             pollWake.signal()
             restWake.signal()
         }
@@ -1604,6 +1616,7 @@ public final class NativeThreadStore {
         // Pieces still being asked for stop; the ones held stay for the next poll.
         images.cancelAll()
         catchUp = nil
+        catchUpFailed = false
         // Visibility does not restart pi or its readiness deadline.
         if busy { busy = false }
         if loadingOlder { loadingOlder = false }
@@ -1701,6 +1714,9 @@ public final class NativeThreadStore {
         settleTask = nil
         if settledRunning { settledRunning = false }
         cutHistory(to: tailStart(rows: rows, maxBytes: maxBytes))
+        // Set when nothing was cut as well (a thread that held no more than a tail): it leaves the threads that hold their history for
+        // the tail tier, bounded with the other tails, and it comes back as a tail does: the eager tail alone, the lazy stack after the
+        // pull. A thread of a few heavy replies is one, and that is the restore its first frame was measured with.
         keepsOnlyTail = true
         // Still more than it may hold: its last question and answer alone.
         if retainedHistoryBytes > maxBytes, let last = lastHeldQuestion, last > 0 {
@@ -1718,8 +1734,10 @@ public final class NativeThreadStore {
     /// question, and no further back than `maxBytes` reaches by a cost estimate of what a message holds once derived (the cache and the
     /// rows built from it take about as much as the text counted in `retainedHistoryBytes`).
     private func tailStart(rows: Int, maxBytes: Int) -> Int {
-        guard let lastQuestion = lastHeldQuestion else { return 0 }
         let pageStart = max(0, messages.count - Self.releasedTailMessages)
+        // No question: one agent turn (`nativeTurns`), the last answer, which the rule keeps whatever it holds. Only what older pages added
+        // above the host's newest one (which the first pull lands over) is cut, and only past the cap.
+        guard let lastQuestion = lastHeldQuestion else { return retainedHistoryBytes > maxBytes ? pageStart : 0 }
         var first = min(max(0, turns.count - rows), lastQuestion)
         while first > 0, projection.start(for: turns[first].id) > pageStart { first -= 1 }
         while first > 0, !turns[first].isUser { first -= 1 }
@@ -2038,6 +2056,8 @@ public final class NativeThreadStore {
                 ready = false
                 if loadError != nil { loadError = nil }
                 if value.dialogs.contains(where: { $0.unavailable == nil }) {
+                    // pi waits on the person: the snapshot that catches the thread up is not coming on its own.
+                    catchUpMissed()
                     endStarting()
                     starting = true
                 } else {
@@ -2150,6 +2170,7 @@ public final class NativeThreadStore {
 
     /// Any failure but `native_starting`: the thread is not starting, it is in trouble.
     private func setLoadError(_ message: String) {
+        catchUpMissed()
         endStarting()
         clearStartProblem()
         resumeStartWaiters(false)
@@ -2170,12 +2191,13 @@ public final class NativeThreadStore {
             derive()
         }
         // Held off on purpose: nothing is starting and nothing is timed, so no watchdog ever turns it into an error.
-        if offline { endStarting(); return }
+        if offline { catchUpMissed(); endStarting(); return }
         clearStartProblem()
         let now = ContinuousClock.now
         let since = startingSince ?? now
         startingSince = since
         guard now - since < startingLimit else {
+            catchUpMissed()
             if starting {
                 starting = false
                 deriveChrome()

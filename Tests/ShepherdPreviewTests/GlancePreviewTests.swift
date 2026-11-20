@@ -16,11 +16,11 @@ struct GlancePreviewTests {
 
     static let session = SHGlance.Session(piSessionID: "p", generation: "g")
     static let hosts: [SHGlance.Host] = [.init(name: "This Mac", online: true), .init(name: "build-01", online: true),
-                                         .init(name: "horizon", online: false)]
+                                         .init(name: "orbit", online: false)]
 
     static let deploy = SHGlance.Item(
         host: "mac", agent: "deploy", title: "Deploy media stack", state: .needsYou, hostName: "This Mac", since: ago(2),
-        tag: "question", question: "How should I handle Horizon’s uncommitted edits?",
+        tag: "question", question: "How should I handle Orbit’s uncommitted edits?",
         options: ["Compare first", "Clean checkout"], dialogID: "d1", session: session, queued: 1)
     static let funnel = SHGlance.Item(host: "build", agent: "funnel", title: "Checkout funnel events", state: .needsYou,
                                       hostName: "build-01", since: ago(1), tag: "retention?")

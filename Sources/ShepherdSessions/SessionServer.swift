@@ -4407,16 +4407,16 @@ public final class SessionServer: @unchecked Sendable {
             guard let automation else { return fail("no_such_automation", "The automation no longer exists on the host.") }
             return answer { .status(await triggers.status(of: automation)) }
         case .pause:
-            return answer { await triggers.pause(automationID); return .ok }
+            return answer { try await triggers.pause(automationID); return .ok }
         case .resume:
-            return answer { await triggers.resume(automationID); await triggers.tick(); return .ok }
+            return answer { try await triggers.resume(automationID); await triggers.tick(); return .ok }
         case .dismissEvent(let eventID):
-            return answer { await triggers.dismiss(automationID, eventID: eventID); return .ok }
+            return answer { try await triggers.dismiss(automationID, eventID: eventID); return .ok }
         case .runEvent(let eventID):
             guard let automation else { return fail("no_such_automation", "The automation no longer exists on the host.") }
             return answer { try await triggers.runPending(automation, eventID: eventID); return .ok }
         case .setAllPaused(let paused):
-            return answer { await triggers.setAllPaused(paused); return .ok }
+            return answer { try await triggers.setAllPaused(paused); return .ok }
         case .setEnabled(let enabled):
             routed = .update(automationID: automationID, name: nil, prompt: nil, cwd: nil, enabled: enabled)
         case .run:
