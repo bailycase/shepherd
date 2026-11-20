@@ -31,14 +31,14 @@ struct BrowserPagePortsTests {
         #expect(forwarder.ports(of: ports.owner).isEmpty)
     }
 
-    @Test func aRefusedPortIsNotRememberedForResume() throws {
+    @Test func aRefusedPortIsNotRememberedForResume() async throws {
         let (ports, _) = make()
-        ports.resume()
+        await ports.resume()
         #expect(ports.forward(try #require(URL(string: "http://localhost/"))) == .privileged(port: 80))
         #expect(ports.forward(try #require(URL(string: "http://127.0.0.1:0/"))) == .invalid(port: 0))
         #expect(ports.ports.isEmpty)
         ports.suspend()
-        #expect(ports.resume().isEmpty)
+        #expect(await ports.resume().isEmpty)
     }
 
     @Test func aRefusalNamesTheDeviceThePageIsOn() {

@@ -116,6 +116,14 @@ public final class BrowserPortForwarder: @unchecked Sendable {
     private let queue = DispatchQueue(label: "shepherd.browser.forward")
     private let lock = NSLock()
     private var listeners: [Int: Listener] = [:]
+    /// Ports let go of but whose listening sockets have not closed yet: a claim made now still finds
+    /// the old socket bound. A page coming back waits for the close (`waitForClose(of:)`) instead of
+    /// reading it as another program's.
+    private var closing: [Int: Owner] = [:]
+    /// How many listening sockets of each closing port have not closed yet.
+    private var closeRemaining: [Int: Int] = [:]
+    /// Tasks waiting for a closing port's sockets to close (`waitForClose(of:)`).
+    private var closeWaiters: [Int: [CheckedContinuation<Void, Never>]] = [:]
 
     public init() {}
 
@@ -126,8 +134,6 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         var slot: BrowserTunnelHubSlot
         var agent: AgentID
         var sources: [DispatchSourceRead] = []
-        /// Signalled when a source's listening socket is closed (its cancel handler has run).
-        var closed: [DispatchSemaphore] = []
 
         init(port: Int, hostPort: Int, owner: Owner, slot: BrowserTunnelHubSlot, agent: AgentID) {
             self.port = port
@@ -167,13 +173,11 @@ public final class BrowserPortForwarder: @unchecked Sendable {
                     guard let self, let listener else { return }
                     self.accept(on: fd, for: listener)
                 }
-                let closed = DispatchSemaphore(value: 0)
-                source.setCancelHandler {
+                source.setCancelHandler { [weak self, port] in
                     Darwin.close(fd)
-                    closed.signal()
+                    self?.closeDidLand(port: port)
                 }
                 listener.sources.append(source)
-                listener.closed.append(closed)
                 source.activate()
             }
             listeners[port] = listener
@@ -181,18 +185,61 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         }
     }
 
-    /// Lets go of every port `owner` holds. The listening sockets are closed when it returns, so the
-    /// port can be claimed again at once (a claim that found a socket still open would read it as
-    /// another program's).
+    /// Tests only: holds the queue that closes listening sockets, so a test can keep a close late
+    /// without sleeping. Balanced with `resumeCloseQueueForTesting`.
+    public func suspendCloseQueueForTesting() { queue.suspend() }
+
+    /// Tests only: lets the queue held by `suspendCloseQueueForTesting` run again.
+    public func resumeCloseQueueForTesting() { queue.resume() }
+
+    /// Lets go of every port `owner` holds, and returns at once: the listening sockets close on the
+    /// forwarding queue shortly after, so this never blocks the caller (a page suspends on the iOS
+    /// client's main actor). A port claimed again before its old sockets close still reads as in use
+    /// until the close lands; `waitForClose(of:)` waits for it.
     public func release(_ owner: Owner) {
         lock.lock()
         let held = listeners.filter { $0.value.owner == owner }
         for port in held.keys { listeners.removeValue(forKey: port) }
-        lock.unlock()
-        for listener in held.values { listener.sources.forEach { $0.cancel() } }
-        for listener in held.values {
-            for closed in listener.closed { _ = closed.wait(timeout: .now() + 2) }
+        for (port, listener) in held {
+            if closing[port] == nil { closing[port] = listener.owner }
+            closeRemaining[port, default: 0] += listener.sources.count
         }
+        let cancelled = Array(held.values)
+        lock.unlock()
+        for listener in cancelled { listener.sources.forEach { $0.cancel() } }
+    }
+
+    /// Waits until a released port's listening sockets are closed (at once, when none are closing),
+    /// so claiming it again does not read the old sockets as another program's. A page coming back
+    /// awaits this before trying its ports again.
+    public func waitForClose(of port: Int) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            if closing[port] == nil {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                closeWaiters[port, default: []].append(continuation)
+                lock.unlock()
+            }
+        }
+    }
+
+    /// A closing port's socket closed: when its last one has, the port is free and its waiters run.
+    private func closeDidLand(port: Int) {
+        lock.lock()
+        guard let remaining = closeRemaining[port] else { lock.unlock(); return }
+        let waiters: [CheckedContinuation<Void, Never>]
+        if remaining <= 1 {
+            closeRemaining.removeValue(forKey: port)
+            closing.removeValue(forKey: port)
+            waiters = closeWaiters.removeValue(forKey: port) ?? []
+        } else {
+            closeRemaining[port] = remaining - 1
+            waiters = []
+        }
+        lock.unlock()
+        for waiter in waiters { waiter.resume() }
     }
 
     /// The ports `owner` holds.

@@ -47,21 +47,31 @@ public final class BrowserPagePorts {
         return nil
     }
 
-    /// The host is connected (again): every port the page held is taken again. The ones that can't
-    /// be (something else took one meanwhile) are let go and returned, so the page can say why.
+    /// The host is connected (again): every port the page held is taken again. A port whose old
+    /// sockets have not closed yet is claimed again once the close lands, not forgotten as in use.
+    /// The ones that can't be (something else took one meanwhile) are let go and returned, so the
+    /// page can say why.
     @discardableResult
-    public func resume() -> [BrowserPortForwarder.Refusal] {
+    public func resume() async -> [BrowserPortForwarder.Refusal] {
         isActive = true
         var refused: [BrowserPortForwarder.Refusal] = []
         for port in ports {
-            if let refusal = forwarder.claim(port: port, hostPort: hostPorts[port], owner: owner, slot: slot, agent: agent) { refused.append(refusal) }
+            var refusal = forwarder.claim(port: port, hostPort: hostPorts[port], owner: owner, slot: slot, agent: agent)
+            if case .inUse = refusal {
+                // The old sockets may still be closing from `suspend`: wait for the real close and
+                // try once more, so a late close does not read as another program's. A refusal that
+                // is still there afterwards is genuine, and the port is let go below.
+                await forwarder.waitForClose(of: port)
+                refusal = forwarder.claim(port: port, hostPort: hostPorts[port], owner: owner, slot: slot, agent: agent)
+            }
+            if let refusal { refused.append(refusal) }
         }
         ports.removeAll { port in refused.contains { $0.port == port } }
         return refused
     }
 
     /// The host went away or the app is leaving the foreground: every port is let go now (the
-    /// listening sockets are closed when this returns) and remembered for `resume`.
+    /// listening sockets close shortly after, without blocking the caller) and remembered for `resume`.
     public func suspend() {
         isActive = false
         forwarder.release(owner)

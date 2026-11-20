@@ -75,11 +75,15 @@ final class BrowserPage {
 
     // MARK: The connection
 
-    /// The host is connected: the ports the page held are taken again.
+    /// The host is connected: the ports the page held are taken again, once their old sockets'
+    /// closes have landed, without blocking the caller.
     func resume() {
         guard host?.supports(RemoteProtocol.browserTunnelCapability) == true else { return }
-        let refused = ports.resume()
-        if let first = refused.first { notice = first.message(hostName: hostName, here: Self.here) }
+        Task { [weak self] in
+            guard let self else { return }
+            let refused = await self.ports.resume()
+            if let first = refused.first { self.notice = first.message(hostName: self.hostName, here: Self.here) }
+        }
     }
 
     /// The host went away (or the app is leaving the foreground): nothing listens until it is back.

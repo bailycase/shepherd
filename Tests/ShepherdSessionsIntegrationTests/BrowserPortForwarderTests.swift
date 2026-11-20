@@ -132,9 +132,10 @@ struct BrowserPortForwarderTests {
         #expect(forwarder.claim(port: port, owner: other, slot: BrowserTunnelHubSlot(), agent: AgentID())
             == .forwardedFor(port: port, hostName: "build-01"))
         #expect(forwarder.owner(of: port) == owner)
-        // Once released, it is free for the other.
+        // Once released and its sockets have closed, it is free for the other.
         forwarder.release(owner)
         #expect(forwarder.owner(of: port) == nil)
+        await forwarder.waitForClose(of: port)
         #expect(forwarder.claim(port: port, owner: other, slot: BrowserTunnelHubSlot(), agent: AgentID()) == nil)
     }
 
@@ -143,6 +144,7 @@ struct BrowserPortForwarderTests {
         let port = Int(try unusedLoopbackPort())
         #expect(forwarder.claim(port: port, owner: owner, slot: BrowserTunnelHubSlot(), agent: AgentID()) == nil)
         forwarder.release(owner)
+        await forwarder.waitForClose(of: port)
         try await eventually("the listener to close") { await get("/", host: "127.0.0.1", port: UInt16(port)) == nil }
     }
 
@@ -164,6 +166,7 @@ struct BrowserPortForwarderTests {
             let reply = await get("/hello", host: "127.0.0.1", port: UInt16(port))
             #expect(reply == "hello from the host", "round \(round) got \(String(describing: reply)); the dev server saw \(dev.requests.current)")
             forwarder.release(owner)
+            await forwarder.waitForClose(of: port)
         }
     }
 
@@ -201,6 +204,28 @@ struct BrowserPortForwarderTests {
         #expect(await get("/hello", host: "127.0.0.1", port: UInt16(port)) == "hello from the host")
     }
 
+    /// Suspending while the forwarding queue runs late, then resuming: the port the page held must
+    /// come back, not be forgotten as in use. The gate holds the old sockets' close without sleeping;
+    /// the resume waits for the real close instead of blocking the caller.
+    @Test func suspendThenResumeAcrossALateCloseKeepsThePort() async throws {
+        let forwarder = BrowserPortForwarder()
+        let port = Int(try unusedLoopbackPort())
+        let page = BrowserPagePorts(forwarder: forwarder, owner: owner, agent: AgentID(rawValue: "agent"),
+                                     slot: BrowserTunnelHubSlot())
+        defer { page.close() }
+        await page.resume()
+        #expect(page.forward(try #require(URL(string: "http://localhost:\(port)/"))) == nil)
+        forwarder.suspendCloseQueueForTesting()
+        page.suspend()
+        #expect(forwarder.ports(of: owner).isEmpty)
+        #expect(page.ports == [port])
+        async let refused = page.resume()
+        // The resume waits for the old sockets' close; letting the queue run finishes it with no refusal.
+        forwarder.resumeCloseQueueForTesting()
+        #expect(await refused.isEmpty)
+        #expect(page.ports == [port])
+    }
+
     /// The iOS client's page: its ports are held only while the host is connected and let go when it
     /// drops or the app leaves the foreground, then taken again; at most eight a page.
     @Test func aPagesPortsAreLetGoWhileSuspendedAndTakenAgainOnResume() async throws {
@@ -217,22 +242,24 @@ struct BrowserPortForwarderTests {
         let url = try #require(URL(string: "http://localhost:\(port)/hello"))
 
         #expect(page.forward(url) == .failed(port: port, errno: ENOTCONN), "nothing is held before the host is connected")
-        page.resume()
+        await page.resume()
         #expect(page.forward(url) == nil)
         #expect(await get("/hello", host: "127.0.0.1", port: UInt16(port)) == "hello from the host")
 
         page.suspend()
         #expect(page.forwarder.ports(of: owner).isEmpty)
+        await page.forwarder.waitForClose(of: port)
         #expect(await get("/hello", host: "127.0.0.1", port: UInt16(port)) == nil, "nothing listens while suspended")
-        #expect(page.resume().isEmpty)
+        #expect(await page.resume().isEmpty)
         #expect(page.ports == [port])
         #expect(await get("/hello", host: "127.0.0.1", port: UInt16(port)) == "hello from the host")
 
         // Another page took the port while this one was suspended: resume says so and forgets it.
         page.suspend()
+        await page.forwarder.waitForClose(of: port)
         let other = BrowserPortForwarder.Owner(id: "host-b/agent", hostName: "build-02")
         #expect(page.forwarder.claim(port: port, owner: other, slot: BrowserTunnelHubSlot(), agent: AgentID()) == nil)
-        #expect(page.resume() == [.forwardedFor(port: port, hostName: "build-02")])
+        #expect(await page.resume() == [.forwardedFor(port: port, hostName: "build-02")])
         #expect(page.ports.isEmpty)
         page.forwarder.release(other)
 
