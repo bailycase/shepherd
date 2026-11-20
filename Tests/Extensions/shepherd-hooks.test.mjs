@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createRequire } from "node:module";
+import { createRequire, syncBuiltinESMExports } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -15,6 +15,16 @@ const pkg = process.env.PI_PACKAGE_DIR;
 if (!pkg) throw Error("Set PI_PACKAGE_DIR to the installed Pi package");
 const { createJiti } = createRequire(path.join(pkg, "package.json"))("jiti");
 const sdk = fs.existsSync(path.join(pkg, "dist/index.js")) ? path.join(pkg, "dist/index.js") : path.join(pkg, "dist/bundle/index.js");
+// The extension imports fs as an ES namespace: wrap readFileSync (and sync the namespace) so a test can act after a read.
+const nodeFs = createRequire(import.meta.url)("node:fs");
+const realReadFileSync = nodeFs.readFileSync;
+let afterRead;
+nodeFs.readFileSync = function (...args) {
+  const bytes = realReadFileSync.apply(this, args);
+  afterRead?.(String(args[0]));
+  return bytes;
+};
+syncBuiltinESMExports();
 const jiti = createJiti(import.meta.url, { alias: { "@earendil-works/pi-coding-agent": sdk, typebox: path.join(pkg, "node_modules/typebox/build/index.mjs") } });
 const hooks = await jiti.import(path.join(root, "Extensions/shepherd-hooks.ts"));
 
@@ -485,23 +495,17 @@ test("a hook published between the settings read and the hook-file read is never
   settings(hooksDir, { off: [] });
   const pi = load(hooksDir);
   // The app publishes a disabled hook (off hash first, then the file) right after an event reads settings.json.
-  const nodeFs = createRequire(import.meta.url)("node:fs");
-  const real = nodeFs.readFileSync;
   let published = false;
-  nodeFs.readFileSync = function (file, ...rest) {
-    const bytes = real.call(this, file, ...rest);
-    if (!published && String(file).endsWith("settings.json")) {
-      published = true;
-      const doc = { hooks: { PreToolUse: [{ matcher: "Edit", hooks: [hook("old"), hook("new")] }] } };
-      fs.writeFileSync(file, JSON.stringify({ version: 1, off: [hooks.hookHash(macFile, "PreToolUse", "Edit", hook("new"))] }));
-      writeJSON(macFile, doc);
-    }
-    return bytes;
+  afterRead = (file) => {
+    if (published || !file.endsWith("settings.json")) return;
+    published = true;
+    fs.writeFileSync(file, JSON.stringify({ version: 1, off: [hooks.hookHash(macFile, "PreToolUse", "Edit", hook("new"))] }));
+    writeJSON(macFile, { hooks: { PreToolUse: [{ matcher: "Edit", hooks: [hook("old"), hook("new")] }] } });
   };
   try {
     await pi.emit("tool_call", editCall(), context(project));
   } finally {
-    nodeFs.readFileSync = real;
+    afterRead = undefined;
   }
   assert.ok(published, "the race was staged");
   await pi.emit("tool_call", editCall(), context(project));
