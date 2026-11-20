@@ -453,20 +453,20 @@ public enum FleetDispatchPresentation {
 
 // MARK: - The dispatched thread
 
-/// What the dispatched thread draws of where it came from (FleetRemote): the header's host pill and "started by" link, the
+/// What the dispatched thread draws of where it came from (FleetRemote): the sender in the header's breadcrumb, the Mac in its options menu, the
 /// From box over the task, and the line saying where its last message goes. Derived from `Agent.dispatchedFrom`.
 public struct FleetSentBy: Equatable, Sendable {
-    /// The Mac running the thread, as the header's pill names it.
+    /// The Mac running the thread, as the options menu's "Runs on" names it.
     public var host: String
     /// The thread that sent it; "you" for one the person started.
     public var sender: String
-    /// The sender is a thread (the header offers its link, the banner says its last message goes back).
+    /// The sender is a thread (the breadcrumb offers its link, the banner says its last message goes back).
     public var fromThread: Bool
     /// "This Mac" or the Mac's own name: where the sender lives.
     public var senderHost: String
     /// Epoch milliseconds the dispatch was sent.
     public var at: Double
-    /// The header names the Mac it runs on: false for a thread another thread started on the same Mac (`StartedBy`).
+    /// The options menu names the Mac it runs on: false for a thread another thread started on the same Mac (`StartedBy`).
     public var showsHost = true
 
     /// "From Speed up checkout CI on This Mac".
@@ -486,7 +486,7 @@ public struct FleetSentBy: Equatable, Sendable {
         at = from.at
     }
 
-    /// A thread `agent_spawn` started on the Mac it runs on: only "started by" shows.
+    /// A thread `agent_spawn` started on the Mac it runs on: only its parent in the breadcrumb shows.
     public init(_ started: StartedBy, host: String) {
         self.host = host
         fromThread = true

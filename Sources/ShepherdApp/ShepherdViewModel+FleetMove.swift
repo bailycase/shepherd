@@ -3,15 +3,15 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-// Moving a thread to another Mac (FleetMove): what the header chip, the thread's menu and the palette offer, and what they ask. The host
+// Moving a thread to another Mac (FleetMove): what the thread options menu, the sidebar row menu and the palette offer, and what they ask. The host
 // that runs the thread does the move (`RemoteAgentAction.moveToMac`); this reads the fleet snapshot for the menu and the move's record for
 // the card.
 
-/// What the header draws of where the thread runs and where it can go.
+/// What the thread options menu says of where the thread runs and where it can go.
 struct FleetMoveHeader: Equatable {
     var chip: FleetMoveChip
     var menu: FleetMoveMenu
-    /// A move of this thread is going or waits: the chip opens nothing.
+    /// A move of this thread is going or waits: Move to is disabled.
     var busy: Bool
 }
 

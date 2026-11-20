@@ -51,19 +51,15 @@ struct NativeRowHeightTests {
         #expect(store.eagerRowCount(coveringHeight: 100_000, maxRows: 30) { $0.isUser } == 10, "skipped rows do not count")
     }
 
-    @Test func eagerCountReachesTheLiveReplyPastAQueuedRow() async throws {
+    @Test func eagerCountReachesTheLiveReplyPastAQueuedRow() async {
         let snapshot = NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: 1, running: true,
                                             supportedActions: [], dialogsSupported: true, dialogs: [],
                                             messages: [message("u0", "user", "Hi"), message("a0", "assistant", "Working."),
                                                        message("u1", "user", "Later.", status: "queued")],
                                             provisional: [], clipped: false)
-        let store = NativeThreadStore()
-        let polling = Task { await store.run(request: { request in
-            if case .snapshot = request { return .snapshot(value: snapshot) }
-            return .failure(code: "x", message: "unscripted")
-        }) }
+        let store = manualStore()
+        let polling = await start(store, FakeHost(snapshot))
         defer { polling.cancel() }
-        for _ in 0..<100 where store.liveRowID == nil { try await Task.sleep(for: .milliseconds(20)) }
         #expect(store.liveRowID != nil && store.rows.contains(where: \.live))
         #expect(store.eagerRowCount(coveringHeight: 1, maxRows: 30) == 2, "the queued row and the live reply above it")
     }

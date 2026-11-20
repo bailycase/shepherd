@@ -84,10 +84,9 @@ final class ThreadInput {
     private(set) var preparingImages = 0
     var dropTargeted = false
     private(set) var focusRequest = 0
-    var available = false {
-        didSet { if available != oldValue { generation += 1 } }
-    }
-    private var generation = 0
+    private(set) var available = false
+    @ObservationIgnored private var availableComposers: Set<UUID> = []
+    @ObservationIgnored private var generation = 0
     /// How dropped images are resized and read; a test holds it to see Send wait.
     @ObservationIgnored var prepareImages: ([NSItemProvider]) async -> [(URL, ImageFile?)] = { providers in
         await ImageFile.read(await AppImageDrop.resolve(providers))
@@ -108,6 +107,15 @@ final class ThreadInput {
         wheelIntentUntil = Date().addingTimeInterval(0.35)
     }
 
+    /// One thread can be shown in more than one composer. Invalidate reads only when the last one goes away.
+    func setAvailable(_ available: Bool, for owner: UUID) {
+        if available { availableComposers.insert(owner) } else { availableComposers.remove(owner) }
+        let hasComposer = !availableComposers.isEmpty
+        guard self.available != hasComposer else { return }
+        self.available = hasComposer
+        generation += 1
+    }
+
     func focus() {
         guard available else { return }
         focusRequest += 1
@@ -124,7 +132,8 @@ final class ThreadInput {
         Task {
             let files = await prepare(providers)
             preparingImages -= 1
-            guard available, self.generation == generation, store.sessionKey == session else { return }
+            // An initial session does not replace the draft the user already started.
+            guard available, self.generation == generation, session == nil || store.sessionKey == session else { return }
             add(files: files, store: store, localFiles: localFiles, imagesSupported: imagesSupported)
         }
     }

@@ -255,29 +255,3 @@ private struct BranchSheetHead: View {
             .accessibilityAddTraits(.isHeader)
     }
 }
-
-/// "started by Speed up checkout CI" under a thread's header (SubThreadPhone, SubThreadPad): the
-/// starter opens when it is on a host this device has.
-struct ThreadStartedByLine: View {
-    let startedBy: StartedBy
-    @Environment(MobileHosts.self) private var hosts
-    @Environment(MobileNavigator.self) private var navigator
-
-    var body: some View {
-        // A thread keeps its id when it moves to another Mac, so the starter is looked up everywhere.
-        let found = hosts.hosts.lazy.compactMap { host in host.agent(startedBy.agentID).map { (host.id, $0.name) } }.first
-        HStack(spacing: SH.Space.xs) {
-            Text("started by").foregroundStyle(Color.sh.textTertiary)
-            if let found {
-                Button(found.1) { navigator.open(.thread(AgentRef(host: found.0, agent: startedBy.agentID))) }
-                    .foregroundStyle(Color.sh.running)
-                    .lineLimit(1)
-            } else {
-                Text(startedBy.agentTitle).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
-            }
-        }
-        .font(.sh(.caption))
-        .frame(maxWidth: .infinity, minHeight: MobileLayout.statusDot * 4)
-        .accessibilityElement(children: .combine)
-    }
-}

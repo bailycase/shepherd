@@ -183,14 +183,12 @@ public struct FleetMoveCard: Equatable, Sendable {
     }
 }
 
-/// The header's chip: where the thread runs, and where it came from after a move.
+/// Where the thread runs and where it came from after a move: the "Runs on" section of the thread's options menu.
 public struct FleetMoveChip: Equatable, Sendable {
     public var text: String
     public var tone: FleetTone
-    /// "moved from This Mac · 14:02", after a move; nil for a thread that never moved.
+    /// "Moved from This Mac · 14:02", after a move; nil for a thread that never moved.
     public var movedFrom: String?
-
-    public var accessibilityLabel: String { "Runs on \(text). Move to another Mac" }
 
     public static func make(host: String, tone: FleetTone, movedFrom: MovedFrom?, thisFleetID: UUID?,
                             locale: Locale = .current, calendar: Calendar = .current) -> FleetMoveChip {
@@ -200,7 +198,7 @@ public struct FleetMoveChip: Equatable, Sendable {
             style.calendar = calendar
             style.timeZone = calendar.timeZone
             let name = movedFrom.hostID == thisFleetID ? "This Mac" : movedFrom.hostName
-            line = "moved from \(name) · \(Date(timeIntervalSince1970: movedFrom.at / 1000).formatted(style))"
+            line = "Moved from \(name) · \(Date(timeIntervalSince1970: movedFrom.at / 1000).formatted(style))"
         }
         return FleetMoveChip(text: host, tone: tone, movedFrom: line)
     }
