@@ -107,17 +107,19 @@ class LinkTests(unittest.TestCase):
         files = [ROOT / n for n in ("AGENTS.md", "DESIGN.md", "ARCHITECTURE.md", "README.md", "CONTRIBUTING.md", "SECURITY.md")]
         files += [ROOT / "docs" / f"{n}.md" for n in REFERENCE_DOCS]
         files.append(ROOT / "docs" / "design" / "boards" / "README.md")
+        files += sorted((ROOT / "docs" / "plans").glob("*.md"))
         problems = []
         for f in files:
             problems += broken_links(f)
         self.assertEqual(problems, [])
 
-    def test_docs_holds_only_the_reference_docs_and_the_saved_boards(self):
+    def test_docs_holds_only_the_kept_docs(self):
         docs = ROOT / "docs"
         extra = sorted(str(p.relative_to(docs)) for p in docs.rglob("*.md")
                        if p.parent == docs and p.stem not in REFERENCE_DOCS
-                       or p.parent != docs and p != docs / "design" / "boards" / "README.md")
-        self.assertEqual(extra, [], "docs/ is only the reference docs: put the detail in code and tests")
+                       or p.parent != docs and p != docs / "design" / "boards" / "README.md"
+                       and p.parent != docs / "plans")
+        self.assertEqual(extra, [], "docs/ is only for kept reference docs, saved boards, and plans in docs/plans")
 
 
 if __name__ == "__main__":
