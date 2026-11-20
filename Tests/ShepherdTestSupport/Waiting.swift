@@ -99,11 +99,12 @@ public func expectScenarioCompleted(_ result: ExitTest.Result?, sourceLocation: 
 }
 
 /// One-shot event a fake opens and a test awaits: no polls, no fixed sleeps. A `wait` that starts
-/// after `open` returns at once, so a signal is never missed.
+/// after `open` returns at once, so a signal is never missed. Cancellation-aware: cancelling a
+/// waiter resumes it at once, so `bounded` throws `GateTimeout` instead of hanging.
 public final class Gate: @unchecked Sendable {
     private let lock = NSLock()
     private var isOpen = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
 
     public init() {}
 
@@ -111,19 +112,28 @@ public final class Gate: @unchecked Sendable {
         let resume = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
             isOpen = true
             defer { waiters.removeAll() }
-            return waiters
+            return Array(waiters.values)
         }
         for waiter in resume { waiter.resume() }
     }
 
     public func wait() async {
-        await withCheckedContinuation { continuation in
-            let resumeNow = lock.withLock { () -> Bool in
-                if isOpen { return true }
-                waiters.append(continuation)
-                return false
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let resumeNow = lock.withLock { () -> Bool in
+                    if isOpen { return true }
+                    if Task.isCancelled { return true }
+                    waiters[id] = continuation
+                    return false
+                }
+                if resumeNow { continuation.resume() }
             }
-            if resumeNow { continuation.resume() }
+        } onCancel: {
+            let resume = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+                waiters.removeValue(forKey: id)
+            }
+            resume?.resume()
         }
     }
 }

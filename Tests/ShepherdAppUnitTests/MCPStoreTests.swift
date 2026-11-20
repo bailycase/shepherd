@@ -35,8 +35,10 @@ final class FakeMCPCLI: MCPCLI, @unchecked Sendable {
         for line in answer.lines { onLine?(line) }
         if blocksLogin, arguments.first == "login" {
             // Simulated pi waiting for a browser: suspends with no sleep until the flow's
-            // task is cancelled, then answers a late success. If cancellation never reached
-            // the fake, the flow would read this as signed in and the test would fail.
+            // task is cancelled, then answers a late success. The flow has already been
+            // cancelled by then, so the test proves it discards a success arriving after
+            // cancel; if cancellation never reached the fake, loginGate would never open
+            // and the test would time out waiting for cancellation.
             state.loginEntered.open()
             await withTaskCancellationHandler {
                 await state.loginGate.wait()
@@ -386,6 +388,7 @@ struct MCPStoreTests {
         harness.store.beginSignIn("notion")
         let flow = try #require(harness.store.signIn)
         await flow.completion()
+        #expect(flow.succeeded)
         #expect(cli.calls.first?.arguments == ["login", "notion", "--timeout", "300"])
         #expect(flow.model.phase == .done)
         #expect(flow.model.steps.map(\.state) == [.done, .done, .done])
@@ -411,6 +414,13 @@ struct MCPStoreTests {
         #expect(flow.model.subtitle == "Nothing was saved.")
         #expect(flow.model.details?.contains("not completed within 300 seconds") == true)
         #expect(!flow.succeeded)
+    }
+
+    @Test func boundedOnANeverOpenedGateThrowsWithinItsTimeout() async throws {
+        let gate = Gate()
+        await #expect(throws: GateTimeout.self) {
+            try await bounded("a gate that never opens", timeout: .milliseconds(50)) { await gate.wait() }
+        }
     }
 
     @Test func closingTheSheetEndsPisLoginAndClosingItTwiceIsFine() async throws {

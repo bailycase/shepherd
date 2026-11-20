@@ -288,7 +288,9 @@ struct MCPSettingsControlTests {
         let before = logins()
         try failed.press("Try again")
         try await eventuallyOnMain("pi's login to run again") { logins() == before + 1 }
-        try await eventuallyOnMain("the retry to fail") { failing.model.phase == .failed }
+        try await eventuallyOnMain("the failed retry sheet to draw") {
+            failing.model.phase == .failed && failed.controls().contains { $0.label == "Details" }
+        }
         try failed.press("Details")
         try failed.press("Close")
         #expect(closed == 2)
