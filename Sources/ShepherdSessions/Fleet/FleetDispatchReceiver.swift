@@ -441,8 +441,8 @@ extension FleetDispatch {
                     guard let self else { return }
                     self.pushing.remove(id)
                     guard delivered, var current = self.inbound[id] else { return self.scheduleEvaluation() }
-                    // What was sent is what the sender knows now; a change that came meanwhile is still owed.
-                    if current.record.updatedAt == record.updatedAt { current.unsent = false }
+                    // An acknowledgment covers the record we sent, not a later update with the same timestamp.
+                    if current.record == record { current.unsent = false }
                     if record.state == .delivering, current.record.state == .delivering { current.record.state = .done }
                     // A thread that moved on is reported to its sender once, and this Mac has nothing more to follow.
                     if record.movedOn != nil, current.record.movedOn != nil { current.record.state = .done }

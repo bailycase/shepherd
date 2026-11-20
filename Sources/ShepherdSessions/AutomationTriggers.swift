@@ -588,6 +588,45 @@ public actor AutomationTriggers {
     }
 }
 
+extension AutomationTriggers.File {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        allPaused = try c.decodeIfPresent(Bool.self, forKey: .allPaused) ?? false
+        records = try c.decodeIfPresent([String: AutomationTriggers.Record].self, forKey: .records) ?? [:]
+    }
+}
+
+extension AutomationTriggers.Pending {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        event = try c.decode(AutomationEvent.self, forKey: .event)
+        attempts = try c.decodeIfPresent(Int.self, forKey: .attempts) ?? 0
+        queuedAt = try c.decode(Double.self, forKey: .queuedAt)
+    }
+}
+
+extension AutomationTriggers.Record {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        fingerprint = try c.decode(String.self, forKey: .fingerprint)
+        baselineAt = try c.decode(Double.self, forKey: .baselineAt)
+        lastCheckedAt = try c.decodeIfPresent(Double.self, forKey: .lastCheckedAt)
+        seen = try c.decode([String: Double].self, forKey: .seen)
+        pending = try c.decode([AutomationTriggers.Pending].self, forKey: .pending)
+        nextRunAt = try c.decodeIfPresent(Double.self, forKey: .nextRunAt)
+        pausedReason = try c.decodeIfPresent(String.self, forKey: .pausedReason)
+        failures = try c.decode(Int.self, forKey: .failures)
+        retryAt = try c.decodeIfPresent(Double.self, forKey: .retryAt)
+        retryReason = try c.decodeIfPresent(String.self, forKey: .retryReason)
+        starts = try c.decode([Double].self, forKey: .starts)
+        capNotifiedDay = try c.decodeIfPresent(String.self, forKey: .capNotifiedDay)
+        heads = try c.decodeIfPresent([String: String].self, forKey: .heads) ?? [:]
+        windows = try c.decodeIfPresent([String: AutomationTriggers.Window].self, forKey: .windows) ?? [:]
+        heldReason = try c.decodeIfPresent(String.self, forKey: .heldReason)
+    }
+}
+
 extension AutomationEvent {
     /// "owner/name#12" for a GitHub event, nil for a schedule tick.
     public var itemKey: String? { Self.itemKey(ofEventID: id) }

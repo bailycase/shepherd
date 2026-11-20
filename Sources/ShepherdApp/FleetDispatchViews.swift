@@ -489,52 +489,6 @@ struct FleetGoesBackBanner: View, Equatable {
     }
 }
 
-/// The header of a thread another Mac or thread started, after its title: the Mac it runs on as a pill with a dot, and "started by <thread>" as a link
-/// when a thread started it.
-struct FleetSentByHeader: View, Equatable {
-    let sentBy: FleetSentBy
-    let online: Bool
-    var openSender: (() -> Void)?
-    /// The Mac's pill: the header's own chip (FleetMove) says it when the thread can move.
-    var showsHost = true
-
-    nonisolated static func == (a: FleetSentByHeader, b: FleetSentByHeader) -> Bool {
-        a.sentBy == b.sentBy && a.online == b.online && (a.openSender == nil) == (b.openSender == nil) && a.showsHost == b.showsHost
-    }
-
-    var body: some View {
-        let sh = Color.sh
-        HStack(spacing: SH.Space.m) {
-            if showsHost {
-                HStack(spacing: SH.Space.s) {
-                    Circle().fill(online ? sh.done : sh.textTertiary).frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
-                    Text(sentBy.host).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary).lineLimit(1)
-                }
-                .padding(.horizontal, SH.Space.m)
-                .frame(height: AppLayout.fleetHeaderPillHeight)
-                .shBorder(sh.lineStrong, radius: SH.Radius.s)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(online ? "Runs on \(sentBy.host)" : "Runs on \(sentBy.host), offline")
-            }
-            // A thread the person started on another Mac is a thread like any other: only one that a thread started says who.
-            if sentBy.fromThread {
-                HStack(spacing: SH.Space.xs) {
-                    Text("started by").foregroundStyle(sh.textTertiary)
-                    if let openSender {
-                        Button(action: openSender) { Text(sentBy.sender).foregroundStyle(sh.running) }
-                            .buttonStyle(.plain)
-                            .help("Open \(sentBy.sender)")
-                    } else {
-                        Text(sentBy.sender).foregroundStyle(sh.textSecondary)
-                    }
-                }
-                .font(.sh(.caption, weight: .regular))
-                .lineLimit(1)
-            }
-        }
-    }
-}
-
 /// "Mac mini stopped answering 2 minutes ago. Work there keeps running; this view catches up when it reconnects."
 struct FleetOfflineBannerView: View {
     let banner: FleetOfflineBanner
