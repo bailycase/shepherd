@@ -50,6 +50,8 @@ final class SHComposerFocusView: NSView {
         wantsLayer = true
         drawn.actions = SHLayerMotion.noActions.merging(
             ["borderColor": NSNull(), "borderWidth": NSNull(), "backgroundColor": NSNull(), "cornerRadius": NSNull()]) { $1 }
+        // SwiftUI's rounded rectangles, which these replaced, have continuous corners.
+        drawn.cornerCurve = .continuous
         layer?.addSublayer(drawn)
     }
 
@@ -93,7 +95,9 @@ final class SHComposerFocusView: NSView {
     override func layout() {
         super.layout()
         drawn.frame = bounds
-        drawn.cornerRadius = part == .line ? SH.Radius.m : SH.Radius.m + SHComposerMetrics.focusRing
+        // The line follows the card's corners. The ring is the shape this layer replaced: a rounded rectangle of the
+        // card's radius and the ring's width, inset by minus the ring's width, which grows the radius by it again.
+        drawn.cornerRadius = part == .line ? SH.Radius.m : SH.Radius.m + 2 * SHComposerMetrics.focusRing
     }
 }
 
