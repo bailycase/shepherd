@@ -49,7 +49,8 @@ final class ShepherdViewModel {
     /// The page the main column shows in place of a thread (New thread, Automations, Hosts);
     /// nil while a thread shows. Picking a row clears it. Ephemeral, like all selection state.
     var destination: MainDestination?
-    /// The sidebar's More is open, showing Hosts and Extensions. Ephemeral.
+    /// The active Changes review opened from the queue in this window.
+    @ObservationIgnored var queuedReview: SidebarRowID?
     /// Activity groups, cached on their source, pins and seen completion generations.
     @ObservationIgnored var sidebarListsCache: (source: SidebarSource, pins: SidebarPins, seen: [SidebarRowID: Int], lists: SidebarLists)?
     /// Those lists with the sidebar filters and sent-thread folds applied, cached on the lists and criteria.
@@ -1049,13 +1050,23 @@ final class ShepherdViewModel {
     /// capturing so rebinding these chords still works.
     private func handleNavigationKeyDown(_ event: NSEvent) -> Bool {
         guard !keybindings.isRecording else { return false }
+        let chord = KeyChord(event: event)
+        let nextNeedingYou = chord == keybindings.chord(for: .nextNeedingYou)
         let action = Self.navigationKeyAction(
             digit: KeyChord.digit(keyCode: event.keyCode),
-            chord: KeyChord(event: event),
+            chord: chord,
             modifiers: event.modifierFlags.intersection([.command, .shift, .option, .control]),
             next: keybindings.chord(for: .nextAgent),
             previous: keybindings.chord(for: .previousAgent)
         )
+        // Vertical document chords belong to multi-line drafts, including the selection
+        // variant (⇧⌘↓). Handle them before the menu can claim the key equivalent.
+        if nextNeedingYou || action == .adjacentAgent(1) || action == .adjacentAgent(-1),
+           let text = NSApp.keyWindow?.firstResponder as? NSTextView,
+           Self.draftTakesVerticalChord(chord, draft: text.string) {
+            text.interpretKeyEvents([event])
+            return true
+        }
         switch action {
         case .agentDigit(let digit):
             // Mirrors the Agent menu's digit rows: live only for an existing row.
@@ -1064,13 +1075,6 @@ final class ShepherdViewModel {
             selectAgentDigit(digit)
             return true
         case .adjacentAgent(let delta):
-            // ⌘↑ and ⌘↓ in a draft of several lines are the text view's own: the caret goes to
-            // the document's start or end, as in every Mac text view, and the agent stays.
-            if let text = NSApp.keyWindow?.firstResponder as? NSTextView,
-               Self.draftTakesVerticalChord(KeyChord(event: event), draft: text.string) {
-                text.interpretKeyEvents([event])
-                return true
-            }
             selectAdjacentAgent(delta)
             return true
         case nil:
@@ -1078,10 +1082,10 @@ final class ShepherdViewModel {
         }
     }
 
-    /// Whether a plain ⌘↑ or ⌘↓ belongs to the text view under the keyboard: only when the
-    /// draft spans more than one line, so a one-line composer still switches agents.
+    /// Document start/end (with or without selection) belongs to a multi-line draft.
     static func draftTakesVerticalChord(_ chord: KeyChord?, draft: String) -> Bool {
-        guard let chord, chord == KeyChord(key: "up", command: true) || chord == KeyChord(key: "down", command: true) else { return false }
+        guard let chord, chord.key == "up" || chord.key == "down",
+              chord.modifierFlags.subtracting(.shift) == .command else { return false }
         return draft.contains(where: \.isNewline)
     }
 

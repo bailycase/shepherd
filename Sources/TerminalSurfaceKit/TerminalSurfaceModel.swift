@@ -616,6 +616,8 @@ extension TerminalConfiguration {
         "shift+cmd+d", "alt+cmd+left", "alt+cmd+right",
         // ⌘↑/↓: previous/next agent in sidebar order. ⌥⌘↑/↓: turn jumps.
         "cmd+up", "cmd+down", "alt+cmd+up", "alt+cmd+down",
+        // ⇧⌘↓ Next Needing You · ⌥⇧⌘R Review Next.
+        "shift+cmd+down", "alt+shift+cmd+r",
         // ⇧⌘S sidebar · ⇧⌘B side pane · ⇧⌘M model picker · ⌘. stop · ⌘I inspect.
         "shift+cmd+s", "shift+cmd+b", "shift+cmd+m", "cmd+period", "cmd+i",
         // ⇧⌘I Import Claude Design Project….
