@@ -3,12 +3,11 @@ import Foundation
 import ShepherdCore
 
 // The apps Shepherd runs (Settings › Apps, the thread header's Run, New thread's quick actions,
-// the agent's app tools): each a background process in its own session (no controlling
-// terminal) and process group, keyed by its
-// space and name, owned here (the host's server) and by nothing else (no thread, no terminal, not
-// the app, which drives them over `apps.v2`). Its output (stdout and stderr together) goes to a
-// bounded ring of lines. Nothing here outlives the host: its stop stops every app, and nothing
-// restarts on the next launch.
+// the agent's app tools) each run in their own session and process group, with no controlling
+// terminal. The host's server owns them, keyed by space and name. The app drives them over
+// `apps.v2`; no thread or terminal owns them. Stdout and stderr share a bounded ring of lines.
+// On orderly shutdown, the host stops the apps it manages. An app can survive if the host is
+// killed, but the next host does not restart it.
 //
 // One serial queue owns every app's state. Callers never wait on it: answers come back through
 // completions, and `onChange` reports what changed (coalesced) on the queue, for the caller to
