@@ -620,6 +620,17 @@ test("hook_propose tests the command, asks with the proposal marker, then writes
   assert.deepEqual(pi.sent.at(-1).details, { kind: "added", event: "PostToolUse", name: "Formatting", detail: "edited in Settings", meta: pi.sent.at(-1).details.meta });
 });
 
+test("hook_propose says when the added hook is switched off by an earlier off record", async () => {
+  const { project, hooksDir, macFile } = fixture();
+  const handler = { type: "command", command: "echo again" };
+  writeJSON(path.join(hooksDir, "settings.json"), { version: 1, off: [hooks.hookHash(macFile, "Stop", "", handler)] });
+  const tool = load(hooksDir).tools.get("hook_propose");
+  const result = await tool.execute("p0", { name: "Again", event: "Stop", command: "echo again", scope: "mac" }, undefined, undefined, context(project, async () => "Add to this Mac"));
+  assert.match(result.content[0].text, /^Added/);
+  assert.match(result.content[0].text, /switched off/);
+  assert.equal(hooks.runnableHooks(project, hooksDir).length, 0, "the off record is kept");
+});
+
 test("hook_propose's test run is the agent's bash call: the person's PreToolUse Bash hooks can deny or ask first", async () => {
   const { project, hooksDir, macFile } = fixture();
   writeJSON(macFile, { hooks: { PreToolUse: [

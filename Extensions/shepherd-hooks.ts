@@ -870,7 +870,9 @@ export default function shepherdHooks(pi) {
       return reply(`Couldn't add the hook to ${file}: ${error?.message ?? error}`, true);
     }
     post([message("added", event, { handler, hash: added.hash, file }, { content: `Hook added: ${hookName(handler)} (${event}) in ${file}`, detail: matcher || undefined, meta: clip(command, 80) })]);
-    return reply(`Added to ${file} for ${event}${matcher ? ` (matcher: ${matcher})` : ""}.`);
+    // A hook the person once turned off keeps its off record, so the same bytes added again stay off. Say so.
+    const off = readSettings(hooksDir).off.includes(added.hash);
+    return reply(`Added to ${file} for ${event}${matcher ? ` (matcher: ${matcher})` : ""}.${off ? " It is switched off: the person turned this exact hook off earlier, so it won't run until they turn it on in Settings > Hooks." : ""}`);
   }
 
   /** Appends one group to the file (other content kept, written whole and atomically); returns its hash. */

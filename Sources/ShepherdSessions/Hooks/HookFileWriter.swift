@@ -24,8 +24,9 @@ public struct HookFileWriter: Sendable {
         try settings.withMutation { try addLocked(draft, to: path, startsOff: !on) }
     }
 
+    /// Call inside `settings.withMutation`.
     @discardableResult
-    private func addLocked(_ draft: HookDraft, to path: String, replacing old: HookEntry? = nil, startsOff: Bool = false) throws -> String {
+    func addLocked(_ draft: HookDraft, to path: String, replacing old: HookEntry? = nil, startsOff: Bool = false) throws -> String {
         var root = try document(path)
         try Self.insert(draft, into: &root)
         return try save(root, path: path, written: draft, replacing: old, startsOff: startsOff)
@@ -84,7 +85,8 @@ public struct HookFileWriter: Sendable {
         try settings.withMutation { try deleteLocked(entry) }
     }
 
-    private func deleteLocked(_ entry: HookEntry) throws {
+    /// Call inside `settings.withMutation`.
+    func deleteLocked(_ entry: HookEntry) throws {
         var root = try document(entry.file)
         try Self.verify(entry, in: root)
         Self.remove(entry, from: &root)
@@ -151,10 +153,16 @@ public struct HookFileWriter: Sendable {
     private func save(_ root: HookJSON, path: String, written draft: HookDraft?, replacing old: HookEntry?, startsOff: Bool = false) throws -> String {
         let hash = draft.map { HookCanonical.hash(file: path, event: $0.event, matcher: $0.matcher, canonical: $0.handler.raw.canonical) } ?? ""
         // Refuse damaged settings. Publish the new off hash first and keep old hashes for readers
-        // that still hold those hooks.
+        // that still hold those hooks. A hook that starts on (an add, or an edit of an enabled hook)
+        // is an explicit enable: it clears an old off record of the same bytes, so it isn't silently off.
         try settings.changeLocked { current in
+            guard draft != nil else { return }
             let carriesOff = old.map { current.off.contains($0.hash) } ?? false
-            if draft != nil, carriesOff || startsOff, !current.off.contains(hash) { current.off.append(hash) }
+            if carriesOff || startsOff {
+                if !current.off.contains(hash) { current.off.append(hash) }
+            } else {
+                current.off.removeAll { $0 == hash }
+            }
         }
         let target = PiHome.canonical(path)
         try FileManager.default.createDirectory(atPath: (target as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
