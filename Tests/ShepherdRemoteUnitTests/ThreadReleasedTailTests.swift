@@ -137,8 +137,8 @@ struct ThreadReleasedTailTests {
 
     /// A release that cut nothing (the thread held no more than a tail) is still a release to the tail: the thread leaves the count of
     /// threads that hold their history, is bounded with the other tails, and comes back as a tail does, its eager tail alone and the
-    /// lazy stack after its pull. Threads of a few heavy replies are most of what is released this way, and what the first frame draws
-    /// for them was measured with that restore (`ThreadRestoreTests`).
+    /// lazy stack after its pull (`ThreadRestoreTests`). A thread of a few heavy replies is one, and that is the restore its first
+    /// frame was measured with.
     @Test func aReleaseThatCutNothingStillLeavesTheThreadAsATail() async {
         let all = session(turns: 6)
         let (store, _) = await hidden(all)
