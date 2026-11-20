@@ -96,6 +96,71 @@ struct NativeThreadSendingTests {
         #expect(userRows(store).map(\.id) == ["pending:\(operation)"])
     }
 
+    /// The host's history already holds the message and the reply while its answer to the send is still on its way (or
+    /// never comes): the "Sending…" copy goes, its record settles, and the composer is free. A host that never names the
+    /// operation on its saved message (an older one) is matched by the words it saved after what the thread held.
+    @Test(arguments: [true, false])
+    func aDeliveredMessageReplacesItsSendingCopyWhateverTheHostCallsIt(_ named: Bool) async throws {
+        let hold = SendHold()
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let (store, loop) = await started(F.snapshot(messages: [hi]), hold: hold, host: host)
+        defer { hold.held = false; loop.cancel(); store.stop() }
+        store.draft = "hello"
+        let send = Task { await store.send(delivery: .followUp) }
+        await until { hold.operation != nil }
+        let operation = try #require(hold.operation)
+        #expect(userRows(store).count == 1 && store.busy)
+        var saved = F.user("hello", id: "u1")
+        if named { saved.operationID = operation }
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, saved, F.assistant("hi there", id: "a2")])
+        await store.refresh()
+        #expect(userRows(store).count == 1 && userRows(store).allSatisfy { $0.turn.sendingNote == nil },
+                "the saved message is the only copy")
+        #expect(store.submissions.isEmpty, "a delivered send is not still sending")
+        #expect(!store.busy, "the composer is not left spinning for an answer the thread already has")
+        hold.held = false
+        #expect(await send.value)
+        #expect(userRows(store).count == 1 && store.pending.isEmpty && store.submissions.isEmpty)
+    }
+
+    /// The same words sent before are not this send landing.
+    @Test func anEarlierMessageWithTheSameWordsIsNotTheSendLanding() async throws {
+        let hold = SendHold()
+        let earlier = F.user("continue", id: "u0")
+        let host = FakeHost(F.snapshot(messages: [earlier, hi]))
+        let (store, loop) = await started(F.snapshot(messages: [earlier, hi]), hold: hold, host: host)
+        defer { hold.held = false; loop.cancel(); store.stop() }
+        store.draft = "continue"
+        let send = Task { await store.send(delivery: .followUp) }
+        await until { hold.operation != nil }
+        host.snapshot = F.snapshot(revision: 2, messages: [earlier, hi])
+        await store.refresh()
+        #expect(userRows(store).count == 2 && store.submissions.first?.state == .sending && store.busy)
+        hold.held = false
+        #expect(await send.value)
+    }
+
+    /// A send the host took, whose saved message reads differently from the words sent (a command or skill pi expanded):
+    /// once its turn is over the echo does not wait for a match that never comes.
+    @Test(arguments: [true, false])
+    func anAcceptedEchoDoesNotOutliveItsSettledTurn(_ hostQueues: Bool) async throws {
+        let hold = SendHold()
+        hold.held = false
+        let start = F.snapshot(messages: [hi], queue: hostQueues ? NativeQueue() : nil)
+        let host = FakeHost(start)
+        let (store, loop) = await started(start, hold: hold, host: host)
+        defer { loop.cancel(); store.stop() }
+        store.draft = "/review"
+        #expect(await store.send(delivery: .followUp))
+        #expect(store.pending.count == (hostQueues ? 0 : 1), "a host with a queue shows its own row for it")
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.user("Review the diff carefully", id: "u1"), F.assistant("done", id: "a2")],
+                                   queue: hostQueues ? NativeQueue() : nil)
+        await store.refresh()
+        await store.refresh()
+        #expect(store.pending.isEmpty, "the turn settled; nothing is still pending")
+        #expect(userRows(store).count == 1 && !store.busy)
+    }
+
     @Test(arguments: [NativeThreadDelivery.followUp, .steer])
     func aSendWhileRunningWaitsBelowTheReplyAndLeavesForUpNext(_ delivery: NativeThreadDelivery) async throws {
         let reply = F.assistant("working", status: "streaming", id: "r")
