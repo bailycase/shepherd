@@ -44,7 +44,7 @@ extension ThreadPreviewTests {
         let size = CGSize(width: 760, height: 520)
         try await Preview.render("question-record-states", size: size) {
             VStack(alignment: .leading, spacing: 28) {
-                SHQuestionRecord(question: "How should I handle Horizon’s uncommitted edits?",
+                SHQuestionRecord(question: "How should I handle Orbit’s uncommitted edits?",
                                  title: "Compare, keep what’s unique, then go through GitHub", answered: true,
                                  timestamp: "2:51 PM · answered", revealed: true)
                 SHQuestionRecord(question: "Clear the session?", title: "Yes", answered: true, timestamp: "2:52 PM · answered",
@@ -85,7 +85,7 @@ private struct QuestionThreadRows: View {
     }
 }
 
-/// QuestionAnswered's thread: the deploy, what pi found on Horizon, the question it asked and
+/// QuestionAnswered's thread: the deploy, what pi found on Orbit, the question it asked and
 /// the answer, then the work that followed. (A question asked from a tool also keeps that
 /// tool's own activity line; the board draws one asked by an extension.)
 @MainActor
@@ -100,29 +100,29 @@ enum QuestionThreads {
         let asked = t0 + 20_000
         let answered = today.addingTimeInterval((14 * 60 + 51) * 60).timeIntervalSince1970 * 1000
         let found = """
-        Before deploying I looked at Horizon’s checkout. It isn’t clean, so I stopped before pulling anything:
+        Before deploying I looked at Orbit’s checkout. It isn’t clean, so I stopped before pulling anything:
 
-        - `master` on Horizon is 50 commits behind GitHub.
-        - Horizon is on `chore/remove-homarr`, which split off from master.
+        - `master` on Orbit is 50 commits behind GitHub.
+        - Orbit is on `chore/remove-homarr`, which split off from master.
         - 11 files are uncommitted: the Homarr removal, media support, routing, and an encrypted secret.
         - GitHub already has a merged PR that removes Homarr.
         """
         let messages = [
-            A.user("u1", "Deploy the new media stack to Horizon.", at: t0),
-            A.tool("s1", "bash", ["command": "ssh horizon git status"], output: "On branch chore/remove-homarr", start: t0 + 1_000, end: t0 + 5_000),
-            A.tool("s2", "bash", ["command": "ssh horizon git fetch"], output: "", start: t0 + 5_000, end: t0 + 9_000),
-            A.tool("s3", "bash", ["command": "ssh horizon git log --oneline master..origin/master | wc -l"], output: "50",
+            A.user("u1", "Deploy the new media stack to Orbit.", at: t0),
+            A.tool("s1", "bash", ["command": "ssh orbit git status"], output: "On branch chore/remove-homarr", start: t0 + 1_000, end: t0 + 5_000),
+            A.tool("s2", "bash", ["command": "ssh orbit git fetch"], output: "", start: t0 + 5_000, end: t0 + 9_000),
+            A.tool("s3", "bash", ["command": "ssh orbit git log --oneline master..origin/master | wc -l"], output: "50",
                    start: t0 + 9_000, end: t0 + 14_000),
             A.assistant("a1", found, at: t0 + 15_000),
             NativeThreadMessage(entryID: "q:ask", role: "question", blocks: [], timestamp: answered,
-                                question: NativeQuestionRecord(kind: .select, question: "How should I handle Horizon’s uncommitted edits?",
+                                question: NativeQuestionRecord(kind: .select, question: "How should I handle Orbit’s uncommitted edits?",
                                                                answer: "Compare, keep what’s unique, then go through GitHub (Recommended)\nNew branch and PR for anything not merged.",
                                                                outcome: .answered, askedAt: asked)),
-            A.tool("s4", "bash", ["command": "ssh horizon git diff --stat origin/master"], output: "11 files changed",
+            A.tool("s4", "bash", ["command": "ssh orbit git diff --stat origin/master"], output: "11 files changed",
                    start: answered + 2_000, end: answered + 20_000),
-            A.tool("s5", "bash", ["command": "ssh horizon git push origin HEAD:horizon/media-support"], output: "",
+            A.tool("s5", "bash", ["command": "ssh orbit git push origin HEAD:orbit/media-support"], output: "",
                    start: answered + 20_000, end: answered + 41_000),
-            A.assistant("a2", "Four of the eleven files were already in the merged Homarr PR. The other seven are on `horizon/media-support`. The encrypted secret stays on Horizon.",
+            A.assistant("a2", "Four of the eleven files were already in the merged Homarr PR. The other seven are on `orbit/media-support`. The encrypted secret stays on Orbit.",
                         at: answered + 43_000),
         ]
         return A.snapshot(messages)

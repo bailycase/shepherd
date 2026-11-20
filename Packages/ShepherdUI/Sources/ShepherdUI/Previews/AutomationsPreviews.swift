@@ -21,7 +21,7 @@ import SwiftUI
                 SHAutomationRow("Triage new Sentry issues", when: "When Shepherd starts · checkout-svc", status: "Asked you",
                                 statusTone: .attention, leading: .symbol("bolt", .attention), isOn: true, selected: true,
                                 toggle: { _ in }, open: {})
-                SHAutomationRow("Stale branch cleanup", when: "By hand · horizon", status: "Host offline", leading: .symbol("bolt"),
+                SHAutomationRow("Stale branch cleanup", when: "By hand · orbit", status: "Host offline", leading: .symbol("bolt"),
                                 isOn: false, switchEnabled: false, dimmed: true)
             }
         }

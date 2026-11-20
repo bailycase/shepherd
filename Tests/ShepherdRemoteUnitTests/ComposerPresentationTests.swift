@@ -280,7 +280,7 @@ struct ComposerPresentationTests {
     @Test func optionsAreNumberedAndKeepTheValueAsOffered() {
         let dialog = NativeThreadDialog(id: "d", kind: .select, title: "Where?", options: [
             "Compare, keep what's unique (Recommended)\nNew branch and PR for anything not merged.",
-            "Leave Horizon alone",
+            "Leave Orbit alone",
             "Deploy — recommended",
         ])
         let options = NativeQuestionOption.options(dialog)
