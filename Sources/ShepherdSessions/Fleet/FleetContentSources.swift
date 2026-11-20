@@ -82,6 +82,8 @@ final class FleetHooksSource: FleetUnitSource {
     private let catalog: () -> HookCatalog
     private let written: () -> Void
     private var present: [String] = []
+    /// unit → the fingerprint `fingerprints()` last reported: the state an op was computed from.
+    private var fingerprinted: [String: String]?
     /// What `isReady` validated, which `read` then uses: a reload in between could see a settings file that isn't.
     private var validated: HookCatalogSnapshot?
 
@@ -99,14 +101,14 @@ final class FleetHooksSource: FleetUnitSource {
     private var sharedPath: String { catalog().home + "/.shepherd/hooks.json" }
     var watchedFiles: [URL] { [URL(fileURLWithPath: sharedPath), catalog().settingsStore.url] }
 
-    /// Damaged settings are logged once until they read again.
+    /// Snapshot problems are logged once until the catalog reads again.
     private var wasReady = true
 
     /// A hooks file that doesn't read would look like no hooks, and delete them all: wait until it does.
     /// Damaged `settings.json` isn't ready either: its fallback reader switches would sync as real edits
-    /// and turn a reader the person switched off back on, on another Mac.
+    /// and turn a reader the person switched off back on, on another Mac. The catalog also
+    /// reports a problem if the hook files kept changing and no stable snapshot was possible.
     var isReady: Bool {
-        let path = sharedPath
         let snapshot = catalog().load()
         validated = nil
         let problem = snapshot.settingsProblem
@@ -118,14 +120,24 @@ final class FleetHooksSource: FleetUnitSource {
                 ShepherdLog.info("fleet: hook sync resumed. Hook settings read again.")
             }
         }
-        if problem != nil { return false }
+        guard problem == nil, readsOwnFile(snapshot) else { return false }
+        validated = snapshot
+        return true
+    }
+
+    /// Whether the snapshot read Shepherd's own hooks file (or found it missing), not something unreadable.
+    private func readsOwnFile(_ snapshot: HookCatalogSnapshot) -> Bool {
+        let path = sharedPath
         guard let source = snapshot.sources.first(where: { $0.path == path }) else { return false }
         switch source.state {
-        case .loaded, .notFound:
-            validated = snapshot
-            return true
+        case .loaded, .notFound: return true
         case .readerOff, .unreadable: return false
         }
+    }
+
+    /// A write met files that were changing or settings that didn't read: it is tried again, never recorded as applied.
+    private struct NotSettled: Error, CustomStringConvertible {
+        var description = "the hook files weren't readable together"
     }
 
     /// The id of a hook: the same on every Mac, whatever its home folder.
@@ -138,13 +150,22 @@ final class FleetHooksSource: FleetUnitSource {
         return snapshot.entries.filter { $0.scope == .mac && $0.format == .shepherd && $0.file == path }
     }
 
+    private static func value(of entry: HookEntry) -> Data {
+        Data(HookJSON.object(["event": .string(entry.event), "handler": entry.handler.raw, "matcher": .string(entry.matcher), "on": .bool(entry.on)]).canonical.utf8)
+    }
+
+    func fingerprints() -> [String: String] {
+        let hashes = read().mapValues { FleetSyncProtocol.hash($0) }
+        fingerprinted = hashes
+        return hashes
+    }
+
     func read() -> [String: Data] {
-        let snapshot = validated ?? catalog().load()
+        if validated == nil, !isReady { return [:] }
+        guard let snapshot = validated else { return [:] }
         var values: [String: Data] = [:]
         for entry in ownEntries(snapshot) {
-            let id = Self.id(event: entry.event, matcher: entry.matcher, handler: entry.handler.raw)
-            let value = HookJSON.object(["event": .string(entry.event), "handler": entry.handler.raw, "matcher": .string(entry.matcher), "on": .bool(entry.on)])
-            values[Self.kind + id] = Data(value.canonical.utf8)
+            values[Self.kind + Self.id(event: entry.event, matcher: entry.matcher, handler: entry.handler.raw)] = Self.value(of: entry)
         }
         present = Array(values.keys)
         let readers = snapshot.settings.readers
@@ -158,35 +179,54 @@ final class FleetHooksSource: FleetUnitSource {
         return String(decoding: value, as: UTF8.self) != HookJSON.object(["claude": .bool(true), "codex": .bool(true)]).canonical
     }
 
+    /// Runs on the server queue: the settings lock is tried, never waited for (`HookSettingsStore.Busy`), and a
+    /// write that can't be applied throws so the materializer tries it again instead of recording it as done.
     func write(_ unit: String, _ value: Data?, origin: String) throws {
         let catalog = catalog()
         validated = nil
         if unit == Self.readers {
             guard let value, let json = try? HookJSON.parse(String(decoding: value, as: UTF8.self)),
                   let claude = json["claude"]?.boolValue, let codex = json["codex"]?.boolValue else { return }
-            try catalog.settingsStore.change { $0.readers = HookSettings.Readers(claude: claude, codex: codex) }
+            try catalog.settingsStore.change(wait: false) { $0.readers = HookSettings.Readers(claude: claude, codex: codex) }
             written()
             return
         }
         guard unit.hasPrefix(Self.kind) else { return }
         let id = String(unit.dropFirst(Self.kind.count))
-        let existing = ownEntries(catalog.load()).first { Self.id(event: $0.event, matcher: $0.matcher, handler: $0.handler.raw) == id }
+        var incoming: (draft: HookDraft, on: Bool)?
+        if let value {
+            guard let json = try? HookJSON.parse(String(decoding: value, as: UTF8.self)), let event = json["event"]?.stringValue, !event.isEmpty,
+                  let handler = json["handler"], handler.objectValue != nil else {
+                throw FleetUnitRefused(description: "\(unit) isn't a hook")
+            }
+            incoming = (HookDraft(event: event, matcher: json["matcher"]?.stringValue ?? "", handler: HookHandler(raw: handler)), json["on"]?.boolValue ?? true)
+        }
         let writer = HookFileWriter(settings: catalog.settingsStore)
+        let path = sharedPath
         do {
-            if let value {
-                guard let json = try? HookJSON.parse(String(decoding: value, as: UTF8.self)), let event = json["event"]?.stringValue, !event.isEmpty,
-                      let handler = json["handler"], handler.objectValue != nil else {
-                    throw FleetUnitRefused(description: "\(unit) isn't a hook")
+            // The lookup and the change share one lock, so the hook can't move between them.
+            try catalog.settingsStore.withMutation(wait: false) {
+                // A catalog that is churning lists no hooks: an upsert would add a duplicate and a delete would find nothing.
+                let snapshot = catalog.load()
+                guard snapshot.settingsProblem == nil, readsOwnFile(snapshot) else { throw NotSettled() }
+                let existing = ownEntries(snapshot).first { Self.id(event: $0.event, matcher: $0.matcher, handler: $0.handler.raw) == id }
+                // The op was computed from the fingerprint the pass read. If the hook moved since (a person
+                // deleted or edited it), writing would undo that: retry after a rescan turns it into an op.
+                if let fingerprinted, (fingerprinted[unit] ?? "-") != existing.map({ FleetSyncProtocol.hash(Self.value(of: $0)) }) ?? "-" {
+                    throw NotSettled(description: "\(unit) changed since it was read")
                 }
-                let on = json["on"]?.boolValue ?? true
-                if let existing {
-                    if existing.on != on { try catalog.settingsStore.setOn(existing.hash, on) }
-                } else {
-                    // A disabled hook is recorded off before its file publishes it.
-                    try writer.add(HookDraft(event: event, matcher: json["matcher"]?.stringValue ?? "", handler: HookHandler(raw: handler)), to: sharedPath, on: on)
+                if let incoming {
+                    if let existing {
+                        // A Fleet value can't tell a toggle from a content upsert, so only turning a hook off applies here:
+                        // an upsert never removes a hash from `off`. Enabling stays a local toggle on each Mac.
+                        if existing.on, !incoming.on { try catalog.settingsStore.changeLocked { HookSettingsStore.switchHash(&$0, existing.hash, false) } }
+                    } else {
+                        // A disabled hook is recorded off before its file publishes it. Bytes already off land off, even with on: true.
+                        try writer.addLocked(incoming.draft, to: path, startsOff: !incoming.on)
+                    }
+                } else if let existing {
+                    try writer.deleteLocked(existing)
                 }
-            } else if let existing {
-                try writer.delete(existing)
             }
         } catch let failure as HookFileWriter.Failure {
             throw FleetUnitRefused(description: failure.description)

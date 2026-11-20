@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
@@ -12,6 +13,11 @@ public final class HookSettingsStore: @unchecked Sendable {
     public struct Damaged: Error, LocalizedError, Equatable, Sendable {
         public let message: String
         public var errorDescription: String? { message }
+    }
+
+    /// Another process holds the settings lock; `withMutation(wait: false)` gave up rather than block.
+    public struct Busy: Error, LocalizedError, Equatable, Sendable {
+        public var errorDescription: String? { "Hook settings are being changed by another process. Try again." }
     }
 
     public let url: URL
@@ -30,10 +36,12 @@ public final class HookSettingsStore: @unchecked Sendable {
 
     /// Switches a hook on or off.
     public func setOn(_ hash: String, _ on: Bool) throws {
-        try change { settings in
-            settings.off.removeAll { $0 == hash }
-            if !on { settings.off.append(hash) }
-        }
+        try change { Self.switchHash(&$0, hash, on) }
+    }
+
+    static func switchHash(_ settings: inout HookSettings, _ hash: String, _ on: Bool) {
+        settings.off.removeAll { $0 == hash }
+        if !on { settings.off.append(hash) }
     }
 
     /// Turns the Claude Code or Codex reader on or off. Shepherd's own files are always read.
@@ -47,14 +55,36 @@ public final class HookSettingsStore: @unchecked Sendable {
         }
     }
 
+    /// The app and host can both write. Lock a separate inode because settings is replaced by rename.
+    /// `wait: false` is for the host's server queue, which never blocks: a lock held elsewhere (a
+    /// suspended app can hold it indefinitely) throws `Busy` and the caller tries again later.
+    func withMutation<T>(wait: Bool = true, _ body: () throws -> T) throws -> T {
+        let directory = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let path = directory.appendingPathComponent("settings.lock").path
+        let fd = open(path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        defer { close(fd) }
+        while flock(fd, wait ? LOCK_EX : LOCK_EX | LOCK_NB) != 0 {
+            if errno == EINTR { continue }
+            if !wait, errno == EWOULDBLOCK { throw Busy() }
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        return try body()
+    }
+
     /// Applies `body` to the current file and writes the result whole; nothing when it changes nothing.
-    public func change(_ body: (inout HookSettings) throws -> Void) throws {
+    public func change(wait: Bool = true, _ body: (inout HookSettings) throws -> Void) throws {
+        try withMutation(wait: wait) { try changeLocked(body) }
+    }
+
+    /// Call inside `withMutation`, including when the settings write must precede a hook publish.
+    func changeLocked(_ body: (inout HookSettings) throws -> Void) throws {
         try lock.withLock {
             var settings = try load()
             let before = settings
             try body(&settings)
             guard settings != before else { return }
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             var data = try encoder.encode(settings)
