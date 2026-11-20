@@ -591,6 +591,7 @@ final class AppSettings {
     var goalsEnabled: Bool {
         didSet {
             store.set(goalsEnabled, forKey: Key.goalsEnabled)
+            hostPreferences?.update { $0.experiments.goals = goalsEnabled }
             if goalsEnabled != oldValue { onGoalsChange?(goalsEnabled) }
         }
     }
@@ -600,6 +601,7 @@ final class AppSettings {
     var projectsEnabled: Bool {
         didSet {
             store.set(projectsEnabled, forKey: Key.projectsEnabled)
+            hostPreferences?.update { $0.experiments.projects = projectsEnabled }
             if projectsEnabled != oldValue { onProjectsChange?(projectsEnabled) }
         }
     }
@@ -703,6 +705,7 @@ final class AppSettings {
     var designToolEnabled: Bool {
         didSet {
             store.set(designToolEnabled, forKey: Key.designToolEnabled)
+            hostPreferences?.update { $0.experiments.designTool = designToolEnabled }
             if designToolEnabled != oldValue { onDesignToolChange?(designToolEnabled) }
         }
     }
@@ -710,7 +713,10 @@ final class AppSettings {
     /// Settings ▸ Experiments ▸ Computer use: new threads get the tools that see and work this
     /// Mac's apps. Off by default; running threads follow at their next start.
     var computerUseEnabled: Bool {
-        didSet { store.set(computerUseEnabled, forKey: Key.computerUseEnabled) }
+        didSet {
+            store.set(computerUseEnabled, forKey: Key.computerUseEnabled)
+            hostPreferences?.update { $0.experiments.computerUse = computerUseEnabled }
+        }
     }
 
     /// Implement in a thread's "Open the thread after sending" (RefSentStay): off stays on the
@@ -724,16 +730,16 @@ final class AppSettings {
 
     private let store: UserDefaults
 
-    /// The host's own copy of the Agents and Worktrees groups (`HostSettingsStore`), set only in the host process:
-    /// each change to either also goes there, beside its UserDefaults key, which stays current for the previous release.
+    /// The host's own copy of the Agents, Worktrees and Experiments groups (`HostSettingsStore`), set only in the host process:
+    /// each change to any of them also goes there, beside its UserDefaults key, which stays current for the previous release.
     @ObservationIgnored private var hostPreferences: HostSettingsStore?
 
     /// Has the host keep `preferences` from now on, starting from what this object holds. The keys
     /// were read at init, so a change the previous release made to them since the file was written wins.
     func adoptHostPreferences(_ preferences: HostSettingsStore) {
         hostPreferences = preferences
-        let agents = agentsGroup, worktrees = worktreesGroup
-        preferences.update { $0.agents = agents; $0.worktrees = worktrees }
+        let agents = agentsGroup, worktrees = worktreesGroup, experiments = experimentsGroup
+        preferences.update { $0.agents = agents; $0.worktrees = worktrees; $0.experiments = experiments }
     }
 
     /// The Agents group as the host's reply reads it: from the host's store once it is adopted (it is kept current by
@@ -742,6 +748,18 @@ final class AppSettings {
 
     /// The Worktrees group as the host's reply reads it, like `hostAgents`.
     var hostWorktrees: StoredHostPreferences.Worktrees { hostPreferences?.preferences.worktrees ?? worktreesGroup }
+
+    /// The Experiments group as the host's reply reads it, like `hostAgents`.
+    var hostExperiments: StoredHostPreferences.Experiments { hostPreferences?.preferences.experiments ?? experimentsGroup }
+
+    private var experimentsGroup: StoredHostPreferences.Experiments {
+        var experiments = StoredHostPreferences.Experiments()
+        experiments.goals = goalsEnabled
+        experiments.projects = projectsEnabled
+        experiments.designTool = designToolEnabled
+        experiments.computerUse = computerUseEnabled
+        return experiments
+    }
 
     private var worktreesGroup: StoredHostPreferences.Worktrees {
         var worktrees = StoredHostPreferences.Worktrees()

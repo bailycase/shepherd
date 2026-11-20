@@ -21,8 +21,11 @@ struct HostSettingsStoreTests {
         let worktrees = StoredHostPreferences.Worktrees()
         let worktreesEncoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(worktrees)) as? [String: Any])
         #expect(Set(Mirror(reflecting: worktrees).children.compactMap(\.label)) == Set(worktreesEncoded.keys), "a Worktrees field the file does not carry")
+        let experiments = StoredHostPreferences.Experiments()
+        let experimentsEncoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(experiments)) as? [String: Any])
+        #expect(Set(Mirror(reflecting: experiments).children.compactMap(\.label)) == Set(experimentsEncoded.keys), "an Experiments field the file does not carry")
         let groups = Mirror(reflecting: StoredHostPreferences()).children.compactMap(\.label)
-        #expect(Set(groups) == ["version", "agents", "worktrees"], "a group with no check above")
+        #expect(Set(groups) == ["version", "agents", "worktrees", "experiments"], "a group with no check above")
         #expect(try StoredHostPreferences.decode(Data("{}".utf8)) == StoredHostPreferences())
     }
 
@@ -38,6 +41,13 @@ struct HostSettingsStoreTests {
         #expect(read.worktrees == StoredHostPreferences.Worktrees() && !read.agents.codemode)
         let partial = try StoredHostPreferences.decode(Data(#"{"worktrees":{"closeOnMerge":true}}"#.utf8)).worktrees
         #expect(partial.closeOnMerge && partial.baseMode == .fresh && partial.fetchBeforeCreate && partial.generatePRDescription && partial.deleteAction == .ask)
+    }
+
+    @Test func aFileFromBeforeExperimentsMovedReadsThemAsDefaults() throws {
+        let read = try StoredHostPreferences.decode(Data(#"{"version":1,"worktrees":{"closeOnMerge":true}}"#.utf8))
+        #expect(read.experiments == StoredHostPreferences.Experiments() && read.worktrees.closeOnMerge)
+        let partial = try StoredHostPreferences.decode(Data(#"{"experiments":{"designTool":true}}"#.utf8)).experiments
+        #expect(partial.designTool && !partial.goals && !partial.projects && !partial.computerUse)
     }
 
     @Test func aChangeIsKeptInTheFileAndAReopenedStoreReadsIt() throws {
