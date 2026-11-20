@@ -42,7 +42,7 @@ public struct AgentBranchLabel: Equatable, Sendable {
         self.host = host
     }
 
-    /// The chip's tooltip: "Worktree · pi/x · 3 files changed · on horizon", then the directory
+    /// The chip's tooltip: "Worktree · pi/x · 3 files changed · on orbit", then the directory
     /// on a second line when it is known.
     public func help(directory: String?) -> String {
         let summary = [kind == .worktree ? "Worktree" : "Your checkout", branch,

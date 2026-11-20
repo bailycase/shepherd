@@ -33,12 +33,18 @@ import ShepherdRemote
             }
             return .projects(id: id, result: result)
         })
-        return FixtureScreen(name: fixture.name, hosts: [host], routes: [.settings(.spaces), .settings(.space(directory))], tab: .settings,
-                             prepare: { _ in
-            await FixtureWindows.wait("space MCP sign-in requests", seconds: 10) {
-                let count = FixtureHost.running(host.id)?.requests.filter { $0 == "projects" }.count ?? 0
-                return count >= (phase == .done ? 4 : 6)
+        return FixtureScreen(name: fixture.name, hosts: [host], routes: [
+            .settings(.root), .settings(.spaces),
+            .settings(.spaceConfiguration(host: host.id, directory: directory, name: "acme-web", section: .mcp)),
+        ], tab: .settings, prepare: { _ in
+            SidebarAutomationsCheck.enableAccessibility()
+            await FixtureCheck.wait("the enabled space MCP sign-in button", seconds: 8) {
+                TriggerFlowCheck.element("Sign in")?.accessibilityTraits.contains(.notEnabled) == false
             }
-        }, setup: { SpaceMCP.fixtureServer = phase == .done ? nil : "acme-issues" })
+            guard phase != .done else { return }
+            await TriggerFlowCheck.press("Sign in")
+            let label = phase == .failed ? "The MCP server couldn't complete sign-in." : "Cancel"
+            await FixtureCheck.wait(label, seconds: 8) { TriggerFlowCheck.element(label) != nil }
+        })
     }
 }

@@ -20,7 +20,7 @@ extension AppLayout {
     static let settingsEditorChrome: CGFloat = 56 + 44 + SH.Space.xxxl + SH.Space.xl
     /// A group's footnote line height.
     static let settingsFootnoteLineHeight: CGFloat = 1.35
-    /// A remote host's address in its row ("horizon.starlight.internal:7433"): mono 12.
+    /// A remote host's address in its row ("orbit.starlight.internal:7433"): mono 12.
     static let settingsAddressSize: CGFloat = 12
     /// Between the page header and each group, and between groups.
     static let settingsGroupSpacing: CGFloat = SH.Space.xl

@@ -140,9 +140,9 @@ private struct SHPreviewSizedControls: View {
 #Preview("Question head") {
     SHPreviewBoth {
         VStack(alignment: .leading, spacing: SH.Space.xl) {
-            SHQuestionHead(question: "How should I handle Horizon’s uncommitted edits?") {}
+            SHQuestionHead(question: "How should I handle Orbit’s uncommitted edits?") {}
             SHQuestionHead(count: 3, question: "Are the threads a trigger starts ordinary threads or throwaway ones?") {}
-            SHQuestionHiddenLine(question: "How should I handle Horizon’s uncommitted edits?") {}
+            SHQuestionHiddenLine(question: "How should I handle Orbit’s uncommitted edits?") {}
         }
         .frame(width: 600)
     }
@@ -178,12 +178,12 @@ struct SHQuestionDockSample: View {
                     SHQuestionDockOption(number: 3, title: "Persist, but keep them in a separate Automations inbox, not the project sidebar"),
                 ], allowsText: true), selection: SHQuestionDockSelection(picked: 1))
             SHQuestionDockSample(SHQuestionDockContent(
-                question: "How should I handle Horizon’s uncommitted edits?", kind: .choice,
+                question: "How should I handle Orbit’s uncommitted edits?", kind: .choice,
                 options: [
                     SHQuestionDockOption(number: 1, title: "Compare, keep what’s unique, then go through GitHub",
-                                         detail: "Diff the 11 files against current master. Nothing on Horizon is overwritten.", recommended: true),
-                    SHQuestionDockOption(number: 2, title: "Leave Horizon alone and deploy from a clean checkout",
-                                         detail: "Horizon keeps its edits as they are."),
+                                         detail: "Diff the 11 files against current master. Nothing on Orbit is overwritten.", recommended: true),
+                    SHQuestionDockOption(number: 2, title: "Leave Orbit alone and deploy from a clean checkout",
+                                         detail: "Orbit keeps its edits as they are."),
                 ]), selection: SHQuestionDockSelection(picked: 1))
             SHQuestionDockSample(SHQuestionDockContent(
                 question: "Is this a regression from #231?", kind: .yesNo,
@@ -191,7 +191,7 @@ struct SHQuestionDockSample: View {
                 showsAnswer: false))
             SHQuestionDockSample(SHQuestionDockContent(
                 question: "How long should refund events stay in the outbox?", kind: .open))
-            SHQuestionDockHidden(question: "How should I handle Horizon’s uncommitted edits?") {}
+            SHQuestionDockHidden(question: "How should I handle Orbit’s uncommitted edits?") {}
         }
         .frame(width: 600)
     }

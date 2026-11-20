@@ -50,7 +50,7 @@ import SwiftUI
             SHBanner(.failed, title: "tests failed 3 times", message: "3 snapshot tests fail at Dynamic Type XL. Retrying won’t help.") {
                 Button("Open replay") {}.buttonStyle(.sh(.secondary, size: .s))
             }
-            SHBanner(.running, title: "horizon reconnecting", message: "Last seen 3h ago. Remote agents resume when it’s back.",
+            SHBanner(.running, title: "orbit reconnecting", message: "Last seen 3h ago. Remote agents resume when it’s back.",
                      systemImage: "desktopcomputer") {
                 Button("Retry now") {}.buttonStyle(.sh(.secondary, size: .s))
             }

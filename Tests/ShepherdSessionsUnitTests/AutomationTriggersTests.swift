@@ -78,6 +78,173 @@ struct AutomationTriggersTests {
 
     // MARK: Persistence
 
+    @Test(arguments: ["{", "", #"{"records":[]}"#, "null", #"{"allPaused":null}"#, #"{"version":1,"value":null}"#, "unreadable"])
+    func damagedTriggerFileStopsDispatchAndStaysIntact(input: String) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("automation-triggers.json")
+        let target = root.appendingPathComponent("missing-target")
+        if input == "unreadable" {
+            try FileManager.default.createSymbolicLink(at: url, withDestinationURL: target)
+        } else {
+            try Data(input.utf8).write(to: url)
+        }
+        let world = World()
+        let automation = Self.loop()
+        world.automations = [automation]
+        let engine = await Self.engine(world, url: url)
+        await engine.tick()
+        world.advance(61)
+        world.with { $0.items = [Self.labeled(1, at: $0.now)] }
+        await engine.tick()
+
+        let status = await engine.status(of: automation)
+        #expect(status.state == .paused && status.allPaused && status.storageDamaged == true)
+        let reason = input == "unreadable" ? "Couldn't read the trigger state file" : "Invalid trigger state JSON"
+        #expect(status.reason == "\(reason): \(url.path)")
+        #expect(world.with { $0.reads == 0 && $0.started.isEmpty })
+        #expect(world.with { $0.notes == ["Automation triggers paused"] })
+        if input == "unreadable" {
+            #expect(try FileManager.default.destinationOfSymbolicLink(atPath: url.path) == target.path)
+            #expect(!FileManager.default.fileExists(atPath: target.path))
+        } else {
+            #expect(try Data(contentsOf: url) == Data(input.utf8))
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func nextTickUsesRepairedDiskStateAndStartsDueWork(readFailure: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("automation-triggers.json")
+        let world = World()
+        world.now = ISO8601DateFormatter().date(from: "2026-10-30T08:00:00Z")!
+        let automation = Automation(id: AutomationID(rawValue: "brief"), name: "Brief", prompt: "brief me", cwd: "/tmp",
+                                    trigger: .schedule(AutomationSchedule(rrule: "FREQ=HOURLY;BYMINUTE=0")))
+        world.automations = [automation]
+        let engine = await Self.engine(world, url: url)
+        await engine.tick()
+        let healthy = try Data(contentsOf: url)
+        // The restored copy is active, unlike the engine's last cached state.
+        try await engine.setAllPaused(true)
+        if readFailure {
+            try FileManager.default.removeItem(at: url)
+            try FileManager.default.createSymbolicLink(at: url, withDestinationURL: root.appendingPathComponent("not-readable"))
+        } else {
+            try Data("{".utf8).write(to: url)
+        }
+        world.advance(3600)
+        await engine.tick()
+        #expect(await engine.status(of: automation).storageDamaged == true)
+        await #expect(throws: AutomationTriggers.Damaged.self) { try await engine.setAllPaused(false) }
+
+        #expect(world.with { $0.started.isEmpty })
+        try FileManager.default.removeItem(at: url)
+        try healthy.write(to: url)
+        await engine.tick()
+        let recovered = await engine.status(of: automation)
+        #expect(recovered.state == .active && !recovered.allPaused && recovered.storageDamaged != true)
+        #expect(world.with { $0.started.map { $0.map(\.title) } } == [["Scheduled run"]])
+    }
+
+    @Test func removingRuntimeDamageRewritesTheLastGoodStateAndKeepsPauseAll() async throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? fm.removeItem(at: root) }
+        let url = root.appendingPathComponent("automation-triggers.json")
+        let world = World()
+        let automation = Self.loop()
+        world.automations = [automation]
+        let engine = await Self.engine(world, url: url)
+        await engine.tick()
+        try await engine.setAllPaused(true)
+        let healthy = try Data(contentsOf: url)
+        try Data("{".utf8).write(to: url)
+        world.advance(61)
+        world.with { $0.items = [Self.labeled(1, at: $0.now)] }
+        await engine.tick()
+        #expect(await engine.status(of: automation).storageDamaged == true)
+
+        try fm.removeItem(at: url)
+        await engine.tick()
+        let recovered = await engine.status(of: automation)
+        #expect(recovered.storageDamaged != true && recovered.allPaused && recovered.state == .paused)
+        #expect(try Data(contentsOf: url) == healthy)
+        #expect(world.with { $0.started.isEmpty })
+        try await engine.setAllPaused(false)
+        await engine.tick()
+        #expect(world.with { $0.started.count == 1 })
+    }
+
+    @Test func removingStartupDamageResetsPauseAllAndNotifiesOnce() async throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+        let url = root.appendingPathComponent("automation-triggers.json")
+        try Data("{".utf8).write(to: url)
+        let world = World()
+        let automation = Self.loop()
+        world.automations = [automation]
+        let engine = await Self.engine(world, url: url)
+        #expect(await engine.allPaused)
+        try fm.removeItem(at: url)
+
+        await engine.tick()
+        let recovered = await engine.status(of: automation)
+        #expect(recovered.storageDamaged != true && !recovered.allPaused && recovered.state == .active)
+        world.advance(61)
+        world.with { $0.items = [Self.labeled(1, at: $0.now)] }
+        await engine.tick()
+        #expect(world.with { $0.started.count == 1 })
+        #expect(world.with { $0.notes } == ["Automation triggers paused", "Automation triggers file was reset; Pause all is off."])
+    }
+
+    @Test func damageReasonTracksTheLatestReadWithoutNotifyingAgain() async throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+        let url = root.appendingPathComponent("automation-triggers.json")
+        try Data("{".utf8).write(to: url)
+        try fm.setAttributes([.posixPermissions: 0o000], ofItemAtPath: url.path)
+        let world = World()
+        let automation = Self.loop()
+        world.automations = [automation]
+        let engine = await Self.engine(world, url: url)
+        #expect(await engine.status(of: automation).reason == "Permission denied reading the trigger state file: \(url.path)")
+
+        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        await engine.tick()
+        let damaged = await engine.status(of: automation)
+        #expect(damaged.storageDamaged == true && damaged.state == .paused)
+        #expect(damaged.reason == "Invalid trigger state JSON: \(url.path)")
+        #expect(world.with { $0.notes } == ["Automation triggers paused"])
+    }
+
+    @Test(arguments: [false, true])
+    func triggerFileReadsEitherShapeAndWritesOnlyLegacy(enveloped: Bool) async throws {
+        let world = World()
+        let automation = Self.loop()
+        world.automations = [automation]
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("automation-triggers.json")
+        let legacy = #"{"version":1,"allPaused":true,"records":{}}"#
+        let input = enveloped ? #"{"version":1,"value":"# + legacy + "}" : legacy
+        try Data(input.utf8).write(to: url)
+        let engine = await Self.engine(world, url: url)
+
+        #expect(await engine.status(of: automation).allPaused)
+        try await engine.setAllPaused(false)
+        let written = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? NSDictionary
+        let expected = try JSONSerialization.jsonObject(with: Data(#"{"version":1,"allPaused":false,"records":{}}"#.utf8)) as? NSDictionary
+        #expect(written == expected)
+    }
+
     @Test func legacyTriggerFileKeepsPendingEventsAndDedupeCursors() throws {
         let json = """
         {"version":1,"records":{"loop":{
@@ -304,7 +471,7 @@ struct AutomationTriggersTests {
     }
 
     /// A lasting error pauses with its reason and one note; a passing one backs off and retries.
-    @Test func failures() async {
+    @Test func failures() async throws {
         let world = World()
         world.automations = [Self.loop()]
         let engine = await Self.engine(world)
@@ -333,7 +500,7 @@ struct AutomationTriggersTests {
         // Resume checks again and fires nothing from while it was paused.
         world.readError = nil
         world.items = [Self.labeled(7, at: world.now.addingTimeInterval(-30))]
-        await engine.resume(world.automations[0].id)
+        try await engine.resume(world.automations[0].id)
         await engine.tick()
         #expect(world.reads == reads + 1 && world.started.isEmpty)
     }
@@ -440,7 +607,7 @@ struct AutomationTriggersTests {
     }
 
     /// Editing the trigger takes a new baseline; Pause all stops every check.
-    @Test func editsAndPauseAll() async {
+    @Test func editsAndPauseAll() async throws {
         let world = World()
         world.automations = [Self.loop()]
         let engine = await Self.engine(world)
@@ -450,7 +617,7 @@ struct AutomationTriggersTests {
         world.automations = [Self.loop(labels: ["ready"])]
         await engine.tick()
         #expect(world.started.isEmpty)
-        await engine.setAllPaused(true)
+        try await engine.setAllPaused(true)
         let reads = world.reads
         world.advance(3600)
         await engine.tick()

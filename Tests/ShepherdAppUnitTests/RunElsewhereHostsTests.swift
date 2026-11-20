@@ -17,11 +17,11 @@ struct RunElsewhereHostsTests {
                        ProjectHostOption(reference: studio, name: "studio", spaces: [Space(name: "acme-web", path: "/s")]),
                        ProjectHostOption(reference: build, name: "build-01", spaces: [api]),
                        ProjectHostOption(reference: .remote(hostID: UUID(), bindingID: UUID()), name: "old-host", spaces: nil)]
-        let away = RunElsewhereHosts.Offline(id: UUID(), name: "horizon", lastSeen: Date(timeIntervalSince1970: 0))
+        let away = RunElsewhereHosts.Offline(id: UUID(), name: "orbit", lastSeen: Date(timeIntervalSince1970: 0))
         let rows = RunElsewhereHosts.rows(options: options, settings: .init(hostPolicy: .anyConnected), from: .local, spaceName: "acme-web",
                                           ownerName: "This Mac", running: { $0 == .local ? 2 : 0 }, offline: [away],
                                           now: Date(timeIntervalSince1970: 3 * 3_600))
-        #expect(rows.map(\.name) == ["This Mac", "studio", "build-01", "old-host", "horizon"])
+        #expect(rows.map(\.name) == ["This Mac", "studio", "build-01", "old-host", "orbit"])
         #expect(rows.map(\.selectable) == [false, true, false, false, false])
         #expect(rows[0].detail == "Runs here now · 2 running" && rows[0].current)
         #expect(rows[1].detail == "Idle" && rows[1].space != nil)

@@ -444,7 +444,7 @@ struct ThreadPreviewTests {
             "TypeError: Cannot read properties of undefined (reading 'provider')",
         ])))
         defer { fixture.store.stop() }
-        fixture.store.hostName = "horizon"
+        fixture.store.hostName = "orbit"
         try await Preview.render("thread-cannot-start-remote", size: CGSize(width: 1180, height: 600), ready: {
             fixture.store.startProblem != nil
         }) {
@@ -480,7 +480,7 @@ struct ThreadPreviewTests {
         fromDisk.stats = nil
         fromDisk.commands = nil
         fixture.store.preview(fromDisk)
-        fixture.store.hostName = "horizon"
+        fixture.store.hostName = "orbit"
         try await Preview.render("thread-stopped-unexpectedly-remote", size: CGSize(width: 1180, height: 900), ready: {
             fixture.store.startProblem != nil && !fixture.store.rows.isEmpty
         }) {
@@ -789,12 +789,12 @@ struct ThreadPreviewTests {
     /// from each asker's presentation: pi's select asking, picked (no note: pi's select takes
     /// none), one of two waiting with a timeout, and hidden to its line.
     @Test func questionStates() async throws {
-        let select = NativeThreadDialog(id: "handle", kind: .select, title: "How should I handle Horizon’s uncommitted edits?", options: [
-            "Compare, keep what’s unique, then go through GitHub (Recommended)\nDiff the 11 files against current master. Anything not merged yet goes on a new branch and PR. Nothing on Horizon is overwritten.",
-            "Leave Horizon alone and deploy from a clean checkout\nHorizon keeps its edits as they are. The deploy runs from a fresh clone of master beside it.",
+        let select = NativeThreadDialog(id: "handle", kind: .select, title: "How should I handle Orbit’s uncommitted edits?", options: [
+            "Compare, keep what’s unique, then go through GitHub (Recommended)\nDiff the 11 files against current master. Anything not merged yet goes on a new branch and PR. Nothing on Orbit is overwritten.",
+            "Leave Orbit alone and deploy from a clean checkout\nOrbit keeps its edits as they are. The deploy runs from a fresh clone of master beside it.",
         ])
         let timed = NativeThreadDialog(id: "hosts", kind: .select, title: "Which host should get the new Traefik config first?",
-                                       options: ["build-01\nTraefik 3.1", "horizon\nTraefik 3.0", "This Mac\nNo Traefik here"], timeout: 60_000)
+                                       options: ["build-01\nTraefik 3.1", "orbit\nTraefik 3.0", "This Mac\nNo Traefik here"], timeout: 60_000)
         // ask_user's shape: the question, then its details after a blank line, offered choices and
         // the person's own words.
         let details = """
@@ -1371,7 +1371,7 @@ enum ActivityThreads {
         let t0 = now - 12 * 60_000
         var t = t0 + 6_000
         var messages = [
-            user("u1", "Get the media stack deployed to horizon and make sure the DNS for it resolves.", at: t0),
+            user("u1", "Get the media stack deployed to orbit and make sure the DNS for it resolves.", at: t0),
             assistant("a1", "I'll confirm the plan with you, then check the stack config and the DNS entry.", at: t0 + 3_000),
         ]
         var index = 0
@@ -1381,8 +1381,8 @@ enum ActivityThreads {
             t += seconds * 1000 + 400
         }
         let infra = "/Users/you/homelab-infra"
-        add("ask_user", ["question": "Apply to horizon now?"], output: "User response: yes", seconds: 5.5)
-        for file in ["stacks/media/main.tf", "stacks/media/variables.tf", "stacks/ubiquiti/dns.tf", "flake.nix", "hosts/horizon.nix", "README.md"] {
+        add("ask_user", ["question": "Apply to orbit now?"], output: "User response: yes", seconds: 5.5)
+        for file in ["stacks/media/main.tf", "stacks/media/variables.tf", "stacks/ubiquiti/dns.tf", "flake.nix", "hosts/orbit.nix", "README.md"] {
             add("read", ["path": "\(infra)/\(file)"], output: "line\nline", seconds: 1.8)
         }
         add("bash", ["command": "cd \(infra) && tofu -chdir=stacks/media init"], output: "Terraform has been successfully initialized!", seconds: 14)
@@ -1390,16 +1390,16 @@ enum ActivityThreads {
         add("bash", ["command": "cd \(infra) && tofu -chdir=stacks/media plan"], output: "Plan: 3 to add, 1 to change, 0 to destroy.", seconds: 21)
         add("edit", ["path": "\(infra)/stacks/media/main.tf", "edits": [["oldText": "a", "newText": "a\nb\nc"]]], output: "ok")
         add("edit", ["path": "\(infra)/stacks/media/variables.tf", "edits": [["oldText": "a", "newText": "a\nb"]]], output: "ok")
-        add("bash", ["command": "ssh you@horizon.local 'docker ps'"], output: "Command exited with code 255", error: true, seconds: 7.4)
+        add("bash", ["command": "ssh you@orbit.local 'docker ps'"], output: "Command exited with code 255", error: true, seconds: 7.4)
         add("bash", ["command": "dscacheutil -flushcache"], output: "", seconds: 1)
-        add("bash", ["command": "dig +short horizon.local"], output: "192.168.1.40", seconds: 0.8)
+        add("bash", ["command": "dig +short orbit.local"], output: "192.168.1.40", seconds: 0.8)
         add("edit", ["path": "\(infra)/stacks/ubiquiti/dns.tf", "edits": [["oldText": "a", "newText": "b"]]], output: "ok")
         add("bash", ["command": "cd \(infra) && tofu -chdir=stacks/ubiquiti apply -auto-approve"], output: "Apply complete! Resources: 0 added, 1 changed, 0 destroyed.", seconds: 54)
-        add("bash", ["command": "for server in sonarr radarr; do curl -sf http://horizon.local/$server/ping; done"],
+        add("bash", ["command": "for server in sonarr radarr; do curl -sf http://orbit.local/$server/ping; done"],
             output: "Command exited with code 2", error: true, seconds: 3)
         add("bash", ["command": "cd \(infra) && tofu -chdir=stacks/media apply -auto-approve"], output: "Apply complete! Resources: 3 added, 1 changed, 0 destroyed.", seconds: 68)
-        add("bash", ["command": "for server in sonarr radarr jellyfin; do curl -sf http://horizon.local/$server/ping; done"], output: "ok\nok\nok", seconds: 6.3)
-        messages.append(assistant("a2", "The stale record was on horizon; I flushed it, fixed the DNS entry, and all three services answer now.", at: t + 2_000))
+        add("bash", ["command": "for server in sonarr radarr jellyfin; do curl -sf http://orbit.local/$server/ping; done"], output: "ok\nok\nok", seconds: 6.3)
+        messages.append(assistant("a2", "The stale record was on orbit; I flushed it, fixed the DNS entry, and all three services answer now.", at: t + 2_000))
         return messages
     }
 

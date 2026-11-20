@@ -1213,7 +1213,7 @@ def question_turn(prompt):
     say({"role": "user", "content": [{"type": "text", "text": prompt}], "timestamp": now_ms()})
     call = f"call_ask{QUESTION['count'] + 1}"
     ask = {"role": "assistant", "content": [
-        {"type": "text", "text": "Horizon's checkout isn't clean."},
+        {"type": "text", "text": "Orbit's checkout isn't clean."},
         {"type": "toolCall", "id": call, "name": "ask_user", "arguments": {"question": "How should I handle it?"}}],
         "stopReason": "toolUse", "timestamp": now_ms()}
     say(ask)
@@ -1223,9 +1223,9 @@ def question_turn(prompt):
     QUESTION["answered"].clear()
     QUESTION["response"] = None
     request = {"type": "extension_ui_request", "id": QUESTION["id"], "method": "select",
-               "title": "How should I handle Horizon's uncommitted edits?",
+               "title": "How should I handle Orbit's uncommitted edits?",
                "options": ["Compare, keep what's unique, then go through GitHub (Recommended)\nNew branch and PR for anything not merged.",
-                           "Leave Horizon alone"]}
+                           "Leave Orbit alone"]}
     timeout = 0.15 if prompt.startswith("question-timeout") else 30.0
     if prompt.startswith("question-timeout"):
         # Model a host timer delayed behind the history refresh, without blocking test queues.

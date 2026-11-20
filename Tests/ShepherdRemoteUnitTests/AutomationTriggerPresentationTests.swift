@@ -86,6 +86,18 @@ struct AutomationTriggerPresentationTests {
         #expect(words.word == word && words.tone == tone && words.reason == reason && words.paused == paused)
     }
 
+    @Test func aDisabledTriggerIsOffButItsDetailStillExplainsStorageDamage() throws {
+        var automation = Self.triggered(.github([GitHubTrigger(events: [.issueOpened])]))
+        automation.enabled = false
+        let reason = "Invalid trigger state JSON: /tmp/acme/automation-triggers.json"
+        let status = AutomationTriggerStatus(state: .off, reason: reason, allPaused: true, storageDamaged: true)
+        let model = AutomationsModel(hosts: [T.host([automation])], runs: [:], statuses: [T.key("a"): status])
+        let row = try #require(model.rows.first)
+        let detail = try #require(model.detail(T.key("a"), runs: [], status: status)?.trigger)
+        #expect(row.status == "Off")
+        #expect(detail.state?.word == "Off" && detail.storageDamaged && detail.state?.reason == reason)
+    }
+
     @Test func aPausedTriggerShowsOnTheRowAndItsDetailListsPending() throws {
         let automation = Self.triggered(.github([GitHubTrigger(repo: "o/r", events: [.issueLabeled], labels: ["shepherd"])]))
         let event = AutomationEvent(id: "e1", kind: .issueLabeled, repo: "o/r", number: 12, title: "Fix login crash",

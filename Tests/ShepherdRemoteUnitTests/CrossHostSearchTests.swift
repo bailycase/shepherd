@@ -21,7 +21,7 @@ struct CrossHostSearchTests {
     static let targets = [
         target("a", "Dock review pane", status: .blocked),
         target("b", "Plan shepherd extensions", status: .working),
-        target("c", "Fix remote subagent deletion", space: "horizon"),
+        target("c", "Fix remote subagent deletion", space: "orbit"),
         target("d", "Fix terminal output buffer", host: build),
         target("e", "Review old notes", host: laptop, online: false),
     ]

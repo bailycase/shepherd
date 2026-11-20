@@ -159,6 +159,29 @@ struct HookFollowUpTests {
         #expect(try #require(catalog.load().entries.first).on == false)
     }
 
+    /// A peer's edit of a hook arrives as the old Fleet id deleted, then the new id upserted with the new bytes.
+    /// Ids are content hashes, so this Mac sees an unrelated new hook. The old disabled bytes always stay off; the new
+    /// bytes land as the peer published them (a peer with the hook disabled publishes on: false, its edit carries off).
+    @Test(arguments: [false, true])
+    func aPeersEditOfADisabledHookKeepsTheOldBytesOffAndInstallsTheNewAsPublished(on: Bool) throws {
+        let f = try HookCatalogTests.Fixture(); defer { f.remove() }
+        let catalog = f.catalog
+        let path = f.home + "/.shepherd/hooks.json"
+        let old = try HookFileWriter(settings: catalog.settingsStore).add(Self.draft, to: path, on: false)
+        let edited = HookDraft(event: Self.event, matcher: "Bash", handler: .command("./edited.sh"))
+        let editedID = FleetHooksSource.id(event: Self.event, matcher: "Bash", handler: edited.handler.raw)
+        let editedValue = Data(HookJSON.object(["event": .string(Self.event), "handler": edited.handler.raw, "matcher": .string("Bash"), "on": .bool(on)]).canonical.utf8)
+        let source = FleetHooksSource(catalog: { catalog })
+
+        try source.write(FleetHooksSource.kind + Self.id, nil, origin: "B")
+        try source.write(FleetHooksSource.kind + editedID, editedValue, origin: "B")
+
+        let entry = try #require(catalog.load().entries.first)
+        #expect(entry.handler.command == "./edited.sh", "the new bytes are installed")
+        #expect(entry.on == on)
+        #expect(try Set(catalog.settingsStore.read().off) == (on ? [old] : [old, entry.hash]))
+    }
+
     // MARK: One lock for the lookup and the change
 
     @Test func aRemoteSwitchLooksTheHookUpUnderTheSettingsLock() throws {

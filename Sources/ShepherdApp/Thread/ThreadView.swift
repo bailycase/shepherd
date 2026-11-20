@@ -647,12 +647,14 @@ struct ThreadView: View {
             // brings their blocks builds them, and the stack comes in the one after it. A parse that does not land holds it back only so long.
             // So does the pull that catches the thread up, for a thread whose first frame came before it because it kept only its tail
             // (`ThreadRestore.awaitsPull`): what it brings changes the tail and adds rows above it, and a stack built before it is built
-            // against a tail that is still to move. And the scroll view of such a thread, until it has stopped reporting and rests on its
-            // end (`ThreadTailGuard.rests`): the pull may land with the tail's rows still being measured, and a stack that joins in the
-            // middle of that is laid out where the viewport was, and builds the heavy rows it finds there. Each waits no longer than the
-            // replies do.
+            // against a tail that is still to move; a pull that failed, or pi held off or not started in time, brings nothing, and the stack
+            // does not wait for it. And the scroll view of such a thread, until it has stopped reporting and rests on its end
+            // (`ThreadTailGuard.rests`): the pull may land with the tail's rows still being measured, and a stack that joins in the middle of
+            // that is laid out where the viewport was, and builds the heavy rows it finds there. Each waits no longer than the replies do.
             var parseRetries = 0, pullRetries = 0, restRetries = 0
-            func pullPending() -> Bool { restore.awaitsPull && store.catchUp == nil && pullRetries < AppLayout.restoreParseRetries }
+            func pullPending() -> Bool {
+                restore.waitsForPull(landed: store.catchUp != nil, failed: store.catchUpFailed, retries: pullRetries)
+            }
             func tailMoving() -> Bool {
                 restore.awaitsPull && restRetries < AppLayout.restoreParseRetries && !tailGuard.rests(quietFor: AppLayout.restoreQuiet)
             }
@@ -1428,6 +1430,13 @@ final class ThreadRestore {
     /// The first lazy stack still waits for the replies at the end of the tail to draw their blocks, having waited `retries` times
     /// (`AppLayout.restoreRetry` each): not for ever, so that a parse that does not land cannot keep the older rows from coming back.
     func waitsForParse(retries: Int) -> Bool { !tailDrawnParsed && retries < AppLayout.restoreParseRetries }
+
+    /// The first lazy stack still waits for the pull that catches the thread up (`awaitsPull`), having waited `retries` times: not once the
+    /// pull has landed, nor once it has failed or pi is held off or did not start in time (`NativeThreadStore.catchUpFailed`), since then
+    /// nothing is on its way to move the tail or add rows above it, and not for ever.
+    func waitsForPull(landed: Bool, failed: Bool, retries: Int) -> Bool {
+        awaitsPull && !landed && !failed && retries < AppLayout.restoreParseRetries
+    }
 
     /// The lazy stack is still to come back (the next step brings it): the thread draws only the rows the eager stack holds, so a
     /// reader cannot scroll to older ones.
