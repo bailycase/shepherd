@@ -9,23 +9,23 @@ extension RemoteProtocol {
     /// The host serves `RemoteRequest.design` while its Design tool experiment is on, and pushes
     /// `designChanged` for the designs a client watches. A client lists it too: it reads those
     /// pushes and `capabilitiesChanged`.
-    public static let designsCapability = "designs.v1"
+    public static let designsCapability = Capability.designs.rawValue
     /// The host takes Pencil markup (`RemoteDesignRequest.sendMarkup`) and settles the design
     /// agent's proposals from it (`settleProposals`). Offered with `designsCapability`.
-    public static let designMarkupCapability = "design.markup.v1"
+    public static let designMarkupCapability = Capability.designMarkup.rawValue
     /// The host deletes a design for another device, with Undo (`RemoteDesignRequest.delete`,
     /// `undoDelete`). Offered with `designsCapability`.
-    public static let designDeleteCapability = "design.delete.v1"
+    public static let designDeleteCapability = Capability.designDelete.rawValue
     /// The host starts a design's agent for another device when it has none
     /// (`RemoteDesignRequest.ensureAgent`), as its own Open does. Offered with `designsCapability`.
-    public static let designAgentCapability = "design.agent.v1"
+    public static let designAgentCapability = Capability.designAgent.rawValue
     /// The host duplicates a design and removes it from Recents for another device
     /// (`RemoteDesignRequest.duplicate`, `removeFromRecents`). Offered with `designsCapability`.
-    public static let designLifecycleCapability = "design.lifecycle.v1"
+    public static let designLifecycleCapability = Capability.designLifecycle.rawValue
     /// The host serves its design systems' files (`systemFile`) and renames, duplicates, deletes
     /// and re-syncs them for another device. A client lists it too: the host pushes
     /// `designSystemsChanged` only to a client that does. Offered with `designsCapability`.
-    public static let designSystemsCapability = "design.systems.v1"
+    public static let designSystemsCapability = Capability.designSystems.rawValue
     /// Every capability a host offers only while it serves designs.
     public static let designCapabilities: Set<String> = [designsCapability, designMarkupCapability, designDeleteCapability,
                                                          designAgentCapability, designLifecycleCapability, designSystemsCapability,
@@ -33,16 +33,16 @@ extension RemoteProtocol {
                                                          designThreadNotesCapability, designGitCapability]
     /// The host shares, reads, commits, pulls and merges its designs through Git, and clones one
     /// as a new design (`RemoteDesignRequest.gitState` … `gitStopMerge`). Offered with `designsCapability`.
-    public static let designGitCapability = "design.git.v1"
+    public static let designGitCapability = Capability.designGit.rawValue
     /// The host reads and removes the notes its threads left on a design
     /// (`RemoteDesignRequest.threadNotes`, `removeThreadNote`). Offered with `designsCapability`.
-    public static let designThreadNotesCapability = "design.threadNotes.v1"
+    public static let designThreadNotesCapability = Capability.designThreadNotes.rawValue
     /// The host adds or applies, and discards, the boards its threads drew for its designs
     /// (`RemoteDesignRequest.settleBoardProposal`). Offered with `designsCapability`.
-    public static let designBoardsCapability = "design.boards.v1"
+    public static let designBoardsCapability = Capability.designBoards.rawValue
     /// The host imports a Claude Design project's ZIP another device uploads
     /// (`RemoteDesignRequest.importBegin`…`importFinish`). Offered with `designsCapability`.
-    public static let designImportCapability = "design.import.v1"
+    public static let designImportCapability = Capability.designImport.rawValue
     /// The largest ZIP another device uploads to import (ponytail: whole-project cap; the host's
     /// own Import takes up to `DesignImportProject.maxProjectBytes` from disk).
     public static let designImportMaxBytes = 256 * 1024 * 1024

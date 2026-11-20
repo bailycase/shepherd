@@ -6,33 +6,33 @@ import ShepherdCore
 /// the extension socket. The transport security is the user's own VPN; the
 /// token only keeps other devices on that network honest.
 public enum RemoteProtocol {
-    public static let pushNotificationsCapability = "push.notifications.v1"
-    public static let hostUpdateCapability = "host.update.v1"
+    public static let pushNotificationsCapability = Capability.pushNotifications.rawValue
+    public static let hostUpdateCapability = Capability.hostUpdate.rawValue
     public static let uploadChunkBytes = 256 * 1024
     public static let uploadMaxBytes = 32 * 1024 * 1024
-    public static let uploadCapability = "session.upload.v1"
-    public static let creationOptionsCapability = "agent.creation.options.v1"
+    public static let uploadCapability = Capability.upload.rawValue
+    public static let creationOptionsCapability = Capability.creationOptions.rawValue
     /// The host answers `RemoteRequest.creationBranches`: a space's branches for a new
     /// worktree's base, before any agent exists. Older hosts leave the base a typed name.
-    public static let creationBranchesCapability = "agent.creation.branches.v1"
-    public static let nativeThreadCapability = "native.thread.v1"
-    public static let nativeThreadRevisionsCapability = "native.revisions.v1"
-    public static let nativeFleetDigestCapability = "native.fleetDigest.v1"
+    public static let creationBranchesCapability = Capability.creationBranches.rawValue
+    public static let nativeThreadCapability = Capability.nativeThread.rawValue
+    public static let nativeThreadRevisionsCapability = Capability.nativeThreadRevisions.rawValue
+    public static let nativeFleetDigestCapability = Capability.nativeFleetDigest.rawValue
     /// v2: snapshot runtime/stats/commands, setModel/setThinking, send images.
-    public static let nativeThreadV2Capability = "native.thread.v2"
+    public static let nativeThreadV2Capability = Capability.nativeThreadV2.rawValue
     /// The host answers `NativeThreadCode.starting` while an agent's pi starts. Older hosts
     /// answered `native_unavailable` then; clients read that as starting (see RemoteHostClient).
-    public static let nativeThreadStartingCapability = "native.thread.starting.v1"
+    public static let nativeThreadStartingCapability = Capability.nativeThreadStarting.rawValue
     /// The host holds messages sent while pi works (`NativeThreadSnapshot.queue`) and serves
     /// `NativeThreadRequest.queue`. Older hosts send every message straight to pi.
-    public static let nativeQueueCapability = "native.queue.v1"
+    public static let nativeQueueCapability = Capability.nativeQueue.rawValue
     /// Partial startup snapshots expose questions without replacing history or releasing sends.
-    public static let nativeStartupDialogsCapability = "native.startup-dialogs.v1"
+    public static let nativeStartupDialogsCapability = Capability.nativeStartupDialogs.rawValue
     /// A client that lists it is answered a `NativeThreadRequest.snapshot` for an agent whose pi is
     /// not running from pi's saved session file (`NativeThreadSnapshot.preview`), without starting
     /// pi; any other request starts it as before. A client that does not list it has every
     /// request start pi, as older hosts did.
-    public static let nativeThreadPreviewCapability = "native.preview.v1"
+    public static let nativeThreadPreviewCapability = Capability.nativeThreadPreview.rawValue
     /// What this client tells a host in `hello`: it reads the host's queue and where each
     /// delivered message came from (`nativeQueueCapability`). An older client, which lists
     /// nothing, finds its own sends in the thread by their text, so a host delivers its queued
@@ -50,10 +50,10 @@ public enum RemoteProtocol {
     /// And it draws a background host's designs off screen when the host asks
     /// (`designRelayCapability`), which a host asks only of a local client that lists it. v2: the
     /// job travels as a file, since a design's files outgrow a frame.
-    public static let designRelayCapability = "designRelay.v2"
+    public static let designRelayCapability = Capability.designRelay.rawValue
     /// And it answers what a background host's agent asks of Shepherd's window (`AppRelayJob`),
     /// which a host asks only of a local client that lists it.
-    public static let appRelayCapability = "appRelay.v1"
+    public static let appRelayCapability = Capability.appRelay.rawValue
     public static let clientCapabilities = [nativeThreadRevisionsCapability, nativeFleetDigestCapability, filesCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designSystemsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability, designRelayCapability, appRelayCapability, appsV2Capability, fleetMoveViewCapability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
@@ -66,258 +66,258 @@ public enum RemoteProtocol {
     /// A host's final reply to a `hello` with another `version`; the message ends with the
     /// host's own ("host speaks protocol 1").
     public static let versionMismatchCode = "protocol_version"
-    public static let pasteCapability = "session.paste.v1"
-    public static let paneControlCapability = "pane.control.v1"
-    public static let agentActionsCapability = "agent.actions.v1"
-    public static let worktreeActionsCapability = "agent.worktree.v1"
+    public static let pasteCapability = Capability.paste.rawValue
+    public static let paneControlCapability = Capability.paneControl.rawValue
+    public static let agentActionsCapability = Capability.agentActions.rawValue
+    public static let worktreeActionsCapability = Capability.worktreeActions.rawValue
     /// The host answers `RemoteAgentQuery.setWorktree`: the branch or base it records for a
     /// worktree thread, after the client changed the checkout itself (the branch card on This Mac).
-    public static let worktreeRecordCapability = "agent.worktree.record.v1"
+    public static let worktreeRecordCapability = Capability.worktreeRecord.rawValue
     /// The host answers `RemoteAgentQuery.moveToCheckout`: a thread re-pointed at another existing
     /// checkout of its repository (the branch picker's "move here"), its pi restarted there.
-    public static let worktreeMoveCapability = "agent.worktree.move.v1"
-    public static let agentInspectionCapability = "agent.inspection.v1"
+    public static let worktreeMoveCapability = Capability.worktreeMove.rawValue
+    public static let agentInspectionCapability = Capability.agentInspection.rawValue
     /// The host answers `RemoteAgentQuery.terminals`: what each of an agent's terminal panes runs
     /// and how far its output has got. Older hosts leave a client with plain tabs.
-    public static let terminalActivityCapability = "terminal.activity.v1"
+    public static let terminalActivityCapability = Capability.terminalActivity.rawValue
     /// The host commits from review (`RemoteAgentQuery.commitInfo`, `.commitMessage`, `.commit`).
     /// Older hosts only take Commit as a turn the agent is asked to do.
-    public static let reviewCommitCapability = "review.commit.v1"
+    public static let reviewCommitCapability = Capability.reviewCommit.rawValue
     /// The host serves `RemoteRequest.automation`: on and off, Run now and Stop, the runs it
     /// kept, and create, edit and delete. Older hosts show automations read-only.
-    public static let automationsCapability = "automations.v1"
+    public static let automationsCapability = Capability.automations.rawValue
     /// Automation triggers: schedules and GitHub events, settings on the draft, status, pause,
     /// pending events and unread runs (`RemoteAutomationRequest.status` and after).
-    public static let automationTriggersCapability = "automationTriggers.v1"
+    public static let automationTriggersCapability = Capability.automationTriggers.rawValue
     /// The host serves `RemoteRequest.forge`: GitHub issues and pull requests through its `gh`
     /// (lists, details, diffs, comments, reviews, merges, pins). Older hosts have no Issues & PRs.
-    public static let forgeCapability = "issuesAndPRs.v1"
+    public static let forgeCapability = Capability.forge.rawValue
     /// Issues & PRs across every repository (`ForgeList.allRepos`), browsing with filters and
     /// pages (`browse`), a repository's people, new issues, editing labels, assignees and
     /// reviewers, and reviews with line comments (`postReview`). Older hosts serve one repository's
     /// sections only.
-    public static let forgeBrowseCapability = "issuesAndPRs.browse.v1"
+    public static let forgeBrowseCapability = Capability.forgeBrowse.rawValue
     /// The host takes every level pi has (`ThinkingLevel`: minimal, xhigh, max too) in
     /// `createAgent`. An older host knows only `ThinkingLevel.legacy`, and refuses a request
     /// carrying another. A client lists it too: it decodes them in state and creation options.
-    public static let thinkingLevelsCapability = "thinking.levels.v1"
+    public static let thinkingLevelsCapability = Capability.thinkingLevels.rawValue
     /// The host answers the Changes pane's queries (`RemoteAgentQuery.changes*`): scopes, the
     /// base picker, a file's hunks, a patch, and Undo and Redo of an agent's last turn; and its
     /// thread snapshots carry the turns it recorded (`NativeThreadSnapshot.turnChanges`). Older
     /// hosts review the working tree only (`RemoteAgentQuery.review`).
-    public static let changesCapability = "changes.v1"
+    public static let changesCapability = Capability.changes.rawValue
     /// The host reports what fills each agent's context window (`NativeThreadSnapshot.context`,
     /// compactions in the thread) and serves `NativeThreadRequest.compact`. Older hosts send
     /// neither, and clients draw no context meter.
-    public static let nativeContextCapability = "native.context.v1"
+    public static let nativeContextCapability = Capability.nativeContext.rawValue
     /// The host takes the opening prompt's images with `createAgent` (`initialImages`) and sends
     /// them to pi with it. An older host would drop them without a word, so a client refuses to
     /// create an agent with images there.
-    public static let createAgentImagesCapability = "agent.create.images.v1"
+    public static let createAgentImagesCapability = Capability.createAgentImages.rawValue
     /// The host takes `createAgent` and `creationOptions` with an empty space id: a thread with no
     /// space, in a folder of its own, as This Mac's "No space". Older hosts refuse the unknown space.
-    public static let createAgentNoSpaceCapability = "agent.create.noSpace.v1"
+    public static let createAgentNoSpaceCapability = Capability.createAgentNoSpace.rawValue
     /// The host serves `RemoteRequest.instructions`: its root instruction files for pi, their
     /// history, save and restore (Settings ▸ Instructions). Older hosts have none to show.
-    public static let instructionsCapability = "instructions.v1"
+    public static let instructionsCapability = Capability.instructions.rawValue
     /// The host serves `RemoteRequest.suggestions`: Settings ▸ Experiments ▸ Suggested
     /// instructions (the experiment's settings, the lines waiting, and those added). Older hosts
     /// have no experiments.
-    public static let suggestionsCapability = "suggestions.v1"
+    public static let suggestionsCapability = Capability.suggestions.rawValue
     /// The host serves `RemoteRequest.hostSettings`: what its Settings ▸ Agents, Worktrees and Pi
     /// set, its Shepherd and pi versions, and one change at a time. Older hosts show none.
-    public static let hostSettingsCapability = "hostSettings.v1"
+    public static let hostSettingsCapability = Capability.hostSettings.rawValue
     /// The host's settings carry Settings ▸ Agents' speed for new threads and Compact at
     /// (`HostSettings.defaultServiceTier`, `compactAtPercent`), and it takes their changes. An older
     /// host omits the fields and refuses the changes as unknown.
-    public static let hostSettingsAgentDefaultsCapability = "hostSettings.agentDefaults.v1"
+    public static let hostSettingsAgentDefaultsCapability = Capability.hostSettingsAgentDefaults.rawValue
     /// The host takes the text generation model's change (`HostSettingChange.textGenerationModel`),
     /// which replaced the session naming model's. An older host knows only the old change, so a
     /// client offers the picker only here.
-    public static let hostSettingsTextGenerationModelCapability = "hostSettings.textGenerationModel.v1"
+    public static let hostSettingsTextGenerationModelCapability = Capability.hostSettingsTextGenerationModel.rawValue
     /// The host takes the image reading model's change (`HostSettingChange.visionModel`) and
     /// its settings carry the pick. An older host refuses the change as unknown, so a client
     /// offers the picker only here.
-    public static let hostSettingsVisionModelCapability = "hostSettings.visionModel.v1"
+    public static let hostSettingsVisionModelCapability = Capability.hostSettingsVisionModel.rawValue
     /// The host answers `RemoteRequest.hostInventory`: its MCP servers and their status, its
     /// subagent profiles, and its providers' sign-in state, read-only (`RemoteHostInventoryRequest`).
-    public static let hostInventoryCapability = "hostInventory.v1"
+    public static let hostInventoryCapability = Capability.hostInventory.rawValue
     /// The host's settings carry Subagent defaults, Deleting a worktree agent, Skills in the /
     /// menu, a repo's .mcp.json and the slash commands, and it takes their changes
     /// (`HostSettingChange.capability`). An older host omits them and refuses the changes.
-    public static let hostSettingsV2Capability = "hostSettings.v2"
+    public static let hostSettingsV2Capability = Capability.hostSettingsV2.rawValue
     /// The host's settings carry Close threads when their pull request merges and it takes its
     /// change (`HostSettingChange.closeOnMerge`). An older host omits it and refuses the change.
-    public static let hostSettingsCloseOnMergeCapability = "hostSettings.closeOnMerge.v1"
+    public static let hostSettingsCloseOnMergeCapability = Capability.hostSettingsCloseOnMerge.rawValue
     /// `HostSettings.backgroundService`: whether the Mac keeps agents running when Shepherd is
     /// quit. Older hosts omit it and clients show nothing.
-    public static let hostSettingsBackgroundServiceCapability = "hostSettings.backgroundService.v1"
+    public static let hostSettingsBackgroundServiceCapability = Capability.hostSettingsBackgroundService.rawValue
     /// The host serves `RemoteRequest.hostConfig`: MCP servers, subagent profiles and provider
     /// sign-ins changed from a client (`RemoteHostConfigRequest`). Older hosts show them read-only.
-    public static let hostConfigCapability = "hostConfig.v1"
+    public static let hostConfigCapability = Capability.hostConfig.rawValue
     /// The host reverts one file of a working-tree review (`RemoteAgentQuery.changesRevertFile`),
     /// fenced to the version the client displayed (`ChangesRevision`).
-    public static let changesRevertCapability = "changes.revert.v1"
+    public static let changesRevertCapability = Capability.changesRevert.rawValue
     /// The host reads a `changes*` query's `cwd`: the repository an agent's `review_diff` asked to
     /// review. Older hosts ignore it and answer for the agent's own folder.
-    public static let changesCwdCapability = "changes.cwd.v1"
+    public static let changesCwdCapability = Capability.changesCwd.rawValue
     /// Older hosts' project inventory uses native .pi configuration paths.
-    public static let projectsCapability = "projects.v1"
+    public static let projectsCapability = Capability.projects.rawValue
     /// Host-owned project files use .shepherd; clients must acknowledge this format before access.
-    public static let projectsV2Capability = "projects.v2"
-    public static let projectDetailsCapability = "projects.details.v1"
-    public static let projectMCPCapability = "projects.mcp.v1"
+    public static let projectsV2Capability = Capability.projectsV2.rawValue
+    public static let projectDetailsCapability = Capability.projectDetails.rawValue
+    public static let projectMCPCapability = Capability.projectMCP.rawValue
     /// No longer offered: spaces need no approval. Kept so older peers' checks still compile and decode.
-    public static let projectTrustCapability = "projects.trust.v1"
+    public static let projectTrustCapability = Capability.projectTrust.rawValue
     /// The host lists a space's resources, removes one, and copies skills into it from a repository.
-    public static let projectResourcesCapability = "projects.resources.v1"
+    public static let projectResourcesCapability = Capability.projectResources.rawValue
     /// The host records what a child space turns off of its parent's MCP servers and skills
     /// (`RemoteProjectsRequest.inheritance`) and reports it in the space's context.
-    public static let projectInheritanceCapability = "projects.inheritance.v1"
+    public static let projectInheritanceCapability = Capability.projectInheritance.rawValue
     /// Child spaces inherit their parent's slash commands and extensions too, and the host records
     /// turning them off (`SpaceInheritanceExclusions.prompts`, `.extensions`).
-    public static let projectInheritedResourcesCapability = "projects.inheritance.resources.v1"
+    public static let projectInheritedResourcesCapability = Capability.projectInheritedResources.rawValue
     /// The host sets a space's parent space and name (`RemoteProjectsRequest.organize`).
-    public static let projectParentCapability = "projects.parent.v1"
+    public static let projectParentCapability = Capability.projectParent.rawValue
     /// The host serves `RemoteRequest.skills`: the agent skills its pi reads (on, off,
     /// how each is used, updates), installs from a repository or a copied folder, and removal
     /// with undo (Settings ▸ Skills). Older hosts have none to show.
-    public static let skillsCapability = "skills.v1"
+    public static let skillsCapability = Capability.skills.rawValue
     /// A host's skills answer carries the skills its pi loads from outside its skills folder
     /// (`SkillsSnapshot.pi`), which Settings lists read-only: none from a host whose pi reads only
     /// its own home. Older hosts send none.
-    public static let piSkillsCapability = "skills.pi.v1"
+    public static let piSkillsCapability = Capability.piSkills.rawValue
     /// The host serves `RemoteRequest.hooks`: Settings › Hooks on its files (the catalog, off
     /// switches, readers, add, edit, delete, and a test run there). Older hosts hide the page.
-    public static let hooksCapability = "hooks.v1"
+    public static let hooksCapability = Capability.hooks.rawValue
     /// The host serves `RemoteRequest.apps`: a space's apps, run and stopped there.
-    public static let appsCapability = "apps.v1"
+    public static let appsCapability = Capability.apps.rawValue
     /// The host serves `RemoteAppsRequest`'s This Mac apps with no space, `processes`, `restart`
     /// and `output`; a local client that lists it (in `clientCapabilities`) is pushed `appsChanged`.
-    public static let appsV2Capability = "apps.v2"
+    public static let appsV2Capability = Capability.appsV2.rawValue
     /// Offered only on the local socket (`host.sock`): the client is this Mac's own app, as a
     /// background host's client. Never in `capabilities`, which every client may be offered.
-    public static let localCapability = "local.v1"
+    public static let localCapability = Capability.local.rawValue
     /// Offered only on the local socket: the host takes `RemoteRequest.drain`, from an app newer
     /// than it. Older hosts leave it off and drain once they see the new bundle.
-    public static let hostDrainCapability = "host.drain.v1"
+    public static let hostDrainCapability = Capability.hostDrain.rawValue
     /// A client capability, from this Mac's own app only: it shows its background host's threads
     /// as its own and posts their turns' and questions' banners itself, so the host doesn't.
-    public static let localThreadsCapability = "local.threads.v1"
+    public static let localThreadsCapability = Capability.localThreads.rawValue
     /// The host takes the terminal panel's actions on an agent's terminal panes
     /// (`RemoteAgentAction.renameTerminal`, `.killTerminalProcess`): Rename tab and Kill
     /// process. Older hosts leave them off. A host answers an older client's `typeInTerminal`
     /// (Run in terminal, since removed) with `unsupported`.
-    public static let terminalControlCapability = "terminal.control.v1"
-    public static let terminalStartCapability = "terminal.start.v1"
+    public static let terminalControlCapability = Capability.terminalControl.rawValue
+    public static let terminalStartCapability = Capability.terminalStart.rawValue
     /// `RemoteAgentAction.readCheckout`: the host reads a thread's checkout again.
-    public static let checkoutReadCapability = "checkout.read.v1"
+    public static let checkoutReadCapability = Capability.checkoutRead.rawValue
     /// Offered only on the local socket: the host takes `RemoteAgentQuery.changesWriteBegan` and
     /// `.changesWriteEnded`, this Mac's app telling its host's Changes engine what it writes for
     /// the person. Never in `capabilities`.
-    public static let changesWritesCapability = "changes.writes.v1"
+    public static let changesWritesCapability = Capability.changesWrites.rawValue
     /// `RemoteAgentQuery.pullRequest`: the host looks a thread's branch's pull request up again.
-    public static let pullRequestLinkCapability = "pullrequest.link.v1"
+    public static let pullRequestLinkCapability = Capability.pullRequestLink.rawValue
     /// `RemoteAgentQuery.branchStatus`, `.branchUpdate` and `.branchAbort`: a device's branch sheet reads
     /// how far a thread's branch is behind its base and its pull request, and runs Update from the base.
-    public static let branchStatusCapability = "branch.status.v1"
+    public static let branchStatusCapability = Capability.branchStatus.rawValue
     /// `HostSettingChange.threadsStartThreads` and `.subThreadPlace`: Settings ▸ Agents ▸ Threads a thread starts.
-    public static let hostSettingsSubThreadsCapability = "hostSettings.subThreads.v1"
+    public static let hostSettingsSubThreadsCapability = Capability.hostSettingsSubThreads.rawValue
     /// The host starts a thread's stopped pi again on request (`RemoteAgentAction.restartPi`).
-    public static let agentRestartCapability = "agent.restart.v1"
+    public static let agentRestartCapability = Capability.agentRestart.rawValue
     /// The host keeps which completion of each thread was opened (`Agent.seenCompletedAt`) and
     /// takes `RemoteAgentAction.markSeen`, so Done clears on every device at once.
-    public static let completionSeenCapability = "agent.seen.v1"
+    public static let completionSeenCapability = Capability.completionSeen.rawValue
     /// The host keeps which threads are muted (`Agent.pushMuted`) and takes
     /// `RemoteAgentAction.mutePushes`: a muted thread sends no push to any phone.
-    public static let pushMuteCapability = "push.mute.v1"
+    public static let pushMuteCapability = Capability.pushMute.rawValue
     /// The host takes a send's `designContext` (what the sender's design screen showed) and hands
     /// it to pi fenced as data. An older host would drop it, so a client leaves it out there.
-    public static let designContextCapability = "design.context.v1"
+    public static let designContextCapability = Capability.designContext.rawValue
     /// Legacy retry routing remains advertised so old clients reach a refusal, not their
     /// send-again fallback. Safe recovery additionally requires checkpointRecoveryCapability.
-    public static let nativeRetryCapability = "native.retry.v1"
-    public static let checkpointRecoveryCapability = "native.checkpointRecovery.v1"
+    public static let nativeRetryCapability = Capability.nativeRetry.rawValue
+    public static let checkpointRecoveryCapability = Capability.checkpointRecovery.rawValue
     /// The host interrupts a running turn for a message (`NativeThreadDelivery.interrupt`,
     /// `NativeQueueAction.interrupt`): it stops pi as Stop does and sends the message at once as
     /// the next turn. An older host has only steer, so a client steers there.
-    public static let nativeInterruptCapability = "native.interrupt.v1"
-    public static let nativeQueueSubagentCapability = "native.queueSubagent.v1"
+    public static let nativeInterruptCapability = Capability.nativeInterrupt.rawValue
+    public static let nativeQueueSubagentCapability = Capability.nativeQueueSubagent.rawValue
     /// The host keeps each agent's service tier (Fast or Standard) and serves
     /// `NativeThreadRequest.setServiceTier`; its snapshots say the tier and the tiers the model
     /// offers (`NativeThreadSnapshot.serviceTier`, `serviceTiers`). An older host has neither, and
     /// a client draws no Speed control there.
-    public static let nativeServiceTierCapability = "native.serviceTier.v1"
+    public static let nativeServiceTierCapability = Capability.nativeServiceTier.rawValue
     /// The host serves the images pi saved in a thread (`NativeThreadRequest.image`) and names them in its snapshots
     /// (`NativeThreadBlock.imageID`). An older host sends only the "Image" chip, and a client draws that.
-    public static let nativeImagesCapability = "native.images.v1"
-    public static let nativeGoalCapability = "native.goal.v1"
+    public static let nativeImagesCapability = Capability.nativeImages.rawValue
+    public static let nativeGoalCapability = Capability.nativeGoal.rawValue
     /// Live Settings ▸ Experiments ▸ Goals control on this host.
-    public static let goalExperimentCapability = "experiments.goals.v1"
-    public static let projectsExperimentCapability = "experiments.projects.v1"
+    public static let goalExperimentCapability = Capability.goalExperiment.rawValue
+    public static let projectsExperimentCapability = Capability.projectsExperiment.rawValue
     /// The host speaks fleet: `fleetIdentify` and `fleetPair` before `hello`, and after it
     /// `fleetIntroduce` and `fleetRevoke` (`FleetWire.swift`), and its `helloOk`
     /// carries its `hostID`. Offered whenever the host runs (Fleet has no off switch); the other fleet requests are the
     /// app's, on the local socket.
-    public static let fleetCapability = "fleet.v1"
+    public static let fleetCapability = Capability.fleet.rawValue
     /// Pressure and readiness: Macs in a fleet push `fleetPressure` and `fleetReadiness` to each
     /// other and answer `fleetPressureNow` (`FleetPressureWire.swift`).
-    public static let fleetPressureCapability = "fleet.pressure.v1"
+    public static let fleetPressureCapability = Capability.fleetPressure.rawValue
     /// Fleet ▸ Check: Macs in a fleet push `fleetCheck` (a `FleetCheckReport`) to each other and answer `fleetCheckNow`
     /// (`FleetCheckWire.swift`). A Mac without it is neither sent a report nor asked for one, and its Check column says it has none.
-    public static let fleetCheckCapability = "fleet.check.v1"
+    public static let fleetCheckCapability = Capability.fleetCheck.rawValue
     /// The host syncs settings and content with the Macs it is paired with (`FleetSyncWire.swift`):
     /// `fleetSync` after `hello` with a peer's token.
-    public static let fleetSyncCapability = "fleet.sync.v1"
+    public static let fleetSyncCapability = Capability.fleetSync.rawValue
     /// A thread on one Mac sends work to another (`FleetDispatchWire.swift`): `fleetDispatchCreate`,
     /// `fleetDispatchControl`, and the pushes `fleetDispatchChanged` and `fleetDispatchResult`, after
     /// `hello` with a peer's token.
-    public static let fleetDispatchCapability = "fleet.dispatch.v1"
-    public static let fleetDispatchCloseCapability = "fleet.dispatch.close.v1"
+    public static let fleetDispatchCapability = Capability.fleetDispatch.rawValue
+    public static let fleetDispatchCloseCapability = Capability.fleetDispatchClose.rawValue
     /// Macs in a fleet push what they hold of each repository to each other as manifests (`fleetRepoManifest`,
     /// `FleetSnapshotWire.swift`). Offered with `fleet.v1`, so to members only.
-    public static let fleetSnapshotCapability = "fleet.snapshot.v1"
+    public static let fleetSnapshotCapability = Capability.fleetSnapshot.rawValue
     /// A thread moves from one Mac to another (`FleetMoveWire.swift`): a dispatch of `kind: .move` carrying the conversation and the
     /// worktree, then `FleetDispatchControl.commit` once the sender has handed over. Offered with `fleet.v1`, so to members only; a Mac
     /// that doesn't list it is never sent a move.
-    public static let fleetMoveCapability = "fleet.move.v1"
+    public static let fleetMoveCapability = Capability.fleetMove.rawValue
     /// A client may ask the host to move one of its threads to another Mac (`RemoteAgentAction.moveToMac`) and read the progress of a move
     /// (`FleetSnapshot.clientView` carries the move records). Offered to every client, devices included, while Fleet runs; it gives no part
     /// in the fleet's store. A client lists it in `hello` (`clientCapabilities`) to be sent the moves in `fleetRead`.
-    public static let fleetMoveViewCapability = "fleet.move.view.v1"
+    public static let fleetMoveViewCapability = Capability.fleetMoveView.rawValue
     /// A Mac can be asked to update Shepherd on another Mac of its fleet (`FleetUpdateWire.swift`): the request `hostUpdate` is served from a
     /// peer (over the connection either Mac opened) with `installWhenIdle` and `cancel` as two more steps, and the host reports the job it
     /// carries out (`FleetSnapshot.updates`). Offered with `fleet.v1` while the host has an updater, so to members only; a Mac that doesn't
     /// list it is shown "Update Shepherd on it yourself" and is never sent the request.
-    public static let fleetUpdateCapability = "fleet.update.v1"
+    public static let fleetUpdateCapability = Capability.fleetUpdate.rawValue
     /// A client may ask the host to update a Mac of its fleet (`FleetAction.update`) and read the job (`FleetSnapshot.updates`). Offered to every
     /// client, devices included, while Fleet runs and the host has an updater; it gives no part in the fleet's store.
-    public static let fleetUpdateViewCapability = "fleet.update.view.v1"
+    public static let fleetUpdateViewCapability = Capability.fleetUpdateView.rawValue
     /// A link between two Macs works whichever of them opened it: the host sends a peer's requests back over the connection that peer
     /// opened (`RemoteReply.fleetPeerCall`, answered `RemoteRequest.fleetPeerAnswer`) and takes `fleetRoutes` (`FleetRoutesWire.swift`).
     /// Offered with `fleet.v1`; a peer lists it in `hello` to say its own connection may carry such calls.
-    public static let fleetLinkCapability = "fleet.link.v1"
+    public static let fleetLinkCapability = Capability.fleetLink.rawValue
     /// What a Mac that dials a peer lists in `hello`: it takes the peer's requests back over that connection.
     public static let fleetLinkClientCapabilities = [fleetLinkCapability, fleetSyncCapability, fleetPressureCapability, fleetCheckCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetDispatchCloseCapability, fleetMoveCapability, fleetUpdateCapability]
     /// The host finds Macs through the person's own iCloud: it keeps a Join record while its code is shown and looks one up
     /// for `FleetAction.findAndPair`, and a presence record lets paired Macs find each other after an address change. Nothing
     /// new crosses between Macs, so a Mac without it pairs and links as before. Offered with `fleet.v1`, so to members only.
-    public static let fleetRendezvousCapability = "fleet.rendezvous.v1"
+    public static let fleetRendezvousCapability = Capability.fleetRendezvous.rawValue
     /// The host pairs with a Mac named by a pairing link or found over SSH (`FleetAction.pairAt`) and says its own routes
     /// (`FleetSnapshot.routes`). Nothing new crosses between Macs: the other Mac sees the ordinary `fleetIdentify` and `fleetPair`.
     /// Offered with `fleet.v1`, so to members only.
-    public static let fleetPairLinkCapability = "fleet.pairlink.v1"
+    public static let fleetPairLinkCapability = Capability.fleetPairLink.rawValue
     /// The host takes client devices by code (`fleetPairDevice`). Offered whenever the host runs; never to a device.
-    public static let fleetDevicesCapability = "fleet.devices.v1"
+    public static let fleetDevicesCapability = Capability.fleetDevices.rawValue
     /// A client may read the fleet's Macs, their load and readiness (`fleetRead`, answered with
     /// `FleetSnapshot.clientView`), ask the host to sample while it looks (`FleetAction.watching`) and
     /// choose where work is sent (`HostSettingChange.fleetWeight`). Offered to every client, devices
     /// included; it gives no part in the fleet's store.
-    public static let fleetViewCapability = "fleet.view.v1"
+    public static let fleetViewCapability = Capability.fleetView.rawValue
     /// A client keeps up with the fleet's Macs: `FleetSnapshot.members` (each Mac's id, name, port and routes, in the answer to
     /// `fleetRead`) and the push `fleetViewChanged` when they change, sent only to a client that lists this in `hello`. Offered to every
     /// client, devices included, while Fleet is on. A host without it says nothing of the members, so a client never prunes from its answer.
-    public static let fleetFollowCapability = "fleet.follow.v1"
+    public static let fleetFollowCapability = Capability.fleetFollow.rawValue
     /// Capabilities a client device is never offered (`FleetAccess`): the ones for taking part in the
     /// fleet's store (`fleet.v1`, sync), and the one for enrolling (a device already has its token). Later fleet
     /// units (credentials, dispatch) add theirs here.
@@ -326,26 +326,26 @@ public enum RemoteProtocol {
     public static let fleetServiceCapabilities: Set<String> = fleetMemberCapabilities.union([fleetViewCapability, fleetFollowCapability, fleetMoveViewCapability, fleetUpdateViewCapability])
     /// Settings ▸ Experiments ▸ Design tool switched from a client (`HostSettingChange.designToolEnabled`).
     /// Offered while the tool is off too: it is not one of `designCapabilities`.
-    public static let designToolExperimentCapability = "experiments.designTool.v1"
+    public static let designToolExperimentCapability = Capability.designToolExperiment.rawValue
     /// Settings ▸ Experiments ▸ Computer use switched from a client (`HostSettingChange.computerUseEnabled`).
-    public static let computerUseExperimentCapability = "experiments.computerUse.v1"
+    public static let computerUseExperimentCapability = Capability.computerUseExperiment.rawValue
     /// The creation page may choose a tier before the opening prompt reaches pi.
-    public static let createAgentServiceTierCapability = "agent.create.serviceTier.v1"
-    public static let projectExecutionCapability = "logicalProjects.execution.v1"
-    public static let logicalProjectRuntimeCapability = "logicalProjectRuntime.v1"
-    public static let projectMessageImagesCapability = "logicalProjectRuntime.images.v1"
+    public static let createAgentServiceTierCapability = Capability.createAgentServiceTier.rawValue
+    public static let projectExecutionCapability = Capability.projectExecution.rawValue
+    public static let logicalProjectRuntimeCapability = Capability.logicalProjectRuntime.rawValue
+    public static let projectMessageImagesCapability = Capability.projectMessageImages.rawValue
     /// The owner keeps a Project's conversation reasoning level (`LogicalProjectSettings.conversationThinking`). An older owner drops
     /// the field it does not know, so a client offers the Project's own reasoning choice only to an owner with this.
-    public static let projectConversationThinkingCapability = "logicalProjects.conversationThinking.v1"
-    public static let browserTabsCapability = "browser.tabs.v1"
+    public static let projectConversationThinkingCapability = Capability.projectConversationThinking.rawValue
+    public static let browserTabsCapability = Capability.browserTabs.rawValue
 
-    public static let moveThreadCapability = "agent.move.v1"
+    public static let moveThreadCapability = Capability.moveThread.rawValue
     /// The host lists and reads a thread's folder, read-only (`RemoteAgentQuery.files`, `.fileRead`; `ThreadFilesLimits`).
     /// Offered only to a client that lists it in `hello`; a client and an older host show Files as needing a newer host.
-    public static let filesCapability = "files.v1"
+    public static let filesCapability = Capability.files.rawValue
     /// The host saves a file of a thread's folder (`RemoteAgentQuery.fileWrite`), only over the text the client
     /// edited from (`ThreadFileSaveResult.changed` otherwise). Served only to a client offered `filesCapability`.
-    public static let filesWriteCapability = "files.write.v1"
+    public static let filesWriteCapability = Capability.filesWrite.rawValue
     public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostSettingsTextGenerationModelCapability, hostSettingsVisionModelCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, createAgentNoSpaceCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, computerUseExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, checkoutReadCapability, pullRequestLinkCapability, branchStatusCapability, hostSettingsSubThreadsCapability, fleetCapability, fleetSyncCapability, fleetDevicesCapability, fleetPressureCapability, fleetCheckCapability, fleetViewCapability, fleetFollowCapability, fleetMoveViewCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetDispatchCloseCapability, fleetMoveCapability, fleetRendezvousCapability, fleetLinkCapability, fleetPairLinkCapability, fleetUpdateCapability, fleetUpdateViewCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
@@ -1055,7 +1055,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case routes, reply
     }
 
-    private enum Kind: String, Codable {
+    public enum Kind: String, Codable, CaseIterable, Sendable {
         case pushRegistration, pushUnregister
         case fleetIdentify, fleetPair, fleetIntroduce, fleetRevoke, fleetRead, fleetAction
         case fleetPressure, fleetReadiness, fleetPressureNow, fleetCheck, fleetCheckNow, fleetRepoManifest, fleetSnapshotPart, fleetBlobPush
@@ -1075,6 +1075,88 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case tunnel
         case browserClaim, browserRelease, browserAnswer
         case designRelayAnswer, appRelayAnswer
+    }
+
+    /// The wire name of this request, the key of its `MessageSpec` row.
+    public var kind: Kind {
+        switch self {
+        case .pushRegistration: .pushRegistration
+        case .pushUnregister: .pushUnregister
+        case .fleetIdentify: .fleetIdentify
+        case .fleetPair: .fleetPair
+        case .fleetIntroduce: .fleetIntroduce
+        case .fleetRevoke: .fleetRevoke
+        case .fleetRead: .fleetRead
+        case .fleetAction: .fleetAction
+        case .fleetPressure: .fleetPressure
+        case .fleetReadiness: .fleetReadiness
+        case .fleetPressureNow: .fleetPressureNow
+        case .fleetCheck: .fleetCheck
+        case .fleetCheckNow: .fleetCheckNow
+        case .fleetRepoManifest: .fleetRepoManifest
+        case .fleetSnapshotPart: .fleetSnapshotPart
+        case .fleetBlobPush: .fleetBlobPush
+        case .fleetDispatchCreate: .fleetDispatchCreate
+        case .fleetDispatchControl: .fleetDispatchControl
+        case .fleetDispatchChanged: .fleetDispatchChanged
+        case .fleetDispatchResult: .fleetDispatchResult
+        case .fleetRoutes: .fleetRoutes
+        case .fleetPeerAnswer: .fleetPeerAnswer
+        case .fleetSync: .fleetSync
+        case .fleetPairDevice: .fleetPairDevice
+        case .fleetSyncDevices: .fleetSyncDevices
+        case .nativeThread: .nativeThread
+        case .nativeThreadSubscribe: .nativeThreadSubscribe
+        case .fleetDigest: .fleetDigest
+        case .projectExecution: .projectExecution
+        case .hello: .hello
+        case .stateFetch: .stateFetch
+        case .attach: .attach
+        case .detach: .detach
+        case .input: .input
+        case .resize: .resize
+        case .paste: .paste
+        case .openPane: .openPane
+        case .closePane: .closePane
+        case .resizePaneSplit: .resizePaneSplit
+        case .listDir: .listDir
+        case .listModels: .listModels
+        case .drain: .drain
+        case .hostUpdateGate: .hostUpdateGate
+        case .addSpace: .addSpace
+        case .spaceAction: .spaceAction
+        case .projectRequest: .projectRequest
+        case .startThread: .startThread
+        case .focusThread: .focusThread
+        case .projectExecutors: .projectExecutors
+        case .createAgent: .createAgent
+        case .agentAction: .agentAction
+        case .agentQuery: .agentQuery
+        case .upload: .upload
+        case .creationOptions: .creationOptions
+        case .creationBranches: .creationBranches
+        case .automation: .automation
+        case .forge: .forge
+        case .logicalProjectRuntime: .logicalProjectRuntime
+        case .instructions: .instructions
+        case .suggestions: .suggestions
+        case .hostSettings: .hostSettings
+        case .hostInventory: .hostInventory
+        case .hostUpdate: .hostUpdate
+        case .skills: .skills
+        case .projects: .projects
+        case .logicalProjects: .logicalProjects
+        case .hostConfig: .hostConfig
+        case .hooks: .hooks
+        case .apps: .apps
+        case .design: .design
+        case .tunnel: .tunnel
+        case .browserClaim: .browserClaim
+        case .browserRelease: .browserRelease
+        case .browserAnswer: .browserAnswer
+        case .designRelayAnswer: .designRelayAnswer
+        case .appRelayAnswer: .appRelayAnswer
+        }
     }
 
     public init(from decoder: Decoder) throws {
