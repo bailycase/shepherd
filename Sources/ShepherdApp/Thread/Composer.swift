@@ -561,6 +561,7 @@ struct Composer: View, Equatable {
         .task(id: FieldClaim(active: active, focused: active && isFocused, question: questionKey != nil)) {
             // The layout coming on screen or going off it is a flip: the card's ring follows at once, as the
             // toolbar does, and a spring it left running would lay the whole layout out again on every frame.
+            // The one coming on still fades its ring in (Core Animation, so no frame lays anything out).
             let flip = claimed.active != active
             claimed.active = active
             claim(false, flip: flip)
@@ -776,6 +777,7 @@ struct Composer: View, Equatable {
         guard flip else { composing = value; return }
         var instant = Transaction()
         instant.disablesAnimations = true
+        instant.shFocusFades = value
         withTransaction(instant) { composing = value }
     }
 
