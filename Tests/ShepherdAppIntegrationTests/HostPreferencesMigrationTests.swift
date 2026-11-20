@@ -154,6 +154,8 @@ struct HostPreferencesMigrationTests {
             }
         }
         try await reported()
+        // The host's own ops so far. A synced setting is the fleet's value, so applying it must not come back out as one of ours.
+        let localOps = await onQueue(server.queue) { engine.store.vector[engine.store.mac] }
         let peer = try #require(UUID(uuidString: "00000000-0000-4000-8000-0000000000C3"))
         let base = UInt64(Date().timeIntervalSince1970 * 1000) + 3_600_000
         let synced: [(FleetHostSetting, String, Step)] = [
@@ -173,6 +175,10 @@ struct HostPreferencesMigrationTests {
             try await eventuallyOnMain("the host's copy to take the synced \(step.label)") { (try? Self.stored(file)) == expected }
             try check("fleet sync \(step.label)")
             try await reported()
+            // Scan again now that the setting is applied: an echo would be a new op of this Mac's, and so a loop between the Macs.
+            await onQueue(server.queue) { engine.localChanged() }
+            let after = await onQueue(server.queue) { engine.store.vector[engine.store.mac] }
+            #expect(after == localOps, "fleet sync \(step.label): the host appended no outgoing op of its own")
         }
     }
 
@@ -323,6 +329,8 @@ struct HostPreferencesWorktreesMigrationTests {
             }
         }
         try await reported()
+        // The host's own ops so far. A synced setting is the fleet's value, so applying it must not come back out as one of ours.
+        let localOps = await onQueue(server.queue) { engine.store.vector[engine.store.mac] }
         let peer = try #require(UUID(uuidString: "00000000-0000-4000-8000-0000000000C3"))
         let base = UInt64(Date().timeIntervalSince1970 * 1000) + 3_600_000
         let synced: [(FleetHostSetting, String, Step)] = [
@@ -340,6 +348,10 @@ struct HostPreferencesWorktreesMigrationTests {
             try await eventuallyOnMain("the host's copy to take the synced \(step.label)") { (try? Self.stored(file)) == expected }
             try check("fleet sync \(step.label)")
             try await reported()
+            // Scan again now that the setting is applied: an echo would be a new op of this Mac's, and so a loop between the Macs.
+            await onQueue(server.queue) { engine.localChanged() }
+            let after = await onQueue(server.queue) { engine.store.vector[engine.store.mac] }
+            #expect(after == localOps, "fleet sync \(step.label): the host appended no outgoing op of its own")
         }
     }
 
@@ -652,6 +664,8 @@ struct HostPreferencesFleetMigrationTests {
             }
         }
         try await reported()
+        // The host's own ops so far. A synced setting is the fleet's value, so applying it must not come back out as one of ours.
+        let localOps = await onQueue(server.queue) { engine.store.vector[engine.store.mac] }
         let peer = try #require(UUID(uuidString: "00000000-0000-4000-8000-0000000000C3"))
         let base = UInt64(Date().timeIntervalSince1970 * 1000) + 3_600_000
         let synced: [(unit: String, json: String, step: Step)] = [
@@ -675,6 +689,10 @@ struct HostPreferencesFleetMigrationTests {
             try await eventuallyOnMain("the host's copy to take the synced \(step.label)") { (try? Self.stored(file)) == expected }
             try check("fleet sync \(step.label)")
             try await reported()
+            // Scan again now that the setting is applied: an echo would be a new op of this Mac's, and so a loop between the Macs.
+            await onQueue(server.queue) { engine.localChanged() }
+            let after = await onQueue(server.queue) { engine.store.vector[engine.store.mac] }
+            #expect(after == localOps, "fleet sync \(step.label): the host appended no outgoing op of its own")
         }
     }
 
