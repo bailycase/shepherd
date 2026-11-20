@@ -32,6 +32,11 @@ import ShepherdRemote
             return .projects(id: id, result: result)
         })
         return FixtureScreen(name: fixture.name, hosts: [host], routes: [.settings(.spaces), .settings(.space(directory))], tab: .settings,
-                             setup: { SpaceMCP.fixtureServer = phase == .done ? nil : "acme-issues" })
+                             prepare: { _ in
+            await FixtureWindows.wait("space MCP sign-in requests", seconds: 10) {
+                let count = FixtureHost.running(host.id)?.requests.filter { $0 == "projects" }.count ?? 0
+                return count >= (phase == .done ? 4 : 6)
+            }
+        }, setup: { SpaceMCP.fixtureServer = phase == .done ? nil : "acme-issues" })
     }
 }

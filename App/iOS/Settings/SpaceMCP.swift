@@ -29,7 +29,8 @@ struct SpaceMCP: View {
     #endif
 
     var body: some View {
-        content.task(id: files) { await load() }
+        VStack(alignment: .leading, spacing: 0) { content }
+            .task(id: files) { await load() }
     }
 
     @ViewBuilder private var content: some View {
